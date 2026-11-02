@@ -79,10 +79,6 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <future>
-#include <thread>
 #include <unordered_set>
 
 #include "common/ValueJson.h"
@@ -1340,24 +1336,6 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   return {};
 }
 
-Roe<void> ConversationsHub::Reinitialize(const HubSettings& settings, const std::string& profile_data_dir) {
-  if (!initialized_) {
-    return Initialize(settings, profile_data_dir);
-  }
-
-  config_ = settings;
-  policy_ = settings.policy;
-  PublishMeshConfig();
-  UpdateOrgBackendClients(settings);
-  if (mesh_messaging_) {
-    mesh_messaging_->SetRelayClient(relay_);
-  }
-  if (actions_) {
-    actions_->SetRegistrationClient(registration_);
-  }
-  return {};
-}
-
 void ConversationsHub::BindAgentInbound(AgentInboundPorts ports) {
   agent_inbound_ = std::move(ports);
   // In place: the router keeps its callbacks, and an unbound agent (teardown, profile reset) leaves
@@ -2006,27 +1984,6 @@ Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id, cons
   return DeleteRelayQuotaItem(*blob_, identity->relay_user_id, blob_id, tier);
 }
 
-Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
-  auto result_promise = std::make_shared<std::promise<Roe<ThreadMessage>>>();
-  auto result_future = result_promise->get_future();
-  SendAttachmentFromPathAsync(thread_id, path, [result_promise](Roe<ThreadMessage> value) {
-    try {
-      result_promise->set_value(std::move(value));
-    } catch (const std::future_error&) {
-    }
-  });
-  constexpr auto kWait = std::chrono::milliseconds(90000);
-  const auto deadline = std::chrono::steady_clock::now() + kWait;
-  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
-         std::chrono::steady_clock::now() < deadline) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return Error("Attachment upload timed out");
-  }
-  return result_future.get();
-}
-
 AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const { return DefaultAttachmentLimits(); }
 
 void ConversationsHub::SetOnBlobSpaceWarning(std::function<void(int percent)> callback) {
@@ -2062,37 +2019,6 @@ void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
   if (callback) {
     AppRuntime::PostUI([callback = std::move(callback), percent]() { callback(percent); });
   }
-}
-
-void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
-                                                   std::function<void(Roe<ThreadMessage>)> on_done) {
-  OutgoingAttachment attachment;
-  attachment.filename = std::filesystem::path(path).filename().string();
-  attachment.mime = AttachmentMimeFromFilename(attachment.filename);
-  const uint64_t max_bytes = MaxAttachmentSendBytes(CurrentAttachmentLimits(), attachment.mime, false);
-  std::error_code ec;
-  const auto size = std::filesystem::file_size(path, ec);
-  if (!ec && size > max_bytes) {
-    if (on_done) {
-      on_done(AttachmentTooLargeError(max_bytes)); // before the file is read
-    }
-    return;
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    if (on_done) {
-      on_done(Error("Could not read attachment file"));
-    }
-    return;
-  }
-  if (!ec) {
-    attachment.bytes.resize(static_cast<size_t>(size));
-    input.read(reinterpret_cast<char*>(attachment.bytes.data()), static_cast<std::streamsize>(attachment.bytes.size()));
-    attachment.bytes.resize(static_cast<size_t>(input.gcount()));
-  } else {
-    attachment.bytes.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-  }
-  SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done));
 }
 
 Roe<Thread> ConversationsHub::AttachmentTargetThread(const std::string& thread_id) {

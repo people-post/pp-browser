@@ -89,12 +89,10 @@ Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
 - Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `capabilities/media/src/lib/media/` (and in pp-cpp-mesh `src/reachability/`)
-- `capabilities/base/src/common/CivilTime.cpp`, `capabilities/base/src/common/WorkerPool.cpp`, `capabilities/base/src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)
-- `src/lib/libp2p/` (upstream; not product policy)
 
-**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/foundation/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `MediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
+**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/foundation/data/`, `capabilities/net/src/lib/net/`, `src/lib/ai/`, portable TUs such as `MediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
 
 ## Adding new platform behavior
 

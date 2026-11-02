@@ -97,11 +97,6 @@ public:
   SessionSpec ActiveSpec() const;
   /** An inbound packet (already demuxed for this session; plaintext Opus / H264). */
   void OnInboundPacket(const MediaPacket& packet);
-  /**
-   * Drop remote jitter/PLC tracks without stopping capture. SoftMigrate send-swap clears
-   * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
-   */
-  void ClearRemoteAudioTracks();
   bool IsPacketMode() const;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();

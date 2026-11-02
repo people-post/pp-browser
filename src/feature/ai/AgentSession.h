@@ -123,7 +123,6 @@ public:
   void SetToolRegistrationHook(ToolRegistrationHook hook);
   void SetToolPermissions(ToolPermissionsPrefs permissions);
   void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
-  McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
@@ -184,7 +183,6 @@ public:
   bool IsBusy() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
-  void StartNewConversation();
   /**
    * The thread was cleared or deleted: forget the brief_AI role that answered its last turn, and (no turn running)
    * this session's permission card and question asked back in that thread. UI thread.
@@ -194,8 +192,6 @@ public:
   bool IsConfigured() const;
   const Conversation& conversation() const;
 
-  TranscriptEntry& AppendUserMessage(const std::string& user_text,
-                                     std::optional<std::string> user_payload = std::nullopt);
   bool CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptChatAction> chat_actions);

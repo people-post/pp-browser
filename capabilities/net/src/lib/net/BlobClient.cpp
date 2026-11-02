@@ -343,25 +343,6 @@ Roe<void> IBlobClient::PutUploadFileRange(const std::string& upload_url, const s
   return put;
 }
 
-Roe<BlobPresignResult> UploadRelayBlobFile(IBlobClient& blob, const std::string& relay_user_id,
-                                           const std::string& content_type, const BlobPurpose purpose,
-                                           const std::string& path, const uint64_t byte_length,
-                                           const std::function<bool(uint64_t, uint64_t)>& progress) {
-  auto presign = blob.Presign(relay_user_id, content_type, byte_length, purpose);
-  if (!presign) {
-    return presign.error();
-  }
-  auto put = blob.PutUploadFile(presign.value().upload_url, content_type, path, progress);
-  if (!put) {
-    return put.error();
-  }
-  auto retain = blob.Retain(relay_user_id, presign.value().blob_id);
-  if (!retain) {
-    return retain.error();
-  }
-  return presign.value();
-}
-
 Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& relay_user_id,
                                             const std::string& content_type, const BlobPurpose purpose,
                                             const std::string& body) {

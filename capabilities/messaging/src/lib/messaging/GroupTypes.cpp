@@ -31,18 +31,6 @@ MemberRole MemberRoleFromString(const std::string& value) {
   return MemberRole::Member;
 }
 
-std::string GroupInvitePolicyToString(const GroupInvitePolicy policy) {
-  switch (policy) {
-  case GroupInvitePolicy::Everyone:
-    return "everyone";
-  case GroupInvitePolicy::ContactsOnly:
-    return "contacts_only";
-  case GroupInvitePolicy::Nobody:
-    return "nobody";
-  }
-  return "contacts_only";
-}
-
 GroupInvitePolicy GroupInvitePolicyFromString(const std::string& value) {
   if (value == "everyone") {
     return GroupInvitePolicy::Everyone;

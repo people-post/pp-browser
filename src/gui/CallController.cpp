@@ -928,12 +928,10 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = AudioSession::IsSpeakerphoneOn();
   auto* backend = Backend();
-  in_call.video_allowed = false;
   in_call.show_camera = false;
   if (backend && backend->Available() && !presenter_.ActiveCallId().empty()) {
     if (auto allowed = backend->VideoAllowedForCall(presenter_.ActiveCallId());
         allowed && allowed->has_value() && **allowed) {
-      in_call.video_allowed = true;
       in_call.show_camera = ShowsCameraButton(
           media.VideoEncoderAvailable(),
           CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget()), in_call.camera_on);

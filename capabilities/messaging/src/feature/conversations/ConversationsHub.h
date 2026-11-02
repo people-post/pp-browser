@@ -154,7 +154,6 @@ public:
 
   /** Core store/inbox/AI — profile vault unlock is separate (ProfileSecretsEngine). */
   Roe<void> Initialize(const HubSettings& settings, const std::string& profile_data_dir);
-  Roe<void> Reinitialize(const HubSettings& settings, const std::string& profile_data_dir);
   void Shutdown();
   /**
    * Quit when the runtime teardown quiesce timed out: persist stores but free nothing
@@ -313,10 +312,6 @@ public:
    * off the UI thread.
    */
   Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
-  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
-  /** Read a file and send it as it is (no picture shrink: that is the picker's job, see OutgoingAttachment). */
-  void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
-                                   std::function<void(Roe<ThreadMessage>)> on_done);
   /**
    * Send prepared bytes. Checked here, before anything is encrypted: the size against CurrentAttachmentLimits(),
    * and the send pace (AttachmentLimits::send_max_per_minute).

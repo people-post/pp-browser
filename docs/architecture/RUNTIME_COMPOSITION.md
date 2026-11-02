@@ -252,7 +252,7 @@ flowchart TB
 
   subgraph pool["Worker pool 2–4"]
     Pool["WorkerPool<br/><small>Critical · Normal · Background</small>"]
-    Http["HttpClient · AgentSession<br/><small>LLM / tools / libcurl</small>"]
+    Http["HttpClient<br/><small>libcurl</small>"]
     P2pWork["MeshDeliveryOrchestrator · ConversationsHub<br/><small>relay sync / send</small>"]
     Pool --> Http
     Pool --> P2pWork
@@ -282,7 +282,8 @@ flowchart TB
 |----------------|-------------|----------|------|
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · pp-cpp-common `common/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | pp-cpp-common `common/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
-| **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, LLM/tools, relay sync/send |
+| **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, relay sync/send |
+| **AI turn pool** | `AiTurnPool` (owned by `AgentSessions`) | `feature/ai/` | AI turns (LLM / tools); a streamed turn holds its thread, so they stay off the worker pool |
 | **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Media capture / video** | `MediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
@@ -333,7 +334,7 @@ Full model: [THREADING.md](THREADING.md).
 | **CallActionsPorts** | `gui/` | Call chrome/actions for chat, shell, people-picker; app-filled from `CallController` |
 | **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
-| **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
+| **AgentSessions / AgentSession** | `feature/ai/` | `AgentSessions` (held by `Application`) owns one `AgentSession` per conversation and the `AiTurnPool`; a session does turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
 | **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by the app, `feature/product/ProductOwners.h`; calls names its own, `common/media/MediaSessionsOwner.h`) | UI mailbox + worker pool + coordinator + owner threads |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **MediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

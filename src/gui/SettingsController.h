@@ -131,7 +131,6 @@ private:
     ui::String profile_nickname;
     ui::String profile_peer_id;
     ui::String profile_relay_id;
-    ui::String profile_public_key;
     ui::String profile_registered = "no";
     ui::String profile_registration_status = "not registered";
     ui::String profile_registration_expires;

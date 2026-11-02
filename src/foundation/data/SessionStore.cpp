@@ -173,12 +173,6 @@ void SessionStore::AddProfilePrefsListener(std::function<void(const ProfilePrefe
   }
 }
 
-void SessionStore::AddThemeListener(std::function<void(const std::string& theme)> listener) {
-  if (listener) {
-    theme_listeners_.push_back(std::move(listener));
-  }
-}
-
 void SessionStore::NotifyConfigListeners(const AppConfig& config) {
   for (const auto& listener : config_listeners_) {
     listener(config);
@@ -197,9 +191,6 @@ void SessionStore::DiffAndNotifyProfilePrefs(const ProfilePreferences& previous,
     return;
   }
   NotifyProfilePrefsListeners(next);
-  if (next.theme != previous.theme) {
-    NotifyThemeListeners(next.theme);
-  }
   if (next.appearance != previous.appearance) {
     NotifyAppearanceListeners(next.appearance);
   }
@@ -209,12 +200,6 @@ void SessionStore::DiffAndNotifyProfilePrefs(const ProfilePreferences& previous,
   if (next.reduce_transparency != previous.reduce_transparency ||
       next.compact_chrome_frost != previous.compact_chrome_frost) {
     NotifyChromeMaterialListeners(next.reduce_transparency, next.compact_chrome_frost);
-  }
-}
-
-void SessionStore::NotifyThemeListeners(const std::string& theme) {
-  for (const auto& listener : theme_listeners_) {
-    listener(theme);
   }
 }
 

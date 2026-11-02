@@ -64,15 +64,6 @@ Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& rel
  */
 uint64_t AttachmentQuotaNeededBytes(const Error& quota_error);
 
-/** Peer-direct when allowed and reachable (1:1 E2E), else the relay files upload (start, PUT, complete). */
-Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
-                                                       const std::string& path,
-                                                       const ChatAttachmentUploadOptions& options = {});
-
-void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
-                                       ChatAttachmentUploadOptions options,
-                                       std::function<void(Roe<ChatAttachmentFields>)> on_done);
-
 /**
  * Deliver an already staged attachment (a retry, also after the app was killed): the same ciphertext and key, a
  * direct push first when it is small and the contact is reachable, then the server. A record already delivered

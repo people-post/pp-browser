@@ -256,8 +256,6 @@ struct CallInProgressState {
   bool show_camera = true;
   /** Phones with the camera on: switch front / rear camera. */
   bool show_flip = false;
-  /** Session policy from initiator (V035). */
-  bool video_allowed = false;
   /** Expanded (top bar), Immersive (people grid), or Minimized (corner chip). */
   CallChromeMode mode = CallChromeMode::Expanded;
   /**

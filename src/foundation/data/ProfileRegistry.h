@@ -42,11 +42,8 @@ public:
    * override (`--profile`) is left alone. Persists the registry when the active profile changes.
    */
   Roe<void> SelectProfileForBackend(const std::string& backend_key);
-  void SetActiveProfileId(std::string id) { active_profile_id_ = std::move(id); }
   void SetSessionProfileOverride(std::string id) { session_override_ = std::move(id); }
   const std::vector<ProfileEntry>& Profiles() const { return profiles_; }
-
-  std::string DataRoot() const { return data_dir_; }
 
 private:
   ProfileRegistry(std::string data_dir, std::string active_profile_id, std::vector<ProfileEntry> profiles);

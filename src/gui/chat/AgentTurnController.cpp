@@ -846,34 +846,6 @@ void AgentTurnController::SelectCalendarDay(const std::string& entry_id, const s
   host_.SendUserText("Selected " + iso_date);
 }
 
-std::string AgentTurnController::HydrateAssistantRml(const TranscriptEntry& entry) const {
-  return widgets_.HydrateAssistantRml(entry);
-}
-
-bool AgentTurnController::IsFormEditable(const std::string& entry_id, const std::string& form_id) const {
-  return widgets_.IsFormEditable(entry_id, form_id);
-}
-
-void AgentTurnController::InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits) {
-  widgets_.Initialize(entry_id, inits);
-}
-
-void AgentTurnController::MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const {
-  widgets_.MergeIntoRow(entry_id, row);
-}
-
-TurnWidgetState* AgentTurnController::FindWidgetState(const std::string& entry_id) {
-  return widgets_.Find(entry_id);
-}
-
-const TurnWidgetState* AgentTurnController::FindWidgetState(const std::string& entry_id) const {
-  return widgets_.Find(entry_id);
-}
-
-void AgentTurnController::ClearFormState() {
-  widgets_.ClearForms();
-}
-
 void AgentTurnController::SendChatAction(const std::string& entry_id, int action_index) {
   if (chat_.loading || action_index < 0 || !host_.MessagingIsReady()) {
     return;

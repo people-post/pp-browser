@@ -286,6 +286,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
+| `PP_BROWSER_STARTUP_TIMING` | Truthy: log `[startup]` timing marks during launch (same as `--startup-timing`) |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 

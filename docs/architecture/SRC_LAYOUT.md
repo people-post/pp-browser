@@ -261,7 +261,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the mesh (`ProductMesh`, built for the profile's role over `domain/node`, lent to the hub as its `HubMeshOwner`) and the hub, and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; where messaging meets AI (`MessagingTools`) and the people picker (`MessagingPeoplePickerPorts`); only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
-| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
+| `feature/ai/` | AgentSessions (one AgentSession per conversation) and AiTurnPool (threads for AI turns), AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports |
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 

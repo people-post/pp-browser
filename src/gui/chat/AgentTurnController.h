@@ -218,13 +218,6 @@ public:
   void CalendarPrev(const std::string& entry_id);
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
-  std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
-  bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
-  void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
-  void MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const;
-  TurnWidgetState* FindWidgetState(const std::string& entry_id);
-  const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
-  void ClearFormState();
 
 private:
   /** A people list's "show more": `step` more rows of `blocks[block_index]` of that stored reply, in place. */

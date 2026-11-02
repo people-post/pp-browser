@@ -1,6 +1,6 @@
 # Group chat — current state
 
-**Last updated:** 2026-10-30 (G015 mentions implemented, m1–m6; signed roster + member check G012 / G013 merged in #411)
+**Last updated:** 2026-11-03 (since 2026-10-30: G016 dissolve merged in #425 on 2026-10-31; in-chat search merged in #462 on 2026-11-02). Before that: 2026-10-30 (G015 mentions implemented, m1–m6; signed roster + member check G012 / G013 merged in #411)
 
 Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.md) G012–G015 before touching rosters or mentions.
 
@@ -16,6 +16,7 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 | Size limit (G014) | 50 active members; the owner refuses create / invite past it and refuses a late accept (`group_invite_refused`); the invitee's group goes read-only |
 | Dissolve (G016) | The owner dissolves a group for everyone: `group_dissolved` (owner-signed roster statement with `dissolved`) to each member. Ending is one transaction with the sends still owed (`GroupRosterStore::EndGroup`, `group_pending_sends`), resumed at start and after failures (`GroupMembershipWorkflow::ResumePendingGroupSends`). Receivers judge it like any owner statement (`ApplyDissolvedStatement`: owner, epoch, `OwnerHandedOn`), empty the roster and mark the group `dissolved`; the chat stays read-only with one line; sends, invites, traffic, checks refused or dropped; a dissolved group answers checks with the dissolve; outstanding invitees get `group_invite_refused` (`group_dissolved`); the owner's other devices hear on the control lane and from the locker's terminal tombstone; group calls cannot start or ring and a live one ends. Not unit-tested: the owner's workflow (`DissolveGroup`, the pending-sends build, `StateGroups`, retry timers) — no harness for `GroupMembershipWorkflow` |
 | Mentions (G015, m1–m6) | Wire `text_spans` (type 6); `SendGroupText`; who a mention reaches (`MentionVerdictFor`, held while a group checks, decided on settle); alerts through a mute once a minute unless mentions are muted too (`NoticeAlerts`, `thread_local_prefs.mute_mentions`); both ingest paths notice; the `thread_mentions` marker ("You were mentioned", jump to the oldest); composer `@` picker with public nicknames; transcript highlight checked at display. Lab `muted_group_alerts_on_a_mention` |
+| Search in a chat (#462) | The "⋯" menu searches inside the open chat; the matching text is marked, not the whole row |
 
 ## Open (next first)
 
@@ -24,5 +25,5 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 ## Notes for whoever picks this up
 
 - The mention-alert rule reads the roster on arrival; the transcript highlight must re-check at display (a late roster restores highlights).
-- `@everyone` eligibility is the owner in `group_metadata.owner_identity`, which follows the signed roster (G012) — do not trust a role field from the message.
+- `@everyone` eligibility is the owner in `group_metadata.owner_identity`, which follows the signed roster (G012) — do not trust a role field from the message. The UI (`ChatPresenter`, `PeoplePickerController`) still decides the owner by roster role where `IsLocalOwner` is not asked, while the engine checks `metadata.owner_identity`.
 - Lab group scenarios: `./scripts/test/pp_local_test.sh run --suite app --no-build` with `PP_APP_LAB_ARGS="--only <scenario>"`.

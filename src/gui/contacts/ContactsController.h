@@ -134,7 +134,6 @@ private:
   static void FindSomeoneCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ShareContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void SetTrustCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleTrustFriendlyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void BlockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void UnblockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

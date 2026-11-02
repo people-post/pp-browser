@@ -152,15 +152,7 @@ Rejected unless `allow_empty_body` (media-relay may allow empty). Empty control 
 
 | Concern | Location |
 |---------|----------|
-| Frame IO | `src/lib/mesh/StreamFrameIo.*` (`StreamIoPolicy`, `DuplexFrameSession`) |
-| JSON frames | `src/lib/mesh/StreamJsonFrame.*` |
-| Direct chat | `capabilities/messaging/src/feature/conversations/Libp2pDirectChatService.*` |
-| Chat history | `capabilities/messaging/src/feature/conversations/Libp2pChatHistoryService.*` |
-| Chat blob | `capabilities/messaging/src/feature/conversations/Libp2pChatBlobService.*` |
-| Limits | `src/base/messaging/MessagingLimits.h` |
-| Exact read | `src/lib/libp2p/include/libp2p/basic/read.hpp` |
-| Noise caps | `src/lib/libp2p/include/libp2p/security/noise/crypto/state.hpp` |
-| Tests | `src/base/people/tests/stream_frame_io_test.cpp` |
+| Limits | `capabilities/delivery/src/common/chat/MessagingLimits.h` |
 
 ## Design notes
 

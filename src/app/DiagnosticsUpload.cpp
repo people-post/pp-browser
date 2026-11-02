@@ -9,6 +9,7 @@
 #include "foundation/diagnostics/DiagnosticsBundle.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/os/OsTime.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/product/AppVersion.h"
 #include "foundation/product/ProductBranding.h"
@@ -32,22 +33,11 @@ DiagnosticsClientToken& ClientToken() {
 
 /** "YYYY-MM-DD HH:MM:SS.mmm" (UTC) for the crash lines, the same shape as a log line's stamp. */
 std::string UtcStamp(const int64_t unix_ms) {
-  const int64_t secs = unix_ms / 1000;
-  const int millis = static_cast<int>(unix_ms % 1000);
-  int64_t days = secs / 86400;
-  const int64_t rem = secs % 86400;
-  days += 719468;  // civil-from-days (H. Hinnant)
-  const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
-  const int64_t doe = days - era * 146097;
-  const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-  const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-  const int64_t mp = (5 * doy + 2) / 153;
-  const int day = static_cast<int>(doy - (153 * mp + 2) / 5 + 1);
-  const int month = static_cast<int>(mp < 10 ? mp + 3 : mp - 9);
-  const int64_t year = yoe + era * 400 + (month <= 2 ? 1 : 0);
-  char buf[40];
-  std::snprintf(buf, sizeof(buf), "%04lld-%02d-%02d %02d:%02d:%02d.%03d", static_cast<long long>(year), month, day,
-                static_cast<int>(rem / 3600), static_cast<int>(rem % 3600 / 60), static_cast<int>(rem % 60), millis);
+  std::tm utc{};
+  (void)os::UtcTime(static_cast<std::time_t>(unix_ms / 1000), &utc);
+  char buf[96]; // room for any int in each field (GCC -Wformat-truncation)
+  std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%03d", utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+                utc.tm_hour, utc.tm_min, utc.tm_sec, static_cast<int>(unix_ms % 1000));
   return buf;
 }
 

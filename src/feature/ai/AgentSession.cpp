@@ -715,15 +715,8 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
     for (const ToolCall& call : tool_calls) {
       AgentSession::PushToolActivity(state, call.name, "running");
 
-      ToolMeta meta;
-      for (const ToolDescriptor& tool : state->tools.Tools()) {
-        if (tool.definition.name == call.name) {
-          meta = tool.meta;
-          break;
-        }
-      }
-      const ToolPermissionEval eval =
-          ToolPermissionPolicy::Evaluate(call.name, meta, state->tool_permissions, {});
+      const ToolPermissionEval eval = ToolPermissionPolicy::Evaluate(
+          call.name, AgentSession::MetaForTool(state, call.name), state->tool_permissions, {});
       if (eval.verdict == ToolPermissionVerdict::Ask || eval.verdict == ToolPermissionVerdict::Deny) {
         AgentSession::PushToolActivity(state, call.name, "error");
         state->turn_trace.tools_executed.push_back(call.name);
@@ -905,7 +898,8 @@ AgentSession::FeedRelist AgentSession::RelistMissingFeedTools(const std::shared_
   // block for the transport's default 30 s while holding configure_work_mutex.
   constexpr long kRelistTimeoutS = 3;
 
-  // Caller holds configure_work_mutex: ConfigureOnIO clears and rebuilds the registry under it.
+  // Takes configure_work_mutex itself on each pass of the loop below, held across the registry check and the
+  // bounded re-list (up to kRelistTimeoutS): ConfigureOnIO clears and rebuilds the registry under it.
   const auto missing = [&] {
     const std::vector<std::string> allowed = AllowedToolNames(state);
     std::string names;
@@ -2131,10 +2125,6 @@ void AgentSession::SetToolPermissionsSaver(ToolPermissionsSaveFn saver) {
   impl_->tool_permissions_saver = std::move(saver);
 }
 
-McpClient* AgentSession::PromotedMcp() {
-  return impl_->mcp.PromotedPtr();
-}
-
 Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, const std::string& decision,
                                              const std::string& decision_label) {
   if (approval_id.empty()) {
@@ -2207,11 +2197,6 @@ bool AgentSession::IsConfigured() const {
 
 const Conversation& AgentSession::conversation() const {
   return impl_->conversation;
-}
-
-TranscriptEntry& AgentSession::AppendUserMessage(const std::string& user_text,
-                                                  std::optional<std::string> user_payload) {
-  return impl_->conversation.AppendUser(user_text, std::move(user_payload));
 }
 
 bool AgentSession::CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw) {
@@ -2373,22 +2358,6 @@ void AgentSession::ForgetThread(const std::string& thread_id) {
     impl_->pending_local_action.reset();
     impl_->local_ask_expires_ms = 0;
   }
-}
-
-void AgentSession::StartNewConversation() {
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
-    CancelParkedApproval(impl, ParkedApprovalState::Cancelled);
-    impl->conversation.StartNewConversation();
-    impl->pending_local_action.reset(); // a question asked in the old conversation is not answered in the new one
-    impl->local_ask_expires_ms = 0;
-    impl->turn_scratch.clear();
-    impl->pending_entry_id.clear();
-    impl->pending_user_text.clear();
-    impl->pending_user_payload.reset();
-    impl->pending_image.reset();
-    impl->cancelled = false;
-    impl->busy = false;
-  });
 }
 
 } // namespace pbr

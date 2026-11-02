@@ -1,48 +1,12 @@
 #include "lib/messaging/ChatAttachmentPrepare.h"
-#include "common/BoundedRead.h"
 
 #include "lib/delivery/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "lib/messaging/AttachmentCache.h"
 
-#include <filesystem>
-#include <fstream>
-#include <iterator>
 #include "common/PbrCompat.h"
 
 namespace pbr {
-
-namespace {
-
-Roe<ByteVector> ReadFileBytes(const std::string& path, const uint64_t max_bytes) {
-  std::error_code ec;
-  const auto size = std::filesystem::file_size(path, ec);
-  if (!ec && size > max_bytes) {
-    return Error("Attachment is over the size limit"); // before the file is read
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    return Error("Could not read attachment file");
-  }
-  auto bytes = ReadBoundedBytes(input, static_cast<size_t>(max_bytes));
-  if (!bytes) {
-    return Error("Attachment is over the size limit"); // read no further than the limit
-  }
-  if (bytes->empty()) {
-    return Error("Attachment file is empty");
-  }
-  return bytes;
-}
-
-std::string FilenameFromPath(const std::string& path) {
-  const std::filesystem::path file_path(path);
-  if (file_path.has_filename()) {
-    return file_path.filename().string();
-  }
-  return "attachment";
-}
-
-} // namespace
 
 Roe<PreparedChatAttachment> PrepareChatAttachmentFromBytes(const std::vector<uint8_t>& plaintext,
                                                            const std::string& filename, const std::string& mime,
@@ -76,14 +40,6 @@ Roe<PreparedChatAttachment> PrepareChatAttachmentFromBytes(const std::vector<uin
   prepared.fields.blob_nonce = encrypted->nonce;
   prepared.ciphertext = std::move(encrypted->ciphertext); // no second copy
   return prepared;
-}
-
-Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path, const uint64_t max_bytes) {
-  auto plaintext = ReadFileBytes(path, max_bytes);
-  if (!plaintext) {
-    return plaintext.error();
-  }
-  return PrepareChatAttachmentFromBytes(*plaintext, FilenameFromPath(path), std::string(), max_bytes);
 }
 
 } // namespace pbr

@@ -27,8 +27,4 @@ NetworkTransport ActiveNetworkTransport() {
 #endif
 }
 
-bool IsOnWifi() {
-  return ActiveNetworkTransport() == NetworkTransport::Wifi;
-}
-
 } // namespace pbr

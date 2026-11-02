@@ -254,7 +254,6 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
   ui_state_.profile_relay_id = bindings_.profile_relay_id.c_str();
-  ui_state_.profile_public_key = bindings_.profile_public_key.c_str();
   ui_state_.profile_registered = bindings_.profile_registered.c_str();
   ui_state_.profile_registration_status = bindings_.profile_registration_status.c_str();
   ui_state_.profile_registration_expires = bindings_.profile_registration_expires.c_str();
@@ -345,7 +344,6 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
   bindings_.profile_relay_id = ui_state_.profile_relay_id.c_str();
-  bindings_.profile_public_key = ui_state_.profile_public_key.c_str();
   bindings_.profile_registered = ui_state_.profile_registered.c_str();
   bindings_.profile_registration_status = ui_state_.profile_registration_status.c_str();
   bindings_.profile_registration_expires = ui_state_.profile_registration_expires.c_str();
@@ -534,7 +532,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
     ctor.Bind("profile_relay_id", &controller.bindings_.profile_relay_id);
-    ctor.Bind("profile_public_key", &controller.bindings_.profile_public_key);
     ctor.Bind("profile_registered", &controller.bindings_.profile_registered);
     ctor.Bind("profile_registration_status", &controller.bindings_.profile_registration_status);
     ctor.Bind("profile_registration_expires", &controller.bindings_.profile_registration_expires);
@@ -684,7 +681,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   }
   host.Dirty("settings", "profile_peer_id");
   host.Dirty("settings", "profile_relay_id");
-  host.Dirty("settings", "profile_public_key");
   host.Dirty("settings", "profile_registered");
   host.Dirty("settings", "profile_registration_status");
   host.Dirty("settings", "profile_registration_expires");

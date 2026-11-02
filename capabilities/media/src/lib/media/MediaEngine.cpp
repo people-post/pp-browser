@@ -269,7 +269,6 @@ struct MediaEngine::Impl {
   std::atomic<bool> camera_enabled{false};
   std::atomic<bool> has_remote_video{false};
   std::atomic<bool> ever_had_remote_video{false};
-  std::atomic<int64_t> connected_at_ms{0};
   std::atomic<int64_t> started_at_ms{0};
   std::atomic<int64_t> last_remote_video_ms{0};
   std::atomic<int64_t>& last_uplink_bps;
@@ -452,12 +451,6 @@ struct MediaEngine::Impl {
   void ApplyStateLocked(const std::string& state) {
     connection_state = state;
     const bool now_connected = (state == "connected");
-    if (now_connected && !connected.load()) {
-      connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-    }
-    if (!now_connected) {
-      connected_at_ms.store(0, std::memory_order_relaxed);
-    }
     connected = now_connected;
     if (state == "failed" || state == "closed") {
       ClearRemoteVideoFrames();
@@ -679,48 +672,6 @@ struct MediaEngine::Impl {
   void JoinPlayoutThread(const char* context) {
     playout_running = false;
     JoinThreadWatched(playout_thread, context, "playout", playout_stage);
-  }
-
-  /** Product quit: cap capture/playout joins so SDL device close cannot hang Shutdown. */
-  void JoinCaptureThreadBudgeted(std::chrono::milliseconds budget) {
-    capture_running = false;
-    JoinThreadBudgeted(capture_thread, budget, "capture");
-  }
-
-  void JoinPlayoutThreadBudgeted(std::chrono::milliseconds budget) {
-    playout_running = false;
-    JoinThreadBudgeted(playout_thread, budget, "playout");
-  }
-
-  void JoinThreadBudgeted(std::thread& thread, std::chrono::milliseconds budget, const char* name) {
-    if (!thread.joinable()) {
-      return;
-    }
-    if (budget == std::chrono::milliseconds::max() || budget.count() <= 0) {
-      thread.join();
-      return;
-    }
-    auto finished = std::make_shared<std::atomic<bool>>(false);
-    std::thread waiter([finishing = std::move(thread), finished]() mutable {
-      if (finishing.joinable()) {
-        finishing.join();
-      }
-      finished->store(true, std::memory_order_release);
-    });
-    const auto deadline = std::chrono::steady_clock::now() + budget;
-    while (!finished->load(std::memory_order_acquire) &&
-           std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    if (finished->load(std::memory_order_acquire)) {
-      if (waiter.joinable()) {
-        waiter.join();
-      }
-      return;
-    }
-    SDL_Log("MediaEngine: %s join still live after %lldms — detaching (process exit must follow)", name,
-            static_cast<long long>(budget.count()));
-    waiter.detach();
   }
 
   /**
@@ -1807,7 +1758,6 @@ struct MediaEngine::Impl {
     active = false;
     muted.store(false, std::memory_order_relaxed);
     RequestCameraOffLocked();
-    connected_at_ms.store(0, std::memory_order_relaxed);
     started_at_ms.store(0, std::memory_order_relaxed);
     retired_send = std::move(packet_send);
     packet_send = nullptr;
@@ -2031,7 +1981,6 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
     impl->packet_send = spec.capture ? std::move(next_send) : nullptr;
     impl->session_id = session_id;
     impl->active = true;
-    impl->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl->ApplyStateLocked("connected");
     impl->StartCaptureLoop(); // device owner for both halves; encodes only when capturing
@@ -2102,12 +2051,6 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
     impl->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
                             packet.payload.size());
   }
-}
-
-void MediaEngine::ClearRemoteAudioTracks() {
-  const std::shared_ptr<Impl> impl = Session();
-  std::lock_guard lock(impl->mutex);
-  impl->ClearAudioTracksLocked();
 }
 
 bool MediaEngine::IsPacketMode() const {
