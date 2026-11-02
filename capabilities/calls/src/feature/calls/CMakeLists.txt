@@ -16,6 +16,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallStack.cpp
     LocalNetworkReaction.cpp
     CallsLoop.cpp
+    CallHopMediaChannel.cpp
     CallHopPath.cpp
     CallUiBackend.cpp
     LiveCallMedia.cpp

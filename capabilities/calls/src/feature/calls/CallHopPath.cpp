@@ -53,6 +53,7 @@ CallHopPath::CallHopPath(std::string call_id, const ICallSessionReader& sessions
       ranking_(hops.Ranking()),
       planning_(hops.Planning()) {
   redirectLogger("CallHopPath");
+  channel_ = std::make_shared<CallHopMediaChannel>(call_id_, engine_, relay_deps_);
 }
 
 void CallHopPath::SetHostPorts(HostPorts ports) {
@@ -284,11 +285,7 @@ void CallHopPath::OnMediaStopped(const std::string& call_id) {
   inbound_gate_.pending = false;
   inbound_gate_.last_failed = false;
   inbound_gate_.last_fail_hop.clear();
-  publishers_.local_stream_id = 0;
-  {
-    std::lock_guard lock(publishers_.mu);
-    publishers_.remote_stream_ids.clear();
-  }
+  channel_->ResetStreams();
   guest_.active_attach.reset();
   guest_.active = false;
   guest_.reattach_attempts = 0;
@@ -552,7 +549,7 @@ void CallHopPath::SubscribePublisherStream(uint32_t stream_id) {
   if (!relay_deps_.relay || stream_id == 0) {
     return;
   }
-  const uint32_t local_stream = publishers_.local_stream_id.load();
+  const uint32_t local_stream = channel_->LocalStreamId();
   if (local_stream != 0 && stream_id == local_stream) {
     return;
   }
@@ -566,11 +563,8 @@ void CallHopPath::MaybeRequestPublisherKeyframe(uint32_t stream_id) {
   if (stream_id == 0) {
     return;
   }
-  {
-    std::lock_guard lock(publishers_.mu);
-    if (!publishers_.video_refresh_sent.insert(stream_id).second) {
-      return;
-    }
+  if (!channel_->FirstVideoRefresh(stream_id)) {
+    return;
   }
   if (!engine_->Runs()) {
     return;
@@ -603,14 +597,11 @@ void CallHopPath::NoteRemotePublisherFromAttach(const CallSfuAttachDetail& attac
   if (attach.publisher_stream_id == 0) {
     return;
   }
-  const uint32_t local_stream = publishers_.local_stream_id.load();
+  const uint32_t local_stream = channel_->LocalStreamId();
   if (local_stream != 0 && attach.publisher_stream_id == local_stream) {
     return;
   }
-  {
-    std::lock_guard lock(publishers_.mu);
-    publishers_.remote_stream_ids.insert(attach.publisher_stream_id);
-  }
+  channel_->AddRemoteStream(attach.publisher_stream_id);
   if (sfu_.attached && engine_->Runs()) {
     log().info << "SFU subscribe announced stream=" << attach.publisher_stream_id << " call_id=" << attach.call_id;
     SubscribePublisherStream(attach.publisher_stream_id);
@@ -618,7 +609,7 @@ void CallHopPath::NoteRemotePublisherFromAttach(const CallSfuAttachDetail& attac
 }
 
 void CallHopPath::AnnounceLocalPublisher(const std::string& call_id, const CallSfuAttachDetail& hop_attach) {
-  if (!sfu_.attached || publishers_.local_stream_id == 0) {
+  if (!sfu_.attached || channel_->LocalStreamId() == 0) {
     return;
   }
   auto local = host_.local_relay_identity();
@@ -627,14 +618,14 @@ void CallHopPath::AnnounceLocalPublisher(const std::string& call_id, const CallS
   }
   CallSfuAttachDetail announce = hop_attach;
   announce.call_id = call_id;
-  announce.publisher_stream_id = publishers_.local_stream_id;
+  announce.publisher_stream_id = channel_->LocalStreamId();
   announce.quote_id.clear();
   const CallSfuAttachDetail fanout = BuildSfuAttachFanout(announce);
   auto encoded = CallControlCodec::EncodeSfuAttach(fanout);
   if (!encoded) {
     return;
   }
-  log().info << "AnnounceLocalPublisher stream=" << publishers_.local_stream_id << " call_id=" << call_id;
+  log().info << "AnnounceLocalPublisher stream=" << channel_->LocalStreamId() << " call_id=" << call_id;
   (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach", *local);
   outbox_.After(std::chrono::milliseconds(2000),
                 hop_path_event::ReannouncePublisher{call_id, *encoded, *local, announce.hop_peer_id,
@@ -645,14 +636,9 @@ void CallHopPath::SyncSfuSubscriptions(const std::string& call_id) {
   if (!relay_deps_.relay || !sfu_.attached || !engine_->Runs()) {
     return;
   }
-  // Runs on the calls owner: update the stream sets under the lock (read off the owner),
-  // subscribe after releasing it (relay I/O takes the relay's own lock).
-  std::vector<uint32_t> to_subscribe;
-  {
-    // Streams announced via CallSfuAttach (covers incomplete Joined roster).
-    std::lock_guard lock(publishers_.mu);
-    to_subscribe.assign(publishers_.remote_stream_ids.begin(), publishers_.remote_stream_ids.end());
-  }
+  // Streams announced via CallSfuAttach (covers incomplete Joined roster), then each Joined peer's;
+  // subscribe after (relay I/O takes the relay's own lock).
+  std::vector<uint32_t> to_subscribe = channel_->RemoteStreams();
   auto participants = sessions_.ListParticipants(call_id);
   int subscribed = 0;
   size_t announced = 0;
@@ -666,19 +652,13 @@ void CallHopPath::SyncSfuSubscriptions(const std::string& call_id) {
         continue;
       }
       const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
-      {
-        std::lock_guard lock(publishers_.mu);
-        publishers_.remote_stream_ids.insert(stream);
-      }
+      channel_->AddRemoteStream(stream);
       to_subscribe.push_back(stream);
       ++subscribed;
       log().info << "SFU subscribe peer=" << p.identity << " stream=" << stream << " call_id=" << call_id;
     }
   }
-  {
-    std::lock_guard lock(publishers_.mu);
-    announced = publishers_.remote_stream_ids.size();
-  }
+  announced = channel_->RemoteStreamCount();
   for (const uint32_t stream : to_subscribe) {
     SubscribePublisherStream(stream);
   }
@@ -1462,7 +1442,7 @@ void CallHopPath::Defer(std::function<void()> step) {
 void CallHopPath::ReannouncePublisher(const hop_path_event::ReannouncePublisher& again) {
   // V050: a later joiner's re-pick may have moved the group — never re-announce the old hop.
   if (!sfu_.attached || !engine_->Runs() || flight_.attached_hop_peer_id != again.hop_peer_id ||
-      publishers_.local_stream_id != again.publisher_stream_id) {
+      channel_->LocalStreamId() != again.publisher_stream_id) {
     return;
   }
   log().info << "AnnounceLocalPublisher re-fan-out call_id=" << again.call_id;
@@ -2218,7 +2198,7 @@ Roe<void> CallHopPath::LoadHopMediaKey(HopAttach& at) const {
 }
 
 void CallHopPath::InstallMediaKey(const std::string& call_id) {
-  if (!live_keys_ || live_keys_call_id_ != call_id || !media_keys_) {
+  if (call_id != call_id_ || !channel_->HasLiveKeys() || !media_keys_) {
     return;
   }
   auto session = sessions_.LoadSession(call_id);
@@ -2227,49 +2207,13 @@ void CallHopPath::InstallMediaKey(const std::string& call_id) {
   }
   const uint32_t epoch = (*session)->media_epoch;
   if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
-    live_keys_->Install(epoch, **key, util::NowUnixMs());
+    channel_->InstallKey(epoch, **key);
     log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
   }
 }
 
 std::function<void(mesh::MediaDataFrame)> CallHopPath::MakeHopFrameSink(const HopAttach& at) {
-  return [this, ready = at.frames_ready, call_id = at.call_id, keys = at.keys](mesh::MediaDataFrame frame) {
-    if (!ready->load(std::memory_order_acquire)) {
-      return;
-    }
-    MediaEngine::MediaPacket pkt;
-    pkt.stream_id = frame.stream_id;
-    pkt.channel_id = frame.channel_id;
-    pkt.seq = frame.seq;
-    pkt.mark = frame.mark;
-    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
-    if (open_with.empty()) {
-      pkt.payload = std::move(frame.payload);
-      (void)engine_->Deliver(pkt);
-      return;
-    }
-    // The newest epoch first; the previous one while the others switch to it.
-    Roe<CallMediaDecodedFrame> plain = Error("no key opened the frame");
-    for (const SfuKeyRing::Key& key : open_with) {
-      plain = DecryptCallMediaSfuFrame(key.key, call_id, key.epoch, frame.stream_id,
-                                       static_cast<uint8_t>(frame.channel_id), frame.payload);
-      if (plain) {
-        break;
-      }
-    }
-    if (!plain) {
-      static std::atomic<int> decrypt_fail_log{0};
-      const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
-      if (n < 8 || (n % 100) == 0) {
-        log().warning << "SFU decrypt failed stream=" << frame.stream_id << " ch=" << frame.channel_id
-                      << " bytes=" << frame.payload.size() << " n=" << n << " err=" << plain.error().message
-                      << " call_id=" << call_id;
-      }
-      return;
-    }
-    pkt.payload = std::move(plain->payload);
-    (void)engine_->Deliver(pkt);
-  };
+  return channel_->MakeFrameSink(at.keys, at.frames_ready);
 }
 
 void CallHopPath::AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done) {
@@ -2310,8 +2254,7 @@ void CallHopPath::AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)
 
 Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
   const std::string& call_id = at.call_id;
-  live_keys_ = at.keys; // a rotation from now on reaches this attach's frames
-  live_keys_call_id_ = call_id;
+  channel_->MakeLive(at.keys); // a rotation from now on reaches this attach's frames
   InstallMediaKey(call_id); // and one that arrived while attaching (the ring holds the epoch it started with)
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
@@ -2319,7 +2262,7 @@ Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) 
     notes_.NoteCallHop(call_id, at.attach.hop_peer_id);
   }
   ApplyQuoteAdaptation(a_up_bps);
-  publishers_.local_stream_id = PublisherStreamIdForLocal();
+  channel_->SetLocalStreamId(PublisherStreamIdForLocal());
   reports_.Emit(hop_report::MediaAttempted{call_id});
   if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
     call_media->HoldSeatForHop();
@@ -2431,33 +2374,7 @@ bool CallHopPath::OwnsHopAttachFlight(const HopAttach& at) const {
 }
 
 MediaEngine::PacketSendFn CallHopPath::MakeHopSendFn(const HopAttach& at) {
-  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id,
-          keys = at.keys](const MediaEngine::MediaPacket& pkt) {
-    if (!relay_deps_.relay) {
-      return;
-    }
-    mesh::MediaDataFrame frame;
-    frame.stream_id = pub;
-    frame.channel_id = pkt.channel_id;
-    frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
-    frame.seq = pkt.seq;
-    frame.mark = pkt.mark;
-    const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
-    if (!key.key.empty()) {
-      auto sealed = EncryptCallMediaSfuFrame(key.key, call_id, key.epoch, pub, pkt.seq, pkt.mark,
-                                             static_cast<uint8_t>(pkt.channel_id), pkt.payload);
-      if (!sealed) {
-        engine_->NoteOutboundDrop();
-        return;
-      }
-      frame.payload = std::move(*sealed);
-    } else {
-      frame.payload = pkt.payload;
-    }
-    if (!relay_deps_.relay->SendFrame(frame)) {
-      engine_->NoteOutboundDrop();
-    }
-  };
+  return channel_->MakeSendFn(at.keys);
 }
 
 Roe<void> CallHopPath::StartHopMedia(const HopAttach& at) {
@@ -2466,8 +2383,7 @@ Roe<void> CallHopPath::StartHopMedia(const HopAttach& at) {
     relay_deps_.relay->StartClientFrameReader();
     log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
   }
-  log().info << "AttachLocalToSfu StartDuplex call_id=" << call_id
-             << " pub_stream=" << publishers_.local_stream_id.load();
+  log().info << "AttachLocalToSfu StartDuplex call_id=" << call_id << " pub_stream=" << channel_->LocalStreamId();
   CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
   if (!call_media) {
     relay_deps_.relay->Detach();
@@ -2806,8 +2722,7 @@ void CallHopPath::StartGuestReattach(const std::string& call_id, const CallSfuAt
   }
   // The engine is already live: frames flow as soon as the relay session is back.
   at.frames_ready->store(true, std::memory_order_release);
-  live_keys_ = at.keys;
-  live_keys_call_id_ = call_id;
+  channel_->MakeLive(at.keys);
   InstallMediaKey(call_id); // a rotation that arrived while the transport was down
   log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
   if (at.attach.hop_multiaddr.empty()) {
@@ -2828,8 +2743,8 @@ Roe<void> CallHopPath::CompleteGuestReattach(const HopAttach& at, int64_t a_up_b
     relay_deps_.relay->Detach();
     return Error("reattach aborted");
   }
-  if (publishers_.local_stream_id == 0) {
-    publishers_.local_stream_id = PublisherStreamIdForLocal();
+  if (channel_->LocalStreamId() == 0) {
+    channel_->SetLocalStreamId(PublisherStreamIdForLocal());
   }
   relay_deps_.relay->StartClientFrameReader();
   sfu_.last_quote_a_up_bps = a_up_bps;

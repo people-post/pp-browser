@@ -39,6 +39,7 @@
 #include <vector>
 #include <chrono>
 #include "mesh/media_plane/MediaRelayAttach.h"
+#include "feature/calls/CallHopMediaChannel.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -330,17 +331,6 @@ private:
     bool slow_retry_pending = false;
   };
 
-  /**
-   * Written on the calls owner and read off it (relay subscription paths), so the sets are
-   * guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
-   */
-  struct PublisherStreams {
-    std::atomic<uint32_t> local_stream_id{0};
-    std::mutex mu;
-    std::unordered_set<uint32_t> remote_stream_ids;
-    std::unordered_set<uint32_t> video_refresh_sent;
-  };
-
   struct SfuSurface {
     /** Owner writes; the 1:1 receive path reads it on transport I/O (the hop carries the call). */
     std::atomic<bool> attached{false};
@@ -361,8 +351,9 @@ private:
   AttachWait attach_wait_;
   InboundAttachGate inbound_gate_;
   GuestSfuSession guest_;
-  PublisherStreams publishers_;
   SfuSurface sfu_;
+  /** The hop's data plane (frames, keys, publisher streams): shared with the relay's I/O. */
+  std::shared_ptr<CallHopMediaChannel> channel_;
 
   // --- The move to the hop and the attach (was CallHopMigrateWorkflow; V046 / V047, merged by V057 6) ---
   /** A follow-up of those flows, back from the calls owner's queue. */
@@ -379,10 +370,6 @@ private:
   void StartGuestReattachAttempt(const std::string& call_id);
   void OnGuestReattachRetry(const hop_migrate_event::GuestReattachRetry& retry);
   void ScheduleSlowGuestReattach(const std::string& call_id);
-
-  /** The live attach's key ring (calls owner), so a rotation reaches its frames. */
-  std::shared_ptr<class SfuKeyRing> live_keys_;
-  std::string live_keys_call_id_;
 
   // SoftMigrate steps (MaybeSoftMigrateToSfuAsync → gate → control thread → pick hops in order).
   /** False when the arming state settles the request here (`on_done` already called). */
