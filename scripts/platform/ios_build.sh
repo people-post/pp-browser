@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Sync with pbr::kProductBundleName in src/foundation/runtime/ProductBranding.h
+# Sync with pbr::kProductBundleName in src/foundation/product/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
 # All local iOS intermediates live under out-ios/ (gitignored). Override with IOS_OUT_DIR.

@@ -69,7 +69,7 @@
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -93,7 +93,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>
@@ -312,14 +312,14 @@ public:
     out.set("show_invite", screen.show_invite);
     out.set("group", screen.group);
     if (calls_->Available()) {
-      if (CallMediaEngine* media = product_->Calls().Stack().MediaEngine()) {
+      if (MediaEngine* media = product_->Calls().Stack().Engine()) {
         const auto health = media->HealthSnapshot();
         out.set("media_active", media->IsActive());
         out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
         out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
         out.set("sfu_mode", health.sfu_mode);
         std::vector<Value> streams;
-        for (const CallMediaStreamHealth& stream : health.streams) {
+        for (const MediaStreamHealth& stream : health.streams) {
           Object row;
           row.set("stream_id", static_cast<int64_t>(stream.stream_id));
           row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));

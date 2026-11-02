@@ -33,7 +33,7 @@ Destroy on the **owner’s thread**:
 
 | Kind | Typical owner affinity |
 |------|------------------------|
-| Rml / SDL / `CallMediaEngine` device teardown | UI |
+| Rml / SDL / `MediaEngine` device teardown | UI |
 | `ChannelSession` / mux / PeerLink | IO (`MeshPump`) |
 | SQLite stores | whatever opened them — close store before wiping files |
 

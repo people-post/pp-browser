@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/conversations/InboxController.h"
-#include "lib/media/VoiceFile.h"
+#include "lib/voice/VoiceFile.h"
 
 #include <string>
 

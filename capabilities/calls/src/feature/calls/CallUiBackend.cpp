@@ -1,6 +1,6 @@
 #include "feature/calls/CallUiBackend.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
@@ -304,7 +304,7 @@ bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const 
   return false;
 }
 
-CallMediaEngine& CallUiBackend::Media() {
+MediaEngine& CallUiBackend::Media() {
   auto* calls = stack_.Calls();
   if (!calls) {
     throw std::runtime_error("CallUiBackend::Media unavailable");

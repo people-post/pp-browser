@@ -2,7 +2,7 @@
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <gtest/gtest.h>
 
@@ -22,7 +22,7 @@ TEST(IncomingLinkTest, ASchemeIsALinkAPathIsNot) {
 }
 
 TEST(IncomingLinkTest, LinksBeforeTheHandlerWaitForIt) {
-  AppRuntime::Initialize(ProductRuntimeConfig());
+  AppRuntime::Initialize(AppRuntimeConfig{});
   std::vector<std::string> taken;
   IncomingLink::Deliver("pp-browser-contact-v1:first");
   AppRuntime::RunUITasks();

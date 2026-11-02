@@ -165,7 +165,7 @@ private:
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
   uint64_t RxAudioFrames() const;
   /** Decoded RX per remote publisher stream. */
-  std::vector<CallMediaStreamHealth> RxStreams() const;
+  std::vector<MediaStreamHealth> RxStreams() const;
   /** Accept the top pending invite once `accept_delay_ms_` passed since it showed; its call id. */
   void PublishAddressDisclosure();
   std::optional<std::string> MaybeAcceptPendingInvite(std::optional<std::chrono::steady_clock::time_point>& first_seen);

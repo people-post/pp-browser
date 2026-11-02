@@ -57,7 +57,7 @@ PeerIds come from pp-cpp-crypto ([MESH_IDENTITY.md](MESH_IDENTITY.md)).
   also watches the OS network and runs LAN mDNS, while the hub decides what to make of them (CR018)
   ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
 - **Spelling:** app code is in `pbr` and writes `mesh::MeshHost`, `mesh::DirectoryHit` through the alias
-  in [`common/MeshAlias.h`](../../src/common/MeshAlias.h).
+  in [`common/MeshAlias.h`](../../capabilities/base/src/common/MeshAlias.h).
 - **Layers:** `common/`, `foundation/` and `lib/` may include only the vocabulary (`mesh/types/…`:
   directory rows, hops, relay scope, address disclosure, public address, media channel, config — no
   Amp); the mesh itself is `feature/` and `app/`'s to compose. `check_base_includes.sh` enforces it.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "mesh/l4/media_relay/MediaRelayVideoLevels.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "lib/broadcast/PeerAnnounceTypes.h"
@@ -71,7 +71,7 @@ struct BroadcasterPorts {
   mesh::MediaRelayAttachPorts relay;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Capture-only session (mic lease; camera lease when publishing video). */
-  CallMediaEngine* engine = nullptr;
+  MediaEngine* engine = nullptr;
   /** B009: the video levels this device can produce, and how many at once (a phone: one level). */
   mesh::MediaRelayVideoOffer video_offer{{mesh::kDefaultVideoLevel}, 1};
 };

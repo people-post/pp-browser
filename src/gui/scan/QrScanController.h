@@ -3,7 +3,7 @@
 #include "gui/scan/ScanPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
-#include "lib/media/QrScanner.h"
+#include "lib/scan/QrScanner.h"
 #include "foundation/runtime/AppLifecycle.h"
 
 #include <ui/base/ObserverPtr.h>

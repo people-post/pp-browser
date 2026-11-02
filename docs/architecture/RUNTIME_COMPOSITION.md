@@ -41,7 +41,7 @@ flowchart TB
     IdentityStore["IdentityStore<br/><small>base/people/</small>"]
     ThreadStore["SqliteThreadStore<br/><small>lib/messaging/</small>"]
     LlmClient["LlmClient<br/><small>lib/ai/</small>"]
-    CallMediaEngine["CallMediaEngine<br/><small>base/media/</small>"]
+    MediaEngine["MediaEngine<br/><small>base/media/</small>"]
   end
 
   subgraph libs["lib + base glue"]
@@ -73,7 +73,7 @@ flowchart TB
   ProductStack -->|owns| ConversationsHub
   ProductStack -->|owns, registers as HubParticipant| CallStack
   ProductStack -->|owns, registers as HubParticipant| BroadcastHub
-  CallStack --> CallMediaEngine
+  CallStack --> MediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
   SettingsLogic --> SessionStore
@@ -265,8 +265,8 @@ flowchart TB
   end
 
   subgraph media_stack["Call media"]
-    Cap["CallMediaEngine capture_thread"]
-    Vid["CallMediaEngine video_thread"]
+    Cap["MediaEngine capture_thread"]
+    Vid["MediaEngine video_thread"]
     Ring["CallRingtone thread_"]
   end
 
@@ -284,7 +284,7 @@ flowchart TB
 | **Coordinator** | `CoordinatorThread` | pp-cpp-common `common/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | pp-cpp-common `common/` · `common/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
-| **Media capture / video** | `CallMediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
+| **Media capture / video** | `MediaEngine` | `lib/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `lib/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
 | **Ringtone** | `CallRingtone` | `lib/media/` | Playback loop thread (speaker lease) |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
@@ -334,6 +334,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
-| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by `foundation/runtime/ProductOwners.h`) | UI mailbox + worker pool + coordinator + owner threads |
+| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by the app, `feature/product/ProductOwners.h`; calls names its own, `common/media/MediaSessionsOwner.h`) | UI mailbox + worker pool + coordinator + owner threads |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
-| **CallMediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
+| **MediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |

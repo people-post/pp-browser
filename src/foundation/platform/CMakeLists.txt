@@ -144,6 +144,7 @@ pp_browser_add_foundation_library(pp_foundation_platform_core
     ${_pp_platform_core_sources}
   PUBLIC_LIBS
     CURL::libcurl
+    pp_foundation_product
 )
 
 # Mobile packaged AssetIO uses SDL_IOFromFile; pp-node is desktop-only so this

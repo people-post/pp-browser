@@ -9,7 +9,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/calls/ICallSessionStore.h"
@@ -25,7 +25,7 @@
 #include "lib/delivery/IPeerSessionStore.h"
 #include "lib/delivery/SessionKeyDeriver.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <chrono>
@@ -191,7 +191,7 @@ class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_csm_" + util::GenerateUuid());
@@ -212,7 +212,7 @@ protected:
     ASSERT_FALSE(local_identity_.empty());
 
     psk_ = std::make_unique<MemoryPskStore>();
-    media_ = std::make_unique<CallMediaEngine>();
+    media_ = std::make_unique<MediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     dial_ = std::make_unique<FakeDialRegistry>();
     transport_ = std::make_unique<FakeCallMediaTransport>();
@@ -401,7 +401,7 @@ protected:
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<MemoryPskStore> psk_;
-  std::unique_ptr<CallMediaEngine> media_;
+  std::unique_ptr<MediaEngine> media_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   /** The manager's 1:1 path (owned by csm_). */

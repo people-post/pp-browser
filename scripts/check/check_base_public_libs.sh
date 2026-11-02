@@ -16,6 +16,9 @@ root = Path(sys.argv[1])
 lib_peers = {
     "pp_lib_people",
     "pp_lib_media",
+    "pp_lib_voice",
+    "pp_lib_call_audio",
+    "pp_lib_scan",
     "pp_lib_net",
     "pp_lib_delivery",
     "pp_lib_messaging",

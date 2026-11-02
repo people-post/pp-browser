@@ -11,6 +11,7 @@ pp_browser_add_lib_library(pp_lib_calls
     CallHopJoinLogic.cpp
     CallHopPlan.cpp
     CallLifecycleTypes.cpp
+    CallMediaAdaptation.cpp
     CallMediaBundleLogic.cpp
     CallMediaControlCodec.cpp
     CallMediaKeyExchange.cpp
@@ -30,6 +31,7 @@ pp_browser_add_lib_library(pp_lib_calls
     SoftMigrateLogic.cpp
   PUBLIC_LIBS
     pp_calls_common
+    pp_media_common
     pp_delivery_common
     pp_foundation_error
     pp_foundation_crypto

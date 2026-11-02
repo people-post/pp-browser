@@ -20,7 +20,7 @@ public:
   explicit LiveCallMedia(const LiveCalls& live) : live_(live) {}
 
   /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
-  void BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat);
+  void BindMediaResources(MediaEngine* engine, CallMediaSeat* seat);
   /** The 1:1 path the coordinators drive (null: none wired). */
   void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
   /** The group path the coordinators drive (null: harness). */

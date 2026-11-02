@@ -39,7 +39,7 @@ private:
 class AgentSessionsTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    AppRuntime::Initialize(ProductRuntimeConfig());
+    AppRuntime::Initialize(AppRuntimeConfig{});
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
     LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   }

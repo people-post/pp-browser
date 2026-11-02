@@ -6,7 +6,7 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -16,7 +16,7 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/SettledWait.h"
 #include "common/Utilities.h"
 #include "mesh/shared/AmpParkUntil.h"
@@ -329,7 +329,7 @@ protected:
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
-    media_ = std::make_unique<CallMediaEngine>();
+    media_ = std::make_unique<MediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeTopologyHost>();
     host_->call_media.BindMediaResources(media_.get(), nullptr);
@@ -456,7 +456,7 @@ protected:
   std::unique_ptr<InMemoryCallSessionStore> sessions_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
-  std::unique_ptr<CallMediaEngine> media_;
+  std::unique_ptr<MediaEngine> media_;
   std::unique_ptr<FakeTopologyHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
@@ -1129,7 +1129,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachSkipsPrivateHopOffLan) {
 TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFlight) {
   // Moto dogfood: SoftMigrate WaitForAttach in flight + inbound CallSfuAttach must not bump
   // migrate_generation_ (Detach mid-AcceptAndAttach → asio UAF).
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
 
@@ -1173,7 +1173,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
 TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   // Dogfood: CallSfuAttach AcceptAndAttach ok then OnLocalAcceptJoined bumped migrate gen →
   // aborted before StartSfu; caller Connected, guest stuck Connecting (streams=0).
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
 
@@ -1288,7 +1288,7 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
 
 TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   // Moto dogfood: mid-call hop CleanupParticipant left TX zombie / RX frozen with no recovery.
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:guest-reattach";
@@ -1346,7 +1346,7 @@ class LateJoinerOnRemoteHopTest : public CallTopologyControllerTest {
 protected:
   /** The local device (`local`) attached to a remote hop in a call of A, B, C; then D's accept arrives. */
   size_t SfuAttachFanoutsAfterLateAccept(const std::string& local) {
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
     const std::string call_id = "call:late-joiner";
     SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -1407,7 +1407,7 @@ TEST_F(LateJoinerOnRemoteHopTest, OtherMembersDoNotAlsoAnnounce) {
 // network coming back without moving (no OnLocalNetworkMoved), never tried again — out of the call
 // for good. A guest keeps trying at a steady pace while the call is on the hop.
 TEST_F(CallTopologyControllerTest, GuestKeepsReattachingPastQuickAttempts) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:guest-dead-zone";
@@ -1468,7 +1468,7 @@ TEST_F(CallTopologyControllerTest, GuestKeepsReattachingPastQuickAttempts) {
 // Our own hop migrations and leaves replace / detach the relay session too: only a dead transport
 // may trigger the guest reattach.
 TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:guest-replaced";
@@ -1508,7 +1508,7 @@ TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach
 // The observer follows the deps: swapping or clearing them unwatches the old relay (mesh stop
 // clears them before the relay goes), and a notice queued for a destroyed topology is dropped.
 TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallTopologyController::MediaRelayDeps deps;
@@ -1535,7 +1535,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   // AcceptAndAttach/StartSfu repeated ~every 8s (CallSfuAttach fan-out / publisher announce).
   // Once live on a hop, duplicate inbound attach must no-op (no second AcceptAndAttach) and
   // clear media activity so chrome can leave Connecting.
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:dup-inbound-attach";
@@ -1592,9 +1592,9 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
 }
 
 TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
-  // Dogfood cbe535: End left CallMediaEngine on call:old. With V036 MediaSeat, End/Leave must
+  // Dogfood cbe535: End left MediaEngine on call:old. With V036 MediaSeat, End/Leave must
   // Release the seat; leftover engine ActiveCallId must not veto call:new attach.
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
