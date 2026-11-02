@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/content/CasStore.h"
 #include "lib/delivery/RelayClients.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
@@ -16,6 +17,7 @@
 #include "common/Error.h"
 
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -34,7 +36,8 @@ public:
   using ChangedCallback = std::function<void()>;
 
   void SetProfileDataDir(std::string profile_dir);
-  void SetProfileId(std::string profile_id);
+  /** The profile's content store (the hub's); none: nothing is stored or found. */
+  void SetContent(std::shared_ptr<CasStore> content);
   void SetFetchDependencies(IThreadStore* store, ContactsStore* contacts, IdentityStore* identity,
                               IChatBlobPeerClient* peer_client);
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
@@ -152,10 +155,11 @@ private:
   void NotifyChanged();
   bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length);
   ByteVector CopyDekUnlocked() const;
+  std::shared_ptr<CasStore> Content() const;
   void ContinueDrainOnWorker();
 
   std::string profile_dir_;
-  std::string profile_id_;
+  std::shared_ptr<CasStore> content_;
   ByteVector dek_;
   IThreadStore* store_ = nullptr;
   ContactsStore* contacts_ = nullptr;

@@ -7,9 +7,10 @@
 //     PP_E2E_BLOB_URL=http://127.0.0.1:8767 PP_E2E_DIR=<dir> PP_E2E_PHASE=$p PP_E2E_MB=100 pp_browser_domain_attachments_test --gtest_filter='LargeAttachmentE2e*'
 //   done
 //
-// The limits are passed in by the test (the shipping default is still 4 MB); the CDN is plain http on loopback,
+// The limits are passed in by the test (the shipping default is 50 MB); the CDN is plain http on loopback,
 // which only the test-only flag allows. It uses the real HttpBlobClient, OutgoingAttachmentStore, streamed
 // upload / capped file download and the private CAS, i.e. the same calls the app's send / receive / open make.
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentClient.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
@@ -98,7 +99,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     in.close();
     std::cout << "E2E after-read peak_rss_mb=" << PeakResidentBytes() / 1'000'000 << std::endl;
     ChatAttachmentUploadOptions options;
-    options.max_plaintext_bytes = size + 1;  // the test passes the limit; the shipping default stays 4 MB
+    options.max_plaintext_bytes = size + 1; // the test passes the limit; the shipping default is 50 MB
     options.thread = Thread{.id = "g1", .kind = ThreadKind::Group, .channel = ThreadChannel::E2e};
     options.thread_id = "g1";
     options.outgoing = &store;
@@ -118,7 +119,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(result) << result.error().message;
     std::cout << "E2E after-upload peak_rss_mb=" << PeakResidentBytes() / 1'000'000 << std::endl;
     ASSERT_FALSE(result->url.empty());
-    ASSERT_TRUE(CopyAttachmentPlaintext(dir.string(), profile_id, "g1", *result, plaintext, Dek(), size));
+    ASSERT_TRUE(CopyAttachmentPlaintext(dir.string(), *MakeInMemoryIndexedCasStore(dir.string(), profile_id), "g1", *result, plaintext, Dek(), size));
     std::ofstream(fields_path) << ChatPayloadCodec::AttachmentFieldsToJson(*result);
     Report("send", size, util::NowUnixMs() - started);
   } else if (phase == "resume") {
@@ -134,7 +135,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(plain) << plain.error().message;
     const std::filesystem::path resumed = dir / "resumed";
     std::filesystem::create_directories(resumed);
-    ASSERT_TRUE(CopyAttachmentPlaintext(resumed.string(), profile_id, "g1", f, *plain, Dek(), size));
+    ASSERT_TRUE(CopyAttachmentPlaintext(resumed.string(), *MakeInMemoryIndexedCasStore(resumed.string(), profile_id), "g1", f, *plain, Dek(), size));
     Report("resume", size, util::NowUnixMs() - started);
   } else if (phase == "receive") {
     std::ifstream in(fields_path);
@@ -143,6 +144,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(fields);
     const std::filesystem::path receiver = dir / "receiver";
     std::filesystem::create_directories(receiver);
+    const auto receiver_content = MakeInMemoryIndexedCasStore(receiver.string(), profile_id);
     AttachmentFetchContext context;
     context.thread_id = "g1";
     context.profile_data_dir = receiver.string();
@@ -161,7 +163,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     ASSERT_TRUE(plaintext) << plaintext.error().message;
     ASSERT_EQ(plaintext->size(), size);
     const ByteVector bytes = std::move(*plaintext);
-    ASSERT_TRUE(SaveAttachmentPlaintext(receiver.string(), profile_id, fields->content_hash, fields->mime, bytes,
+    ASSERT_TRUE(SaveAttachmentPlaintext(*receiver_content, fields->content_hash, fields->mime, bytes,
                                         fields->filename, Dek()));
     if (size <= kMaxDirectAttachmentBytes) {  // a large file's view is made by an Open only
       ASSERT_TRUE(StoreAttachmentViewBytes(receiver.string(), "g1", fields->content_hash, fields->mime, fields->filename, bytes));
@@ -175,7 +177,8 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     const std::filesystem::path receiver = dir / "receiver";
     // What opening does after a restart or lock (the views are wiped): decrypt the stored copy into a view file.
     std::filesystem::remove_all(AttachmentViewRoot(receiver.string(), "g1"));
-    auto view = EnsureAttachmentView(receiver.string(), profile_id, "g1", fields->content_hash, fields->mime,
+    // A separate run: the stored block is read back from disk (the index holds no bytes).
+    auto view = EnsureAttachmentView(receiver.string(), *MakeInMemoryIndexedCasStore(receiver.string(), profile_id), "g1", fields->content_hash, fields->mime,
                                      fields->filename, Dek());
     ASSERT_TRUE(view) << view.error().message;
     ASSERT_EQ(std::filesystem::file_size(*view), size);

@@ -6,6 +6,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/runtime/BackgroundActivity.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
@@ -27,7 +28,7 @@ namespace {
 /** Content hashes a message refers to (attachment, AI image). */
 std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
 /** Bytes a cancelled download wrote: CAS object, view, poster, RAM copy. */
-void DeleteFetchedBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+void DeleteFetchedBytes(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
                         const ChatAttachmentFields& fields);
 
 } // namespace
@@ -40,8 +41,14 @@ void AttachmentFetchWorkflow::SetProfileDataDir(std::string profile_dir) {
   profile_dir_ = std::move(profile_dir);
 }
 
-void AttachmentFetchWorkflow::SetProfileId(std::string profile_id) {
-  profile_id_ = std::move(profile_id);
+void AttachmentFetchWorkflow::SetContent(std::shared_ptr<CasStore> content) {
+  std::lock_guard lock(mutex_);
+  content_ = std::move(content);
+}
+
+std::shared_ptr<CasStore> AttachmentFetchWorkflow::Content() const {
+  std::lock_guard lock(mutex_);
+  return content_;
 }
 
 void AttachmentFetchWorkflow::SetFetchDependencies(IThreadStore* store, ContactsStore* contacts,
@@ -97,15 +104,14 @@ int64_t SteadyNowMs() {
 }
 
 /** What the attachment store holds: the private content blocks plus pushed ciphertext not yet opened. */
-uint64_t ScanAttachmentStoreBytes(const std::string& profile_dir, const std::string& profile_id) {
+uint64_t ScanAttachmentStoreBytes(const std::string& profile_dir, const CasStore* content) {
   if (profile_dir.empty()) {
     return 0;
   }
   uint64_t total = PendingAttachmentCiphertextBytes(profile_dir);
-  if (!profile_id.empty()) {
+  if (content != nullptr) {
     std::error_code ec;
-    CasStore cas(profile_dir, profile_id);
-    for (std::filesystem::recursive_directory_iterator it(cas.BlocksRoot(CasRealm::Private), ec), end;
+    for (std::filesystem::recursive_directory_iterator it(content->BlocksRoot(CasRealm::Private), ec), end;
          !ec && it != end; it.increment(ec)) {
       std::error_code size_ec;
       if (it->is_regular_file(size_ec) && !size_ec) {
@@ -126,7 +132,7 @@ bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const st
   std::function<uint64_t()> scan_override;
   bool need_scan = false;
   std::string profile_dir;
-  std::string profile_id;
+  std::shared_ptr<CasStore> content;
   {
     std::lock_guard lock(mutex_);
     limits = limits_;
@@ -134,7 +140,7 @@ bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const st
     clock = clock_;
     scan_override = scan_override_;
     profile_dir = profile_dir_;
-    profile_id = profile_id_;
+    content = content_;
   }
   const int64_t now_ms = clock ? clock() : SteadyNowMs();
   uint64_t used = 0;
@@ -147,7 +153,7 @@ bool AttachmentFetchWorkflow::AdmitByBudget(AutoDownloadBudget& budget, const st
     }
     if (need_scan) {
       // A directory walk: never under mutex_, which StateFor (the transcript render) takes.
-      const uint64_t total = scan_override ? scan_override() : ScanAttachmentStoreBytes(profile_dir, profile_id);
+      const uint64_t total = scan_override ? scan_override() : ScanAttachmentStoreBytes(profile_dir, content.get());
       std::lock_guard lock(mutex_);
       scanned_disk_bytes_ = total;
       scanned_at_ms_ = now_ms;
@@ -274,7 +280,7 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
   if (!CanFetchAttachment(job.fields, fetch_context)) {
     return;
   }
-  if (AttachmentBlobExists(profile_dir_, job.fields.content_hash)) {
+  if (const auto content = Content(); content && AttachmentBlobExists(*content, job.fields.content_hash)) {
     return;
   }
   if (job.fields.byte_length > Limits().max_receive_bytes) {
@@ -402,12 +408,16 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   // A copy of the fields for the call: the callback below moves `job` away, and the arguments of one call are
   // evaluated before it runs (reading job.fields there found them already moved-from: no url, no hash).
   const ChatAttachmentFields fields = job.fields;
+  // Download, decrypt and store, all of it, also if the app goes to the background meanwhile (released with the
+  // last copy of the callbacks below).
+  auto background = std::make_shared<BackgroundActivity>("attachment download");
   FetchAndDecryptAttachmentAsync(
       fields, context,
-      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms,
-       declared_bytes](Roe<std::vector<uint8_t>> plaintext) mutable {
+      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms, declared_bytes,
+       background](Roe<std::vector<uint8_t>> plaintext) mutable {
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
-                           plaintext = std::move(plaintext), started_ms, declared_bytes]() mutable {
+                           plaintext = std::move(plaintext), started_ms, declared_bytes,
+                           background = std::move(background)]() mutable {
           // Reported at the end, after the bytes are stored, so the peak covers the whole receive.
           const auto report = [&](const bool ok) {
             EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
@@ -428,8 +438,19 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
             return;
           }
+          // Every answer of the relay spends one of the file's few downloads (expired, used up and deleted all look
+          // the same 404): after one, no automatic retry asks again; the card's Download button does
+          // (RetryDownload). A failure that never reached it (offline, no DNS, no connection) spent nothing.
+          const auto hold_back_spent_download = [&] {
+            if (suppression_ && !job.fields.url.empty()) {
+              (void)suppression_->Suppress(job.thread_id, job.fields.content_hash);
+            }
+          };
           if (!plaintext) {
             report(false);
+            if (FetchFailureReachedTheServer(plaintext.error())) {
+              hold_back_spent_download();
+            }
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -438,17 +459,21 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
           const ByteVector bytes = std::move(*plaintext); // no second whole-file copy
           const ByteVector dek_copy = CopyDek();
-          if (dek_copy.empty() || profile_id_.empty()) {
+          const std::shared_ptr<CasStore> content = Content();
+          if (dek_copy.empty() || !content) {
             report(false);
+            hold_back_spent_download(); // the bytes came, so the download was spent
             MarkFailed(key);
             if (on_done) {
               on_done();
             }
             return;
           }
-          if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, job.fields.content_hash, job.fields.mime, bytes, job.fields.filename, dek_copy);
+          if (auto saved = SaveAttachmentPlaintext(*content, job.fields.content_hash, job.fields.mime, bytes,
+                                                   job.fields.filename, dek_copy);
               !saved) {
             report(false);
+            hold_back_spent_download();
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -472,7 +497,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             cancelled_meanwhile = !active_.contains(key);
           }
           if (cancelled_meanwhile) {
-            DeleteFetchedBytes(profile_dir_, profile_id_, job.thread_id, job.fields);
+            DeleteFetchedBytes(profile_dir_, *content, job.thread_id, job.fields);
             if (on_done) {
               on_done();
             }
@@ -572,7 +597,7 @@ AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(
   if (profile_dir_.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return DownloadState::Failed;
   }
-  if (AttachmentBlobExists(profile_dir_, content_hash)) {
+  if (const auto content = Content(); content && AttachmentBlobExists(*content, content_hash)) {
     return DownloadState::Ready;
   }
   const std::string key = JobKey(thread_id, content_hash);
@@ -612,27 +637,29 @@ Roe<std::string> AttachmentFetchWorkflow::EnsureLocalViewPath(const std::string&
                                                                 const std::string& mime,
                                                                 const std::string& filename) {
   const ByteVector dek_copy = CopyDek();
-  if (dek_copy.empty() || profile_id_.empty()) {
+  const std::shared_ptr<CasStore> content = Content();
+  if (dek_copy.empty() || !content) {
     return Error("Attachment view requires unlocked DEK");
   }
-  return EnsureAttachmentView(profile_dir_, profile_id_, thread_id, content_hash, mime, filename, dek_copy);
+  return EnsureAttachmentView(profile_dir_, *content, thread_id, content_hash, mime, filename, dek_copy);
 }
 
 Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLocalImage(
     const std::string& thread_id, const ByteVector& plaintext, const std::string& mime) {
   const ByteVector dek_copy = CopyDek();
-  if (dek_copy.empty() || profile_id_.empty()) {
+  const std::shared_ptr<CasStore> content = Content();
+  if (dek_copy.empty() || !content) {
     return Error("Storing an image requires unlocked DEK");
   }
   auto hash = AttachmentContentHash(plaintext);
   if (!hash) {
     return hash.error();
   }
-  if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, mime, plaintext, std::string(), dek_copy);
+  if (auto saved = SaveAttachmentPlaintext(*content, *hash, mime, plaintext, std::string(), dek_copy);
       !saved) {
     return saved.error();
   }
-  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id, *hash, mime, std::string(), dek_copy);
+  auto view = EnsureAttachmentView(profile_dir_, *content, thread_id, *hash, mime, std::string(), dek_copy);
   if (!view) {
     return view.error();
   }
@@ -642,13 +669,12 @@ Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLoc
 namespace {
 
 /** CAS object, RAM copy and this thread's view file of one object; errors are not reported (best effort). */
-void DeleteLocalBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+void DeleteLocalBytes(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
                       const std::vector<uint8_t>& content_hash, const std::string& mime, const std::string& filename) {
   if (content_hash.size() != kAttachmentContentHashSize) {
     return;
   }
-  CasStore cas(profile_dir, profile_id);
-  (void)cas.Delete(CasRealm::Private, content_hash); // the object id is the content hash (R016)
+  (void)content.Delete(CasRealm::Private, content_hash); // the object id is the content hash (R016)
   AttachmentPlaintextMemoryCache::Instance().Erase(AttachmentHashHex(content_hash));
   std::error_code ec;
   if (const auto view = AttachmentLocalPath(profile_dir, thread_id, content_hash, mime, filename); !view.empty()) {
@@ -672,24 +698,24 @@ std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& mess
   return hashes;
 }
 
-void DeleteFetchedBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+void DeleteFetchedBytes(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
                         const ChatAttachmentFields& fields) {
-  DeleteLocalBytes(profile_dir, profile_id, thread_id, fields.content_hash, fields.mime, fields.filename);
+  DeleteLocalBytes(profile_dir, content, thread_id, fields.content_hash, fields.mime, fields.filename);
 }
 
 /** The bytes a message refers to (a chat attachment, or the image of an AI question), unless still used. */
-void DeleteMessageBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+void DeleteMessageBytes(const std::string& profile_dir, CasStore& content, const std::string& thread_id,
                         const ThreadMessage& message, const std::unordered_set<std::string>& still_used) {
   if (message.content_type == ChatContentType::Attachment) {
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
         fields && !still_used.contains(AttachmentHashHex(fields->content_hash))) {
-      DeleteLocalBytes(profile_dir, profile_id, thread_id, fields->content_hash, fields->mime, fields->filename);
+      DeleteLocalBytes(profile_dir, content, thread_id, fields->content_hash, fields->mime, fields->filename);
     }
   }
   if (message.ai_image_json) {
     if (const auto ref = AiImageRefFromJson(*message.ai_image_json);
         ref && !still_used.contains(AttachmentHashHex(ref->content_hash))) {
-      DeleteLocalBytes(profile_dir, profile_id, thread_id, ref->content_hash, ref->mime, std::string());
+      DeleteLocalBytes(profile_dir, content, thread_id, ref->content_hash, ref->mime, std::string());
     }
   }
 }
@@ -697,7 +723,7 @@ void DeleteMessageBytes(const std::string& profile_dir, const std::string& profi
 } // namespace
 
 Roe<void> AttachmentFetchWorkflow::DeleteThreadMedia(const std::string& thread_id, IThreadStore& store) {
-  if (profile_dir_.empty() || profile_id_.empty()) {
+  if (profile_dir_.empty() || !Content()) {
     return Error("Deleting media requires a profile");
   }
   auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
@@ -711,7 +737,8 @@ Roe<void> AttachmentFetchWorkflow::DeleteThreadMedia(const std::string& thread_i
 void AttachmentFetchWorkflow::DeleteMessagesMedia(const std::string& thread_id,
                                                   const std::vector<ThreadMessage>& messages,
                                                   const std::vector<ThreadMessage>& kept) {
-  if (profile_dir_.empty() || profile_id_.empty()) {
+  const std::shared_ptr<CasStore> content = Content();
+  if (profile_dir_.empty() || !content) {
     return;
   }
   // Content-addressed: bytes another live message of this thread still shows stay.
@@ -736,7 +763,7 @@ void AttachmentFetchWorkflow::DeleteMessagesMedia(const std::string& thread_id,
     CancelJobsLocked([&keys](const std::string& key) { return keys.contains(key); });
   }
   for (const ThreadMessage& message : messages) {
-    DeleteMessageBytes(profile_dir_, profile_id_, thread_id, message, still_used);
+    DeleteMessageBytes(profile_dir_, *content, thread_id, message, still_used);
   }
 }
 
@@ -769,10 +796,11 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, con
     return; // a large video gets its poster from the first open (that decrypts it for the session anyway)
   }
   const ByteVector dek_copy = CopyDek();
-  if (dek_copy.empty() || profile_id_.empty()) {
+  const std::shared_ptr<CasStore> content = Content();
+  if (dek_copy.empty() || !content) {
     return;
   }
-  (void)EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id, fields.content_hash, fields.mime,
+  (void)EnsureAttachmentPosterFromContent(profile_dir_, *content, thread_id, fields.content_hash, fields.mime,
                                           fields.filename, dek_copy, fields.byte_length, Limits().max_receive_bytes);
 }
 

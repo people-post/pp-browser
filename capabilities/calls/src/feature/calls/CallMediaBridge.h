@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallPathPolicy.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
@@ -74,13 +74,13 @@ struct CallDirectSeatPorts {
 
 /**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
- * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
+ * Uses MediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
-  CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
+  CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys, MediaEngine& media,
+                  ICallMediaTransport& direct, mesh::PeerReachPorts reach);
   ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
@@ -168,7 +168,7 @@ public:
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
   /**
-   * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
+   * SoftMigrate: close 1:1 call-media stream without MediaEngine::Stop so SFU capture continues.
    * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
   void ReleaseDirectTransport() override;
@@ -229,7 +229,7 @@ public:
   std::string MediaPathKind() const;
   /** The active 1:1 call-media link's figures (unavailable when no direct call is bound). */
   CallLinkCounters MediaLinkCounters() const;
-  /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
+  /** True when 1:1 call-media stream is up (not merely MediaEngine StartSfu). */
   bool HasActiveDirectStream() const;
 
   /** V039 Direct planner Apply — product callbacks on the calls owner. */
@@ -287,7 +287,7 @@ private:
   void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
-  static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+  static void ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, const CallMediaHost& host,
                                  const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                  uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
                                  const std::vector<uint8_t>& payload);
@@ -351,7 +351,7 @@ private:
   CallMediaHost& host_;
   ICallSessionStore& sessions_;
   ICallMediaKeyStore& media_keys_;
-  CallMediaEngine& media_;
+  MediaEngine& media_;
   ICallMediaTransport& direct_;
   CallDirectArmingPorts arming_;
   CallDirectSeatPorts seat_;

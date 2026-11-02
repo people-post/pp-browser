@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/content/CasStore.h"
 #include "lib/delivery/RelayClients.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/IThreadStore.h"
@@ -42,7 +43,8 @@ public:
   /** Tests whose mesh does not run on the identity's device key: the PeerId requests are signed for. */
   void SetLocalPeerIdForTest(std::string peer_id) { local_peer_id_override_ = std::move(peer_id); }
   void SetProfileDataDir(std::string profile_data_dir) override;
-  void SetProfileId(std::string profile_id) override;
+  /** The profile's content store, what fetches are served from; none: private and public fetches refused. */
+  void SetContent(std::shared_ptr<CasStore> content);
   void SetPushGate(std::function<bool(const std::string& sender, uint64_t ciphertext_bytes)> gate) override;
   void Start();
   void Stop();

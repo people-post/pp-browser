@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "feature/calls/CallMediaCoordinator.h"
 #include "feature/calls/SharedPorts.h"
 #include "lib/calls/CallControlCodec.h"
@@ -213,7 +213,7 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(ICallSessionStore& sessions, CallMediaEngine& media);
+  CallHopMigrateWorkflow(ICallSessionStore& sessions, MediaEngine& media);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
@@ -311,7 +311,7 @@ private:
   bool OwnsHopAttachFlight(const HopAttach& at) const;
   /** Detach the relay session and report the attach as aborted. */
   Roe<void> AbortHopAttach();
-  CallMediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
+  MediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
@@ -335,7 +335,7 @@ private:
   static std::function<Roe<void>(const mesh::MediaRelayQuote&)> RelayQuotePricingGate();
 
   ICallSessionStore& sessions_;
-  CallMediaEngine& media_;
+  MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;

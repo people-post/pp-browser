@@ -22,7 +22,7 @@ PostLane RandomLane() {
 
 } // namespace
 
-PostAuthor::PostAuthor(PostStore& store, std::string account_id, std::string device, PostSigner signer,
+PostAuthor::PostAuthor(IPostStore& store, std::string account_id, std::string device, PostSigner signer,
                        std::function<PostLane()> random_lane)
     : store_(store), account_id_(std::move(account_id)), device_(std::move(device)), signer_(std::move(signer)),
       random_lane_(random_lane ? std::move(random_lane) : std::function<PostLane()>(RandomLane)) {}

@@ -320,6 +320,10 @@ Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessagesPage(const std::
   return hub_.Store().GetMessagesPage(thread_id, before, limit);
 }
 
+Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessages(const std::string& thread_id) {
+  return hub_.Store().GetMessages(thread_id);
+}
+
 Roe<ThreadMessage> ConversationsFacade::AppendMessage(const ThreadMessage& message) {
   return hub_.Store().AppendMessage(message);
 }
@@ -844,7 +848,9 @@ Roe<BlobQuotaRecoveryPlan> ConversationsFacade::PlanRelayQuotaRecovery(const Err
   return hub_.PlanRelayQuotaRecovery(quota_error);
 }
 
-Roe<void> ConversationsFacade::DeleteRelayBlobById(const std::string& blob_id) { return hub_.DeleteRelayBlobById(blob_id); }
+Roe<void> ConversationsFacade::DeleteRelayBlobById(const std::string& blob_id, const BlobTier tier) {
+  return hub_.DeleteRelayBlobById(blob_id, tier);
+}
 
 void ConversationsFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
 

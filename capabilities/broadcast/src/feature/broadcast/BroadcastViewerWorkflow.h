@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mesh/types/MediaChannel.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/broadcast/BroadcastRpcCodec.h"
@@ -64,7 +64,7 @@ struct BroadcastViewerPorts {
   /** Dial hint for a hop (may return empty). */
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
-  CallMediaEngine* engine = nullptr;
+  MediaEngine* engine = nullptr;
   std::function<int64_t()> now_ms;
   /** B009: the video level this viewer prefers; the nearest published one is taken (0 = no video). */
   int preferred_video_level = mesh::kDefaultVideoLevel;

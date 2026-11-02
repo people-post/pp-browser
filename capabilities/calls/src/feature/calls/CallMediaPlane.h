@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/MeshConfig.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "common/Error.h"

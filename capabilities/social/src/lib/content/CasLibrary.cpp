@@ -1,7 +1,5 @@
 #include "lib/content/CasLibrary.h"
 
-#include "lib/content/CasStore.h"
-
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <sstream>
@@ -47,11 +45,7 @@ CasLibraryRow ToRow(const CasObjectMeta& meta) {
 
 } // namespace
 
-Roe<std::vector<CasLibraryRow>> ListCasLibrary(const std::string& profile_dir, const CasLibraryFilter filter) {
-  if (profile_dir.empty()) {
-    return Error("CAS library requires profile directory");
-  }
-  ObjectIndex index(profile_dir);
+Roe<std::vector<CasLibraryRow>> ListCasLibrary(const CasStore& content, const CasLibraryFilter filter) {
   std::optional<CasRealm> realm;
   std::optional<bool> pinned;
   switch (filter) {
@@ -68,7 +62,7 @@ Roe<std::vector<CasLibraryRow>> ListCasLibrary(const std::string& profile_dir, c
     pinned = false;
     break;
   }
-  auto listed = index.List(realm, pinned);
+  auto listed = content.Index().List(realm, pinned);
   if (!listed) {
     return listed.error();
   }
@@ -80,16 +74,12 @@ Roe<std::vector<CasLibraryRow>> ListCasLibrary(const std::string& profile_dir, c
   return rows;
 }
 
-Roe<ByteVector> ShareCasPublicly(const std::string& profile_dir, const std::string& profile_id,
-                                 const ByteVector& dek, const ByteVector& private_content_id) {
-  CasStore store(profile_dir, profile_id);
-  return store.PublishFromPrivate(private_content_id, dek);
+Roe<ByteVector> ShareCasPublicly(CasStore& content, const ByteVector& dek, const ByteVector& private_content_id) {
+  return content.PublishFromPrivate(private_content_id, dek);
 }
 
-Roe<void> UnpublishCasPublic(const std::string& profile_dir, const std::string& profile_id,
-                             const ByteVector& public_content_id) {
-  CasStore store(profile_dir, profile_id);
-  return store.Unpublish(public_content_id);
+Roe<void> UnpublishCasPublic(CasStore& content, const ByteVector& public_content_id) {
+  return content.Unpublish(public_content_id);
 }
 
 std::string FormatCasPublicTip(const std::string& content_id_hex) {
@@ -121,10 +111,8 @@ Roe<ByteVector> ParseCasPublicTip(const std::string_view tip) {
   return id;
 }
 
-Roe<ByteVector> LoadPinnedPublicCasBytes(const std::string& profile_dir, const std::string& profile_id,
-                                         const ByteVector& content_id) {
-  CasStore store(profile_dir, profile_id);
-  auto meta = store.Index().Lookup(CasRealm::Public, content_id);
+Roe<ByteVector> LoadPinnedPublicCasBytes(const CasStore& content, const ByteVector& content_id) {
+  auto meta = content.Index().Lookup(CasRealm::Public, content_id);
   if (!meta) {
     return meta.error();
   }
@@ -134,15 +122,13 @@ Roe<ByteVector> LoadPinnedPublicCasBytes(const std::string& profile_dir, const s
   if (!(*meta)->pinned) {
     return Error("Public CAS object is not Kept (provide refused)");
   }
-  return store.GetPublic(content_id);
+  return content.GetPublic(content_id);
 }
 
-Roe<void> CacheFetchedPublicCas(const std::string& profile_dir, const std::string& profile_id,
-                                const ByteVector& content_id, const ByteVector& bytes,
+Roe<void> CacheFetchedPublicCas(CasStore& content, const ByteVector& content_id, const ByteVector& bytes,
                                 const std::string_view mime, const std::string_view filename) {
-  CasStore store(profile_dir, profile_id);
   // Peer-fetched public → unpinned Cache (C013).
-  return store.PutPublic(content_id, bytes, mime, filename, /*published_from_hex=*/{}, /*pinned=*/false);
+  return content.PutPublic(content_id, bytes, mime, filename, /*published_from_hex=*/{}, /*pinned=*/false);
 }
 
 } // namespace pbr

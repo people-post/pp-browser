@@ -11,10 +11,10 @@
   <!-- Status row above the input, only when something needs saying: an attachment uploading / failed (Retry, Cancel),
        the AI picture, the AI answer's stop key. -->
   <div class="prompt-composer-status"
-       data-if="!voice_recording && (attachment_uploading || attachment_failed || image_chip || loading)">
-    <div class="prompt-attachment-chip" data-if="attachment_uploading || attachment_failed">
-      <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
-      <span class="prompt-attachment-chip-status" data-value="attachment_status"></span>
+       data-if="!voice_recording && (attachment_here || image_chip || loading)">
+    <div class="prompt-attachment-chip" data-if="attachment_here">
+      <span class="prompt-attachment-chip-name">{{attachment_draft_name}}</span>
+      <span class="prompt-attachment-chip-status">{{attachment_status}}</span>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
               data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
@@ -30,7 +30,7 @@
           <svg src="../icons/close.svg" width="8" height="8" crop-to-content="true"></svg>
         </div>
       </div>
-      <span class="prompt-attachment-chip-name" data-value="image_draft_name"></span>
+      <span class="prompt-attachment-chip-name">{{image_draft_name}}</span>
       <span class="prompt-attachment-chip-status" data-if="image_preparing">{{i18n:chat.image.preparing}}</span>
     </div>
     <button class="prompt-stop-btn" type="button" data-if="loading" data-event-click="stop_turn()"
@@ -77,12 +77,13 @@
             data-class-prompt-voice-bar--blocked="voice_blocked"
             data-class-prompt-voice-bar--active="voice_recording" data-attr-title="voice_title"
             data-event-mousedown="voice_press()" data-event-click="voice_click()">
-      <span class="prompt-voice-bar-hold" data-if="!voice_recording && !voice_click_mode">{{i18n:chat.voice.hold_to_talk}}</span>
-      <span class="prompt-voice-bar-click" data-if="!voice_recording && voice_click_mode">{{i18n:chat.voice.click_to_talk}}</span>
-      <div class="prompt-voice-status" data-if="voice_recording">
+      <span class="prompt-voice-bar-hold" data-if="!voice_recording && !voice_finishing && !voice_click_mode">{{i18n:chat.voice.hold_to_talk}}</span>
+      <span class="prompt-voice-bar-click" data-if="!voice_recording && !voice_finishing && voice_click_mode">{{i18n:chat.voice.click_to_talk}}</span>
+      <span class="prompt-voice-bar-sending" data-if="voice_finishing">{{i18n:chat.attachment.sending}}</span>
+      <div class="prompt-voice-status" data-if="voice_recording && !voice_finishing">
         <div class="prompt-voice-dot"></div>
-        <span class="prompt-voice-timer" data-class-prompt-voice-timer--countdown="voice_countdown" data-value="voice_timer"></span>
-        <span class="prompt-voice-hint" data-class-prompt-voice-hint--cancel="voice_cancel_zone" data-value="voice_hint"></span>
+        <span class="prompt-voice-timer" data-class-prompt-voice-timer--countdown="voice_countdown">{{voice_timer}}</span>
+        <span class="prompt-voice-hint" data-class-prompt-voice-hint--cancel="voice_cancel_zone">{{voice_hint}}</span>
       </div>
     </button>
     <!-- Desktop recording (started by a click on the voice bar): Cancel / Send. -->

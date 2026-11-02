@@ -1,3 +1,4 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -21,7 +22,7 @@ protected:
     dir_ = std::filesystem::temp_directory_path() / ("pp_receive_limits_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     workflow_.SetProfileDataDir(dir_.string());
-    workflow_.SetProfileId("test");
+    workflow_.SetContent(MakeInMemoryIndexedCasStore(dir_.string(), "test"));
   }
   void TearDown() override {
     std::error_code ec;
@@ -65,10 +66,11 @@ TEST_F(ReceiveLimitsTest, DeclaredSizeAboveTheReceiveLimitIsTooLargeAndNeverQueu
   EXPECT_EQ(workflow_.StateFor("t1", Hash(1), 5000), AttachmentFetchWorkflow::DownloadState::TooLarge);
 }
 
-TEST_F(ReceiveLimitsTest, ShippingReceiveLimitIsFourMegabytes) {
+TEST_F(ReceiveLimitsTest, ShippingReceiveLimitIsTheDefault) {
   const AttachmentLimits limits = workflow_.Limits();
   EXPECT_EQ(limits.max_receive_bytes, kDefaultAttachmentReceiveMaxBytes);
-  EXPECT_EQ(workflow_.StateFor("t1", Hash(2), 4'000'001), AttachmentFetchWorkflow::DownloadState::TooLarge);
+  EXPECT_EQ(workflow_.StateFor("t1", Hash(2), kDefaultAttachmentReceiveMaxBytes + 1),
+            AttachmentFetchWorkflow::DownloadState::TooLarge);
 }
 
 TEST_F(ReceiveLimitsTest, ASenderOverItsMinuteLimitStaysADownloadRowButAnotherSenderDoesNot) {
@@ -201,7 +203,7 @@ TEST_F(ReceiveLimitsTest, DirectPushesFollowTheSamePaceAndTheDiskCapCountsPendin
 
   AttachmentFetchWorkflow other;
   other.SetProfileDataDir(dir_.string());
-  other.SetProfileId("test");
+  other.SetContent(MakeInMemoryIndexedCasStore(dir_.string(), "test"));
   AttachmentLimits roomy;
   roomy.auto_download_max_count_per_minute = 2;
   other.SetLimits(roomy);

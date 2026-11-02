@@ -82,7 +82,6 @@ class IChatBlobPeerService : public IChatBlobPeerClient, public IDekConsumer {
 public:
   ~IChatBlobPeerService() override = default;
   virtual void SetProfileDataDir(std::string profile_data_dir) = 0;
-  virtual void SetProfileId(std::string profile_id) = 0;
   /** Receiver-side admission for a direct push (sender account, ciphertext size); empty admits all. */
   virtual void SetPushGate(std::function<bool(const std::string& sender, uint64_t ciphertext_bytes)> gate) {
     (void)gate;

@@ -7,7 +7,7 @@
 
 **Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (AAD, ciphertext, signing), [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [COMPATIBILITY.md](COMPATIBILITY.md), [e2e DESIGN](../../projects/e2e-message-crypto/DESIGN.md) (planning), [chat-storage CURRENT_STATE](../../projects/chat-storage-and-memory/CURRENT_STATE.md).
 
-**C++ reference:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
+**C++ reference:** [`capabilities/base/src/common/Serialize.hpp`](../../capabilities/base/src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`capabilities/base/src/common/BinaryPack.hpp`](../../capabilities/base/src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
@@ -323,7 +323,7 @@ Top-level `text` is the display glyph for `reaction` (may be empty for `reaction
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob; **empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
+| `url` | **LenUtf8** — relay file share link of the ciphertext, `<origin>/api/relay/v1/files/<blob_id>/download?t=<token>` ([SERVICE_ENDPOINTS § HTTP relay files](SERVICE_ENDPOINTS.md#http-relay-files-chat-attachments)); the token is the download credential (7 days, 10 downloads), so the link is never logged whole. **Empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
 | `mime` | **LenUtf8** — logical type, chosen from the file extension: `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, `text/plain`, `video/mp4`, `video/webm`, `video/quicktime` (.mov), `audio/mpeg` (.mp3), `audio/mp4` (.m4a), `audio/wav`, `audio/ogg`; any other extension is `application/octet-stream`. Table only, nothing is transcoded; receivers must also accept mimes they do not know. |
 | `filename` | **LenUtf8** — original filename |
 | `byte_length` | `u64` BE — plaintext size |

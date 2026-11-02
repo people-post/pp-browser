@@ -1,5 +1,6 @@
 #include "lib/people/AccountCard.h"
-#include "lib/people/PeerCardStore.h"
+#include "lib/people/PeerCards.h"
+#include "lib/people/testing/InMemoryPeerCards.h"
 
 #include "lib/people/tests/TestAccount.h"
 
@@ -124,15 +125,12 @@ TEST(PeerCardMergeTest, AnUndatedKeyCardDoesNotOverrideASignedCard) {
   EXPECT_EQ(MergeKeyCard(keys_only, different, "directory").keys, different);
 }
 
-TEST(PeerCardStoreTest, KeepsOnlyCheckedCardsAndPersistsTheNewest) {
-  const auto dir = std::filesystem::temp_directory_path() / "pp_peer_card_store_test";
-  std::filesystem::remove_all(dir);
-  std::filesystem::create_directories(dir);
-  const std::string db = (dir / "profile.db").string();
+TEST(PeerCardsTest, KeepsOnlyCheckedCardsAndTheNewest) {
+  InMemoryPeerCards cards;  // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount mallory = test::TestAccount::Make();
   {
-    PeerCardStore store(db);
+    PeerCards& store = cards;
     KeyCard forged = KeysOf(alice);
     forged.kem_public_key_b64 = mallory.KemPublicB64();
     EXPECT_FALSE(store.AddKeyCard(forged, "directory"));
@@ -146,24 +144,20 @@ TEST(PeerCardStoreTest, KeepsOnlyCheckedCardsAndPersistsTheNewest) {
     ASSERT_TRUE(
         store.AddAccountCard(CardOf(alice, test::Devices({"QmLaptop", "QmPhone"}), kNow + 1), kNow + 1, "device"));
   }
-  PeerCardStore reopened(db);
+  PeerCards& reopened = cards;
   auto found = reopened.Get(alice.account_id);
   ASSERT_TRUE(found && found->has_value());
   EXPECT_TRUE(SameKeys((*found)->keys, KeysOf(alice)));
   EXPECT_EQ((*found)->devices, (std::vector<std::string>{test::PeerIdOf("QmLaptop"), test::PeerIdOf("QmPhone")}));
   EXPECT_EQ(reopened.List().value().size(), 1u);
-  std::filesystem::remove_all(dir);
 }
 
-TEST(PeerCardStoreTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
-  const auto dir = std::filesystem::temp_directory_path() / "pp_peer_card_floor_test";
-  std::filesystem::remove_all(dir);
-  std::filesystem::create_directories(dir);
-  const std::string db = (dir / "profile.db").string();
+TEST(PeerCardsTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
+  InMemoryPeerCards cards;  // that the cards survive a restart is the app storage's (peer_card_store_contract_test)
   const test::TestAccount alice = test::TestAccount::Make();
   const test::TestAccount bob = test::TestAccount::Make();
   {
-    PeerCardStore store(db);
+    PeerCards& store = cards;
     int newer = 0;
     store.SetOnNewerCard([&newer]() { ++newer; });
     // Restored: the account locker knew Alice's card issued at kNow + 5 (her stolen phone taken out by then).
@@ -182,7 +176,7 @@ TEST(PeerCardStoreTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
     ASSERT_TRUE(store.AddAccountCard(CardOf(bob, test::Devices({"QmBob"}), kNow + 2), kNow + 10, "envelope"));
     EXPECT_EQ(newer, 2) << "the same card again is not newer";
   }
-  PeerCardStore reopened(db);
+  PeerCards& reopened = cards;
   std::vector<PeerCardFloor> newest = reopened.NewestKnown().value();
   std::sort(newest.begin(), newest.end(),
             [](const PeerCardFloor& x, const PeerCardFloor& y) { return x.account_id < y.account_id; });
@@ -190,7 +184,6 @@ TEST(PeerCardStoreTest, ARestoredFloorRefusesOlderCardsAndIsBackedUp) {
   std::sort(expected.begin(), expected.end(),
             [](const PeerCardFloor& x, const PeerCardFloor& y) { return x.account_id < y.account_id; });
   EXPECT_EQ(newest, expected);
-  std::filesystem::remove_all(dir);
 }
 
 } // namespace

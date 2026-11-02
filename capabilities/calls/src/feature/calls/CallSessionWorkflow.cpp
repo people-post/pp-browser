@@ -940,10 +940,13 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
-  call_media_.StopMedia(session.call_id);
+  // The decision is recorded before the media stops (#452): nothing about a slow stop may leave the
+  // call looking live. The stop itself never waits on the devices (L016).
   session.state = CallSessionState::Ended;
   session.ended_at = util::NowUnixMs();
-  if (auto saved = sessions_.UpsertSession(session); !saved) {
+  const auto saved = sessions_.UpsertSession(session);
+  call_media_.StopMedia(session.call_id);
+  if (!saved) {
     return saved.error();
   }
   SendSummary(session, reason, StillInCall(session.call_id) ? SummaryWrite::EndWhileIn : SummaryWrite::Final);

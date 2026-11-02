@@ -18,7 +18,7 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../capabilities/calls/src/lib/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp/realtime/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../capabilities/calls/src/lib/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
+Voice/video capture and playback go through **SDL3 audio/camera** in [`MediaEngine`](../../capabilities/media/src/lib/media/MediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp/realtime/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../capabilities/media/src/lib/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
 
 | Platform | SDL audio backend | Extra build packages? | Product needs |
 |----------|-------------------|----------------------|----------------------------------|
@@ -41,7 +41,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Test LAN calls only from an IDE's integrated terminal | Prefer a normal OS terminal or the packaged `.app` — an IDE's environment can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
-`Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
+`Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `MediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
 
 ## Android (milestone 2)
 
@@ -85,7 +85,7 @@ Android still keeps the activity alive across other config changes (`configChang
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
-**A/V:** `RECORD_AUDIO` for voice; a3 also needs `CAMERA` + runtime prompt before `CallMediaEngine` opens capture (V019). See [§ A/V media](#av-media-sdl--calls).
+**A/V:** `RECORD_AUDIO` for voice; a3 also needs `CAMERA` + runtime prompt before `MediaEngine` opens capture (V019). See [§ A/V media](#av-media-sdl--calls).
 
 Build: [BUILD.md](../ops/BUILD.md#android-local).
 
@@ -114,7 +114,7 @@ Mobile builds link curl against vendored BoringSSL (no Secure Transport on iOS).
 | Android | `CURLOPT_CAPATH` → Conscrypt/system hashed PEMs (`os::TlsCaPath`) | Yes (OS CA updates) |
 | iOS | `CURLOPT_SSL_CTX_FUNCTION` → `SecTrustEvaluateWithError` | Yes (Keychain trust store) |
 
-Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`src/foundation/tls/OsTlsPlatformCurl_*`; a base mechanism, not the product's platform layer — capability-repos CR015).
+Entry point: `ApplyCurlSslDefaults` → `os::ApplyPlatformCurlSsl` (`capabilities/base/src/foundation/tls/OsTlsPlatformCurl_*`; a base mechanism, not the product's platform layer — capability-repos CR015).
 
 **A/V ([V016](../../projects/p2p-av-calls/DECISIONS.md#v016--a3-delivery-slice-lan-video-mobile-wiring-included)):** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` in [`packaging/ios/Info.plist`](../../packaging/ios/Info.plist); `AVAudioSession` play-and-record / VoIP via `CallAudioSession` before capture; `UIBackgroundModes` → `audio` for in-call background. **Portrait-only** (`UISupportedInterfaceOrientations` + `SDL_HINT_ORIENTATIONS`) — same rotation lock as Android. Physical device dogfood optional.
 
@@ -131,4 +131,4 @@ Desktop may run as a mesh **Node** (listen preferred on TCP **18517**, busy-port
 
 On `AppLifecycle::OnWillEnterBackground`, messaging suspends cold peer connections (`PeerSessionManager::SuspendColdPeers`) while keeping the warm (active-thread) set. Foreground resume may re-warm the open thread.
 
-Inbox sync uses [`BackgroundSyncScheduler`](../../src/foundation/runtime/BackgroundSyncScheduler.h): foreground poll every 2s. In the background a phone is reached by push only (P010, for power): its work is paused (`AppLifecycle`), and a push or WorkManager wake resumes it for `kBackgroundWakeWindowMs` (20 s: fetch the inbox, ring), then pauses again. A call (ringing or on) keeps it running until the call ends, so a hang-up or a ring answered from the lock screen goes through with the app in the background. A minimized desktop window is not background: it keeps working and notifies. Android's opt-in **Stay connected in the background** (P011) keeps the work running there (a foreground service, `PpConnectionService`) and polls the relay every 30 s, for phones without a push service. Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).
+Inbox sync uses [`BackgroundSyncScheduler`](../../capabilities/base/src/foundation/runtime/BackgroundSyncScheduler.h): foreground poll every 2s. In the background a phone is reached by push only (P010, for power): its work is paused (`AppLifecycle`), and a push or WorkManager wake resumes it for `kBackgroundWakeWindowMs` (20 s: fetch the inbox, ring), then pauses again. A call (ringing or on) keeps it running until the call ends, so a hang-up or a ring answered from the lock screen goes through with the app in the background. A minimized desktop window is not background: it keeps working and notifies. Android's opt-in **Stay connected in the background** (P011) keeps the work running there (a foreground service, `PpConnectionService`) and polls the relay every 30 s, for phones without a push service. Android additionally uses WorkManager (~15 min when notifications are off; rarer backup when on) and optional FCM opaque wakes when `google-services.json` is present. See [projects/push-notifications](../../projects/push-notifications/).

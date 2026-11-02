@@ -1,3 +1,4 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "domain/attachments/LargeTransferLane.h"
 
@@ -123,7 +124,8 @@ protected:
     dir_ = std::filesystem::temp_directory_path() / ("pp_large_dl_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     workflow_.SetProfileDataDir(dir_.string());
-    workflow_.SetProfileId("test");
+    content_ = MakeInMemoryIndexedCasStore(dir_.string(), "test");
+    workflow_.SetContent(content_);
     workflow_.SetTransferLane(&lane_);
     workflow_.SetAllowLocalCdnForTest(true);
     ByteVector dek(kDataEncryptionKeySize, 0x31);
@@ -153,6 +155,7 @@ protected:
   }
 
   std::filesystem::path dir_;
+  std::shared_ptr<CasStore> content_;
   LargeTransferLane lane_;
   AttachmentFetchWorkflow workflow_;
   pbr::test::LocalHttpServer server_;
@@ -170,7 +173,7 @@ TEST_F(LargeDownloadTest, ALargeFileIsDownloadedOnTheLaneStoredEncryptedAndNotMa
     return workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length) ==
            AttachmentFetchWorkflow::DownloadState::Ready;
   }));
-  EXPECT_TRUE(AttachmentBlobExists(dir_.string(), prepared->fields.content_hash)) << "stored (encrypted) in the CAS";
+  EXPECT_TRUE(AttachmentBlobExists(*content_, prepared->fields.content_hash)) << "stored (encrypted) in the CAS";
   EXPECT_TRUE(AttachmentLocalPath(dir_.string(), "t1", prepared->fields.content_hash, prepared->fields.mime,
                                   prepared->fields.filename)
                   .empty())
@@ -234,7 +237,7 @@ TEST_F(LargeDownloadTest, ACancelledDownloadLeavesNoFailureAndNoPercent) {
   EXPECT_NE(workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length),
             AttachmentFetchWorkflow::DownloadState::Failed);
   EXPECT_EQ(workflow_.ProgressPercent("t1", prepared->fields.content_hash), -1);
-  EXPECT_FALSE(AttachmentBlobExists(dir_.string(), prepared->fields.content_hash));
+  EXPECT_FALSE(AttachmentBlobExists(*content_, prepared->fields.content_hash));
 }
 
 } // namespace

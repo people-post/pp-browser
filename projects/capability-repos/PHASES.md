@@ -72,12 +72,12 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       pricing, messaging, calls, broadcast, node. Each: `git mv` into `capabilities/<name>/src/`,
       its `CMakeLists.txt` with the CTest label, a changes-filter output and its `-LE` skip in `build.yml`.
 
-- [ ] Calls repo-ready (CR023): [x] owns its tests, [ ] `media` split, [ ] base folder, [ ] standalone build + CI,
+- [ ] Calls repo-ready (CR023): [x] owns its tests, [x] `media` split, [x] base folder, [ ] standalone build + CI,
       [ ] host contract + README / docs.
-- [ ] Ideas in capabilities, the database in the app (CR024): [x] delivery's ports and in-memory stores,
+- [x] Ideas in capabilities, the database in the app (CR024): [x] delivery's ports and in-memory stores,
       [x] messaging's store ports and in-memory stores (contract-tested against SQLite),
       [x] `src/lib/storage` with the SQLite stores and the profile database, [x] calls' stores,
-      [ ] people's and social's stores.
+      [x] people's and social's stores (peer cards, posts, content's object index).
 
 ## Contracts repo (any time, CR010)
 

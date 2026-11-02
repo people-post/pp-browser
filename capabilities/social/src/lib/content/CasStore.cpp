@@ -41,8 +41,8 @@ std::string BuildCasPrivateAad(const std::string_view profile_id, const std::str
   return std::string("cas-private|") + std::string(profile_id) + "|" + std::string(content_id_hex) + "|1";
 }
 
-CasStore::CasStore(std::string profile_dir, std::string profile_id)
-    : profile_dir_(std::move(profile_dir)), profile_id_(std::move(profile_id)), index_(profile_dir_) {}
+CasStore::CasStore(std::string profile_dir, std::string profile_id, std::unique_ptr<IObjectIndex> index)
+    : profile_dir_(std::move(profile_dir)), profile_id_(std::move(profile_id)), index_(std::move(index)) {}
 
 std::string CasStore::BlocksRoot(const CasRealm realm) const {
   return (std::filesystem::path(profile_dir_) / "cas" / CasRealmToString(realm) / "blocks").string();
@@ -154,7 +154,7 @@ Roe<void> CasStore::PutPrivate(const ByteVector& content_id, const ByteVector& p
   meta.filename = std::string(filename);
   meta.byte_length = plaintext.size();
   meta.pinned = pinned;
-  return index_.Upsert(meta);
+  return index_->Upsert(meta);
 }
 
 Roe<ByteVector> CasStore::GetPrivate(const ByteVector& content_id, const ByteVector& dek) const {
@@ -206,7 +206,7 @@ Roe<void> CasStore::PutPublic(const ByteVector& content_id, const ByteVector& pu
   meta.byte_length = published_bytes.size();
   meta.published_from_hex = std::string(published_from_hex);
   meta.pinned = pinned;
-  return index_.Upsert(meta);
+  return index_->Upsert(meta);
 }
 
 Roe<ByteVector> CasStore::GetPublic(const ByteVector& content_id) const {
@@ -229,7 +229,7 @@ Roe<void> CasStore::Delete(const CasRealm realm, const ByteVector& content_id) {
   }
   std::error_code ec;
   std::filesystem::remove(BlockPath(realm, content_id), ec);
-  if (auto removed = index_.Remove(realm, content_id); !removed) {
+  if (auto removed = index_->Remove(realm, content_id); !removed) {
     return removed.error();
   }
   return {};
@@ -241,7 +241,7 @@ Roe<ByteVector> CasStore::PublishFromPrivate(const ByteVector& private_content_i
   if (!plaintext) {
     return plaintext.error();
   }
-  auto meta = index_.Lookup(CasRealm::Private, private_content_id);
+  auto meta = index_->Lookup(CasRealm::Private, private_content_id);
   if (!meta) {
     return meta.error();
   }
@@ -267,14 +267,14 @@ Roe<void> CasStore::Unpublish(const ByteVector& public_content_id) {
   if (auto valid = ValidateContentId(public_content_id); !valid) {
     return valid.error();
   }
-  auto meta = index_.Lookup(CasRealm::Public, public_content_id);
+  auto meta = index_->Lookup(CasRealm::Public, public_content_id);
   if (!meta) {
     return meta.error();
   }
   if (!meta->has_value()) {
     return Error("Public CAS object not found");
   }
-  return index_.SetPinned(CasRealm::Public, public_content_id, false);
+  return index_->SetPinned(CasRealm::Public, public_content_id, false);
 }
 
 } // namespace pbr

@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready and storage in the app (CR023, CR024) in progress
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done
 
 ## Done
 
@@ -118,10 +118,30 @@
   are calls', on the port) handed to `CallStack::InitializeStores` as `CallStores`, which `CallsParticipant` opens
   through storage (`OpenSqliteCallStores`); in-memory ones in `lib/calls/testing`, a contract test on both. Calls
   holds no SQL and no at-rest encryption.
+- **CR024 stage 4, people and posts:** `PeerCardStore` is people's `PeerCards` (the checks, the merge, the floors)
+  over an `IPeerCardStore` port, from `ProfileStores`; `PostStore` is social's `IPostStore` (`AddEntry` on the port).
+  Their SQLite ones are storage's, in-memory ones in each capability's `testing/`, contract tests on both. People and
+  posts hold no SQL; `pp_lib_people_cards` is gone (the cards are plain people code, headless too).
+- **CR024 stage 4, content (CR024 done):** `ObjectIndex` is content's `IObjectIndex` port; `SqliteObjectIndex` is
+  storage's (`object_index.db`, unchanged), `InMemoryObjectIndex` in `lib/content/testing`, a contract test on both.
+  `CasStore` is one per profile, built by the hub on the index the app opens (`SetContentStorage`) and shared with
+  the attachment workflow, the blob transport and Me → Storage; content's functions take it instead of a path. No
+  capability holds SQL now.
+
+- **CR023 step 2, the media split:** `capabilities/media` (devices, hardware codecs, `MediaEngine` — renamed from
+  `CallMediaEngine`; `common/media_engine`) on the base only; calls' adaptation policy to `lib/calls` (the engine
+  applies `MediaTargets`), the call's sounds to `lib/call_audio`, voice messages to messaging's `lib/voice`, QR
+  scanning to the app's `lib/scan`. The ringback's audio-session hold is a `CallAudioSession` tone hold. Gate map,
+  CI filters and labels updated.
+
+- **CR023 step 3, the base's folder:** `capabilities/base/src` (common, foundation's runtime / TLS / error /
+  diagnostics / crypto / identity); `src/foundation` keeps the product's base (+ `product`: name, version). No
+  capability target has `src/` as an include root any more (all 563 capability sources compile without it). Calls
+  names its owner thread and the app registers it; the crash dump, the text layer and net take the product's identity
+  as values.
 
 ## Next
 
-1. CR024 stage 4: people's and social's stores (`PeerCardStore`, `PostStore`, `ObjectIndex`) behind ports.
-2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
-3. Contracts repo (CR010) when convenient.
-4. P3's namespaces when a second app needs a capability.
+1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
+2. Contracts repo (CR010) when convenient.
+3. P3's namespaces when a second app needs a capability.

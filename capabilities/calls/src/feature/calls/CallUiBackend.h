@@ -18,7 +18,7 @@
 
 namespace pbr {
 
-class CallMediaEngine;
+class MediaEngine;
 class CallSessionManager;
 class CallStack;
 
@@ -142,7 +142,7 @@ public:
   std::string LastRingCallId() const { return State()->last_ring_call_id; }
   std::string ActiveCallId() const { return State()->active_call_id; }
 
-  CallMediaEngine& Media();
+  MediaEngine& Media();
 
 private:
   /** Run `op` on the calls owner with the current session manager (skipped when there is none). */

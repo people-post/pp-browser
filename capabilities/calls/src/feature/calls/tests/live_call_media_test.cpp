@@ -7,7 +7,7 @@ namespace {
 
 // A coordinator belongs to one admission of a call: a re-admitted id starts with fresh media.
 TEST(LiveCallMediaTest, OneCoordinatorPerAdmission) {
-  CallMediaEngine engine;
+  MediaEngine engine;
   engine.SetSkipDeviceOpenForTest(true);
   LiveCalls live;
   LiveCallMedia media(live);

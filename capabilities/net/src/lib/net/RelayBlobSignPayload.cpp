@@ -11,6 +11,11 @@ constexpr const char kBlobRetainDomain[] = "pp-browser:relay-blob-retain-v1";
 constexpr const char kBlobDeleteDomain[] = "pp-browser:relay-blob-delete-v1";
 constexpr const char kBlobListDomain[] = "pp-browser:relay-blob-list-v1";
 constexpr const char kProfileIconDomain[] = "pp-browser:relay-profile-icon-v1";
+constexpr const char kFileStartDomain[] = "pp-browser:relay-file-start-v1";
+constexpr const char kFilePartDomain[] = "pp-browser:relay-file-part-v1";
+constexpr const char kFileCompleteDomain[] = "pp-browser:relay-file-complete-v1";
+constexpr const char kFileDeleteDomain[] = "pp-browser:relay-file-delete-v1";
+constexpr const char kFileListDomain[] = "pp-browser:relay-file-list-v1";
 constexpr uint8_t kBlobSignVersion = 1;
 
 std::vector<uint8_t> BuildDomainSignBytes(const char* domain, const auto& append_fields) {
@@ -19,6 +24,15 @@ std::vector<uint8_t> BuildDomainSignBytes(const char* domain, const auto& append
   RelaySignAppendU8(oss, kBlobSignVersion);
   append_fields(oss);
   return RelaySignOssToBytes(oss);
+}
+
+std::vector<uint8_t> BuildUserBlobSignBytes(const char* domain, const std::string& relay_user_id,
+                                            const std::string& text, const int64_t timestamp) {
+  return BuildDomainSignBytes(domain, [&](std::ostringstream& oss) {
+    RelaySignAppendWireLenUtf8(oss, relay_user_id);
+    RelaySignAppendWireLenUtf8(oss, text);
+    RelaySignAppendI64(oss, timestamp);
+  });
 }
 
 } // namespace
@@ -72,6 +86,40 @@ std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& relay_user_id,
     RelaySignAppendWireLenUtf8(oss, kind);
     RelaySignAppendI64(oss, timestamp);
   });
+}
+
+std::vector<uint8_t> BuildFileStartSignBytes(const std::string& relay_user_id, const uint64_t byte_length,
+                                             const int64_t timestamp) {
+  return BuildDomainSignBytes(kFileStartDomain, [&](std::ostringstream& oss) {
+    RelaySignAppendWireLenUtf8(oss, relay_user_id);
+    RelaySignAppendU64(oss, byte_length);
+    RelaySignAppendI64(oss, timestamp);
+  });
+}
+
+std::vector<uint8_t> BuildFilePartSignBytes(const std::string& relay_user_id, const std::string& blob_id,
+                                            const uint64_t part_number, const int64_t timestamp) {
+  return BuildDomainSignBytes(kFilePartDomain, [&](std::ostringstream& oss) {
+    RelaySignAppendWireLenUtf8(oss, relay_user_id);
+    RelaySignAppendWireLenUtf8(oss, blob_id);
+    RelaySignAppendU64(oss, part_number);
+    RelaySignAppendI64(oss, timestamp);
+  });
+}
+
+std::vector<uint8_t> BuildFileCompleteSignBytes(const std::string& relay_user_id, const std::string& blob_id,
+                                                const int64_t timestamp) {
+  return BuildUserBlobSignBytes(kFileCompleteDomain, relay_user_id, blob_id, timestamp);
+}
+
+std::vector<uint8_t> BuildFileDeleteSignBytes(const std::string& relay_user_id, const std::string& blob_id,
+                                              const int64_t timestamp) {
+  return BuildUserBlobSignBytes(kFileDeleteDomain, relay_user_id, blob_id, timestamp);
+}
+
+std::vector<uint8_t> BuildFileListSignBytes(const std::string& relay_user_id, const std::string& status_filter,
+                                            const int64_t timestamp) {
+  return BuildUserBlobSignBytes(kFileListDomain, relay_user_id, status_filter, timestamp);
 }
 
 } // namespace pbr

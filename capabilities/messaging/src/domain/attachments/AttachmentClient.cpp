@@ -1,10 +1,14 @@
 #include "domain/attachments/AttachmentClient.h"
 
 #include "domain/attachments/ChatBlobRequest.h"
+#include "domain/attachments/RelayFileUrl.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/Logger.h"
 #include "foundation/error/AppError.h"
+#include "foundation/runtime/BackgroundActivity.h"
+#include "lib/net/BlobQuota.h"
 
 #include <algorithm>
 #include <cctype>
@@ -87,15 +91,15 @@ Error NoteDirectFailed(Error server_error) {
 
 Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
                                                 const PreparedChatAttachment& prepared) {
+  const BackgroundActivity background("attachment upload");
   const std::string body(reinterpret_cast<const char*>(prepared.ciphertext.data()), prepared.ciphertext.size());
-  auto uploaded =
-      UploadRelayBlobBytes(blob, relay_user_id, "application/octet-stream", BlobPurpose::File, body);
+  auto uploaded = UploadRelayFileBytes(blob, relay_user_id, body);
   if (!uploaded) {
     return uploaded.error();
   }
 
   ChatAttachmentFields fields = prepared.fields;
-  fields.url = uploaded.value().public_url;
+  fields.url = uploaded->url;
   return fields;
 }
 
@@ -117,15 +121,24 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
   const ByteVector dek = options.dek;
   auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
                     finish](const bool direct_failed) mutable {
-    auto uploaded = UploadRelayBlobFile(blob, relay_id, "application/octet-stream", BlobPurpose::File,
-                                        store->CipherPath(record.id), record.cipher_bytes, progress);
+    // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.
+    const BackgroundActivity background("attachment upload");
+    auto uploaded = UploadRelayFile(blob, relay_id, store->CipherPath(record.id), record.cipher_bytes, progress);
     if (!uploaded) {
       finish(direct_failed ? NoteDirectFailed(uploaded.error()) : uploaded.error());
       return;
     }
-    record.fields.url = uploaded.value().public_url;
+    record.fields.url = uploaded->url;
     record.delivered = true;
-    (void)store->Update(record, dek);
+    if (auto saved = store->Update(record, dek); !saved) {
+      // The link is given once; a copy whose link is not kept cannot be sent later, so it goes and this send fails
+      // (a retry uploads again).
+      logging::getLogger("AttachmentClient").info << "relay file abandon blob=" << uploaded->blob_id
+                                                  << " step=store code=none";
+      (void)blob.FileDelete(relay_id, uploaded->blob_id);
+      finish(saved.error());
+      return;
+    }
     finish(record.fields);
   };
 
@@ -165,6 +178,32 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
 }
 
 } // namespace
+
+Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& relay_user_id, const std::string& url) {
+  if (url.empty()) {
+    return {}; // sent peer-direct: nothing on the server
+  }
+  const std::string blob_id = RelayFileUrl::BlobIdOf(url);
+  if (blob_id.empty()) {
+    // An old CDN link: nothing this account can delete through the files relay.
+    logging::getLogger("AttachmentClient").info << "uploaded copy skipped: not a relay file link";
+    return {};
+  }
+  auto deleted = DeleteRelayFile(blob, relay_user_id, blob_id);
+  if (!deleted && !(AppError::CategoryOf(deleted.error()) == ErrorCategory::Blob &&
+                    deleted.error().code == static_cast<int32_t>(Err::Blob::Expired))) {
+    Error failed = deleted.error(); // its own code (network, rate limit, ...), with the id for the log
+    failed.message = "blob=" + blob_id + " " + failed.message;
+    return failed;
+  }
+  return {}; // deleted, or already gone
+}
+
+uint64_t AttachmentQuotaNeededBytes(const Error& quota_error) {
+  const uint64_t asked = RelayFileQuotaNeededBytes(quota_error);
+  // No size in the error: free enough for the largest attachment this client sends.
+  return asked > 0 ? asked : kDefaultAttachmentSendMaxBytes + kAttachmentCipherOverheadBytes;
+}
 
 bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, const uint64_t plaintext_bytes) {
   return thread && thread->kind == ThreadKind::Direct && ThreadChannelIsE2e(thread->channel) &&

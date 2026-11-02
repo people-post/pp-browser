@@ -49,6 +49,7 @@ public:
     bool& show_forget_memory;
     bool& show_sync_with_peer;
     bool& show_thread_menu;
+    bool& show_search;
     bool& show_gap_banner;
     bool& show_compromised_banner;
     bool& show_locked_out_banner;

@@ -27,6 +27,7 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
   const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
   hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
   hub_->SetStorage(&OpenSqliteProfileStores);
+  hub_->SetContentStorage(&OpenSqliteObjectIndex);
   // Order matters: up in this order (calls, then broadcast), down in reverse.
   hub_->AddParticipant(calls_);
   hub_->AddParticipant(broadcast_);

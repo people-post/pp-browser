@@ -418,7 +418,7 @@ external code nobody edits, which the checks, formatting and lint skip.
 ## CR023 — Calls becomes repo-ready first
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); step 1 done
+**Status:** accepted (Hongwei, 2026-11-02); steps 1–3 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
 
 **Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
 testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
@@ -440,10 +440,38 @@ called the app's Android activity by method name, and `src/` (the app) stays an 
 
 Namespaces and an `include/` split wait for an actual repo split (CR022).
 
+**Step 2, as done (2026-11-02):**
+- **`media`** (`capabilities/media`, on the base only): devices (`MediaDeviceArbiter`, the SDL3 backend, the OS
+  audio session), hardware codecs (`GuardedVideoCodec` over the platform's), and the engine — renamed
+  `CallMediaEngine` → **`MediaEngine`**, since broadcast runs on it too (Hongwei). Its `common/media_engine` holds
+  what the engine reports and is told (`MediaEngineHealth`, `MediaTargets`), headers only (`pp_media_common`).
+- Three calls concepts the engine reached are cut: it applies neutral **`MediaTargets`** (calls' `CallMediaAdaptation`,
+  now in `lib/calls`, turns its V024 decision into them and answers "may the camera go on" from the engine's path
+  pressure and uplink quote); the ringback's hold on the phone's audio session is a **tone hold** in
+  `CallAudioSession` that the engine waits for; its health type is media's.
+- **Voice messages → messaging's `lib/voice`** (`pp_lib_voice`), not the app (amends the decision; Hongwei): they
+  are a messaging idea, and messaging may sit on media.
+- **QR scanning → the app's `lib/scan`** (`pp_lib_scan`); **the call's sounds → calls' `lib/call_audio`**
+  (`pp_lib_call_audio`), so `pp_lib_calls` stays pure logic without SDL.
+- The gate's map, CI's path filters (`media`, and calls / broadcast / messaging on it) and the test labels follow.
+
+**Step 3, as done (2026-11-02):**
+- **The base has its folder:** `capabilities/base/src/` (`common/` except the app's `common/ui`; foundation's
+  runtime, TLS, error, diagnostics, crypto, identity), with its own label and CI filter. `src/foundation/` keeps
+  the product's base (`data`, `platform`, `i18n` and the new `product`).
+- **`src/` is no include root of a capability:** the helpers give a capability's targets its own `src/` only
+  (`pp_browser_own_include_root`); everything else comes by link. All capability sources compile so: the compiler
+  now holds what the gate checks.
+- **App concepts became values:** calls names its owner thread (`common/media/MediaSessionsOwner.h`) and the app
+  registers it (`feature/product/ProductOwners`); the product's name and version are the product's
+  (`foundation/product`): the crash dump takes a `CrashIdentity`, text gets `product.name` / `{product}` from the
+  app's translator, net's upgrade fallback is passed in. `AppLifecycle`, background activity / sync and diagnostics
+  stay base mechanisms.
+
 ## CR024 — Capabilities own ideas; the app owns the database
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); stages 1–3 done; stage 4 (people, social) next
+**Status:** accepted (Hongwei, 2026-11-02); done (stages 1–4) — the rule is in [SRC_LAYOUT § Capability folders](../../docs/architecture/SRC_LAYOUT.md#capability-folders)
 
 **Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
 `chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without
@@ -476,5 +504,12 @@ an include. Each capability also carried at-rest encryption (the profile DEK) in
 3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
    move to storage (calls drops its at-rest crypto includes).
 4. People and social: `PeerCardStore`, `PostStore` and `ObjectIndex` the same way.
+
+**Notes (stage 4, content):** `CasStore` was opened by path wherever it was used (about ten places, each reopening
+the index). It is now one per profile, built by the hub on an `IObjectIndex` from the app
+(`ConversationsHub::SetContentStorage`, not `ProfileStores`: messaging's lib stays off content, C012) and lent as a
+`shared_ptr` to the attachment workflow, the blob transport and Me → Storage. The blocks and their encryption stay
+content's: they are the format, not a database. The blob port lost `SetProfileId`; the transport now gets the store
+from `PeerTransports`, which keeps it across a re-attach (the id was lost on one before).
 
 **Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).

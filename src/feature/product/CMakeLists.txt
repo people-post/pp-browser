@@ -11,6 +11,7 @@ pp_browser_add_feature_library(pp_feature_product
     MessagingTools.cpp
     HubSettingsProjection.cpp
     ProductMesh.cpp
+    ProductOwners.cpp
     ProductStack.cpp
   PUBLIC_LIBS
     pp_feature_conversations

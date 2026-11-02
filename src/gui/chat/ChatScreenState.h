@@ -50,6 +50,12 @@ struct ChatScreenState {
   /** A call (or ringing) has the microphone: the button is grey and its tooltip says why. */
   bool voice_blocked = false;
   bool voice_recording = false;
+  /** Released to send (or the limit ran out) and the file is still being written: the bar says "Sending…". */
+  bool voice_finishing = false;
+  /** A picked / captured file is being copied before the upload starts (iOS): the chip says "Sending…". */
+  bool attachment_preparing = false;
+  /** The chip's condition: an attachment is preparing / uploading / failed in the chat open now (not in another one). */
+  bool attachment_here = false;
   /** Voice mode (WeChat style): a "hold to talk" bar replaces the text input. Per app session; off whenever show_voice is. */
   bool voice_mode = false;
   /** Desktop: a click starts, and Send / Cancel buttons end it. Phones: hold, release sends, slide up cancels. */
@@ -78,6 +84,18 @@ struct ChatScreenState {
   bool show_forget_memory = false;
   bool show_sync_with_peer = false;
   bool show_thread_menu = false;
+  /** The "⋯" menu offers "Search" (a chat is open and messaging is ready). */
+  bool show_search = false;
+  /** Search inside the open chat: the search box replaces the header, the step bar replaces the composer. */
+  bool search_open = false;
+  /** The first index is being built ("Searching…"). */
+  bool search_indexing = false;
+  ui::String search_query;
+  /** "Searching…", "No results" or "3 of 12"; empty while nothing is typed. */
+  ui::String search_count_label;
+  bool search_has_hits = false;
+  bool search_can_older = false;
+  bool search_can_newer = false;
   bool show_gap_banner = false;
   bool show_compromised_banner = false;
   bool show_locked_out_banner = false;

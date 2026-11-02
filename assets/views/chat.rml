@@ -5,7 +5,23 @@
      data-class-chat-shell--group="thread_is_group"
      data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
-    <div class="chat-header-main">
+    <!-- Search inside the chat, one row in the title row's place: box, "3 of 12", older (up) / newer (down), Cancel.
+         Enter in the box steps to the next older hit. -->
+    <div class="chat-search-bar" data-if="search_open" keep-focus="">
+      <input id="search-input" class="field chat-search-input" type="text" data-value="search_query"
+             data-event-change="search_query_changed()" placeholder="{{i18n:chat.search.placeholder}}"/>
+      <span class="chat-search-count muted" data-if="search_count_label != ''">{{search_count_label}}</span>
+      <button class="chat-search-step" type="button" data-event-click="search_older()"
+              data-attrif-disabled="!search_can_older">
+        <svg src="../icons/chevron-up.svg" width="10" height="10" crop-to-content="true"></svg>
+      </button>
+      <button class="chat-search-step" type="button" data-event-click="search_newer()"
+              data-attrif-disabled="!search_can_newer">
+        <svg src="../icons/chevron-down.svg" width="10" height="10" crop-to-content="true"></svg>
+      </button>
+      <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
+    </div>
+    <div class="chat-header-main" data-if="!search_open">
       <div class="chat-header-title-row">
         <div class="chat-header-type-icon" data-if="thread_is_ai">
           <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
@@ -47,7 +63,7 @@
         <p class="text-xs muted chat-header-subtitle" data-event-click="open_group_members()">{{thread_subtitle}}</p>
       </div>
     </div>
-    <div class="chat-header-actions row">
+    <div class="chat-header-actions row" data-if="!search_open">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-class-chat-header-call-btn--join="call_joinable"
               data-event-click="start_call()">
@@ -117,6 +133,8 @@
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-class-message-row-mentions-me="row.mentions_me"
+           data-class-message-row-search-hit="row.search_hit"
+           data-class-message-row-search-current="row.search_current"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>

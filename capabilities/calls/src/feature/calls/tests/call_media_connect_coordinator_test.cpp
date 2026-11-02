@@ -8,7 +8,7 @@
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 
 #include <chrono>
 #include <filesystem>
@@ -137,7 +137,7 @@ public:
 class CallMediaConnectCoordinatorTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitReach>(*dial_);

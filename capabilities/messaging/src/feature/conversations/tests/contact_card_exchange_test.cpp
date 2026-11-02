@@ -1,3 +1,4 @@
+#include "lib/people/testing/InMemoryPeerCards.h"
 #include "feature/conversations/ContactCardExchange.h"
 
 #include "common/ValueJson.h"
@@ -27,7 +28,7 @@ protected:
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
     contacts_ = std::make_unique<ContactsStore>(dir_.string());
-    cards_ = std::make_unique<PeerCardStore>((dir_ / "profile.db").string());
+    cards_ = std::make_unique<InMemoryPeerCards>();
     keys_ = std::make_unique<AccountKeyResolver>(signing_, kem_, *cards_, directory_);  // no directory
     exchange_ = std::make_unique<ContactCardExchange>(*contacts_, *keys_);
   }
@@ -53,7 +54,7 @@ protected:
   PeerKemKeyStore kem_;
   SwitchableDirectoryClient directory_;
   std::unique_ptr<ContactsStore> contacts_;
-  std::unique_ptr<PeerCardStore> cards_;
+  std::unique_ptr<InMemoryPeerCards> cards_;
   std::unique_ptr<AccountKeyResolver> keys_;
   std::unique_ptr<ContactCardExchange> exchange_;
   test::TestAccount bob_ = test::TestAccount::Make();

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/content/CasStore.h"
 #include "lib/delivery/HttpRelayClient.h"
 #include "common/Secret.h"
 
@@ -85,7 +86,7 @@ class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
-class PeerCardStore;
+class PeerCards;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -229,6 +230,8 @@ public:
   /** The group rosters (from stores open to hub teardown; null outside that). */
   IGroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return profile_db_path_; }
+  /** The profile's content store (private and public objects; Me → Storage), from Initialize to teardown. */
+  std::shared_ptr<CasStore> Content() const { return content_; }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
   /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
@@ -299,7 +302,8 @@ public:
   /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   /** Delete the relay blob the person confirmed (by id). */
-  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
+  /** One id of a confirmed quota recovery, on its tier's endpoint (DeleteRelayQuotaItem). */
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id, BlobTier tier);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
@@ -338,7 +342,7 @@ public:
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   AttachmentFetchWorkflow& Attachments();
-  /** Our uploaded relay copy of an attachment message, if any; best effort. */
+  /** Our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy); a failure is logged. */
   void DeleteUploadedCopy(const ThreadMessage& message);
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
@@ -411,6 +415,9 @@ public:
   void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
   /** Where the profile's stores come from (CR024): the app's storage, or a test's in-memory ones. */
   void SetStorage(OpenProfileStores open) { open_stores_ = std::move(open); }
+  /** Opens the content index the profile's content store is built on (the app's storage, or a test's). */
+  using OpenContentIndex = std::function<std::unique_ptr<IObjectIndex>(const std::string& profile_data_dir)>;
+  void SetContentStorage(OpenContentIndex open) { open_content_index_ = std::move(open); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -530,6 +537,7 @@ private:
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
   /** Opens the profile's stores (the app's storage); set before Initialize. */
   OpenProfileStores open_stores_;
+  OpenContentIndex open_content_index_;
   std::unique_ptr<IThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -551,7 +559,10 @@ private:
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   /** Account cards this device has checked and kept (profile.db). */
-  std::unique_ptr<PeerCardStore> peer_cards_;
+  std::unique_ptr<IPeerCardStore> peer_card_rows_;
+  std::unique_ptr<PeerCards> peer_cards_;
+  /** The profile's content store, lent to attachments and the blob transport (they may outlive a teardown). */
+  std::shared_ptr<CasStore> content_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
   Roe<void> KeepLinkedAccountCard(const std::string& card_json);

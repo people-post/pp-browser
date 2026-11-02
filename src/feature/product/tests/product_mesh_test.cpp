@@ -3,7 +3,7 @@
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
 
