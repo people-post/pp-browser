@@ -540,7 +540,7 @@ struct CallMediaEngine::Impl {
     return underruns;
   }
 
-  void TearDownAudioLocked() {
+  void TearDownAudioLocked(const bool release_session = true) {
     // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
     // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
     capture_running = false;
@@ -572,6 +572,13 @@ struct CallMediaEngine::Impl {
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
+    if (release_session) {
+      ReleaseAudioSession();
+    }
+  }
+
+  /** Touches the OS audio session only, not Impl: Stop() runs it after dropping the lock. */
+  static void ReleaseAudioSession() {
     CallAudioSession::Deactivate();
     CallAudioSession::ClearCaptureAudioHints();
   }
@@ -1896,13 +1903,23 @@ void CallMediaEngine::Stop() {
   timed_step("join_capture", [&] { impl_->JoinCaptureThread("media stop"); });
   timed_step("join_playout", [&] { impl_->JoinPlayoutThread("media stop"); });
   timed_step("join_video", [&] { impl_->JoinVideoThread("media stop"); });
+  // B125: on phones teardown takes ~1 s (OS audio session deactivation, hardware codec teardown) and
+  // UI getters wait for the engine mutex meanwhile. Capture / playout / video are already joined, so
+  // the codec is detached under the lock (the video loop makes a fresh one next call) and both slow
+  // parts run after it is released.
+  std::unique_ptr<IVideoCodec> doomed_codec;
   timed_step("teardown_audio", [&] {
-    std::lock_guard lock(impl_->mutex);
-    impl_->TearDownAudioLocked();
-    impl_->call_id.clear();
-    impl_->spec = SessionSpec::Duplex();
-    impl_->ApplyStateLocked("closed");
-    state_cb = impl_->on_state_changed;
+    {
+      std::lock_guard lock(impl_->mutex);
+      doomed_codec = std::move(impl_->video_codec);
+      impl_->TearDownAudioLocked(/*release_session=*/false);
+      impl_->call_id.clear();
+      impl_->spec = SessionSpec::Duplex();
+      impl_->ApplyStateLocked("closed");
+      state_cb = impl_->on_state_changed;
+    }
+    doomed_codec.reset();
+    Impl::ReleaseAudioSession();
   });
   log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
   if (state_cb) {
