@@ -10,10 +10,22 @@
 
 namespace pbr {
 
-AgentSessions::AgentSessions(const size_t max_concurrent_turns, Clock clock)
-    : max_concurrent_turns_(max_concurrent_turns), clock_(std::move(clock)) {
+namespace {
+
+/** Free-tier brief_AI key minted without registration (BriefGuestLlmClient). */
+constexpr const char* kBriefGuestKeyPrefix = "brf_guest_";
+
+} // namespace
+
+size_t MaxConcurrentTurnsFor(const AppConfig& config) {
+  return config.llm.api_key.Reveal().rfind(kBriefGuestKeyPrefix, 0) == 0 ? kMaxConcurrentGuestTurns
+                                                                          : kMaxConcurrentTurns;
+}
+
+AgentSessions::AgentSessions(const std::optional<size_t> max_concurrent_turns, Clock clock)
+    : fixed_max_concurrent_turns_(max_concurrent_turns), clock_(std::move(clock)) {
   redirectLogger("AgentSessions");
-  shared_->turn_pool = std::make_shared<AiTurnPool>(max_concurrent_turns_ + 1);
+  shared_->turn_pool = std::make_shared<AiTurnPool>(max_concurrent_turns.value_or(kMaxConcurrentTurns) + 1);
   home_ = MakeSession();
 }
 
@@ -108,6 +120,13 @@ void AgentSessions::SetBriefAiStream(BriefAiStreamFn fn) {
 
 // --- turns -----------------------------------------------------------------------------------------
 
+size_t AgentSessions::MaxConcurrentTurns() const {
+  if (fixed_max_concurrent_turns_) {
+    return *fixed_max_concurrent_turns_;
+  }
+  return config_ ? MaxConcurrentTurnsFor(*config_) : kMaxConcurrentGuestTurns;
+}
+
 size_t AgentSessions::RunningThreadTurns() const {
   return static_cast<size_t>(std::count_if(threads_.begin(), threads_.end(),
                                             [](const auto& item) { return item.second.session->IsBusy(); }));
@@ -117,7 +136,7 @@ TurnStart AgentSessions::CanStart(const std::string& thread_id) const {
   if (IsBusy(thread_id)) {
     return TurnStart::BusyHere;
   }
-  if (!thread_id.empty() && RunningThreadTurns() >= max_concurrent_turns_) {
+  if (!thread_id.empty() && RunningThreadTurns() >= MaxConcurrentTurns()) {
     return TurnStart::Full;
   }
   return TurnStart::Yes;
@@ -211,7 +230,7 @@ Roe<void> AgentSessions::ResumeToolPermission(const std::string& approval_id, co
     if (!entry.session->HoldsApproval(approval_id)) {
       continue;
     }
-    if (!entry.session->IsBusy() && RunningThreadTurns() >= max_concurrent_turns_) {
+    if (!entry.session->IsBusy() && RunningThreadTurns() >= MaxConcurrentTurns()) {
       return Error(ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
     }
     entry.last_active = Now();
@@ -271,10 +290,6 @@ bool AgentSessions::IsBusy(const std::string& thread_id) const {
 
 bool AgentSessions::AnyBusy() const {
   return home_->IsBusy() || RunningThreadTurns() > 0;
-}
-
-bool AgentSessions::ThreadTurnsFull() const {
-  return RunningThreadTurns() >= max_concurrent_turns_;
 }
 
 void AgentSessions::WaitForConfigureIdle() {

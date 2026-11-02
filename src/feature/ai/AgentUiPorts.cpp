@@ -37,6 +37,7 @@ AgentUiPorts MakeAgentUiPorts(AgentSessions& agent) {
     return agent.SubmitToThread(thread_id, text, std::nullopt, std::move(image));
   };
   ports.can_start = [&agent](const std::string& thread_id) { return agent.CanStart(thread_id); };
+  ports.max_thread_turns = [&agent]() { return agent.MaxConcurrentTurns(); };
   ports.cancel = [&agent](const std::string& thread_id) { agent.Cancel(thread_id); };
   ports.cancel_all = [&agent]() { agent.CancelAll(); };
   ports.forget_thread = [&agent](const std::string& thread_id) { agent.ForgetThread(thread_id); };

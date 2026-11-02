@@ -1,6 +1,6 @@
 // AgentSessions (DEV/PLAN-ai-concurrent-turns.md, step 2): one session for the Home composer, one per thread, the cap
 // on thread turns running at once, idle sessions closed and rebuilt. Real AgentSessions with a fake brief_AI stream.
-// The product cap is kMaxConcurrentTurns (1 for now); tests about several turns at once build it with 3.
+// Without a fixed cap the sessions take theirs from the configured key: kMaxConcurrentTurns (3), a guest 1.
 
 #include "feature/ai/AgentSessions.h"
 #include "feature/ai/tests/agent_session_test_support.h"
@@ -59,7 +59,8 @@ protected:
    * Sessions with the fake stream and the fake app tools. A question starting with "hold" streams one token and waits
    * for `release_` (or a cancel); any other answers at once. `configure`: configure and wait for it.
    */
-  void Make(const size_t cap = kMaxConcurrentTurns, const bool configure = true) {
+  /** `cap`: a fixed cap; none: the configured key's (MakeConfig's is a registered one: kMaxConcurrentTurns). */
+  void Make(const std::optional<size_t> cap = std::nullopt, const bool configure = true) {
     sessions_ = std::make_unique<AgentSessions>(cap, [this] { return now_; });
     sessions_->SetThreadStore(&store_);
     sessions_->SetToolRegistrationHook([this](ToolRegistry& registry) { RegisterFakes(registry); });
@@ -277,7 +278,6 @@ TEST_F(AgentSessionsTest, FourthThreadIsReportedFullNotDropped) {
   EXPECT_EQ(sessions_->CanStart("t4"), TurnStart::Full);
   EXPECT_EQ(sessions_->SubmitToThread("t4", "fourth"), SubmitOutcome::Full);
   EXPECT_FALSE(sessions_->HasSession("t4")) << "a question that was not taken opens no session";
-  EXPECT_TRUE(sessions_->ThreadTurnsFull());
   WaitRequests(3);
   EXPECT_EQ(Requests().size(), 3u);
 
@@ -309,14 +309,48 @@ TEST_F(AgentSessionsTest, HomeTurnDoesNotCountTowardsTheThreadCap) {
   EXPECT_FALSE(sessions_->AnyBusy());
 }
 
-TEST_F(AgentSessionsTest, HomeTurnDoesNotCountAtTheProductCapEither) {
-  Make();
+TEST_F(AgentSessionsTest, HomeTurnDoesNotCountAtCapOneEither) {
+  Make(1);
   EXPECT_EQ(sessions_->Submit("hold home"), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitToThread("t1", "hold"), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitToThread("t2", "second"), SubmitOutcome::Full) << "one thread turn at a time";
   release_ = true;
   WaitEnded("");
   WaitEnded("t1");
+}
+
+// --- the cap follows the key ----------------------------------------------------------------------------
+
+TEST_F(AgentSessionsTest, ARegisteredKeyAnswersThreeChatsAtOnce) {
+  Make();
+  EXPECT_EQ(sessions_->MaxConcurrentTurns(), kMaxConcurrentTurns);
+  for (const char* thread : {"t1", "t2", "t3"}) {
+    EXPECT_EQ(sessions_->SubmitToThread(thread, "hold"), SubmitOutcome::Started) << thread;
+  }
+  EXPECT_EQ(sessions_->SubmitToThread("t4", "hold"), SubmitOutcome::Full);
+  release_ = true;
+  PumpUntil([&] { return !sessions_->AnyBusy(); }, "every turn to end");
+}
+
+TEST_F(AgentSessionsTest, AGuestKeyAnswersOneChatAtATime) {
+  Make(std::nullopt, /*configure=*/false);
+  AppConfig guest = MakeConfig("brief");
+  guest.llm.api_key = "brf_guest_0123";
+  sessions_->Configure(guest);
+  sessions_->WaitForConfigureIdle();
+  EXPECT_EQ(sessions_->MaxConcurrentTurns(), kMaxConcurrentGuestTurns);
+  EXPECT_EQ(sessions_->Submit("hold home"), SubmitOutcome::Started) << "Home is not counted";
+  EXPECT_EQ(sessions_->SubmitToThread("t1", "hold"), SubmitOutcome::Started);
+  EXPECT_EQ(sessions_->CanStart("t2"), TurnStart::Full);
+  EXPECT_EQ(sessions_->SubmitToThread("t2", "hold"), SubmitOutcome::Full);
+  release_ = true;
+  PumpUntil([&] { return !sessions_->AnyBusy(); }, "every turn to end");
+
+  AppConfig registered = MakeConfig("brief");
+  registered.llm.api_key = "brf_llm_0123";
+  sessions_->Configure(registered); // the user signed up
+  sessions_->WaitForConfigureIdle();
+  EXPECT_EQ(sessions_->MaxConcurrentTurns(), kMaxConcurrentTurns);
 }
 
 // --- stop, cards, configure ---------------------------------------------------------------------------
@@ -367,7 +401,7 @@ TEST_F(AgentSessionsTest, ParkedApprovalKeepsTheInstanceButFreesTheSlot) {
 }
 
 TEST_F(AgentSessionsTest, AResumedCardCountsFromTheTap) {
-  Make();
+  Make(1);
   sessions_->SubmitToThread("a", "关掉通知");
   WaitEnded("a");
   const std::string approval = ApprovalId(OfType(AgentEventType::AssistantReady).front().text);
@@ -554,11 +588,10 @@ TEST_F(AgentSessionsTest, SoftAliveCapEvictsIdleNotRunning) {
 
 // --- app actions ---------------------------------------------------------------------------------------
 
-// Step 0: app-action tools run on the turn's worker thread, not on the UI thread, so two threads' actions are kept
-// apart only by the cap. At kMaxConcurrentTurns (1) the second is Full until the first has ended; the UI hands it
-// over then, and the events reach the UI in that order.
+// At cap 1 the second thread's app action is Full until the first has ended; the UI hands it over then, and the
+// events reach the UI in that order.
 TEST_F(AgentSessionsTest, SecondThreadsLocalActionIsFullAtCapOneThenRunsInOrder) {
-  Make();
+  Make(1);
   EXPECT_EQ(sessions_->SubmitLocalAction("ta", "find a", "search_people", Query("a")), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Full);
   WaitEnded("ta");
