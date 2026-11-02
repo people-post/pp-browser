@@ -373,7 +373,6 @@ protected:
     std::filesystem::create_directories(dir_);
     suppression_ = std::make_unique<AttachmentSuppressionStore>(dir_.string());
     workflow_.SetProfileDataDir(dir_.string());
-    workflow_.SetProfileId("test");
     workflow_.SetAllowLocalCdnForTest(true);
     workflow_.SetSuppressionStore(suppression_.get());
     ASSERT_TRUE(workflow_.SetDek(TestDek()));
