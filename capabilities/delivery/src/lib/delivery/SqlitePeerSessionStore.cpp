@@ -1,4 +1,4 @@
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -52,7 +52,7 @@ std::vector<RetiredPskEntry> ParseRetiredPsks(const char* json_text) {
   return retired_psks;
 }
 
-void ApplyFingerprint(PskSessionRecord& record) {
+void ApplyFingerprint(PeerSessionRecord& record) {
   record.psk_fingerprint.reset();
   if (!record.master_psk_b64) {
     return;
@@ -98,15 +98,15 @@ constexpr const char* kDeviceSessionColumns =
 
 } // namespace
 
-SqlitePskSessionStore::SqlitePskSessionStore(std::string profile_db_path, std::string profile_id)
+SqlitePeerSessionStore::SqlitePeerSessionStore(std::string profile_db_path, std::string profile_id)
     : profile_db_path_(std::move(profile_db_path)), profile_id_(std::move(profile_id)) {
-  redirectLogger("SqlitePskSessionStore");
+  redirectLogger("SqlitePeerSessionStore");
   if (profile_id_.empty()) {
     profile_id_ = "default";
   }
 }
 
-SqlitePskSessionStore::~SqlitePskSessionStore() {
+SqlitePeerSessionStore::~SqlitePeerSessionStore() {
   std::lock_guard lock(mutex_);
   if (db_) {
     sqlite3_close(db_);
@@ -118,7 +118,7 @@ SqlitePskSessionStore::~SqlitePskSessionStore() {
   }
 }
 
-Roe<void> SqlitePskSessionStore::SetDek(ByteVector dek) {
+Roe<void> SqlitePeerSessionStore::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
@@ -130,7 +130,7 @@ Roe<void> SqlitePskSessionStore::SetDek(ByteVector dek) {
   return {};
 }
 
-void SqlitePskSessionStore::ClearDek() {
+void SqlitePeerSessionStore::ClearDek() {
   std::lock_guard lock(mutex_);
   if (!dek_.empty()) {
     sodium_memzero(dek_.data(), dek_.size());
@@ -138,14 +138,14 @@ void SqlitePskSessionStore::ClearDek() {
   }
 }
 
-Roe<void> SqlitePskSessionStore::RequireDek() const {
+Roe<void> SqlitePeerSessionStore::RequireDek() const {
   if (dek_.size() != kDataEncryptionKeySize) {
     return AppError::Pin(Err::Pin::Required, "PSK store DEK not set (unlock profile vault first)");
   }
   return {};
 }
 
-Roe<std::string> SqlitePskSessionStore::EncryptFieldB64(const std::string& plaintext_b64,
+Roe<std::string> SqlitePeerSessionStore::EncryptFieldB64(const std::string& plaintext_b64,
                                                        const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
@@ -159,7 +159,7 @@ Roe<std::string> SqlitePskSessionStore::EncryptFieldB64(const std::string& plain
   return Base64Encode(*cipher);
 }
 
-Roe<std::string> SqlitePskSessionStore::DecryptFieldB64(const std::string& ciphertext_b64,
+Roe<std::string> SqlitePeerSessionStore::DecryptFieldB64(const std::string& ciphertext_b64,
                                                        const char* aad_kind) const {
   if (auto dek = RequireDek(); !dek) {
     return dek.error();
@@ -176,15 +176,15 @@ Roe<std::string> SqlitePskSessionStore::DecryptFieldB64(const std::string& ciphe
   return std::string(plain->begin(), plain->end());
 }
 
-Roe<std::string> SqlitePskSessionStore::EncryptPskB64(const std::string& plaintext_b64) const {
+Roe<std::string> SqlitePeerSessionStore::EncryptPskB64(const std::string& plaintext_b64) const {
   return EncryptFieldB64(plaintext_b64, "psk");
 }
 
-Roe<std::string> SqlitePskSessionStore::DecryptPskB64(const std::string& ciphertext_b64) const {
+Roe<std::string> SqlitePeerSessionStore::DecryptPskB64(const std::string& ciphertext_b64) const {
   return DecryptFieldB64(ciphertext_b64, "psk");
 }
 
-Roe<PskSessionRecord> SqlitePskSessionStore::DecryptRecord(PskSessionRecord record) const {
+Roe<PeerSessionRecord> SqlitePeerSessionStore::DecryptRecord(PeerSessionRecord record) const {
   if (record.master_psk_b64) {
     auto decrypted = DecryptPskB64(*record.master_psk_b64);
     if (!decrypted) {
@@ -212,7 +212,7 @@ Roe<PskSessionRecord> SqlitePskSessionStore::DecryptRecord(PskSessionRecord reco
   return record;
 }
 
-Roe<PskSessionRecord> SqlitePskSessionStore::EncryptRecord(PskSessionRecord record) const {
+Roe<PeerSessionRecord> SqlitePeerSessionStore::EncryptRecord(PeerSessionRecord record) const {
   if (record.master_psk_b64) {
     auto encrypted = EncryptPskB64(*record.master_psk_b64);
     if (!encrypted) {
@@ -240,7 +240,7 @@ Roe<PskSessionRecord> SqlitePskSessionStore::EncryptRecord(PskSessionRecord reco
   return record;
 }
 
-Roe<sqlite3*> SqlitePskSessionStore::OpenDb() const {
+Roe<sqlite3*> SqlitePeerSessionStore::OpenDb() const {
   std::lock_guard lock(mutex_);
   if (db_) {
     return db_;
@@ -259,7 +259,7 @@ Roe<sqlite3*> SqlitePskSessionStore::OpenDb() const {
   return db_;
 }
 
-Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTargetKey& key) const {
+Roe<std::optional<PeerSessionRecord>> SqlitePeerSessionStore::Load(const PeerSessionKey& key) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -284,9 +284,9 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   }
   if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
-    return std::optional<PskSessionRecord>{};
+    return std::optional<PeerSessionRecord>{};
   }
-  PskSessionRecord record;
+  PeerSessionRecord record;
   record.key = key;
   record.session_epoch = static_cast<uint32_t>(sqlite3_column_int(stmt, 0));
   if (sqlite3_column_text(stmt, 1)) {
@@ -330,16 +330,16 @@ Roe<std::optional<PskSessionRecord>> SqlitePskSessionStore::Load(const ChatTarge
   record.restart_pending = sqlite3_column_int(stmt, 15) != 0;
   sqlite3_finalize(stmt);
   if (!record.master_psk_b64 && record.retired_psks.empty() && !record.thread_kem_sk_b64) {
-    return std::optional<PskSessionRecord>(record);
+    return std::optional<PeerSessionRecord>(record);
   }
   auto decrypted = DecryptRecord(std::move(record));
   if (!decrypted) {
     return decrypted.error();
   }
-  return std::optional<PskSessionRecord>(*decrypted);
+  return std::optional<PeerSessionRecord>(*decrypted);
 }
 
-Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
+Roe<std::vector<PeerSessionRecord>> SqlitePeerSessionStore::List() const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -352,9 +352,9 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
   if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare PSK list");
   }
-  std::vector<PskSessionRecord> rows;
+  std::vector<PeerSessionRecord> rows;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
-    PskSessionRecord record;
+    PeerSessionRecord record;
     if (sqlite3_column_text(stmt, 0)) {
       record.key.peer_identity_kind = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
     }
@@ -421,8 +421,8 @@ Roe<std::vector<PskSessionRecord>> SqlitePskSessionStore::List() const {
   return rows;
 }
 
-Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
-  PskSessionRecord to_save = record;
+Roe<void> SqlitePeerSessionStore::Save(const PeerSessionRecord& record) {
+  PeerSessionRecord to_save = record;
   ApplyFingerprint(to_save);
   PskBundleCodec::CapRetiredTail(to_save.retired_psks, to_save.session_epoch);
 
@@ -545,7 +545,7 @@ Roe<void> SqlitePskSessionStore::Save(const PskSessionRecord& record) {
   return {};
 }
 
-Roe<void> SqlitePskSessionStore::SaveDeviceSession(sqlite3* db, const PskSessionRecord& to_save,
+Roe<void> SqlitePeerSessionStore::SaveDeviceSession(sqlite3* db, const PeerSessionRecord& to_save,
                                                    const std::string& retired_json) {
   // A session moved to another epoch numbers from 1 there (its old epoch's count is the old epoch's).
   const char* sql =
@@ -600,7 +600,7 @@ Roe<void> SqlitePskSessionStore::SaveDeviceSession(sqlite3* db, const PskSession
   return {};
 }
 
-Roe<uint64_t> SqlitePskSessionStore::AllocateSenderSeq(const ChatTargetKey& key) {
+Roe<uint64_t> SqlitePeerSessionStore::AllocateSenderSeq(const PeerSessionKey& key) {
   if (key.peer_device.empty()) {
     return Error("AllocateSenderSeq: a device-pair session only (the account's numbering is the thread's)");
   }
@@ -628,99 +628,6 @@ Roe<uint64_t> SqlitePskSessionStore::AllocateSenderSeq(const ChatTargetKey& key)
   const auto seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
   sqlite3_finalize(stmt);
   return seq;
-}
-
-Roe<ByteVector> SqlitePskSessionStore::GenerateMasterPsk() {
-  EnsureSodiumInit();
-  ByteVector psk(kMasterPskSize);
-  randombytes_buf(psk.data(), psk.size());
-  return psk;
-}
-
-Roe<std::optional<std::string>> SqlitePskSessionStore::ResolveMasterPskForEpoch(const ChatTargetKey& key,
-                                                                              const uint32_t envelope_epoch) const {
-  auto loaded = Load(key);
-  if (!loaded) {
-    return loaded.error();
-  }
-  if (!loaded->has_value()) {
-    return std::optional<std::string>{};
-  }
-  const PskSessionRecord& record = **loaded;
-  if (envelope_epoch == record.session_epoch && record.master_psk_b64) {
-    return std::optional<std::string>(*record.master_psk_b64);
-  }
-  for (const RetiredPskEntry& retired : record.retired_psks) {
-    if (retired.epoch == envelope_epoch) {
-      return std::optional<std::string>(retired.master_psk_b64);
-    }
-  }
-  return std::optional<std::string>{};
-}
-
-Roe<void> SqlitePskSessionStore::MarkPskVerified(const ChatTargetKey& key, const int64_t verified_at_ms) {
-  auto loaded = Load(key);
-  if (!loaded || !loaded->has_value()) {
-    return Error("PSK session not found");
-  }
-  PskSessionRecord record = **loaded;
-  record.psk_verified_at = verified_at_ms;
-  return Save(record);
-}
-
-Roe<bool> SqlitePskSessionStore::IsPskVerified(const ChatTargetKey& key) const {
-  auto loaded = Load(key);
-  if (!loaded) {
-    return loaded.error();
-  }
-  return loaded->has_value() && loaded->value().psk_verified_at.has_value();
-}
-
-Roe<PskBundleV1> SqlitePskSessionStore::ExportPskBundle(const ChatTargetKey& key) const {
-  auto loaded = Load(key);
-  if (!loaded || !loaded->has_value() || !loaded->value().master_psk_b64) {
-    return Error("No PSK to export");
-  }
-  const PskSessionRecord& record = loaded->value();
-  PskBundleV1 bundle;
-  bundle.channel = key.channel;
-  bundle.active_epoch = record.session_epoch;
-  bundle.master_psk_b64 = *record.master_psk_b64;
-  bundle.retired_epochs = record.retired_psks;
-  PskBundleCodec::CapRetiredTail(bundle.retired_epochs, bundle.active_epoch);
-  if (auto valid = PskBundleCodec::ValidateBundle(bundle); !valid) {
-    return valid.error();
-  }
-  return bundle;
-}
-
-Roe<void> SqlitePskSessionStore::ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) {
-  if (bundle.channel != key.channel) {
-    return Error("PSK bundle channel mismatch");
-  }
-  if (auto valid = PskBundleCodec::ValidateBundle(bundle); !valid) {
-    return valid.error();
-  }
-
-  PskSessionRecord record;
-  record.key = key;
-  record.session_epoch = bundle.active_epoch;
-  record.master_psk_b64 = bundle.master_psk_b64;
-  record.psk_verified_at = std::nullopt;
-  if (auto existing = Load(key); existing && existing->has_value()) {
-    record.retired_psks = PskBundleCodec::MergeRetired(existing->value().retired_psks, bundle.retired_epochs);
-    record.key_scope = existing->value().key_scope;
-    record.thread_kem_pk_b64 = existing->value().thread_kem_pk_b64;
-    record.thread_kem_sk_b64 = existing->value().thread_kem_sk_b64;
-    record.peer_thread_kem_pk_b64 = existing->value().peer_thread_kem_pk_b64;
-    record.last_psk_rotate_at = existing->value().last_psk_rotate_at;
-    record.psk_rotate_msg_count = existing->value().psk_rotate_msg_count;
-    record.last_rotation_id = existing->value().last_rotation_id;
-  } else {
-    record.retired_psks = bundle.retired_epochs;
-  }
-  PskBundleCodec::CapRetiredTail(record.retired_psks, record.session_epoch);
-  return Save(record);
 }
 
 } // namespace pbr

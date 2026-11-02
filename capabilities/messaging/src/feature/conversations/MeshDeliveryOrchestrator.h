@@ -15,7 +15,7 @@
 #include "lib/delivery/DeliveryNotice.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/people/PeerKemKeyStore.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
@@ -31,7 +31,7 @@
 #include "lib/delivery/PublicPskLockCoordinator.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/IControlLaneSeenStore.h"
 #include "domain/delivery/PeerRouteBook.h"
 #include "domain/delivery/ControlLane.h"
 #include "domain/delivery/DeliveryOutbox.h"
@@ -95,7 +95,7 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, AccountKeyResolver& account_keys, IPskSessionStore& psk_store,
+                      InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
@@ -311,7 +311,7 @@ private:
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
-  Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
+  Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
   void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
@@ -324,7 +324,7 @@ private:
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
-  Roe<void> StartNextPairEpochIfRestored(const ChatTargetKey& key);
+  Roe<void> StartNextPairEpochIfRestored(const PeerSessionKey& key);
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
@@ -356,14 +356,14 @@ private:
   IRelayClient* relay_ = nullptr;
   InboxController& inbox_;
   AccountKeyResolver& account_keys_;
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
-  std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
+  std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
    *  pipeline their inbound handler feeds, so they go first. */

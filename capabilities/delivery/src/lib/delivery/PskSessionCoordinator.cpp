@@ -8,10 +8,10 @@
 
 namespace pbr {
 
-PskSessionCoordinator::PskSessionCoordinator(IThreadStore& store, IPskSessionStore& psk_store)
+PskSessionCoordinator::PskSessionCoordinator(IThreadStore& store, IPeerSessionStore& psk_store)
     : store_(store), psk_store_(psk_store) {}
 
-Roe<ChatTargetKey> PskSessionCoordinator::TargetKeyForThread(const std::string& thread_id) const {
+Roe<PeerSessionKey> PskSessionCoordinator::TargetKeyForThread(const std::string& thread_id) const {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -68,7 +68,7 @@ Roe<PskExportView> PskSessionCoordinator::EnsureGenerated(const std::string& thr
     return generated.error();
   }
 
-  PskSessionRecord record;
+  PeerSessionRecord record;
   record.key = *key;
   record.session_epoch = *epoch;
   record.master_psk_b64 = Base64Encode(*generated);
@@ -111,7 +111,7 @@ Roe<std::string> PskSessionCoordinator::ExportBundleJson(const std::string& thre
   return PskBundleCodec::SerializeBundle(*bundle);
 }
 
-Roe<void> PskSessionCoordinator::ApplyBundleToThread(const std::string& thread_id, const ChatTargetKey& key,
+Roe<void> PskSessionCoordinator::ApplyBundleToThread(const std::string& thread_id, const PeerSessionKey& key,
                                                      const PskBundleV1& bundle) {
   auto current_epoch = store_.GetChatTargetSessionEpoch(thread_id);
   if (!current_epoch) {
@@ -191,7 +191,7 @@ Roe<std::string> PskSessionCoordinator::RotatePskAndExportBundle(const std::stri
     return Error("No PSK to rotate");
   }
 
-  PskSessionRecord record = loaded->value();
+  PeerSessionRecord record = loaded->value();
   const uint32_t old_epoch = record.session_epoch;
   if (auto cancelled = store_.CancelOldEpochPending(thread_id, old_epoch); !cancelled) {
     return cancelled.error();

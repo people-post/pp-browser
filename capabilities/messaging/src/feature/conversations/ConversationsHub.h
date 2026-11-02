@@ -80,12 +80,12 @@
 
 namespace pbr {
 
-class IPskSessionStore;
+class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
 class PeerCardStore;
-class SqlitePskSessionStore;
+class SqlitePeerSessionStore;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -226,7 +226,6 @@ public:
   /** Null until a messaging stack is built (and after it is dropped). */
   MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
   SystemControlRegistry& SystemControls() { return system_controls_; }
-  SqlitePskSessionStore* PskSessions() { return psk_store_.get(); }
   /** The group rosters (from stores open to hub teardown; null outside that). */
   GroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
@@ -245,7 +244,8 @@ public:
   IThreadStore& Store();
   ContactsStore& Contacts();
   IdentityStore& Identity();
-  IPskSessionStore* PskStore();
+  /** The peer sessions (null before messaging is ready). */
+  IPeerSessionStore* PeerSessions();
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
   ContactCardExchange& ContactCards();
@@ -532,7 +532,7 @@ private:
   std::unique_ptr<PaymentPromiseStore> payment_promises_;
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
-  std::unique_ptr<SqlitePskSessionStore> psk_store_;
+  std::unique_ptr<SqlitePeerSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
   std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */

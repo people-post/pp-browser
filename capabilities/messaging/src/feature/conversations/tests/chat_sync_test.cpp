@@ -20,7 +20,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 #include "common/MeshAlias.h"
 
 #include <filesystem>
@@ -101,7 +101,7 @@ public:
     local_relay_id = identity.Get()->relay_user_id;
     local_account_id = identity.Get()->account_id;
 
-    PskSessionRecord psk;
+    PeerSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
     psk.session_epoch = 1;
     const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
@@ -179,7 +179,7 @@ public:
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
-  SqlitePskSessionStore psk_store;
+  SqlitePeerSessionStore psk_store;
   MockRelayClient relay;
   MockChatHistoryPeerClient peer_history;
   /** The peer: its device signs what it sends. */

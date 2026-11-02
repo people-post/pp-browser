@@ -1,6 +1,6 @@
 #include "lib/calls/CallLifecycleTypes.h"
-#include "feature/product/tests/calls_loopback_outbox.h"
-#include "feature/product/tests/calls_on_owner.h"
+#include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/tests/calls_on_owner.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -13,7 +13,7 @@
 #include "lib/calls/CallMediaKeyStore.h"
 #include "lib/calls/CallSessionStore.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/ValueJson.h"
 #include "domain/call_media/ICallMediaTransport.h"
@@ -21,7 +21,7 @@
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/delivery/SessionKeyDeriver.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"
@@ -32,7 +32,7 @@
 #include <functional>
 #include <atomic>
 #include <optional>
-#include "feature/product/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/call_media_inbound_fake.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -63,37 +63,25 @@ ByteVector TestMediaKey() {
   return key;
 }
 
-class MemoryPskStore final : public IPskSessionStore {
+class MemoryPskStore final : public IPeerSessionStore {
 public:
   void SeedMasterPsk(ByteVector master_psk) {
     master_psk_ = std::move(master_psk);
     master_psk_b64_ = Base64Encode(*master_psk_);
   }
 
-  Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& /*key*/) const override {
+  Roe<std::optional<PeerSessionRecord>> Load(const PeerSessionKey& /*key*/) const override {
     if (!master_psk_) {
-      return std::optional<PskSessionRecord>{};
+      return std::optional<PeerSessionRecord>{};
     }
-    PskSessionRecord record;
+    PeerSessionRecord record;
     record.session_epoch = 1;
     record.master_psk_b64 = master_psk_b64_;
-    return std::optional<PskSessionRecord>{std::move(record)};
+    return std::optional<PeerSessionRecord>{std::move(record)};
   }
-  Roe<std::vector<PskSessionRecord>> List() const override { return std::vector<PskSessionRecord>{}; }
-  Roe<void> Save(const PskSessionRecord& /*record*/) override { return {}; }
-  Roe<ByteVector> GenerateMasterPsk() override { return ByteVector(32, 0x11); }
-  Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const ChatTargetKey& /*key*/,
-                                                           uint32_t /*epoch*/) const override {
-    if (!master_psk_) {
-      return std::optional<std::string>{};
-    }
-    return std::optional<std::string>{master_psk_b64_};
-  }
-  Roe<void> MarkPskVerified(const ChatTargetKey& /*key*/, int64_t /*verified_at_ms*/) override { return {}; }
-  Roe<bool> IsPskVerified(const ChatTargetKey& /*key*/) const override { return false; }
-  Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& /*key*/) const override { return PskBundleV1{}; }
-  Roe<void> ImportPskBundle(const ChatTargetKey& /*key*/, const PskBundleV1& /*bundle*/) override { return {}; }
-  Roe<uint64_t> AllocateSenderSeq(const ChatTargetKey& /*key*/) override { return uint64_t{1}; }
+  Roe<std::vector<PeerSessionRecord>> List() const override { return std::vector<PeerSessionRecord>{}; }
+  Roe<void> Save(const PeerSessionRecord& /*record*/) override { return {}; }
+  Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& /*key*/) override { return uint64_t{1}; }
 
 private:
   std::optional<ByteVector> master_psk_;
@@ -209,10 +197,10 @@ protected:
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
 
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
-    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
+    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "csm-test");
@@ -289,9 +277,9 @@ protected:
     // Drain UI/worker replies while CSM/bridge still alive (avoid UAF on late Accept/Decline).
     (void)AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000));
     // Drain only proves a marker task passed; a worker task posted by the body (offerer Accept
-    // roster fan-out → SendCallDirectMessage → SqliteThreadStore) can still be running on
+    // roster fan-out → SendCallDirectMessage → the thread store) can still be running on
     // another pool thread. Join the pool before destroying anything it may touch — ASan:
-    // heap-use-after-free in SqliteThreadStore::UpsertThread from FanOutToJoinedAndRinging
+    // heap-use-after-free in the thread store's UpsertThread from FanOutToJoinedAndRinging
     // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
     AppRuntime::Shutdown();
     bridge_ = nullptr;
@@ -406,7 +394,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<CallSessionStore> sessions_;
   std::unique_ptr<CallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
@@ -1674,7 +1662,6 @@ TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
 }
 
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {
-  ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
   // Windows: thread id is a directory name under threads/ — no ':' (illegal path char).
   thread.id = "thread-dm-out";
@@ -1700,7 +1687,6 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
 // PR #240 review: a new call whose invites cannot go out must leave the current call alone, and must
 // not stay behind ringing.
 TEST_F(CallSessionInboundComposeTest, StartCallThatCannotInviteKeepsTheCurrentCall) {
-  ASSERT_TRUE(store_->SetDek(TestDek()));
   for (const char* id : {"thread-dm-a", "thread-dm-b"}) {
     Thread thread;
     thread.id = id;
@@ -1732,7 +1718,6 @@ TEST_F(CallSessionInboundComposeTest, StartCallThatCannotInviteKeepsTheCurrentCa
 
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnanswered) {
   // CALLS: OutboundCalling + no media past TTL → Leave via Sweep (not GUI LeaveClicked).
-  ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
   thread.id = "thread-dm-ttl";
   thread.kind = ThreadKind::Direct;
@@ -1764,7 +1749,6 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
 }
 
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl) {
-  ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
   thread.id = "thread-dm-ttl-early";
   thread.kind = ThreadKind::Direct;

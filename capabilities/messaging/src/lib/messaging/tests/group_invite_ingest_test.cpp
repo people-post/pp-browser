@@ -18,7 +18,7 @@
 #include "lib/messaging/tests/TestRosterSigner.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/TranscriptAssembly.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -71,7 +71,7 @@ struct FakeContacts : IContactTrustAccess {
 };
 
 // Temp-dir cleanup (Windows CI): do not call remove_all while SqliteThreadStore /
-// GroupRosterStore / SqlitePskSessionStore still hold open DB handles. Member
+// GroupRosterStore / SqlitePeerSessionStore still hold open DB handles. Member
 // destructors close SQLite first; a harness destructor that remove_all's first
 // throws on Windows ("being used by another process") and aborts the test process.
 // Use a unique path and skip destructor cleanup (same as SyncTestHarness).
@@ -113,7 +113,7 @@ struct PartyHarness {
     }
     dm_thread = *created;
 
-    PskSessionRecord psk;
+    PeerSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(dm_thread);
     psk.session_epoch = 1;
     psk.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -181,7 +181,7 @@ struct PartyHarness {
   test::TestAccount keys;
   FakeContacts contacts;
   GroupRosterStore roster;
-  SqlitePskSessionStore psk_store;
+  SqlitePeerSessionStore psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
   GroupInviteGate gate;

@@ -5,7 +5,7 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/host/MeshHost.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
@@ -179,7 +179,7 @@ private:
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
-  std::unique_ptr<SqlitePskSessionStore> psk_;
+  std::unique_ptr<SqlitePeerSessionStore> psk_;
   AppConfig app_config_;
   // Outlives the call stack and broadcast (they borrow its objects).
   std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mesh/types/AddressDisclosure.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -90,7 +90,7 @@ public:
 
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                      CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
-                     IPskSessionStore& psk_store, CallMediaEngine& media);
+                     IPeerSessionStore& psk_store, CallMediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */

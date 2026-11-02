@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022)
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready and storage in the app (CR023, CR024) in progress
 
 ## Done
 
@@ -98,7 +98,16 @@
   aggregate. Every capability is in its folder: 1521 of 2910 tests carry a capability label; the rest are the base's
   and the app's. Every capability target's link closure holds only what is below it (checked with CMake's link graph).
 
+- **CR023 step 1 and CR024 stage 1:** calls owns its tests (17 composed call tests out of `feature/product`, 808
+  labelled); the one checking the app's wording of call lines stays with the app. Delivery's session idea is
+  `PeerSessionKey` / `PeerSessionRecord` / `IPeerSessionStore` (a thin port; an epoch's key, verification and key
+  bundles are delivery's on top), the control lane's seen ids a port, and `InMemoryDeliveryStore` keeps threads and
+  peer sessions on shared rows for tests — found on the way: delivery's SQLite PSK store wrote into messaging's
+  `chat_targets` table and shared its epoch with the thread store.
+
 ## Next
 
-1. Contracts repo (CR010) when convenient.
-2. P3's namespaces when a second app needs a capability.
+1. CR024 stage 2: the storage module (`src/lib/storage`) takes the SQLite stores and the profile database.
+2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
+3. Contracts repo (CR010) when convenient.
+4. P3's namespaces when a second app needs a capability.

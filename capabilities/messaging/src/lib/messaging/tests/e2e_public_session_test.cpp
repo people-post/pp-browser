@@ -7,7 +7,7 @@
 #include "common/chat/RelayStreamKey.h"
 #include "common/chat/SystemControl.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/SqliteControlLaneSeenStore.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
@@ -15,7 +15,7 @@
 #include "lib/delivery/OutboundMessage.h"
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
@@ -82,11 +82,11 @@ struct Side {
       throw std::runtime_error("store");
     }
     roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
-    psk = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), tag);
+    psk = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), tag);
     if (!psk->SetDek(TestDek(seed))) {
       throw std::runtime_error("psk");
     }
-    seen = std::make_unique<ControlLaneSeenStore>(store->ProfileDbPath());
+    seen = std::make_unique<SqliteControlLaneSeenStore>(store->ProfileDbPath());
     pipeline = std::make_unique<RelayReceivePipeline>(
         *store,
         [this](const std::string& account_id) -> std::optional<AccountCard> {
@@ -136,7 +136,7 @@ struct Side {
 
   /** A lane signal to `peer`, as SendControl builds it (opening the session when there is none). */
   RelayEnvelope Signal(const Side& peer) {
-    ChatTargetKey target;
+    PeerSessionKey target;
     target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
     target.peer_identity_value = peer.account;
     target.channel = CryptoChannel::E2ePublic;
@@ -172,7 +172,7 @@ struct Side {
 
   /** A chat message to `peer` on the public channel, as a send builds it (opening the session when there is none). */
   RelayEnvelope Chat(const Side& peer, const std::string& text) {
-    ChatTargetKey target;
+    PeerSessionKey target;
     target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
     target.peer_identity_value = peer.account;
     target.channel = CryptoChannel::E2ePublic;
@@ -223,7 +223,7 @@ struct Side {
     message.timestamp = util::NowUnixMs();
     std::map<std::string, RelayEnvelope> out;
     for (const AccountCardDevice& device : cards.at(peer_account).devices) {
-      const ChatTargetKey pair = GroupE2ePayloadCodec::PairTargetKey(peer_account, device.peer_id);
+      const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(peer_account, device.peer_id);
       if (auto record = psk->Load(pair); record && record->has_value() && (*record)->restart_pending) {
         const uint32_t old_epoch = (*record)->session_epoch;
         EXPECT_TRUE(RestartE2ePublicSession(*psk, pair, old_epoch, old_epoch + 1, util::NowUnixMs()));
@@ -264,7 +264,7 @@ struct Side {
     auto sessions = psk->List();
     ASSERT_TRUE(sessions);
     OpenProfile("profile-reset-" + util::GenerateUuid());
-    for (PskSessionRecord& record : *sessions) {
+    for (PeerSessionRecord& record : *sessions) {
       if (record.key.channel != CryptoChannel::E2ePublic || !record.master_psk_b64) {
         continue;
       }
@@ -275,7 +275,7 @@ struct Side {
 
   /** What a send does first in a pair marked to restart (MeshDeliveryOrchestrator::StartNextEpochIfRestored). */
   void RestartIfPending(const Side& peer) {
-    ChatTargetKey target;
+    PeerSessionKey target;
     target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
     target.peer_identity_value = peer.account;
     target.channel = CryptoChannel::E2ePublic;
@@ -346,7 +346,7 @@ struct Side {
       targets.push_back(target);
     }
     auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-        text, group_id, account, message.id, message.timestamp, targets, *psk, [this](const ChatTargetKey& key) {
+        text, group_id, account, message.id, message.timestamp, targets, *psk, [this](const PeerSessionKey& key) {
           if (!key.peer_device.empty()) {
             return Base64Decode(FindCardDevice(cards.at(key.peer_identity_value), key.peer_device)->kem_public_key_b64);
           }
@@ -400,8 +400,8 @@ struct Side {
   SystemControlRegistry controls;
   std::unique_ptr<SqliteThreadStore> store;
   std::unique_ptr<GroupRosterStore> roster;
-  std::unique_ptr<SqlitePskSessionStore> psk;
-  std::unique_ptr<ControlLaneSeenStore> seen;
+  std::unique_ptr<SqlitePeerSessionStore> psk;
+  std::unique_ptr<SqliteControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
   std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch

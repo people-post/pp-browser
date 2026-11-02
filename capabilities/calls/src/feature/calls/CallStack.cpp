@@ -11,7 +11,6 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
 #include "mesh/reachability/Reachability.h"
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "mesh/reachability/AmpObservedAddrs.h"

@@ -12,10 +12,10 @@
 
 namespace pbr {
 
-PublicPskLockCoordinator::PublicPskLockCoordinator(IThreadStore& store, IPskSessionStore& psk_store)
+PublicPskLockCoordinator::PublicPskLockCoordinator(IThreadStore& store, IPeerSessionStore& psk_store)
     : store_(store), psk_store_(psk_store) {}
 
-Roe<ChatTargetKey> PublicPskLockCoordinator::TargetKeyForPublicThread(const std::string& thread_id) const {
+Roe<PeerSessionKey> PublicPskLockCoordinator::TargetKeyForPublicThread(const std::string& thread_id) const {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -29,7 +29,7 @@ Roe<ChatTargetKey> PublicPskLockCoordinator::TargetKeyForPublicThread(const std:
   return E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
 }
 
-Roe<PskSessionRecord> PublicPskLockCoordinator::LoadRequired(const ChatTargetKey& key) const {
+Roe<PeerSessionRecord> PublicPskLockCoordinator::LoadRequired(const PeerSessionKey& key) const {
   auto loaded = psk_store_.Load(key);
   if (!loaded) {
     return loaded.error();
@@ -83,7 +83,7 @@ Roe<bool> PublicPskLockCoordinator::ShouldAutoRekey(const std::string& thread_id
   if (!loaded->has_value()) {
     return false;
   }
-  const PskSessionRecord& record = loaded->value();
+  const PeerSessionRecord& record = loaded->value();
   if (record.key_scope != PublicKeyScope::DevicePair || !record.peer_thread_kem_pk_b64) {
     return false;
   }
@@ -108,12 +108,12 @@ Roe<void> PublicPskLockCoordinator::NoteTraffic(const std::string& thread_id) {
   if (!loaded->has_value() || loaded->value().key_scope != PublicKeyScope::DevicePair) {
     return {};
   }
-  PskSessionRecord record = loaded->value();
+  PeerSessionRecord record = loaded->value();
   ++record.psk_rotate_msg_count;
   return psk_store_.Save(record);
 }
 
-Roe<void> PublicPskLockCoordinator::EnsureConversationKem(PskSessionRecord& record) {
+Roe<void> PublicPskLockCoordinator::EnsureConversationKem(PeerSessionRecord& record) {
   if (record.thread_kem_pk_b64 && record.thread_kem_sk_b64 && !record.thread_kem_pk_b64->empty() &&
       !record.thread_kem_sk_b64->empty()) {
     return {};
@@ -234,7 +234,7 @@ Roe<void> PublicPskLockCoordinator::Commit(const PublicPskRotatePlan& plan, cons
   if (auto cancelled = store_.CancelOldEpochPending(plan.thread_id, plan.old_epoch); !cancelled) {
     return cancelled.error();
   }
-  PskSessionRecord record = *loaded;
+  PeerSessionRecord record = *loaded;
   RetiredPskEntry retired;
   retired.epoch = plan.old_epoch;
   retired.master_psk_b64 = Base64Encode(plan.old_master_psk);
@@ -258,7 +258,7 @@ Roe<void> PublicPskLockCoordinator::AbortPrepare(const PublicPskRotatePlan& plan
   if (!loaded || !loaded->has_value()) {
     return {};
   }
-  PskSessionRecord record = loaded->value();
+  PeerSessionRecord record = loaded->value();
   if (record.last_rotation_id && *record.last_rotation_id == plan.detail.rotation_id) {
     record.last_rotation_id.reset();
     return psk_store_.Save(record);

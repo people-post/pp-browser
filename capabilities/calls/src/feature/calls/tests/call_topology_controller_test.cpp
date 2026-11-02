@@ -3,7 +3,7 @@
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/LiveCallMedia.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "feature/product/tests/calls_loopback_outbox.h"
+#include "feature/calls/tests/calls_loopback_outbox.h"
 
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
@@ -12,7 +12,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductOwners.h"
@@ -322,10 +322,10 @@ protected:
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_topo_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
-    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
+    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
     ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     media_ = std::make_unique<CallMediaEngine>();
@@ -451,7 +451,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<CallSessionStore> sessions_;
   std::unique_ptr<CallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;

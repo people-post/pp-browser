@@ -9,7 +9,7 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
 #include <functional>
 #include <mutex>
@@ -28,7 +28,7 @@ namespace pbr {
 class CallControlClient : public Module {
 public:
   CallControlClient(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                    IPskSessionStore& psk_store, const CallDeliveryPorts& delivery);
+                    IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery);
 
   Roe<std::string> LocalRelayIdentity() const;
   /** Signaling to `peer_identity` on the control lane. */
@@ -58,7 +58,7 @@ private:
   IThreadStore& store_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
   const CallDeliveryPorts& delivery_;
   /**
    * AutoKey key_init from ensure_peer_session_key — rides the next SendDirect to that peer (the

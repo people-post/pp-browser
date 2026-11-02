@@ -69,7 +69,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
 
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                                       CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
+                                       CallDeliveryPorts delivery, IPeerSessionStore& psk_store, CallMediaEngine& media)
     : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),

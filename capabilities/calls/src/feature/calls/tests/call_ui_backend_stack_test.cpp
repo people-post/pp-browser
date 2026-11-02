@@ -5,13 +5,12 @@
 #include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/ProductOwners.h"
@@ -22,7 +21,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
-#include "feature/product/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -171,7 +170,7 @@ protected:
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
 
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "stack-test");
@@ -180,14 +179,12 @@ protected:
     ASSERT_TRUE(loaded) << loaded.error().message;
     local_identity_ = loaded->account_id;
 
-    psk_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), "stack-test");
-    ASSERT_TRUE(psk_->SetDek(TestDek()));
 
-    app_config_ = AppConfig{};
+    mesh_config_ = MeshConfig{};
     listen_desires_ = 0;
 
     stack_ = std::make_unique<CallStack>();
-    ASSERT_TRUE(stack_->InitializeStores(store_->ProfileDbPath(), "stack-test"));
+    ASSERT_TRUE(stack_->InitializeStores((data_dir_ / "profile.db").string(), "stack-test"));
     ASSERT_TRUE(stack_->MediaKeys()->SetDek(TestDek()));
 
     ui_ = std::make_unique<CallUiBackend>(*stack_);
@@ -197,7 +194,7 @@ protected:
     deps.store = store_.get();
     deps.contacts = contacts_.get();
     deps.identity = identity_.get();
-    deps.psk = psk_.get();
+    deps.psk = store_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
                                         const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
       ++sent_control_;
@@ -222,7 +219,7 @@ protected:
     };
     deps.delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     deps.delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
-    deps.mesh_config = [this]() { return std::make_shared<const MeshConfig>(app_config_.mesh); };
+    deps.mesh_config = [this]() { return std::make_shared<const MeshConfig>(mesh_config_); };
     deps.mesh = []() -> mesh::MeshHost* { return nullptr; };
     deps.list_directory_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
     deps.list_dht_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
@@ -266,10 +263,6 @@ protected:
     AppRuntime::ShutdownUI();
     // Join the pool before resetting stores a worker may still touch (PR #216 follow-up).
     AppRuntime::Shutdown();
-    if (psk_) {
-      psk_->ClearDek();
-    }
-    psk_.reset();
     identity_.reset();
     contacts_.reset();
     store_.reset();
@@ -311,10 +304,9 @@ protected:
   // First: the call stack unbinds its family here on teardown.
   SystemControlRegistry controls_;
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
-  std::unique_ptr<SqlitePskSessionStore> psk_;
   // Outlive stack_ (declared first; connectivity before the relay built on it).
   mesh::MeshConnectivity connectivity_;
   mesh::MeshMediaRelay media_relay_{connectivity_};
@@ -323,7 +315,7 @@ protected:
   std::unique_ptr<CallUiBackend> ui_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<FakeDialRegistry> dial_;
-  AppConfig app_config_;
+  MeshConfig mesh_config_;
   const void* sessions_identity_ = nullptr;
   std::string local_identity_;
   int sent_control_ = 0;
@@ -427,7 +419,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
 // k6 exit: a pinned class (config) rides this end's accept caps, and this end's policy for the call
 // combines it with the caps the invite carried.
 TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
-  app_config_.mesh.mobility = "mobile";
+  mesh_config_.mobility = "mobile";
   stack_->ReloadMobilityOverride();
   AppRuntime::RunUIAndOwnerTasks();
   ASSERT_EQ(stack_->LocalMobility(), MobilityClass::Mobile);
@@ -465,7 +457,7 @@ TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
   EXPECT_EQ(policy.relay_role, DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Mobile).relay_role)
       << "the other end computes the same";
 
-  app_config_.mesh.mobility = "auto";
+  mesh_config_.mobility = "auto";
   stack_->ReloadMobilityOverride();
   AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(stack_->LocalMobility(), MobilityClass::Unknown) << "auto, no network seen in the test";
@@ -573,7 +565,6 @@ TEST_F(CallUiBackendStackTest, DeclineViaBackendClearsPending) {
 }
 
 TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
-  ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
   // Windows: thread id is a directory name under threads/ — no ':' (illegal path char).
   thread.id = "thread-ui-out";

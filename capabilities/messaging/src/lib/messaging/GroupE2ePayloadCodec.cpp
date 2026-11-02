@@ -10,8 +10,8 @@
 
 namespace pbr {
 
-ChatTargetKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity, const std::string& member_device) {
-  ChatTargetKey key;
+PeerSessionKey GroupE2ePayloadCodec::PairTargetKey(const std::string& member_identity, const std::string& member_device) {
+  PeerSessionKey key;
   key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   key.peer_identity_value = member_identity;
   key.channel = CryptoChannel::E2ePublic;
@@ -26,8 +26,8 @@ bool GroupE2ePayloadCodec::IsGroupEnvelope(const RelayEnvelope& envelope) {
 Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
     const std::string& message_id, const int64_t timestamp,
-    const std::vector<GroupMemberTarget>& members, IPskSessionStore& psk_store,
-    const std::function<Roe<ByteVector>(const ChatTargetKey&)>& resolve_peer_kem_public,
+    const std::vector<GroupMemberTarget>& members, IPeerSessionStore& psk_store,
+    const std::function<Roe<ByteVector>(const PeerSessionKey&)>& resolve_peer_kem_public,
     const std::optional<std::vector<uint8_t>>& chat_payload_plaintext) {
   (void)group_id;
   GroupEncryptResult result;
@@ -114,8 +114,8 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
 
 Roe<ThreadMessage> GroupE2ePayloadCodec::DecryptForLocalMember(const RelayEnvelope& envelope,
                                                                const std::string& local_contact_id,
-                                                               const ChatTargetKey& target_key,
-                                                               IPskSessionStore& psk_store,
+                                                               const PeerSessionKey& target_key,
+                                                               IPeerSessionStore& psk_store,
                                                                const std::optional<ByteVector>& local_kem_private_key,
                                                                AutoKeyRead* read) {
   // The copy this device reads (SelectRelayCopy: its device's, or the account copy), read as the direct

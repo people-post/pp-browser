@@ -4,7 +4,7 @@
 
 #include "common/directory/IContactTrustAccess.h"
 #include "lib/delivery/E2eIngestClassifier.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/people/AccountCard.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/delivery/DeliveryNotice.h"
@@ -30,7 +30,7 @@
 
 namespace pbr {
 
-class ControlLaneSeenStore;
+class IControlLaneSeenStore;
 
 class GroupInviteGate;
 
@@ -137,14 +137,14 @@ using AccountCardLookup = std::function<std::optional<AccountCard>(const std::st
 /** v6 receive pipeline steps 0–12: an inbound envelope verified, decrypted, applied and stored. */
 class RelayReceivePipeline : public Module {
 public:
-  RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards, IPskSessionStore& psk_store,
+  RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards, IPeerSessionStore& psk_store,
                        LocalKeys local_keys, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
   /** Where control-lane ids are remembered (at most once per message); none: no dedupe. */
-  void SetControlLaneSeen(ControlLaneSeenStore* seen) { control_lane_seen_ = seen; }
+  void SetControlLaneSeen(IControlLaneSeenStore* seen) { control_lane_seen_ = seen; }
   /**
    * projects/privacy T3: direct messages (chat and call control) from a Blocked sender are dropped
    * on receipt. Not owned; null = no blocking.
@@ -281,12 +281,12 @@ private:
 
   IThreadStore& store_;
   AccountCardLookup account_cards_;
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
   LocalKeys local_keys_;
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   const SystemControlRegistry* controls_ = nullptr;
-  ControlLaneSeenStore* control_lane_seen_ = nullptr;
+  IControlLaneSeenStore* control_lane_seen_ = nullptr;
 
   IContactTrustAccess* contact_trust_ = nullptr;
   bool SenderBlocked(const std::string& sender) const;

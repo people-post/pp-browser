@@ -14,10 +14,10 @@
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/SqliteControlLaneSeenStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -78,7 +78,7 @@ public:
     local_account_id = local.account_id;
 
     if (channel == ThreadChannel::E2e) {
-      PskSessionRecord psk;
+      PeerSessionRecord psk;
       psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
       psk.session_epoch = 1;
       psk.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -255,7 +255,7 @@ public:
   SqliteThreadStore store;
   test::TestAccount local;
   GroupRosterStore roster_store;
-  SqlitePskSessionStore psk_store;
+  SqlitePeerSessionStore psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
   RelayReceivePipeline pipeline;
@@ -561,7 +561,7 @@ struct LaneHarness {
 
   SystemControlRegistry controls;
   PipelineHarness harness;
-  ControlLaneSeenStore seen;
+  SqliteControlLaneSeenStore seen;
 };
 
 // --- a group's membership events travel as direct messages, but are not read in that chat ----------------------

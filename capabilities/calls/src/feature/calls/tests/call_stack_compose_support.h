@@ -11,18 +11,17 @@
 
 #include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/data/Config.h"
+#include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "feature/product/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -170,10 +169,10 @@ struct StackSide {
   /** The stack binds its call-control family here and unbinds it on teardown: declared first. */
   SystemControlRegistry controls;
   std::filesystem::path data_dir;
-  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<SqlitePskSessionStore> psk;
+  IPeerSessionStore* psk = nullptr;  // the store's peer sessions (one row with its threads, as in the app)
   // Outlive the stack (connectivity first: the relay is built on it).
   std::unique_ptr<mesh::MeshConnectivity> connectivity = std::make_unique<mesh::MeshConnectivity>();
   std::unique_ptr<mesh::MeshMediaRelay> media_relay = std::make_unique<mesh::MeshMediaRelay>(*connectivity);
@@ -181,7 +180,7 @@ struct StackSide {
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
   std::unique_ptr<FakeDialRegistry> dial;
-  AppConfig app_config;
+  MeshConfig mesh_config;
   std::string local_identity;
   /** Call-control this side sends (its `send_user_message`); the test delivers it. */
   std::function<void(const std::string& peer, const ThreadMessage& msg)> on_send;
@@ -209,16 +208,15 @@ struct StackSideOptions {
   std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
 };
 
-/** Build `side` (tag = profile id, dirs under temp). Set `side.app_config` / `on_send` before. */
+/** Build `side` (tag = profile id, dirs under temp). Set `side.mesh_config` / `on_send` before. */
 inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_seed,
                            const StackSideOptions& options = {}) {
   side.data_dir = std::filesystem::temp_directory_path() / ("pp_stack_" + tag + "_" + util::GenerateUuid());
   std::filesystem::remove_all(side.data_dir);
   std::filesystem::create_directories(side.data_dir);
 
-  side.store = std::make_unique<SqliteThreadStore>(side.data_dir.string());
+  side.store = std::make_unique<InMemoryDeliveryStore>();
   ASSERT_TRUE(side.store->ListThreads());
-  ASSERT_TRUE(side.store->SetDek(TestDek(dek_seed)));
   side.contacts = std::make_unique<ContactsStore>(side.data_dir.string());
   side.identity = std::make_unique<IdentityStore>(side.data_dir.string(), tag);
   ASSERT_TRUE(side.identity->SetDek(TestDek(dek_seed)));
@@ -227,11 +225,10 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   side.local_identity = loaded->account_id;
   ASSERT_FALSE(side.local_identity.empty());
 
-  side.psk = std::make_unique<SqlitePskSessionStore>(side.store->ProfileDbPath(), tag);
-  ASSERT_TRUE(side.psk->SetDek(TestDek(dek_seed)));
+  side.psk = side.store.get();
 
   side.stack = std::make_unique<CallStack>();
-  ASSERT_TRUE(side.stack->InitializeStores(side.store->ProfileDbPath(), tag));
+  ASSERT_TRUE(side.stack->InitializeStores((side.data_dir / "profile.db").string(), tag));
   ASSERT_TRUE(side.stack->MediaKeys()->SetDek(TestDek(dek_seed)));
   side.ui = std::make_unique<CallUiBackend>(*side.stack);
 
@@ -239,7 +236,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.store = side.store.get();
   deps.contacts = side.contacts.get();
   deps.identity = side.identity.get();
-  deps.psk = side.psk.get();
+  deps.psk = side.psk;
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
                                        const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {
@@ -272,7 +269,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     return std::nullopt;
   };
   deps.delivery.sync_inbox_from_wake = [](bool) {};
-  deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
+  deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.mesh_config); };
   deps.mesh = []() -> mesh::MeshHost* { return nullptr; };
   deps.list_directory_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
   deps.list_dht_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
@@ -310,10 +307,7 @@ inline void SoftStopStackSide(StackSide& side) {
 
 /** Drop the stores and the profile dir (after AppRuntime shutdown joined the pool). */
 inline void DestroyStackSide(StackSide& side) {
-  if (side.psk) {
-    side.psk->ClearDek();
-  }
-  side.psk.reset();
+  side.psk = nullptr;
   side.identity.reset();
   side.contacts.reset();
   side.store.reset();

@@ -3,7 +3,7 @@
 // an in-process blind forwarder (subscribed streams only, never back to the sender); call-control
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
-#include "feature/product/tests/call_stack_compose_support.h"
+#include "feature/calls/tests/call_stack_compose_support.h"
 #include "foundation/runtime/ProductOwners.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
@@ -258,7 +258,7 @@ protected:
     for (size_t i = 0; i < kSides; ++i) {
       relays_[i] = std::make_unique<FakeHopClient>(hop_, MeshPeerIdOf(i));
       // The hop is an org seed every participant knows (Wide scope → seed pick, V035).
-      sides_[i].app_config.mesh.bootstrap_peers = {kHopMultiaddr};
+      sides_[i].mesh_config.bootstrap_peers = {kHopMultiaddr};
       sides_[i].on_send = [this, i](const std::string& peer, const ThreadMessage& msg) { Route(i, peer, msg); };
       StackSideOptions options;
       options.seed_dial_ok = true;
@@ -317,7 +317,7 @@ protected:
           target.channel = ThreadChannel::E2ePublic;
           auto thread = sides_[self].store->FindOrCreateDirectThread(target, "", sides_[peer].local_identity);
           ASSERT_TRUE(thread) << thread.error().message;
-          PskSessionRecord record;
+          PeerSessionRecord record;
           record.key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
           record.key.peer_identity_value = sides_[peer].local_identity;
           record.key.channel = CryptoChannel::E2ePublic;
@@ -449,7 +449,7 @@ protected:
   /** Every participant knows both hops (the planned one ranks first). */
   void OfferBothHops() {
     for (StackSide& side : sides_) {
-      side.app_config.mesh.bootstrap_peers = {kHopMultiaddr, kOtherHopMultiaddr};
+      side.mesh_config.bootstrap_peers = {kHopMultiaddr, kOtherHopMultiaddr};
       side.stack->RebindMeshMedia();
     }
   }
@@ -575,7 +575,7 @@ protected:
   }
 
   std::optional<CallPlannedHop> PlannedHopSeenBy(size_t i, const std::string& call_id) const {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
     auto session = sessions.LoadSession(call_id);
     return session && session->has_value() ? (*session)->planned_hop : std::nullopt;
   }
@@ -600,7 +600,7 @@ protected:
 
   /** Hop owner (re-picks) as side `i` computes it from its own rows (V050: earliest joined). */
   std::string OwnerSeenBy(size_t i, const std::string& call_id) const {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
     auto rows = sessions.ListParticipants(call_id);
     if (!rows) {
       return {};
@@ -656,7 +656,7 @@ TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
   const std::string call_id = StartGroupCall();
   ASSERT_FALSE(call_id.empty());
   for (size_t i : {kB, kC}) {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());  // read-only view of the stack's rows
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());  // read-only view of the stack's rows
     auto rows = sessions.ListParticipants(call_id);
     ASSERT_TRUE(rows) << rows.error().message;
     std::set<std::string> ids;
@@ -697,7 +697,7 @@ TEST_F(CallGroupStackComposeTest, SimultaneousAcceptsConvergeOnTheHop) {
 // keep its own reading and disagree with the others on the owner.
 TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
   auto stamp = [&](size_t viewer, size_t subject, const std::string& call_id) -> std::optional<int64_t> {
-    CallSessionStore sessions(sides_[viewer].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[viewer].data_dir / "profile.db").string());
     auto row = sessions.FindParticipant(call_id, sides_[subject].local_identity);
     return row && row->has_value() ? (*row)->joined_at : std::nullopt;
   };
@@ -826,7 +826,7 @@ TEST_F(CallGroupStackComposeTest, ThirdJoinMigratesOntoThePlannedHop) {
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " attached before anyone accepted";
   }
   // The listing changes before the group forms: a new hop now ranks first on the initiator.
-  sides_[kA].app_config.mesh.bootstrap_peers = {kOtherHopMultiaddr, kHopMultiaddr};
+  sides_[kA].mesh_config.bootstrap_peers = {kOtherHopMultiaddr, kHopMultiaddr};
   sides_[kA].stack->RebindMeshMedia();
 
   AcceptInvite(kB, call_id);
@@ -1326,7 +1326,7 @@ TEST_F(CallGroupStackComposeTest, RemovedFromTheGroupIsOutOfTheCall) {
     group_of_[i] = {sides_[kA].local_identity, sides_[kB].local_identity, sides_[kD].local_identity};
   }
   auto state_of_c = [&](size_t i) {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
     auto row = sessions.FindParticipant(call_id, sides_[kC].local_identity);
     return row && row->has_value() ? (*row)->state : CallParticipantState::Invited;
   };
@@ -1482,7 +1482,7 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
   const std::string winner = std::min(a->call_id, b->call_id);
   const std::string loser = std::max(a->call_id, b->call_id);
   auto ringing = [&](size_t i, const std::string& call_id) {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
     auto session = sessions.LoadSession(call_id);
     auto row = sessions.FindParticipant(call_id, sides_[i].local_identity);
     return session && session->has_value() && (*session)->state != CallSessionState::Ended && row &&
@@ -1494,7 +1494,7 @@ TEST_F(CallGroupStackComposeTest, TwoCallingTheGroupAtOnceEndUpInOneCall) {
            ringing(kC, winner) && !ringing(kC, loser);
   });
   for (size_t i : {kA, kB}) {
-    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    CallSessionStore sessions((sides_[i].data_dir / "profile.db").string());
     auto me = sessions.FindParticipant(winner, sides_[i].local_identity);
     EXPECT_TRUE(me && me->has_value() && (*me)->state == CallParticipantState::Joined)
         << "side " << i << " is not in the winning call:" << Describe(winner);

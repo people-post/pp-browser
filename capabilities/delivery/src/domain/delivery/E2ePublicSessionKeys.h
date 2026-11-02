@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/thread/ThreadTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/people/PeerKemKeyStore.h"
 
@@ -22,23 +22,23 @@ namespace pbr {
 class E2ePublicSessionKeys {
 public:
   struct Session {
-    ChatTargetKey target_key;
+    PeerSessionKey target_key;
     uint32_t epoch = 1;
     ByteVector master_psk;
     /** Set when this call just opened the session (attach on the first send). */
     std::optional<std::string> key_init_b64;
   };
 
-  E2ePublicSessionKeys(IPskSessionStore& psk_store, IPeerKemKeyResolver& kem_key_resolver);
+  E2ePublicSessionKeys(IPeerSessionStore& psk_store, IPeerKemKeyResolver& kem_key_resolver);
 
   Roe<Session> Resolve(const std::string& peer_identity);
   /** The session's current key (a call invite's media-key wrap), opening the session if needed. */
   Roe<EnsuredE2ePublicSessionKey> Ensure(const std::string& peer_identity);
   /** The peer's account KEM public key (directory, M015). */
-  Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
+  Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
 
 private:
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
   IPeerKemKeyResolver& kem_key_resolver_;
 };
 

@@ -21,7 +21,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.store = &hub.Store();
   deps.contacts = &hub.Contacts();
   deps.identity = &hub.Identity();
-  deps.psk = hub.PskSessions();
+  deps.psk = hub.PeerSessions();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
                                         const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {

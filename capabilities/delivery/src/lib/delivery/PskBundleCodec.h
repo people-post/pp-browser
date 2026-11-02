@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
 #include "common/Error.h"
 

@@ -6,7 +6,7 @@
 #include "common/chat/IDirectMessageClient.h"
 #include "common/chat/RelayEnvelope.h"
 #include "common/thread/IThreadStore.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/people/IdentityStore.h"
 #include "mesh/host/DisclosureGatedPeerLinks.h"
@@ -42,7 +42,7 @@ public:
   using PostAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   PeerTransports(IThreadStore& store, IdentityStore& identity, IPeerSigningKeyResolver& signing_key_resolver,
-                 IPskSessionStore& psk_store);
+                 IPeerSessionStore& psk_store);
   ~PeerTransports() override;
   PeerTransports(const PeerTransports&) = delete;
   PeerTransports& operator=(const PeerTransports&) = delete;
@@ -85,7 +85,7 @@ private:
   IThreadStore& store_;
   IdentityStore& identity_;
   IPeerSigningKeyResolver& signing_key_resolver_;
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
   const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
   std::function<void(RelayEnvelope, std::string)> inbound_;
   std::function<std::vector<std::string>(const std::string&)> devices_of_;

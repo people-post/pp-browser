@@ -4,7 +4,7 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/LinkDeviceCoordinator.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 
@@ -47,14 +47,14 @@ protected:
   std::filesystem::path old_dir_;
   std::filesystem::path new_dir_;
   std::unique_ptr<SqliteThreadStore> old_threads_;
-  std::unique_ptr<SqlitePskSessionStore> old_psks_;
+  std::unique_ptr<SqlitePeerSessionStore> old_psks_;
 };
 
 TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessions) {
   const ByteVector shared = MakeDek();
   old_threads_ = std::make_unique<SqliteThreadStore>(old_dir_.string());
   ASSERT_TRUE(old_threads_->ListThreads());
-  old_psks_ = std::make_unique<SqlitePskSessionStore>(old_threads_->ProfileDbPath(), "old");
+  old_psks_ = std::make_unique<SqlitePeerSessionStore>(old_threads_->ProfileDbPath(), "old");
   ASSERT_TRUE(old_psks_->SetDek(shared));
 
   IdentityStore old_identity(old_dir_.string(), "old");
@@ -76,7 +76,7 @@ TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessi
   ASSERT_TRUE(old_threads_->FindOrCreateDirectThread(public_target, "contact-bob", "Bob"));
   auto public_psk = old_psks_->GenerateMasterPsk();
   ASSERT_TRUE(public_psk);
-  PskSessionRecord public_row;
+  PeerSessionRecord public_row;
   public_row.key.peer_identity_kind = "account";
   public_row.key.peer_identity_value = "account:bob";
   public_row.key.channel = CryptoChannel::E2ePublic;

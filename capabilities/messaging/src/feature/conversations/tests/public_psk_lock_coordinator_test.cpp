@@ -8,7 +8,7 @@
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 
@@ -39,16 +39,16 @@ ByteVector TestMasterPsk() {
 struct LockFixture {
   std::filesystem::path dir;
   std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<SqlitePskSessionStore> psk_store;
+  std::unique_ptr<SqlitePeerSessionStore> psk_store;
   std::unique_ptr<PublicPskLockCoordinator> lock;
   std::string thread_id;
-  ChatTargetKey key;
+  PeerSessionKey key;
 
   explicit LockFixture(const std::string& suffix)
       : dir(std::filesystem::temp_directory_path() / ("pp_public_lock_" + suffix + "_" + util::GenerateUuid())) {
     std::filesystem::remove_all(dir);
     store = std::make_unique<SqliteThreadStore>(dir.string());
-    psk_store = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), suffix);
+    psk_store = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), suffix);
     lock = std::make_unique<PublicPskLockCoordinator>(*store, *psk_store);
     EXPECT_TRUE(static_cast<bool>(psk_store->SetDek(TestDek())));
     DirectChatTarget target;
@@ -61,7 +61,7 @@ struct LockFixture {
     key.peer_identity_kind = "account";
     key.peer_identity_value = "account:bob";
     key.channel = CryptoChannel::E2ePublic;
-    PskSessionRecord record;
+    PeerSessionRecord record;
     record.key = key;
     record.session_epoch = 1;
     record.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -119,7 +119,7 @@ TEST(PublicPskLockCoordinatorTest, SiblingOfLockerLocksOut) {
   ASSERT_TRUE(static_cast<bool>(plan)) << plan.error().message;
   ASSERT_TRUE(static_cast<bool>(alice.lock->AbortPrepare(*plan)));
 
-  PskSessionRecord sibling = alice.psk_store->Load(alice.key)->value();
+  PeerSessionRecord sibling = alice.psk_store->Load(alice.key)->value();
   sibling.last_rotation_id.reset();
   sibling.thread_kem_pk_b64.reset();
   sibling.thread_kem_sk_b64.reset();
@@ -150,7 +150,7 @@ TEST(PublicPskLockCoordinatorTest, PeerAdoptsAndInitiatorLocks) {
   auto bob_thread = bob.store->FindOrCreateDirectThread(bob_target, "contact-alice", "Alice");
   ASSERT_TRUE(static_cast<bool>(bob_thread));
   bob.thread_id = bob_thread->id;
-  PskSessionRecord bob_record;
+  PeerSessionRecord bob_record;
   bob_record.key = bob.key;
   bob_record.session_epoch = 1;
   bob_record.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -192,7 +192,7 @@ TEST(PublicPskLockCoordinatorTest, SecondLockUsesConversationKem) {
   ASSERT_TRUE(static_cast<bool>(first));
   ASSERT_TRUE(static_cast<bool>(alice.lock->Commit(*first, 3001)));
 
-  PskSessionRecord record = alice.psk_store->Load(alice.key)->value();
+  PeerSessionRecord record = alice.psk_store->Load(alice.key)->value();
   record.key_scope = PublicKeyScope::Account;
   record.peer_thread_kem_pk_b64 = record.thread_kem_pk_b64;
   ASSERT_TRUE(static_cast<bool>(alice.psk_store->Save(record)));
@@ -244,7 +244,7 @@ TEST(PublicPskLockCoordinatorTest, AutoRekeyOnlyWhenBothDeviceBound) {
   EXPECT_FALSE(*alice.lock->ShouldAutoRekey(alice.thread_id, 10));
 
   auto loaded = alice.psk_store->Load(alice.key);
-  PskSessionRecord record = loaded->value();
+  PeerSessionRecord record = loaded->value();
   record.key_scope = PublicKeyScope::DevicePair;
   record.peer_thread_kem_pk_b64 = "dGVzdA==";
   record.psk_rotate_msg_count = kPublicPskAutoRotateMsgCount;

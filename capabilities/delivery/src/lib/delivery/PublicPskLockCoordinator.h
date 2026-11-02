@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/PskRotateCodec.h"
 #include "common/chat/RelayEnvelope.h"
@@ -16,7 +16,7 @@ namespace pbr {
 enum class PublicPskRotateKind { Lock, Auto };
 
 struct PublicPskRotatePlan {
-  ChatTargetKey key;
+  PeerSessionKey key;
   std::string thread_id;
   uint32_t old_epoch = 1;
   ByteVector old_master_psk;
@@ -30,7 +30,7 @@ struct PublicPskRotatePlan {
 /** E027 — in-band public 1:1 device-lock / D2D auto-rekey. Not private OOB rotate. */
 class PublicPskLockCoordinator {
 public:
-  PublicPskLockCoordinator(IThreadStore& store, IPskSessionStore& psk_store);
+  PublicPskLockCoordinator(IThreadStore& store, IPeerSessionStore& psk_store);
 
   Roe<PublicKeyScope> GetKeyScope(const std::string& thread_id) const;
   Roe<bool> CanLockToThisDevice(const std::string& thread_id) const;
@@ -48,14 +48,14 @@ public:
                                    const std::string& local_account_id, int64_t now_ms);
 
 private:
-  Roe<ChatTargetKey> TargetKeyForPublicThread(const std::string& thread_id) const;
-  Roe<PskSessionRecord> LoadRequired(const ChatTargetKey& key) const;
-  Roe<void> EnsureConversationKem(PskSessionRecord& record);
+  Roe<PeerSessionKey> TargetKeyForPublicThread(const std::string& thread_id) const;
+  Roe<PeerSessionRecord> LoadRequired(const PeerSessionKey& key) const;
+  Roe<void> EnsureConversationKem(PeerSessionRecord& record);
   Roe<PublicPskRotatePlan> PrepareRotate(const std::string& thread_id, PublicPskRotateKind kind,
                                          const ByteVector& peer_account_kem_pk, int64_t now_ms);
 
   IThreadStore& store_;
-  IPskSessionStore& psk_store_;
+  IPeerSessionStore& psk_store_;
 };
 
 } // namespace pbr

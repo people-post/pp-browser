@@ -32,7 +32,7 @@
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCardStore.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -906,7 +906,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
 
   InstallOrgBackendClients(settings);
 
-  psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
+  psk_store_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
   // The account locker keeps every group (G013): republish it on any roster change.
   group_roster_->SetOnChanged([this](const std::string& group_id) {
@@ -3079,7 +3079,7 @@ IdentityStore& ConversationsHub::Identity() {
   return *identity_;
 }
 
-IPskSessionStore* ConversationsHub::PskStore() {
+IPeerSessionStore* ConversationsHub::PeerSessions() {
   return psk_store_.get();
 }
 

@@ -35,7 +35,7 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/SqliteControlLaneSeenStore.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -86,8 +86,8 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
  * The session a copy is read under (M021): the pair with the sending device for a copy to this device,
  * the account-level session for an account copy.
  */
-ChatTargetKey CopyTargetKey(const RelayEnvelope& envelope, const DirectChatTarget& sender, const CryptoChannel channel) {
-  ChatTargetKey key;
+PeerSessionKey CopyTargetKey(const RelayEnvelope& envelope, const DirectChatTarget& sender, const CryptoChannel channel) {
+  PeerSessionKey key;
   key.peer_identity_kind = sender.peer_identity_kind;
   key.peer_identity_value = sender.peer_identity_value;
   key.channel = channel;
@@ -139,7 +139,7 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards,
-                                           IPskSessionStore& psk_store, LocalKeys local_keys,
+                                           IPeerSessionStore& psk_store, LocalKeys local_keys,
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
     : store_(store), account_cards_(std::move(account_cards)), psk_store_(psk_store), local_keys_(std::move(local_keys)),
       group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
@@ -895,7 +895,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   if (!kem_private) {
     return outcome;
   }
-  const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
+  const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_,
                                                          *kem_private, &read);
@@ -962,7 +962,7 @@ void RelayReceivePipeline::ApplySiblingNotice(const RelayEnvelope& envelope, con
     return;
   }
   // A one-off opener to our account KEM (ControlLane::NotifySiblings): read, no session kept between siblings.
-  const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
+  const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_account_id, target_key, psk_store_,
                                                          *kem_private, &read);
@@ -1138,7 +1138,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       auto verified_dup = VerifySignature(envelope, inbound_target);
       outcome.sender_verified = verified_dup && *verified_dup;
       if (verified_dup && *verified_dup && E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
-        const ChatTargetKey target_key = CopyTargetKey(envelope, inbound_target,
+        const PeerSessionKey target_key = CopyTargetKey(envelope, inbound_target,
                                                        E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
@@ -1186,7 +1186,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   // The pair's epoch as it stood before this envelope: reading it may move the session to a later epoch
   // the peer restarted at (ReconcileE2ePublicSession), and that is still an advance to classify.
   const bool device_copy = !envelope.recipient_device.empty();
-  const ChatTargetKey copy_key =
+  const PeerSessionKey copy_key =
       CopyTargetKey(envelope, inbound_target, E2eRelayPayloadCodec::ChannelFromThread(envelope.route.channel));
   std::optional<uint32_t> epoch_before;
   if (device_copy) {
@@ -1211,7 +1211,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     }
     const std::string& local_aad_id = local_relay_user_id;
 
-    const ChatTargetKey& target_key = copy_key;
+    const PeerSessionKey& target_key = copy_key;
 
     std::optional<ByteVector> local_kem_private_key;
     if (envelope.route.channel == ThreadChannel::E2ePublic) {
@@ -1599,7 +1599,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
 
-  const ChatTargetKey pair_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
+  const PeerSessionKey pair_key = CopyTargetKey(envelope, inbound_target, CryptoChannel::E2ePublic);
   AutoKeyRead read;
   auto decrypted = GroupE2ePayloadCodec::DecryptForLocalMember(envelope, local_relay_user_id, pair_key, psk_store_,
                                                                  *kem_private, &read);

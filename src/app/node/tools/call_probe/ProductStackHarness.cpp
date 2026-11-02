@@ -151,7 +151,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   }
   local_account_ = loaded->account_id;
 
-  psk_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), "call-probe");
+  psk_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), "call-probe");
   if (auto psk_dek = psk_->SetDek(ProbeDek()); !psk_dek) {
     return psk_dek.error();
   }

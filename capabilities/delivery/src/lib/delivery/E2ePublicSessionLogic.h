@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
 #include "common/Error.h"
 #include "common/PbrCompat.h"
@@ -42,8 +42,8 @@ struct EnsuredE2ePublicSessionKey {
  * Callers that wrap before the first outbound message must attach `key_init_b64` on that send
  * so the peer can open the session.
  */
-Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_store,
-                                                      const ChatTargetKey& target_key,
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store,
+                                                      const PeerSessionKey& target_key,
                                                       uint32_t session_epoch,
                                                       const ByteVector& peer_kem_public);
 
@@ -59,7 +59,7 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_sto
  * - read under a key_init for a later epoch than ours: the peer restarted the pair there (D014) — we move
  *   to that epoch and session, the previous one kept (retired) for late messages.
  */
-Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
+Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
                                     uint32_t session_epoch, const AutoKeyRead& read,
                                     const std::optional<std::string>& envelope_key_init_b64,
                                     int64_t envelope_timestamp_ms);
@@ -70,7 +70,7 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
  * session is retired at `old_epoch` (late messages still read), none is current — the next send opens one
  * at `new_epoch` with a key_init the peer follows — and the restart mark is cleared.
  */
-Roe<void> RestartE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key, uint32_t old_epoch,
+Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key, uint32_t old_epoch,
                                   uint32_t new_epoch, int64_t now_ms);
 
 Roe<ByteVector> DeriveE2ePublicSessionKey(const ByteVector& master_psk, uint32_t session_epoch);

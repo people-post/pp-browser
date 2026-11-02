@@ -17,7 +17,7 @@
 namespace pbr {
 
 CallControlClient::CallControlClient(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                                     IPskSessionStore& psk_store, const CallDeliveryPorts& delivery)
+                                     IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery)
     : store_(store), identity_(identity), sessions_(sessions), psk_store_(psk_store), delivery_(delivery) {
   redirectLogger("CallControlClient");
 }
@@ -172,7 +172,7 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
 }
 
 Roe<ByteVector> CallControlClient::ResolvePeerSessionKey(const std::string& peer_identity) const {
-  ChatTargetKey target_key;
+  PeerSessionKey target_key;
   target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target_key.peer_identity_value = peer_identity;
   target_key.channel = CryptoChannel::E2ePublic;

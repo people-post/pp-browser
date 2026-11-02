@@ -4,7 +4,7 @@
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/delivery/PskSessionCoordinator.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -26,7 +26,7 @@ TEST(PskSessionCoordinatorTest, GenerateImportVerifyAndRotate) {
       std::filesystem::temp_directory_path() / "pp_browser_psk_session_coordinator";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  SqlitePeerSessionStore psk_store(store.ProfileDbPath(), "test");
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
   PskSessionCoordinator coordinator(store, psk_store);
 

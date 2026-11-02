@@ -9,7 +9,7 @@
 #include "lib/messaging/GroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -32,8 +32,8 @@ ByteVector TestDek() {
   return dek;
 }
 
-void InstallTestPsk(SqlitePskSessionStore& psk_store, const Thread& thread) {
-  PskSessionRecord record;
+void InstallTestPsk(SqlitePeerSessionStore& psk_store, const Thread& thread) {
+  PeerSessionRecord record;
   record.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
   record.session_epoch = 1;
   record.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -46,7 +46,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
       std::filesystem::temp_directory_path() / "pp_browser_e2e_relay_crypto";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  SqlitePeerSessionStore psk_store(store.ProfileDbPath(), "test");
   ASSERT_TRUE(static_cast<bool>(store.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
 
@@ -90,7 +90,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(body_hash_again));
   EXPECT_EQ(*body_hash, *body_hash_again);
 
-  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
+  const PeerSessionKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, "account:local", target_key, psk_store);
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(decrypted->text, "Hello");
@@ -101,7 +101,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
       std::filesystem::temp_directory_path() / "pp_browser_e2e_pipeline_crypto";
   std::filesystem::remove_all(data_dir);
   SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  SqlitePeerSessionStore psk_store(store.ProfileDbPath(), "test");
   ASSERT_TRUE(static_cast<bool>(store.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
   const test::TestAccount local = test::TestAccount::Make();

@@ -392,7 +392,7 @@ Example libp2p / client JSON:
 | `requester_identity_kind` | string | yes | Authenticated caller identity kind |
 | `requester_identity_value` | string | yes | Authenticated caller identity value |
 | `peer_identity_kind` | string | yes | Other party identity kind |
-| `peer_identity_value` | string | yes | Other party (`ChatTargetKey.peer_identity_value`) |
+| `peer_identity_value` | string | yes | Other party (`PeerSessionKey.peer_identity_value`) |
 | `channel` | string | yes | `e2e` \| `e2e_public` |
 | `session_epoch` | integer | yes | Required for both direct tiers |
 | `min_sender_seq` | integer | no | Inclusive lower bound — mapped to relay `min_index_key` in v1 |

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
+#include "lib/delivery/PeerSessionKey.h"
 
 #include "common/Error.h"
 
@@ -25,8 +26,8 @@ struct PskBundleV1 {
   std::vector<RetiredPskEntry> retired_epochs;
 };
 
-struct PskSessionRecord {
-  ChatTargetKey key;
+struct PeerSessionRecord {
+  PeerSessionKey key;
   uint32_t session_epoch = 1;
   std::optional<std::string> master_psk_b64;
   std::optional<std::string> psk_fingerprint;
@@ -60,26 +61,34 @@ struct PskSessionRecord {
   bool restart_pending = false;
 };
 
-class IPskSessionStore {
+/**
+ * Where a device keeps its peer sessions (CR024): the port is the rows — load, list, save, and the device pair's
+ * numbering, handed out atomically. What the rows mean (an epoch's key, verification, a key bundle) is delivery's,
+ * on top of them. The app's storage keeps them (encrypted at rest); tests use an in-memory one.
+ */
+class IPeerSessionStore {
 public:
-  virtual ~IPskSessionStore() = default;
+  virtual ~IPeerSessionStore() = default;
 
-  virtual Roe<std::optional<PskSessionRecord>> Load(const ChatTargetKey& key) const = 0;
-  /** Rows with a master PSK or retired tail (plaintext after DEK decrypt). */
-  virtual Roe<std::vector<PskSessionRecord>> List() const = 0;
-  virtual Roe<void> Save(const PskSessionRecord& record) = 0;
-  virtual Roe<ByteVector> GenerateMasterPsk() = 0;
-  virtual Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const ChatTargetKey& key,
-                                                                 uint32_t envelope_epoch) const = 0;
-  virtual Roe<void> MarkPskVerified(const ChatTargetKey& key, int64_t verified_at_ms) = 0;
-  virtual Roe<bool> IsPskVerified(const ChatTargetKey& key) const = 0;
-  virtual Roe<PskBundleV1> ExportPskBundle(const ChatTargetKey& key) const = 0;
-  virtual Roe<void> ImportPskBundle(const ChatTargetKey& key, const PskBundleV1& bundle) = 0;
+  virtual Roe<std::optional<PeerSessionRecord>> Load(const PeerSessionKey& key) const = 0;
+  /** Sessions with a master PSK or a retired tail. */
+  virtual Roe<std::vector<PeerSessionRecord>> List() const = 0;
+  virtual Roe<void> Save(const PeerSessionRecord& record) = 0;
   /**
    * Our next `sender_seq` in a device pair's session at its current epoch (M021: numbering is the pair's;
    * a new epoch starts at 1). Device-pair keys only; the session must exist.
    */
-  virtual Roe<uint64_t> AllocateSenderSeq(const ChatTargetKey& key) = 0;
+  virtual Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& key) = 0;
+
+  /** A fresh random master PSK. */
+  Roe<ByteVector> GenerateMasterPsk() const;
+  /** The master PSK of `envelope_epoch`: the current one, or a retired one; none when neither has it. */
+  Roe<std::optional<std::string>> ResolveMasterPskForEpoch(const PeerSessionKey& key, uint32_t envelope_epoch) const;
+  Roe<void> MarkPskVerified(const PeerSessionKey& key, int64_t verified_at_ms);
+  Roe<bool> IsPskVerified(const PeerSessionKey& key) const;
+  Roe<PskBundleV1> ExportPskBundle(const PeerSessionKey& key) const;
+  /** Adopts the bundle's key (unverified), merging its retired tail into the session's and keeping its KEM state. */
+  Roe<void> ImportPskBundle(const PeerSessionKey& key, const PskBundleV1& bundle);
 };
 
 } // namespace pbr

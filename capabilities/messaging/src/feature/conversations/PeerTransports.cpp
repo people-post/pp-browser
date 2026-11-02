@@ -14,7 +14,7 @@
 namespace pbr {
 
 PeerTransports::PeerTransports(IThreadStore& store, IdentityStore& identity,
-                               IPeerSigningKeyResolver& signing_key_resolver, IPskSessionStore& psk_store)
+                               IPeerSigningKeyResolver& signing_key_resolver, IPeerSessionStore& psk_store)
     : store_(store), identity_(identity), signing_key_resolver_(signing_key_resolver), psk_store_(psk_store) {
   redirectLogger("PeerTransports");
 }

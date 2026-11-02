@@ -4,7 +4,7 @@
 #include "common/MeshConfig.h"
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallSessionStore.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
@@ -53,7 +53,7 @@ struct CallStackDeps {
   IThreadStore* store = nullptr;
   ContactsStore* contacts = nullptr;
   IdentityStore* identity = nullptr;
-  SqlitePskSessionStore* psk = nullptr;
+  IPeerSessionStore* psk = nullptr;
   /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
   /** Where call control is bound as a system-control family (after the CSM is built; unbound with it). */
@@ -61,7 +61,7 @@ struct CallStackDeps {
 
   /** Current MeshHost (null before StartMesh, reset on stop). */
   std::function<mesh::MeshHost*()> mesh;
-  /** Live AppConfig (libp2p role / caps / bootstrap / listen multiaddr). */
+  /** The live mesh config (role, caps, bootstrap, listen multiaddrs), from the app. */
   /** The hub's mesh config as last published (immutable snapshot — read from any owner). */
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
 

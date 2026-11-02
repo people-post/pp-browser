@@ -14,9 +14,9 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include "feature/product/tests/call_media_inbound_fake.h"
-#include "feature/product/tests/calls_loopback_outbox.h"
-#include "feature/product/tests/calls_on_owner.h"
+#include "feature/calls/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/tests/calls_on_owner.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>

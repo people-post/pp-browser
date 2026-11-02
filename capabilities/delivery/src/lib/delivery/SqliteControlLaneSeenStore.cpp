@@ -1,4 +1,4 @@
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/SqliteControlLaneSeenStore.h"
 
 #include <sqlite3.h>
 
@@ -30,10 +30,10 @@ struct DbCloser {
 
 } // namespace
 
-ControlLaneSeenStore::ControlLaneSeenStore(std::string profile_db_path)
+SqliteControlLaneSeenStore::SqliteControlLaneSeenStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<sqlite3*> ControlLaneSeenStore::OpenDb() const {
+Roe<sqlite3*> SqliteControlLaneSeenStore::OpenDb() const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     sqlite3_close(db);
@@ -53,7 +53,7 @@ Roe<sqlite3*> ControlLaneSeenStore::OpenDb() const {
   return db;
 }
 
-Roe<bool> ControlLaneSeenStore::FirstSight(const std::string& sender, const std::string& control_id,
+Roe<bool> SqliteControlLaneSeenStore::FirstSight(const std::string& sender, const std::string& control_id,
                                            const int64_t now_ms) {
   if (sender.empty() || control_id.empty()) {
     return Error("control lane message without sender or id");
@@ -94,7 +94,7 @@ Roe<bool> ControlLaneSeenStore::FirstSight(const std::string& sender, const std:
   return sqlite3_changes(db.get()) == 1;
 }
 
-void ControlLaneSeenStore::Forget(const std::string& sender, const std::string& control_id) {
+void SqliteControlLaneSeenStore::Forget(const std::string& sender, const std::string& control_id) {
   std::lock_guard lock(mutex_);
   auto opened = OpenDb();
   if (!opened) {

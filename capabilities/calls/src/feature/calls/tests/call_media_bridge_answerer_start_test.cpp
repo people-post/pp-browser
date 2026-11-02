@@ -3,15 +3,15 @@
 #include "common/runtime/RuntimeOwnerExecutor.h"
 #include "foundation/runtime/ProductOwners.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/product/tests/calls_loopback_outbox.h"
-#include "feature/product/tests/calls_on_owner.h"
+#include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/tests/calls_on_owner.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
 #include "lib/media/CallMediaEngine.h"
 #include "lib/calls/CallMediaKeyStore.h"
 #include "lib/calls/CallSessionStore.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/runtime/AppRuntime.h"
@@ -20,7 +20,7 @@
 
 #include <chrono>
 #include <filesystem>
-#include "feature/product/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -383,10 +383,10 @@ protected:
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_bridge_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
-    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    sessions_ = std::make_unique<CallSessionStore>((data_dir_ / "profile.db").string());
+    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
@@ -474,7 +474,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<CallSessionStore> sessions_;
   std::unique_ptr<CallMediaKeyStore> keys_;
   std::unique_ptr<CallMediaEngine> media_;

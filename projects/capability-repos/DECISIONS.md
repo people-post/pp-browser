@@ -414,3 +414,62 @@ external code nobody edits, which the checks, formatting and lint skip.
   over moving them as they were). It surfaced one hidden edge, the hub's `SDL_GetTicks`, now `steady_clock`.
 - `src/` stays an include root of every target, so an app path still compiles in a capability; the gate stops it.
   Capability roots come only through links, so the compiler stops a capability including one above or beside it.
+
+## CR023 — Calls becomes repo-ready first
+
+**Date:** 2026-11-02  
+**Status:** accepted (Hongwei, 2026-11-02); step 1 done
+
+**Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
+testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
+its includes are clean (people, delivery, pricing, the base, pp-cpp-*), but 18 of its composed tests lived in
+the app's `feature/product/tests`, `lib/media` mixed four owners (devices, the call engine, voice messages, QR
+scanning), it reached three app concepts in `foundation/runtime` (branding, lifecycle, `ProductOwners`), it
+called the app's Android activity by method name, and `src/` (the app) stays an include root of its targets.
+
+**Decision:** calls is made repo-ready in steps, one PR each:
+1. Calls owns its tests: the call tests move into the calls folder, with delivery's in-memory stores in place
+   of messaging's SQLite ones (CR024); tests that check the app's wording stay with the app.
+2. `lib/media` splits by owner: devices and codecs into a `media` capability below calls (broadcast and voice
+   messages use it too), voice messages to the app's messaging side, QR scanning to the app's scan feature.
+3. The base gets its own folder, so `src/` stops being an include root of capabilities; calls takes branding,
+   lifecycle and owners as values or ports.
+4. A standalone build of calls with what is below it, and a CI job that builds and tests only that.
+5. A host contract (audio route, call system UI, the Android hooks) as ports the app fills; calls gets a README
+   and `docs/` (CALLS.md and its wire schemas).
+
+Namespaces and an `include/` split wait for an actual repo split (CR022).
+
+## CR024 — Capabilities own ideas; the app owns the database
+
+**Date:** 2026-11-02  
+**Status:** accepted (Hongwei, 2026-11-02); stage 1 done, stage 2 next
+
+**Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
+`chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without
+messaging's store having opened the database first. The gate does not see it — it is a table name in SQL, not
+an include. Each capability also carried at-rest encryption (the profile DEK) inside its SQLite stores.
+
+**Decision:**
+- A capability ships its records, its logic and the ports it needs to keep them, and an in-memory implementation
+  for tests — no SQL. The app owns the database file, every schema and migration, at-rest encryption, and the
+  SQLite implementations of the capabilities' ports, in one storage module (`src/lib/storage`).
+- Logic stays in the capability above a thin port: delivery's `IPeerSessionStore` keeps `Load` / `List` / `Save`
+  / `AllocateSenderSeq` (atomic) as the port, and resolving an epoch's key, verifying, exporting and importing a
+  key bundle on top of them, in delivery.
+- Delivery's session idea is renamed for what it is: `ChatTargetKey` / `PskSessionRecord` / `IPskSessionStore`
+  become `PeerSessionKey` / `PeerSessionRecord` / `IPeerSessionStore` (the key moves from `foundation/crypto` into
+  delivery). The table follows when its schema moves into storage: `chat_targets` → `peer_sessions`.
+
+**Stages:**
+1. Delivery's ideas: the rename; the thin port with delivery's logic on top; a port for the control lane's seen
+   ids; one in-memory store for delivery's ports (`InMemoryDeliveryStore`: the threads and the peer sessions over
+   shared rows, as in SQLite) and in-memory seen ids. Calls takes the ports, and its tests run in memory.
+2. Storage: `src/lib/storage` takes the SQLite side together — the profile database, the thread store and group
+   rosters, the peer-session and control-lane stores (the thread store and the PSK store share the per-peer row,
+   so they move as one) — handed to the hub by the app; `chat_targets` is renamed `peer_sessions` there.
+   Messaging's SQLite tests go with them; its logic tests use delivery's in-memory store.
+3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
+   move to storage (calls drops its at-rest crypto includes).
+
+**Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).
