@@ -254,6 +254,8 @@ private:
   AgentBusyState busy_;           // the threads whose turn runs (B112)
   AgentSendQueue queue_;          // AI sends waiting for a free turn
   bool draining_ = false;
+  /** The queue's head was last kept waiting (logged once until something is handed over). */
+  bool queue_held_ = false;
   /** The last step label ("Searching the web…") of each running turn, shown in its own thread. */
   std::map<std::string, std::string> step_status_;
   /**

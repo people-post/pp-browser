@@ -840,5 +840,24 @@ TEST_F(AgentTurnBusyTest, AHomeTurnStartedElsewhereShowsThinkingAndIsRecovered) 
   EXPECT_FALSE(chat_.loading);
 }
 
+TEST_F(AgentTurnBusyTest, AnotherChatsStreamIsRenderedOnlyWhenShown) {
+  host_.messaging_ready = true;
+  Open("A");
+  AgentEvent delta;
+  delta.type = AgentEventType::AssistantDelta;
+  delta.entry_id = "e2";
+  delta.thread_id = "B";
+  delta.text = "answer in B";
+  controller_.HandleAgentEvent(delta);
+  EXPECT_EQ(chat_links_.count("streaming-e2"), 0u) << "B is not on screen: no Markdown rendered for it";
+  EXPECT_TRUE(chat_.messages.empty());
+
+  Open("B");
+  controller_.Tick();
+  ASSERT_FALSE(chat_.messages.empty());
+  EXPECT_STREQ(chat_.messages.back().message_id.c_str(), "streaming-e2");
+  EXPECT_EQ(chat_links_.count("streaming-e2"), 1u);
+}
+
 } // namespace
 } // namespace pbr

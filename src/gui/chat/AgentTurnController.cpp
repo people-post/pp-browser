@@ -625,6 +625,9 @@ void AgentTurnController::OnAssistantDelta(const AgentEvent& event) {
 void AgentTurnController::FlushStreamingRow() {
   const auto now = std::chrono::steady_clock::now();
   for (auto& [thread_id, row] : streaming_) {
+    if (thread_id != host_.ActiveThreadId()) {
+      continue; // another chat's answer only gathers text; it is rendered when that chat is shown
+    }
     bool changed = false;
     if (row.dirty && ShouldRenderStreamDelta(row.last_render, now)) {
       ChatAnswerRml answer = BuildMarkdownAnswer(row.text);
@@ -635,7 +638,7 @@ void AgentTurnController::FlushStreamingRow() {
       row.dirty = false;
       changed = true;
     }
-    if (row.rml.empty() || thread_id != host_.ActiveThreadId()) {
+    if (row.rml.empty()) {
       continue;
     }
     // Row rebuilds (scroller paging, thread sync) drop the synthetic row; put it back.
@@ -771,16 +774,23 @@ void AgentTurnController::DrainQueue() {
       continue;
     }
     if (start == TurnStart::Full) {
-      log().info << "Queued AI send kept: as many chats as allowed are being answered";
+      if (!queue_held_) { // asked again every second while it waits: said once
+        log().debug << "Queued AI send kept: as many chats as allowed are being answered";
+        queue_held_ = true;
+      }
       queue_.PushFront(std::move(*item));
       break;
     }
     const QueuedSendOutcome outcome = host_.RunQueuedAgentSend(*item);
     if (outcome == QueuedSendOutcome::Busy) {
-      log().info << "Queued AI send put back: the assistant is still busy";
+      if (!queue_held_) {
+        log().debug << "Queued AI send put back: the assistant is still busy";
+        queue_held_ = true;
+      }
       queue_.PushFront(std::move(*item));
       break;
     }
+    queue_held_ = false;
     if (outcome == QueuedSendOutcome::NotStarted) {
       log().info << "Queued AI send did not start a turn; going on with the next one";
     }
