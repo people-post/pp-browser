@@ -345,5 +345,23 @@ TEST(CameraFlipTest, ShownOnlyOnPhonesWithTheCameraOn) {
   EXPECT_FALSE(ShowsCameraFlip(true, /*show_camera=*/false, true)) << "no flip without the camera button";
 }
 
+// B130: path pressure (live jitter state) crossed its limit while the camera was on and sending; the
+// camera button and with it the flip button vanished. The controls follow the camera, not the verdict.
+TEST(CameraFlipTest, CameraAndFlipStayWhileTheCameraIsOnWhenThePathStopsAllowingVideo) {
+  const bool encoder = true;
+  // Connected, path allows video, camera on: both shown.
+  bool show_camera = ShowsCameraButton(encoder, /*path_allows_video=*/true, /*camera_on=*/true);
+  EXPECT_TRUE(show_camera);
+  EXPECT_TRUE(ShowsCameraFlip(/*mobile=*/true, show_camera, /*camera_on=*/true));
+  // Pressure crosses the limit: path no longer allows video, camera still on.
+  show_camera = ShowsCameraButton(encoder, /*path_allows_video=*/false, /*camera_on=*/true);
+  EXPECT_TRUE(show_camera) << "the off switch must stay while the camera is on";
+  EXPECT_TRUE(ShowsCameraFlip(true, show_camera, true));
+  // Camera off on a path that disallows video: the button is withdrawn (nothing to start).
+  EXPECT_FALSE(ShowsCameraButton(encoder, false, /*camera_on=*/false));
+  EXPECT_TRUE(ShowsCameraButton(encoder, true, false));
+  EXPECT_FALSE(ShowsCameraButton(/*encoder_available=*/false, true, true)) << "no encoder, no camera button";
+}
+
 } // namespace
 } // namespace pbr

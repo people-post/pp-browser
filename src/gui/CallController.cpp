@@ -930,7 +930,8 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     if (auto allowed = backend->VideoAllowedForCall(presenter_.ActiveCallId());
         allowed && allowed->has_value() && **allowed) {
       in_call.video_allowed = true;
-      in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
+      in_call.show_camera =
+          ShowsCameraButton(media.VideoEncoderAvailable(), media.CameraPathAllowsVideo(), in_call.camera_on);
       camera_sync_off_done_ = false;
     } else if (!camera_sync_off_done_ && media.IsCameraEnabled() && allowed && allowed->has_value() &&
                !**allowed) {
