@@ -4,7 +4,19 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
+#include <mutex>
+
 namespace pbr {
+
+namespace {
+
+/** Every agent session sets the slot when it configures (on a worker, several at once) while others post through it. */
+std::mutex& HttpPostMutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+} // namespace
 
 HttpPostFn& McpClient::HttpPostSlot() {
   static HttpPostFn post;
@@ -12,6 +24,7 @@ HttpPostFn& McpClient::HttpPostSlot() {
 }
 
 void McpClient::SetHttpPost(HttpPostFn post) {
+  std::lock_guard lock(HttpPostMutex());
   HttpPostSlot() = std::move(post);
 }
 
@@ -77,10 +90,15 @@ Roe<Object> McpClient::Request(const std::string& method, const Object& params, 
     req.set("params", params);
 
     log().debug << "HTTP MCP request: " << method;
-    if (!HttpPostSlot()) {
+    HttpPostFn post;
+    {
+      std::lock_guard lock(HttpPostMutex());
+      post = HttpPostSlot();
+    }
+    if (!post) {
       return Error("MCP HTTP transport is not configured");
     }
-    auto response = HttpPostSlot()(http_url_, DumpJson(req), {{"Content-Type", "application/json"}}, timeout_s);
+    auto response = post(http_url_, DumpJson(req), {{"Content-Type", "application/json"}}, timeout_s);
     if (!response) {
       log().error << "HTTP MCP request failed for " << method << ": " << response.error().message;
       return response.error();
