@@ -511,7 +511,10 @@ with the caller — the private one when there is one). Invites carry no thread 
 ```text
 ApplyInboundControl(type)                     (CallSessionManager, calls owner)
   CallAnsweredElsewhere   → own account only (M021)
-  anything but an invite / summary from a sender not in the call (or offered it, V053) → dropped
+  the sender gate (`WhoMaySend`, lib/calls/CallControlGate — V057): an invite from anyone the audience
+                          lets through; CallAnsweredElsewhere from our own account; JoinRequest / Ended from
+                          someone in the call or offered it (V053); everything else from someone in the call;
+                          the summary and SDP / ICE are not signaling here → anyone else dropped, silently
   CallInvite / Accept / JoinRequest / Decline / Leave / Roster / Ended / SfuAttach* / HopRefuse
                           → CallSessionWorkflow::HandleInbound* (store rows, LiveCalls, then the paths:
                             Topology.OnRemoteAcceptJoined / OnInboundSfuAttach, media stop on end)

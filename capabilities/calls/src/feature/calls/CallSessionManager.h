@@ -80,6 +80,8 @@ private:
   /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
   void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
+  /** The inbound gate (V057 4): `sender_identity` may send `type` about the detail's call. */
+  bool SenderMaySend(CallControlType type, const std::string& detail_json, const std::string& sender_identity) const;
   /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
   bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
   /** V053: the call was offered to the sender (a group call): it may ask to join, or say it ended. */
