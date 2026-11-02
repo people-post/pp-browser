@@ -14,15 +14,29 @@
 
 namespace pbr {
 namespace {
+// One pass and one allocation for any multiple of 90 degrees clockwise (was one full-frame copy per turn).
 VideoFrameRgba Upright(VideoFrameRgba frame, int rotation) {
-  for (int i = 0; i < ((rotation % 360 + 360) % 360) / 90; ++i) {
-    VideoFrameRgba rotated;
-    if (!RotateRgba90Cw(frame, rotated)) {
-      return {};
-    }
-    frame = std::move(rotated);
+  const int turns = ((rotation % 360 + 360) % 360) / 90;
+  if (turns == 0) { return frame; }
+  if (frame.width <= 0 || frame.height <= 0 ||
+      frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
+    return {};
   }
-  return frame;
+  VideoFrameRgba out;
+  out.width = turns == 2 ? frame.width : frame.height;
+  out.height = turns == 2 ? frame.height : frame.width;
+  out.rgba.resize(static_cast<size_t>(out.width) * static_cast<size_t>(out.height) * 4);
+  const size_t in_w = static_cast<size_t>(frame.width);
+  for (int y = 0; y < out.height; ++y) {
+    for (int x = 0; x < out.width; ++x) {
+      // Source pixel of the clockwise rotation: 90 -> (y, H-1-x), 180 -> (W-1-x, H-1-y), 270 -> (W-1-y, x).
+      const size_t sx = turns == 1 ? y : turns == 2 ? frame.width - 1 - x : frame.width - 1 - y;
+      const size_t sy = turns == 1 ? frame.height - 1 - x : turns == 2 ? frame.height - 1 - y : x;
+      std::copy_n(frame.rgba.data() + (sy * in_w + sx) * 4, 4,
+                  out.rgba.data() + (static_cast<size_t>(y) * out.width + x) * 4);
+    }
+  }
+  return out;
 }
 
 using ScanClock = std::chrono::steady_clock;
@@ -61,14 +75,22 @@ public:
   // against the settled state would compound a second zoom on top of the first (Windows CI).
   QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now,
                             const CameraZoomState& zoom_state) {
-    frame = Upright(std::move(frame), rotation_);
-    width = frame.width;
-    height = frame.height;
+    const bool swap = ((rotation_ % 360 + 360) % 360) / 90 % 2 == 1;
+    width = swap ? frame.height : frame.width;
+    height = swap ? frame.width : frame.height;
     if (width < 2 || height < 2) { return {}; }
     decode_ms = 0;
     detected = false;
+    if (now < next_decode_) {
+      // Most frames only feed the preview: shrink to the preview size first, then rotate the small copy.
+      auto preview = Upright(ScanPreview(std::move(frame), software_zoom_), rotation_);
+      if (preview.width < 2 || preview.height < 2) { return {}; }
+      return {std::move(preview), std::nullopt, {}};
+    }
+    frame = Upright(std::move(frame), rotation_);
+    if (frame.width < 2 || frame.height < 2) { return {}; }
     std::optional<std::string> text;
-    if (now >= next_decode_) {
+    {
       const auto started = ScanClock::now();
       auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, 1280)) : InspectQr(frame);
       decode_ms = ElapsedMs(started);
