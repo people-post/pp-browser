@@ -1,4 +1,5 @@
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/messaging/SqliteThreadMentionsStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
@@ -144,7 +145,7 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
 TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   InboxTestEnv env("clear_drops_mentions");
   ASSERT_TRUE(env.inbox->ListThreads());
-  ThreadMentionsStore mentions(env.store->ProfileDbPath());
+  SqliteThreadMentionsStore mentions(env.store->ProfileDbPath());
   env.inbox->SetThreadMentions(&mentions);
 
   Thread group;

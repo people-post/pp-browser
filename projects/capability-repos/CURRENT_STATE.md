@@ -104,10 +104,13 @@
   bundles are delivery's on top), the control lane's seen ids a port, and `InMemoryDeliveryStore` keeps threads and
   peer sessions on shared rows for tests — found on the way: delivery's SQLite PSK store wrote into messaging's
   `chat_targets` table and shared its epoch with the thread store.
+- **CR024 stage 2a:** messaging's stores are ports (`IGroupRosterStore`, `IThreadLocalPrefsStore`,
+  `IThreadMentionsStore`; the SQLite ones `Sqlite*`) with in-memory ones in `lib/messaging/testing`; a contract test
+  runs every case on both.
 
 ## Next
 
-1. CR024 stage 2: the storage module (`src/lib/storage`) takes the SQLite stores and the profile database.
+1. CR024 stage 2b: the storage module (`src/lib/storage`) takes the SQLite stores and the profile database.
 2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
 3. Contracts repo (CR010) when convenient.
 4. P3's namespaces when a second app needs a capability.

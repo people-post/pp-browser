@@ -1,4 +1,4 @@
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
 
 #include "common/Utilities.h"
 #include "lib/messaging/SqliteThreadStore.h"
@@ -17,7 +17,7 @@ protected:
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
-    prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
+    prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(store_->ProfileDbPath());
   }
 
   void TearDown() override {
@@ -28,7 +28,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<ThreadLocalPrefsStore> prefs_;
+  std::unique_ptr<SqliteThreadLocalPrefsStore> prefs_;
 };
 
 TEST_F(ThreadLocalPrefsStoreTest, ThreadWithoutARowHasDefaults) {
@@ -128,7 +128,7 @@ TEST_F(ThreadLocalPrefsStoreTest, MuteMentionsIsStoredAndAddedToAnOlderTable) {
                          nullptr, nullptr, nullptr),
             SQLITE_OK);
   sqlite3_close(db);
-  prefs_ = std::make_unique<ThreadLocalPrefsStore>(db_path);
+  prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
   auto old = prefs_->Get("g");
   ASSERT_TRUE(old) << old.error().message;
   EXPECT_EQ(old->muted_until, 99);
@@ -158,7 +158,7 @@ TEST_F(ThreadLocalPrefsStoreTest, ShareAiConfirmedIsStoredAndAddedToAnOlderTable
                          nullptr, nullptr, nullptr),
             SQLITE_OK);
   sqlite3_close(db);
-  prefs_ = std::make_unique<ThreadLocalPrefsStore>(db_path);
+  prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
   auto old = prefs_->Get("g");
   ASSERT_TRUE(old) << old.error().message;
   EXPECT_EQ(old->muted_until, 99);
@@ -205,7 +205,7 @@ TEST_F(ThreadLocalPrefsStoreTest, TableIsAddedToAnExistingProfileDbWithoutTouchi
   auto threads = store_->ListThreads();
   ASSERT_TRUE(threads);
   ASSERT_EQ(threads->size(), 1u);
-  prefs_ = std::make_unique<ThreadLocalPrefsStore>(db_path);
+  prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(db_path);
   ThreadLocalPrefs p;
   p.thread_id = "thread-old";
   p.pinned_at = 9;

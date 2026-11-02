@@ -8,8 +8,6 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-struct sqlite3;
-
 namespace pbr {
 
 /** `muted_until` for "always". */
@@ -34,28 +32,18 @@ struct ThreadLocalPrefs {
   bool share_ai_confirmed = false;
 };
 
-/**
- * Pin / mute / archive / marked-unread per thread, in its own table of profile.db (additive; `threads` is
- * untouched).
- */
-class ThreadLocalPrefsStore {
+/** Where a device keeps its per-thread settings (CR024); the app's storage keeps them, tests an in-memory one. */
+class IThreadLocalPrefsStore {
 public:
-  explicit ThreadLocalPrefsStore(std::string profile_db_path);
-
-  Roe<void> EnsureSchema(sqlite3* profile_db) const;
+  virtual ~IThreadLocalPrefsStore() = default;
 
   /** Rows that differ from the defaults. */
-  Roe<std::vector<ThreadLocalPrefs>> List() const;
+  virtual Roe<std::vector<ThreadLocalPrefs>> List() const = 0;
   /** The thread's settings; defaults when it has no row. */
-  Roe<ThreadLocalPrefs> Get(const std::string& thread_id) const;
+  virtual Roe<ThreadLocalPrefs> Get(const std::string& thread_id) const = 0;
   /** Stores the settings; a thread back at the defaults keeps no row. */
-  Roe<void> Set(const ThreadLocalPrefs& prefs) const;
-  Roe<void> Delete(const std::string& thread_id) const;
-
-private:
-  Roe<sqlite3*> OpenDb() const;
-
-  std::string profile_db_path_;
+  virtual Roe<void> Set(const ThreadLocalPrefs& prefs) const = 0;
+  virtual Roe<void> Delete(const std::string& thread_id) const = 0;
 };
 
 } // namespace pbr

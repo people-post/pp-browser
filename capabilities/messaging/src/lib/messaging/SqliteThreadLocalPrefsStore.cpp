@@ -1,4 +1,4 @@
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
 
 #include <sqlite3.h>
 
@@ -45,10 +45,10 @@ ThreadLocalPrefs PrefsFromStmt(sqlite3_stmt* stmt) {
 
 } // namespace
 
-ThreadLocalPrefsStore::ThreadLocalPrefsStore(std::string profile_db_path)
+SqliteThreadLocalPrefsStore::SqliteThreadLocalPrefsStore(std::string profile_db_path)
     : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<sqlite3*> ThreadLocalPrefsStore::OpenDb() const {
+Roe<sqlite3*> SqliteThreadLocalPrefsStore::OpenDb() const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for thread prefs");
@@ -62,7 +62,7 @@ Roe<sqlite3*> ThreadLocalPrefsStore::OpenDb() const {
   return db;
 }
 
-Roe<void> ThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> SqliteThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kThreadLocalPrefsSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "thread prefs schema failed";
@@ -98,7 +98,7 @@ Roe<void> ThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
   return {};
 }
 
-Roe<std::vector<ThreadLocalPrefs>> ThreadLocalPrefsStore::List() const {
+Roe<std::vector<ThreadLocalPrefs>> SqliteThreadLocalPrefsStore::List() const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -117,7 +117,7 @@ Roe<std::vector<ThreadLocalPrefs>> ThreadLocalPrefsStore::List() const {
   return out;
 }
 
-Roe<ThreadLocalPrefs> ThreadLocalPrefsStore::Get(const std::string& thread_id) const {
+Roe<ThreadLocalPrefs> SqliteThreadLocalPrefsStore::Get(const std::string& thread_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -139,7 +139,7 @@ Roe<ThreadLocalPrefs> ThreadLocalPrefsStore::Get(const std::string& thread_id) c
   return prefs;
 }
 
-Roe<void> ThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
+Roe<void> SqliteThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
   if (prefs.pinned_at == 0 && prefs.muted_until == 0 && !prefs.archived && !prefs.marked_unread &&
       !prefs.mute_mentions && !prefs.share_ai_confirmed) {
     return Delete(prefs.thread_id);
@@ -177,7 +177,7 @@ Roe<void> ThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
   return {};
 }
 
-Roe<void> ThreadLocalPrefsStore::Delete(const std::string& thread_id) const {
+Roe<void> SqliteThreadLocalPrefsStore::Delete(const std::string& thread_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();

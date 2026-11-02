@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
 
 #include "common/chat/SystemControl.h"
@@ -37,7 +37,7 @@ struct GroupDissolvedEnd {
  * `local_account` is our account id.
  */
 SystemControlFamily MakeGroupRosterSyncFamily(
-    GroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
+    IGroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
     std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer,
     std::function<void(GroupDissolvedEnd end)> on_dissolved = {});
 

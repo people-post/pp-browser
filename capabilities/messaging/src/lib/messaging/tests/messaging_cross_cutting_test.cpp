@@ -11,7 +11,7 @@
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/SqliteControlLaneSeenStore.h"
@@ -254,7 +254,7 @@ public:
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   test::TestAccount local;
-  GroupRosterStore roster_store;
+  SqliteGroupRosterStore roster_store;
   SqlitePeerSessionStore psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;

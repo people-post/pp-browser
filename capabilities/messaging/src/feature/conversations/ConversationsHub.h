@@ -20,15 +20,15 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/PeerDisplaySources.h"
 #include "lib/people/PeerKemKeyStore.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
 #include "lib/messaging/SqliteThreadStore.h"
-#include "lib/messaging/ThreadMentionsStore.h"
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
+#include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "common/Lifetime.h"
@@ -200,9 +200,9 @@ public:
 
   InboxController& Inbox();
   /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
-  ThreadLocalPrefsStore& ThreadPrefs();
+  IThreadLocalPrefsStore& ThreadPrefs();
   /** Unread mentions of this account per thread (G015); null until the stores open. */
-  ThreadMentionsStore* ThreadMentions();
+  IThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
   /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
   std::optional<std::string> OwnAccountCardJson();
@@ -227,7 +227,7 @@ public:
   MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
   SystemControlRegistry& SystemControls() { return system_controls_; }
   /** The group rosters (from stores open to hub teardown; null outside that). */
-  GroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
+  IGroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
@@ -533,10 +533,10 @@ private:
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePeerSessionStore> psk_store_;
-  std::unique_ptr<GroupRosterStore> group_roster_;
-  std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
+  std::unique_ptr<IGroupRosterStore> group_roster_;
+  std::unique_ptr<IThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */
-  std::unique_ptr<ThreadMentionsStore> thread_mentions_;
+  std::unique_ptr<IThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;

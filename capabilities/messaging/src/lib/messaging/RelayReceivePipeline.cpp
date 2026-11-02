@@ -26,7 +26,7 @@
 #include "common/directory/ShortRelayId.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/delivery/PskRotateCodec.h"
 #include "lib/delivery/RelayWirePayload.h"
 #include "lib/messaging/SyncStateCodec.h"
@@ -140,7 +140,7 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards,
                                            IPeerSessionStore& psk_store, LocalKeys local_keys,
-                                           GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
+                                           IGroupRosterStore& group_roster, GroupInviteGate* invite_gate)
     : store_(store), account_cards_(std::move(account_cards)), psk_store_(psk_store), local_keys_(std::move(local_keys)),
       group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
   redirectLogger("RelayReceivePipeline");

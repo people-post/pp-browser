@@ -1,8 +1,8 @@
 #include "lib/messaging/SqliteThreadDb.h"
 
 #include "lib/messaging/SqliteThreadSchema.h"
-#include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
 #include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -175,11 +175,11 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
                      nullptr, nullptr);
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN restart_pending INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
-  GroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
+  SqliteGroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();
   }
-  ThreadLocalPrefsStore prefs_store(SqliteThreadProfileDbFile(data_dir_));
+  SqliteThreadLocalPrefsStore prefs_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto prefs_schema = prefs_store.EnsureSchema(profile_db_); !prefs_schema) {
     return prefs_schema.error();
   }

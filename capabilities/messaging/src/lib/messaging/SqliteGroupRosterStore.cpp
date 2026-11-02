@@ -1,4 +1,4 @@
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 
 #include "lib/messaging/GroupMembershipCodec.h"
 
@@ -112,9 +112,9 @@ InviteStatus InviteStatusFromString(const std::string& value) {
 
 } // namespace
 
-GroupRosterStore::GroupRosterStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
+SqliteGroupRosterStore::SqliteGroupRosterStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kGroupSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "group schema failed";
@@ -140,22 +140,17 @@ Roe<void> GroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
   return {};
 }
 
-void GroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
+void SqliteGroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
   on_changed_ = std::move(on_changed);
 }
 
-void GroupRosterStore::NotifyChanged(const std::string& group_id) const {
+void SqliteGroupRosterStore::NotifyChanged(const std::string& group_id) const {
   if (on_changed_) {
     on_changed_(group_id);
   }
 }
 
-std::unique_lock<std::recursive_mutex> GroupRosterStore::LockForUpdate() {
-  static std::recursive_mutex mutex;
-  return std::unique_lock<std::recursive_mutex>(mutex);
-}
-
-bool GroupRosterStore::OpenDb(sqlite3** db) const {
+bool SqliteGroupRosterStore::OpenDb(sqlite3** db) const {
   if (sqlite3_open(profile_db_path_.c_str(), db) != SQLITE_OK) {
     return false;
   }
@@ -163,7 +158,7 @@ bool GroupRosterStore::OpenDb(sqlite3** db) const {
   return true;
 }
 
-Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const {
+Roe<void> SqliteGroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db for group metadata");
@@ -208,7 +203,7 @@ Roe<void> GroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) const 
   return {};
 }
 
-Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::string& group_id) const {
+Roe<std::optional<GroupMetadata>> SqliteGroupRosterStore::LoadMetadata(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -255,7 +250,7 @@ Roe<std::optional<GroupMetadata>> GroupRosterStore::LoadMetadata(const std::stri
   return result;
 }
 
-Roe<std::vector<std::string>> GroupRosterStore::ListGroupIds() const {
+Roe<std::vector<std::string>> SqliteGroupRosterStore::ListGroupIds() const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -277,7 +272,7 @@ Roe<std::vector<std::string>> GroupRosterStore::ListGroupIds() const {
   return ids;
 }
 
-Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const GroupRosterMember& member) const {
+Roe<void> SqliteGroupRosterStore::UpsertMember(const std::string& group_id, const GroupRosterMember& member) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -308,7 +303,7 @@ Roe<void> GroupRosterStore::UpsertMember(const std::string& group_id, const Grou
   return {};
 }
 
-Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std::string& member_identity) const {
+Roe<void> SqliteGroupRosterStore::RemoveMember(const std::string& group_id, const std::string& member_identity) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -329,7 +324,7 @@ Roe<void> GroupRosterStore::RemoveMember(const std::string& group_id, const std:
   return {};
 }
 
-Roe<std::vector<GroupRosterMember>> GroupRosterStore::ListMembers(const std::string& group_id) const {
+Roe<std::vector<GroupRosterMember>> SqliteGroupRosterStore::ListMembers(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -359,7 +354,7 @@ Roe<std::vector<GroupRosterMember>> GroupRosterStore::ListMembers(const std::str
   return members;
 }
 
-Roe<std::optional<GroupRosterMember>> GroupRosterStore::FindMember(const std::string& group_id,
+Roe<std::optional<GroupRosterMember>> SqliteGroupRosterStore::FindMember(const std::string& group_id,
                                                                  const std::string& member_identity) const {
   auto members = ListMembers(group_id);
   if (!members) {
@@ -373,7 +368,7 @@ Roe<std::optional<GroupRosterMember>> GroupRosterStore::FindMember(const std::st
   return Roe<std::optional<GroupRosterMember>>(std::optional<GroupRosterMember>{});
 }
 
-Roe<bool> GroupRosterStore::IsMember(const std::string& group_id, const std::string& member_identity) const {
+Roe<bool> SqliteGroupRosterStore::IsMember(const std::string& group_id, const std::string& member_identity) const {
   auto member = FindMember(group_id, member_identity);
   if (!member) {
     return member.error();
@@ -381,7 +376,7 @@ Roe<bool> GroupRosterStore::IsMember(const std::string& group_id, const std::str
   return member->has_value();
 }
 
-Roe<void> GroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite) const {
+Roe<void> SqliteGroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -422,7 +417,7 @@ Roe<void> GroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& invite
   return {};
 }
 
-Roe<std::optional<PendingGroupInvite>> GroupRosterStore::LoadPendingInvite(const std::string& invite_nonce) const {
+Roe<std::optional<PendingGroupInvite>> SqliteGroupRosterStore::LoadPendingInvite(const std::string& invite_nonce) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -461,7 +456,7 @@ Roe<std::optional<PendingGroupInvite>> GroupRosterStore::LoadPendingInvite(const
   return result;
 }
 
-Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, const InviteStatus status) const {
+Roe<void> SqliteGroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, const InviteStatus status) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -481,7 +476,7 @@ Roe<void> GroupRosterStore::UpdateInviteStatus(const std::string& invite_nonce, 
   return {};
 }
 
-Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,
+Roe<std::vector<PendingGroupInvite>> SqliteGroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,
                                                                                   const int64_t now_ms) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -529,7 +524,7 @@ Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ListOutboundPendingInvite
   return invites;
 }
 
-Roe<void> GroupRosterStore::ExpireOutboundInvitesTo(const std::string& group_id,
+Roe<void> SqliteGroupRosterStore::ExpireOutboundInvitesTo(const std::string& group_id,
                                                    const std::string& invitee_identity) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -621,7 +616,7 @@ bool RunBound(sqlite3* db, const char* sql, const std::vector<std::string>& text
 
 } // namespace
 
-Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ExpirePendingInvitesOf(const std::string& group_id) const {
+Roe<std::vector<PendingGroupInvite>> SqliteGroupRosterStore::ExpirePendingInvitesOf(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -632,7 +627,7 @@ Roe<std::vector<PendingGroupInvite>> GroupRosterStore::ExpirePendingInvitesOf(co
   return voided;
 }
 
-Roe<std::optional<std::vector<PendingGroupInvite>>> GroupRosterStore::EndGroup(const std::string& group_id,
+Roe<std::optional<std::vector<PendingGroupInvite>>> SqliteGroupRosterStore::EndGroup(const std::string& group_id,
                                                                                const GroupEnding& ending) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -697,7 +692,7 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> GroupRosterStore::EndGroup(c
   return std::optional<std::vector<PendingGroupInvite>>(std::move(*voided));
 }
 
-Roe<std::vector<PendingGroupSend>> GroupRosterStore::ListPendingSends(const std::string& group_id) const {
+Roe<std::vector<PendingGroupSend>> SqliteGroupRosterStore::ListPendingSends(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -727,7 +722,7 @@ Roe<std::vector<PendingGroupSend>> GroupRosterStore::ListPendingSends(const std:
   return sends;
 }
 
-Roe<void> GroupRosterStore::DeletePendingSend(const PendingGroupSend& send) const {
+Roe<void> SqliteGroupRosterStore::DeletePendingSend(const PendingGroupSend& send) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -742,7 +737,7 @@ Roe<void> GroupRosterStore::DeletePendingSend(const PendingGroupSend& send) cons
   return {};
 }
 
-Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
+Roe<size_t> SqliteGroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -765,7 +760,7 @@ Roe<size_t> GroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) c
   return count;
 }
 
-Roe<void> GroupRosterStore::UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
+Roe<void> SqliteGroupRosterStore::UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                                               const uint32_t session_epoch, const uint64_t next_outgoing_seq) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
@@ -795,7 +790,7 @@ Roe<void> GroupRosterStore::UpsertGroupTarget(const std::string& group_id, const
   return {};
 }
 
-Roe<void> GroupRosterStore::ClearGroupTarget(const std::string& group_id) const {
+Roe<void> SqliteGroupRosterStore::ClearGroupTarget(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -813,7 +808,7 @@ Roe<void> GroupRosterStore::ClearGroupTarget(const std::string& group_id) const 
   return {};
 }
 
-Roe<void> GroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_thread_id) const {
+Roe<void> SqliteGroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_thread_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -832,7 +827,7 @@ Roe<void> GroupRosterStore::ClearGroupTargetByThreadId(const std::string& local_
   return {};
 }
 
-Roe<std::optional<std::string>> GroupRosterStore::FindThreadIdForGroup(const std::string& group_id) const {
+Roe<std::optional<std::string>> SqliteGroupRosterStore::FindThreadIdForGroup(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -854,7 +849,7 @@ Roe<std::optional<std::string>> GroupRosterStore::FindThreadIdForGroup(const std
   return Roe<std::optional<std::string>>(thread_id);
 }
 
-Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_id) const {
+Roe<uint64_t> SqliteGroupRosterStore::AllocateGroupSenderSeq(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -886,7 +881,7 @@ Roe<uint64_t> GroupRosterStore::AllocateGroupSenderSeq(const std::string& group_
   return seq;
 }
 
-Roe<uint64_t> GroupRosterStore::AllocateMemberSeq(const std::string& group_id, const std::string& member_identity,
+Roe<uint64_t> SqliteGroupRosterStore::AllocateMemberSeq(const std::string& group_id, const std::string& member_identity,
                                                   const uint32_t pair_epoch, const std::string& member_device) const {
   // A device pair counts on its own: its row is the member's with the device (M021).
   const std::string counter = member_device.empty() ? member_identity : member_identity + "/" + member_device;
@@ -923,7 +918,7 @@ Roe<uint64_t> GroupRosterStore::AllocateMemberSeq(const std::string& group_id, c
   return *seq;
 }
 
-Roe<uint32_t> GroupRosterStore::GetGroupSessionEpoch(const std::string& group_id) const {
+Roe<uint32_t> SqliteGroupRosterStore::GetGroupSessionEpoch(const std::string& group_id) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");
@@ -947,7 +942,7 @@ Roe<uint32_t> GroupRosterStore::GetGroupSessionEpoch(const std::string& group_id
   return epoch;
 }
 
-Roe<void> GroupRosterStore::BumpGroupSessionEpoch(const std::string& group_id, const uint32_t new_epoch) const {
+Roe<void> SqliteGroupRosterStore::BumpGroupSessionEpoch(const std::string& group_id, const uint32_t new_epoch) const {
   sqlite3* db = nullptr;
   if (!OpenDb(&db)) {
     return Error("Failed to open profile.db");

@@ -60,7 +60,8 @@ InMemoryDeliveryStore::Numbering* InMemoryDeliveryStore::NumberingLocked(const s
     return nullptr;
   }
   if (thread->second.kind == ThreadKind::Group && thread->second.group_id) {
-    return &groups_[*thread->second.group_id];
+    auto group = groups_.find(*thread->second.group_id);
+    return group == groups_.end() ? nullptr : &group->second.numbering;
   }
   ChatTargetRow* row = TargetForThreadLocked(thread_id);
   return row ? &row->numbering : nullptr;
@@ -85,7 +86,7 @@ std::optional<Thread> InMemoryDeliveryStore::FindDirectThreadLocked(const Direct
 Thread InMemoryDeliveryStore::UpsertThreadLocked(const Thread& thread) {
   Thread stored = thread;
   if (auto existing = threads_.find(thread.id); existing != threads_.end()) {
-    stored.listed = existing->second.listed || thread.listed;  // as SQLite: listed stays once set
+    stored.listed = existing->second.listed || thread.listed; // as SQLite: listed stays once set
   }
   threads_[stored.id] = stored;
   return stored;
@@ -146,8 +147,8 @@ Roe<std::optional<Thread>> InMemoryDeliveryStore::FindDirectThread(const DirectC
 }
 
 Roe<Thread> InMemoryDeliveryStore::FindOrCreateDirectThread(const DirectChatTarget& target,
-                                                          const std::string& participant_contact_id,
-                                                          const std::string& title) {
+                                                            const std::string& participant_contact_id,
+                                                            const std::string& title) {
   std::lock_guard lock(mutex_);
   if (std::optional<Thread> existing = FindDirectThreadLocked(target)) {
     Thread thread = *existing;
@@ -178,7 +179,7 @@ Roe<Thread> InMemoryDeliveryStore::FindOrCreateDirectThread(const DirectChatTarg
   thread.title = title;
   thread.encrypted = ThreadChannelIsE2e(target.channel);
   thread.updated_at = util::NowUnixMs();
-  thread.listed = false;  // listed once something readable is in it, or the user opens it
+  thread.listed = false; // listed once something readable is in it, or the user opens it
   Thread saved = UpsertThreadLocked(thread);
   // The session with this peer may have come first (its row, its epoch): the thread joins that row.
   ChatTargetRow* row = TargetLocked(target);
@@ -203,7 +204,7 @@ Roe<std::optional<Thread>> InMemoryDeliveryStore::FindGroupThread(const std::str
 }
 
 Roe<Thread> InMemoryDeliveryStore::FindOrCreateGroupThread(const std::string& group_id, const std::string& title,
-                                                         const std::vector<std::string>& participant_contact_ids) {
+                                                           const std::vector<std::string>& participant_contact_ids) {
   if (auto existing = FindGroupThread(group_id); existing && *existing) {
     return **existing;
   }
@@ -217,8 +218,9 @@ Roe<Thread> InMemoryDeliveryStore::FindOrCreateGroupThread(const std::string& gr
   thread.title = title;
   thread.encrypted = true;
   thread.updated_at = util::NowUnixMs();
-  groups_.try_emplace(group_id);
-  return UpsertThreadLocked(thread);
+  Thread saved = UpsertThreadLocked(thread);
+  groups_[group_id] = GroupTargetRow{saved.id, Numbering{}};
+  return saved;
 }
 
 Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessages(const std::string& thread_id) const {
@@ -228,8 +230,8 @@ Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessages(const std::st
 }
 
 Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesPage(const std::string& thread_id,
-                                                                     std::optional<int64_t> before_display_order,
-                                                                     size_t limit) const {
+                                                                       std::optional<int64_t> before_display_order,
+                                                                       size_t limit) const {
   std::lock_guard lock(mutex_);
   std::vector<ThreadMessage> page;
   auto rows = messages_.find(thread_id);
@@ -247,12 +249,12 @@ Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesPage(const std
 }
 
 Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesForContext(const std::string& thread_id,
-                                                                           const ContextBudget& /*budget*/) const {
+                                                                             const ContextBudget& /*budget*/) const {
   return GetMessages(thread_id);
 }
 
 Roe<int64_t> InMemoryDeliveryStore::CountContextEligibleMessagesAfter(const std::string& thread_id,
-                                                                    int64_t after_display_order) const {
+                                                                      int64_t after_display_order) const {
   auto after = GetContextEligibleMessagesAfter(thread_id, after_display_order);
   if (!after) {
     return after.error();
@@ -261,7 +263,7 @@ Roe<int64_t> InMemoryDeliveryStore::CountContextEligibleMessagesAfter(const std:
 }
 
 Roe<int64_t> InMemoryDeliveryStore::CountAnnotationsForTarget(const std::string& thread_id,
-                                                            const std::string& target_message_id) const {
+                                                              const std::string& target_message_id) const {
   auto annotations = GetAnnotationsForTarget(thread_id, target_message_id);
   if (!annotations) {
     return annotations.error();
@@ -296,7 +298,7 @@ Roe<bool> InMemoryDeliveryStore::UpdateMessage(const ThreadMessage& message) {
   }
   for (ThreadMessage& row : rows->second) {
     if (row.id == message.id) {
-      const int64_t order = row.display_order;  // keeps its place in the thread
+      const int64_t order = row.display_order; // keeps its place in the thread
       row = message;
       row.display_order = order;
       return true;
@@ -390,7 +392,7 @@ Roe<uint32_t> InMemoryDeliveryStore::GetChatTargetSessionEpoch(const std::string
 }
 
 Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesBySeqRange(const std::string& thread_id,
-                                                                           const SeqRangeQuery& query) const {
+                                                                             const SeqRangeQuery& query) const {
   auto messages = GetMessages(thread_id);
   if (!messages) {
     return messages.error();
@@ -418,22 +420,22 @@ Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesBySeqRange(con
 }
 
 Roe<PeerSyncState> InMemoryDeliveryStore::GetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
-                                                         const std::string& sender_device) const {
+                                                           const std::string& sender_device) const {
   std::lock_guard lock(mutex_);
   auto state = sync_.find({thread_id, session_epoch, sender_device});
   return state == sync_.end() ? PeerSyncState{} : state->second;
 }
 
 Roe<void> InMemoryDeliveryStore::SetPeerSyncState(const std::string& thread_id, uint32_t session_epoch,
-                                                const PeerSyncState& state, const std::string& sender_device) {
+                                                  const PeerSyncState& state, const std::string& sender_device) {
   std::lock_guard lock(mutex_);
   sync_[{thread_id, session_epoch, sender_device}] = state;
   return {};
 }
 
 Roe<void> InMemoryDeliveryStore::CancelOldEpochPending(const std::string& /*thread_id*/,
-                                                     uint32_t /*old_session_epoch*/) {
-  return {};  // no outbox here
+                                                       uint32_t /*old_session_epoch*/) {
+  return {}; // no outbox here
 }
 
 Roe<void> InMemoryDeliveryStore::AdoptChatTargetEpoch(const std::string& thread_id, uint32_t new_session_epoch) {
@@ -447,9 +449,9 @@ Roe<void> InMemoryDeliveryStore::AdoptChatTargetEpoch(const std::string& thread_
 }
 
 Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message,
-                                                                           uint32_t /*old_session_epoch*/,
-                                                                           uint32_t new_session_epoch,
-                                                                           const PeerSyncState& new_sync_state) {
+                                                                             uint32_t /*old_session_epoch*/,
+                                                                             uint32_t new_session_epoch,
+                                                                             const PeerSyncState& new_sync_state) {
   std::lock_guard lock(mutex_);
   if (Numbering* numbering = NumberingLocked(message.thread_id)) {
     numbering->session_epoch = new_session_epoch;
@@ -518,7 +520,7 @@ Roe<void> InMemoryDeliveryStore::Save(const PeerSessionRecord& record) {
   if (!record.key.peer_device.empty()) {
     DeviceSessionRow& device = devices_[DeviceKeyOf(record.key)];
     if (device.session.session_epoch != record.session_epoch) {
-      device.next_outgoing_seq = 1;  // a new epoch numbers from 1
+      device.next_outgoing_seq = 1; // a new epoch numbers from 1
     }
     device.session = record;
     return {};
@@ -545,6 +547,55 @@ Roe<uint64_t> InMemoryDeliveryStore::AllocateSenderSeq(const PeerSessionKey& key
     return Error("No device session to number in");
   }
   return device->second.next_outgoing_seq++;
+}
+
+void InMemoryDeliveryStore::SetGroupTarget(const std::string& group_id, const std::string& thread_id,
+                                           uint32_t session_epoch, uint64_t next_outgoing_seq) {
+  std::lock_guard lock(mutex_);
+  groups_[group_id] = GroupTargetRow{thread_id, Numbering{session_epoch, next_outgoing_seq}};
+}
+
+void InMemoryDeliveryStore::ClearGroupTarget(const std::string& group_id) {
+  std::lock_guard lock(mutex_);
+  groups_.erase(group_id);
+}
+
+void InMemoryDeliveryStore::ClearGroupTargetsOfThread(const std::string& thread_id) {
+  std::lock_guard lock(mutex_);
+  std::erase_if(groups_, [&](const auto& entry) { return entry.second.thread_id == thread_id; });
+}
+
+std::optional<std::string> InMemoryDeliveryStore::GroupTargetThread(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  auto group = groups_.find(group_id);
+  return group == groups_.end() ? std::nullopt : std::optional<std::string>(group->second.thread_id);
+}
+
+Roe<uint64_t> InMemoryDeliveryStore::AllocateGroupSeq(const std::string& group_id) {
+  std::lock_guard lock(mutex_);
+  auto group = groups_.find(group_id);
+  if (group == groups_.end()) {
+    return Error("No group target for group_id");
+  }
+  return group->second.numbering.next_outgoing_seq++;
+}
+
+Roe<uint32_t> InMemoryDeliveryStore::GroupEpoch(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  auto group = groups_.find(group_id);
+  if (group == groups_.end()) {
+    return Error("No group target");
+  }
+  return group->second.numbering.session_epoch;
+}
+
+Roe<void> InMemoryDeliveryStore::SetGroupEpoch(const std::string& group_id, uint32_t session_epoch) {
+  std::lock_guard lock(mutex_);
+  auto group = groups_.find(group_id);
+  if (group != groups_.end()) {
+    group->second.numbering = Numbering{session_epoch, 1};
+  }
+  return {};
 }
 
 Roe<bool> InMemoryControlLaneSeenStore::FirstSight(const std::string& sender, const std::string& control_id,

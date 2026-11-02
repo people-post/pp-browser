@@ -10,10 +10,10 @@
 
 namespace pbr {
 
-Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
+Roe<bool> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
                                     const std::string& member_identity, const std::string& group_id,
                                     const std::string& local_identity, const int64_t now_ms) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -81,9 +81,9 @@ Roe<bool> ApplyInviteAcceptToRoster(GroupRosterStore& roster, const std::string&
   return true;
 }
 
-Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string& invite_nonce,
+Roe<void> ApplyInviteDeclineToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
                                      const std::string& member_identity, const std::string& group_id) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto pending = roster.LoadPendingInvite(invite_nonce);
   if (!pending) {
     return pending.error();
@@ -103,7 +103,7 @@ Roe<void> ApplyInviteDeclineToRoster(GroupRosterStore& roster, const std::string
 
 namespace {
 
-Roe<GroupMetadata> LoadMetadataRequired(GroupRosterStore& roster, const std::string& group_id) {
+Roe<GroupMetadata> LoadMetadataRequired(IGroupRosterStore& roster, const std::string& group_id) {
   auto metadata = roster.LoadMetadata(group_id);
   if (!metadata) {
     return metadata.error();
@@ -123,9 +123,9 @@ Roe<void> RequireNewerEpoch(const GroupMetadata& metadata, const uint64_t inboun
 
 } // namespace
 
-Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
+Roe<void> ApplyMemberJoinedToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberJoinedPayload& payload,
                                     const std::string& actor_identity) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -168,10 +168,10 @@ Roe<void> ApplyMemberJoinedToRoster(GroupRosterStore& roster, const GroupMembers
   return roster.UpsertMetadata(updated);
 }
 
-Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
+Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
                                         const GroupMembershipCodec::OwnerTransferredPayload& payload,
                                         const std::string& actor_identity) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -222,9 +222,9 @@ Roe<void> ApplyOwnerTransferredToRoster(GroupRosterStore& roster,
   return {};
 }
 
-Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
+Roe<void> ApplyMemberLeftToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
                                   const std::string& actor_identity) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   if (payload.member_identity != actor_identity) {
     return Error("member_left actor must match member_identity");
   }
@@ -246,10 +246,10 @@ Roe<void> ApplyMemberLeftToRoster(GroupRosterStore& roster, const GroupMembershi
   return roster.UpsertMetadata(updated);
 }
 
-Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
+Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -271,9 +271,9 @@ Roe<void> ApplyMemberRemovedToRoster(GroupRosterStore& roster,
   return roster.UpsertMetadata(updated);
 }
 
-Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
+Roe<bool> ApplyGroupRenamedToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::GroupRenamedPayload& payload,
                                     const std::string& actor_identity) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   auto metadata = LoadMetadataRequired(roster, payload.group_id);
   if (!metadata) {
     return metadata.error();
@@ -296,7 +296,7 @@ Roe<bool> ApplyGroupRenamedToRoster(GroupRosterStore& roster, const GroupMembers
   return true;
 }
 
-Roe<GroupDissolvedApplied> EndGroupInRoster(GroupRosterStore& roster, const std::string& group_id,
+Roe<GroupDissolvedApplied> EndGroupInRoster(IGroupRosterStore& roster, const std::string& group_id,
                                            const std::string& owner_identity, const uint64_t roster_epoch,
                                            const std::string& statement_json,
                                            const std::vector<PendingGroupSend>& sends) {
@@ -320,9 +320,9 @@ Roe<GroupDissolvedApplied> EndGroupInRoster(GroupRosterStore& roster, const std:
 namespace {
 
 /** The shared rule; `actor` (the DM's sender) must be the owner it names when given. */
-Roe<GroupDissolvedApplied> ApplyDissolved(GroupRosterStore& roster, const GroupRosterStatement& statement,
+Roe<GroupDissolvedApplied> ApplyDissolved(IGroupRosterStore& roster, const GroupRosterStatement& statement,
                                           const std::string& local_identity, const std::string* actor) {
-  const auto lock = GroupRosterStore::LockForUpdate();  // read-then-write of the roster
+  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
   GroupDissolvedApplied result;
   auto metadata = roster.LoadMetadata(statement.group_id);
   if (!metadata) {
@@ -365,12 +365,12 @@ Roe<GroupDissolvedApplied> ApplyDissolved(GroupRosterStore& roster, const GroupR
 
 } // namespace
 
-Roe<GroupDissolvedApplied> ApplyDissolvedStatement(GroupRosterStore& roster, const GroupRosterStatement& statement,
+Roe<GroupDissolvedApplied> ApplyDissolvedStatement(IGroupRosterStore& roster, const GroupRosterStatement& statement,
                                                    const std::string& local_identity) {
   return ApplyDissolved(roster, statement, local_identity, nullptr);
 }
 
-Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(GroupRosterStore& roster, const GroupRosterStatement& statement,
+Roe<GroupDissolvedApplied> ApplyGroupDissolvedToRoster(IGroupRosterStore& roster, const GroupRosterStatement& statement,
                                                        const std::string& actor_identity,
                                                        const std::string& local_identity) {
   return ApplyDissolved(roster, statement, local_identity, &actor_identity);

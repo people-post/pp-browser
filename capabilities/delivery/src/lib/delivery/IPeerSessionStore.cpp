@@ -18,7 +18,7 @@ Roe<ByteVector> IPeerSessionStore::GenerateMasterPsk() const {
 }
 
 Roe<std::optional<std::string>> IPeerSessionStore::ResolveMasterPskForEpoch(const PeerSessionKey& key,
-                                                                              const uint32_t envelope_epoch) const {
+                                                                            const uint32_t envelope_epoch) const {
   auto loaded = Load(key);
   if (!loaded) {
     return loaded.error();

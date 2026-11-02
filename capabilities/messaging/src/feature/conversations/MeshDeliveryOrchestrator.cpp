@@ -33,7 +33,7 @@
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/SqliteThreadSchema.h"
@@ -97,7 +97,7 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                          IRelayClient* relay, InboxController& inbox, AccountKeyResolver& account_keys,
                                          IPeerSessionStore& psk_store,
-                                         GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
+                                         IGroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
                                          std::function<void(std::function<void()>)> amp_post_io,

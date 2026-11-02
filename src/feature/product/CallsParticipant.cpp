@@ -77,7 +77,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
     };
     deps.delivery.group_members = [&hub](const std::string& group_id) -> std::optional<std::set<std::string>> {
       // The roster store, not Groups(): the membership workflow goes with the session; the calls may outlive it.
-      GroupRosterStore* rosters = hub.GroupRosterOrNull();
+      IGroupRosterStore* rosters = hub.GroupRosterOrNull();
       if (rosters == nullptr) {
         return std::nullopt;
       }

@@ -11,7 +11,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"

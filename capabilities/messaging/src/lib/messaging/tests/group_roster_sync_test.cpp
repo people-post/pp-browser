@@ -2,7 +2,7 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupRosterSyncFamily.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/tests/TestRosterSigner.h"
 
@@ -31,7 +31,7 @@ protected:
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
-    roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+    roster_ = std::make_unique<SqliteGroupRosterStore>(store_->ProfileDbPath());
     bob_ = "account:bob";
     carol_ = "account:carol";
     dave_ = "account:dave";
@@ -88,7 +88,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<GroupRosterStore> roster_;
+  std::unique_ptr<SqliteGroupRosterStore> roster_;
   TestSigner alice_;
   std::string bob_, carol_, dave_;
 };
@@ -461,7 +461,7 @@ TEST_F(GroupRosterSyncTest, EndingAGroupIsAllOrNothing) {
   EXPECT_EQ(Metadata().roster_statement_json, "stmt");
 
   // What is still to send survives (a restart reads it back) until its copy is in the outbox.
-  GroupRosterStore reopened(store_->ProfileDbPath());
+  SqliteGroupRosterStore reopened(store_->ProfileDbPath());
   auto pending = reopened.ListPendingSends(kGroup);
   ASSERT_TRUE(pending);
   ASSERT_EQ(pending->size(), 1u);

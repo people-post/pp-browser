@@ -127,7 +127,7 @@
 namespace pbr {
 
 static_assert(kSessionMutedForever == kThreadMutedForever,
-              "SessionMenu.h and ThreadLocalPrefsStore.h must agree on \"always\"");
+              "SessionMenu.h and IThreadLocalPrefsStore.h must agree on \"always\"");
 
 namespace {
 

@@ -5,7 +5,7 @@
 
 namespace pbr {
 
-GroupInviteGate::GroupInviteGate(StandingFn standing, GroupRosterStore& roster)
+GroupInviteGate::GroupInviteGate(StandingFn standing, IGroupRosterStore& roster)
     : standing_(std::move(standing)), roster_(roster) {}
 
 void GroupInviteGate::SetInboundPolicy(const GroupInvitePolicy policy) {

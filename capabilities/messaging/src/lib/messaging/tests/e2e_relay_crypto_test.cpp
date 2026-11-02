@@ -6,7 +6,7 @@
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/MlDsa.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/delivery/SqlitePeerSessionStore.h"
@@ -118,7 +118,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(thread));
   InstallTestPsk(psk_store, *thread);
 
-  GroupRosterStore roster_store(store.ProfileDbPath());
+  SqliteGroupRosterStore roster_store(store.ProfileDbPath());
   RelayReceivePipeline pipeline(
       store, [&peer_card](const std::string& account) -> std::optional<AccountCard> {
         return account == "account:peer" ? std::optional<AccountCard>(peer_card) : std::nullopt;

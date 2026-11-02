@@ -138,7 +138,9 @@ base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest
   encryption and the SQLite implementations, in one storage module. Still moving there: the SQLite stores in
-  delivery (`SqlitePeerSessionStore`, `SqliteControlLaneSeenStore`), messaging (the thread store) and calls.
+  delivery (`SqlitePeerSessionStore`, `SqliteControlLaneSeenStore`), messaging (the thread store and database,
+  `SqliteGroupRosterStore`, `SqliteThreadLocalPrefsStore`, `SqliteThreadMentionsStore`), calls, people and social.
+  An in-memory store and its SQLite one pass the same contract test (`messaging_store_contract_test`).
 
 ## What `src/common` provides
 

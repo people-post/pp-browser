@@ -1,4 +1,7 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "lib/messaging/SqliteThreadMentionsStore.h"
+#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
@@ -907,7 +910,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   InstallOrgBackendClients(settings);
 
   psk_store_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), profile_id_);
-  group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+  group_roster_ = std::make_unique<SqliteGroupRosterStore>(store_->ProfileDbPath());
   // The account locker keeps every group (G013): republish it on any roster change.
   group_roster_->SetOnChanged([this](const std::string& group_id) {
     PublishAccountLockerSoon();
@@ -915,8 +918,8 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
       mesh_messaging_->DecideHeldMentions(group_id);  // G015: a check that settled decides its held mentions
     }
   });
-  thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
-  thread_mentions_ = std::make_unique<ThreadMentionsStore>(store_->ProfileDbPath());
+  thread_prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(store_->ProfileDbPath());
+  thread_mentions_ = std::make_unique<SqliteThreadMentionsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
       return opened.error();
@@ -3047,9 +3050,9 @@ InboxController& ConversationsHub::Inbox() {
   return *inbox_;
 }
 
-ThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() { return *thread_prefs_; }
+IThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() { return *thread_prefs_; }
 
-ThreadMentionsStore* ConversationsHub::ThreadMentions() { return thread_mentions_.get(); }
+IThreadMentionsStore* ConversationsHub::ThreadMentions() { return thread_mentions_.get(); }
 
 MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;

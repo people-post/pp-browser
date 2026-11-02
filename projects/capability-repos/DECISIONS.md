@@ -443,7 +443,7 @@ Namespaces and an `include/` split wait for an actual repo split (CR022).
 ## CR024 — Capabilities own ideas; the app owns the database
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); stage 1 done, stage 2 next
+**Status:** accepted (Hongwei, 2026-11-02); stage 1 and stage 2a done, stage 2b next
 
 **Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
 `chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without
@@ -465,11 +465,16 @@ an include. Each capability also carried at-rest encryption (the profile DEK) in
 1. Delivery's ideas: the rename; the thin port with delivery's logic on top; a port for the control lane's seen
    ids; one in-memory store for delivery's ports (`InMemoryDeliveryStore`: the threads and the peer sessions over
    shared rows, as in SQLite) and in-memory seen ids. Calls takes the ports, and its tests run in memory.
-2. Storage: `src/lib/storage` takes the SQLite side together — the profile database, the thread store and group
-   rosters, the peer-session and control-lane stores (the thread store and the PSK store share the per-peer row,
-   so they move as one) — handed to the hub by the app; `chat_targets` is renamed `peer_sessions` there.
-   Messaging's SQLite tests go with them; its logic tests use delivery's in-memory store.
+2. Storage, in two commits. (a) Messaging's stores become ports in place — `IGroupRosterStore`,
+   `IThreadLocalPrefsStore`, `IThreadMentionsStore` — with in-memory implementations (`lib/messaging/testing`; the
+   roster shares each group's send target with `InMemoryDeliveryStore`, as SQLite's roster and thread store share
+   `group_targets`) and a contract test that runs every case on both. (b) `src/lib/storage` takes the SQLite side
+   together — the profile database and its schema, the thread store, rosters, thread prefs, mentions, the
+   peer-session and control-lane stores (they share rows, so they move as one) — handed to the hub by the app;
+   `chat_targets` is renamed `peer_sessions` there. Messaging's SQLite tests go with them; its logic tests run in
+   memory.
 3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
    move to storage (calls drops its at-rest crypto includes).
+4. People and social: `PeerCardStore`, `PostStore` and `ObjectIndex` the same way.
 
 **Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).

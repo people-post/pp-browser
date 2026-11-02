@@ -12,7 +12,7 @@
 #include "lib/delivery/E2eIngestClassifier.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
@@ -138,7 +138,7 @@ using AccountCardLookup = std::function<std::optional<AccountCard>(const std::st
 class RelayReceivePipeline : public Module {
 public:
   RelayReceivePipeline(IThreadStore& store, AccountCardLookup account_cards, IPeerSessionStore& psk_store,
-                       LocalKeys local_keys, GroupRosterStore& group_roster,
+                       LocalKeys local_keys, IGroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
@@ -283,7 +283,7 @@ private:
   AccountCardLookup account_cards_;
   IPeerSessionStore& psk_store_;
   LocalKeys local_keys_;
-  GroupRosterStore& group_roster_;
+  IGroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   const SystemControlRegistry* controls_ = nullptr;
   IControlLaneSeenStore* control_lane_seen_ = nullptr;

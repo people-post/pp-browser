@@ -7,7 +7,7 @@
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "common/directory/IContactTrustAccess.h"
@@ -71,7 +71,7 @@ struct FakeContacts : IContactTrustAccess {
 };
 
 // Temp-dir cleanup (Windows CI): do not call remove_all while SqliteThreadStore /
-// GroupRosterStore / SqlitePeerSessionStore still hold open DB handles. Member
+// SqliteGroupRosterStore / SqlitePeerSessionStore still hold open DB handles. Member
 // destructors close SQLite first; a harness destructor that remove_all's first
 // throws on Windows ("being used by another process") and aborts the test process.
 // Use a unique path and skip destructor cleanup (same as SyncTestHarness).
@@ -180,7 +180,7 @@ struct PartyHarness {
   SqliteThreadStore store;
   test::TestAccount keys;
   FakeContacts contacts;
-  GroupRosterStore roster;
+  SqliteGroupRosterStore roster;
   SqlitePeerSessionStore psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
@@ -1023,7 +1023,7 @@ TEST_F(GroupDissolvedIngestTest, ADeletedChatStaysGoneAndTheMarkerSurvivesAResta
   EXPECT_FALSE(bob_.store.FindGroupThread(kGroup)->has_value());
 
   // A restart reads it all back from disk.
-  GroupRosterStore reopened(bob_.store.ProfileDbPath());
+  SqliteGroupRosterStore reopened(bob_.store.ProfileDbPath());
   const auto metadata = reopened.LoadMetadata(kGroup).value();
   ASSERT_TRUE(metadata);
   EXPECT_EQ(metadata->sync_state, GroupSyncState::Dissolved);

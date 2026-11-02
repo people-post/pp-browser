@@ -1,13 +1,13 @@
 #pragma once
 
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/PeerDisplayResolver.h"
 #include "domain/peers/DirectoryShadowCache.h"
 
 namespace pbr {
 
 /** Peer naming over the directory nickname cache and (optionally) the group roster. */
-inline PeerDisplaySources PeerDisplaySourcesFrom(DirectoryShadowCache& shadows, GroupRosterStore* roster = nullptr) {
+inline PeerDisplaySources PeerDisplaySourcesFrom(DirectoryShadowCache& shadows, IGroupRosterStore* roster = nullptr) {
   PeerDisplaySources sources;
   sources.directory = [&shadows](const std::string& identity) { return shadows.Get(identity); };
   if (roster) {

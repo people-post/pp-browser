@@ -16,7 +16,7 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/PeerDisplaySources.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
@@ -184,7 +184,7 @@ public:
   MockChatHistoryPeerClient peer_history;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
-  GroupRosterStore roster_store;
+  SqliteGroupRosterStore roster_store;
   ContactsStore contacts;
   MockDirectoryClient directory;
   DirectoryShadowCache shadows;

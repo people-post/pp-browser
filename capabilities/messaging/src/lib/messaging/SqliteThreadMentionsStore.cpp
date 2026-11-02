@@ -1,4 +1,4 @@
-#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/SqliteThreadMentionsStore.h"
 
 #include <sqlite3.h>
 
@@ -18,9 +18,9 @@ CREATE TABLE IF NOT EXISTS thread_mentions (
 
 } // namespace
 
-ThreadMentionsStore::ThreadMentionsStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
+SqliteThreadMentionsStore::SqliteThreadMentionsStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {}
 
-Roe<sqlite3*> ThreadMentionsStore::OpenDb() const {
+Roe<sqlite3*> SqliteThreadMentionsStore::OpenDb() const {
   sqlite3* db = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     sqlite3_close(db);
@@ -35,7 +35,7 @@ Roe<sqlite3*> ThreadMentionsStore::OpenDb() const {
   return db;
 }
 
-Roe<void> ThreadMentionsStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> SqliteThreadMentionsStore::EnsureSchema(sqlite3* profile_db) const {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kThreadMentionsSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "thread mentions schema failed";
@@ -45,7 +45,7 @@ Roe<void> ThreadMentionsStore::EnsureSchema(sqlite3* profile_db) const {
   return {};
 }
 
-Roe<void> ThreadMentionsStore::Exec(const char* sql, const std::string& a, const std::string& b,
+Roe<void> SqliteThreadMentionsStore::Exec(const char* sql, const std::string& a, const std::string& b,
                                     const int64_t n) const {
   auto db = OpenDb();
   if (!db) {
@@ -72,21 +72,21 @@ Roe<void> ThreadMentionsStore::Exec(const char* sql, const std::string& a, const
   return {};
 }
 
-Roe<void> ThreadMentionsStore::Add(const std::string& thread_id, const std::string& message_id,
+Roe<void> SqliteThreadMentionsStore::Add(const std::string& thread_id, const std::string& message_id,
                                    const int64_t created_at) const {
   return Exec("INSERT OR IGNORE INTO thread_mentions (thread_id, message_id, created_at) VALUES (?, ?, ?);", thread_id,
               message_id, created_at);
 }
 
-Roe<void> ThreadMentionsStore::DropThread(const std::string& thread_id) const {
+Roe<void> SqliteThreadMentionsStore::DropThread(const std::string& thread_id) const {
   return Exec("DELETE FROM thread_mentions WHERE thread_id = ?;", thread_id);
 }
 
-Roe<void> ThreadMentionsStore::DropMessage(const std::string& thread_id, const std::string& message_id) const {
+Roe<void> SqliteThreadMentionsStore::DropMessage(const std::string& thread_id, const std::string& message_id) const {
   return Exec("DELETE FROM thread_mentions WHERE thread_id = ? AND message_id = ?;", thread_id, message_id);
 }
 
-Roe<std::set<std::string>> ThreadMentionsStore::Threads() const {
+Roe<std::set<std::string>> SqliteThreadMentionsStore::Threads() const {
   auto db = OpenDb();
   if (!db) {
     return db.error();
@@ -107,7 +107,7 @@ Roe<std::set<std::string>> ThreadMentionsStore::Threads() const {
   return threads;
 }
 
-Roe<std::optional<std::string>> ThreadMentionsStore::Oldest(const std::string& thread_id) const {
+Roe<std::optional<std::string>> SqliteThreadMentionsStore::Oldest(const std::string& thread_id) const {
   auto db = OpenDb();
   if (!db) {
     return db.error();

@@ -4,7 +4,7 @@
 #include "foundation/error/AppError.h"
 
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
@@ -44,7 +44,7 @@ struct Device {
     keys = test::TestAccount::Make();
     store = std::make_unique<SqliteThreadStore>(root.string());
     EXPECT_TRUE(store->SetDek(TestDek(seed)) && store->ListThreads());
-    roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
+    roster = std::make_unique<SqliteGroupRosterStore>(store->ProfileDbPath());
     psk = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), tag);
     EXPECT_TRUE(psk->SetDek(TestDek(seed)));
     pipeline = std::make_unique<RelayReceivePipeline>(
@@ -102,7 +102,7 @@ struct Device {
   /** The peers' cards this device keeps. */
   std::map<std::string, AccountCard> cards;
   std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<GroupRosterStore> roster;
+  std::unique_ptr<SqliteGroupRosterStore> roster;
   std::unique_ptr<SqlitePeerSessionStore> psk;
   std::unique_ptr<RelayReceivePipeline> pipeline;
 };

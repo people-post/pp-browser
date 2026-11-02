@@ -19,9 +19,8 @@ struct PeerSessionKey {
   std::string peer_device;
 
   bool operator==(const PeerSessionKey& other) const {
-    return peer_identity_kind == other.peer_identity_kind &&
-           peer_identity_value == other.peer_identity_value && channel == other.channel &&
-           peer_device == other.peer_device;
+    return peer_identity_kind == other.peer_identity_kind && peer_identity_value == other.peer_identity_value &&
+           channel == other.channel && peer_device == other.peer_device;
   }
 };
 

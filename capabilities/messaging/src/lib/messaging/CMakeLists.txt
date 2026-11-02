@@ -10,7 +10,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     AtAiParser.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
-    ThreadLocalPrefsStore.cpp
+    SqliteThreadLocalPrefsStore.cpp
     PeerThreadLogic.cpp
     GroupInviteGate.cpp
     RelayReceivePipeline.cpp
@@ -27,12 +27,13 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupRosterSyncCodec.cpp
     GroupRosterSyncFamily.cpp
     MentionAlert.cpp
-    GroupRosterStore.cpp
+    IGroupRosterStore.cpp
+    SqliteGroupRosterStore.cpp
     GroupTypes.cpp
     SentCopy.cpp
     CopyAsk.cpp
     CardAsk.cpp
-    ThreadMentionsStore.cpp
+    SqliteThreadMentionsStore.cpp
     ContactLocator.cpp
     TranscriptBodyCodec.cpp
     TranscriptAssembly.cpp
@@ -52,5 +53,12 @@ pp_browser_add_lib_library(pp_lib_messaging
     SQLite::SQLite3)
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Messaging's stores in memory (rosters, thread prefs, mentions): test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_messaging_testing
+    SOURCES
+      testing/InMemoryMessagingStores.cpp
+    PUBLIC_LIBS
+      pp_lib_messaging
+      pp_lib_delivery_testing)
   add_subdirectory(tests)
 endif()

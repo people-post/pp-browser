@@ -7,7 +7,7 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/messaging/SyncStateCodec.h"
@@ -1096,7 +1096,7 @@ Roe<bool> SqliteThreadStore::DeleteThread(const std::string& thread_id) {
   std::lock_guard profile_lock(db_.profile_mutex());
   ClearChatTargetThreadLinkUnlocked(thread_id);
   {
-    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
+    SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     (void)roster.ClearGroupTargetByThreadId(thread_id);
   }
   sqlite3_stmt* stmt = nullptr;
@@ -1292,7 +1292,7 @@ Roe<std::optional<Thread>> SqliteThreadStore::FindGroupThread(const std::string&
   if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
+  SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
   auto mapped_thread_id = roster.FindThreadIdForGroup(group_id);
   if (!mapped_thread_id) {
     return mapped_thread_id.error();
@@ -1343,7 +1343,7 @@ Roe<Thread> SqliteThreadStore::FindOrCreateGroupThread(const std::string& group_
     return saved.error();
   }
 
-  GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
+  SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
   if (auto target = roster.UpsertGroupTarget(group_id, saved->id, 1, 1); !target) {
     return target.error();
   }
@@ -1380,7 +1380,7 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
     return Error("Thread not found");
   }
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
+    SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     return roster.AllocateGroupSenderSeq(*(*thread)->group_id);
   }
   std::lock_guard lock(db_.profile_mutex());
@@ -1423,7 +1423,7 @@ Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& th
     return Error("Thread not found");
   }
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
+    SqliteGroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     return roster.GetGroupSessionEpoch(*(*thread)->group_id);
   }
   std::lock_guard lock(db_.profile_mutex());

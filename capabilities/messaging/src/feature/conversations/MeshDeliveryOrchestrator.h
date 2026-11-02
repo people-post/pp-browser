@@ -10,10 +10,10 @@
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/messaging/CardAsk.h"
 #include "lib/messaging/CopyAsk.h"
-#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
 #include "lib/delivery/DeliveryNotice.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerKemKeyStore.h"
 #include "lib/delivery/IPeerSessionStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
@@ -96,7 +96,7 @@ public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
                       InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
-                      GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                      IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
                       std::function<void(std::function<void()>)> amp_post_io = {},
@@ -145,7 +145,7 @@ public:
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /** Where a live message that mentions us is marked (G015); null: not marked. */
-  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
+  void SetThreadMentions(IThreadMentionsStore* mentions) { mentions_ = mentions; }
   /**
    * A group's member check settled (its roster changed): its held mentions are decided — those still under
    * kHeldMentionMaxAgeMs that reach us are marked and alert like a fresh one; the rest are dropped.
@@ -357,7 +357,7 @@ private:
   InboxController& inbox_;
   AccountKeyResolver& account_keys_;
   IPeerSessionStore& psk_store_;
-  GroupRosterStore& group_roster_;
+  IGroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
@@ -410,7 +410,7 @@ private:
     std::string local_account;
     int64_t held_at_ms = 0;
   };
-  ThreadMentionsStore* mentions_ = nullptr;
+  IThreadMentionsStore* mentions_ = nullptr;
   /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
   static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
   std::mutex asked_copies_mutex_;

@@ -91,6 +91,18 @@ public:
   Roe<void> Save(const PeerSessionRecord& record) override;
   Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& key) override;
 
+  // A group thread's numbering — its send target. SQLite keeps it with the group roster; messaging's in-memory roster
+  // reads and writes it here, so the two share it as they do there.
+  void SetGroupTarget(const std::string& group_id, const std::string& thread_id, uint32_t session_epoch,
+                      uint64_t next_outgoing_seq);
+  void ClearGroupTarget(const std::string& group_id);
+  void ClearGroupTargetsOfThread(const std::string& thread_id);
+  std::optional<std::string> GroupTargetThread(const std::string& group_id) const;
+  Roe<uint64_t> AllocateGroupSeq(const std::string& group_id);
+  Roe<uint32_t> GroupEpoch(const std::string& group_id) const;
+  /** A new epoch numbers from 1. */
+  Roe<void> SetGroupEpoch(const std::string& group_id, uint32_t session_epoch);
+
 private:
   /** A thread's numbering: a direct thread's chat target, or a group's. */
   struct Numbering {
@@ -101,9 +113,9 @@ private:
   struct ChatTargetRow {
     DirectChatTarget target;
     std::string participant_contact_id;
-    std::string thread_id;  // empty while only the session exists
+    std::string thread_id; // empty while only the session exists
     Numbering numbering;
-    std::optional<PeerSessionRecord> session;  // its epoch lives in `numbering`
+    std::optional<PeerSessionRecord> session; // its epoch lives in `numbering`
   };
   struct DeviceSessionRow {
     PeerSessionRecord session;
@@ -123,7 +135,11 @@ private:
   std::map<std::string, Thread> threads_;
   std::vector<ChatTargetRow> targets_;
   std::map<std::tuple<std::string, std::string, CryptoChannel, std::string>, DeviceSessionRow> devices_;
-  std::map<std::string, Numbering> groups_;
+  struct GroupTargetRow {
+    std::string thread_id;
+    Numbering numbering;
+  };
+  std::map<std::string, GroupTargetRow> groups_;
   /** Per thread, ascending display order. */
   std::map<std::string, std::vector<ThreadMessage>> messages_;
   std::map<std::string, ConversationSummary> memory_;

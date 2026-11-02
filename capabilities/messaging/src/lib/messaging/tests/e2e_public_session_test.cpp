@@ -13,7 +13,7 @@
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/delivery/OutboundMessage.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/SqlitePeerSessionStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
@@ -81,7 +81,7 @@ struct Side {
     if (!store->SetDek(TestDek(seed)) || !store->ListThreads()) {
       throw std::runtime_error("store");
     }
-    roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
+    roster = std::make_unique<SqliteGroupRosterStore>(store->ProfileDbPath());
     psk = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), tag);
     if (!psk->SetDek(TestDek(seed))) {
       throw std::runtime_error("psk");
@@ -399,7 +399,7 @@ struct Side {
   std::unordered_map<std::string, std::string> peer_kem;
   SystemControlRegistry controls;
   std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<GroupRosterStore> roster;
+  std::unique_ptr<SqliteGroupRosterStore> roster;
   std::unique_ptr<SqlitePeerSessionStore> psk;
   std::unique_ptr<SqliteControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;

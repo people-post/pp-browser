@@ -1,6 +1,6 @@
 // The unread-mention marker (group-chat G015): per message, dropped with the message, the opened thread or the
 // deleted one.
-#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/SqliteThreadMentionsStore.h"
 
 #include "common/Utilities.h"
 #include "lib/messaging/SqliteThreadStore.h"
@@ -18,7 +18,7 @@ protected:
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
-    mentions_ = std::make_unique<ThreadMentionsStore>(store_->ProfileDbPath());
+    mentions_ = std::make_unique<SqliteThreadMentionsStore>(store_->ProfileDbPath());
   }
 
   void TearDown() override {
@@ -29,7 +29,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<ThreadMentionsStore> mentions_;
+  std::unique_ptr<SqliteThreadMentionsStore> mentions_;
 };
 
 TEST_F(ThreadMentionsStoreTest, TheOldestUnreadMentionIsWhereTheChatOpens) {

@@ -1,5 +1,5 @@
 #include "lib/messaging/GroupMembershipApply.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/SqliteThreadStore.h"
 
 #include "common/Utilities.h"
@@ -21,9 +21,9 @@ protected:
                 ("pp_group_roster_apply_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-    // Ensure threads/ + profile.db exist before GroupRosterStore opens the path.
+    // Ensure threads/ + profile.db exist before SqliteGroupRosterStore opens the path.
     ASSERT_TRUE(store_->ListThreads());
-    roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+    roster_ = std::make_unique<SqliteGroupRosterStore>(store_->ProfileDbPath());
   }
 
   void TearDown() override {
@@ -66,7 +66,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<GroupRosterStore> roster_;
+  std::unique_ptr<SqliteGroupRosterStore> roster_;
 };
 
 TEST_F(GroupRosterInviteApplyTest, AcceptAddsMemberAndBumpsEpoch) {
@@ -533,7 +533,7 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
   std::atomic<int> applied{0};
   for (int i = 0; i < kInvitees; ++i) {
     workers.emplace_back([this, i, &applied]() {
-      GroupRosterStore own(store_->ProfileDbPath());  // each worker its own connection, as in the app
+      SqliteGroupRosterStore own(store_->ProfileDbPath());  // each worker its own connection, as in the app
       auto accepted = ApplyInviteAcceptToRoster(own, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
                                                 "group:hike", "relay:alice", util::NowUnixMs());
       if (accepted && *accepted) {

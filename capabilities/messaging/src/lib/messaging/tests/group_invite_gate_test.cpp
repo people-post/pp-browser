@@ -1,4 +1,4 @@
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/GroupInviteGate.h"
@@ -34,7 +34,7 @@ protected:
     std::filesystem::create_directories(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
-    roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+    roster_ = std::make_unique<SqliteGroupRosterStore>(store_->ProfileDbPath());
     gate_ = std::make_unique<GroupInviteGate>(
         [this](const std::string& identity) {
           auto it = standings_.find(identity);
@@ -58,7 +58,7 @@ protected:
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<GroupRosterStore> roster_;
+  std::unique_ptr<SqliteGroupRosterStore> roster_;
   std::map<std::string, GroupInviteGate::InviterStanding> standings_;
   std::unique_ptr<GroupInviteGate> gate_;
 };
