@@ -9,7 +9,7 @@
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "common/runtime/QueueOwnerExecutor.h"
 #include "common/PbrCompat.h"
@@ -180,7 +180,7 @@ protected:
   pp::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
-  CallMediaEngine engine_{devices_};
+  MediaEngine engine_{devices_};
   FakeDial dial_;
   FakeRelay relay_;
   std::unique_ptr<BroadcastViewerWorkflow> workflow_;
@@ -202,7 +202,7 @@ TEST_F(BroadcastViewerWorkflowTest, AdmittedViewerListensReceiveOnlyOnThePublish
   EXPECT_EQ(relay_.last_quote.want_up_bps, 0) << "receive-only";
   EXPECT_EQ(relay_.subscriptions,
             (std::vector<std::pair<uint32_t, uint16_t>>{{BroadcastPublisherStreamId(kPublisher), 0}}));
-  EXPECT_EQ(engine_.ActiveSpec(), CallMediaEngine::SessionSpec::PlaybackOnly());
+  EXPECT_EQ(engine_.ActiveSpec(), MediaEngine::SessionSpec::PlaybackOnly());
   EXPECT_TRUE(devices_.Holders(MediaDeviceKind::Mic).empty()) << "a viewer never takes the mic";
 
   relay_.sink(SealedFrame(context_, 1));
@@ -438,7 +438,7 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
 // thread-ownership t2b-4: hub steps run on the media-sessions owner; the GUI reads a snapshot and
 // hears results on UI; the workflows end on the owner when the hub goes.
 TEST_F(BroadcastViewerWorkflowTest, HubStepsRunOnTheMediaSessionsOwner) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
   admission_.emplace("hop", Admit("hop"));
   PeerAnnounceTip tip;

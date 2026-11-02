@@ -3,7 +3,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/net/ClientCompat.h"
-#include "foundation/runtime/AppVersion.h"
+#include "foundation/product/AppVersion.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 #include "common/Logger.h"
@@ -126,7 +126,7 @@ void ClientCompatController::PublishSupport(const ClientCompatDocument& doc) {
 }
 
 void ClientCompatController::PresentAction(CompatUiAction action, const ClientCompatDocument& doc) {
-  upgrade_url_ = ResolvedUpgradeUrl(doc);
+  upgrade_url_ = ResolvedUpgradeUrl(doc, kDefaultUpgradeUrl);
   if (action == CompatUiAction::UpdateRequired) {
     ShowUpdateRequired(doc);
     return;

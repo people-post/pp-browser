@@ -6,7 +6,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 
 **Related:** [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
-**C++ wire profile:** [Serialize.hpp](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+**C++ wire profile:** [Serialize.hpp](../../capabilities/base/src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
 ## Overview
 
@@ -177,7 +177,7 @@ Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_
 ## Code
 
 The message formats are the delivery capability's (`capabilities/delivery/src/lib/delivery/`, capability-repos CR020, CR022); the AEAD blob both
-messages and the at-rest store use is the base's (`src/foundation/crypto/`); generic pieces are pp-cpp-crypto's.
+messages and the at-rest store use is the base's (`capabilities/base/src/foundation/crypto/`); generic pieces are pp-cpp-crypto's.
 
 | Component | Where | Role |
 |-----------|-------|------|

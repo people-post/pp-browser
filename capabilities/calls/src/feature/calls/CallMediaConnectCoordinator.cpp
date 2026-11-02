@@ -1,7 +1,7 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
 
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 
 #include <algorithm>
 #include <chrono>

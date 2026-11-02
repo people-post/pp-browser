@@ -60,7 +60,7 @@ struct BroadcastViewerWorkflow::FrameSink {
   std::string context;
   uint32_t epoch = 1;
   uint32_t stream_id = 0;
-  CallMediaEngine* engine = nullptr;
+  MediaEngine* engine = nullptr;
   std::atomic<uint64_t> rejected{0};
 
   void OnFrame(const mesh::MediaDataFrame& frame) {
@@ -73,7 +73,7 @@ struct BroadcastViewerWorkflow::FrameSink {
       rejected.fetch_add(1, std::memory_order_relaxed);
       return;
     }
-    CallMediaEngine::SfuPacket packet;
+    MediaEngine::SfuPacket packet;
     packet.stream_id = stream_id;
     packet.channel_id = frame.channel_id;
     packet.seq = opened->seq;
@@ -418,7 +418,7 @@ void BroadcastViewerWorkflow::OnAttached(const std::string& hop, mesh::MediaRela
 
 void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   mesh::IMediaRelayClient* relay = ports_.relay.relay;
-  if (auto started = ports_.engine->Start(status_.target.join_handle, CallMediaEngine::SessionSpec::PlaybackOnly(), {});
+  if (auto started = ports_.engine->Start(status_.target.join_handle, MediaEngine::SessionSpec::PlaybackOnly(), {});
       !started) {
     Fail("playback: " + started.error().message);
     return;

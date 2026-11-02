@@ -112,13 +112,14 @@ Moved in pp-cpp-common **v1.3.0** (`common/runtime/`, namespace `pp`, with its t
 (`common/PbrCompat.h`).
 
 - **Owners are registered, not named by the runtime:** `AppRuntimeConfig::owners` lists id + thread name (ids
-  below `kMaxOwnerThreads`); a drain passes through each registered owner. pp-browser's live in
-  `foundation/runtime/ProductOwners.h` (`kMediaSessionsOwner`, `pp-media-sess`), with `ProductRuntimeConfig()`
-  and its own `ManualOwnerRuntimeConfig()` for tests.
-- **No product version in the shared runtime:** `pp_foundation_runtime_core` is now pp-browser's small target
-  (the product's owners on top of `pp_common`) and still carries `PP_BROWSER_VERSION` /
-  `PP_BROWSER_RELEASE_VERSION`.
-- `AppLifecycle`, `BackgroundSyncScheduler`, `AppVersion`, `ProductBranding`, `FramePacing` stay in pp-browser.
+  below `kMaxOwnerThreads`); a drain passes through each registered owner. A capability names the owner it
+  runs on (calls: `common/media/MediaSessionsOwner.h`, `kMediaSessionsOwner`, `pp-media-sess`); the app registers
+  them (`feature/product/ProductOwners.h`, `ProductRuntimeConfig()`, `ManualOwnerRuntimeConfig()`) (CR023 step 3).
+- **No product version in the shared runtime or the base:** the version and the product's name are the
+  product's (`foundation/product`, `pp_foundation_product`); the app hands the base and capabilities values
+  (`CrashIdentity`, the text layer's `{product}` / `product.name`).
+- `AppLifecycle`, `BackgroundSyncScheduler`, `FramePacing` stay in pp-browser's base; `AppVersion`,
+  `ProductBranding` are the product's.
 
 ## Before anything moves (CR012)
 

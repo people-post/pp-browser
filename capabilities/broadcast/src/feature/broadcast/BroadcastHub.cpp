@@ -6,7 +6,7 @@
 #include "lib/broadcast/BroadcastMedia.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/MeshAlias.h"
 
 #include <chrono>
@@ -36,8 +36,10 @@ std::function<void(Roe<void>)> ReplyOnUi(std::function<void(Roe<void>)> on_done)
 
 BroadcastHub::BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster,
                            OwnerExecutor* executor)
-    : executor_(executor ? *executor : own_executor_), tasks_(executor_),
-      engine_(std::make_unique<CallMediaEngine>(devices)), capture_engine_(std::make_unique<CallMediaEngine>(devices)) {
+    : executor_(executor ? *executor : own_executor_),
+      tasks_(executor_),
+      engine_(std::make_unique<MediaEngine>(devices)),
+      capture_engine_(std::make_unique<MediaEngine>(devices)) {
   viewer.engine = engine_.get();
   viewer_ = std::make_unique<BroadcastViewerWorkflow>(std::move(viewer));
   viewer_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) {

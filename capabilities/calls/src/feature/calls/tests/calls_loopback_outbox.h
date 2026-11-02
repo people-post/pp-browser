@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/runtime/RuntimeOwnerExecutor.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "common/PbrCompat.h"
 

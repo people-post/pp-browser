@@ -2,10 +2,10 @@
 
 #include "gui/chat/ChatScreenState.h"
 #include "lib/media/MediaDeviceArbiter.h"
-#include "lib/media/VoiceGesture.h"
+#include "lib/voice/VoiceGesture.h"
 #include "lib/media/MicPermission.h"
-#include "lib/media/VoiceRecorder.h"
-#include "lib/media/VoiceTouchHold.h"
+#include "lib/voice/VoiceRecorder.h"
+#include "lib/voice/VoiceTouchHold.h"
 #include "lib/messaging/AttachmentLimits.h"
 
 #include <ui/dom/EventListener.h>

@@ -3,7 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
 #include "gui/chat/VoiceBubble.h"
-#include "lib/media/VoiceFile.h"
+#include "lib/voice/VoiceFile.h"
 
 #include <ui/dom/Element.h>
 

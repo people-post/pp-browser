@@ -9,7 +9,7 @@
 #include "lib/calls/CallHopAttachLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -48,11 +48,15 @@ logging::Logger& DirectReceiveLog() {
 
 } // namespace
 
-CallMediaBridge::CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions,
-                                             ICallMediaKeyStore& media_keys, CallMediaEngine& media,
-                                             ICallMediaTransport& direct, mesh::PeerReachPorts reach)
-    : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct),
-      reach_(std::move(reach)), connect_(direct, reach_),
+CallMediaBridge::CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
+                                 MediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach)
+    : host_(host),
+      sessions_(sessions),
+      media_keys_(media_keys),
+      media_(media),
+      direct_(direct),
+      reach_(std::move(reach)),
+      connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
 
@@ -861,7 +865,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   host_.P2pNotifyRingChanged();
 }
 
-void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, const CallMediaHost& host,
                                          const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                          const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
                                          const uint8_t mark, const std::vector<uint8_t>& payload) {
@@ -888,7 +892,7 @@ void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& med
     }
     return;
   }
-  CallMediaEngine::SfuPacket pkt;
+  MediaEngine::SfuPacket pkt;
   pkt.stream_id = remote_stream;
   pkt.channel_id = channel;
   pkt.seq = seq;
@@ -1383,17 +1387,18 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   if (!call_media) {
     return Error("no live call for media " + call_id);
   }
-  auto started = call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
-    if (!mesh::IsAudioChannel(pkt.channel_id) && !mesh::IsVideoChannel(pkt.channel_id)) {
-      return;
-    }
-    // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
-    if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
-      return;
-    }
-    const uint32_t seq = mesh::IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
-    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
-  });
+  auto started =
+      call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const MediaEngine::SfuPacket& pkt) {
+        if (!mesh::IsAudioChannel(pkt.channel_id) && !mesh::IsVideoChannel(pkt.channel_id)) {
+          return;
+        }
+        // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
+        if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
+          return;
+        }
+        const uint32_t seq = mesh::IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+        (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
+      });
   if (!started) {
     return started;
   }
@@ -1641,7 +1646,7 @@ void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
-  // Bridge state, the connect sequence and CallMediaEngine::Stop (SDL capture — CALLS.md) are
+  // Bridge state, the connect sequence and MediaEngine::Stop (SDL capture — CALLS.md) are
   // calls-owner only; every stop reaches here through the owner's events.
   PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
   StopMeshMediaOnUi(call_id);
@@ -1734,7 +1739,7 @@ void CallMediaBridge::ReleaseDirectTransport(const CallMediaSeat::Token& token) 
 }
 
 void CallMediaBridge::ReleaseDirectTransportBody() {
-  // SoftMigrate: drop 1:1 transport; keep CallMediaEngine capture feeding media_relay.
+  // SoftMigrate: drop 1:1 transport; keep MediaEngine capture feeding media_relay.
   Apply(CallDirectPlannerEvent::ReleaseTransport, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();

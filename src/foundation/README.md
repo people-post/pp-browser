@@ -1,25 +1,22 @@
 # `src/foundation`
 
-Shared **kernel** implementations every lib peer may use. Ordered bands (not fully peer-independent).
+The **product's base** (CR015, [CR023](../../projects/capability-repos/DECISIONS.md) step 3): what is pp-browser's own
+and the apps read — capabilities never include it.
 
-```
-runtime, platform(_core)   # platform/ui/ = window + RmlUi Backend + overlays
-  ↑
-error, i18n
-  ↑
-data
-  ↑
-crypto
-  ↑
-identity
-```
+| Folder | Target | Contents |
+|--------|--------|----------|
+| `product/` | `pp_foundation_product` | The product's name and slug (`ProductBranding.h`) and the build's version (`AppVersion.h`) |
+| `platform/` | `pp_foundation_platform(_core)` | Platform hooks, OS integration, the window host and overlays (`platform/ui/`) |
+| `i18n/` | `pp_foundation_i18n` | Text catalogs and the translator capabilities ask through (`common/Localized.h`) |
+| `data/` | `pp_foundation_data` | Config, its file format, data paths |
 
-This tree holds the foundation band: `runtime/`, `platform/` (including `platform/ui/` for the product window host), `error/`, `i18n/`, `data/`, `crypto/`, and `identity/` (PeerId).
-
-CMake targets: `pp_foundation_runtime(_core)`, `pp_foundation_platform(_core)`, `pp_foundation_error`, `pp_foundation_i18n`, `pp_foundation_data`, `pp_foundation_crypto`, `pp_foundation_identity`, plus convenience aggregate `pp_foundation`. Use `pp_browser_add_foundation_library` in this tree. GUI builds fold `platform/ui/` sources into `pp_foundation_platform` (headless uses `_core` only).
-
-Includes: `#include "foundation/…"`. Aggregate `pp_foundation` is defined in this folder’s [`CMakeLists.txt`](CMakeLists.txt). Product-stack convenience `pp_base` is in [`src/CMakeLists.txt`](../CMakeLists.txt).
+The shared base — `common/` and foundation's runtime, TLS, errors, diagnostics, crypto and identity — is
+[`capabilities/base/src/`](../../capabilities/base/src/): every capability uses it, and it uses pp-cpp-* only. Its
+targets keep their names (`pp_pbr_common`, `pp_foundation_runtime_core`, `pp_foundation_crypto`, …) and paths
+(`#include "foundation/crypto/…"`). The aggregate `pp_foundation` (both) is in
+[`src/CMakeLists.txt`](../CMakeLists.txt).
 
 North Star: [`docs/architecture/SRC_LAYOUT.md`](../../docs/architecture/SRC_LAYOUT.md).
 
-**Testing:** aim for near-full **unit** coverage of band logic. Doctrine: [TESTING.md](../../docs/architecture/TESTING.md). SQLite/temp-dir conventions: [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md#unit-test-conventions).
+**Testing:** doctrine [TESTING.md](../../docs/architecture/TESTING.md); SQLite / temp-dir conventions
+[TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md#unit-test-conventions).

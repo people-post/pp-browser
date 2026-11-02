@@ -5,7 +5,7 @@
 #include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -144,7 +144,7 @@ TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
 // pushes on the caller (the policy is in before connectivity wires), changes push from a worker, and
 // nothing is pushed between Stop and the next Start (the inputs read a mesh that may be going).
 TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
-  AppRuntime::Initialize(ProductRuntimeConfig());
+  AppRuntime::Initialize(AppRuntimeConfig{});
   {
     mesh::MeshConnectivity connectivity;
     MeshHopPolicyFeed feed(connectivity);

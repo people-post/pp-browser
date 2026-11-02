@@ -40,7 +40,7 @@ public:
     bool connected = false;
     std::string path;  // CallMediaBridge::MediaPathKind: direct / punched / circuit
     CallPathQuality quality = CallPathQuality::Good;
-    CallMediaEngineHealth health;
+    MediaEngineHealth health;
   };
 
   /** Placing a call. Returns the previous call's final line if one was still tracked. */
@@ -86,7 +86,7 @@ public:
       return out;
     }
     NoteVitals(vitals, out);
-    const CallMediaEngineHealth& h = tick.health;
+    const MediaEngineHealth& h = tick.health;
     if (!call_.have_base) {
       call_.base = h;
       call_.have_base = true;
@@ -196,9 +196,9 @@ private:
     int stalls = 0;
     int64_t stall_max_ms = 0;
     bool have_base = false;
-    CallMediaEngineHealth base;
+    MediaEngineHealth base;
     /** The last sample taken while the engine ran (the summary's audio fields). */
-    CallMediaEngineHealth last;
+    MediaEngineHealth last;
     bool have_running_sample = false;
     bool last_sample_stopped = false;
     DeviceVitals vitals_start;
@@ -272,8 +272,8 @@ private:
     if (call_.connected_ms == 0) {
       return SetupLine(UnconnectedResult(), end_ms);
     }
-    const CallMediaEngineHealth& b = call_.base;
-    const CallMediaEngineHealth& l = call_.last;
+    const MediaEngineHealth& b = call_.base;
+    const MediaEngineHealth& l = call_.last;
     const int64_t duration_ms = std::max<int64_t>(end_ms - call_.connected_ms, 1);
     int64_t quality_total = 0;
     for (const int64_t ms : call_.quality_ms) {

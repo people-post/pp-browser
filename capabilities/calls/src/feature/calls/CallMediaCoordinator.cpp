@@ -30,7 +30,7 @@ const char* PathName(const CallMediaSeat::PathKind path) {
 CallMediaCoordinator::CallMediaCoordinator(std::string call_id, const CallMediaResources& resources)
     : call_id_(std::move(call_id)), resources_(resources) {}
 
-Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, CallMediaEngine::SfuSendFn send) {
+Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, MediaEngine::SfuSendFn send) {
   CallMediaSeat* const seat = resources_.seat;
   if (seat && !seat->AllowsPathOp(seat->Acquire(call_id_))) {
     return Error("media seat will not hold call " + call_id_);

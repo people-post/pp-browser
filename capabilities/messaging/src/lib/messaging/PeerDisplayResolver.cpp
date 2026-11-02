@@ -2,7 +2,7 @@
 
 #include "lib/people/ContactJson.h"
 #include "common/Localized.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "common/Localized.h"
 #include "common/MeshAlias.h"
 
 #include <utility>
@@ -80,7 +80,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
 
   if (thread.kind == ThreadKind::Ai) {
     PeerDisplayLabel label;
-    label.title = thread.title.empty() ? kProductName : thread.title;
+    label.title = thread.title.empty() ? Localized(kProductNameKey) : thread.title;
     label.trust = PeerLabelTrust::Contact;
     return label;
   }

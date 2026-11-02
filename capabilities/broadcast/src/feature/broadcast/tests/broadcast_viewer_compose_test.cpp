@@ -9,7 +9,7 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 #include "feature/broadcast/AmpBroadcastTransport.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/VideoCodecUnavailable.h"
 #include "mesh/l4/media_relay/client/AmpMediaRelayClient.h"
@@ -108,7 +108,7 @@ protected:
                                                           PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
 
     rpc_ = std::make_unique<AmpBroadcastRpcClient>(*links_a_, pump, PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
-    engine_ = std::make_unique<CallMediaEngine>(devices_);
+    engine_ = std::make_unique<MediaEngine>(devices_);
     engine_->SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(ViewerPorts());
     // The fixture plays the runner: the workflow's events come back through `ui_`.
@@ -238,7 +238,7 @@ protected:
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
   AlwaysDialable dial_;
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
-  std::unique_ptr<CallMediaEngine> engine_;
+  std::unique_ptr<MediaEngine> engine_;
   std::unique_ptr<BroadcastViewerWorkflow> workflow_;
   std::deque<std::function<void()>> ui_;
   pp::QueueOwnerExecutor owner_{ui_};
@@ -255,7 +255,7 @@ TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelay
   ASSERT_EQ(workflow_->CurrentStatus().phase, BroadcastViewerWorkflow::Phase::Listening)
       << workflow_->CurrentStatus().error;
   EXPECT_EQ(workflow_->CurrentStatus().hop, hop_);
-  EXPECT_EQ(engine_->ActiveSpec(), CallMediaEngine::SessionSpec::PlaybackOnly());
+  EXPECT_EQ(engine_->ActiveSpec(), MediaEngine::SessionSpec::PlaybackOnly());
 
   // Let the viewer's subscribe reach the hop before the publisher sends.
   for (int i = 0; i < 40; ++i) {
@@ -306,7 +306,7 @@ TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
   auto publisher_client = std::make_unique<mesh::AmpMediaRelayClient>(*publisher_relay_, [this]() { h_->PumpAll(); },
                                                                 publisher_, PostIo(*h_->runtime_b),
                                                                 PostAfter(*h_->runtime_b));
-  CallMediaEngine capture(devices_);
+  MediaEngine capture(devices_);
   capture.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
   BroadcasterPorts bp;
   bp.local_peer_id = [this]() { return publisher_; };

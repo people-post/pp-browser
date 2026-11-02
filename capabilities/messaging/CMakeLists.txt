@@ -8,6 +8,8 @@ include(PpBrowserFeature)
 # Chat keeps its data in the profile's SQLite, which headless configures do not build.
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(src/lib/messaging)
+  # Voice messages: recording and playing a clip (Ogg Opus), on the media capability's devices.
+  add_subdirectory(src/lib/voice)
   add_subdirectory(src/domain/attachments)
   add_subdirectory(src/feature/conversations)
 endif()

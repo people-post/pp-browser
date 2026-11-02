@@ -2,7 +2,7 @@
 
 #include "mesh/types/AddressDisclosure.h"
 #include "lib/delivery/IPeerSessionStore.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/ICallSessionStore.h"
@@ -88,9 +88,9 @@ public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
-  CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                     ICallSessionStore& sessions, ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
-                     IPeerSessionStore& psk_store, CallMediaEngine& media);
+  CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, ICallSessionStore& sessions,
+                     ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery, IPeerSessionStore& psk_store,
+                     MediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -292,7 +292,7 @@ public:
                                 std::optional<int64_t> relay_created_at_ms = std::nullopt,
                                 std::optional<int64_t> relay_server_time_ms = std::nullopt);
 
-  CallMediaEngine& Media();
+  MediaEngine& Media();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
   /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
@@ -411,7 +411,7 @@ private:
   ICallSessionStore& sessions_;
   ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
-  CallMediaEngine& media_;
+  MediaEngine& media_;
   /** Before topology_ / live_calls_: both hold it (ports / media resources). */
   CallMediaSeat seat_;
   CallDirectDriver* direct_driver_ = nullptr;

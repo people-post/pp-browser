@@ -21,7 +21,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/AmpDhtProtocol.h"
@@ -92,7 +92,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   if (!clock) {
     return Error("null Amp clock");
   }
-  AppRuntime::Initialize(ProductRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsRuntimeConfig());
   AppRuntime::InitializeUI();
 
   auto harness = std::unique_ptr<ProductStackHarness>(new ProductStackHarness());
@@ -845,14 +845,14 @@ public:
   std::chrono::steady_clock::time_point MetAt() const { return met_at_; }
   const std::string& Last() const { return last_; }
 
-  void Tick(const std::vector<CallMediaStreamHealth>& streams) {
+  void Tick(const std::vector<MediaStreamHealth>& streams) {
     const auto now = std::chrono::steady_clock::now();
     if (!Enabled() || met_ || now < next_sample_) {
       return;
     }
     next_sample_ = now + std::chrono::milliseconds(250);
     Sample sample{now, {}};
-    for (const CallMediaStreamHealth& s : streams) {
+    for (const MediaStreamHealth& s : streams) {
       sample.rx[s.stream_id] = s.rx_frames;
     }
     samples_.push_back(std::move(sample));
@@ -902,11 +902,11 @@ private:
 
 } // namespace
 
-std::vector<CallMediaStreamHealth> ProductStackHarness::RxStreams() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+std::vector<MediaStreamHealth> ProductStackHarness::RxStreams() const {
+  if (!stack_ || !stack_->Engine()) {
     return {};
   }
-  return stack_->MediaEngine()->HealthSnapshot().streams;
+  return stack_->Engine()->HealthSnapshot().streams;
 }
 
 std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
@@ -947,17 +947,17 @@ std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
 }
 
 uint64_t ProductStackHarness::TxAudioFrames() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+  if (!stack_ || !stack_->Engine()) {
     return 0;
   }
-  return stack_->MediaEngine()->HealthSnapshot().tx_audio_frames;
+  return stack_->Engine()->HealthSnapshot().tx_audio_frames;
 }
 
 uint64_t ProductStackHarness::RxAudioFrames() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+  if (!stack_ || !stack_->Engine()) {
     return 0;
   }
-  return stack_->MediaEngine()->HealthSnapshot().rx_audio_frames;
+  return stack_->Engine()->HealthSnapshot().rx_audio_frames;
 }
 
 int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
@@ -1139,8 +1139,7 @@ void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   const bool flushed = PumpUntil(
       [this, sends_before]() {
-        return ui_->Phase() == CallPhase::Idle &&
-               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive()) &&
+        return ui_->Phase() == CallPhase::Idle && (!stack_->Engine() || !stack_->Engine()->IsActive()) &&
                control_sends_.load(std::memory_order_acquire) > sends_before;
       },
       8000);

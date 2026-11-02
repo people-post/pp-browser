@@ -3,7 +3,7 @@
 
 #include "lib/calls/CallMediaSeat.h"
 
-#include "lib/media/CallMediaAdaptation.h"
+#include "lib/calls/CallMediaAdaptation.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 #include "lib/calls/CallSessionLogic.h"
@@ -15,8 +15,7 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "common/Localized.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -42,7 +41,7 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
   if (failure != HopPickFailure::AllUndialable) {
     return msg;
   }
-  const std::string tip = Localized(kPlatformNetworkHintKey, {{"product", kProductName}});
+  const std::string tip = Localized(kPlatformNetworkHintKey);
   if (!tip.empty()) {
     msg += " ";
     msg += tip;
@@ -52,11 +51,10 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 
 } // namespace
 
-CallHopMigrateWorkflow::CallHopMigrateWorkflow(ICallSessionStore& sessions, CallMediaEngine& media)
+CallHopMigrateWorkflow::CallHopMigrateWorkflow(ICallSessionStore& sessions, MediaEngine& media)
     : sessions_(sessions), media_(media) {
   redirectLogger("CallHopMigrateWorkflow");
 }
-
 
 void CallHopMigrateWorkflow::SetHostPorts(CallHopMigrateHostPorts ports) {
   host_ = std::move(ports);
@@ -684,7 +682,7 @@ std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSi
     if (!ready->load(std::memory_order_acquire)) {
       return;
     }
-    CallMediaEngine::SfuPacket pkt;
+    MediaEngine::SfuPacket pkt;
     pkt.stream_id = frame.stream_id;
     pkt.channel_id = frame.channel_id;
     pkt.seq = frame.seq;
@@ -833,7 +831,7 @@ void CallHopMigrateWorkflow::ApplyQuoteAdaptation(int64_t a_up_bps) {
   in.per_user_up_bps = a_up_bps;
   in.camera_user_wants = media_.IsCameraEnabled();
   in.path_pressure = media_.PathPressure();
-  media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
+  media_.ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
 }
 
 Roe<void> CallHopMigrateWorkflow::AbortHopAttach() {
@@ -881,9 +879,9 @@ bool CallHopMigrateWorkflow::OwnsHopAttachFlight(const HopAttach& at) const {
          attach_wait_.call_id == at.call_id;
 }
 
-CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach& at) {
+MediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach& at) {
   return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id,
-          keys = at.keys](const CallMediaEngine::SfuPacket& pkt) {
+          keys = at.keys](const MediaEngine::SfuPacket& pkt) {
     if (!relay_deps_ || !relay_deps_->relay) {
       return;
     }
@@ -1081,9 +1079,9 @@ void CallHopMigrateWorkflow::ReleaseDirectWhenHopHeard(const hop_migrate_event::
   const bool still_on_hop = sfu_.attached && media_.ActiveCallId() == wait.call_id;
   std::vector<int64_t> heard_ms;
   if (still_on_hop) {
-    const CallMediaEngineHealth health = media_.HealthSnapshot();
+    const MediaEngineHealth health = media_.HealthSnapshot();
     if (health.sfu_mode) {
-      for (const CallMediaStreamHealth& stream : health.streams) {
+      for (const MediaStreamHealth& stream : health.streams) {
         heard_ms.push_back(stream.last_rx_ms);
       }
     }
