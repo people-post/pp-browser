@@ -1175,10 +1175,7 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
   if (attempt == 1) {
     // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
     // Recovery() (Reattaching, then HopLost) keeps the Reconnecting line up until a reattach succeeds.
-    const auto arming_ports = arming_.Get();
-    if (arming_ports->report_progress) {
-      arming_ports->report_progress(CallHopPlannerPhase::Attaching, call_id);
-    }
+    reports_.Emit(HopReport{call_id, CallHopPlannerPhase::Attaching});
   }
 
   // The completion runs on the owner (from the attach's event, or a deferred early failure).
@@ -1191,10 +1188,7 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
       log().info << "Guest SFU reattach ok call_id=" << call_id;
       guest_.reattach_attempts = 0;
       host_.ClearMediaActivity();
-      const auto arming_ports = arming_.Get();
-      if (arming_ports->report_progress) {
-        arming_ports->report_progress(CallHopPlannerPhase::Live, call_id);
-      }
+      reports_.Emit(HopReport{call_id, CallHopPlannerPhase::Live});
       return;
     }
     log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message

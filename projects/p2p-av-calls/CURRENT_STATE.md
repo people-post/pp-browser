@@ -183,10 +183,13 @@ shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*Pl
    `CallTopologyController::Recovery()` replaces the four recovery flags the screen read;
    `RecoveryInFlight` is the old "awaiting SFU recovery".
 
-**Next, in order:** fold `accept_in_flight_` into `LiveCallState::Accepting`; make the seat's
-Live / Failed derive from `LiveCall` (drop the hand-paired `note_live` + `on_connected` writes);
-planners emit events into `LiveCall` (drop `report_progress` beside `Apply`); feed the engine's
-connection state in as an event (the screen stops reading the engine); one path value.
+**Landed in cm2 (V055):** the accept flag is `LiveCallState::Accepting`; the seat is the lock only
+(its media state and path, write-only, are gone — cm2a); the paths report as events (`DirectReport`,
+`HopReport`) instead of `report_progress` / `on_*` ports, and the owner arms and starts the deferred
+answerer itself (cm2b).
+
+**Next, in order:** feed the engine's connection state in as an event (the screen stops reading the
+engine); one path value.
 
 End state: [CALLS.md § Call state: one owner](../../docs/architecture/CALLS.md#call-state-one-owner).
 

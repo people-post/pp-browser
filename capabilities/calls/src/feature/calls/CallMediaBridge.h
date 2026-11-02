@@ -32,23 +32,11 @@
 namespace pbr {
 
 /**
- * Direct arming / outcomes — CallMediaBridge consumer contract (V048).
- * Empty ports = permissive (unit tests).
+ * What the 1:1 path asks of the calls it serves: may it run now (the call's Status arms one planner). Its
+ * outcomes go up as reports (DirectReport). Empty ports = permissive (unit tests).
  */
 struct CallDirectArmingPorts {
   std::function<bool()> direct_ops_allowed;
-  std::function<void(const std::string& call_id)> request_direct_arming;
-  std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
-  std::function<void(const std::string& call_id)> on_connected;
-  /** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
-  std::function<void(const std::string& call_id)> on_handed_to_hop;
-  std::function<void(const std::string& call_id)> on_connect_failed;
-  /** H013: we placed this 1:1 call and stopped trying to reach the peer — tell it, so it stops waiting. */
-  std::function<void(const std::string& call_id, const std::string& peer_identity)> on_gave_up_reaching;
-  /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
-  std::function<void(const std::string& call_id)> on_peer_reconnected;
-  std::function<void(const std::string& call_id)> on_media_deferred;
-  std::function<void(const std::string& call_id)> on_media_key_ready;
   std::function<const char*()> arming_debug_name;
 
   bool IsBound() const { return static_cast<bool>(direct_ops_allowed); }
@@ -143,6 +131,8 @@ public:
   void OnPeerGaveUpReaching(const std::string& call_id);
   /** Where the path reports its events (its parent binds it); its timers are delayed events. */
   void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
+  /** Where this path reports to the calls it serves (events up; V055). */
+  void SetReports(OwnerOutbox<DirectReport> reports) { reports_ = std::move(reports); }
   /** An event it reported, back from the calls owner's queue. */
   void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
@@ -343,6 +333,7 @@ private:
   MediaEngine& media_;
   ICallMediaTransport& direct_;
   CallDirectArmingPorts arming_;
+  OwnerOutbox<DirectReport> reports_;
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;

@@ -160,7 +160,6 @@ CallHopMigrateArmingPorts CallTopologyController::MakeMigrateArmingPorts(
   out.migrate_ops_allowed = ports.hop_ops_allowed;
   out.soft_migrate_may_arm = ports.soft_migrate_may_arm;
   out.media_cancel_gen = ports.media_cancel_gen;
-  out.report_progress = ports.report_progress;
   out.arming_debug_name = ports.arming_debug_name;
   return out;
 }
@@ -299,10 +298,12 @@ void CallTopologyController::SetHopPlannerPhase(const CallHopPlannerPhase next,
 
 void CallTopologyController::ReportHopProgress(const CallHopPlannerPhase phase,
                                                const std::string& call_id) {
-  const auto arming_ports = arming_.Get();
-  if (arming_ports->report_progress) {
-    arming_ports->report_progress(phase, call_id);
-  }
+  reports_.Emit(HopReport{call_id, phase});
+}
+
+void CallTopologyController::SetReports(OwnerOutbox<HopReport> reports) {
+  reports_ = std::move(reports);
+  hop_migrate_.SetReports(reports_);
 }
 
 void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& call_id) {

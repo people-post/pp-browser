@@ -51,7 +51,6 @@ struct CallHopArmingPorts {
   std::function<bool()> direct_failed;
   std::function<bool()> soft_migrate_may_arm;
   std::function<uint64_t()> media_cancel_gen;
-  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<const char*()> arming_debug_name;
 
   bool IsBound() const { return static_cast<bool>(hop_ops_allowed); }
@@ -112,6 +111,8 @@ public:
   void SetHopArmingPorts(CallHopArmingPorts ports);
   /** Where topology (and hop migrate under it) reports its events (the session manager binds it). */
   void SetOutbox(OwnerOutbox<TopologyEvent> outbox);
+  /** Where the hop path reports to the calls it serves (events up; V055). */
+  void SetReports(OwnerOutbox<HopReport> reports);
   /** An event it reported, back from the calls owner's queue. */
   void Handle(TopologyEvent& event);
 
@@ -312,6 +313,7 @@ private:
   /** Names the current relay watch: a loss reported by an earlier one is stale. */
   uint64_t relay_watch_ = 0;
   OwnerOutbox<TopologyEvent> outbox_;
+  OwnerOutbox<HopReport> reports_;
   /** Finish steps waiting for their Continue event. */
   OwnerSteps steps_;
   uint64_t relay_loss_observer_ = 0;

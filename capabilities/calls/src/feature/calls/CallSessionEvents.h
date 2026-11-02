@@ -3,6 +3,8 @@
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/calls/CallTypes.h"
+#include "lib/calls/CallDirectPlannerLogic.h"
+#include "lib/calls/CallHopPlannerLogic.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "common/runtime/OwnerSteps.h"
 
@@ -280,6 +282,61 @@ using DirectPathEvent =
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
                  direct_event::RebindInboundStream, direct_event::ForConnect, direct_event::StepReady>;
 
+/**
+ * What the 1:1 path reports to the calls it serves (V055: events up, in its own terms). The calls'
+ * owner moves the call's state on them; the path never writes it.
+ */
+namespace direct_report {
+
+/** The path's planner moved (Reconnecting, DegradedTxOnly, …). */
+struct Progress {
+  std::string call_id;
+  CallDirectPlannerPhase phase = CallDirectPlannerPhase::Idle;
+};
+/** Media flows over the 1:1 path (or over the hop that replaced it). */
+struct Connected {
+  std::string call_id;
+};
+/** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
+struct HandedToHop {
+  std::string call_id;
+};
+/** No 1:1 path could be kept: the call stays open, failed. */
+struct ConnectFailed {
+  std::string call_id;
+};
+/** H013: we placed this 1:1 call and stopped trying to reach `peer_identity` — tell it. */
+struct GaveUpReaching {
+  std::string call_id;
+  std::string peer_identity;
+};
+/** A connection for this failed call came up (the peer's retry). */
+struct PeerReconnected {
+  std::string call_id;
+};
+/** The answerer's media waits for the call's key. */
+struct MediaDeferred {
+  std::string call_id;
+};
+/** The key the answerer waited for landed: its 1:1 start can go ahead with `peer_identity`. */
+struct MediaKeyReady {
+  std::string call_id;
+  std::string peer_identity;
+};
+
+} // namespace direct_report
+
+using DirectReport =
+    std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
+                 direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
+                 direct_report::MediaDeferred, direct_report::MediaKeyReady>;
+
+/** What the group (hop) path reports to the calls it serves: its planner moved. */
+struct HopReport {
+  std::string call_id;
+  CallHopPlannerPhase phase = CallHopPlannerPhase::Idle;
+};
+
 namespace session_event {
 
 /** An event of the 1:1 path; `generation` names that path (one built since drops it). */
@@ -287,10 +344,20 @@ struct ForDirectPath {
   uint64_t generation = 0;
   DirectPathEvent event;
 };
+/** A report of the 1:1 path `generation` (one built since drops it). */
+struct FromDirectPath {
+  uint64_t generation = 0;
+  DirectReport report;
+};
+/** A report of the group path. */
+struct FromHopPath {
+  HopReport report;
+};
 
 } // namespace session_event
 
-using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
-                                  TopologyEvent, session_event::ForDirectPath>;
+using SessionEvent =
+    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent, TopologyEvent,
+                 session_event::ForDirectPath, session_event::FromDirectPath, session_event::FromHopPath>;
 
 } // namespace pbr

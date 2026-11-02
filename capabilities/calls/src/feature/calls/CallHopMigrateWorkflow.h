@@ -92,7 +92,6 @@ struct CallHopMigrateArmingPorts {
   std::function<bool()> migrate_ops_allowed;
   std::function<bool()> soft_migrate_may_arm;
   std::function<uint64_t()> media_cancel_gen;
-  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<const char*()> arming_debug_name;
 
   bool IsBound() const { return static_cast<bool>(migrate_ops_allowed); }
@@ -209,6 +208,8 @@ public:
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
   void SetOutbox(OwnerOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
+  /** Where the hop path reports to the calls it serves (its topology passes its own). */
+  void SetReports(OwnerOutbox<HopReport> reports) { reports_ = std::move(reports); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(HopMigrateEvent& event);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
@@ -342,6 +343,7 @@ private:
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
   OwnerOutbox<HopMigrateEvent> outbox_;
+  OwnerOutbox<HopReport> reports_;
   /** Steps waiting for their Continue event (deferred steps, a picked hop's reach answer). */
   OwnerSteps steps_;
   /** Relay attaches waiting for the relay's answer. */

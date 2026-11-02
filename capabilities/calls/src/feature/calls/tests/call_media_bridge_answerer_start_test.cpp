@@ -59,18 +59,10 @@ ByteVector TestMediaKey() {
   return key;
 }
 
-/** The 1:1 arming / progress ports as CallSessionManager::DirectArmingPorts binds them. */
+/** The 1:1 arming ports as CallSessionManager::DirectArmingPorts binds them. */
 CallDirectArmingPorts TestDirectArmingPorts(LiveCalls* live) {
   CallDirectArmingPorts ports;
   ports.direct_ops_allowed = [live]() { return live->AllowsDirectPath(); };
-  ports.request_direct_arming = [live](const std::string& call_id) { live->RequestDirectArming(call_id); };
-  ports.report_progress = [live](CallDirectPlannerPhase phase, const std::string& call_id) {
-    live->ReportDirectProgress(call_id, phase);
-  };
-  ports.on_connected = [live](const std::string& call_id) { live->NoteMediaConnected(call_id); };
-  ports.on_connect_failed = [live](const std::string& call_id) { live->NoteMediaFailed(call_id); };
-  ports.on_media_deferred = [live](const std::string& call_id) { live->NoteMediaDeferred(call_id); };
-  ports.on_media_key_ready = [live](const std::string& call_id) { live->NoteMediaKeyReady(call_id); };
   ports.arming_debug_name = [live]() { return CallMediaStatusName(live->Status()); };
   return ports;
 }
@@ -402,6 +394,7 @@ protected:
         mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
     bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
+    bridge_->SetReports(bridge_reports_.Get());
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
@@ -488,6 +481,32 @@ protected:
     if (bridge_) {
       bridge_->Handle(event);
     }
+  }};
+  /** The path's reports, taken as CallSessionManager::OnDirectReport takes them. */
+  CallsLoopbackOutbox<DirectReport> bridge_reports_{[this](DirectReport& report) {
+    LiveCalls& live = host_->live;
+    std::visit(
+        [&](const auto& r) {
+          using R = std::decay_t<decltype(r)>;
+          if constexpr (std::is_same_v<R, direct_report::Progress>) {
+            live.ReportDirectProgress(r.call_id, r.phase);
+          } else if constexpr (std::is_same_v<R, direct_report::Connected>) {
+            live.NoteMediaConnected(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::HandedToHop>) {
+            live.NoteDirectHandedToHop(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
+            live.NoteMediaFailed(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
+            live.NoteMediaDeferred(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
+            live.NoteMediaKeyReady(r.call_id);
+            if (bridge_ && !r.peer_identity.empty()) {
+              live.RequestDirectArming(r.call_id);
+              bridge_->ScheduleStartMediaAsAnswerer(r.call_id, r.peer_identity);
+            }
+          }
+        },
+        report);
   }};
 };
 

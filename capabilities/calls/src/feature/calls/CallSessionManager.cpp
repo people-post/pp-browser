@@ -490,6 +490,8 @@ void CallSessionManager::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
   topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
+  topology_.SetReports(outbox_.For<HopReport>(
+      [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
 }
 
 void CallSessionManager::Handle(SessionEvent& event) {
@@ -508,11 +510,54 @@ void CallSessionManager::Handle(SessionEvent& event) {
           if (direct_path_ && e.generation == direct_path_generation_) {
             direct_path_->Handle(e.event);
           }
+        } else if constexpr (std::is_same_v<E, session_event::FromDirectPath>) {
+          if (e.generation == direct_path_generation_) {
+            OnDirectReport(e.report);
+          }
+        } else if constexpr (std::is_same_v<E, session_event::FromHopPath>) {
+          live_calls_.ReportHopProgress(e.report.call_id, e.report.phase);
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }
       },
       event);
+}
+
+void CallSessionManager::OnDirectReport(const DirectReport& report) {
+  std::visit(
+      [this](const auto& r) {
+        using R = std::decay_t<decltype(r)>;
+        if constexpr (std::is_same_v<R, direct_report::Progress>) {
+          live_calls_.ReportDirectProgress(r.call_id, r.phase);
+        } else if constexpr (std::is_same_v<R, direct_report::Connected>) {
+          live_calls_.NoteMediaConnected(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::HandedToHop>) {
+          live_calls_.NoteDirectHandedToHop(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
+          live_calls_.NoteMediaFailed(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::GaveUpReaching>) {
+          SendConnectGiveUp(r.call_id, r.peer_identity);
+        } else if constexpr (std::is_same_v<R, direct_report::PeerReconnected>) {
+          RestartMedia(r.call_id, true);
+        } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
+          live_calls_.NoteMediaDeferred(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
+          OnAnswererKeyReady(r.call_id, r.peer_identity);
+        } else {
+          static_assert(!sizeof(R), "take every DirectReport");
+        }
+      },
+      report);
+}
+
+void CallSessionManager::OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity) {
+  live_calls_.NoteMediaKeyReady(call_id);
+  if (peer_identity.empty()) {
+    return;
+  }
+  // The deferred answerer goes ahead on the 1:1 path: arm it there, then start it (calls down).
+  live_calls_.RequestDirectArming(call_id);
+  ScheduleStartDirectMedia(call_id, peer_identity, /*offerer=*/false);
 }
 
 void CallSessionManager::SetInitiationBillingStore(IInitiationBillingBook* store) {
@@ -535,9 +580,6 @@ CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
   ports.direct_failed = [this]() { return live_calls_.Status() == CallMediaStatus::Failed; };
   ports.soft_migrate_may_arm = [this]() { return live_calls_.SoftMigrateMayArm(); };
   ports.media_cancel_gen = [this]() { return live_calls_.MediaCancelGen(); };
-  ports.report_progress = [this](CallHopPlannerPhase phase, const std::string& call_id) {
-    live_calls_.ReportHopProgress(call_id, phase);
-  };
   ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
   return ports;
 }
@@ -545,19 +587,6 @@ CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
 CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
   CallDirectArmingPorts ports;
   ports.direct_ops_allowed = [this]() { return live_calls_.AllowsDirectPath(); };
-  ports.request_direct_arming = [this](const std::string& call_id) { live_calls_.RequestDirectArming(call_id); };
-  ports.report_progress = [this](CallDirectPlannerPhase phase, const std::string& call_id) {
-    live_calls_.ReportDirectProgress(call_id, phase);
-  };
-  ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
-  ports.on_handed_to_hop = [this](const std::string& call_id) { live_calls_.NoteDirectHandedToHop(call_id); };
-  ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
-  ports.on_gave_up_reaching = [this](const std::string& call_id, const std::string& peer_identity) {
-    SendConnectGiveUp(call_id, peer_identity);
-  };
-  ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
-  ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
-  ports.on_media_key_ready = [this](const std::string& call_id) { live_calls_.NoteMediaKeyReady(call_id); };
   ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
   return ports;
 }
@@ -599,6 +628,9 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     const uint64_t generation = ++direct_path_generation_;
     direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
       return SessionEvent{session_event::ForDirectPath{generation, std::move(event)}};
+    }));
+    direct_path_->SetReports(outbox_.For<DirectReport>([generation](DirectReport report) {
+      return SessionEvent{session_event::FromDirectPath{generation, std::move(report)}};
     }));
     log().info << "1:1 path built";
   } else {

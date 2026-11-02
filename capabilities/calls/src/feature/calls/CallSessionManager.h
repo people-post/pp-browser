@@ -337,6 +337,9 @@ private:
 
   void StopMediaIfCall(const std::string& call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  /** What the 1:1 path reported (events up): move the call's state, or call the path down. */
+  void OnDirectReport(const DirectReport& report);
+  void OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity);
   void BindWorkflowHostPorts();
   CallSessionWorkflow::WirePorts MakeWorkflowWirePorts();
   CallSessionWorkflow::HopPathPorts MakeWorkflowHopPorts();

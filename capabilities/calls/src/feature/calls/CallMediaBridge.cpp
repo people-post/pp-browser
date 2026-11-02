@@ -179,9 +179,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
     direct_.Detach();
     ClearMeshConnectFailed();
-    if (arming_.on_connected) {
-      arming_.on_connected(call_id);
-    }
+    reports_.Emit(direct_report::Connected{call_id});
     host_.P2pNotifyRingChanged();
     return;
   case BundleFailureAction::AwaitHop:
@@ -193,9 +191,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     ClearMeshConnectFailed();
     host_.P2pRequestInboxSync();
     // Nothing is live until the hop attaches: the call waits for it (not "connected").
-    if (arming_.on_handed_to_hop) {
-      arming_.on_handed_to_hop(call_id);
-    }
+    reports_.Emit(direct_report::HandedToHop{call_id});
     host_.P2pNotifyRingChanged();
     return;
   case BundleFailureAction::Fail:
@@ -373,9 +369,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
         }
       }
       if (!cid.empty() && !peer.empty()) {
-        if (arming_.report_progress) {
-          arming_.report_progress(CallDirectPlannerPhase::DegradedTxOnly, cid);
-        }
+        reports_.Emit(direct_report::Progress{cid, CallDirectPlannerPhase::DegradedTxOnly});
         EscalateTxOnlyViaCircuit(cid, peer);
       }
     }
@@ -396,16 +390,12 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
     // path: chrome follows.
     if (out.decision == CallDirectPlannerDecision::Transition) {
       CancelReanchor();
-      if (arming_.on_connected) {
-        arming_.on_connected(call_id);
-      }
+      reports_.Emit(direct_report::Connected{call_id});
     }
     break;
   case CallDirectPlannerEvent::PathLost:
     if (out.decision == CallDirectPlannerDecision::Transition) {
-      if (arming_.report_progress) {
-        arming_.report_progress(CallDirectPlannerPhase::Reconnecting, call_id);
-      }
+      reports_.Emit(direct_report::Progress{call_id, CallDirectPlannerPhase::Reconnecting});
       host_.P2pNotifyRingChanged();
       // The offerer reaches the peer again and moves the call onto that link; the answerer's
       // transport accepts the migrate (invite / accept is the agreement, as for the first connect).
@@ -830,10 +820,10 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
     // Connected after this side's connect failed: the call may still be open (failed ≠ closed) —
     // the lifecycle resumes media over this stream if so; after Leave it ignores it.
     if (mesh_connect_failed_ && failed_open_ && failed_open_->call_id == call_id && !failed_open_->resume_requested &&
-        DirectMediaReady() && arming_.on_peer_reconnected) {
+        DirectMediaReady()) {
       log().info << "call-media connected after connect failed call_id=" << call_id << " — resume?";
       failed_open_->resume_requested = true;
-      arming_.on_peer_reconnected(call_id);
+      reports_.Emit(direct_report::PeerReconnected{call_id});
     }
     return;
   }
@@ -846,9 +836,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (direct_connected_at_ms_ <= 0) {
     direct_connected_at_ms_ = util::NowUnixMs();
   }
-  if (arming_.on_connected) {
-    arming_.on_connected(call_id);
-  }
+  reports_.Emit(direct_report::Connected{call_id});
   ApplyPathPolicyToTransport(call_id);
   ArmDirectUpgrade(call_id);
   ArmRelayStandby(call_id);
@@ -1138,11 +1126,9 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
     failed_open_ = FailedOpenCall{call_id};
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
-  if (arming_.on_connect_failed) {
-    arming_.on_connect_failed(call_id);
-  }
-  if (tell_peer && arming_.on_gave_up_reaching) {
-    arming_.on_gave_up_reaching(call_id, gave_up_peer);
+  reports_.Emit(direct_report::ConnectFailed{call_id});
+  if (tell_peer) {
+    reports_.Emit(direct_report::GaveUpReaching{call_id, gave_up_peer});
   }
   mesh_connect_failed_ = true;
   if (seed_unreachable) {
@@ -1483,14 +1469,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
 
 void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::string& peer_identity) {
   log().info << "ScheduleStartMediaAsAnswerer call_id=" << call_id << " peer=" << peer_identity;
-  // Re-arm Direct before Apply so product AllowsDirectPath for Schedule.
-  if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
-    log().info << "ScheduleStartMediaAsAnswerer request_direct_arming call_id=" << call_id
-               << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
-    if (arming_.request_direct_arming) {
-      arming_.request_direct_arming(call_id);
-    }
-  }
+  // The owner armed the call for the 1:1 path before starting it here (calls down).
   Apply(CallDirectPlannerEvent::ScheduleAnswerer, call_id, peer_identity);
   if (direct_planner_phase_ != CallDirectPlannerPhase::Arming &&
       direct_planner_phase_ != CallDirectPlannerPhase::Connecting &&
@@ -1533,9 +1512,7 @@ void CallMediaBridge::DeferAnswererUntilMediaKey(const std::string& call_id, con
   pending_answerer_call_id_ = call_id;
   pending_answerer_peer_ = peer_identity;
   media_attempted_calls_.Insert(call_id);
-  if (arming_.on_media_deferred) {
-    arming_.on_media_deferred(call_id);
-  }
+  reports_.Emit(direct_report::MediaDeferred{call_id});
   // Each poll round is a delayed event naming this wait; a newer wait (or none) makes it stale.
   const uint64_t wait = ++key_wait_gen_;
   if (media_key_inbox_poll_rounds_ <= 0) {
@@ -1577,9 +1554,7 @@ void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
   mesh_connect_failed_ = true;
   host_.P2pSetLastMediaError(Localized("call.error.media_key_timeout"));
   Apply(CallDirectPlannerEvent::KeyTimeout, call_id);
-  if (arming_.on_connect_failed) {
-    arming_.on_connect_failed(call_id);
-  }
+  reports_.Emit(direct_report::ConnectFailed{call_id});
   host_.P2pNotifyRingChanged();
 }
 
@@ -1612,12 +1587,8 @@ void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
   ++key_wait_gen_;
   pending_answerer_peer_.clear();
   Apply(CallDirectPlannerEvent::KeyReady, call_id, peer);
-  if (arming_.on_media_key_ready) {
-    arming_.on_media_key_ready(call_id);
-  }
-  if (!peer.empty()) {
-    ScheduleStartMediaAsAnswerer(call_id, peer);
-  }
+  // The owner arms the call and starts the answerer through the call's media (calls down).
+  reports_.Emit(direct_report::MediaKeyReady{call_id, peer});
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
@@ -1726,10 +1697,8 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();
   // The hop's attach completion reports the call live (LiveCall Status) — not ReleaseDirect alone.
-  if (arming_.IsBound() && media_.IsActive() && media_.IsSfuMode()) {
-    if (arming_.on_connected) {
-      arming_.on_connected(media_.ActiveCallId());
-    }
+  if (media_.IsActive() && media_.IsSfuMode()) {
+    reports_.Emit(direct_report::Connected{media_.ActiveCallId()});
   }
   host_.P2pNotifyRingChanged();
 }

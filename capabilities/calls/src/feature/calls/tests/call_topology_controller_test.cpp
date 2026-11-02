@@ -42,9 +42,6 @@ CallHopArmingPorts TestHopArmingPorts(LiveCalls* live) {
   ports.hop_ops_allowed = [live]() { return live->AllowsHopPath(); };
   ports.soft_migrate_may_arm = [live]() { return live->SoftMigrateMayArm(); };
   ports.media_cancel_gen = [live]() { return live->MediaCancelGen(); };
-  ports.report_progress = [live](CallHopPlannerPhase phase, const std::string& call_id) {
-    live->ReportHopProgress(call_id, phase);
-  };
   ports.arming_debug_name = [live]() { return CallMediaStatusName(live->Status()); };
   return ports;
 }
@@ -333,6 +330,7 @@ protected:
     relay_ = std::make_unique<FakeMediaRelayClient>();
     topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
     topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
+    topo_->SetReports(topo_reports_.Get());
     topo_->SetMediaKeyStore(keys_.get());
     topo_->SetHostPorts(host_->MakeHostPorts());
 
@@ -462,6 +460,9 @@ protected:
       topo_->Handle(event);
     }
   }};
+  /** The hop path's reports, taken as the session manager takes them. */
+  CallsLoopbackOutbox<HopReport> topo_reports_{
+      [this](HopReport& report) { host_->live.ReportHopProgress(report.call_id, report.phase); }};
 };
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {
