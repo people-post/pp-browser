@@ -30,14 +30,14 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {config_dir}/config.json
 {data_dir}/profiles.json
 {data_dir}/machine.json
-{data_dir}/mesh_directory_nodes.json   # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1)
 {data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .5 = previous launches) — ops/CONFIGURATION.md § Log file; never leaves the device
 {data_dir}/logs/metrics.log            # Metrics channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/logs/diag.log               # Diag channel: shareable lines (rotated like the log) — contracts/DIAGNOSTICS.md
 {data_dir}/diagnostics/last_upload.json    # {upload_id, at_ms} of the last Send diagnostics (0600)
 {data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/
-  manifest.json
+  manifest.json             # schema_version; backend = the backend key the profile belongs to (see Per-backend profiles)
+  mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1); per profile, so per backend
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
@@ -138,7 +138,19 @@ Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md).
 
 Legacy flat `threads/index.json` and `{thread_id}.json` are removed on first run after the SQLite migration (development wipe — see [chat-storage D016](../../projects/chat-storage-and-memory/DECISIONS.md)). Plaintext `identity.json` is not migrated — wipe the profile and recreate. Overview: [COMPATIBILITY.md](COMPATIBILITY.md).
 
-Phase 1 ships a single `default` profile. Use `--profile NAME` for dev isolation (no account-switcher UI yet).
+### Per-backend profiles
+
+Each backend (Me → Network → Service, `backend.env`) has its own profile, so identities, contacts, conversations and caches of different backends never mix, and switching back finds everything as it was. A profile's `manifest.json` records its `backend` key:
+
+| Backend | Key (and id of a profile created for it) |
+|---------|------------------------------------------|
+| `prod` | `prod` |
+| `qa` | `qa` |
+| `custom`, or any run with `PP_BROWSER_ORIGIN` | `custom-<12 hex>`: FNV-1a 64 of the normalized registration URL (origin for `PP_BROWSER_ORIGIN`) |
+
+At startup, after the config is loaded, the registry selects the active profile for the key: the active one when it matches; else the existing profile recorded for the key; else a new profile with the key as its id. A profile with no recorded backend (made before this field) is adopted in place as the key (as `prod` when the key is `qa`), so an existing user keeps their `default` profile as the prod one without moving data. `manifest.backend` is never overwritten once set. A `--profile` override is not redirected. The backend is chosen once per run; changing it takes effect on the next start.
+
+There is no account-switcher UI: the profile follows the backend. Use `--profile NAME` for dev isolation. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 
 ## Schema versioning
 
