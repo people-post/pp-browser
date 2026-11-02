@@ -9,6 +9,7 @@
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
 #include "lib/media/DecodeStallPolicy.h"
+#include "lib/media/GuardedVideoCodec.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -57,6 +58,16 @@ constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
 constexpr int kVideoFps = 20;
+/** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
+constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
+/** A new session's first mic open waits this long for the previous session to let the mic go. */
+constexpr auto kMicHandoverWait = std::chrono::milliseconds(1500);
+/** Shown once when the camera is busy or stuck; the video comes on by itself afterwards. */
+constexpr const char* kCameraBusyMessage = "Camera is busy — video turns on when it's free";
+constexpr const char* kCameraStuckMessage = "Camera isn't responding — restart the app to use it";
+/** A hardware codec that stops responding is replaced this many times per camera request / stream. */
+constexpr int kMaxCodecRestarts = 3;
+constexpr const char* kEncoderStuckMessage = "Video isn't responding — restart the app to send video";
 /** Soft stall: keep last frame; UI may show Reconnecting… */
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
@@ -183,7 +194,81 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
 
 } // namespace
 
+/**
+ * What outlives one media session: the engine's settings and its device source. Each session holds
+ * it, so a retired session cleaning up on its own thread keeps it alive.
+ */
+struct CallMediaEngine::Shared {
+  std::mutex mu;
+  /** Under `mu`; a retired session never calls it. */
+  StateChangedFn on_state_changed;
+  /** Under `mu`; a session takes a copy when it starts. */
+  std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
+  /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
+  MediaDeviceArbiter* devices = nullptr;
+  MediaDeviceArbiter* own_devices = nullptr;
+  std::unique_ptr<MediaDeviceArbiter> test_devices;
+  /** Test fixtures: skip SDL mic/camera open (silence TX only). */
+  std::atomic<bool> skip_device_open_for_test{false};
+  /** Under `mu`; a session takes a copy when it starts. */
+  HardwareLimits limits;
+  std::atomic<int64_t> last_uplink_bps{0};
+  std::atomic<int64_t> adaptation_target_video_bps{0};
+  std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
+  /** The level outgoing video is sent at (docs/contracts/MEDIA_CHANNELS.md). */
+  std::atomic<uint8_t> video_level{mesh::kDefaultVideoLevel};
+  /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
+  std::atomic<bool> video_level_profile{false};
+
+  StateChangedFn StateCallback() {
+    std::lock_guard lock(mu);
+    return on_state_changed;
+  }
+};
+
+/** Sessions that retired and still clean up (join their threads, release devices) on their own threads. */
+struct CallMediaEngine::Retirements {
+  std::mutex mu;
+  std::condition_variable cv;
+  size_t running = 0;
+};
+
+namespace {
+
+/**
+ * The OS audio session is process-wide. A retiring session deactivates it after its threads are
+ * gone; a session that started meanwhile activated it again, and that stale deactivation must not
+ * undo it. So activation bumps the generation and a retiring session deactivates only if it is still
+ * the one it saw when it retired.
+ */
+std::mutex g_audio_session_mu;
+uint64_t g_audio_session_gen = 0;
+
+} // namespace
+
 struct CallMediaEngine::Impl {
+  explicit Impl(std::shared_ptr<Shared> settings)
+      : shared(std::move(settings)),
+        last_uplink_bps(shared->last_uplink_bps),
+        skip_device_open_for_test(shared->skip_device_open_for_test),
+        adaptation_target_video_bps(shared->adaptation_target_video_bps),
+        video_level(shared->video_level),
+        video_level_profile(shared->video_level_profile),
+        adaptation_target_audio_bps(shared->adaptation_target_audio_bps) {
+    std::lock_guard lock(shared->mu);
+    devices = shared->devices;
+    // Every hardware codec runs behind a guard: a call into it waits at most its budget (L016).
+    limits = shared->limits;
+    make_video_codec = [make = shared->make_video_codec, budgets = limits.codecs](VideoCodecRole role) {
+      return MakeGuardedVideoCodec(make, role, budgets);
+    };
+  }
+
+  std::shared_ptr<Shared> shared;
+  /** Stopped (or replaced by a newer session): it only cleans up now, and reports nothing. */
+  std::atomic<bool> retired{false};
+  /** The audio session generation when it retired (deactivate only if nothing activated since). */
+  uint64_t audio_session_seen = 0;
   std::recursive_mutex mutex;
   std::string call_id;
   std::atomic<bool> active{false};
@@ -195,17 +280,14 @@ struct CallMediaEngine::Impl {
   std::atomic<int64_t> connected_at_ms{0};
   std::atomic<int64_t> started_at_ms{0};
   std::atomic<int64_t> last_remote_video_ms{0};
-  std::atomic<int64_t> last_uplink_bps{0};
+  std::atomic<int64_t>& last_uplink_bps;
   std::mutex video_refresh_mu;
   std::unordered_set<uint32_t> pending_video_refresh_streams;
   std::unordered_map<uint32_t, int64_t> last_video_refresh_note_ms;
   std::string connection_state = "idle";
 
-  StateChangedFn on_state_changed;
-
   bool sfu_mode = false;
-  /** Test fixtures: skip SDL mic/camera open (silence TX only). */
-  std::atomic<bool> skip_device_open_for_test{false};
+  std::atomic<bool>& skip_device_open_for_test;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<SfuSendFn> sfu_send;
   /**
@@ -218,11 +300,9 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
-  std::atomic<int64_t> adaptation_target_video_bps{0};
-  /** The level outgoing video is sent at (docs/contracts/MEDIA_CHANNELS.md). */
-  std::atomic<uint8_t> video_level{mesh::kDefaultVideoLevel};
-  /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
-  std::atomic<bool> video_level_profile{false};
+  std::atomic<int64_t>& adaptation_target_video_bps;
+  std::atomic<uint8_t>& video_level;
+  std::atomic<bool>& video_level_profile;
 
   /** The camera's geometry, sized by the level's profile when one was set. */
   CameraGeometry EncodeGeometry(CameraGeometry geometry) const {
@@ -233,7 +313,7 @@ struct CallMediaEngine::Impl {
     }
     return geometry;
   }
-  std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
+  std::atomic<int64_t>& adaptation_target_audio_bps;
   std::atomic<double> path_pressure{0.0};
   std::atomic<uint64_t> outbound_drops{0};
   std::atomic<uint64_t> playout_ticks{0};
@@ -255,10 +335,8 @@ struct CallMediaEngine::Impl {
 #endif
 
   OpusEncoder* encoder = nullptr;
-  /** Where audio devices come from: `own_devices` (constructor) or `test_devices` (skip-open). */
+  /** Where this session's devices come from (the engine's, when it started). */
   MediaDeviceArbiter* devices = nullptr;
-  MediaDeviceArbiter* own_devices = nullptr;
-  std::unique_ptr<MediaDeviceArbiter> test_devices;
   /**
    * Held while the session runs. Acquired / reopened by the capture thread (the only writer while it
    * runs, under `mutex`); the playout thread writes the speaker under `mutex`.
@@ -294,8 +372,13 @@ struct CallMediaEngine::Impl {
   /** Local encoder: created, configured, fed and bitrate-adjusted by the video thread only
    *  (reset by TearDown after that thread joined). */
   std::unique_ptr<IVideoCodec> video_codec;
-  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
-  std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
+  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub), guarded. */
+  std::function<std::unique_ptr<IVideoCodec>(VideoCodecRole)> make_video_codec;
+  HardwareLimits limits;
+  /** Encoders dropped for not responding since the camera opened (video thread only). */
+  int encoder_restarts = 0;
+  /** Decoders dropped for not responding, per stream; a stream past the cap shows no video. Under `mutex`. */
+  std::unordered_map<uint32_t, int> decoder_restarts;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
@@ -316,6 +399,8 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> camera_front_facing{false};
   /** The video thread holds an open camera lease (false while an open is pending or after a release). */
   std::atomic<bool> camera_open{false};
+  /** Wanted, but held by another holder or not responding: opened when the arbiter can grant it (L016). */
+  std::atomic<bool> camera_waiting{false};
   /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
   std::mutex camera_failure_mu;
   std::string camera_failure;
@@ -334,6 +419,11 @@ struct CallMediaEngine::Impl {
   MediaThreadStageTracker video_stage;
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
+  /**
+   * A device the spec wants was refused (held by another holder, or the audio devices are not
+   * responding): the capture thread takes the leases again when the arbiter can grant them (L016).
+   */
+  std::atomic<bool> audio_waiting{false};
   std::atomic<float> local_input_level{0.f};
   std::atomic<float> remote_output_level{0.f};
   std::atomic<int64_t> remote_level_ms{0};
@@ -383,12 +473,10 @@ struct CallMediaEngine::Impl {
   }
 
   void EmitStateChanged(const std::string& state) {
-    StateChangedFn cb;
-    {
-      std::lock_guard lock(mutex);
-      cb = on_state_changed;
+    if (retired.load(std::memory_order_acquire)) {
+      return; // the engine's callback belongs to the session after this one
     }
-    if (cb) {
+    if (StateChangedFn cb = shared->StateCallback()) {
       cb(state);
     }
   }
@@ -504,6 +592,7 @@ struct CallMediaEngine::Impl {
    *  Never joins: the video thread takes `mutex` to read the send callback. */
   void RequestCameraOffLocked() {
     camera_enabled.store(false, std::memory_order_relaxed);
+    camera_waiting.store(false, std::memory_order_relaxed);
     camera_reopen_requested.store(false, std::memory_order_relaxed);  // a flip in flight dies with the camera
   }
 
@@ -543,6 +632,19 @@ struct CallMediaEngine::Impl {
   void TearDownAudioLocked(const bool release_session = true) {
     // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
     // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
+    ReleaseAudioLocked();
+    if (video_codec) {
+      video_codec->ResetEncoder();
+      video_codec->ResetDecoder();
+    }
+    ClearVideoFrames();
+    if (release_session) {
+      ReleaseAudioSession();
+    }
+  }
+
+  /** The audio half: device leases, the Opus encoder, remote tracks, counters. Not the OS session. */
+  void ReleaseAudioLocked() {
     capture_running = false;
     playout_running = false;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
@@ -553,11 +655,6 @@ struct CallMediaEngine::Impl {
       encoder = nullptr;
     }
     ClearAudioTracksLocked();
-    if (video_codec) {
-      video_codec->ResetEncoder();
-      video_codec->ResetDecoder();
-    }
-    ClearVideoFrames();
     local_input_level.store(0.f, std::memory_order_relaxed);
     remote_output_level.store(0.f, std::memory_order_relaxed);
     remote_level_ms.store(0, std::memory_order_relaxed);
@@ -572,39 +669,27 @@ struct CallMediaEngine::Impl {
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
-    if (release_session) {
-      ReleaseAudioSession();
-    }
   }
 
-  /**
-   * OS audio session ownership. Stop() deactivates the session after dropping the engine lock (the
-   * call is slow); a Start that interleaves activates it again, and a stale Stop must not undo
-   * that. So activation bumps `session_gen` and Stop deactivates only if the generation is still
-   * the one it saw under the engine lock; both run under `session_mu` (never held with `mutex`
-   * taken after it, so no inversion).
-   */
-  std::mutex session_mu;
-  uint64_t session_gen = 0;
-
-  void ActivateAudioSession() {
-    std::lock_guard lock(session_mu);
-    ++session_gen;
+  /** OS audio session ownership (g_audio_session_gen): never under `mutex`. */
+  static void ActivateAudioSession() {
+    std::lock_guard lock(g_audio_session_mu);
+    ++g_audio_session_gen;
     CallAudioSession::ActivateForVoipCall();
   }
-  uint64_t SessionGeneration() {
-    std::lock_guard lock(session_mu);
-    return session_gen;
+  static uint64_t SessionGeneration() {
+    std::lock_guard lock(g_audio_session_mu);
+    return g_audio_session_gen;
   }
-  /** Stop(): deactivate the session unless a Start activated it since `seen_gen`. */
-  void ReleaseAudioSessionIfUnchanged(const uint64_t seen_gen) {
-    std::lock_guard lock(session_mu);
-    if (session_gen == seen_gen) {
+  /** A retired session: deactivate the OS session unless a session activated it since `seen_gen`. */
+  static void ReleaseAudioSessionIfUnchanged(const uint64_t seen_gen) {
+    std::lock_guard lock(g_audio_session_mu);
+    if (g_audio_session_gen == seen_gen) {
       ReleaseAudioSession();
     }
   }
 
-  /** Touches the OS audio session only, not Impl: Stop() runs it after dropping the lock. */
+  /** Touches the OS audio session only, not Impl. */
   static void ReleaseAudioSession() {
     CallAudioSession::Deactivate();
     CallAudioSession::ClearCaptureAudioHints();
@@ -943,6 +1028,9 @@ struct CallMediaEngine::Impl {
       CallAudioSession::ApplyCaptureAudioHints();
       ActivateAudioSession();
     }
+    if (!reopen && want_spec.capture && !mic) {
+      WaitForMicHandover();
+    }
     TryAcquireVoiceDuplex(want_spec, holder, mic, speaker);
     const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
       if (!wanted || !capture_running.load(std::memory_order_acquire)) {
@@ -976,10 +1064,40 @@ struct CallMediaEngine::Impl {
     mic_lease = std::move(mic);
     speaker_lease = std::move(speaker);
     capture_available = mic_lease && mic_lease->HasDevice();
+    audio_waiting.store((want_spec.capture && !mic_lease) || (want_spec.playback && !speaker_lease),
+                        std::memory_order_release);
 #ifdef PP_BROWSER_CALL_DENOISE
     denoise.Reset();
 #endif
     return {};
+  }
+
+  /**
+   * The session before this one (a call that just ended, or the one this replaced) may still be
+   * letting the mic go on its own thread: give it a moment, so this session gets the mic — and the
+   * voice-processing pair — at its first open rather than at a retry.
+   */
+  void WaitForMicHandover() {
+    const auto deadline = std::chrono::steady_clock::now() + kMicHandoverWait;
+    while (!DeviceArbiter().CanAcquire(MediaDeviceKind::Mic) && capture_running.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+
+  /** The devices a waiting session was refused can be granted now. */
+  bool WaitedAudioGrantable() {
+    SessionSpec want_spec;
+    bool need_mic = false;
+    bool need_speaker = false;
+    {
+      std::lock_guard lock(mutex);
+      want_spec = spec;
+      need_mic = want_spec.capture && !mic_lease;
+      need_speaker = want_spec.playback && !speaker_lease;
+    }
+    return (!need_mic || DeviceArbiter().CanAcquire(MediaDeviceKind::Mic)) &&
+           (!need_speaker || DeviceArbiter().CanAcquire(MediaDeviceKind::Speaker));
   }
 
   /**
@@ -1046,7 +1164,29 @@ struct CallMediaEngine::Impl {
       // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
       // back to SDL for the rest of this call. Capture-thread-local.
       int vpio_starve_reopens = 0;
+      int64_t last_audio_retry_ms = 0;
       while (capture_running.load()) {
+        if (audio_waiting.load(std::memory_order_acquire)) {
+          const int64_t now = util::NowUnixMs();
+          if (now - last_audio_retry_ms >= kDeviceRetryPoll.count() && WaitedAudioGrantable()) {
+            last_audio_retry_ms = now;
+            // All of it again (not just the missing half), so a duplex call can get its voice pair.
+            pending.clear();
+            SDL_Log("CallMediaEngine: audio devices free again — taking them");
+            capture_stage.Set(MediaThreadStage::OpenDevices);
+            {
+              std::lock_guard lock(mutex);
+              CloseAudioDevicesLocked();
+            }
+            if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
+              SDL_Log("CallMediaEngine: audio devices: %s", audio.error().message.c_str());
+            }
+            last_capture_pcm_ms = util::NowUnixMs();
+            capture_opened_ms = last_capture_pcm_ms;
+          } else if (now - last_audio_retry_ms >= kDeviceRetryPoll.count()) {
+            last_audio_retry_ms = now;
+          }
+        }
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
           // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
@@ -1206,9 +1346,11 @@ struct CallMediaEngine::Impl {
           try {
             capture_stage.Set(MediaThreadStage::Send);
             std::lock_guard send_lock(sfu_send_call_mu);
-            (*send_fn)(pkt);
-            tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
-            last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+            if (!retired.load(std::memory_order_acquire)) { // a retired session never sends (Retire drains)
+              (*send_fn)(pkt);
+              tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
+              last_tx_audio_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+            }
           } catch (...) {
           }
         }
@@ -1247,6 +1389,20 @@ struct CallMediaEngine::Impl {
     request.format.fps = kVideoFps;
     request.format.prefer_front_facing = camera_prefer_front.load(std::memory_order_relaxed);
     auto lease = DeviceArbiter().AcquireCamera(request);
+    if (!lease && !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
+      // Held by another holder, or the camera is not responding (stuck on an earlier close): stay
+      // wanted and open when it is free again — told once.
+      if (CameraStuckTooLong()) {
+        GiveUpCamera(kCameraStuckMessage);
+        return nullptr;
+      }
+      if (!camera_waiting.exchange(true, std::memory_order_acq_rel)) {
+        EngineLog().info << "camera waiting for the device: " << lease.error().message;
+        NoteCameraFailure(kCameraBusyMessage);
+      }
+      return nullptr;
+    }
+    camera_waiting.store(false, std::memory_order_relaxed);
     if (!lease) {
       camera_enabled.store(false, std::memory_order_relaxed);
       camera_prefer_front.store(true, std::memory_order_relaxed);  // a failed facing is not asked for again
@@ -1265,7 +1421,7 @@ struct CallMediaEngine::Impl {
     // Created with the camera, not the session: playback-only and audio-only sessions never open a
     // hardware encoder (media-client-layers l3a).
     if (!video_codec) {
-      video_codec = make_video_codec();
+      video_codec = make_video_codec(VideoCodecRole::Encoder);
     }
     if (!video_codec) {
       return;
@@ -1360,8 +1516,10 @@ struct CallMediaEngine::Impl {
     try {
       video_stage.Set(MediaThreadStage::Send);
       std::lock_guard send_lock(sfu_send_call_mu);
-      (*send_fn)(pkt);
-      tx_video_frames.fetch_add(1, std::memory_order_relaxed);
+      if (!retired.load(std::memory_order_acquire)) { // a retired session never sends (Retire drains)
+        (*send_fn)(pkt);
+        tx_video_frames.fetch_add(1, std::memory_order_relaxed);
+      }
     } catch (...) {
     }
   }
@@ -1401,6 +1559,16 @@ struct CallMediaEngine::Impl {
           video_codec->ResetEncoder();
         }
       }
+      if (wanted && !camera && camera_waiting.load(std::memory_order_acquire) &&
+          !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
+        video_stage.Set(MediaThreadStage::WaitCamera);
+        if (CameraStuckTooLong()) {
+          GiveUpCamera(kCameraStuckMessage);
+          continue;
+        }
+        std::this_thread::sleep_for(kDeviceRetryPoll);
+        continue;
+      }
       if (wanted && !camera) {
         if (!camera_requested) {
           camera_requested = std::chrono::steady_clock::now();
@@ -1413,7 +1581,9 @@ struct CallMediaEngine::Impl {
           camera_front_facing.store(geometry.front_facing, std::memory_order_relaxed);
           camera_open.store(true, std::memory_order_release);
           video_stage.Set(MediaThreadStage::ConfigureEncoder);
+          encoder_restarts = 0; // each camera request gets its own replacements
           ConfigureLocalEncoder(geometry);
+          (void)DropStuckEncoder();
           applied_bps = 0;
           need_keyframe = true;
         }
@@ -1433,8 +1603,21 @@ struct CallMediaEngine::Impl {
         continue;
       }
       const auto t0 = std::chrono::steady_clock::now();
+      if (!video_codec && encoder_restarts > 0) {
+        // The last encoder stopped responding: a new one, and an IDR to start its stream.
+        video_stage.Set(MediaThreadStage::ConfigureEncoder);
+        ConfigureLocalEncoder(geometry);
+        applied_bps = 0;
+        need_keyframe = true;
+        if (DropStuckEncoder()) {
+          continue;
+        }
+      }
       video_stage.Set(MediaThreadStage::SetBitrate);
       ApplyVideoBitrate(applied_bps);
+      if (DropStuckEncoder()) {
+        continue;
+      }
       video_stage.Set(MediaThreadStage::WaitFrame);
       auto frame = camera->NextFrame();
       if (!frame) {
@@ -1447,6 +1630,7 @@ struct CallMediaEngine::Impl {
       }
       video_stage.Set(MediaThreadStage::Convert);
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      (void)DropStuckEncoder();
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       video_stage.Set(MediaThreadStage::Sleep);
       if (elapsed < frame_period) {
@@ -1496,7 +1680,11 @@ struct CallMediaEngine::Impl {
         if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
           return;
         }
-        auto created = make_video_codec();
+        if (const auto restarts = decoder_restarts.find(stream_id);
+            restarts != decoder_restarts.end() && restarts->second > kMaxCodecRestarts) {
+          return; // its decoders kept hanging: no video from this stream this call
+        }
+        auto created = make_video_codec(VideoCodecRole::Decoder);
         if (!created) {
           return;
         }
@@ -1509,6 +1697,10 @@ struct CallMediaEngine::Impl {
     }
     if (!decoder->HasDecoder()) {
       if (auto configured = decoder->ConfigureDecoder(); !configured) {
+        if (decoder->NotResponding()) {
+          DropStuckDecoder(stream_id);
+          return;
+        }
         static bool logged_cfg = false;
         if (!logged_cfg) {
           logged_cfg = true;
@@ -1518,6 +1710,10 @@ struct CallMediaEngine::Impl {
       }
     }
     auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
+    if (!decoded && decoder->NotResponding()) {
+      DropStuckDecoder(stream_id);
+      return;
+    }
     if (!decoded) {
       // In the app log (SDL_Log never reaches the phone's log file), a few per call.
       if (video_decode_fail_logs < 5) {
@@ -1543,6 +1739,53 @@ struct CallMediaEngine::Impl {
       }
     }
     PublishRemoteFrame(stream_id, std::move(**decoded));
+  }
+
+  /**
+   * A decoder that stopped responding (L016) is dropped — destroyed on its own thread when it lets
+   * go — and the next packet makes a new one; it asks the sender for an IDR. Past kMaxCodecRestarts
+   * the stream shows no video for the rest of the call.
+   */
+  void DropStuckDecoder(uint32_t stream_id) {
+    std::lock_guard lock(mutex);
+    remote_decoders.erase(stream_id);
+    decoder_resets.erase(stream_id);
+    const int restarts = ++decoder_restarts[stream_id];
+    EngineLog().warning << "remote H264 decoder not responding; dropped stream=" << stream_id
+                        << " restarts=" << restarts << (restarts > kMaxCodecRestarts ? " (no more this call)" : "")
+                        << " call=" << call_id;
+    NoteVideoRefreshNeeded(stream_id);
+  }
+
+  /**
+   * Video thread: the local encoder stopped responding (L016) — drop it (destroyed on its own thread
+   * when it lets go); the next frame makes a new one. Past kMaxCodecRestarts the camera is given up
+   * on. True when it was dropped.
+   */
+  bool DropStuckEncoder() {
+    if (!video_codec || !video_codec->NotResponding()) {
+      return false;
+    }
+    video_codec.reset();
+    ++encoder_restarts;
+    EngineLog().warning << "video encoder not responding; dropped restarts=" << encoder_restarts;
+    if (encoder_restarts > kMaxCodecRestarts) {
+      GiveUpCamera(kEncoderStuckMessage);
+    }
+    return true;
+  }
+
+  /** The camera cannot work this session: off, the person told why (and the roster withdrawn). */
+  void GiveUpCamera(const char* message) {
+    EngineLog().warning << "camera given up: " << message;
+    camera_enabled.store(false, std::memory_order_relaxed);
+    camera_waiting.store(false, std::memory_order_relaxed);
+    NoteCameraFailure(message);
+  }
+
+  /** A camera that waits for its device gives up once that device has been stuck device_give_up_after. */
+  bool CameraStuckTooLong() {
+    return DeviceArbiter().Health(MediaDeviceKind::Camera).stuck_ms >= limits.device_give_up_after.count();
   }
 
   /**
@@ -1573,37 +1816,198 @@ struct CallMediaEngine::Impl {
                         << " took_ms=" << took_ms << " call=" << call_id;
   }
 
+  /**
+   * Stopped, or replaced by a newer session: from here this session only cleans up (FinishRetired,
+   * on its own thread) and reports nothing. Never waits on a media thread or a device. Returns
+   * whether anything ran (an idle session has nothing to clean up).
+   */
+  bool BeginRetire() {
+    audio_session_seen = SessionGeneration();
+    retired.store(true, std::memory_order_release);
+    std::lock_guard lock(mutex);
+    const bool running =
+        active || sfu_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
+    if (running) {
+      EngineLog().info << "media stop begin call=" << call_id;
+    }
+    active = false;
+    muted.store(false, std::memory_order_relaxed);
+    RequestCameraOffLocked();
+    connected_at_ms.store(0, std::memory_order_relaxed);
+    started_at_ms.store(0, std::memory_order_relaxed);
+    retired_send = std::move(sfu_send);
+    sfu_send = nullptr;
+    sfu_mode = false;
+    capture_running = false;
+    playout_running = false;
+    video_running = false;
+    ApplyStateLocked("closed");
+    return running;
+  }
+
+  /**
+   * Wait out a send already inside the callback (the transport's Detach unblocks a blocking write),
+   * then drop the callback: from here no thread of this session calls it — they check `retired`
+   * under the same lock. So the owner may destroy what the callback reaches as soon as Stop returns.
+   */
+  void DrainSend() {
+    std::shared_ptr<SfuSendFn> abandoned;
+    std::lock_guard drain(sfu_send_call_mu);
+    std::lock_guard lock(mutex);
+    abandoned = std::move(retired_send);
+  }
+
+  /**
+   * A retired session's cleanup, on its own thread: join its media threads, release the devices,
+   * tear the codecs down. A step that hangs (a wedged OS device or hardware codec) holds only this
+   * thread — and the devices this session still holds, which the arbiter hands to the next holder
+   * once they are released (L016). The audio devices go before the video thread is joined, so a
+   * stuck camera or encoder keeps no microphone.
+   */
+  void FinishRetired() {
+    const auto stop_from = std::chrono::steady_clock::now();
+    std::string stopping_call;
+    {
+      std::lock_guard lock(mutex);
+      stopping_call = call_id;
+    }
+    // B128: which step of a stop hangs (codec teardown vs. capture / playout / camera joins).
+    const auto timed_step = [&stopping_call](const char* step, const auto& run) {
+      const auto from = std::chrono::steady_clock::now();
+      run();
+      const int64_t ms = MsSince(from);
+      if (ms > kSlowStopStepMs) {
+        EngineLog().warning << "media stop slow step=" << step << " ms=" << ms << " call=" << stopping_call;
+      } else {
+        EngineLog().info << "media stop step=" << step << " ms=" << ms;
+      }
+    };
+    timed_step("join_capture", [&] { JoinCaptureThread("media stop"); });
+    timed_step("join_playout", [&] { JoinPlayoutThread("media stop"); });
+    timed_step("release_audio", [&] {
+      {
+        std::lock_guard lock(mutex);
+        ReleaseAudioLocked();
+      }
+      ReleaseAudioSessionIfUnchanged(audio_session_seen);
+    });
+    timed_step("join_video", [&] { JoinVideoThread("media stop"); });
+    // B125 / B128: destroying a hardware codec can take ~1 s on a phone (or block for good when the
+    // vendor codec is wedged): taken out under the lock, destroyed after it.
+    timed_step("codecs", [&] {
+      std::unique_ptr<IVideoCodec> codec;
+      std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> decoders;
+      {
+        std::lock_guard lock(mutex);
+        codec = std::move(video_codec);
+        decoders.swap(remote_decoders);
+        decoder_resets.clear();
+        ClearVideoFrames();
+        call_id.clear();
+      }
+    });
+    EngineLog().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
+  }
+
+  /** The send callback a retired session dropped, released once no thread is inside it. */
+  std::shared_ptr<SfuSendFn> retired_send;
 };
 
 CallMediaEngine::CallMediaEngine() : CallMediaEngine(MediaDeviceArbiter::Default()) {}
 
-CallMediaEngine::CallMediaEngine(MediaDeviceArbiter& devices) : impl_(std::make_unique<Impl>()) {
+CallMediaEngine::CallMediaEngine(MediaDeviceArbiter& devices)
+    : shared_(std::make_shared<Shared>()), retirements_(std::make_shared<Retirements>()) {
   redirectLogger("CallMediaEngine");
-  impl_->own_devices = &devices;
-  impl_->devices = &devices;
+  shared_->own_devices = &devices;
+  shared_->devices = &devices;
+  impl_ = std::make_shared<Impl>(shared_);
 }
 
 CallMediaEngine::~CallMediaEngine() {
   Stop();
+  // Product quit / owner teardown: give retired sessions a moment; one stuck on a device is left to
+  // the process exit (it keeps what it uses alive).
+  if (!WaitForRetiredSessions(kRetiredWaitOnDestroy)) {
+    log().warning << "media engine destroyed while a stopped session still cleans up";
+  }
+}
+
+std::shared_ptr<CallMediaEngine::Impl> CallMediaEngine::Session() const {
+  std::lock_guard lock(session_mu_);
+  return impl_;
+}
+
+std::shared_ptr<CallMediaEngine::Impl> CallMediaEngine::ReplaceSession() {
+  auto fresh = std::make_shared<Impl>(shared_);
+  std::lock_guard lock(session_mu_);
+  return std::exchange(impl_, std::move(fresh));
+}
+
+bool CallMediaEngine::Retire(std::shared_ptr<Impl> session) {
+  if (!session || !session->BeginRetire()) {
+    return false;
+  }
+  session->DrainSend();
+  {
+    std::lock_guard lock(retirements_->mu);
+    ++retirements_->running;
+  }
+  std::thread([retirements = retirements_, session = std::move(session)]() mutable {
+    session->FinishRetired();
+    session.reset();
+    {
+      std::lock_guard lock(retirements->mu);
+      --retirements->running;
+    }
+    retirements->cv.notify_all();
+  }).detach();
+  return true;
+}
+
+bool CallMediaEngine::WaitForRetiredSessions(const std::chrono::milliseconds budget) {
+  std::unique_lock lock(retirements_->mu);
+  return retirements_->cv.wait_for(lock, budget, [this]() { return retirements_->running == 0; });
 }
 
 void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
-  std::lock_guard lock(impl_->mutex);
-  impl_->on_state_changed = std::move(callback);
+  std::lock_guard lock(shared_->mu);
+  shared_->on_state_changed = std::move(callback);
+}
+
+void CallMediaEngine::SetHardwareLimits(const HardwareLimits& limits) {
+  {
+    std::lock_guard lock(shared_->mu);
+    shared_->limits = limits;
+  }
+  RefreshIdleSession();
 }
 
 void CallMediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make) {
-  std::lock_guard lock(impl_->mutex);
-  impl_->make_video_codec = std::move(make);
+  {
+    std::lock_guard lock(shared_->mu);
+    shared_->make_video_codec = std::move(make);
+  }
+  RefreshIdleSession();
 }
 
 void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
-  impl_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
-  std::lock_guard lock(impl_->mutex);
-  if (skip && !impl_->test_devices) {
-    impl_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
+  shared_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
+  {
+    std::lock_guard lock(shared_->mu);
+    if (skip && !shared_->test_devices) {
+      shared_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
+    }
+    shared_->devices = skip ? shared_->test_devices.get() : shared_->own_devices;
   }
-  impl_->devices = skip ? impl_->test_devices.get() : impl_->own_devices;
+  RefreshIdleSession();
+}
+
+void CallMediaEngine::RefreshIdleSession() {
+  // Settings a session copies when made (devices, codec factory) are set before Start: an idle
+  // session is replaced so it has them; a running one keeps what it started with.
+  if (!Session()->active.load(std::memory_order_acquire)) {
+    (void)Retire(ReplaceSession());
+  }
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
@@ -1611,128 +2015,98 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
 }
 
 CallMediaEngine::SessionSpec CallMediaEngine::ActiveSpec() const {
-  Impl::TimedGetterLock lock(*impl_, "ActiveSpec");
-  return impl_->spec;
+  const std::shared_ptr<Impl> impl = Session();
+  Impl::TimedGetterLock lock(*impl, "ActiveSpec");
+  return impl->spec;
 }
 
 Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec spec, SfuSendFn send) {
-  StateChangedFn state_cb;
-  std::shared_ptr<SfuSendFn> abandoned_send;
-  bool need_rebuild = false;
-  bool send_replaced_only = false;
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  if (!spec.capture && !spec.playback) {
+    return Error("media session needs capture or playback");
+  }
   auto next_send = std::make_shared<SfuSendFn>(std::move(send));
+  if (spec.capture && !*next_send) {
+    return Error("SFU send callback required");
+  }
+  const std::shared_ptr<Impl> current = Session();
+  std::shared_ptr<SfuSendFn> abandoned_send;
+  bool send_swap = false;
   {
-    std::lock_guard lock(impl_->mutex);
-    if (call_id.empty()) {
-      return Error("call_id required");
-    }
-    if (!spec.capture && !spec.playback) {
-      return Error("media session needs capture or playback");
-    }
-    if (spec.capture && !*next_send) {
-      return Error("SFU send callback required");
-    }
-    if (impl_->active) {
-      if (impl_->call_id == call_id && impl_->sfu_mode && impl_->spec == spec) {
-        // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
-        abandoned_send = std::move(impl_->sfu_send);
-        impl_->sfu_send = std::move(next_send);
-        send_replaced_only = true;
-      } else {
-        // Soft-migrate: clear send callback BEFORE destroying opus/SDL.
-        impl_->active = false;
-        abandoned_send = std::move(impl_->sfu_send);
-        impl_->sfu_send = nullptr;
-        impl_->capture_running = false;
-        need_rebuild = true;
-        impl_->call_id.clear();
-      }
+    std::lock_guard lock(current->mutex);
+    if (current->active && current->call_id == call_id && current->sfu_mode && current->spec == spec) {
+      // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
+      abandoned_send = std::move(current->sfu_send);
+      current->sfu_send = std::move(next_send);
+      send_swap = true;
     }
   }
-  if (send_replaced_only) {
-    // Drain any capture/video thread still inside the old send before the caller Detach's that
-    // stream — otherwise SoftMigrate races into heap corruption.
-    std::lock_guard drain(impl_->sfu_send_call_mu);
-    abandoned_send = nullptr;
-    // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
-    // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
-    // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
-    {
-      std::lock_guard lock(impl_->mutex);
-      impl_->audio_tracks.erase(0);
-      {
-        std::lock_guard lg(impl_->sfu_rx_log_mu);
-        impl_->sfu_rx_logged_streams.erase(0);
-      }
-    }
-    // Android speaker / communication-mode route changes around SoftMigrate can leave the open
-    // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
-    // Desktop SoftMigrate send-swap must not close/reopen SDL (malloc/double-free on Leave).
-    if (CallAudioSession::CaptureReopenSettleDelayMs() > 0) {
-      RequestAudioDeviceReopen();
-    }
-    RequestVideoKeyframe();
+  if (send_swap) {
+    SwapSend(*current, std::move(abandoned_send));
     return {};
   }
-  abandoned_send = nullptr;
-  if (need_rebuild) {
-    impl_->playout_running = false;
-    impl_->JoinCaptureThread("media restart");
-    impl_->JoinPlayoutThread("media restart");
-    impl_->JoinVideoThread("media restart");  // outside `mutex`: the video thread takes it to read the send callback
-    std::lock_guard lock(impl_->mutex);
-    impl_->TearDownAudioLocked();
-  }
+  // Anything else is a new session: the one before (idle, or another call's) retires and cleans up
+  // on its own thread — this never waits for its threads or devices.
+  (void)Retire(ReplaceSession());
+  const std::shared_ptr<Impl> impl = Session();
   {
-    std::lock_guard lock(impl_->mutex);
-    if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
-      impl_->TearDownAudioLocked();
+    std::lock_guard lock(impl->mutex);
+    if (auto codecs = impl->EnsureOpusCodecs(); !codecs) {
+      impl->TearDownAudioLocked();
       return codecs.error();
     }
-    impl_->sfu_mode = true;
-    impl_->spec = spec;
-    impl_->sfu_send = spec.capture ? std::move(next_send) : nullptr;
-    impl_->sfu_audio_seq.store(0);
-    impl_->sfu_video_seq.store(0);
-    impl_->call_id = call_id;
-    impl_->active = true;
-    impl_->muted.store(false, std::memory_order_relaxed);
-    impl_->camera_enabled.store(false, std::memory_order_relaxed);
-    impl_->camera_prefer_front.store(true, std::memory_order_relaxed);
-    impl_->camera_reopen_requested.store(false, std::memory_order_relaxed);
-    impl_->camera_open.store(false, std::memory_order_relaxed);
-    impl_->camera_front_facing.store(false, std::memory_order_relaxed);
-    impl_->adaptation_camera_allowed.store(true, std::memory_order_relaxed);
-    impl_->outbound_drops.store(0, std::memory_order_relaxed);
-    impl_->playout_ticks.store(0, std::memory_order_relaxed);
-    impl_->path_pressure.store(0.0, std::memory_order_relaxed);
-    impl_->ClearAudioTracksLocked();
-    {
-      std::lock_guard lg(impl_->sfu_rx_log_mu);
-      impl_->sfu_rx_logged_streams.clear();
+    impl->sfu_mode = true;
+    impl->spec = spec;
+    impl->sfu_send = spec.capture ? std::move(next_send) : nullptr;
+    impl->call_id = call_id;
+    impl->active = true;
+    impl->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+    impl->ApplyStateLocked("connected");
+    impl->StartCaptureLoop(); // device owner for both halves; encodes only when capturing
+    if (spec.playback) {
+      impl->StartPlayoutLoop();
     }
-    impl_->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-    impl_->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
-    impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
-    impl_->ApplyStateLocked("connected");
-    impl_->StartCaptureLoop();  // device owner for both halves; encodes only when capturing
-    if (spec.playback && !impl_->playout_thread.joinable()) {
-      impl_->StartPlayoutLoop();
-    }
-    state_cb = impl_->on_state_changed;
   }
-  if (state_cb) {
-    state_cb("connected");
-  }
+  impl->EmitStateChanged("connected");
   return {};
 }
 
+void CallMediaEngine::SwapSend(Impl& impl, std::shared_ptr<SfuSendFn> abandoned_send) {
+  // Drain any capture/video thread still inside the old send before the caller Detach's that
+  // stream — otherwise SoftMigrate races into heap corruption.
+  {
+    std::lock_guard drain(impl.sfu_send_call_mu);
+    abandoned_send = nullptr;
+  }
+  // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
+  // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
+  // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
+  {
+    std::lock_guard lock(impl.mutex);
+    impl.audio_tracks.erase(0);
+    {
+      std::lock_guard lg(impl.sfu_rx_log_mu);
+      impl.sfu_rx_logged_streams.erase(0);
+    }
+  }
+  // Android speaker / communication-mode route changes around SoftMigrate can leave the open
+  // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
+  // Desktop SoftMigrate send-swap must not close/reopen SDL (malloc/double-free on Leave).
+  if (CallAudioSession::CaptureReopenSettleDelayMs() > 0) {
+    RequestAudioDeviceReopen();
+  }
+  RequestVideoKeyframe();
+}
+
 void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
+  const std::shared_ptr<Impl> impl = Session();
   // Must hold mutex: SoftMigrate StartSfu TearDownAudioLocked destroys opus/SDL while the
   // media_relay client reader can already deliver frames (guest attach dogfood crash).
-  std::lock_guard lock(impl_->mutex);
-  if (!impl_->active || !impl_->sfu_mode || !impl_->spec.playback || packet.payload.empty()) {
+  std::lock_guard lock(impl->mutex);
+  if (!impl->active || !impl->sfu_mode || !impl->spec.playback || packet.payload.empty()) {
     return;
   }
   // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
@@ -1745,93 +2119,97 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
     // Cleared on SoftMigrate StartSfu send-swap so post-migrate RX is visible again.
     bool log_this = false;
     {
-      std::lock_guard lg(impl_->sfu_rx_log_mu);
-      log_this = impl_->sfu_rx_logged_streams.insert(packet.stream_id).second;
+      std::lock_guard lg(impl->sfu_rx_log_mu);
+      log_this = impl->sfu_rx_logged_streams.insert(packet.stream_id).second;
     }
     if (log_this) {
       log().info << "OnSfuPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
-                 << " seq=" << packet.seq << " bytes=" << packet.payload.size()
-                 << " call=" << impl_->call_id;
+                 << " seq=" << packet.seq << " bytes=" << packet.payload.size() << " call=" << impl->call_id;
     }
   }
   if (mesh::IsAudioChannel(packet.channel_id)) {
-    impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
-                             reinterpret_cast<const std::byte*>(packet.payload.data()),
-                             packet.payload.size());
+    impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
+                            packet.payload.size());
   } else if (mesh::IsVideoChannel(packet.channel_id)) {
-    impl_->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
-                             packet.payload.size());
+    impl->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
+                            packet.payload.size());
   }
 }
 
 void CallMediaEngine::ClearRemoteAudioTracks() {
-  std::lock_guard lock(impl_->mutex);
-  impl_->ClearAudioTracksLocked();
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->mutex);
+  impl->ClearAudioTracksLocked();
 }
 
 bool CallMediaEngine::IsSfuMode() const {
-  Impl::TimedGetterLock lock(*impl_, "IsSfuMode");
-  return impl_->sfu_mode;
+  const std::shared_ptr<Impl> impl = Session();
+  Impl::TimedGetterLock lock(*impl, "IsSfuMode");
+  return impl->sfu_mode;
 }
 
 void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
-  impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
-  impl_->adaptation_target_video_bps.store(decision.target_video_lo_bps, std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
+  impl->adaptation_target_video_bps.store(decision.target_video_lo_bps, std::memory_order_relaxed);
   const int64_t audio_bps =
       decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
-  impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
+  impl->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
   // Bitrates are applied by the threads that encode, right before their next frame (encoders are
   // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan).
   if (!decision.camera_allowed) {
-    std::lock_guard lock(impl_->mutex);
-    impl_->RequestCameraOffLocked();
+    std::lock_guard lock(impl->mutex);
+    impl->RequestCameraOffLocked();
   }
 }
 
 double CallMediaEngine::PathPressure() const {
-  return impl_->path_pressure.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->path_pressure.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::NoteOutboundDrop() {
-  impl_->outbound_drops.fetch_add(1, std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->outbound_drops.fetch_add(1, std::memory_order_relaxed);
 }
 
 CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
+  const std::shared_ptr<Impl> impl = Session();
   CallMediaEngineHealth h;
-  h.active = impl_->active.load(std::memory_order_relaxed);
+  h.active = impl->active.load(std::memory_order_relaxed);
   // Started and not stopped — also while running without an audio device (RX muted, device still
   // opening); a stopped engine's counters are not the call's.
   h.engine_running = h.active;
-  h.connected = impl_->connected.load(std::memory_order_relaxed);
-  h.muted = impl_->muted.load(std::memory_order_relaxed);
-  h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
-  h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
-  h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
-  h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
-  h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
-  h.fec_frames = impl_->fec_frames_total.load(std::memory_order_relaxed);
-  h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
-  h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
-  h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
-  h.last_tx_audio_ms = impl_->last_tx_audio_ms.load(std::memory_order_relaxed);
-  h.rx_video_frames = impl_->rx_video_frames.load(std::memory_order_relaxed);
-  h.tx_video_frames = impl_->tx_video_frames.load(std::memory_order_relaxed);
-  h.last_rx_video_ms = impl_->last_rx_video_ms.load(std::memory_order_relaxed);
-  h.video_target_bps = impl_->adaptation_target_video_bps.load(std::memory_order_relaxed);
-  h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
-  h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
+  h.connected = impl->connected.load(std::memory_order_relaxed);
+  h.muted = impl->muted.load(std::memory_order_relaxed);
+  h.path_pressure = impl->path_pressure.load(std::memory_order_relaxed);
+  h.opus_target_bps = impl->adaptation_target_audio_bps.load(std::memory_order_relaxed);
+  h.outbound_drops = impl->outbound_drops.load(std::memory_order_relaxed);
+  h.playout_underruns = impl->playout_underruns_total.load(std::memory_order_relaxed);
+  h.plc_frames = impl->plc_frames_total.load(std::memory_order_relaxed);
+  h.fec_frames = impl->fec_frames_total.load(std::memory_order_relaxed);
+  h.rx_audio_frames = impl->rx_audio_frames.load(std::memory_order_relaxed);
+  h.tx_audio_frames = impl->tx_audio_frames.load(std::memory_order_relaxed);
+  h.last_rx_audio_ms = impl->last_rx_audio_ms.load(std::memory_order_relaxed);
+  h.last_tx_audio_ms = impl->last_tx_audio_ms.load(std::memory_order_relaxed);
+  h.rx_video_frames = impl->rx_video_frames.load(std::memory_order_relaxed);
+  h.tx_video_frames = impl->tx_video_frames.load(std::memory_order_relaxed);
+  h.last_rx_video_ms = impl->last_rx_video_ms.load(std::memory_order_relaxed);
+  h.video_target_bps = impl->adaptation_target_video_bps.load(std::memory_order_relaxed);
+  h.local_level = impl->local_input_level.load(std::memory_order_relaxed);
+  h.remote_level = impl->remote_output_level.load(std::memory_order_relaxed);
   {
-    Impl::TimedGetterLock lock(*impl_, "HealthSnapshot");
-    AudioDeviceLease* speaker = impl_->speaker_lease.get();
+    Impl::TimedGetterLock lock(*impl, "HealthSnapshot");
+    AudioDeviceLease* speaker = impl->speaker_lease.get();
     const bool voice = speaker && speaker->IsVoiceDuplex();
-    const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
+    const bool any_device = (impl->mic_lease && impl->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
     h.audio_io = voice ? "vpio" : (any_device ? "sdl" : "none");
-    h.io_underruns = impl_->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
-    h.stream_count = impl_->audio_tracks.size();
-    h.sfu_mode = impl_->sfu_mode;
-    h.capture_available = impl_->capture_available;
-    h.streams.reserve(impl_->audio_tracks.size());
-    for (const auto& [id, track] : impl_->audio_tracks) {
+    h.io_underruns = impl->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
+    h.stream_count = impl->audio_tracks.size();
+    h.sfu_mode = impl->sfu_mode;
+    h.capture_available = impl->capture_available;
+    h.streams.reserve(impl->audio_tracks.size());
+    for (const auto& [id, track] : impl->audio_tracks) {
       if (!track) {
         continue;
       }
@@ -1853,130 +2231,34 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
 }
 
 void CallMediaEngine::Stop() {
-  StateChangedFn state_cb;
-  std::shared_ptr<SfuSendFn> abandoned_send;
-  std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> doomed_decoders;
-  const auto stop_from = std::chrono::steady_clock::now();
-  std::string stopping_call;
-  // B128: logged before the lock — a decode wedged inside OnSfuPacket would hold it. Idle Stops
-  // (destructor, repeated ends) stay quiet.
-  if (impl_->active.load(std::memory_order_relaxed)) {
-    log().info << "media stop begin";
-  }
-  {
-    std::lock_guard lock(impl_->mutex);
-    if (!impl_->active && !impl_->sfu_mode) {
-      // Still join threads if a prior StartSfu left them running after a failed half-stop.
-      if (!impl_->capture_thread.joinable() && !impl_->playout_thread.joinable() &&
-          !impl_->video_thread.joinable()) {
-        return;
-      }
+  // The session's threads and devices are released on its own thread (FinishRetired): a stop never
+  // waits on hardware, so the calls owner going on with the next invite cannot be held by it (#452).
+  if (Retire(ReplaceSession())) {
+    if (StateChangedFn cb = shared_->StateCallback()) {
+      cb("closed");
     }
-    impl_->active = false;
-    impl_->muted.store(false, std::memory_order_relaxed);
-    impl_->camera_enabled.store(false, std::memory_order_relaxed);
-    impl_->connected_at_ms.store(0, std::memory_order_relaxed);
-    impl_->started_at_ms.store(0, std::memory_order_relaxed);
-    abandoned_send = std::move(impl_->sfu_send);
-    impl_->sfu_send = nullptr;
-    impl_->sfu_mode = false;
-    impl_->capture_running = false;
-    impl_->playout_running = false;
-    // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
-    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen. Taken out under the lock, so
-    // the receive path (OnSfuPacket holds the lock while it decodes) and ResetStalledDecoder (looks
-    // the decoder up again under it) can no longer reach them; destroyed below, off this thread.
-    doomed_decoders.swap(impl_->remote_decoders);
-    impl_->decoder_resets.clear();
-    impl_->video_decode_fail_logs = 0;
-    impl_->lock_wait_warns.store(0, std::memory_order_relaxed);
-    stopping_call = impl_->call_id;
-  }
-  // B128: which step of a stop hangs (codec teardown vs. capture / playout / camera joins).
-  auto timed_step = [this](const char* step, const auto& run) {
-    const auto from = std::chrono::steady_clock::now();
-    run();
-    const int64_t ms = MsSince(from);
-    if (ms > kSlowStopStepMs) {
-      log().warning << "media stop slow step=" << step << " ms=" << ms;
-    } else {
-      log().info << "media stop step=" << step << " ms=" << ms;
-    }
-  };
-  {
-    const int64_t lock_ms = MsSince(stop_from);
-    if (lock_ms > kSlowStopStepMs) {
-      log().warning << "media stop slow step=lock ms=" << lock_ms << " call=" << stopping_call;
-    } else {
-      log().info << "media stop step=lock ms=" << lock_ms << " call=" << stopping_call;
-    }
-  }
-  abandoned_send = nullptr;
-  // B128: destroying a hardware decoder (AMediaCodec_stop / delete) can block for good when the
-  // vendor codec is wedged, and this is the calls owner thread. A decoder owns only its codec and
-  // never touches Impl, so a detached thread may outlive the engine here — the "always join" rule
-  // below is about threads that use Impl.
-  timed_step("decoders", [&] {
-    if (!doomed_decoders.empty()) {
-      std::thread([decoders = std::move(doomed_decoders)]() mutable { decoders.clear(); }).detach();
-    }
-  });
-  // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
-  timed_step("drain_send", [&] { std::lock_guard drain(impl_->sfu_send_call_mu); });
-  // Always join — never detach. Budgeted detach raced TearDownAudioLocked / ~Impl with
-  // capture still inside SDL_OpenAudioDeviceStream (Windows CI headless: segfault after
-  // "OpenAudioDevices failed"). Product quit must wait for the worker; SDL open fails fast
-  // when no device is present.
-  timed_step("join_capture", [&] { impl_->JoinCaptureThread("media stop"); });
-  timed_step("join_playout", [&] { impl_->JoinPlayoutThread("media stop"); });
-  timed_step("join_video", [&] { impl_->JoinVideoThread("media stop"); });
-  // B125: on phones teardown takes ~1 s (OS audio session deactivation, hardware codec teardown) and
-  // UI getters wait for the engine mutex meanwhile. Capture / playout / video are already joined, so
-  // the codec is detached under the lock (the video loop makes a fresh one next call) and both slow
-  // parts run after it is released.
-  std::unique_ptr<IVideoCodec> doomed_codec;
-  timed_step("teardown_audio", [&] {
-    uint64_t session_seen = 0;
-    {
-      std::lock_guard lock(impl_->mutex);
-      if (!impl_->video_thread.joinable()) {
-        doomed_codec = std::move(impl_->video_codec);
-      } else {
-        // Something restarted the video loop after the join: it owns the codec now.
-        log().warning << "media stop: video thread running again, codec left in place";
-      }
-      session_seen = impl_->SessionGeneration();
-      impl_->TearDownAudioLocked(/*release_session=*/false);
-      impl_->call_id.clear();
-      impl_->spec = SessionSpec::Duplex();
-      impl_->ApplyStateLocked("closed");
-      state_cb = impl_->on_state_changed;
-    }
-    doomed_codec.reset();
-    impl_->ReleaseAudioSessionIfUnchanged(session_seen);
-  });
-  log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
-  if (state_cb) {
-    state_cb("closed");
   }
 }
 
 void CallMediaEngine::SetMuted(bool muted) {
-  impl_->muted.store(muted, std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->muted.store(muted, std::memory_order_relaxed);
   if (muted) {
-    impl_->local_input_level.store(0.f, std::memory_order_relaxed);
+    impl->local_input_level.store(0.f, std::memory_order_relaxed);
   }
 }
 
 bool CallMediaEngine::IsMuted() const {
-  return impl_->muted.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->muted.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::RequestAudioDeviceReopen() {
-  if (!impl_->capture_running.load(std::memory_order_relaxed)) {
+  const std::shared_ptr<Impl> impl = Session();
+  if (!impl->capture_running.load(std::memory_order_relaxed)) {
     return;
   }
-  impl_->audio_reopen_requested.store(true, std::memory_order_release);
+  impl->audio_reopen_requested.store(true, std::memory_order_release);
 }
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
@@ -1985,97 +2267,112 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
 }
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rotation) {
-  std::lock_guard lock(impl_->mutex);
-  if (!impl_->active) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->mutex);
+  if (!impl->active) {
     return Error("Call media not active");
   }
   if (!enabled) {
-    impl_->RequestCameraOffLocked();
+    impl->RequestCameraOffLocked();
     return {};
   }
-  if (!impl_->spec.capture) {
+  if (!impl->spec.capture) {
     return Error("camera needs a capturing session");
   }
-  if (!impl_->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
+  if (!impl->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
     return Error("Camera blocked by adaptation (uplink/path)");
   }
-  if (impl_->skip_device_open_for_test.load(std::memory_order_relaxed)) {
+  if (impl->skip_device_open_for_test.load(std::memory_order_relaxed)) {
     return Error("camera skipped (test)");
   }
   // Async: the video thread takes the camera lease (opened on the media device thread). A failed
   // open flips IsCameraEnabled back to false and is reported through TakeCameraFailure.
-  impl_->camera_display_rotation.store(display_rotation, std::memory_order_relaxed);
-  impl_->camera_enabled.store(true, std::memory_order_relaxed);
-  if (!impl_->video_thread.joinable()) {
-    impl_->StartVideoLoop();
+  impl->camera_display_rotation.store(display_rotation, std::memory_order_relaxed);
+  impl->camera_enabled.store(true, std::memory_order_relaxed);
+  if (!impl->video_thread.joinable()) {
+    impl->StartVideoLoop();
   }
   return {};
 }
 
 Roe<void> CallMediaEngine::FlipCamera() {
-  std::lock_guard lock(impl_->mutex);
-  if (!impl_->active) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->mutex);
+  if (!impl->active) {
     return Error("Call media not active");
   }
-  if (!impl_->camera_enabled.load(std::memory_order_relaxed)) {
+  if (!impl->camera_enabled.load(std::memory_order_relaxed)) {
     return Error("camera is off");
   }
-  if (!impl_->camera_open.load(std::memory_order_acquire)) {
+  if (!impl->camera_open.load(std::memory_order_acquire)) {
     return Error("camera is still opening");  // the facing is not known yet; a tap this early does nothing
   }
-  if (impl_->camera_reopen_requested.load(std::memory_order_acquire)) {
+  if (impl->camera_reopen_requested.load(std::memory_order_acquire)) {
     return {};  // one flip is already on its way; a second tap does not undo it
   }
   // The video thread owns the lease: it releases the open camera and takes the other facing, with
   // the display rotation it already has (UpdateCameraDisplayRotation keeps that current). The target
   // is the opposite of the camera actually open, so a device that gave the same camera twice still flips.
-  impl_->camera_prefer_front.store(!impl_->camera_front_facing.load(std::memory_order_relaxed),
-                                   std::memory_order_relaxed);
-  impl_->camera_reopen_requested.store(true, std::memory_order_release);
+  impl->camera_prefer_front.store(!impl->camera_front_facing.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
+  impl->camera_reopen_requested.store(true, std::memory_order_release);
   return {};
 }
 
 bool CallMediaEngine::CameraFrontFacing() const {
-  return impl_->camera_front_facing.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->camera_front_facing.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::SetVideoLevel(const uint8_t level) {
+  const std::shared_ptr<Impl> impl = Session();
   if (!mesh::IsVideoLevel(level)) {
     return;
   }
-  impl_->video_level.store(level, std::memory_order_relaxed);
-  impl_->video_level_profile.store(true, std::memory_order_relaxed);
+  impl->video_level.store(level, std::memory_order_relaxed);
+  impl->video_level_profile.store(true, std::memory_order_relaxed);
 }
 
 uint8_t CallMediaEngine::VideoLevel() const {
-  return impl_->video_level.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->video_level.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::UpdateCameraDisplayRotation(const int display_rotation_deg) {
-  impl_->camera_display_rotation.store(display_rotation_deg, std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->camera_display_rotation.store(display_rotation_deg, std::memory_order_relaxed);
 }
 
 std::optional<std::string> CallMediaEngine::TakeCameraFailure() {
-  std::lock_guard lock(impl_->camera_failure_mu);
-  if (impl_->camera_failure.empty()) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->camera_failure_mu);
+  if (impl->camera_failure.empty()) {
     return std::nullopt;
   }
-  return std::exchange(impl_->camera_failure, std::string());
+  return std::exchange(impl->camera_failure, std::string());
 }
 
 bool CallMediaEngine::IsCameraEnabled() const {
-  return impl_->camera_enabled.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->camera_enabled.load(std::memory_order_relaxed);
+}
+
+bool CallMediaEngine::CameraWaitingForDevice() const {
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->camera_enabled.load(std::memory_order_relaxed) && impl->camera_waiting.load(std::memory_order_relaxed);
 }
 
 bool CallMediaEngine::HasRemoteVideo() const {
-  return impl_->has_remote_video.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->has_remote_video.load(std::memory_order_relaxed);
 }
 
 bool CallMediaEngine::IsRemoteVideoStalling() const {
-  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+  const std::shared_ptr<Impl> impl = Session();
+  if (!impl->has_remote_video.load(std::memory_order_relaxed)) {
     return false;
   }
-  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  const int64_t last = impl->last_remote_video_ms.load(std::memory_order_relaxed);
   if (last <= 0) {
     return false;
   }
@@ -2084,45 +2381,49 @@ bool CallMediaEngine::IsRemoteVideoStalling() const {
 }
 
 bool CallMediaEngine::IsRemoteVideoLive(const int64_t within_ms) const {
-  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+  const std::shared_ptr<Impl> impl = Session();
+  if (!impl->has_remote_video.load(std::memory_order_relaxed)) {
     return false;
   }
-  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  const int64_t last = impl->last_remote_video_ms.load(std::memory_order_relaxed);
   return last > 0 && util::NowUnixMs() - last < within_ms;
 }
 
 bool CallMediaEngine::EverHadRemoteVideo() const {
-  return impl_->ever_had_remote_video.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->ever_had_remote_video.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::ClearRemoteVideo() {
-  impl_->ClearRemoteVideoFrames();
+  const std::shared_ptr<Impl> impl = Session();
+  impl->ClearRemoteVideoFrames();
 }
 
 void CallMediaEngine::RefreshRemoteVideoHealth() {
-  if (!impl_->active.load()) {
+  const std::shared_ptr<Impl> impl = Session();
+  if (!impl->active.load()) {
     return;
   }
   const int64_t now = util::NowUnixMs();
   std::string state;
   {
-    Impl::TimedGetterLock lock(*impl_, "RefreshRemoteVideoHealth");
-    state = impl_->connection_state;
+    Impl::TimedGetterLock lock(*impl, "RefreshRemoteVideoHealth");
+    state = impl->connection_state;
   }
   if (state == "failed" || state == "closed") {
-    impl_->ClearRemoteVideoFrames();
+    impl->ClearRemoteVideoFrames();
     return;
   }
-  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+  if (!impl->has_remote_video.load(std::memory_order_relaxed)) {
     return;
   }
-  std::lock_guard lock(impl_->video_frame_mutex);
+  std::lock_guard lock(impl->video_frame_mutex);
   int64_t newest_ms = 0;
   uint32_t newest_stream = 0;
-  for (auto it = impl_->last_video_ms_by_stream.begin(); it != impl_->last_video_ms_by_stream.end();) {
+  for (auto it = impl->last_video_ms_by_stream.begin(); it != impl->last_video_ms_by_stream.end();) {
     if (it->second > 0 && (now - it->second) >= kRemoteVideoStallHardMs) {
-      impl_->remote_video_by_stream.erase(it->first);
-      it = impl_->last_video_ms_by_stream.erase(it);
+      impl->remote_video_by_stream.erase(it->first);
+      it = impl->last_video_ms_by_stream.erase(it);
       continue;
     }
     if (it->second >= newest_ms) {
@@ -2131,16 +2432,16 @@ void CallMediaEngine::RefreshRemoteVideoHealth() {
     }
     ++it;
   }
-  if (impl_->last_video_ms_by_stream.empty()) {
-    impl_->remote_video_frame = {};
-    impl_->has_remote_video.store(false, std::memory_order_relaxed);
-    impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
+  if (impl->last_video_ms_by_stream.empty()) {
+    impl->remote_video_frame = {};
+    impl->has_remote_video.store(false, std::memory_order_relaxed);
+    impl->last_remote_video_ms.store(0, std::memory_order_relaxed);
     return;
   }
-  impl_->last_remote_video_ms.store(newest_ms, std::memory_order_relaxed);
-  auto live = impl_->remote_video_by_stream.find(newest_stream);
-  if (live != impl_->remote_video_by_stream.end()) {
-    impl_->remote_video_frame = live->second;
+  impl->last_remote_video_ms.store(newest_ms, std::memory_order_relaxed);
+  auto live = impl->remote_video_by_stream.find(newest_stream);
+  if (live != impl->remote_video_by_stream.end()) {
+    impl->remote_video_frame = live->second;
   }
 }
 
@@ -2150,99 +2451,116 @@ bool CallMediaEngine::VideoEncoderAvailable() const {
 }
 
 bool CallMediaEngine::CameraPathAllowsVideo() const {
+  const std::shared_ptr<Impl> impl = Session();
   CallAdaptationInput in;
   in.camera_user_wants = true;
   in.path_pressure = PathPressure();
-  in.per_user_up_bps = impl_->last_uplink_bps.load(std::memory_order_relaxed);
+  in.per_user_up_bps = impl->last_uplink_bps.load(std::memory_order_relaxed);
   return CallMediaAdaptation::Evaluate(in).camera_allowed;
 }
 
 void CallMediaEngine::NoteUplinkBudget(int64_t per_user_up_bps) {
-  impl_->last_uplink_bps.store(per_user_up_bps, std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->last_uplink_bps.store(per_user_up_bps, std::memory_order_relaxed);
 }
 
 void CallMediaEngine::RequestVideoKeyframe() {
-  impl_->video_need_keyframe.store(true, std::memory_order_release);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->video_need_keyframe.store(true, std::memory_order_release);
 }
 
 std::vector<uint32_t> CallMediaEngine::TakePendingVideoRefreshStreamIds() {
-  std::lock_guard lock(impl_->video_refresh_mu);
-  std::vector<uint32_t> out(impl_->pending_video_refresh_streams.begin(),
-                            impl_->pending_video_refresh_streams.end());
-  impl_->pending_video_refresh_streams.clear();
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_refresh_mu);
+  std::vector<uint32_t> out(impl->pending_video_refresh_streams.begin(), impl->pending_video_refresh_streams.end());
+  impl->pending_video_refresh_streams.clear();
   return out;
 }
 
 std::vector<uint32_t> CallMediaEngine::PendingVideoRefreshStreamsForTest() const {
-  std::lock_guard lock(impl_->video_refresh_mu);
-  return {impl_->pending_video_refresh_streams.begin(), impl_->pending_video_refresh_streams.end()};
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_refresh_mu);
+  return {impl->pending_video_refresh_streams.begin(), impl->pending_video_refresh_streams.end()};
 }
 
 bool CallMediaEngine::IsActive() const {
-  return impl_->active.load();
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->active.load();
 }
 
 bool CallMediaEngine::IsConnected() const {
-  return impl_->connected.load();
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->connected.load();
 }
 
 void CallMediaEngine::SetConnectionState(const std::string& state) {
-  impl_->SetState(state);
+  const std::shared_ptr<Impl> impl = Session();
+  impl->SetState(state);
 }
 
 std::string CallMediaEngine::ActiveCallId() const {
-  Impl::TimedGetterLock lock(*impl_, "ActiveCallId");
-  return impl_->call_id;
+  const std::shared_ptr<Impl> impl = Session();
+  Impl::TimedGetterLock lock(*impl, "ActiveCallId");
+  return impl->call_id;
 }
 
 std::string CallMediaEngine::ConnectionState() const {
-  Impl::TimedGetterLock lock(*impl_, "ConnectionState");
-  return impl_->connection_state;
+  const std::shared_ptr<Impl> impl = Session();
+  Impl::TimedGetterLock lock(*impl, "ConnectionState");
+  return impl->connection_state;
 }
 
 int64_t CallMediaEngine::ConnectedAtMs() const {
-  return impl_->connected_at_ms.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->connected_at_ms.load(std::memory_order_relaxed);
 }
 
 int64_t CallMediaEngine::StartedAtMs() const {
-  return impl_->started_at_ms.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->started_at_ms.load(std::memory_order_relaxed);
 }
 
 bool CallMediaEngine::HasLocalCapture() const {
-  Impl::TimedGetterLock lock(*impl_, "HasLocalCapture");
-  return impl_->capture_available;
+  const std::shared_ptr<Impl> impl = Session();
+  Impl::TimedGetterLock lock(*impl, "HasLocalCapture");
+  return impl->capture_available;
 }
 
 float CallMediaEngine::LocalInputLevel() const {
-  return impl_->local_input_level.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->local_input_level.load(std::memory_order_relaxed);
 }
 
 float CallMediaEngine::RemoteOutputLevel() const {
-  return impl_->remote_output_level.load(std::memory_order_relaxed);
+  const std::shared_ptr<Impl> impl = Session();
+  return impl->remote_output_level.load(std::memory_order_relaxed);
 }
 
 bool CallMediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {
-  std::lock_guard lock(impl_->video_frame_mutex);
-  if (impl_->local_video_frame.rgba.empty()) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  if (impl->local_video_frame.rgba.empty()) {
     return false;
   }
-  out = impl_->local_video_frame;
+  out = impl->local_video_frame;
   return true;
 }
 
 bool CallMediaEngine::CopyRemoteVideoFrame(VideoTileFrame& out) const {
-  std::lock_guard lock(impl_->video_frame_mutex);
-  if (impl_->remote_video_frame.rgba.empty()) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  if (impl->remote_video_frame.rgba.empty()) {
     return false;
   }
-  out = impl_->remote_video_frame;
+  out = impl->remote_video_frame;
   return true;
 }
 
 bool CallMediaEngine::CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const {
-  std::lock_guard lock(impl_->video_frame_mutex);
-  auto it = impl_->remote_video_by_stream.find(stream_id);
-  if (it == impl_->remote_video_by_stream.end() || it->second.rgba.empty()) {
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  auto it = impl->remote_video_by_stream.find(stream_id);
+  if (it == impl->remote_video_by_stream.end() || it->second.rgba.empty()) {
     return false;
   }
   out = it->second;
@@ -2250,9 +2568,10 @@ bool CallMediaEngine::CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTil
 }
 
 bool CallMediaEngine::HasRemoteVideoForStream(uint32_t stream_id) const {
-  std::lock_guard lock(impl_->video_frame_mutex);
-  auto it = impl_->remote_video_by_stream.find(stream_id);
-  return it != impl_->remote_video_by_stream.end() && !it->second.rgba.empty();
+  const std::shared_ptr<Impl> impl = Session();
+  std::lock_guard lock(impl->video_frame_mutex);
+  auto it = impl->remote_video_by_stream.find(stream_id);
+  return it != impl->remote_video_by_stream.end() && !it->second.rgba.empty();
 }
 
 } // namespace pbr
