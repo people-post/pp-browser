@@ -62,6 +62,8 @@ public:
   void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
+  /** Shown as an overlay or as the keyboard-area panel. */
+  bool IsOpen() const { return layer_id_ >= 0 || bottom_chrome_mode_; }
 
   /**
    * Grow-ahead + unload-behind window for emoji sections.

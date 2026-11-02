@@ -72,6 +72,14 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_forget_memory", &state.show_forget_memory);
   ctor.Bind("show_sync_with_peer", &state.show_sync_with_peer);
   ctor.Bind("show_thread_menu", &state.show_thread_menu);
+  ctor.Bind("show_search", &state.show_search);
+  ctor.Bind("search_open", &state.search_open);
+  ctor.Bind("search_indexing", &state.search_indexing);
+  ctor.Bind("search_query", &state.search_query);
+  ctor.Bind("search_count_label", &state.search_count_label);
+  ctor.Bind("search_has_hits", &state.search_has_hits);
+  ctor.Bind("search_can_older", &state.search_can_older);
+  ctor.Bind("search_can_newer", &state.search_can_newer);
   ctor.Bind("show_gap_banner", &state.show_gap_banner);
   ctor.Bind("show_compromised_banner", &state.show_compromised_banner);
   ctor.Bind("show_locked_out_banner", &state.show_locked_out_banner);
@@ -189,6 +197,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");
+  DataModelHost::Instance().Dirty("chat", "show_search");
   DataModelHost::Instance().Dirty("chat", "show_gap_banner");
   DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
   DataModelHost::Instance().Dirty("chat", "show_locked_out_banner");

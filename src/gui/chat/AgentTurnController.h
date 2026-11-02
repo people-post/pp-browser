@@ -64,6 +64,8 @@ public:
   virtual QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) = 0;
   /** Unsent text goes back to the composer of the conversation it was typed in (not the open one, if different). */
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
+  /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
+  virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
 };
 
 /**

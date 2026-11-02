@@ -166,6 +166,70 @@ select selectbox option {
   min-width: 0;
 }
 
+/* Search inside the chat: the box and "Cancel" in the title row's place. */
+.chat-search-bar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+}
+
+.chat-search-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  margin-bottom: 0;
+}
+
+.chat-search-cancel {
+  flex-shrink: 0;
+  padding: 6dp 12dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 14dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* "3 of 12" and the steps in the composer's place. */
+.chat-search-steps {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  min-height: 40dp;
+  margin: 0 8dp 8dp 8dp;
+  padding: 0 4dp 0 14dp;
+}
+
+.chat-search-count {
+  flex: 1;
+  min-width: 0;
+  font-size: 14dp;
+}
+
+.chat-search-step {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border: 0;
+  border-radius: 18dp;
+  background-color: rgba(128, 128, 128, 0.2);
+  cursor: pointer;
+}
+
+.chat-search-step:disabled {
+  opacity: 0.35;
+  cursor: auto;
+}
+
 .chat-header-meta-row {
   display: flex;
   flex-direction: row;

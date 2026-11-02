@@ -1216,6 +1216,7 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       if (event.thread_id.empty()) {
         home_turn_thread_.reset(); // the Home session's turn is over
       }
+      host_.OnAgentTurnEnded(thread);
       DrainQueue(); // a turn ended: the next question waiting, if one does
     } else {
       if (event.thread_id.empty() && !home_turn_thread_) {

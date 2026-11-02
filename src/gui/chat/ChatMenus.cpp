@@ -384,6 +384,16 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   const ui::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
+  // Not while a voice message is being recorded (its bar holds the composer's place).
+  if (chat_.show_search && !chat_.voice_recording) {
+    actions.push_back({
+        "search",
+        Tr("chat.search.menu"),
+        nullptr,
+        [this]() { host_.OnOpenSearch(); },
+        "../icons/search.svg",
+    });
+  }
   ConversationsFacade* facade = host_.Facade();
   if (chat_.thread_is_public && host_.MessagingIsReady() && facade) {
     auto can_lock = facade->CanLockPublicToThisDevice(host_.ActiveThreadId());

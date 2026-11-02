@@ -28,6 +28,8 @@
 #include "gui/chat/NotificationBody.h"
 #include "feature/presenters/SessionListText.h"
 #include "feature/presenters/SessionMenu.h"
+#include "feature/presenters/ThreadSearch.h"
+#include "gui/chat/ChatSearchRows.h"
 #include "gui/chat/BriefFeedIntent.h"
 #include "gui/chat/SuggestionPayload.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -130,6 +132,15 @@ static_assert(kSessionMutedForever == kThreadMutedForever,
               "SessionMenu.h and IThreadLocalPrefsStore.h must agree on \"always\"");
 
 namespace {
+
+/** Search inside a chat: typing settles this long before the query is applied (plan: 250 ms, 400 if IME jumps). */
+constexpr auto kSearchDebounce = std::chrono::milliseconds(250);
+
+/** Milliseconds of a monotonic clock, for the search index's rebuild spacing. */
+int64_t SteadyNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
 
 /** What the user sees when a row action (add / message) fails: the directory's state, never raw HTTP text. */
 std::string LocalActionFailureText(const Error& error) {
@@ -313,6 +324,7 @@ ChatController::ChatController()
                  .show_forget_memory = chat_.show_forget_memory,
                  .show_sync_with_peer = chat_.show_sync_with_peer,
                  .show_thread_menu = chat_.show_thread_menu,
+                 .show_search = chat_.show_search,
                  .show_gap_banner = chat_.show_gap_banner,
                  .show_compromised_banner = chat_.show_compromised_banner,
                  .show_locked_out_banner = chat_.show_locked_out_banner,
@@ -730,6 +742,9 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   if (!messaging_ready_) {
     return;
   }
+  if (thread_id != search_thread_) {
+    CloseSearch(); // another chat: the search and its index belong to the one left
+  }
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
     FinalizeThreadDisplay();
@@ -754,6 +769,7 @@ void ChatController::CloseChatWith(const std::string& thread_id, const std::func
   (void)agent_.TakeQueued(thread_id); // a question queued for a closed chat has nowhere to go
   ForgetComposerExtras(thread_id);
   if (was_open) {
+    CloseSearch();
     chat_.draft = "";
     chat_.status = "";
     pending_reply_.reset();
@@ -961,6 +977,7 @@ void ChatController::RefreshFromMessaging() {
 }
 
 void ChatController::OnProfileDataReset() {
+  CloseSearch(); // nothing decrypted from the old profile stays in memory
   messaging_ready_ = false;
   mesh_ready_ = false;
   // profile.db is recreated: nothing read from the old one may be written back into the new one.
@@ -1741,6 +1758,7 @@ void ChatController::SyncDisplayFromThread() {
     return;
   }
   if (!facade_ || !facade_->GetActiveThread()) {
+    CloseSearch(); // no chat open (Home, or the chat was closed)
     chrome_.ResetPanelState();
     agent_.RefreshBusyForActiveThread();
     SyncDraftOwner();
@@ -1764,12 +1782,29 @@ void ChatController::SyncDisplayFromThread() {
   const size_t prev_count = chat_.messages.size();
 
   chat_.messages =
-      BuildMessageRows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
+      scroller_.Rows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
+  if (search_.view().open) {
+    if (thread_changed || thread_id != search_thread_) {
+      CloseSearch();
+    } else {
+      // Messages added or removed (not a redraw): in the rows shown, or at the chat's end when the rows shown are
+      // older history.
+      const std::string tail = chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
+      bool changed = tail != prev_tail_id || chat_.messages.size() != prev_count;
+      if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1); newest && !newest->empty()) {
+        changed = changed || newest->back().id != search_thread_tail_;
+        search_thread_tail_ = newest->back().id;
+      }
+      if (changed) {
+        OnSearchMessagesChanged();
+      }
+    }
+  }
   agent_.RefreshBusyForActiveThread(); // "thinking", the stop key and a queued bubble follow the open thread
   SyncDraftOwner();                    // so does the unsent text
 
@@ -2160,29 +2195,13 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
   NotifySurfaceChanged();
 }
 
-namespace {
-
-// What the user reads in a message.
-std::string PlainTextOf(const ThreadMessage& message) {
-  // Local-pipeline AI answers are stored as UI block documents.
-  if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
-    return *prose;
-  }
-  // A reply that quotes another message: only what this message itself says.
-  if (const auto parts = SplitQuoteReply(message.text)) {
-    return parts->reply;
-  }
-  return message.text;
-}
-
-} // namespace
-
 void ChatController::DeleteMessageForMe(const std::string& message_id) {
   if (auto deleted = presenter_.DeleteForMe(message_id); !deleted) {
     ShowToast(AppError::Display(deleted.error()));
     return;
   }
   SyncDisplayFromThread();
+  OnSearchMessagesChanged();
   DirtyChatTurns();
   NotifySurfaceChanged();
 }
@@ -2822,6 +2841,10 @@ ChatController::ComposerEscape ChatController::OnComposerEscape() {
   if (voice_ && voice_->OnEscape()) {
     return ComposerEscape::Handled; // Esc cancels a recording (the composer is not focused during one)
   }
+  if (chat_.search_open) {
+    CloseSearch(/*refocus_composer=*/true); // the search box has the focus, not the composer
+    return ComposerEscape::Handled;
+  }
   if (!context_) {
     return ComposerEscape::NotInComposer;
   }
@@ -3165,6 +3188,11 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& message_id) { RetryAttachmentDownload(message_id); }));
         ctor.BindEventCallback("clear_history", DataEvent([this] { OnClearHistory(); }));
         ctor.BindEventCallback("forget_memory", DataEvent([this] { OnForgetMemory(); }));
+        ctor.BindEventCallback("open_search", DataEvent([this] { OnOpenSearch(); }));
+        ctor.BindEventCallback("close_search", DataEvent([this] { CloseSearch(/*refocus_composer=*/true); }));
+        ctor.BindEventCallback("search_query_changed", DataEvent([this] { OnSearchQueryChanged(); }));
+        ctor.BindEventCallback("search_older", DataEvent([this] { OnSearchOlder(); }));
+        ctor.BindEventCallback("search_newer", DataEvent([this] { OnSearchNewer(); }));
         ctor.BindEventCallback("open_thread_actions_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
@@ -3321,6 +3349,7 @@ void ChatController::CancelVoice() {
 }
 
 void ChatController::OnApplicationPause() {
+  CloseSearch(); // the decrypted index does not stay in memory while the app is in the background
   agent_.Cancel();
   // Going to the background loses a held press (no release will come) and ends a clip: cancel, never send.
   voice_->Lost();
@@ -3347,6 +3376,19 @@ void ChatController::Update() {
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
 
+  if (search_.view().open) {
+    const auto search_now = std::chrono::steady_clock::now();
+    if (search_query_due_ && search_now >= *search_query_due_) {
+      search_query_due_.reset();
+      search_.SetQuery(chat_.search_query.c_str());
+      ApplySearchView();
+      JumpToSearchHit();
+    }
+    if (const std::optional<uint64_t> generation = search_.Tick(SteadyNowMs())) {
+      StartSearchIndex(*generation);
+    }
+  }
+
   // Voice: the hold's touch state, a call turning live, and the vault locking under a recording or a clip.
   const auto now = std::chrono::steady_clock::now();
   voice_->Tick(now);
@@ -3362,6 +3404,13 @@ void ChatController::Update() {
 }
 
 void ChatController::AfterLayout() {
+  if (search_focus_ != SearchFocus::None && context_ && context_->GetNumDocuments() > 0) {
+    const char* id = search_focus_ == SearchFocus::Input ? "search-input" : "draft-input";
+    search_focus_ = SearchFocus::None;
+    if (ui::Element* el = context_->GetDocument(0)->GetElementById(id)) {
+      el->Focus();
+    }
+  }
   scroller_.ApplyPolicy();
   FillSessionListAfterLayout();
 }
@@ -3407,6 +3456,171 @@ void ChatController::Shutdown() {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
+}
+
+// --- Search inside the open chat -------------------------------------------------------------------------------
+
+void ChatController::OnOpenSearch() {
+  const std::string thread_id = ActiveThreadId();
+  if (!messaging_ready_ || !facade_ || thread_id.empty() || (voice_ && voice_->Recording())) {
+    return;
+  }
+  if (search_.view().open && search_thread_ == thread_id) {
+    search_focus_ = SearchFocus::Input;
+    return;
+  }
+  // The search box and the step bar take the header's and the composer's places: what floats over them goes.
+  mentions_.Close();
+  if (emoji_picker_notify_.close_if_open) {
+    emoji_picker_notify_.close_if_open();
+  }
+  search_thread_ = thread_id;
+  search_thread_tail_.clear();
+  if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1); newest && !newest->empty()) {
+    search_thread_tail_ = newest->back().id;
+  }
+  const uint64_t generation = search_.Open();
+  search_query_due_.reset();
+  chat_.search_query = "";
+  DataModelHost::Instance().Dirty("chat", "search_query");
+  ApplySearchView();
+  search_focus_ = SearchFocus::Input;
+  StartSearchIndex(generation);
+}
+
+void ChatController::CloseSearch(const bool refocus_composer) {
+  if (!search_.view().open && !chat_.search_open) {
+    return;
+  }
+  search_.Close();
+  search_thread_.clear();
+  search_thread_tail_.clear();
+  search_query_due_.reset();
+  chat_.search_query = "";
+  DataModelHost::Instance().Dirty("chat", "search_query");
+  ApplySearchView();
+  search_focus_ = refocus_composer ? SearchFocus::Composer : SearchFocus::None;
+}
+
+void ChatController::OnSearchQueryChanged() {
+  if (!search_.view().open) {
+    return;
+  }
+  search_query_due_ = std::chrono::steady_clock::now() + kSearchDebounce;
+}
+
+void ChatController::OnSearchOlder() {
+  search_.Older();
+  ApplySearchView();
+  JumpToSearchHit();
+}
+
+void ChatController::OnSearchNewer() {
+  search_.Newer();
+  ApplySearchView();
+  JumpToSearchHit();
+}
+
+void ChatController::ApplySearchView() {
+  const ThreadSearchSession::View& view = search_.view();
+  chat_.search_open = view.open;
+  chat_.search_indexing = view.open && view.indexing;
+  chat_.search_has_hits = view.hit_count > 0;
+  chat_.search_can_older = view.can_older;
+  chat_.search_can_newer = view.can_newer;
+  std::string label;
+  if (view.open) {
+    if (view.indexing) {
+      label = Tr("chat.search.indexing");
+    } else if (!FoldForSearch(view.query).empty()) {
+      label = view.hit_count == 0 ? Tr("chat.search.none")
+                                  : Tr("chat.search.count", {{"index", std::to_string(view.current + 1)},
+                                                             {"count", std::to_string(view.hit_count)}});
+    }
+  }
+  chat_.search_count_label = label.c_str();
+
+  search_hit_ids_.clear();
+  for (const ThreadSearchHit& hit : search_.hits()) {
+    search_hit_ids_.insert(hit.message_id);
+  }
+  search_current_id_ = search_.CurrentMessageId();
+  if (view.open) {
+    scroller_.SetRowDecorator(
+        [this](std::vector<MessageDisplayRow>& rows) { MarkSearchRows(rows, search_hit_ids_, search_current_id_); });
+  } else {
+    scroller_.SetRowDecorator({});
+  }
+  scroller_.Redecorate(); // the rows shown now: a new query or a step changes the tint, not the rows
+
+  for (const char* field : {"search_open", "search_indexing", "search_count_label", "search_has_hits",
+                            "search_can_older", "search_can_newer"}) {
+    DataModelHost::Instance().Dirty("chat", field);
+  }
+}
+
+void ChatController::JumpToSearchHit() {
+  // Each NotFound drops one hit, so this ends.
+  while (std::optional<std::string> message_id = search_.TakeJump()) {
+    if (scroller_.JumpToMessage(*message_id) != ChatTranscriptScroller::JumpResult::NotFound) {
+      return; // jumped; or the store did not answer (not proof that it is gone: the hit stays)
+    }
+    search_.DropHit(*message_id); // deleted since the index was built
+    ApplySearchView();
+  }
+}
+
+void ChatController::StartSearchIndex(const uint64_t generation) {
+  ConversationsFacade* facade = facade_;
+  const std::string thread_id = search_thread_;
+  if (!facade || thread_id.empty()) {
+    return;
+  }
+  // Reading the whole chat decrypts every message: off the UI thread. Only the index comes back; the
+  // decrypted messages die with this worker task.
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, generation]() {
+    const auto started = std::chrono::steady_clock::now();
+    std::vector<ThreadSearchEntry> index;
+    size_t rows = 0;
+    bool read = false;
+    if (auto messages = facade->GetMessages(thread_id)) {
+      read = true;
+      rows = messages->size();
+      index = BuildSearchIndex(*messages);
+    }
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    AppRuntime::PostUI([this, generation, index = std::move(index), rows, ms, read]() mutable {
+      if (read) {
+        log().info << "chat search index rows=" << rows << " ms=" << ms;
+      } else {
+        log().warning << "chat search index: the chat could not be read";
+      }
+      // A late result (closed, or another chat since) is dropped here, before anything keeps it.
+      if (search_.IndexReady(generation, std::move(index), SteadyNowMs())) {
+        ApplySearchView();
+        JumpToSearchHit();
+      }
+      if (const std::optional<uint64_t> next = search_.Tick(SteadyNowMs())) {
+        StartSearchIndex(*next);
+      }
+    });
+  });
+}
+
+void ChatController::OnSearchMessagesChanged() {
+  if (!search_.view().open) {
+    return;
+  }
+  if (const std::optional<uint64_t> generation = search_.MessagesChanged(SteadyNowMs())) {
+    StartSearchIndex(*generation);
+  }
+}
+
+void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
+  if (!thread_id.empty() && thread_id == search_thread_) {
+    OnSearchMessagesChanged(); // the answer is stored now
+  }
 }
 
 } // namespace pbr

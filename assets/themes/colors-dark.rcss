@@ -307,6 +307,24 @@ select selectbox option:hover {
   border-left: 3dp #f59e0b;
 }
 
+/* Search inside the chat: every hit pale yellow, the one the search is on deeper. */
+.message-row-search-hit {
+  background-color: #3a3514;
+}
+
+.message-row-search-current {
+  background-color: #6b5d10;
+}
+
+.chat-search-cancel,
+.chat-search-count {
+  color: #f9fafb;
+}
+
+.chat-search-step svg {
+  image-color: #f9fafb;
+}
+
 /* On the tinted row the text sits on the tint: no bubble of its own. */
 .message-row-mentions-me .bubble-assistant {
   background-color: transparent;
