@@ -166,7 +166,7 @@ Client registration is in-tree (`IosPushDeviceRegistrar` + SDL app-delegate hook
 
 1. **Identifiers → App ID** → enable **Push Notifications** and **Time Sensitive Notifications** (incoming-call alerts break through Focus, P012); regenerate Development + App Store profiles (`aps-environment`, `com.apple.developer.usernotifications.time-sensitive`). CallKit builds (`PP_BROWSER_IOS_CALLKIT`, default on; `-DPP_BROWSER_IOS_CALLKIT=OFF` for the China storefront) add the `voip` background mode to Info.plist and receive VoIP pushes with the same APNs key (topic `<bundle id>.voip`); no extra capability
 2. **Keys → + → Apple Push Notifications service (APNs)** → download **`AuthKey_XXXX.p8`** (once)
-3. On www: set `BRF_WWW_APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `BUNDLE_ID` (see www README). Use `BRF_WWW_APNS_USE_SANDBOX=1` only for USB development tokens.
+3. On www: set `BRF_WWW_APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `BUNDLE_ID` (see www README). Use `BRF_WWW_APNS_USE_SANDBOX=1` only for USB development tokens. Without it the relay sends to the production gateway, so only TestFlight / App Store builds receive pushes; a development-signed build registers a sandbox token that the production gateway rejects (`BadDeviceToken`). The client does not report the token environment, so one relay cannot serve both build types at once.
 
 ---
 
