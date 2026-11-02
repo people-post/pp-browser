@@ -18,6 +18,9 @@ namespace pbr {
 /** Device kinds a media pipeline can hold (media-client-layers L010 / L011). */
 enum class MediaDeviceKind : uint8_t { Mic, Speaker, Camera };
 
+/** What a device thread is doing (logs, `media.device_stuck` / `media.device_back`). */
+enum class MediaDeviceOp : uint8_t { Open, Close, Reopen };
+
 const char* MediaDeviceKindName(MediaDeviceKind kind);
 
 /** Signed 16-bit PCM at `freq` Hz, `channels` interleaved. */
@@ -170,6 +173,8 @@ struct MediaDeviceHealth {
   std::vector<std::string> holders;
   /** What its device thread is stuck on ("close camera for call:a for 4100ms"); empty when responsive. */
   std::string stuck;
+  /** How long it has been stuck on it (0 when responsive). */
+  int64_t stuck_ms = 0;
 };
 
 class MediaDeviceArbiter;

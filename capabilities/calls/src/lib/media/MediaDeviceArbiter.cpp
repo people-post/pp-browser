@@ -1,5 +1,6 @@
 #include "lib/media/MediaDeviceArbiter.h"
 
+#include "common/Diag.h"
 #include "common/Logger.h"
 
 #include <algorithm>
@@ -74,6 +75,30 @@ int64_t SteadyMs() {
       .count();
 }
 
+ShareWord KindWord(MediaDeviceKind kind) {
+  switch (kind) {
+    case MediaDeviceKind::Mic:
+      return "mic";
+    case MediaDeviceKind::Speaker:
+      return "speaker";
+    case MediaDeviceKind::Camera:
+      return "camera";
+  }
+  return "device";
+}
+
+ShareWord OpWord(MediaDeviceOp op) {
+  switch (op) {
+    case MediaDeviceOp::Open:
+      return "open";
+    case MediaDeviceOp::Close:
+      return "close";
+    case MediaDeviceOp::Reopen:
+      return "reopen";
+  }
+  return "other";
+}
+
 } // namespace
 
 /**
@@ -86,6 +111,16 @@ struct MediaDeviceLane {
     std::function<void()> run;
     std::string what;
     std::chrono::milliseconds budget{0};
+    MediaDeviceKind kind = MediaDeviceKind::Speaker;
+    MediaDeviceOp op = MediaDeviceOp::Open;
+  };
+
+  /** The running task, when it is past its budget. */
+  struct Stuck {
+    std::string what;
+    int64_t ms = 0;
+    MediaDeviceKind kind = MediaDeviceKind::Speaker;
+    MediaDeviceOp op = MediaDeviceOp::Open;
   };
 
   explicit MediaDeviceLane(const char* lane_name) : name(lane_name) {}
@@ -104,6 +139,10 @@ struct MediaDeviceLane {
   int64_t busy_since_ms = 0;
   int64_t busy_budget_ms = 0;
   std::string busy_what;
+  MediaDeviceKind busy_kind = MediaDeviceKind::Speaker;
+  MediaDeviceOp busy_op = MediaDeviceOp::Open;
+  /** The running task's overrun was reported (media.device_stuck), once per task. */
+  bool stuck_reported = false;
 
   void Start() {
     thread = std::thread([this]() { Run(); });
@@ -125,6 +164,9 @@ struct MediaDeviceLane {
         busy_since_ms = SteadyMs();
         busy_budget_ms = task.budget.count();
         busy_what = task.what;
+        busy_kind = task.kind;
+        busy_op = task.op;
+        stuck_reported = false;
       }
       task.run();
       int64_t took_ms = 0;
@@ -136,22 +178,47 @@ struct MediaDeviceLane {
       }
       if (task.budget.count() > 0 && took_ms > task.budget.count()) {
         ArbiterLog().warning << name << " devices responding again: " << task.what << " took " << took_ms << "ms";
+        DiagLine("media.device_back")
+            .Add("kind", KindWord(task.kind))
+            .Add("op", OpWord(task.op))
+            .Add("ms", took_ms)
+            .Emit();
       }
     }
     finished.store(true, std::memory_order_release);
   }
 
-  /** Why the lane cannot take work now (its running task is past its budget); empty when it can. */
-  std::string StuckReason() const {
-    std::lock_guard lock(mu);
-    if (busy_since_ms == 0 || busy_budget_ms <= 0) {
-      return {};
+  /** The running task when it is past its budget (the lane cannot take work); nullopt when it can. */
+  std::optional<Stuck> StuckNow() {
+    Stuck stuck;
+    bool report = false;
+    {
+      std::lock_guard lock(mu);
+      if (busy_since_ms == 0 || busy_budget_ms <= 0) {
+        return std::nullopt;
+      }
+      const int64_t ms = SteadyMs() - busy_since_ms;
+      if (ms <= busy_budget_ms) {
+        return std::nullopt;
+      }
+      stuck = Stuck{busy_what, ms, busy_kind, busy_op};
+      report = !std::exchange(stuck_reported, true);
     }
-    const int64_t ms = SteadyMs() - busy_since_ms;
-    if (ms <= busy_budget_ms) {
-      return {};
+    if (report) {
+      ArbiterLog().warning << name << " devices not responding: " << stuck.what << " for " << stuck.ms << "ms";
+      DiagLine("media.device_stuck")
+          .Add("kind", KindWord(stuck.kind))
+          .Add("op", OpWord(stuck.op))
+          .Add("ms", stuck.ms)
+          .Emit();
     }
-    return busy_what + " for " + std::to_string(ms) + "ms";
+    return stuck;
+  }
+
+  /** Why the lane cannot take work now; empty when it can. */
+  std::string StuckReason() {
+    const auto stuck = StuckNow();
+    return stuck ? stuck->what + " for " + std::to_string(stuck->ms) + "ms" : std::string();
   }
 
   /** Queue on the lane; runs inline when the thread is gone. */
@@ -171,7 +238,8 @@ struct MediaDeviceLane {
    * Run on the lane and wait at most `budget` (inline on the lane itself or after Shutdown). False
    * when the budget ran out: the task still runs later and must cope with nobody waiting.
    */
-  bool RunAndWait(const std::string& what, std::chrono::milliseconds budget, const std::function<void()>& run) {
+  bool RunAndWait(const std::string& what, std::chrono::milliseconds budget, MediaDeviceKind kind, MediaDeviceOp op,
+                  const std::function<void()>& run) {
     if (std::this_thread::get_id() == thread_id) {
       run();
       return true;
@@ -182,7 +250,7 @@ struct MediaDeviceLane {
                 run();
                 done->set_value();
               },
-              what, budget});
+              what, budget, kind, op});
     return finished_future.wait_for(budget) == std::future_status::ready;
   }
 
@@ -329,9 +397,10 @@ struct LeaseSlot {
     }
     live->Unhold(id);
     if (closing) {
-      live->LaneFor(kind).Post(MediaDeviceLane::Task{
-          [closing = std::move(closing)]() mutable { closing.reset(); },
-          std::string("close ") + MediaDeviceKindName(kind) + " for " + holder, live->budgets.close});
+      live->LaneFor(kind).Post(
+          MediaDeviceLane::Task{[closing = std::move(closing)]() mutable { closing.reset(); },
+                                std::string("close ") + MediaDeviceKindName(kind) + " for " + holder,
+                                live->budgets.close, kind, MediaDeviceOp::Close});
     }
   }
 };
@@ -435,17 +504,18 @@ Roe<void> AudioDeviceLease::Reopen() {
   }
   auto state = state_;
   const std::string what = std::string("reopen ") + MediaDeviceKindName(state->kind) + " for " + state->holder;
-  const bool done = core->audio.RunAndWait(what, core->budgets.close + core->budgets.open_audio, [state, core]() {
-    if (state->Released()) {
-      return;
-    }
-    // Readers / writers see no device from here until the new endpoint is installed.
-    state->TakeEndpoint().reset();
-    if (const auto settle = core->backend->ReopenSettle(state->kind); settle.count() > 0) {
-      std::this_thread::sleep_for(settle);
-    }
-    state->OpenOnDevice(*core->backend);
-  });
+  const bool done = core->audio.RunAndWait(
+      what, core->budgets.close + core->budgets.open_audio, state->kind, MediaDeviceOp::Reopen, [state, core]() {
+        if (state->Released()) {
+          return;
+        }
+        // Readers / writers see no device from here until the new endpoint is installed.
+        state->TakeEndpoint().reset();
+        if (const auto settle = core->backend->ReopenSettle(state->kind); settle.count() > 0) {
+          std::this_thread::sleep_for(settle);
+        }
+        state->OpenOnDevice(*core->backend);
+      });
   if (!done) {
     return Error(std::string(MediaDeviceKindName(state->kind)) + " not responding (" + what + ")");
   }
@@ -563,7 +633,8 @@ Roe<std::unique_ptr<AudioDeviceLease>> MediaDeviceArbiter::AcquireAudio(const Au
   auto lease = std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(state));
   const std::string what = OpenWhat(request.kind, request.holder);
   const auto budget = core_->OpenBudget(request.kind);
-  if (!core_->audio.RunAndWait(what, budget, [state, core]() { state->OpenOnDevice(*core->backend); })) {
+  if (!core_->audio.RunAndWait(what, budget, request.kind, MediaDeviceOp::Open,
+                               [state, core]() { state->OpenOnDevice(*core->backend); })) {
     ArbiterLog().warning << what << " gave up after " << budget.count() << "ms";
     return NotResponding(request.kind, what, budget); // `lease` releases: a late open closes on the lane
   }
@@ -609,22 +680,24 @@ Roe<MediaDeviceArbiter::VoiceDuplexLeases> MediaDeviceArbiter::AcquireVoiceDuple
   auto core = core_;
   const AudioDeviceFormat format = request.format;
   const std::string what = "open voice duplex for " + request.holder;
-  const bool done = core_->audio.RunAndWait(what, core_->budgets.open_audio, [mic, speaker, core, format, outcome]() {
-    if (mic->Released()) {
-      return;
-    }
-    std::string error;
-    VoiceDuplexEndpoints pair = core->backend->OpenVoiceDuplex(format, &error);
-    const bool opened = pair.mic && pair.speaker;
-    if (opened) {
-      mic->Install(std::move(pair.mic), {});
-      speaker->Install(std::move(pair.speaker), {});
-    }
-    std::lock_guard lock(outcome->mu);
-    outcome->opened = opened;
-    outcome->error = error;
-    // A half-open pair closes here, on the lane.
-  });
+  const bool done = core_->audio.RunAndWait(what, core_->budgets.open_audio, MediaDeviceKind::Mic, MediaDeviceOp::Open,
+                                            [mic, speaker, core, format, outcome]() {
+                                              if (mic->Released()) {
+                                                return;
+                                              }
+                                              std::string error;
+                                              VoiceDuplexEndpoints pair =
+                                                  core->backend->OpenVoiceDuplex(format, &error);
+                                              const bool opened = pair.mic && pair.speaker;
+                                              if (opened) {
+                                                mic->Install(std::move(pair.mic), {});
+                                                speaker->Install(std::move(pair.speaker), {});
+                                              }
+                                              std::lock_guard lock(outcome->mu);
+                                              outcome->opened = opened;
+                                              outcome->error = error;
+                                              // A half-open pair closes here, on the lane.
+                                            });
   VoiceDuplexLeases leases;
   leases.mic = std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(mic)));
   leases.speaker = std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(speaker)));
@@ -658,14 +731,15 @@ Roe<std::unique_ptr<CameraDeviceLease>> MediaDeviceArbiter::AcquireCamera(const 
   const CameraRequestFormat format = request.format;
   auto lease = std::unique_ptr<CameraDeviceLease>(new CameraDeviceLease(state));
   const std::string what = OpenWhat(MediaDeviceKind::Camera, request.holder);
-  const bool done = core_->camera.RunAndWait(what, core_->budgets.open_camera, [state, core, format]() {
-    if (state->Released()) {
-      return;
-    }
-    std::string error;
-    auto opened = core->backend->OpenCamera(format, &error);
-    state->Install(std::move(opened), error);
-  });
+  const bool done = core_->camera.RunAndWait(what, core_->budgets.open_camera, MediaDeviceKind::Camera,
+                                             MediaDeviceOp::Open, [state, core, format]() {
+                                               if (state->Released()) {
+                                                 return;
+                                               }
+                                               std::string error;
+                                               auto opened = core->backend->OpenCamera(format, &error);
+                                               state->Install(std::move(opened), error);
+                                             });
   if (!done) {
     ArbiterLog().warning << what << " gave up after " << core_->budgets.open_camera.count() << "ms";
     return NotResponding(MediaDeviceKind::Camera, what, core_->budgets.open_camera);
@@ -703,7 +777,10 @@ bool MediaDeviceArbiter::CanAcquire(MediaDeviceKind kind) const {
 MediaDeviceHealth MediaDeviceArbiter::Health(MediaDeviceKind kind) const {
   MediaDeviceHealth health;
   health.holders = Holders(kind);
-  health.stuck = core_->LaneFor(kind).StuckReason();
+  if (const auto stuck = core_->LaneFor(kind).StuckNow()) {
+    health.stuck = stuck->what + " for " + std::to_string(stuck->ms) + "ms";
+    health.stuck_ms = stuck->ms;
+  }
   return health;
 }
 

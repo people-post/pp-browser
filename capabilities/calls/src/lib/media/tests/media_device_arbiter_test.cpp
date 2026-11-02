@@ -1,6 +1,8 @@
 #include "lib/media/CallMediaEngine.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/VideoCodecUnavailable.h"
+#include "mesh/types/MediaChannel.h"
+#include "common/MeshAlias.h"
 #include "common/Logger.h"
 
 #include <gtest/gtest.h>
@@ -982,6 +984,117 @@ TEST_F(EngineDeviceLeaseTest, TurningAWaitingCameraOffWithdrawsIt) {
   EXPECT_FALSE(engine.IsCameraEnabled());
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
   engine.Stop();
+}
+
+// --- hardware codecs that stop responding (L016) ------------------------------------------------
+
+/** An encoder; the instances `hang_from` and later hang in Encode until released (bounded). */
+class FlakyEncoder final : public IVideoCodec {
+public:
+  struct Control {
+    std::atomic<int> made{0};
+    std::atomic<int> hang_from{1};
+    std::atomic<int> hang_until{1}; // instances in [hang_from, hang_until) hang
+    std::atomic<bool> release{false};
+  };
+  explicit FlakyEncoder(std::shared_ptr<Control> control)
+      : control_(std::move(control)), index_(control_->made.fetch_add(1)) {}
+  std::string BackendName() const override { return "flaky"; }
+  bool HasEncoder() const override { return configured_; }
+  bool HasDecoder() const override { return false; }
+  Roe<void> ConfigureEncoder(int, int, int) override {
+    configured_ = true;
+    return {};
+  }
+  Roe<void> ConfigureDecoder() override { return Error("no decoder"); }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override {
+    if (index_ >= control_->hang_from.load() && index_ < control_->hang_until.load()) {
+      for (int i = 0; i < 1000 && !control_->release.load(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+    }
+    return EncodedAccessUnit{{0x01}, false};
+  }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return Error("no decoder"); }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+
+private:
+  std::shared_ptr<Control> control_;
+  int index_ = 0;
+  bool configured_ = false;
+};
+
+CallMediaEngine::HardwareLimits ShortHardwareLimits() {
+  CallMediaEngine::HardwareLimits limits;
+  limits.codecs.create = std::chrono::milliseconds(300);
+  limits.codecs.configure = std::chrono::milliseconds(300);
+  limits.codecs.frame = std::chrono::milliseconds(150);
+  limits.codecs.reset = std::chrono::milliseconds(300);
+  limits.device_give_up_after = std::chrono::milliseconds(400);
+  return limits;
+}
+
+TEST_F(EngineDeviceLeaseTest, AHungEncoderIsReplacedAndVideoGoesOn) {
+  auto control = std::make_shared<FlakyEncoder::Control>();
+  control->hang_from = 0;
+  control->hang_until = 1; // the first encoder hangs; its replacement works
+  auto engine = std::make_unique<CallMediaEngine>(*arbiter_);
+  engine->SetHardwareLimits(ShortHardwareLimits());
+  engine->SetVideoCodecFactoryForTest([control] { return std::make_unique<FlakyEncoder>(control); });
+  std::atomic<int> video_sent{0};
+  ASSERT_TRUE(engine->StartSfu("call:1", [&](const CallMediaEngine::SfuPacket& packet) {
+    if (mesh::IsVideoChannel(packet.channel_id)) {
+      video_sent.fetch_add(1);
+    }
+  }));
+  ASSERT_TRUE(engine->SetCameraEnabled(true));
+  EXPECT_TRUE(WaitUntil([&] { return video_sent.load() >= 3; })) << "video flows on the replacement";
+  EXPECT_EQ(control->made.load(), 2);
+  EXPECT_TRUE(engine->IsCameraEnabled());
+  EXPECT_FALSE(engine->TakeCameraFailure());
+  control->release = true;
+  engine->Stop();
+}
+
+TEST_F(EngineDeviceLeaseTest, AnEncoderThatKeepsHangingGivesTheCameraUp) {
+  auto control = std::make_shared<FlakyEncoder::Control>();
+  control->hang_from = 0;
+  control->hang_until = 100;
+  auto engine = std::make_unique<CallMediaEngine>(*arbiter_);
+  engine->SetHardwareLimits(ShortHardwareLimits());
+  engine->SetVideoCodecFactoryForTest([control] { return std::make_unique<FlakyEncoder>(control); });
+  ASSERT_TRUE(engine->StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine->SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return !engine->IsCameraEnabled(); })) << "given up";
+  EXPECT_EQ(control->made.load(), 4) << "the first encoder and three replacements";
+  const auto failure = engine->TakeCameraFailure();
+  ASSERT_TRUE(failure);
+  EXPECT_NE(failure->find("restart the app"), std::string::npos) << *failure;
+  EXPECT_FALSE(engine->CameraWaitingForDevice());
+  EXPECT_TRUE(WaitHolders(MediaDeviceKind::Camera, 0)) << "the camera is let go";
+  control->release = true;
+  engine->Stop();
+}
+
+TEST_F(StuckDeviceTest, ACameraStuckTooLongIsGivenUpWithARestartHint) {
+  WedgeCameraClose();
+  CallMediaEngine engine(*arbiter_);
+  engine.SetHardwareLimits(ShortHardwareLimits());
+  engine.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test stub"); });
+  ASSERT_TRUE(engine.StartSfu("call:b", [](const CallMediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return !engine.IsCameraEnabled(); })) << "given up";
+  std::optional<std::string> failure;
+  std::string last;
+  while ((failure = engine.TakeCameraFailure())) {
+    last = *failure;
+  }
+  EXPECT_NE(last.find("restart the app"), std::string::npos) << last;
+  EXPECT_FALSE(engine.CameraWaitingForDevice());
+  engine.Stop();
+  backend_->camera_close_gate.release.store(true);
+  EXPECT_TRUE(engine.WaitForRetiredSessions(std::chrono::seconds(3)));
 }
 
 } // namespace

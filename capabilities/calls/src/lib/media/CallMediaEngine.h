@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/media/CallMediaAdaptation.h"
+#include "lib/media/GuardedVideoCodec.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "common/media/CallMediaHealth.h"
@@ -41,6 +42,16 @@ public:
 
   using StateChangedFn = std::function<void(const std::string& state)>;
 
+  /**
+   * How long hardware may take before the engine stops waiting for it (L016). The defaults suit a
+   * product; tests shorten them. Set before Start.
+   */
+  struct HardwareLimits {
+    VideoCodecBudgets codecs;
+    /** A camera whose device stays stuck this long is given up on ("restart the app"). */
+    std::chrono::milliseconds device_give_up_after{30000};
+  };
+
   /** Audio devices from `MediaDeviceArbiter::Default()`. */
   CallMediaEngine();
   /** Audio devices from `devices` (must outlive the engine). */
@@ -48,6 +59,7 @@ public:
   ~CallMediaEngine() override;
 
   void SetOnStateChanged(StateChangedFn callback);
+  void SetHardwareLimits(const HardwareLimits& limits);
 
   /**
    * SFU encoded packet (app maps to N021 MediaDataFrame).

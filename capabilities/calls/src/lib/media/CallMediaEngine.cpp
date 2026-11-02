@@ -9,6 +9,7 @@
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
 #include "lib/media/DecodeStallPolicy.h"
+#include "lib/media/GuardedVideoCodec.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -63,6 +64,10 @@ constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 constexpr auto kMicHandoverWait = std::chrono::milliseconds(1500);
 /** Shown once when the camera is busy or stuck; the video comes on by itself afterwards. */
 constexpr const char* kCameraBusyMessage = "Camera is busy — video turns on when it's free";
+constexpr const char* kCameraStuckMessage = "Camera isn't responding — restart the app to use it";
+/** A hardware codec that stops responding is replaced this many times per camera request / stream. */
+constexpr int kMaxCodecRestarts = 3;
+constexpr const char* kEncoderStuckMessage = "Video isn't responding — restart the app to send video";
 /** Soft stall: keep last frame; UI may show Reconnecting… */
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
@@ -205,6 +210,8 @@ struct CallMediaEngine::Shared {
   std::unique_ptr<MediaDeviceArbiter> test_devices;
   /** Test fixtures: skip SDL mic/camera open (silence TX only). */
   std::atomic<bool> skip_device_open_for_test{false};
+  /** Under `mu`; a session takes a copy when it starts. */
+  HardwareLimits limits;
   std::atomic<int64_t> last_uplink_bps{0};
   std::atomic<int64_t> adaptation_target_video_bps{0};
   std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
@@ -250,7 +257,11 @@ struct CallMediaEngine::Impl {
         adaptation_target_audio_bps(shared->adaptation_target_audio_bps) {
     std::lock_guard lock(shared->mu);
     devices = shared->devices;
-    make_video_codec = shared->make_video_codec;
+    // Every hardware codec runs behind a guard: a call into it waits at most its budget (L016).
+    limits = shared->limits;
+    make_video_codec = [make = shared->make_video_codec, budgets = limits.codecs](VideoCodecRole role) {
+      return MakeGuardedVideoCodec(make, role, budgets);
+    };
   }
 
   std::shared_ptr<Shared> shared;
@@ -361,8 +372,13 @@ struct CallMediaEngine::Impl {
   /** Local encoder: created, configured, fed and bitrate-adjusted by the video thread only
    *  (reset by TearDown after that thread joined). */
   std::unique_ptr<IVideoCodec> video_codec;
-  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
-  std::function<std::unique_ptr<IVideoCodec>()> make_video_codec;
+  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub), guarded. */
+  std::function<std::unique_ptr<IVideoCodec>(VideoCodecRole)> make_video_codec;
+  HardwareLimits limits;
+  /** Encoders dropped for not responding since the camera opened (video thread only). */
+  int encoder_restarts = 0;
+  /** Decoders dropped for not responding, per stream; a stream past the cap shows no video. Under `mutex`. */
+  std::unordered_map<uint32_t, int> decoder_restarts;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
@@ -1376,6 +1392,10 @@ struct CallMediaEngine::Impl {
     if (!lease && !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
       // Held by another holder, or the camera is not responding (stuck on an earlier close): stay
       // wanted and open when it is free again — told once.
+      if (CameraStuckTooLong()) {
+        GiveUpCamera(kCameraStuckMessage);
+        return nullptr;
+      }
       if (!camera_waiting.exchange(true, std::memory_order_acq_rel)) {
         EngineLog().info << "camera waiting for the device: " << lease.error().message;
         NoteCameraFailure(kCameraBusyMessage);
@@ -1401,7 +1421,7 @@ struct CallMediaEngine::Impl {
     // Created with the camera, not the session: playback-only and audio-only sessions never open a
     // hardware encoder (media-client-layers l3a).
     if (!video_codec) {
-      video_codec = make_video_codec();
+      video_codec = make_video_codec(VideoCodecRole::Encoder);
     }
     if (!video_codec) {
       return;
@@ -1542,6 +1562,10 @@ struct CallMediaEngine::Impl {
       if (wanted && !camera && camera_waiting.load(std::memory_order_acquire) &&
           !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
         video_stage.Set(MediaThreadStage::WaitCamera);
+        if (CameraStuckTooLong()) {
+          GiveUpCamera(kCameraStuckMessage);
+          continue;
+        }
         std::this_thread::sleep_for(kDeviceRetryPoll);
         continue;
       }
@@ -1557,7 +1581,9 @@ struct CallMediaEngine::Impl {
           camera_front_facing.store(geometry.front_facing, std::memory_order_relaxed);
           camera_open.store(true, std::memory_order_release);
           video_stage.Set(MediaThreadStage::ConfigureEncoder);
+          encoder_restarts = 0; // each camera request gets its own replacements
           ConfigureLocalEncoder(geometry);
+          (void)DropStuckEncoder();
           applied_bps = 0;
           need_keyframe = true;
         }
@@ -1577,8 +1603,21 @@ struct CallMediaEngine::Impl {
         continue;
       }
       const auto t0 = std::chrono::steady_clock::now();
+      if (!video_codec && encoder_restarts > 0) {
+        // The last encoder stopped responding: a new one, and an IDR to start its stream.
+        video_stage.Set(MediaThreadStage::ConfigureEncoder);
+        ConfigureLocalEncoder(geometry);
+        applied_bps = 0;
+        need_keyframe = true;
+        if (DropStuckEncoder()) {
+          continue;
+        }
+      }
       video_stage.Set(MediaThreadStage::SetBitrate);
       ApplyVideoBitrate(applied_bps);
+      if (DropStuckEncoder()) {
+        continue;
+      }
       video_stage.Set(MediaThreadStage::WaitFrame);
       auto frame = camera->NextFrame();
       if (!frame) {
@@ -1591,6 +1630,7 @@ struct CallMediaEngine::Impl {
       }
       video_stage.Set(MediaThreadStage::Convert);
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      (void)DropStuckEncoder();
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       video_stage.Set(MediaThreadStage::Sleep);
       if (elapsed < frame_period) {
@@ -1640,7 +1680,11 @@ struct CallMediaEngine::Impl {
         if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
           return;
         }
-        auto created = make_video_codec();
+        if (const auto restarts = decoder_restarts.find(stream_id);
+            restarts != decoder_restarts.end() && restarts->second > kMaxCodecRestarts) {
+          return; // its decoders kept hanging: no video from this stream this call
+        }
+        auto created = make_video_codec(VideoCodecRole::Decoder);
         if (!created) {
           return;
         }
@@ -1653,6 +1697,10 @@ struct CallMediaEngine::Impl {
     }
     if (!decoder->HasDecoder()) {
       if (auto configured = decoder->ConfigureDecoder(); !configured) {
+        if (decoder->NotResponding()) {
+          DropStuckDecoder(stream_id);
+          return;
+        }
         static bool logged_cfg = false;
         if (!logged_cfg) {
           logged_cfg = true;
@@ -1662,6 +1710,10 @@ struct CallMediaEngine::Impl {
       }
     }
     auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
+    if (!decoded && decoder->NotResponding()) {
+      DropStuckDecoder(stream_id);
+      return;
+    }
     if (!decoded) {
       // In the app log (SDL_Log never reaches the phone's log file), a few per call.
       if (video_decode_fail_logs < 5) {
@@ -1687,6 +1739,53 @@ struct CallMediaEngine::Impl {
       }
     }
     PublishRemoteFrame(stream_id, std::move(**decoded));
+  }
+
+  /**
+   * A decoder that stopped responding (L016) is dropped — destroyed on its own thread when it lets
+   * go — and the next packet makes a new one; it asks the sender for an IDR. Past kMaxCodecRestarts
+   * the stream shows no video for the rest of the call.
+   */
+  void DropStuckDecoder(uint32_t stream_id) {
+    std::lock_guard lock(mutex);
+    remote_decoders.erase(stream_id);
+    decoder_resets.erase(stream_id);
+    const int restarts = ++decoder_restarts[stream_id];
+    EngineLog().warning << "remote H264 decoder not responding; dropped stream=" << stream_id
+                        << " restarts=" << restarts << (restarts > kMaxCodecRestarts ? " (no more this call)" : "")
+                        << " call=" << call_id;
+    NoteVideoRefreshNeeded(stream_id);
+  }
+
+  /**
+   * Video thread: the local encoder stopped responding (L016) — drop it (destroyed on its own thread
+   * when it lets go); the next frame makes a new one. Past kMaxCodecRestarts the camera is given up
+   * on. True when it was dropped.
+   */
+  bool DropStuckEncoder() {
+    if (!video_codec || !video_codec->NotResponding()) {
+      return false;
+    }
+    video_codec.reset();
+    ++encoder_restarts;
+    EngineLog().warning << "video encoder not responding; dropped restarts=" << encoder_restarts;
+    if (encoder_restarts > kMaxCodecRestarts) {
+      GiveUpCamera(kEncoderStuckMessage);
+    }
+    return true;
+  }
+
+  /** The camera cannot work this session: off, the person told why (and the roster withdrawn). */
+  void GiveUpCamera(const char* message) {
+    EngineLog().warning << "camera given up: " << message;
+    camera_enabled.store(false, std::memory_order_relaxed);
+    camera_waiting.store(false, std::memory_order_relaxed);
+    NoteCameraFailure(message);
+  }
+
+  /** A camera that waits for its device gives up once that device has been stuck device_give_up_after. */
+  bool CameraStuckTooLong() {
+    return DeviceArbiter().Health(MediaDeviceKind::Camera).stuck_ms >= limits.device_give_up_after.count();
   }
 
   /**
@@ -1873,6 +1972,14 @@ bool CallMediaEngine::WaitForRetiredSessions(const std::chrono::milliseconds bud
 void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
   std::lock_guard lock(shared_->mu);
   shared_->on_state_changed = std::move(callback);
+}
+
+void CallMediaEngine::SetHardwareLimits(const HardwareLimits& limits) {
+  {
+    std::lock_guard lock(shared_->mu);
+    shared_->limits = limits;
+  }
+  RefreshIdleSession();
 }
 
 void CallMediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make) {
