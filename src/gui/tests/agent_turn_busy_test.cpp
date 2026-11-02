@@ -3,6 +3,7 @@
 // the queued bubble, the stop key, and the fate of a held send.
 #include "gui/chat/AgentTurnController.h"
 #include "foundation/data/SessionStore.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
@@ -10,6 +11,7 @@
 #include <deque>
 #include <thread>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,8 @@ public:
   };
   std::vector<Sent> sent;
   SessionStore store;
+  /** What ChatController does when a queued send starts a turn (marks that chat busy). */
+  std::function<void(const std::string& thread_id)> on_started;
 
   ConversationsFacade* Facade() const override { return nullptr; }
   bool MessagingIsReady() const override { return false; }
@@ -60,6 +64,9 @@ public:
     }
     const QueuedSendOutcome outcome = outcomes.front();
     outcomes.pop_front();
+    if (outcome == QueuedSendOutcome::Started && on_started) {
+      on_started(item.thread_id);
+    }
     return outcome;
   }
 };
@@ -93,6 +100,7 @@ protected:
     // A mock-reply setup (no base_url): "ready" then only needs the agent session to exist.
     host_.store.Initialize(BootstrapResult{});
     host_.store.Mutable().config.llm.base_url.clear();
+    host_.on_started = [this](const std::string& thread_id) { controller_.MarkAgentBusy(thread_id); };
   }
 
   void Open(const std::string& thread) {
@@ -138,7 +146,7 @@ TEST_F(AgentTurnBusyTest, ThinkingShowsOnlyInTheThreadWhoseTurnRuns) {
   Open("A");
   EXPECT_TRUE(chat_.loading);
 
-  controller_.MarkAgentIdle();
+  controller_.MarkAgentIdle("A");
   EXPECT_FALSE(chat_.loading);
 }
 
@@ -150,21 +158,19 @@ TEST_F(AgentTurnBusyTest, StatusBarActivityFollowsTheOpenThread) {
   EXPECT_FALSE(host_.activity.back());
   Open("A");
   EXPECT_TRUE(host_.activity.back());
-  controller_.MarkAgentIdle();
+  controller_.MarkAgentIdle("A");
   EXPECT_FALSE(host_.activity.back());
 }
 
-TEST_F(AgentTurnBusyTest, UnknownThreadShowsThinkingNowhereButAiSendsStillQueue) {
+TEST_F(AgentTurnBusyTest, UnknownThreadShowsThinkingNowhere) {
   // Kenneth 2026-10-28: "thinking" belongs to the conversation that is answering; when that is unknown it is shown
-  // nowhere, while every AI send still queues (DecideSend treats an unknown thread as busy).
+  // nowhere. Whether a send may start is the sessions' answer, not this.
   controller_.MarkAgentBusy("");
+  EXPECT_FALSE(controller_.Busy().Any());
   for (const char* thread : {"A", "B", "C"}) {
     Open(thread);
     EXPECT_FALSE(chat_.loading) << thread;
-    EXPECT_EQ(DecideSend(true, controller_.Busy(), thread, false), SendDecision::Queue) << thread;
   }
-  controller_.MarkAgentIdle();
-  EXPECT_FALSE(chat_.loading);
 }
 
 TEST_F(AgentTurnBusyTest, LoadingChangedCarriesTheThreadIn) {
@@ -174,10 +180,10 @@ TEST_F(AgentTurnBusyTest, LoadingChangedCarriesTheThreadIn) {
   EXPECT_TRUE(controller_.Busy().BusyIn("A"));
   Open("B");
   EXPECT_FALSE(chat_.loading);
-  EXPECT_TRUE(controller_.Busy().BusyElsewhere("B"));
+  EXPECT_FALSE(controller_.Busy().BusyIn("B"));
 
-  controller_.HandleAgentEvent(Loading(false));
-  EXPECT_FALSE(controller_.Busy().busy);
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_FALSE(controller_.Busy().Any());
   EXPECT_FALSE(chat_.loading);
 }
 
@@ -198,18 +204,19 @@ TEST_F(AgentTurnBusyTest, IdleEventDrainsTheQueue) {
   ASSERT_TRUE(controller_.QueueSend(Queued("B")));
   EXPECT_TRUE(host_.handed_over.empty()) << "nothing is handed over while the AI is busy";
 
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
   EXPECT_EQ(controller_.QueuedCount(), 0u);
 }
 
-TEST_F(AgentTurnBusyTest, ATurnThatStartedHoldsBackTheRest) {
+TEST_F(AgentTurnBusyTest, ATurnThatStartedHoldsBackTheRestAtCapOne) {
+  // The mock assistant answers one chat at a time, like a guest's sessions.
   host_.outcomes = {QueuedSendOutcome::Started};
   controller_.MarkAgentBusy("A");
   controller_.QueueSend(Queued("B"));
   controller_.QueueSend(Queued("C"));
 
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"})) << "C waits for B's turn to end";
   EXPECT_EQ(controller_.QueuedCount(), 1u);
   EXPECT_TRUE(controller_.HasQueued("C"));
@@ -222,7 +229,7 @@ TEST_F(AgentTurnBusyTest, ASendThatDidNotStartIsSkippedAndTheNextOneRuns) {
   controller_.QueueSend(Queued("B"));
   controller_.QueueSend(Queued("C"));
 
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B", "C"}));
   EXPECT_EQ(controller_.QueuedCount(), 0u);
 }
@@ -234,7 +241,7 @@ TEST_F(AgentTurnBusyTest, AQueueOfSendsThatNeverStartStillEmpties) {
   controller_.QueueSend(Queued("C"));
   controller_.QueueSend(Queued("D"));
 
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B", "C", "D"}));
   EXPECT_EQ(controller_.QueuedCount(), 0u);
 }
@@ -245,14 +252,14 @@ TEST_F(AgentTurnBusyTest, ARefusedSendGoesBackToTheHeadInOrder) {
   controller_.QueueSend(Queued("B"));
   controller_.QueueSend(Queued("C"));
 
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"})) << "C is not handed over behind a refusal";
   EXPECT_EQ(controller_.QueuedCount(), 2u);
 
   // The next idle event offers B first again, then C.
   host_.handed_over.clear();
   host_.outcomes = {QueuedSendOutcome::NotStarted, QueuedSendOutcome::NotStarted};
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B", "C"}));
 }
 
@@ -287,7 +294,7 @@ TEST_F(AgentTurnBusyTest, AHomeQuestionTheSessionDidNotTakeGoesBackToTheComposer
   Open("A");
 
   controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
-  EXPECT_FALSE(controller_.Busy().busy);
+  EXPECT_FALSE(controller_.Busy().Any());
   ASSERT_EQ(host_.put_back.size(), 1u);
   EXPECT_EQ(host_.put_back.front(), (std::pair<std::string, std::string>{"A", "hello"}));
 
@@ -326,8 +333,8 @@ TEST_F(AgentTurnBusyTest, AHomeTurnIsStoppedAndWatchedInTheHomeSession) {
   EXPECT_EQ(cancel_calls_, 1);
   EXPECT_EQ(cancelled_thread_, "") << "the stop reaches the Home session";
 
-  controller_.HandleAgentEvent(Loading(false));
-  EXPECT_FALSE(controller_.Busy().busy);
+  controller_.HandleAgentEvent(Loading(false)); // the Home session's end names no thread
+  EXPECT_FALSE(controller_.Busy().Any());
   home_busy = false;
 }
 
@@ -353,7 +360,7 @@ TEST_F(AgentTurnBusyTest, AnImageQuestionTheSessionDidNotTakeComesBack) {
   controller_.MarkAgentBusy("A");
   controller_.SubmitStoredImageQuestion("A", "what is it", "what is it", "m1", image(), "");
   EXPECT_EQ(submits, 1);
-  EXPECT_FALSE(controller_.Busy().busy);
+  EXPECT_FALSE(controller_.Busy().Any());
   EXPECT_TRUE(controller_.HasPendingImage());
   EXPECT_TRUE(chat_.image_chip);
   ASSERT_EQ(host_.put_back.size(), 1u);
@@ -404,8 +411,8 @@ TEST_F(AgentTurnBusyTest, AQueueTheSessionsRefusedIsAskedAgainEverySecond) {
 TEST_F(AgentTurnBusyTest, TwoIdleEventsInARowHandOverOnlyOnce) {
   controller_.MarkAgentBusy("A");
   controller_.QueueSend(Queued("B"));
-  controller_.HandleAgentEvent(Loading(false));
-  controller_.HandleAgentEvent(Loading(false));
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  controller_.HandleAgentEvent(Loading(false, "A"));
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
 }
 
@@ -418,7 +425,7 @@ TEST_F(AgentTurnBusyTest, AnErrorWaitsForTheTurnsEndBeforeDraining) {
   error.type = AgentEventType::Error;
   error.message = "boom";
   controller_.HandleAgentEvent(error);
-  EXPECT_TRUE(controller_.Busy().busy) << "the turn's own LoadingChanged(false) ends it";
+  EXPECT_TRUE(controller_.Busy().Any()) << "the turn's own LoadingChanged(false) ends it";
   EXPECT_TRUE(host_.handed_over.empty());
 
   AgentEvent ended;
@@ -593,10 +600,185 @@ TEST_F(AgentTurnBusyTest, AnotherChatsTurnIsSaidAboveTheComposer) {
   Open("A");
   controller_.RefreshBusyForActiveThread();
   EXPECT_FALSE(chat_.busy_elsewhere) << "in its own chat it is \"thinking\", not \"another chat\"";
-  controller_.MarkAgentIdle();
+  controller_.MarkAgentIdle("A");
   Open("B");
   controller_.RefreshBusyForActiveThread();
   EXPECT_FALSE(chat_.busy_elsewhere);
+}
+
+// --- several chats at once (DEV/PLAN-ai-concurrent-turns.md, step 3) ---------------------------------
+
+/** The sessions as the controller sees them: a cap, the chats whose turn runs, Stop per chat. */
+struct FakeSessions {
+  size_t cap = kMaxConcurrentTurns;
+  std::set<std::string> running;
+  std::vector<std::string> cancelled;
+
+  TurnStart CanStart(const std::string& thread_id) const {
+    if (running.count(thread_id) > 0) {
+      return TurnStart::BusyHere;
+    }
+    return running.size() >= cap ? TurnStart::Full : TurnStart::Yes;
+  }
+};
+
+class AgentTurnConcurrentTest : public AgentTurnBusyTest {
+protected:
+  void Bind(const size_t cap) {
+    sessions_.cap = cap;
+    AgentUiPorts ports;
+    ports.has_session = [] { return true; };
+    ports.can_start = [this](const std::string& thread_id) { return sessions_.CanStart(thread_id); };
+    ports.max_thread_turns = [this] { return sessions_.cap; };
+    ports.is_busy = [this](const std::string& thread_id) { return sessions_.running.count(thread_id) > 0; };
+    ports.cancel = [this](const std::string& thread_id) { sessions_.cancelled.push_back(thread_id); };
+    controller_.BindPorts(std::move(ports));
+    controller_.SetUseLlm(true);
+    host_.on_started = [this](const std::string& thread_id) {
+      sessions_.running.insert(thread_id);
+      controller_.MarkAgentBusy(thread_id);
+    };
+  }
+
+  /** What ChatController does with an AI send in `thread_id`: DecideSend, then start it or queue it. */
+  SendDecision Send(const std::string& thread_id) {
+    const SendDecision decision = DecideSend(true, controller_.CanStart(thread_id), controller_.Busy().BusyIn(thread_id),
+                                             controller_.HasQueued(thread_id));
+    if (decision == SendDecision::Send) {
+      sessions_.running.insert(thread_id);
+      controller_.MarkAgentBusy(thread_id);
+    } else if (decision == SendDecision::Queue) {
+      EXPECT_TRUE(controller_.QueueSend(Queued(thread_id)));
+    }
+    return decision;
+  }
+
+  void End(const std::string& thread_id) {
+    sessions_.running.erase(thread_id);
+    controller_.HandleAgentEvent(Loading(false, thread_id));
+  }
+
+  FakeSessions sessions_;
+};
+
+TEST_F(AgentTurnConcurrentTest, TwoThreadsThinkAtOnceThirdQueuesAndStartsWhenOneEnds) {
+  Bind(2); // two at once here; the product answers kMaxConcurrentTurns
+  Open("A");
+  EXPECT_EQ(Send("A"), SendDecision::Send);
+  EXPECT_EQ(Send("B"), SendDecision::Send) << "B does not wait for A";
+  EXPECT_TRUE(chat_.loading);
+  Open("B");
+  EXPECT_TRUE(chat_.loading) << "both chats think at once";
+  EXPECT_FALSE(chat_.busy_elsewhere);
+
+  Open("C");
+  EXPECT_TRUE(chat_.busy_elsewhere) << "a question here would wait";
+  host_.outcomes = {QueuedSendOutcome::Started};
+  EXPECT_EQ(Send("C"), SendDecision::Queue);
+  EXPECT_TRUE(host_.handed_over.empty());
+  EXPECT_TRUE(chat_.has_queued);
+  EXPECT_FALSE(chat_.loading);
+  EXPECT_STREQ(chat_.queued_note.c_str(), Tr("chat.ai_queue.pending_cap", {{"count", "2"}}).c_str());
+
+  End("A");
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"C"})) << "A's end frees a turn for C";
+  EXPECT_FALSE(chat_.has_queued);
+  EXPECT_TRUE(chat_.loading) << "C thinks now";
+  EXPECT_TRUE(controller_.Busy().BusyIn("B"));
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
+}
+
+TEST_F(AgentTurnConcurrentTest, SeveralQueuedSendsStartWhileTurnsAreFree) {
+  Bind(3);
+  for (const char* thread : {"A", "B", "C"}) {
+    EXPECT_EQ(Send(thread), SendDecision::Send) << thread;
+  }
+  EXPECT_EQ(Send("D"), SendDecision::Queue);
+  EXPECT_EQ(Send("E"), SendDecision::Queue);
+  EXPECT_EQ(Send("F"), SendDecision::Queue);
+
+  host_.outcomes = {QueuedSendOutcome::Started, QueuedSendOutcome::Started, QueuedSendOutcome::Started};
+  sessions_.running.erase("A");
+  sessions_.running.erase("B");
+  End("C"); // three ended before the screen heard of them: one drain hands over as many as are free
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  controller_.HandleAgentEvent(Loading(false, "B"));
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"D", "E", "F"}));
+  EXPECT_EQ(controller_.QueuedCount(), 0u);
+}
+
+TEST_F(AgentTurnConcurrentTest, QueuedSendCancelsWithEscape) {
+  Bind(1);
+  EXPECT_EQ(Send("A"), SendDecision::Send);
+  Open("B");
+  EXPECT_EQ(Send("B"), SendDecision::Queue);
+  ASSERT_TRUE(chat_.has_queued);
+
+  // One Escape in B's composer cancels its queued question (ChatController::CancelQueuedHere takes it).
+  ASSERT_EQ(DecideEscape(1000, std::nullopt, controller_.HasQueued("B"), controller_.Busy().BusyIn("B")),
+            EscapeAction::CancelQueued);
+  const auto taken = controller_.TakeQueued("B");
+  ASSERT_TRUE(taken.has_value());
+  EXPECT_FALSE(chat_.has_queued);
+
+  host_.outcomes = {QueuedSendOutcome::Started};
+  End("A");
+  EXPECT_TRUE(host_.handed_over.empty()) << "a cancelled question is never sent";
+  EXPECT_TRUE(sessions_.cancelled.empty()) << "cancelling a queued question stops no turn";
+}
+
+TEST_F(AgentTurnConcurrentTest, FullFromTheSessionsGoesToTheQueueNotTheFloor) {
+  // The screen has heard of no turn, yet the sessions are full (turns it was not told of): the send is queued, kept,
+  // and handed over once the sessions can start it.
+  Bind(1);
+  sessions_.running.insert("X");
+  ASSERT_FALSE(controller_.Busy().Any());
+  Open("B");
+  EXPECT_EQ(Send("B"), SendDecision::Queue);
+  EXPECT_EQ(controller_.QueuedCount(), 1u);
+  EXPECT_TRUE(host_.handed_over.empty());
+  EXPECT_TRUE(host_.put_back.empty()) << "nothing dropped, nothing bounced";
+
+  host_.outcomes = {QueuedSendOutcome::Started};
+  End("X"); // an end the screen did not expect still frees the turn
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
+}
+
+TEST_F(AgentTurnConcurrentTest, AGuestIsAnsweredOneChatAtATime) {
+  Bind(kMaxConcurrentGuestTurns);
+  EXPECT_EQ(Send("A"), SendDecision::Send);
+  Open("B");
+  EXPECT_EQ(Send("B"), SendDecision::Queue);
+  EXPECT_STREQ(chat_.queued_note.c_str(), Tr("chat.ai_queue.pending").c_str()) << "one at a time: no number to say";
+}
+
+TEST_F(AgentTurnConcurrentTest, StopEndsOnlyTheOpenChatsTurn) {
+  Bind(3);
+  EXPECT_EQ(Send("A"), SendDecision::Send);
+  EXPECT_EQ(Send("B"), SendDecision::Send);
+  Open("B");
+  controller_.OnStopTurn();
+  EXPECT_EQ(sessions_.cancelled, std::vector<std::string>{"B"});
+  End("B");
+  EXPECT_TRUE(controller_.Busy().BusyIn("A")) << "A goes on answering";
+}
+
+TEST_F(AgentTurnConcurrentTest, StepLabelsStayInTheirOwnChat) {
+  Bind(3);
+  EXPECT_EQ(Send("A"), SendDecision::Send);
+  EXPECT_EQ(Send("B"), SendDecision::Send);
+  Open("A");
+  AgentEvent step;
+  step.type = AgentEventType::ToolActivity;
+  step.tool_name = "search_web";
+  step.status = "tool";
+  step.thread_id = "B";
+  controller_.HandleAgentEvent(step);
+  EXPECT_STREQ(chat_.status.c_str(), "") << "B's step is not shown in A";
+  Open("B");
+  EXPECT_STRNE(chat_.status.c_str(), "");
+  End("B");
+  EXPECT_STREQ(chat_.status.c_str(), "");
 }
 
 } // namespace

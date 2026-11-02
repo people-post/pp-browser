@@ -280,7 +280,7 @@ private:
   void PutTextBack(const std::string& key, const std::string& text, bool prepend);
   /** The draft key of what the composer shows now: Home, or the open thread ("" = none shown). */
   std::string CurrentDraftKey() const;
-  /** An AI send while another thread's turn runs: confirm "@ai+" sharing first, then queue it (B112). */
+  /** An AI send while every turn is taken: confirm "@ai+" sharing first, then queue it (B112). */
   void QueueAgentSend(const std::string& thread_id, const std::string& text, std::optional<std::string> payload,
                       bool thread_created_for_this, bool already_confirmed = false);
   /** The "share with the AI?" dialog for an "@ai+" / "@ai++" send; "don't ask again" is remembered. */

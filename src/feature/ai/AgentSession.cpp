@@ -251,7 +251,10 @@ void AgentSession::PushApprovalClosed(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                     const std::string& status) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::ToolActivity, .tool_name = tool_name, .status = status});
+  PushEvent(state, AgentEvent{.type = AgentEventType::ToolActivity,
+                              .tool_name = tool_name,
+                              .status = status,
+                              .thread_id = state->pending_thread_id}); // shown in that chat only
 }
 
 void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
