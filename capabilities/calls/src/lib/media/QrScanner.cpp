@@ -247,6 +247,8 @@ struct QrScanner::State {
     auto last_frame = std::chrono::steady_clock::now();
     ScanFrameProcessor processor(*lease, rotate);
     ScanCaptureStats stats;
+    // Wake on the frame cadence, not every few ms: each wake costs three locked camera calls.
+    const auto frame_period = std::chrono::milliseconds(request.format.fps > 0 ? 1000 / request.format.fps : 16);
     while (Current(epoch)) {
       const auto capture_started = std::chrono::steady_clock::now();
       if (auto error = lease->CaptureError(); !error.empty()) {
@@ -256,8 +258,10 @@ struct QrScanner::State {
       const auto zoom_state = processor.DecodeDue(capture_started) ? lease->ZoomState() : CameraZoomState{};
       auto frame = lease->NextFrame();
       stats.Poll(capture_started);
+      auto idle_wait = frame_period / 2;
       if (frame) {
         last_frame = capture_started;
+        idle_wait = frame_period;
         auto next = processor.Process(std::move(*frame), last_frame, zoom_state);
         stats.Frame(last_frame, processor);
         const bool complete = next.text.has_value();
@@ -274,7 +278,10 @@ struct QrScanner::State {
         return;
       }
       std::unique_lock lock(mutex);
-      cv.wait_for(lock, std::chrono::milliseconds(5), [&] {
+      // After a frame the next one is a full period away (less the time spent on this one).
+      const auto spent = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - capture_started);
+      cv.wait_for(lock, std::max(std::chrono::milliseconds(1), idle_wait - spent), [&] {
         return closing || !scanning || generation != epoch;
       });
     }
