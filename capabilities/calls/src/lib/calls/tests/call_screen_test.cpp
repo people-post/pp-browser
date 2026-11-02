@@ -6,7 +6,6 @@ namespace pbr {
 namespace {
 
 using Status = CallScreen::Status;
-using MediaState = CallMediaSeat::MediaState;
 
 InCallStatus Decide(InCallSignals s) {
   return DecideInCallStatus(s);

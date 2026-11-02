@@ -112,10 +112,7 @@ struct CallHopMigrateSeatPorts {
   std::function<void(const std::string& call_id, const std::string& hop)> end_attach_if_matching;
   std::function<bool()> has_attach_in_flight;
   std::function<std::string()> attaching_hop;
-  std::function<void(const std::string& call_id)> note_connecting;
   std::function<void(const std::string& call_id)> note_start;
-  std::function<void(CallMediaSeat::PathKind kind)> note_path;
-  std::function<void(const std::string& call_id)> note_live;
 
   bool IsBound() const { return static_cast<bool>(is_bound); }
 };

@@ -419,9 +419,6 @@ void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size
     return;
   }
   flight_.attaching_hop_peer_id = hop.peer_id;
-  if (seat_ports->IsBound()) {
-    seat_ports->note_connecting(pick->call_id);
-  }
   host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
   CallSfuAttachDetail attach;
@@ -618,9 +615,6 @@ Roe<bool> CallHopMigrateWorkflow::ClaimHopAttachFlight(const std::string& call_i
     return false;
   }
   flight_.attaching_hop_peer_id = attach.hop_peer_id;
-  if (seat_ports->IsBound()) {
-    seat_ports->note_connecting(call_id);
-  }
   return true;
 }
 
@@ -921,7 +915,7 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
     return Error("no live call for media " + call_id);
   }
   // Takes the seat's hold for this call, starts (or send-swaps) the engine, marks the seat on Hop.
-  if (auto started = call_media->StartEngine(CallMediaSeat::PathKind::Hop, MakeHopSendFn(at)); !started) {
+  if (auto started = call_media->StartEngine(CallMediaPath::Hop, MakeHopSendFn(at)); !started) {
     log().info << "AttachLocalToSfu aborted at StartSfu (" << started.error().message << ") call_id=" << call_id;
     relay_deps_->relay->Detach();
     sfu_.attached = false;
@@ -960,9 +954,7 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   ops_.announce_local_publisher(call_id, at.attach);
   ops_.clear_sfu_attach_wait();
   ops_.refresh_adaptation(call_id);
-  // V036 Phase 2: NoteLive before ReleaseDirect so chrome Connected is not ReleaseDirect alone.
   if (seat_ports->IsBound()) {
-    seat_ports->note_live(call_id);
     seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
   }
   ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);  // reports Live
@@ -1182,8 +1174,7 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
   host_.SetMediaActivity(Localized("call.status.reconnecting"));
   if (attempt == 1) {
     // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
-    // The seat stays Live by design (a reattach is not a demotion); Recovery() (Reattaching, then
-    // HopLost) keeps the Reconnecting line up until a reattach succeeds.
+    // Recovery() (Reattaching, then HopLost) keeps the Reconnecting line up until a reattach succeeds.
     const auto arming_ports = arming_.Get();
     if (arming_ports->report_progress) {
       arming_ports->report_progress(CallHopPlannerPhase::Attaching, call_id);

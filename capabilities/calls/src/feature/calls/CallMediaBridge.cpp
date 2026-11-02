@@ -846,12 +846,6 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (direct_connected_at_ms_ <= 0) {
     direct_connected_at_ms_ = util::NowUnixMs();
   }
-  // V036 Phase 2: seat Live is the chrome Connected gate — DirectConnected alone is signaling.
-  // Prefer Live only when the direct stream is actually up (not StartSfu alone).
-  if (seat_.IsBound() && media_.IsActive() && media_.ActiveCallId() == call_id &&
-      (DirectMediaReady() || HopAttachedFor(call_id))) {
-    seat_.note_live(call_id);
-  }
   if (arming_.on_connected) {
     arming_.on_connected(call_id);
   }
@@ -1060,9 +1054,6 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
 
 void CallMediaBridge::EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer) {
   Apply(CallDirectPlannerEvent::CircuitEscalated, call_id, peer);
-  if (seat_.IsBound()) {
-    seat_.note_connecting(call_id);
-  }
   media_.SetConnectionState("connecting");
   reach_kind_ = mesh::PeerLinkKind::Unknown;
   direct_connected_at_ms_ = 0;
@@ -1145,9 +1136,6 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (!call_id.empty()) {
     media_attempted_calls_.Insert(call_id);
     failed_open_ = FailedOpenCall{call_id};
-  }
-  if (seat_.note_failed) {
-    seat_.note_failed(call_id);
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
   if (arming_.on_connect_failed) {
@@ -1379,24 +1367,19 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   if (!call_media) {
     return Error("no live call for media " + call_id);
   }
-  auto started =
-      call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const MediaEngine::SfuPacket& pkt) {
-        if (!mesh::IsAudioChannel(pkt.channel_id) && !mesh::IsVideoChannel(pkt.channel_id)) {
-          return;
-        }
-        // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
-        if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
-          return;
-        }
-        const uint32_t seq = mesh::IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
-        (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
-      });
+  auto started = call_media->StartEngine(CallMediaPath::Direct, [this, send_gen](const MediaEngine::SfuPacket& pkt) {
+    if (!mesh::IsAudioChannel(pkt.channel_id) && !mesh::IsVideoChannel(pkt.channel_id)) {
+      return;
+    }
+    // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
+    if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
+      return;
+    }
+    const uint32_t seq = mesh::IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
+  });
   if (!started) {
     return started;
-  }
-  // Duplex Live only after direct stream (CommitDirectConnected) — not StartSfu alone.
-  if (seat_.IsBound() && !DirectMediaReady()) {
-    seat_.note_connecting(call_id);
   }
   // StartSfu marks connected immediately for SFU capture; 1:1 chrome waits on the direct stream.
   if (!DirectMediaReady()) {
@@ -1742,8 +1725,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();
-  // V036 Phase 2: signaling may advance to InCall, but chrome Connected requires seat Live
-  // (set by CompleteAttachLocalToSfu NoteLive — not ReleaseDirect alone).
+  // The hop's attach completion reports the call live (LiveCall Status) — not ReleaseDirect alone.
   if (arming_.IsBound() && media_.IsActive() && media_.IsSfuMode()) {
     if (arming_.on_connected) {
       arming_.on_connected(media_.ActiveCallId());

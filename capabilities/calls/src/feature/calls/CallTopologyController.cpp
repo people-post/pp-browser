@@ -189,10 +189,7 @@ CallHopMigrateSeatPorts CallTopologyController::MakeMigrateSeatPorts(
   out.end_attach_if_matching = ports.end_attach_if_matching;
   out.has_attach_in_flight = ports.has_attach_in_flight;
   out.attaching_hop = ports.attaching_hop;
-  out.note_connecting = ports.note_connecting;
   out.note_start = ports.note_start;
-  out.note_path = ports.note_path;
-  out.note_live = ports.note_live;
   return out;
 }
 
@@ -1345,11 +1342,7 @@ bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_i
 }
 
 void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) {
-  const auto seat_ports = seat_.Get();
   BeginSfuAttachWait(call_id);
-  if (seat_ports->IsBound()) {
-    seat_ports->note_connecting(call_id);
-  }
   host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
   const uint64_t gen = ClaimMigrateFlight(call_id);

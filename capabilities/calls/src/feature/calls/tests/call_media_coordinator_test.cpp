@@ -59,28 +59,27 @@ protected:
   CallMediaResources no_seat_;
 };
 
-// A call's coordinator runs the one engine for that call: it takes the seat, starts the engine and
-// marks the seat started on its path.
+// A call's coordinator runs the one engine for that call: it takes the seat and starts the engine.
 TEST_F(CallMediaCoordinatorTest, StartTakesTheSeatAndRunsTheEngineOnThePath) {
   CallMediaCoordinator call("call:1", with_seat_);
-  ASSERT_TRUE(call.StartEngine(CallMediaSeat::PathKind::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:1"));
-  EXPECT_EQ(seat_.Path(), CallMediaSeat::PathKind::Direct);
   EXPECT_EQ(engine_.ActiveCallId(), "call:1");
-  EXPECT_EQ(call.Path(), CallMediaSeat::PathKind::Direct);
+  const uint64_t direct_epoch = seat_.Epoch();
 
   // Direct → Hop on the same call re-points the running engine; the seat stays this call's.
-  ASSERT_TRUE(call.StartEngine(CallMediaSeat::PathKind::Hop, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Hop, [](const MediaEngine::SfuPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:1"));
-  EXPECT_EQ(seat_.Path(), CallMediaSeat::PathKind::Hop);
+  EXPECT_GT(seat_.Epoch(), direct_epoch) << "a release posted before the re-point cannot stop it";
+  EXPECT_EQ(engine_.ActiveCallId(), "call:1");
 }
 
 // Another call starting media takes the seat from the first (one call owns media at a time).
 TEST_F(CallMediaCoordinatorTest, ASecondCallTakesTheSeat) {
   CallMediaCoordinator first("call:1", with_seat_);
   CallMediaCoordinator second("call:2", with_seat_);
-  ASSERT_TRUE(first.StartEngine(CallMediaSeat::PathKind::Direct, [](const MediaEngine::SfuPacket&) {}));
-  ASSERT_TRUE(second.StartEngine(CallMediaSeat::PathKind::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(first.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(second.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:2"));
   EXPECT_FALSE(seat_.IsBound("call:1"));
   EXPECT_EQ(engine_.ActiveCallId(), "call:2");
@@ -88,7 +87,7 @@ TEST_F(CallMediaCoordinatorTest, ASecondCallTakesTheSeat) {
 
 TEST_F(CallMediaCoordinatorTest, WithoutASeatOnlyTheEngineIsDriven) {
   CallMediaCoordinator call("call:1", no_seat_);
-  ASSERT_TRUE(call.StartEngine(CallMediaSeat::PathKind::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
   EXPECT_EQ(engine_.ActiveCallId(), "call:1");
   call.StopEngine("test");
   EXPECT_FALSE(engine_.IsActive());
@@ -103,14 +102,13 @@ TEST_F(CallMediaCoordinatorTest, BeginDirectTakesTheSeatThenStartsTheDriver) {
 }
 
 // Direct → Hop hand-off: once the hop runs the call, the coordinator drops the 1:1 transport under
-// the seat's token and marks the seat on Hop — only while this call holds the seat.
+// the seat's token — only while this call holds the seat.
 TEST_F(CallMediaCoordinatorTest, ReleaseDirectOnlyWhileTheCallHoldsTheSeat) {
   CallMediaCoordinator call("call:1", with_seat_);
   call.HoldSeatForHop();
   call.ReleaseDirect();
   ASSERT_EQ(direct_.released.size(), 1u);
   EXPECT_EQ(direct_.released.front().call_id, "call:1");
-  EXPECT_EQ(seat_.Path(), CallMediaSeat::PathKind::Hop);
 
   CallMediaCoordinator other("call:2", with_seat_);
   other.HoldSeatForHop();  // another call took the seat

@@ -69,10 +69,7 @@ CallTopologySeatPorts TestTopologySeatPorts(CallMediaSeat* seat) {
   };
   ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
   ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
   ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
   ports.cancel_attach_for_call = [seat](const std::string& call_id) {
     seat->CancelAttachForCall(call_id);
   };

@@ -13,14 +13,14 @@ logging::Logger& CallMediaCoordinatorLog() {
   return logger;
 }
 
-const char* PathName(const CallMediaSeat::PathKind path) {
+const char* PathName(const CallMediaPath path) {
   switch (path) {
-  case CallMediaSeat::PathKind::None:
-    return "none";
-  case CallMediaSeat::PathKind::Direct:
-    return "direct";
-  case CallMediaSeat::PathKind::Hop:
-    return "hop";
+    case CallMediaPath::Undecided:
+      return "undecided";
+    case CallMediaPath::Direct:
+      return "direct";
+    case CallMediaPath::Hop:
+      return "hop";
   }
   return "?";
 }
@@ -30,7 +30,7 @@ const char* PathName(const CallMediaSeat::PathKind path) {
 CallMediaCoordinator::CallMediaCoordinator(std::string call_id, const CallMediaResources& resources)
     : call_id_(std::move(call_id)), resources_(resources) {}
 
-Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, MediaEngine::SfuSendFn send) {
+Roe<void> CallMediaCoordinator::StartEngine(const CallMediaPath path, MediaEngine::SfuSendFn send) {
   CallMediaSeat* const seat = resources_.seat;
   if (seat && !seat->AllowsPathOp(seat->Acquire(call_id_))) {
     return Error("media seat will not hold call " + call_id_);
@@ -40,14 +40,12 @@ Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, 
   }
   if (seat) {
     seat->NoteStart(call_id_);
-    seat->NotePath(path);
     // NoteStart bumps the epoch; the call must still hold the seat (a concurrent release lost it).
     if (!seat->IsBound(call_id_)) {
       Engine().Stop();
       return Error("media seat lost call " + call_id_ + " during start");
     }
   }
-  path_ = path;
   CallMediaCoordinatorLog().info << "engine started call_id=" << call_id_ << " path=" << PathName(path);
   return {};
 }
@@ -95,7 +93,6 @@ void CallMediaCoordinator::ReleaseDirect() {
   if (token.call_id != call_id_ || !seat->AllowsPathOp(token)) {
     return;
   }
-  seat->NotePath(CallMediaSeat::PathKind::Hop);
   resources_.direct->ReleaseDirectTransport(token);
 }
 

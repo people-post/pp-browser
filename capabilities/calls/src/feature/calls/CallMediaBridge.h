@@ -63,11 +63,7 @@ struct CallDirectSeatPorts {
   std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
   std::function<CallMediaSeat::Token()> current_token;
   std::function<std::string()> bound_call_id;
-  std::function<void(const std::string& call_id)> note_connecting;
   std::function<void(const std::string& call_id)> note_start;
-  std::function<void(CallMediaSeat::PathKind kind)> note_path;
-  std::function<void(const std::string& call_id)> note_live;
-  std::function<void(const std::string& call_id)> note_failed;
 
   bool IsBound() const { return static_cast<bool>(acquire); }
 };

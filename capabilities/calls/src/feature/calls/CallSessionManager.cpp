@@ -688,11 +688,7 @@ CallDirectSeatPorts CallSessionManager::DirectSeatPorts() {
   ports.allows_path_op = [seat](const CallMediaSeat::Token& token) { return seat->AllowsPathOp(token); };
   ports.current_token = [seat]() { return seat->CurrentToken(); };
   ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
   ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
-  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
   return ports;
 }
 
@@ -711,10 +707,7 @@ CallTopologySeatPorts CallSessionManager::MakeTopologySeatPorts() {
   };
   ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
   ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
   ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
   ports.cancel_attach_for_call = [seat](const std::string& call_id) { seat->CancelAttachForCall(call_id); };
   return ports;
 }

@@ -23,7 +23,7 @@ struct CallMediaResources {
   CallHopDriver* hop = nullptr;
 };
 
-/** Which path carries a call's media, as its coordinator decided. */
+/** Which path carries a call's media. */
 enum class CallMediaPath {
   /** Not decided yet (before a join). */
   Undecided,
@@ -51,11 +51,11 @@ public:
   const std::string& CallId() const { return call_id_; }
 
   /**
-   * Run the engine for this call on `path`, sending with `send`: take the seat (releasing any other
-   * call's media), start — or, when it already runs this call, re-point — the engine, and mark the
-   * seat started on `path`. Fails when the seat will not hold this call.
+   * Run the engine for this call on `path` (Direct / Hop), sending with `send`: take the seat
+   * (releasing any other call's media), start — or, when it already runs this call, re-point — the
+   * engine, and mark the seat started. Fails when the seat will not hold this call.
    */
-  Roe<void> StartEngine(CallMediaSeat::PathKind path, MediaEngine::SfuSendFn send);
+  Roe<void> StartEngine(CallMediaPath path, MediaEngine::SfuSendFn send);
 
   /** Stop the engine (capture threads, send). The seat stays bound — the call may restart. */
   void StopEngine(const char* why);
@@ -69,9 +69,6 @@ public:
    * holds the seat. The engine keeps running.
    */
   void ReleaseDirect();
-
-  /** The path the engine was last started on for this call. */
-  CallMediaSeat::PathKind Path() const { return path_; }
 
   // --- Media mode: which path carries the call ----------------------------------------------------
 
@@ -113,7 +110,6 @@ private:
 
   std::string call_id_;
   const CallMediaResources& resources_;
-  CallMediaSeat::PathKind path_ = CallMediaSeat::PathKind::None;
   CallMediaPath media_path_ = CallMediaPath::Undecided;
 };
 
