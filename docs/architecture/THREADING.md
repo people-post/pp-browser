@@ -62,7 +62,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 
 **Call media** stays outside the general pool: dedicated capture / video / playout / ringtone threads per active call.
 
-**AI turns** stay outside it too: a streamed answer holds its thread to the end, so `AgentSessions` runs turns on its own `AiTurnPool` (the most thread turns at once plus one for Home). That pool is not behind the teardown gate; `AgentSessions` stops and joins its turns itself ([AGENT_CONVERSATION.md](../ui/AGENT_CONVERSATION.md#sessions-one-per-conversation)). Configure stays on the worker pool.
+**AI turns** stay outside it too: a streamed answer holds its thread to the end, so `AgentSessions` runs turns on its own `AiTurnPool` (`kTurnPoolThreads`: the most thread turns at once, one for Home, two for next steps and stopped turns leaving). That pool is not behind the teardown gate; `AgentSessions` stops and joins its turns itself ([AGENT_CONVERSATION.md](../ui/AGENT_CONVERSATION.md#sessions-one-per-conversation)). Configure stays on the worker pool.
 
 **Headless node** (`app/node/`): no UI thread; coordinator + MeshHost pump + pool.
 
