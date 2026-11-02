@@ -1203,25 +1203,29 @@ void ChatController::ToggleVoiceMode() {
 }
 
 void ChatController::BeginAttachmentPreparing() {
-  if (!preparing_.Begin() || chat_.attachment_uploading) {
+  if (chat_.attachment_uploading || !preparing_.Begin(std::chrono::steady_clock::now())) {
     return;
   }
-  chat_.attachment_preparing = true;
-  chat_.attachment_failed = false;
-  chat_.attachment_draft_name = "";
-  chat_.attachment_status = Tr("chat.attachment.sending").c_str();
-  SyncComposerInputState();
-  DirtyChatChrome();
-  DirtyChatHeader();
+  SyncAttachmentPreparing();
 }
 
-void ChatController::EndAttachmentPreparing(const AttachmentPrepareOutcome outcome) {
-  preparing_.End(outcome);
-  if (!chat_.attachment_preparing) {
+void ChatController::EndAttachmentPreparing() {
+  preparing_.End();
+  SyncAttachmentPreparing();
+}
+
+void ChatController::SyncAttachmentPreparing() {
+  if (chat_.attachment_preparing == preparing_.Busy()) {
     return;
   }
-  chat_.attachment_preparing = false;
-  chat_.attachment_status = "";
+  chat_.attachment_preparing = preparing_.Busy();
+  if (chat_.attachment_preparing) {
+    chat_.attachment_failed = false;
+    chat_.attachment_draft_name = "";
+    chat_.attachment_status = Tr("chat.attachment.sending").c_str();
+  } else {
+    chat_.attachment_status = "";
+  }
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
@@ -1265,7 +1269,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   const auto picked = [this](const OutgoingPickSource source) {
     return [this, source](std::vector<std::string> paths) {
       AppRuntime::PostUI([this, source, paths = std::move(paths)]() mutable {
-        EndAttachmentPreparing(paths.empty() ? AttachmentPrepareOutcome::NoFile : AttachmentPrepareOutcome::Delivered);
+        EndAttachmentPreparing();
         if (paths.empty()) {
           return;
         }
@@ -1278,7 +1282,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   const auto picked_picture = [this]() {
     return [this](std::vector<std::string> paths) {
       AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-        EndAttachmentPreparing(paths.empty() ? AttachmentPrepareOutcome::NoFile : AttachmentPrepareOutcome::Delivered);
+        EndAttachmentPreparing();
         if (paths.empty()) {
           return;
         }
@@ -1366,11 +1370,7 @@ void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
       Backend::GetWindow(), kind, limits.video_max_seconds, limits.max_video_bytes,
       [this](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
         AppRuntime::PostUI([this, outcome, paths = std::move(paths)]() mutable {
-          EndAttachmentPreparing(outcome == CameraCaptureOutcome::Picked      ? AttachmentPrepareOutcome::Delivered
-                                 : outcome == CameraCaptureOutcome::Cancelled ? AttachmentPrepareOutcome::Cancelled
-                                 : outcome == CameraCaptureOutcome::Unprocessable
-                                     ? AttachmentPrepareOutcome::Unprocessable
-                                     : AttachmentPrepareOutcome::Unavailable);
+          EndAttachmentPreparing();
           HandleCaptureResult(MakeCaptureFlowPorts(), outcome, std::move(paths));
         });
       },
@@ -3460,6 +3460,10 @@ void ChatController::Update() {
   // Voice: the hold's touch state, a call turning live, and the vault locking under a recording or a clip.
   const auto now = std::chrono::steady_clock::now();
   voice_->Tick(now);
+  if (preparing_.Expire(now)) {
+    log().warning << "attachment preparing timed out";
+    SyncAttachmentPreparing();
+  }
   if ((voice_->Active() || voice_playback_->Active()) && messaging_ready_ && !MessagingReady()) {
     CancelVoice();
   }

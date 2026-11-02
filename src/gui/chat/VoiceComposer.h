@@ -105,6 +105,7 @@ public:
   void ProcessEvent(ui::Event& event) override;
 
 private:
+  friend struct VoiceComposerTestAccess; // tests inject a late progress tick
   void StartRecording();
   void LaunchRecorder(int generation, const VoiceRecorderConfig& config);
   void Apply(VoiceGesture::Action action);

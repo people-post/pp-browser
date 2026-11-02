@@ -419,7 +419,7 @@ void VoiceComposer::SetHint() {
 }
 
 void VoiceComposer::OnProgress(const int generation, const int64_t elapsed_ms) {
-  if (generation != generation_ || !state_.voice_recording) {
+  if (generation != generation_ || !in_flight_ || !state_.voice_recording) {
     return;
   }
   elapsed_ms_ = elapsed_ms;

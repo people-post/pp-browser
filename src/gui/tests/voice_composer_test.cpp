@@ -10,6 +10,13 @@
 // The microphone button's logic with a scripted microphone and fake ports: no device, no UI, no OS prompt.
 
 namespace pbr {
+
+/** Lets a test deliver a progress tick by hand, as a recorder's late post would. */
+struct VoiceComposerTestAccess {
+  static void Progress(VoiceComposer& composer, int generation, int64_t elapsed_ms) {
+    composer.OnProgress(generation, elapsed_ms);
+  }
+};
 namespace {
 
 using namespace voice_test;
@@ -464,6 +471,20 @@ TEST(VoiceComposer, AtTheLimitTheRecorderEndsItselfAndSendingShows) {
   h.composer->BeginAt(0, nullptr, /*hold=*/false);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
   EXPECT_TRUE(h.saw_finishing) << "the limit ended it without a release";
+  EXPECT_FALSE(h.state.voice_finishing);
+}
+
+TEST(VoiceComposer, ALateProgressTickAfterTheResultDoesNotSetSendingAgain) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/1);
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(1000));
+  };
+  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  ASSERT_FALSE(h.state.voice_finishing);
+  VoiceComposerTestAccess::Progress(*h.composer, 1, 1000); // the recording's own generation, past the limit
   EXPECT_FALSE(h.state.voice_finishing);
 }
 

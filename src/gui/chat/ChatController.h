@@ -205,7 +205,9 @@ private:
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
   void BeginAttachmentPreparing();
   /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
-  void EndAttachmentPreparing(AttachmentPrepareOutcome outcome);
+  void EndAttachmentPreparing();
+  /** Mirror preparing_ into the chat fields (the one place chat_.attachment_preparing is written). */
+  void SyncAttachmentPreparing();
   /**
    * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
    * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip

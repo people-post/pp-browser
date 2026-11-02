@@ -32,9 +32,9 @@ namespace {
 PPAttachmentPreview* g_preview = nil; // the preview that is up (or being presented); nil when none
 
 /** Let go of the current preview. Autoreleased: this runs inside the preview's own delegate callbacks. */
-void EndPreview() {
-  if (g_preview == nil) {
-    return;
+void EndPreview(PPAttachmentPreview* ended) {
+  if (g_preview == nil || g_preview != ended) {
+    return; // not the current preview (already ended, or a later one is up)
   }
   PPAttachmentPreview* preview = g_preview;
   g_preview = nil;
@@ -68,6 +68,13 @@ bool OpenOnMain(const std::string& path) {
       g_preview = preview;
       pbr::ios_pick::SetActivePicker(preview);
       [host presentViewController:controller animated:YES completion:nil];
+      // UIKit may refuse silently: if the preview never appears, do not keep the guard claimed.
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        if (g_preview == preview && controller.presentingViewController == nil) {
+          pbr::logging::getLogger("attachment").warning << "attachment preview present refused";
+          EndPreview(preview);
+        }
+      });
       pbr::logging::getLogger("attachment").info << "attachment preview path=quicklook";
       return true;
     }
@@ -80,7 +87,7 @@ bool OpenOnMain(const std::string& path) {
     pbr::ios_pick::SetActivePicker(preview);
     const CGRect anchor = CGRectMake(CGRectGetMidX(host.view.bounds), CGRectGetMidY(host.view.bounds), 1, 1);
     if (![interaction presentOptionsMenuFromRect:anchor inView:host.view animated:YES]) {
-      EndPreview();
+      EndPreview(preview);
       return false;
     }
     pbr::logging::getLogger("attachment").info << "attachment preview path=document-interaction";
@@ -107,11 +114,26 @@ bool OpenOnMain(const std::string& path) {
 }
 
 - (void)previewControllerDidDismiss:(QLPreviewController*)controller {
-  EndPreview();
+  EndPreview(self);
 }
 
 - (void)documentInteractionControllerDidDismissOptionsMenu:(UIDocumentInteractionController*)controller {
-  EndPreview();
+  EndPreview(self);
+}
+
+- (void)documentInteractionControllerDidDismissOpenInMenu:(UIDocumentInteractionController*)controller {
+  EndPreview(self);
+}
+
+// A hand-off to another app: the menu may not report a dismiss, so the guard is let go here too.
+- (void)documentInteractionController:(UIDocumentInteractionController*)controller
+        willBeginSendingToApplication:(NSString*)application {
+  EndPreview(self);
+}
+
+- (void)documentInteractionController:(UIDocumentInteractionController*)controller
+           didEndSendingToApplication:(NSString*)application {
+  EndPreview(self);
 }
 
 @end

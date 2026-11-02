@@ -5,6 +5,8 @@
 namespace pbr {
 namespace {
 
+using std::chrono::seconds;
+
 TEST(AttachmentPreparing, BeginMakesItBusy) {
   AttachmentPreparing preparing;
   EXPECT_FALSE(preparing.Busy());
@@ -12,16 +14,12 @@ TEST(AttachmentPreparing, BeginMakesItBusy) {
   EXPECT_TRUE(preparing.Busy());
 }
 
-TEST(AttachmentPreparing, EveryExitEndsIt) {
-  for (const auto outcome :
-       {AttachmentPrepareOutcome::Delivered, AttachmentPrepareOutcome::NoFile, AttachmentPrepareOutcome::Cancelled,
-        AttachmentPrepareOutcome::Unavailable, AttachmentPrepareOutcome::Unprocessable}) {
-    AttachmentPreparing preparing;
-    ASSERT_TRUE(preparing.Begin());
-    preparing.End(outcome);
-    EXPECT_FALSE(preparing.Busy()) << static_cast<int>(outcome);
-    EXPECT_TRUE(preparing.Begin()) << "a new attachment can start again";
-  }
+TEST(AttachmentPreparing, EndEndsItAndANewOneCanStart) {
+  AttachmentPreparing preparing;
+  ASSERT_TRUE(preparing.Begin());
+  preparing.End(); // path delivered, empty path, camera failure and picker cancel all end here
+  EXPECT_FALSE(preparing.Busy());
+  EXPECT_TRUE(preparing.Begin());
 }
 
 TEST(AttachmentPreparing, ASecondEntryIsRefusedWhileBusy) {
@@ -33,8 +31,19 @@ TEST(AttachmentPreparing, ASecondEntryIsRefusedWhileBusy) {
 
 TEST(AttachmentPreparing, EndingWhenNothingIsOnIsHarmless) {
   AttachmentPreparing preparing;
-  preparing.End(AttachmentPrepareOutcome::Cancelled); // a picker that was cancelled never began
+  preparing.End(); // a picker that was cancelled never began
   EXPECT_FALSE(preparing.Busy());
+}
+
+TEST(AttachmentPreparing, ItExpiresWhenNoExitEverReports) {
+  AttachmentPreparing preparing;
+  const auto start = AttachmentPreparing::Clock::now();
+  ASSERT_TRUE(preparing.Begin(start));
+  EXPECT_FALSE(preparing.Expire(start + seconds(59)));
+  EXPECT_TRUE(preparing.Busy());
+  EXPECT_TRUE(preparing.Expire(start + seconds(61)));
+  EXPECT_FALSE(preparing.Busy());
+  EXPECT_FALSE(preparing.Expire(start + seconds(62))) << "reported once";
 }
 
 } // namespace
