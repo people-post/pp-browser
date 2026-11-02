@@ -19,8 +19,17 @@ namespace {
 
 ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
   ToolMeta meta{"settings", std::move(domain), std::move(risk), mutating};
-  // A change goes through the SessionStore the settings page reads and writes on the UI thread: made there too.
-  meta.ui_thread = mutating;
+  // The SessionStore has no lock: the settings page reads and saves it on the UI thread, and so do these tools,
+  // reads included (they are quick). A save runs the same listeners a toggle on the settings page runs there.
+  meta.app_state = true;
+  meta.ui_thread = true;
+  return meta;
+}
+
+/** Starts a network probe and reads its status: neither app state nor the UI thread. */
+ToolMeta NetworkOnly(ToolMeta meta) {
+  meta.app_state = false;
+  meta.ui_thread = false;
   return meta;
 }
 
@@ -797,7 +806,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
 
   tools.push_back(MakeTool(
       ToolDefinition{"probe_reachability", "Re-run the network reachability probe. Optionally try UPnP port mapping first.", MustSchema(R"json({"type":"object","properties":{"try_upnp":{"type":"boolean"}},"required":[]})json")},
-      Meta("network", "write", true),
+      NetworkOnly(Meta("network", "write", true)),
       [ports](const Object& arguments) -> Roe<std::string> {
          if (!ports.run_reachability_probe) {
            return Error("Reachability probe unavailable");

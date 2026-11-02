@@ -101,8 +101,9 @@ protected:
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
     }
+    // Stands in for an app-state tool (the real search_people is network-only; local actions only take this one).
     registry.Register(MakeTool(ToolDefinition{"search_people", "search_people", Object{}},
-                               ToolMeta{.provider = "messaging", .domain = "people", .risk = "read"},
+                               ToolMeta{.provider = "messaging", .domain = "people", .risk = "read", .app_state = true},
                                [this](const Object& args) -> Roe<std::string> {
                                  const int now_running = ++tools_running_;
                                  int seen = max_tools_running_.load();
@@ -116,8 +117,8 @@ protected:
                                  --tools_running_;
                                  return std::string("[]");
                                }));
-    ToolMeta on_ui{.provider = "messaging", .domain = "communications", .risk = "read"};
-    on_ui.ui_thread = true;
+    ToolMeta on_ui{.provider = "messaging", .domain = "communications", .risk = "read", .app_state = true,
+                   .ui_thread = true};
     registry.Register(MakeTool(ToolDefinition{"open_conversation", "open_conversation", Object{}}, on_ui,
                                [this](const Object& args) -> Roe<std::string> {
                                  const int now_running = ++tools_running_;

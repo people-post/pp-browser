@@ -512,6 +512,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   TurnExecutionOptions options;
   options.start_index = park.next_tool_index;
   options.permissions = state->tool_permissions;
+  options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -737,7 +738,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
         continue;
       }
 
-      auto result = state->tools.Execute(call.name, call.arguments);
+      auto result = state->tools.Execute(call.name, call.arguments, &state->cancelled);
       AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
       state->turn_trace.tools_executed.push_back(call.name);
 
@@ -1085,6 +1086,7 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
 
   TurnExecutionOptions options;
   options.permissions = state->tool_permissions;
+  options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -1379,7 +1381,7 @@ LocalPlanContext AgentSession::BuildLocalPlanContext(const std::shared_ptr<Impl>
   }
   if (tool == "set_language") {
     // The shipped locales, as the settings tool lists them (no I/O).
-    if (auto listed = state->tools.Execute("list_locales", Object{})) {
+    if (auto listed = state->tools.Execute("list_locales", Object{}, &state->cancelled)) {
       if (const auto doc = TryParseObject(*listed)) {
         if (const Array* locales = doc->getArray("locales")) {
           for (const Value& entry : locales->elements) {

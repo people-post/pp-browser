@@ -17,8 +17,13 @@ struct ToolMeta {
   std::string risk;     // "read" | "write" | "destructive"
   bool mutating = false;
   /**
-   * The tool changes what the screens show (opens a chat, saves a setting the settings page reads): ToolRegistry
-   * runs it on the UI thread while the turn's worker waits (DEV/PLAN-ai-concurrent-turns.md 2b).
+   * The tool reads or changes the app's own state (chats, contacts, settings): ToolRegistry runs such tools one at
+   * a time across every AI session (DEV/PLAN-ai-concurrent-turns.md 2b). Network-only tools leave it false.
+   */
+  bool app_state = false;
+  /**
+   * The tool touches state that lives on the UI thread (the chat screen, the SessionStore): ToolRegistry runs it
+   * there while the turn waits. Only for quick tools; implies app_state.
    */
   bool ui_thread = false;
 };
