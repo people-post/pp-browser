@@ -14,6 +14,15 @@ target_compile_definitions(pp_foundation_runtime_core PUBLIC
   "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
   "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 
+# Time to finish a transfer in the background (BackgroundActivity): iOS asks UIKit; elsewhere nothing to ask.
+# Here (base) rather than foundation/platform: capabilities hold one and may not include the product's platform.
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_runtime_core PRIVATE BackgroundActivity_Ios.mm)
+  target_link_libraries(pp_foundation_runtime_core PUBLIC "-framework UIKit")
+else()
+  target_sources(pp_foundation_runtime_core PRIVATE BackgroundActivity_Default.cpp)
+endif()
+
 if(PP_BROWSER_HEADLESS)
   return()
 endif()
