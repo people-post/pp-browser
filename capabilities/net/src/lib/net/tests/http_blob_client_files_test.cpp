@@ -126,7 +126,7 @@ std::string IsoMinutesAgo(const int minutes) {
   const time_t at = static_cast<time_t>(util::NowUnixMs() / 1000) - static_cast<time_t>(minutes) * 60;
   std::tm tm{};
   EXPECT_TRUE(civil_time::UtcTime(at, &tm));
-  char text[32];
+  char text[64]; // wide enough for GCC's worst-case %d analysis (-Wformat-truncation)
   std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02d.000Z", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                 tm.tm_hour, tm.tm_min, tm.tm_sec);
   return text;
