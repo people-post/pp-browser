@@ -18,11 +18,15 @@
 
 namespace pbr {
 
-CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, ICallSessionStore& sessions,
+CallSessionWorkflow::CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions,
                                          CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing,
                                          LiveCalls& live_calls, LiveCallMedia& call_media)
-    : store_(store), sessions_(sessions), key_exchange_(key_exchange), billing_(billing),
-      live_calls_(live_calls), call_media_(call_media) {
+    : threads_(threads),
+      sessions_(sessions),
+      key_exchange_(key_exchange),
+      billing_(billing),
+      live_calls_(live_calls),
+      call_media_(call_media) {
   redirectLogger("CallSessionWorkflow");
 }
 
@@ -212,7 +216,7 @@ Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thr
   if (pending->has_value()) {
     return Error("Decline the incoming call first");
   }
-  auto thread = store_.GetThread(origin_thread_id);
+  auto thread = threads_.GetThread(origin_thread_id);
   if (!thread || !*thread) {
     return Error("Origin thread not found");
   }
@@ -1841,7 +1845,7 @@ std::optional<CallSession> CallSessionWorkflow::JoinableCallInThread(const std::
   if (!local) {
     return std::nullopt;
   }
-  auto thread = store_.GetThread(thread_id);
+  auto thread = threads_.GetThread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
     return std::nullopt;
   }

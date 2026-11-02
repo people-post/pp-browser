@@ -2,14 +2,12 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "common/thread/IThreadStore.h"
+#include "common/thread/IThreadTranscript.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/ICallSessionStore.h"
-#include "lib/people/ContactsStore.h"
-#include "lib/people/IdentityStore.h"
+#include "common/directory/ILocalAccount.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "lib/delivery/IPeerSessionStore.h"
 
 #include <functional>
 #include <mutex>
@@ -27,8 +25,8 @@ namespace pbr {
  */
 class CallControlClient : public Module {
 public:
-  CallControlClient(IThreadStore& store, IdentityStore& identity, ICallSessionStore& sessions,
-                    IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery);
+  CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account, ICallSessionStore& sessions,
+                    const CallDeliveryPorts& delivery);
 
   Roe<std::string> LocalRelayIdentity() const;
   /** Signaling to `peer_identity` on the control lane. */
@@ -51,18 +49,20 @@ public:
   Roe<void> SendMediaKey(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
                          const std::string& media_key_id, const ByteVector& key_bytes);
 
-  /** The E2E session key with `peer_identity` (ensured when missing) — media keys are wrapped under it. */
-  Roe<ByteVector> ResolvePeerSessionKey(const std::string& peer_identity) const;
+  /**
+   * The e2e_public session key with `peer_identity` (delivery's: opened when missing) — media keys are
+   * wrapped under it. A key_init the session still carries rides the next SendDirect to that peer.
+   */
+  Roe<ByteVector> SessionKeyWith(const std::string& peer_identity) const;
 
 private:
-  IThreadStore& store_;
-  IdentityStore& identity_;
+  IThreadTranscript& transcript_;
+  const ILocalAccount& account_;
   ICallSessionStore& sessions_;
-  IPeerSessionStore& psk_store_;
   const CallDeliveryPorts& delivery_;
   /**
    * AutoKey key_init from ensure_peer_session_key — rides the next SendDirect to that peer (the
-   * peer needs it to derive the session key the media key is wrapped under).
+   * peer needs it to open the session the media key is wrapped under).
    */
   mutable std::mutex pending_key_init_mutex_;
   mutable std::unordered_map<std::string, std::string> pending_key_init_;

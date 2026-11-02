@@ -8,7 +8,7 @@
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
-#include "lib/people/ContactsStore.h"
+#include "lib/people/IContactBook.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallHopDriver.h"
@@ -95,7 +95,7 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, MediaEngine& media);
+  CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts, MediaEngine& media);
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
   CallTopologyController& operator=(const CallTopologyController&) = delete;
@@ -301,7 +301,7 @@ private:
 
   HostPorts host_;
   ICallSessionStore& sessions_;
-  ContactsStore& contacts_;
+  const IContactBook& contacts_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   SharedPorts<CallTopologySeatPorts> seat_;

@@ -191,10 +191,10 @@ protected:
     EXPECT_FALSE(ui_->Available()) << "before BuildSessions";
 
     CallStackDeps deps;
-    deps.store = store_.get();
+    deps.threads = store_.get();
+    deps.transcript = store_.get();
     deps.contacts = contacts_.get();
-    deps.identity = identity_.get();
-    deps.psk = store_.get();
+    deps.account = identity_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
                                         const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
       ++sent_control_;

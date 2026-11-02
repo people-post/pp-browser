@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/directory/IContactTrustAccess.h"
+#include "lib/people/IContactBook.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "lib/people/ContactTypes.h"
@@ -15,7 +16,7 @@
 
 namespace pbr {
 
-class ContactsStore : public Module, public IContactTrustAccess {
+class ContactsStore : public Module, public IContactBook, public IContactTrustAccess {
 public:
   /**
    * Nested local/remote contact rows (+ empty overrides). Unversioned files migrate on load.
@@ -25,12 +26,12 @@ public:
 
   explicit ContactsStore(std::string data_dir);
 
-  Roe<std::vector<Contact>> List() const;
+  Roe<std::vector<Contact>> List() const override;
   Roe<std::optional<Contact>> Get(const std::string& contact_id) const;
   /** Exact match on contact.ids[].value; when kind is set, also requires matching kind. */
   Roe<std::optional<Contact>> FindByIdentity(const std::string& identity_value,
-                                             std::optional<mesh::ContactIdKind> kind = std::nullopt) const;
-  Roe<Contact> Upsert(const Contact& contact);
+                                             std::optional<mesh::ContactIdKind> kind = std::nullopt) const override;
+  Roe<Contact> Upsert(const Contact& contact) override;
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
   Roe<Contact> AddFromDirectoryHit(const mesh::DirectoryHit& hit);

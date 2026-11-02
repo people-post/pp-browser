@@ -6,7 +6,7 @@
 
 namespace pbr {
 
-CallInitiationBilling::CallInitiationBilling(IdentityStore& identity) : identity_(identity) {
+CallInitiationBilling::CallInitiationBilling(const ILocalAccount& account) : account_(account) {
   redirectLogger("CallInitiationBilling");
 }
 
@@ -67,7 +67,7 @@ void CallInitiationBilling::FillAccept(const int64_t offer_minor, const Initiati
   // P001: the recipient chooses waive (0) or take_all (rails checked before).
   if (store_) {
     accept.offer_amount_minor = offer_minor;
-    accept.charge_decision = InitiationChargeDecisionToWire(decision);
+    accept.charge_decision = decision;
   }
 }
 
@@ -82,8 +82,8 @@ bool CallInitiationBilling::TakeInboundOffer(const std::string& sender_identity,
     return true;
   }
   int64_t local_floor = 0;
-  if (auto id = identity_.Get()) {
-    local_floor = id->initiation_floor;
+  if (auto floor = account_.InitiationFloor()) {
+    local_floor = *floor;
   }
   if (local_floor <= 0) {
     return true;

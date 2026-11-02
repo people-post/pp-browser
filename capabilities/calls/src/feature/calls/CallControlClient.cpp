@@ -8,7 +8,6 @@
 #include "lib/delivery/PairwiseFanoutLogic.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/SessionKeyDeriver.h"
 
 #include <utility>
 #include "common/PbrCompat.h"
@@ -16,18 +15,18 @@
 
 namespace pbr {
 
-CallControlClient::CallControlClient(IThreadStore& store, IdentityStore& identity, ICallSessionStore& sessions,
-                                     IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery)
-    : store_(store), identity_(identity), sessions_(sessions), psk_store_(psk_store), delivery_(delivery) {
+CallControlClient::CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account,
+                                     ICallSessionStore& sessions, const CallDeliveryPorts& delivery)
+    : transcript_(transcript), account_(account), sessions_(sessions), delivery_(delivery) {
   redirectLogger("CallControlClient");
 }
 
 Roe<std::string> CallControlClient::LocalRelayIdentity() const {
-  auto identity = identity_.Get();
-  if (!identity || identity->account_id.empty()) {
+  auto account = account_.GetAccountId();
+  if (!account || account->empty()) {
     return Error("Local account identity unavailable");
   }
-  return identity->account_id;
+  return *account;
 }
 
 Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const CallControlType type,
@@ -70,7 +69,7 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
   if (summary.group && local_only) {
     message_id = GroupCallSummaryMessageId(summary.call_id);
     std::optional<CallSummaryDetail> existing;
-    auto row = store_.GetMessage(thread_id, message_id);
+    auto row = transcript_.GetMessage(thread_id, message_id);
     if (!row) {
       return row.error();  // could not read it: do not write over a record that may be there
     }
@@ -120,7 +119,7 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
   }
   message->sender_contact_id = kLocalSelfContactId;
   // Upsert, not get-then-write: the leave, the call's end and a restart cleanup may write at once.
-  if (auto appended = message_id.empty() ? store_.AppendMessage(*message) : store_.UpsertMessage(*message);
+  if (auto appended = message_id.empty() ? transcript_.AppendMessage(*message) : transcript_.UpsertMessage(*message);
       !appended) {
     return appended.error();
   }
@@ -171,60 +170,25 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
   return {};
 }
 
-Roe<ByteVector> CallControlClient::ResolvePeerSessionKey(const std::string& peer_identity) const {
-  PeerSessionKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
-  target_key.peer_identity_value = peer_identity;
-  target_key.channel = CryptoChannel::E2ePublic;
-
-  auto record = psk_store_.Load(target_key);
-  if (!record) {
-    return record.error();
+Roe<ByteVector> CallControlClient::SessionKeyWith(const std::string& peer_identity) const {
+  if (!delivery_.ensure_peer_session_key) {
+    return Error("Call delivery not bound");
   }
-  if (!record->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-        pending_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK session for peer");
+  auto ensured = delivery_.ensure_peer_session_key(peer_identity);
+  if (!ensured) {
+    return ensured.error();
   }
-  const uint32_t active_epoch = (*record)->session_epoch;
-  auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, active_epoch);
-  if (!master_psk_b64) {
-    return master_psk_b64.error();
+  if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
+    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
+    pending_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
   }
-  if (!master_psk_b64->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-        pending_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK for active session epoch");
-  }
-  auto master_psk = Base64Decode(**master_psk_b64);
-  if (!master_psk) {
-    return master_psk.error();
-  }
-  return SessionKeyDeriver::Derive(*master_psk, CryptoChannel::E2ePublic, active_epoch);
+  return std::move(ensured->session_key);
 }
 
 Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std::string& peer_identity,
                                                  const uint32_t media_epoch, const std::string& media_key_id,
                                                  const ByteVector& key_bytes) {
-  auto session_key = ResolvePeerSessionKey(peer_identity);
+  auto session_key = SessionKeyWith(peer_identity);
   if (!session_key) {
     return session_key.error();
   }

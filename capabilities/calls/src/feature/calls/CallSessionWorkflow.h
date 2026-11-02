@@ -5,7 +5,7 @@
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "common/thread/IThreadStore.h"
+#include "common/thread/IThreadCatalog.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
@@ -136,9 +136,8 @@ public:
     bool IsBound() const { return wire.IsBound(); }
   };
 
-  CallSessionWorkflow(IThreadStore& store, ICallSessionStore& sessions,
-                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
-                      LiveCallMedia& call_media);
+  CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions, CallMediaKeyExchange& key_exchange,
+                      CallInitiationBilling& billing, LiveCalls& live_calls, LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -347,7 +346,7 @@ private:
   void PostRosterAfterAccept(const std::string& call_id, const std::string& inviter, const std::string& local_identity);
   void SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after);
   void SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after);
-  IThreadStore& store_;
+  const IThreadCatalog& threads_;
   ICallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
   CallMediaKeyExchange& key_exchange_;

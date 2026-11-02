@@ -5,12 +5,12 @@
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallStores.h"
-#include "lib/delivery/IPeerSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "common/thread/IThreadStore.h"
-#include "lib/people/ContactsStore.h"
-#include "lib/people/IdentityStore.h"
+#include "common/thread/IThreadCatalog.h"
+#include "common/thread/IThreadTranscript.h"
+#include "lib/people/IContactBook.h"
+#include "common/directory/ILocalAccount.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "lib/calls/CallPathPolicy.h"
 #include "feature/calls/CallMediaBridge.h"
@@ -51,10 +51,12 @@ namespace pbr {
  * CallUiBackend binds a CallStack& directly (not the hub) for call APIs.
  */
 struct CallStackDeps {
-  IThreadStore* store = nullptr;
-  ContactsStore* contacts = nullptr;
-  IdentityStore* identity = nullptr;
-  IPeerSessionStore* psk = nullptr;
+  /** The chats a call starts from (a call's thread). */
+  const IThreadCatalog* threads = nullptr;
+  /** Where a call's summary lands when it cannot be sent. */
+  IThreadTranscript* transcript = nullptr;
+  IContactBook* contacts = nullptr;
+  const ILocalAccount* account = nullptr;
   /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
   /** Where call control is bound as a system-control family (after the CSM is built; unbound with it). */

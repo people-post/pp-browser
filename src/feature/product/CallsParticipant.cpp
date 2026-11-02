@@ -19,10 +19,10 @@ namespace {
 CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   CallStackDeps deps;
   deps.address_disclosure = &hub.AddressDisclosure();
-  deps.store = &hub.Store();
+  deps.threads = &hub.Store();
+  deps.transcript = &hub.Store();
   deps.contacts = &hub.Contacts();
-  deps.identity = &hub.Identity();
-  deps.psk = hub.PeerSessions();
+  deps.account = &hub.Identity();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
                                         const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {

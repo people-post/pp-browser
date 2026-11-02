@@ -69,7 +69,7 @@
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/media/MediaEngine.h"
+#include "lib/media/IMediaView.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -312,21 +312,20 @@ public:
     out.set("show_invite", screen.show_invite);
     out.set("group", screen.group);
     if (calls_->Available()) {
-      if (MediaEngine* media = product_->Calls().Stack().Engine()) {
-        const auto health = media->HealthSnapshot();
-        out.set("media_active", media->IsActive());
-        out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
-        out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
-        out.set("sfu_mode", health.sfu_mode);
-        std::vector<Value> streams;
-        for (const MediaStreamHealth& stream : health.streams) {
-          Object row;
-          row.set("stream_id", static_cast<int64_t>(stream.stream_id));
-          row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
-          streams.push_back(ObjectValue(std::move(row)));
-        }
-        out.set("streams", ArrayValue(std::move(streams)));
+      IMediaView& media = calls_->Media();
+      const auto health = media.HealthSnapshot();
+      out.set("media_active", media.IsActive());
+      out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
+      out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
+      out.set("sfu_mode", health.sfu_mode);
+      std::vector<Value> streams;
+      for (const MediaStreamHealth& stream : health.streams) {
+        Object row;
+        row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+        row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
+        streams.push_back(ObjectValue(std::move(row)));
       }
+      out.set("streams", ArrayValue(std::move(streams)));
       std::vector<Value> joined;
       if (!last_call_id_.empty()) {
         if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {

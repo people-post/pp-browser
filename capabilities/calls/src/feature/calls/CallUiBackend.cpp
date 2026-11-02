@@ -304,7 +304,7 @@ bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const 
   return false;
 }
 
-MediaEngine& CallUiBackend::Media() {
+IMediaView& CallUiBackend::Media() {
   auto* calls = stack_.Calls();
   if (!calls) {
     throw std::runtime_error("CallUiBackend::Media unavailable");

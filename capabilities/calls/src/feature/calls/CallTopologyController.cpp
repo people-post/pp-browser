@@ -36,7 +36,8 @@
 
 namespace pbr {
 
-CallTopologyController::CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, MediaEngine& media)
+CallTopologyController::CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts,
+                                               MediaEngine& media)
     : hop_migrate_(sessions, media),
       flight_(hop_migrate_.Flight()),
       attach_wait_(hop_migrate_.AttachWaitState()),

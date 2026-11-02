@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/media/GuardedVideoCodec.h"
+#include "lib/media/IMediaView.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "common/media_engine/MediaEngineHealth.h"
@@ -30,16 +31,8 @@ namespace pbr {
  * layers L016). So no caller — the calls owner above all — ever waits on a device or a hardware
  * codec here, and a stuck one holds only the session that used it.
  */
-class MediaEngine : public Module {
+class MediaEngine : public Module, public IMediaView {
 public:
-  struct VideoTileFrame {
-    int width = 0;
-    int height = 0;
-    /** Premultiplied RGBA8. */
-    std::vector<uint8_t> rgba;
-    uint64_t seq = 0;
-  };
-
   using StateChangedFn = std::function<void(const std::string& state)>;
 
   /**
@@ -114,7 +107,7 @@ public:
    * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
    */
   void ClearRemoteAudioTracks();
-  bool IsSfuMode() const;
+  bool IsSfuMode() const override;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();
   /**
@@ -124,23 +117,23 @@ public:
   bool WaitForRetiredSessions(std::chrono::milliseconds budget);
 
   void SetMuted(bool muted);
-  bool IsMuted() const;
+  bool IsMuted() const override;
 
   /**
    * Reopen SDL capture/playback on the capture worker (Android speaker route / SoftMigrate).
    * Safe while media is active; no-op if capture is not running.
    */
-  void RequestAudioDeviceReopen();
+  void RequestAudioDeviceReopen() override;
 
   /** What to send at, from the feature's adaptation policy (calls: V024): the camera gate and bitrates. */
   void ApplyTargets(const MediaTargets& targets);
 
   /** 0..1 receiver/path pressure for adaptation (V032). */
-  double PathPressure() const;
+  double PathPressure() const override;
   /** Hop/send path observed a drop — raises pressure (V032). */
   void NoteOutboundDrop();
   /** Snapshot for chrome / logs (V032 instrumentation). */
-  MediaEngineHealth HealthSnapshot() const;
+  MediaEngineHealth HealthSnapshot() const override;
 
   /**
    * Request the camera on / off (best-effort: never kills voice, V019). Call on the UI thread (reads display rotation). Enabling is
@@ -164,45 +157,45 @@ public:
    * The display turned while the camera is on (read on UI via `CameraDisplayRotationDegrees`): later
    * frames rotate to match without reopening the camera or reconfiguring the encoder. Any thread.
    */
-  void UpdateCameraDisplayRotation(int display_rotation_deg);
+  void UpdateCameraDisplayRotation(int display_rotation_deg) override;
   /**
    * Phones: switch between the front and rear camera while the camera is on (error when it is off).
    * Asynchronous like SetCameraEnabled: the video thread releases the camera and opens the other
    * facing; the next call starts with the front camera again. Any thread.
    */
-  Roe<void> FlipCamera();
+  Roe<void> FlipCamera() override;
   /** Facing of the camera the engine last opened (false before any open). */
   bool CameraFrontFacing() const;
   /** The camera is wanted: on, opening, or waiting for the device (CameraWaitingForDevice). */
-  bool IsCameraEnabled() const;
+  bool IsCameraEnabled() const override;
   /**
    * The camera was asked for but is held by someone else or not responding: it opens by itself when
    * the device is free again (L016). TakeCameraFailure reported it once.
    */
-  bool CameraWaitingForDevice() const;
+  bool CameraWaitingForDevice() const override;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
-  std::optional<std::string> TakeCameraFailure();
+  std::optional<std::string> TakeCameraFailure() override;
   /**
    * True when a fresh remote decoded frame is available (not stalled / cleared).
    * Call RefreshRemoteVideoHealth() from the UI tick before reading.
    */
-  bool HasRemoteVideo() const;
+  bool HasRemoteVideo() const override;
   /** Soft stall: frames aged past soft threshold but not yet cleared. */
-  bool IsRemoteVideoStalling() const;
+  bool IsRemoteVideoStalling() const override;
   /** A remote frame arrived within the last within_ms (frames are still flowing). */
-  bool IsRemoteVideoLive(int64_t within_ms) const;
+  bool IsRemoteVideoLive(int64_t within_ms) const override;
   /** True after at least one remote frame this media session (survives hard-stall clear). */
-  bool EverHadRemoteVideo() const;
+  bool EverHadRemoteVideo() const override;
   /** Drop last remote frame (camera off, leave, hard stall, connection dead). */
-  void ClearRemoteVideo();
+  void ClearRemoteVideo() override;
   /**
    * UI-tick health: clear remote video on hard frame stall or failed/closed connection.
    */
-  void RefreshRemoteVideoHealth();
-  bool VideoEncoderAvailable() const;
+  void RefreshRemoteVideoHealth() override;
+  bool VideoEncoderAvailable() const override;
   /** The uplink the path last quoted per user (A↑; 0 = unknown / unbounded), for the feature's policy. */
   void NoteUplinkBudget(int64_t per_user_up_bps);
-  int64_t UplinkBudget() const;
+  int64_t UplinkBudget() const override;
   /** Force next encoded AU to be an IDR (SoftMigrate / call_video_refresh). */
   void RequestVideoKeyframe();
   /**
@@ -215,31 +208,31 @@ public:
   /** Test-only: codecs for the local encoder / remote decoders (default: platform HW). Before Start. */
   void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
-  std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
+  std::vector<uint32_t> TakePendingVideoRefreshStreamIds() override;
   /** Test-only: the stream ids waiting for an IDR, without draining them. */
   std::vector<uint32_t> PendingVideoRefreshStreamsForTest() const;
 
-  bool IsActive() const;
-  bool IsConnected() const;
+  bool IsActive() const override;
+  bool IsConnected() const override;
   /** Update chrome-facing SFU connection state (e.g. libp2p pending direct stream). */
   void SetConnectionState(const std::string& state);
-  std::string ActiveCallId() const;
-  std::string ConnectionState() const;
+  std::string ActiveCallId() const override;
+  std::string ConnectionState() const override;
   int64_t ConnectedAtMs() const;
   /** Wall time when StartSfu succeeded (0 if inactive). */
   int64_t StartedAtMs() const;
   /** False when mic open failed (silence sent); used for permission hints. */
-  bool HasLocalCapture() const;
+  bool HasLocalCapture() const override;
 
-  float LocalInputLevel() const;
-  float RemoteOutputLevel() const;
+  float LocalInputLevel() const override;
+  float RemoteOutputLevel() const override;
 
   /** Copy latest local preview / remote decoded frames (empty if none). */
-  bool CopyLocalVideoFrame(VideoTileFrame& out) const;
-  bool CopyRemoteVideoFrame(VideoTileFrame& out) const;
+  bool CopyLocalVideoFrame(VideoTileFrame& out) const override;
+  bool CopyRemoteVideoFrame(VideoTileFrame& out) const override;
   /** Group: copy decoded frame for a publisher stream_id (0 = primary remote). */
-  bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const;
-  bool HasRemoteVideoForStream(uint32_t stream_id) const;
+  bool CopyRemoteVideoFrameForStream(uint32_t stream_id, VideoTileFrame& out) const override;
+  bool HasRemoteVideoForStream(uint32_t stream_id) const override;
 
 private:
   struct Impl;

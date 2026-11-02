@@ -34,6 +34,7 @@
 #include <atomic>
 #include <optional>
 #include "feature/calls/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/seeded_session_key.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -250,9 +251,10 @@ protected:
     };
     delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
+    delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
 
-    csm_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *sessions_, *keys_,
-                                                std::move(delivery), *psk_, *media_);
+    csm_ = std::make_unique<CallSessionManager>(*store_, *store_, *contacts_, *identity_, *sessions_, *keys_,
+                                                std::move(delivery), *media_);
     csm_->SetOutbox(csm_events_.Get());  // the fixture plays the stack
     // The manager owns the 1:1 path, as in the product: attach it on the fake transport.
     CallDirectPathDeps direct;

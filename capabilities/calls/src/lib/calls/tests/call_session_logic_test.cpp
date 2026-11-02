@@ -316,13 +316,13 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   CallAcceptDetail accept;
   accept.call_id = "call:pay";
   accept.identity = "account:b";
-  accept.charge_decision = "take_all";
+  accept.charge_decision = InitiationChargeDecision::TakeAll;
   accept.offer_amount_minor = 25;
   auto encoded_accept = CallControlCodec::EncodeAccept(accept);
   ASSERT_TRUE(encoded_accept);
   auto decoded_accept = CallControlCodec::DecodeAccept(*encoded_accept);
   ASSERT_TRUE(decoded_accept);
-  EXPECT_EQ(decoded_accept->charge_decision, "take_all");
+  EXPECT_EQ(decoded_accept->charge_decision, InitiationChargeDecision::TakeAll);
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
 

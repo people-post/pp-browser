@@ -36,9 +36,8 @@ void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn,
   }
 }
 
-void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
-                         const std::string& identity, const CallPeerCaps& caps,
-                         const std::vector<std::string>& listen_multiaddrs) {
+void NoteCapsForIdentity(CallSessionManager& sessions, const IContactBook& contacts, const std::string& identity,
+                         const CallPeerCaps& caps, const std::vector<std::string>& listen_multiaddrs) {
   if (!caps.present && listen_multiaddrs.empty()) {
     return;
   }
@@ -64,25 +63,26 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
 
 } // namespace
 
-CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
+CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTranscript& transcript,
+                                       IContactBook& contacts, const ILocalAccount& account,
                                        ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                                       CallDeliveryPorts delivery, IPeerSessionStore& psk_store, MediaEngine& media)
+                                       CallDeliveryPorts delivery, MediaEngine& media)
     : contacts_(contacts),
       sessions_(sessions),
       media_keys_(media_keys),
       delivery_(std::move(delivery)),
       media_(media),
       topology_(sessions, contacts, media),
-      control_(store, identity, sessions, psk_store, delivery_),
+      control_(transcript, account, sessions, delivery_),
       key_exchange_(
           sessions, media_keys,
           CallMediaKeyExchange::Transport{
-              [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); },
+              [this](const std::string& peer) { return control_.SessionKeyWith(peer); },
               [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
                      const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
-      billing_(identity),
+      billing_(account),
       reach_signals_(control_),
-      workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_),
+      workflow_(threads, sessions, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
@@ -515,7 +515,7 @@ void CallSessionManager::Handle(SessionEvent& event) {
       event);
 }
 
-void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
+void CallSessionManager::SetInitiationBillingStore(IInitiationBillingBook* store) {
   billing_.SetStore(store);
 }
 

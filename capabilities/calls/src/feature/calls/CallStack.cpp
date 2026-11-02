@@ -4,8 +4,6 @@
 #include "common/MeshConfig.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/PeerCapsLogic.h"
-#include "lib/people/ContactsStore.h"
-#include "lib/people/IdentityStore.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
@@ -380,9 +378,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     return;
   }
   deps_ = deps;
-  call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
-                                                        *call_session_store_, *call_media_keys_, deps_.delivery,
-                                                        *deps_.psk, *call_media_engine_);
+  call_sessions_ = std::make_unique<CallSessionManager>(*deps_.threads, *deps_.transcript, *deps_.contacts,
+                                                        *deps_.account, *call_session_store_, *call_media_keys_,
+                                                        deps_.delivery, *call_media_engine_);
   BindSessionOutbox();
   BindCallControlInbound();
   // No manager tracks the calls left open in the store (a previous run, or one reset since).

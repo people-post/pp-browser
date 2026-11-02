@@ -1,16 +1,16 @@
 #pragma once
 
 #include "mesh/types/AddressDisclosure.h"
-#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/pricing/PricingTypes.h"
-#include "lib/pricing/InitiationBillingStore.h"
-#include "common/thread/IThreadStore.h"
-#include "lib/people/ContactsStore.h"
-#include "lib/people/IdentityStore.h"
+#include "lib/pricing/IInitiationBillingBook.h"
+#include "common/thread/IThreadCatalog.h"
+#include "common/thread/IThreadTranscript.h"
+#include "lib/people/IContactBook.h"
+#include "common/directory/ILocalAccount.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
@@ -78,9 +78,9 @@ public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
 
-  CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, ICallSessionStore& sessions,
-                     ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery, IPeerSessionStore& psk_store,
-                     MediaEngine& media);
+  CallSessionManager(const IThreadCatalog& threads, IThreadTranscript& transcript, IContactBook& contacts,
+                     const ILocalAccount& account, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
+                     CallDeliveryPorts delivery, MediaEngine& media);
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -175,8 +175,7 @@ public:
     call_media_.BindDirectDriver(direct);
   }
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
-  void SetInitiationBillingStore(InitiationBillingStore* store);
-  InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
+  void SetInitiationBillingStore(IInitiationBillingBook* store);
   /** Offer amount stored for inviter when inbound invite carried pricing. */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
@@ -389,8 +388,7 @@ private:
   /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
   void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
-
-  ContactsStore& contacts_;
+  IContactBook& contacts_;
   ICallSessionStore& sessions_;
   ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;

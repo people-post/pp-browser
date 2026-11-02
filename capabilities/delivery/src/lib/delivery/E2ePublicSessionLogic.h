@@ -6,6 +6,7 @@
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -46,6 +47,13 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
                                                       const PeerSessionKey& target_key,
                                                       uint32_t session_epoch,
                                                       const ByteVector& peer_kem_public);
+/**
+ * Same, asking for the peer's KEM public key only when the session has to be opened: an open session
+ * never waits on a directory lookup for a key it does not need.
+ */
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                       uint32_t session_epoch,
+                                                       const std::function<Roe<ByteVector>()>& peer_kem_public);
 
 /**
  * What reading an authenticated envelope (signature verified) proves about the pair's session, and

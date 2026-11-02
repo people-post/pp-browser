@@ -7,6 +7,7 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
+#include "lib/media/IMediaView.h"
 #include "lib/calls/LiveCall.h"
 
 #include <functional>
@@ -18,7 +19,6 @@
 
 namespace pbr {
 
-class MediaEngine;
 class CallSessionManager;
 class CallStack;
 
@@ -29,7 +29,8 @@ class CallStack;
  * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
  *   publishes after each step (`CallStack::UiState`);
  * - **durable state** (invites, sessions, participants) reads the stores directly (read-only);
- * - `Media()` is the engine, which synchronizes itself (levels, video, health for the GUI).
+ * - `Media()` is the engine as the screen sees it (`IMediaView`: levels, video, health, device-local
+ *   knobs), which synchronizes itself — never session control.
  * Queries go through stack.Calls() per call so stack rebuilds stay transparent. Application owns
  * the instance (bound to ConversationsHub::CallStackRef()); CallController binds via
  * CallFunctionalPorts. UI thread.
@@ -142,7 +143,7 @@ public:
   std::string LastRingCallId() const { return State()->last_ring_call_id; }
   std::string ActiveCallId() const { return State()->active_call_id; }
 
-  MediaEngine& Media();
+  IMediaView& Media();
 
 private:
   /** Run `op` on the calls owner with the current session manager (skipped when there is none). */

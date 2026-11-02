@@ -4,7 +4,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/CallAudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
-#include "lib/media/MediaEngine.h"
+#include "lib/media/IMediaView.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/DeviceVitals.h"
 #include "common/media/CallMediaHealth.h"
@@ -896,7 +896,7 @@ void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
 
-void CallController::ApplyAudioLevels(MediaEngine& media) {
+void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
 
   auto& in_call = in_call_;
@@ -1026,7 +1026,7 @@ void CallController::ApplyAudioLevels(MediaEngine& media) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
 
-  MediaEngine::VideoTileFrame local_tile;
+  IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
   if (in_call.local_preview) {
     CallVideoTileRenderer::Frame frame;
@@ -1037,7 +1037,7 @@ void CallController::ApplyAudioLevels(MediaEngine& media) {
     CallVideoTileRenderer::Instance().SubmitLocalFrame(std::move(frame));
   }
   if (in_call.remote_video) {
-    MediaEngine::VideoTileFrame remote_tile;
+    IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
@@ -1061,7 +1061,7 @@ void CallController::ApplyAudioLevels(MediaEngine& media) {
       continue;
     }
     live_peer_streams.push_back(stream);
-    MediaEngine::VideoTileFrame peer_tile;
+    IMediaView::VideoTileFrame peer_tile;
     if (!media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
       continue;
     }
@@ -1157,7 +1157,7 @@ void CallController::ApplyAudioLevels(MediaEngine& media) {
   ApplyMediaHealth(media, backend, media_reconnect || mesh_messaging_failed);
 }
 
-CallMediaHealthView CallController::BuildMediaHealthView(MediaEngine& media, CallUiBackend* backend,
+CallMediaHealthView CallController::BuildMediaHealthView(IMediaView& media, CallUiBackend* backend,
                                                          const bool media_reconnect) const {
   CallMediaHealthInput in;
   in.engine = media.HealthSnapshot();
@@ -1194,7 +1194,7 @@ void CallController::SampleLinkHealth(CallUiBackend* backend, const int64_t now_
   link_counters_ = now;
 }
 
-void CallController::ApplyMediaHealth(MediaEngine& media, CallUiBackend* backend, const bool media_reconnect) {
+void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend, const bool media_reconnect) {
   auto& in_call = in_call_;
   if (!in_call.active) {
     return;

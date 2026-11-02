@@ -201,10 +201,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   PublishAddressDisclosure();
   CallStackDeps deps;
   deps.address_disclosure = &address_disclosure_;
-  deps.store = store_.get();
+  deps.threads = store_.get();
+  deps.transcript = store_.get();
   deps.contacts = contacts_.get();
-  deps.identity = identity_.get();
-  deps.psk = psk_.get();
+  deps.account = identity_.get();
   // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
   deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
   deps.mesh = [this]() -> mesh::MeshHost* { return host_.get(); };
@@ -250,7 +250,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;
-  reach.contacts = deps.contacts;
+  reach.contacts = contacts_.get();
   reach.mesh_config = deps.mesh_config;
   reach.list_directory_nodes = deps.list_directory_nodes;
   reach.list_dht_nodes = deps.list_dht_nodes;
