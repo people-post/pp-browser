@@ -6,7 +6,9 @@
 #include "lib/media/QrScanner.h"
 #include "foundation/runtime/AppLifecycle.h"
 
+#include <ui/base/ObserverPtr.h>
 #include <ui/base/Types.h>
+#include <ui/dom/Element.h>
 
 namespace ui {
 class Context;
@@ -36,12 +38,14 @@ private:
   void BeginCapture();
   void OnDismissed();
   void Dirty();
+  void FindPreview();
 
   QrScanner scanner_;
   ShellNavigationPorts navigation_;
   FlowCoordinatorPorts flow_;
   QrScanResultCallback on_result_;
   ui::Context* context_ = nullptr;
+  ui::ObserverPtr<ui::Element> preview_;
   int layer_id_ = -1;
   ui::String status_;
   bool failed_ = false;

@@ -95,6 +95,7 @@ void QrScanController::OnDismissed() {
 }
 
 void QrScanController::Close() {
+  preview_ = nullptr;
   scanner_.Stop();
   on_result_ = nullptr;
   const int layer = layer_id_;
@@ -139,18 +140,25 @@ void QrScanController::Tick() {
   }
   if (update.preview && context_) {
     status_ = Tr("scan.hint");
-    for (int i = 0; i < context_->GetNumDocuments(); ++i) {
-      auto* document = context_->GetDocument(i);
-      if (!document) {
-        continue;
-      }
-      auto* element = document->GetElementById("qr-scan-preview");
-      if (auto* preview = dynamic_cast<ElementScanPreview*>(element)) {
-        preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
-        break;
-      }
+    if (!preview_) {
+      FindPreview();
+    }
+    if (auto* preview = static_cast<ElementScanPreview*>(preview_.get())) {
+      preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
     }
     Dirty();
+  }
+}
+
+// Looked up once per scan surface; the observer pointer empties itself when the element goes away.
+void QrScanController::FindPreview() {
+  for (int i = 0; i < context_->GetNumDocuments(); ++i) {
+    auto* document = context_->GetDocument(i);
+    auto* element = document ? document->GetElementById("qr-scan-preview") : nullptr;
+    if (dynamic_cast<ElementScanPreview*>(element)) {
+      preview_ = element->GetObserverPtr();
+      return;
+    }
   }
 }
 
