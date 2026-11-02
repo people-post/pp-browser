@@ -596,11 +596,6 @@ CallMedia::View CallDevice::ActivePathsView() const {
   return call ? call->PathsView() : CallMedia::View{};
 }
 
-CallDirectPath* CallDevice::DirectPathForTest(const std::string& call_id) {
-  CallMedia* call = call_media_.Find(call_id);
-  return call ? dynamic_cast<CallDirectPath*>(call->DirectIfBuilt()) : nullptr;
-}
-
 void CallDevice::SetDirectPathFactoryForTest(CallDirectPathFactory make) {
   call_media_.DropDirectPaths();
   if (make) {

@@ -526,8 +526,16 @@ TEST_F(CallSessionInboundComposeTest, ADuplicateResumeThatFailsLeavesTheResumedC
   live.NoteMediaFailed(call_id);
   ASSERT_EQ(device_->Live().Phase(), CallPhase::ConnectFailed);
 
-  OnCallsOwner([&] { device_->PeerReconnectedForTest(call_id); });
-  OnCallsOwner([&] { device_->PeerReconnectedForTest(call_id); }); // ignored: no longer failed
+  // What the call's 1:1 path reports when the peer's connection for the failed call reaches it.
+  const auto peer_reconnected = [&] {
+    CallMedia* media = device_->CallMediaOf().Media(call_id);
+    ASSERT_TRUE(media && media->Direct());
+    SessionEvent report{
+        session_event::FromDirectPath{call_id, media->DirectSerial(), direct_report::PeerReconnected{call_id}}};
+    device_->Handle(report);
+  };
+  OnCallsOwner(peer_reconnected);
+  OnCallsOwner(peer_reconnected);    // ignored: no longer failed
   live.NoteMediaConnected(call_id);  // the first resume committed the peer's stream
   AppRuntime::RunAllOwnerTasks();    // the queued resume finds nothing to resume and fails
   EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);

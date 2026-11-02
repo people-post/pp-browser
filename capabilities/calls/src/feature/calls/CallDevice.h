@@ -84,7 +84,6 @@ public:
   const MediaEngine& Engine() const { return media_; }
   /** The media seat (owned here: the calls' media arbitrate it). */
   const CallMediaSeat& Seat() const { return seat_; }
-  CallMediaSeat& SeatForTest() { return seat_; }
   /** Harnesses that seed store rows directly admit the call the way the workflow would. */
   LiveCalls& LiveCallsForTest() { return live_calls_; }
 
@@ -125,8 +124,6 @@ public:
   void DropDirectPath();
   /** The 1:1 path's arming / progress ports over the calls' media progress. */
   CallDirectArmingPorts DirectArmingPorts();
-  /** `call_id`'s 1:1 path if built (tests). */
-  CallDirectPath* DirectPathForTest(const std::string& call_id);
   /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
   void SetDirectPathFactoryForTest(CallDirectPathFactory make);
 
@@ -164,8 +161,6 @@ public:
   void KickAnswererDirectMediaIfArmed(const std::string& call_id);
   /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
   void RestartMedia(const std::string& call_id, bool resume);
-  /** What the direct path reports when the peer's connection for a failed call reaches us. */
-  void PeerReconnectedForTest(const std::string& call_id) { RestartMedia(call_id, true); }
 
   // --- What the device shows (the stack publishes it) ------------------------------------------
   /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
