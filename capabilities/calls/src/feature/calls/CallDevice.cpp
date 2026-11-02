@@ -338,11 +338,11 @@ std::string CallDevice::AcceptingCallId() const {
 
 void CallDevice::KickAnswererAfterAccept(const std::string& call_id) {
   if (!live_calls_.AllowsDirectPath(call_id)) {
-    log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << call_id
+    log().info << "AcceptSucceeded skip KickAnswerer StartDuplex call_id=" << call_id
                << " status=" << CallMediaStatusName(live_calls_.Status(call_id));
     return;
   }
-  log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << call_id;
+  log().info << "AcceptSucceeded KickAnswererDirectMedia StartDuplex arm call_id=" << call_id;
   KickAnswererDirectMediaIfArmed(call_id);
   // Once more, as the next event: the first kick can land before the 1:1 start is armed.
   outbox_.Emit(session_event::AnswererKickRetry{call_id});
@@ -386,10 +386,10 @@ void CallDevice::RetryAnswererKick(const std::string& call_id) {
   if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
     return;
   }
-  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+  if (media_.IsActive() && media_.ActiveSessionId() == call_id) {
     return;
   }
-  log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
+  log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartDuplex call_id=" << call_id;
   KickAnswererDirectMediaIfArmed(call_id);
 }
 
@@ -529,7 +529,7 @@ void CallDevice::StopMediaForSeat(const std::string& call_id, const uint64_t epo
     call->StopMedia();
     return;
   }
-  if (media_.IsActive() || media_.IsSfuMode()) { // a leftover with no live call here
+  if (media_.IsActive() || media_.IsPacketMode()) { // a leftover with no live call here
     media_.Stop();
   }
 }
@@ -747,8 +747,8 @@ void CallDevice::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
   }
   CallAnswererKickDecisionInput in;
   in.allows_direct_path = live_calls_.AllowsDirectPath(call_id);
-  // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
-  in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
+  // IsActive alone — do not require tx/connected (capture lags StartDuplex; dogfood e157 thrash).
+  in.media_already_active_same_call = media_.IsActive() && media_.ActiveSessionId() == call_id;
   in.peer_nonempty = !peer.empty();
   if (!ShouldKickAnswererDirectMedia(in)) {
     if (!in.allows_direct_path) {

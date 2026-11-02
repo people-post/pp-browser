@@ -59,12 +59,12 @@ void CallMedia::DropDirect() {
   direct_serial_ = 0;
 }
 
-Roe<void> CallMedia::StartEngine(const CallMediaPath path, MediaEngine::SfuSendFn send) {
+Roe<void> CallMedia::StartEngine(const CallMediaPath path, MediaEngine::PacketSendFn send) {
   CallMediaSeat* const seat = resources_.seat;
   if (seat && !seat->AllowsPathOp(seat->Acquire(call_id_))) {
     return Error("media seat will not hold call " + call_id_);
   }
-  if (auto started = Engine().StartSfu(call_id_, std::move(send)); !started) {
+  if (auto started = Engine().StartDuplex(call_id_, std::move(send)); !started) {
     return started;
   }
   if (seat) {
@@ -80,7 +80,7 @@ Roe<void> CallMedia::StartEngine(const CallMediaPath path, MediaEngine::SfuSendF
 }
 
 void CallMedia::StopEngine(const char* why) {
-  const std::string running = Engine().ActiveCallId();
+  const std::string running = Engine().ActiveSessionId();
   if (!running.empty() && running != call_id_) {
     // Parity: the stop paths always stopped leftover media (a drifted engine is worse than a stop).
     CallMediaLog().warning << "stopping engine running call_id=" << running << " for call_id=" << call_id_ << " ("
@@ -287,7 +287,7 @@ void CallMedia::StopMedia() {
     direct_->StopMeshMedia(call_id_); // tears the 1:1 path down, engine included
     return;
   }
-  if (Engine().IsActive() || Engine().IsSfuMode()) {
+  if (Engine().IsActive() || Engine().IsPacketMode()) {
     Engine().Stop();
   }
 }

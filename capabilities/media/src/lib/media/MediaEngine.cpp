@@ -3,8 +3,8 @@
 #include "mesh/types/MediaChannel.h"
 #include "lib/media/VideoLevelProfile.h"
 
-#include "lib/media/CallAudioSession.h"
-#include "lib/media/CallMediaPlayout.h"
+#include "lib/media/AudioSession.h"
+#include "lib/media/AudioPlayout.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
 #include "lib/media/DecodeStallPolicy.h"
@@ -71,7 +71,7 @@ constexpr const char* kEncoderStuckMessage = "Video isn't responding — restart
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
-/** A getter waiting this long for the media mutex is logged (B125), at most kMaxLockWaitWarns per call. */
+/** A getter waiting this long for the media mutex is logged (B125), at most kMaxLockWaitWarns per session. */
 constexpr int64_t kLockWaitWarnMs = 50;
 constexpr int kMaxLockWaitWarns = 10;
 /** A Stop() step (thread join, decoder hand-off, audio teardown) longer than this is a WARN (B128). */
@@ -95,7 +95,7 @@ int64_t SteadyNowMs() {
 /** A join still waiting after this logs which stage the thread is in (B128), then keeps waiting. */
 constexpr auto kJoinStageWarnAfter = std::chrono::milliseconds(2000);
 
-/** Where a media thread is (B128: Stop hung joining one; which call was it in?). */
+/** Where a media thread is (B128: Stop hung joining one; which session was it in?). */
 enum class MediaThreadStage : uint8_t {
   Idle,
   OpenDevices,  // capture: audio leases open / reopen
@@ -262,7 +262,7 @@ struct MediaEngine::Impl {
   /** The audio session generation when it retired (deactivate only if nothing activated since). */
   uint64_t audio_session_seen = 0;
   std::recursive_mutex mutex;
-  std::string call_id;
+  std::string session_id;
   std::atomic<bool> active{false};
   std::atomic<bool> connected{false};
   std::atomic<bool> muted{false};
@@ -278,12 +278,12 @@ struct MediaEngine::Impl {
   std::unordered_map<uint32_t, int64_t> last_video_refresh_note_ms;
   std::string connection_state = "idle";
 
-  bool sfu_mode = false;
+  bool packet_mode = false;
   std::atomic<bool>& skip_device_open_for_test;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
-  std::shared_ptr<SfuSendFn> sfu_send;
+  std::shared_ptr<PacketSendFn> sfu_send;
   /**
-   * Held around (*sfu_send)(...) in capture/video threads. StartSfu takes this after swapping the
+   * Held around (*sfu_send)(...) in capture/video threads. StartDuplex takes this after swapping the
    * callback so SoftMigrate ReleaseDirectTransport cannot Detach while an old send is mid-write
    * (Linux: malloc unaligned tcache / Aborted right after 2nd join).
    */
@@ -335,10 +335,10 @@ struct MediaEngine::Impl {
    */
   std::unique_ptr<AudioDeviceLease> mic_lease;
   std::unique_ptr<AudioDeviceLease> speaker_lease;
-  /** Set for the rest of this call once voice-processing capture has starved 3 times in a row (I3):
+  /** Set for the rest of this session once voice-processing capture has starved 3 times in a row (I3):
    *  the next opens skip the voice duplex until the next StartCaptureLoop(). */
-  std::atomic<bool> vpio_disabled_for_call{false};
-  /** Voice-processing playout underruns of pairs already released this call; under `mutex`. */
+  std::atomic<bool> vpio_disabled_for_session{false};
+  /** Voice-processing playout underruns of pairs already released this session; under `mutex`. */
   uint64_t vpio_underruns_closed = 0;
 
   struct RemoteAudioTrack {
@@ -357,7 +357,7 @@ struct MediaEngine::Impl {
   /** Per publisher stream_id (V032). Guarded by mutex (decode + playout mix). */
   std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
   bool audio_track_cap_logged = false;
-  /** First OnSfuPacket log per stream; cleared on SoftMigrate send-swap / StartSfu. */
+  /** First OnInboundPacket log per stream; cleared on SoftMigrate send-swap / StartDuplex. */
   std::mutex sfu_rx_log_mu;
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
 
@@ -375,7 +375,7 @@ struct MediaEngine::Impl {
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   int video_decode_fail_logs = 0;
-  /** Getter waits for `mutex` over kLockWaitWarnMs logged this call (B125: is decode holding it?). */
+  /** Getter waits for `mutex` over kLockWaitWarnMs logged this session (B125: is decode holding it?). */
   std::atomic<int> lock_wait_warns{0};
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
@@ -383,7 +383,7 @@ struct MediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
-  /** Facing the next camera open asks for: front at each call's start, turned over by FlipCamera. */
+  /** Facing the next camera open asks for: front at each session's start, turned over by FlipCamera. */
   std::atomic<bool> camera_prefer_front{true};
   /** FlipCamera asked the video thread to release the open camera and take the other facing. */
   std::atomic<bool> camera_reopen_requested{false};
@@ -448,7 +448,7 @@ struct MediaEngine::Impl {
   }
 
   /** Update connection fields only. Never invoke on_state_changed here — callers may
-   *  already hold `mutex`, and callbacks (ActiveCallId / SFU migrate) re-enter the engine. */
+   *  already hold `mutex`, and callbacks (ActiveSessionId / SFU migrate) re-enter the engine. */
   void ApplyStateLocked(const std::string& state) {
     connection_state = state;
     const bool now_connected = (state == "connected");
@@ -491,9 +491,10 @@ struct MediaEngine::Impl {
       if (waited_ms_ <= kLockWaitWarnMs || impl_.lock_wait_warns.fetch_add(1) >= kMaxLockWaitWarns) {
         return;
       }
-      const std::string call = impl_.call_id;
+      const std::string session = impl_.session_id;
       lock_.unlock();
-      EngineLog().warning << "media lock wait getter=" << getter_ << " waited_ms=" << waited_ms_ << " call=" << call;
+      EngineLog().warning << "media lock wait getter=" << getter_ << " waited_ms=" << waited_ms_
+                          << " session=" << session;
     }
     TimedGetterLock(const TimedGetterLock&) = delete;
     TimedGetterLock& operator=(const TimedGetterLock&) = delete;
@@ -605,7 +606,7 @@ struct MediaEngine::Impl {
 
   void TearDownAudioLocked(const bool release_session = true) {
     // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
-    // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
+    // OnInboundPacket which need the same mutex (deadlock + SDL double-free on quit).
     ReleaseAudioLocked();
     if (video_codec) {
       video_codec->ResetEncoder();
@@ -649,7 +650,7 @@ struct MediaEngine::Impl {
   static void ActivateAudioSession() {
     std::lock_guard lock(g_audio_session_mu);
     ++g_audio_session_gen;
-    CallAudioSession::ActivateForVoipCall();
+    AudioSession::ActivateForVoip();
   }
   static uint64_t SessionGeneration() {
     std::lock_guard lock(g_audio_session_mu);
@@ -665,8 +666,8 @@ struct MediaEngine::Impl {
 
   /** Touches the OS audio session only, not Impl. */
   static void ReleaseAudioSession() {
-    CallAudioSession::Deactivate();
-    CallAudioSession::ClearCaptureAudioHints();
+    AudioSession::Deactivate();
+    AudioSession::ClearCaptureAudioHints();
   }
 
   /** `context` names the caller in the slow-join warning ("media stop", "media restart"). */
@@ -919,7 +920,7 @@ struct MediaEngine::Impl {
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
     opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
     opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC(10));
-    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(CallAudioSession::OpusEncoderComplexity()));
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(AudioSession::OpusEncoderComplexity()));
     return {};
   }
 
@@ -980,7 +981,7 @@ struct MediaEngine::Impl {
     {
       std::lock_guard lock(mutex);
       want_spec = spec;
-      holder = call_id;
+      holder = session_id;
       // A voice-processing pair is one unit: re-acquired whole on reopen (never Reopen'd per half).
       if (reopen && ((mic_lease && mic_lease->IsVoiceDuplex()) || (speaker_lease && speaker_lease->IsVoiceDuplex()))) {
         CloseAudioDevicesLocked();
@@ -994,11 +995,11 @@ struct MediaEngine::Impl {
       // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
       // Re-asserted on reopen too: Android route changes can drop MODE_IN_COMMUNICATION.
       // A caller ringback that activated the session may still release it: let it finish first.
-      CallAudioSession::WaitUntilToneHoldsReleased();
+      AudioSession::WaitUntilToneHoldsReleased();
       if (!capture_running.load(std::memory_order_acquire)) {
-        return Error("call media stopped");
+        return Error("media session stopped");
       }
-      CallAudioSession::ApplyCaptureAudioHints();
+      AudioSession::ApplyCaptureAudioHints();
       ActivateAudioSession();
     }
     if (!reopen && want_spec.capture && !mic) {
@@ -1020,7 +1021,7 @@ struct MediaEngine::Impl {
     ensure(want_spec.capture, MediaDeviceKind::Mic, mic);
     ensure(want_spec.playback, MediaDeviceKind::Speaker, speaker);
     if (!capture_running.load(std::memory_order_acquire)) {
-      return Error("call media stopped");  // leases release on scope exit
+      return Error("media session stopped"); // leases release on scope exit
     }
     const bool voice = mic && mic->IsVoiceDuplex();
     if (voip && !voice) {
@@ -1084,7 +1085,7 @@ struct MediaEngine::Impl {
         skip_device_open_for_test.load(std::memory_order_relaxed) || !capture_running.load(std::memory_order_acquire)) {
       return;
     }
-    if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
+    if (vpio_disabled_for_session.load(std::memory_order_acquire)) {
       EngineLog().info << "audio_io=sdl reason=vpio disabled for call (capture starved)";
       return;
     }
@@ -1106,7 +1107,7 @@ struct MediaEngine::Impl {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
-    vpio_disabled_for_call.store(false, std::memory_order_relaxed);
+    vpio_disabled_for_session.store(false, std::memory_order_relaxed);
     capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
@@ -1183,7 +1184,7 @@ struct MediaEngine::Impl {
           audio_reopen_requested.store(true, std::memory_order_release);
           continue;
         }
-        std::shared_ptr<SfuSendFn> send_fn;
+        std::shared_ptr<PacketSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
         bool capturing = true;
@@ -1192,7 +1193,7 @@ struct MediaEngine::Impl {
           std::lock_guard lock(mutex);
           capturing = spec.capture;
           enc = encoder;
-          can_send = capturing && sfu_mode && static_cast<bool>(sfu_send) && enc;
+          can_send = capturing && packet_mode && static_cast<bool>(sfu_send) && enc;
           if (can_send) {
             send_fn = sfu_send;
           }
@@ -1238,7 +1239,7 @@ struct MediaEngine::Impl {
                 // I3: persistent voice-processing capture starvation (not just a starved SDL
                 // device) falls back to SDL for the rest of this call after 3 reopens in a row.
                 if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
-                  vpio_disabled_for_call.store(true, std::memory_order_release);
+                  vpio_disabled_for_session.store(true, std::memory_order_release);
                   SDL_Log("MediaEngine: vpio capture starved 3x — using SDL for this call");
                 }
               }
@@ -1312,7 +1313,7 @@ struct MediaEngine::Impl {
           continue;
         }
         if (send_fn) {
-          SfuPacket pkt;
+          MediaPacket pkt;
           pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
@@ -1356,7 +1357,7 @@ struct MediaEngine::Impl {
     CameraLeaseRequest request;
     {
       std::lock_guard lock(mutex);
-      request.holder = call_id;
+      request.holder = session_id;
     }
     request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
     request.format.fps = kVideoFps;
@@ -1470,18 +1471,18 @@ struct MediaEngine::Impl {
       return;
     }
     need_keyframe = false;
-    std::shared_ptr<SfuSendFn> send_fn;
+    std::shared_ptr<PacketSendFn> send_fn;
     {
       video_stage.Set(MediaThreadStage::LockMedia);
       std::lock_guard lock(mutex);
-      if (sfu_mode && sfu_send) {
+      if (packet_mode && sfu_send) {
         send_fn = sfu_send;
       }
     }
     if (!send_fn) {
       return;
     }
-    SfuPacket pkt;
+    MediaPacket pkt;
     pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = sfu_video_seq.fetch_add(1) + 1;
     pkt.mark = encoded->keyframe ? 1 : 0;
@@ -1692,7 +1693,7 @@ struct MediaEngine::Impl {
       if (video_decode_fail_logs < 5) {
         ++video_decode_fail_logs;
         EngineLog().warning << "remote H264 decode failed stream=" << stream_id << " size=" << size << ": "
-                      << decoded.error().message << " call=" << call_id;
+                            << decoded.error().message << " session=" << session_id;
       }
       NoteVideoRefreshNeeded(stream_id);
       if (decoded.error().message == kDecoderStalledError) {
@@ -1705,7 +1706,7 @@ struct MediaEngine::Impl {
       return;
     }
     {
-      // Per frame, but OnSfuPacket already holds this (recursive) lock: no extra contention.
+      // Per frame, but OnInboundPacket already holds this (recursive) lock: no extra contention.
       std::lock_guard lock(mutex);
       if (auto it = decoder_resets.find(stream_id); it != decoder_resets.end()) {
         it->second.NoteFrame();
@@ -1726,7 +1727,7 @@ struct MediaEngine::Impl {
     const int restarts = ++decoder_restarts[stream_id];
     EngineLog().warning << "remote H264 decoder not responding; dropped stream=" << stream_id
                         << " restarts=" << restarts << (restarts > kMaxCodecRestarts ? " (no more this call)" : "")
-                        << " call=" << call_id;
+                        << " session=" << session_id;
     NoteVideoRefreshNeeded(stream_id);
   }
 
@@ -1784,9 +1785,9 @@ struct MediaEngine::Impl {
     it->second->ResetDecoder();
     const auto took_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets="
-                        << budget.Resets() << (budget.Exhausted() ? " (no more rebuilds this call)" : "")
-                        << " took_ms=" << took_ms << " call=" << call_id;
+    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets=" << budget.Resets()
+                        << (budget.Exhausted() ? " (no more rebuilds this call)" : "") << " took_ms=" << took_ms
+                        << " session=" << session_id;
   }
 
   /**
@@ -1799,9 +1800,9 @@ struct MediaEngine::Impl {
     retired.store(true, std::memory_order_release);
     std::lock_guard lock(mutex);
     const bool running =
-        active || sfu_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
+        active || packet_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
     if (running) {
-      EngineLog().info << "media stop begin call=" << call_id;
+      EngineLog().info << "media stop begin session=" << session_id;
     }
     active = false;
     muted.store(false, std::memory_order_relaxed);
@@ -1810,7 +1811,7 @@ struct MediaEngine::Impl {
     started_at_ms.store(0, std::memory_order_relaxed);
     retired_send = std::move(sfu_send);
     sfu_send = nullptr;
-    sfu_mode = false;
+    packet_mode = false;
     capture_running = false;
     playout_running = false;
     video_running = false;
@@ -1824,7 +1825,7 @@ struct MediaEngine::Impl {
    * under the same lock. So the owner may destroy what the callback reaches as soon as Stop returns.
    */
   void DrainSend() {
-    std::shared_ptr<SfuSendFn> abandoned;
+    std::shared_ptr<PacketSendFn> abandoned;
     std::lock_guard drain(sfu_send_call_mu);
     std::lock_guard lock(mutex);
     abandoned = std::move(retired_send);
@@ -1839,18 +1840,18 @@ struct MediaEngine::Impl {
    */
   void FinishRetired() {
     const auto stop_from = std::chrono::steady_clock::now();
-    std::string stopping_call;
+    std::string stopping_session;
     {
       std::lock_guard lock(mutex);
-      stopping_call = call_id;
+      stopping_session = session_id;
     }
     // B128: which step of a stop hangs (codec teardown vs. capture / playout / camera joins).
-    const auto timed_step = [&stopping_call](const char* step, const auto& run) {
+    const auto timed_step = [&stopping_session](const char* step, const auto& run) {
       const auto from = std::chrono::steady_clock::now();
       run();
       const int64_t ms = MsSince(from);
       if (ms > kSlowStopStepMs) {
-        EngineLog().warning << "media stop slow step=" << step << " ms=" << ms << " call=" << stopping_call;
+        EngineLog().warning << "media stop slow step=" << step << " ms=" << ms << " call=" << stopping_session;
       } else {
         EngineLog().info << "media stop step=" << step << " ms=" << ms;
       }
@@ -1876,14 +1877,14 @@ struct MediaEngine::Impl {
         decoders.swap(remote_decoders);
         decoder_resets.clear();
         ClearVideoFrames();
-        call_id.clear();
+        session_id.clear();
       }
     });
-    EngineLog().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
+    EngineLog().info << "media stop done call=" << stopping_session << " ms=" << MsSince(stop_from);
   }
 
   /** The send callback a retired session dropped, released once no thread is inside it. */
-  std::shared_ptr<SfuSendFn> retired_send;
+  std::shared_ptr<PacketSendFn> retired_send;
 };
 
 MediaEngine::MediaEngine() : MediaEngine(MediaDeviceArbiter::Default()) {}
@@ -1978,8 +1979,8 @@ void MediaEngine::RefreshIdleSession() {
   }
 }
 
-Roe<void> MediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
-  return Start(call_id, SessionSpec::Duplex(), std::move(send));
+Roe<void> MediaEngine::StartDuplex(const std::string& session_id, PacketSendFn send) {
+  return Start(session_id, SessionSpec::Duplex(), std::move(send));
 }
 
 MediaEngine::SessionSpec MediaEngine::ActiveSpec() const {
@@ -1988,23 +1989,23 @@ MediaEngine::SessionSpec MediaEngine::ActiveSpec() const {
   return impl->spec;
 }
 
-Roe<void> MediaEngine::Start(const std::string& call_id, const SessionSpec spec, SfuSendFn send) {
-  if (call_id.empty()) {
-    return Error("call_id required");
+Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec spec, PacketSendFn send) {
+  if (session_id.empty()) {
+    return Error("session id required");
   }
   if (!spec.capture && !spec.playback) {
     return Error("media session needs capture or playback");
   }
-  auto next_send = std::make_shared<SfuSendFn>(std::move(send));
+  auto next_send = std::make_shared<PacketSendFn>(std::move(send));
   if (spec.capture && !*next_send) {
     return Error("SFU send callback required");
   }
   const std::shared_ptr<Impl> current = Session();
-  std::shared_ptr<SfuSendFn> abandoned_send;
+  std::shared_ptr<PacketSendFn> abandoned_send;
   bool send_swap = false;
   {
     std::lock_guard lock(current->mutex);
-    if (current->active && current->call_id == call_id && current->sfu_mode && current->spec == spec) {
+    if (current->active && current->session_id == session_id && current->packet_mode && current->spec == spec) {
       // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
       abandoned_send = std::move(current->sfu_send);
       current->sfu_send = std::move(next_send);
@@ -2025,10 +2026,10 @@ Roe<void> MediaEngine::Start(const std::string& call_id, const SessionSpec spec,
       impl->TearDownAudioLocked();
       return codecs.error();
     }
-    impl->sfu_mode = true;
+    impl->packet_mode = true;
     impl->spec = spec;
     impl->sfu_send = spec.capture ? std::move(next_send) : nullptr;
-    impl->call_id = call_id;
+    impl->session_id = session_id;
     impl->active = true;
     impl->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
     impl->started_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
@@ -2041,16 +2042,16 @@ Roe<void> MediaEngine::Start(const std::string& call_id, const SessionSpec spec,
   return {};
 }
 
-void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<SfuSendFn> abandoned_send) {
+void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_send) {
   // Drain any capture/video thread still inside the old send before the caller Detach's that
   // stream — otherwise SoftMigrate races into heap corruption.
   {
     std::lock_guard drain(impl.sfu_send_call_mu);
     abandoned_send = nullptr;
   }
-  // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
+  // 1:1 libp2p also uses StartDuplex with stream_id=0 packets. SoftMigrate to media_relay must
   // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
-  // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
+  // Do NOT wipe live media_relay RX tracks on duplicate StartDuplex send-swap (reattach storm).
   {
     std::lock_guard lock(impl.mutex);
     impl.audio_tracks.erase(0);
@@ -2062,18 +2063,18 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<SfuSendFn> abandoned_send
   // Android speaker / communication-mode route changes around SoftMigrate can leave the open
   // SDL recording device feeding zeros while encode still runs (mic_lvl→0, tx_frames rising).
   // Desktop SoftMigrate send-swap must not close/reopen SDL (malloc/double-free on Leave).
-  if (CallAudioSession::CaptureReopenSettleDelayMs() > 0) {
+  if (AudioSession::CaptureReopenSettleDelayMs() > 0) {
     RequestAudioDeviceReopen();
   }
   RequestVideoKeyframe();
 }
 
-void MediaEngine::OnSfuPacket(const SfuPacket& packet) {
+void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
   const std::shared_ptr<Impl> impl = Session();
-  // Must hold mutex: SoftMigrate StartSfu TearDownAudioLocked destroys opus/SDL while the
+  // Must hold mutex: SoftMigrate StartDuplex TearDownAudioLocked destroys opus/SDL while the
   // media_relay client reader can already deliver frames (guest attach dogfood crash).
   std::lock_guard lock(impl->mutex);
-  if (!impl->active || !impl->sfu_mode || !impl->spec.playback || packet.payload.empty()) {
+  if (!impl->active || !impl->packet_mode || !impl->spec.playback || packet.payload.empty()) {
     return;
   }
   // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
@@ -2083,15 +2084,15 @@ void MediaEngine::OnSfuPacket(const SfuPacket& packet) {
   }
   {
     // Log the first packet per stream_id per process (PreferLocal multi-peer RX).
-    // Cleared on SoftMigrate StartSfu send-swap so post-migrate RX is visible again.
+    // Cleared on SoftMigrate StartDuplex send-swap so post-migrate RX is visible again.
     bool log_this = false;
     {
       std::lock_guard lg(impl->sfu_rx_log_mu);
       log_this = impl->sfu_rx_logged_streams.insert(packet.stream_id).second;
     }
     if (log_this) {
-      log().info << "OnSfuPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
-                 << " seq=" << packet.seq << " bytes=" << packet.payload.size() << " call=" << impl->call_id;
+      log().info << "OnInboundPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
+                 << " seq=" << packet.seq << " bytes=" << packet.payload.size() << " session=" << impl->session_id;
     }
   }
   if (mesh::IsAudioChannel(packet.channel_id)) {
@@ -2109,10 +2110,10 @@ void MediaEngine::ClearRemoteAudioTracks() {
   impl->ClearAudioTracksLocked();
 }
 
-bool MediaEngine::IsSfuMode() const {
+bool MediaEngine::IsPacketMode() const {
   const std::shared_ptr<Impl> impl = Session();
-  Impl::TimedGetterLock lock(*impl, "IsSfuMode");
-  return impl->sfu_mode;
+  Impl::TimedGetterLock lock(*impl, "IsPacketMode");
+  return impl->packet_mode;
 }
 
 void MediaEngine::ApplyTargets(const MediaTargets& targets) {
@@ -2171,7 +2172,7 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.audio_io = voice ? "vpio" : (any_device ? "sdl" : "none");
     h.io_underruns = impl->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
     h.stream_count = impl->audio_tracks.size();
-    h.sfu_mode = impl->sfu_mode;
+    h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
     h.streams.reserve(impl->audio_tracks.size());
     for (const auto& [id, track] : impl->audio_tracks) {
@@ -2231,7 +2232,7 @@ Roe<void> MediaEngine::SetCameraEnabled(bool enabled, const int display_rotation
   const std::shared_ptr<Impl> impl = Session();
   std::lock_guard lock(impl->mutex);
   if (!impl->active) {
-    return Error("Call media not active");
+    return Error("Media session not active");
   }
   if (!enabled) {
     impl->RequestCameraOffLocked();
@@ -2260,7 +2261,7 @@ Roe<void> MediaEngine::FlipCamera() {
   const std::shared_ptr<Impl> impl = Session();
   std::lock_guard lock(impl->mutex);
   if (!impl->active) {
-    return Error("Call media not active");
+    return Error("Media session not active");
   }
   if (!impl->camera_enabled.load(std::memory_order_relaxed)) {
     return Error("camera is off");
@@ -2445,10 +2446,10 @@ bool MediaEngine::IsActive() const {
   return impl->active.load();
 }
 
-std::string MediaEngine::ActiveCallId() const {
+std::string MediaEngine::ActiveSessionId() const {
   const std::shared_ptr<Impl> impl = Session();
-  Impl::TimedGetterLock lock(*impl, "ActiveCallId");
-  return impl->call_id;
+  Impl::TimedGetterLock lock(*impl, "ActiveSessionId");
+  return impl->session_id;
 }
 
 int64_t MediaEngine::StartedAtMs() const {

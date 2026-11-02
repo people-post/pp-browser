@@ -376,7 +376,7 @@ protected:
     if (topo_) {
       topo_->SetHopArmingPorts({});
     }
-    // Stop capture before the topology goes: the engine's capture thread runs the StartSfu send
+    // Stop capture before the topology goes: the engine's capture thread runs the StartDuplex send
     // fn, which captures the hop-migrate workflow (TSan: use-after-free in TearDown).
     if (media_) {
       media_->Stop();
@@ -528,7 +528,7 @@ protected:
 };
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {
-  // V037/V038: even with N≥3 in store, Direct* Status must not StartSfu on stale CallSfuAttach.
+  // V037/V038: even with N≥3 in store, Direct* Status must not StartDuplex on stale CallSfuAttach.
   const std::string call_id = "call:direct-blocks-hop";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
@@ -1081,7 +1081,7 @@ TEST_F(CallTopologyControllerTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall
 }
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredOnOneToOne) {
-  // Dogfood 1cee3df4: Accept chose P2P ScheduleStart; inbound CallSfuAttach still StartSfu'd
+  // Dogfood 1cee3df4: Accept chose P2P ScheduleStart; inbound CallSfuAttach still StartDuplex'd
   // (stale gen) → brief media_relay audio then chrome "direct" / silence.
   const std::string call_id = "call:p2p-ignore-sfu";
   SeedJoinedCall(call_id, {"account:A", "account:B"}, 1000);
@@ -1231,7 +1231,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
 
 TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   // Dogfood: CallSfuAttach AcceptAndAttach ok then OnLocalAcceptJoined bumped migrate gen →
-  // aborted before StartSfu; caller Connected, guest stuck Connecting (streams=0).
+  // aborted before StartDuplex; caller Connected, guest stuck Connecting (streams=0).
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
@@ -1265,7 +1265,7 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   AppRuntime::RunUIAndOwnerTasks();
-  EXPECT_TRUE(attached) << "inbound attach must reach StartSfu after LocalAccept";
+  EXPECT_TRUE(attached) << "inbound attach must reach StartDuplex after LocalAccept";
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
@@ -1274,13 +1274,13 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
 }
 
 TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
-  // Dogfood 12:33: AcceptAndAttach ok then stale gen want=170 have=226 aborted StartSfu →
+  // Dogfood 12:33: AcceptAndAttach ok then stale gen want=170 have=226 aborted StartDuplex →
   // ReportSfuAttachFailed → "looking for another media path" while caller Connected.
   const std::string call_id = "call:gen-stampede";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
   // V056: the path is this call's, so an unrelated call's stop never reaches it (the dogfood stampede
-  // came from one topology for every call). The stops below are ignored; the attach still StartSfu's.
+  // came from one topology for every call). The stops below are ignored; the attach still StartDuplex's.
   topo_->OnMediaStopped("call:prime");
   topo_->BeginSfuAttachWait(call_id);
 
@@ -1292,7 +1292,7 @@ TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
   dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
   dial_->force_dialable[attach.hop_peer_id] = true;
 
-  // Stampede migrate_generation_ after AcceptAndAttach, before StartSfu (same as dogfood).
+  // Stampede migrate_generation_ after AcceptAndAttach, before StartDuplex (same as dogfood).
   relay_->before_accept_done = [this, call_id]() {
     for (int i = 0; i < 56; ++i) {
       topo_->OnMediaStopped("call:unrelated-zombie");
@@ -1300,7 +1300,7 @@ TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
     topo_->BeginSfuAttachWait(call_id);
   };
 
-  ASSERT_TRUE(AttachToHop(call_id, attach)) << "must StartSfu while call still active";
+  ASSERT_TRUE(AttachToHop(call_id, attach)) << "must StartDuplex while call still active";
   EXPECT_TRUE(topo_->IsSfuAttached());
   EXPECT_GE(relay_->attach_calls, 1);
 }
@@ -1593,7 +1593,7 @@ TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
 
 TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAttach) {
   // Dogfood: guest heard audio but UI stayed Connecting; media_health RX stalled while
-  // AcceptAndAttach/StartSfu repeated ~every 8s (CallSfuAttach fan-out / publisher announce).
+  // AcceptAndAttach/StartDuplex repeated ~every 8s (CallSfuAttach fan-out / publisher announce).
   // Once live on a hop, duplicate inbound attach must no-op (no second AcceptAndAttach) and
   // clear media activity so chrome can leave Connecting.
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
@@ -1689,7 +1689,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   bool attached = false;
   for (int i = 0; i < 200; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
-    if (topo_->IsSfuAttached() && media_->ActiveCallId() == old_id) {
+    if (topo_->IsSfuAttached() && media_->ActiveSessionId() == old_id) {
       attached = true;
       break;
     }
@@ -1708,7 +1708,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   ASSERT_TRUE(sessions_->UpsertSession(**old_session));
   seat.Release(old_id);
   EXPECT_TRUE(seat.BoundCallId().empty());
-  EXPECT_EQ(media_->ActiveCallId(), old_id) << "engine leftover without Stop is the dogfood case";
+  EXPECT_EQ(media_->ActiveSessionId(), old_id) << "engine leftover without Stop is the dogfood case";
 
   SeedJoinedCall(new_id, {"account:A", "account:B", "account:C"}, 2000);
   CallsLoopbackOutbox<TopologyEvent> new_events{[](TopologyEvent&) {}};
@@ -1724,7 +1724,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   bool new_attached = false;
   for (int i = 0; i < 200; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
-    if (media_->ActiveCallId() == new_id) {
+    if (media_->ActiveSessionId() == new_id) {
       new_attached = true;
       break;
     }

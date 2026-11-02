@@ -63,7 +63,7 @@ struct BroadcastViewerPorts {
   mesh::MediaRelayAttachPorts relay;
   /** Dial hint for a hop (may return empty). */
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
-  /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
+  /** Playback-only session target (owner for Start / Stop; OnInboundPacket any thread). */
   MediaEngine* engine = nullptr;
   std::function<int64_t()> now_ms;
   /** B009: the video level this viewer prefers; the nearest published one is taken (0 = no video). */

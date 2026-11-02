@@ -8,7 +8,7 @@
 namespace pbr {
 
 /**
- * Call audio IO through the OS voice-processing unit (Apple kAudioUnitSubType_VoiceProcessingIO:
+ * Live audio IO through the OS voice-processing unit (Apple kAudioUnitSubType_VoiceProcessingIO:
  * echo cancellation + noise suppression + AGC). Capture and playback both go through it, because
  * the unit uses its own playback signal as the echo reference. 48 kHz mono s16.
  *

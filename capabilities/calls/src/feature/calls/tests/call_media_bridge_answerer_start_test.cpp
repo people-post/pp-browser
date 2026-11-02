@@ -664,7 +664,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStops
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
-  // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartSfu when key present.
+  // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartDuplex when key present.
   const std::string call_id = "call:answerer-key";
   SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -678,7 +678,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
 
   EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
 }
 
@@ -743,7 +743,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) 
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  // InCall + HopLive: ScheduleStart must not re-arm Direct or StartSfu.
+  // InCall + HopLive: ScheduleStart must not re-arm Direct or StartDuplex.
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::HopLive);
 }
@@ -762,7 +762,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
 
   EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   // Offerer Connect waits inbound grace before ConnectAsync — do not assert dial yet.
 }
 
@@ -783,7 +783,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DeferredKeyThenOnMediaKeyReadyActivates
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
 }
 
@@ -803,7 +803,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
 
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
 }
 
 // Dogfood 2026-09-24: the answerer's only link to the caller was the relay carrier; the reach
@@ -872,7 +872,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
-  // Dogfood: Connect give-up must stop StartSfu capture (no zombie TX) and Direct→Idle.
+  // Dogfood: Connect give-up must stop StartDuplex capture (no zombie TX) and Direct→Idle.
   const std::string call_id = "call:circuit-miss-stop";
   SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -1420,7 +1420,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed)
   EXPECT_GE(circuit_->call_media_ensure_calls, 1)
       << "second attempt must redial via Ensure, not short-circuit on the stale link";
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
@@ -1457,7 +1457,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
   EXPECT_EQ(transport_->connect_async_calls, 2)
       << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

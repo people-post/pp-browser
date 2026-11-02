@@ -8,7 +8,7 @@
 namespace pbr {
 
 /**
- * Self-written stationary-noise suppressor for the call capture path (spec §3, no deps).
+ * Self-written stationary-noise suppressor for the live capture path (spec §3, no deps).
  * 512-point STFT, sqrt-Hann analysis/synthesis, 50 % overlap; per-bin noise floor by
  * minimum tracking gated on a-posteriori SNR; decision-directed a-priori SNR; Wiener gain
  * with a -18 dB floor, 3-tap smoothing across bins. Constant delay kLatencySamples.

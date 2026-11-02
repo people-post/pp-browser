@@ -21,7 +21,7 @@ struct MediaStreamHealth {
 
 struct MediaEngineHealth {
   bool active = false;
-  bool sfu_mode = false;
+  bool packet_mode = false;
   bool muted = false;
   /** False when mic open failed / absent — silence may still be sent; not a TX fault. */
   bool capture_available = true;
@@ -32,7 +32,7 @@ struct MediaEngineHealth {
   uint64_t plc_frames = 0;
   /** Frames recovered from the next packet's Opus in-band FEC (spec §2). */
   uint64_t fec_frames = 0;
-  /** Call audio device path: "vpio" (OS voice processing / AEC), "sdl", or "none". */
+  /** Live audio device path: "vpio" (OS voice processing / AEC), "sdl", or "none". */
   std::string audio_io = "none";
   /** The engine was started and not stopped (with or without audio devices). A sample taken after it
    *  stopped has all-zero counters; the call summary keeps the last running sample instead (B125). */

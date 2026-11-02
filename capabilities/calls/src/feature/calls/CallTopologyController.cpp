@@ -288,8 +288,7 @@ CallHopPlannerApplyContext CallTopologyController::BuildHopPlannerContext(
   ctx.should_arm_hop = ShouldArmHopPlanner(joined_count);
   ctx.has_sfu_hint = has_sfu_hint;
   ctx.soft_migrate_in_flight = flight_.in_flight;
-  ctx.sfu_attached = sfu_.attached && media_.IsSfuMode() &&
-                     (call_id.empty() || media_.ActiveCallId() == call_id);
+  ctx.sfu_attached = sfu_.attached && media_.IsPacketMode() && (call_id.empty() || media_.ActiveSessionId() == call_id);
   return ctx;
 }
 
@@ -359,7 +358,7 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
     return;
   }
   const auto seat_ports = seat_.Get();
-  // Invalidate in-flight SoftMigrate / AttachLocalToSfu so they cannot StartSfu after Leave
+  // Invalidate in-flight SoftMigrate / AttachLocalToSfu so they cannot StartDuplex after Leave
   // (Linux quit dogfood: double-free from SDL reopen during teardown).
   Apply(CallHopPlannerEvent::Stop, call_id);
   flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel);
@@ -406,8 +405,7 @@ void CallTopologyController::PollPendingSfuAttach() {
   if (auto joined = sessions_.CountJoined(call_id)) {
     in.joined_count = *joined;
   }
-  in.media_active_mesh_for_call =
-      media_.IsActive() && media_.ActiveCallId() == call_id && !media_.IsSfuMode();
+  in.media_active_mesh_for_call = media_.IsActive() && media_.ActiveSessionId() == call_id && !media_.IsPacketMode();
 
   switch (PollSfuAttachWait(in)) {
   case SfuAttachWaitPollResult::Idle:
@@ -511,7 +509,7 @@ bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
 
 bool CallTopologyController::SettleFinishedMigrate(const std::string& call_id) {
   ReleaseMigrateFlight();
-  if (!(sfu_.attached && media_.IsSfuMode())) {
+  if (!(sfu_.attached && media_.IsPacketMode())) {
     return false;
   }
   ClearSfuAttachWait();
@@ -678,7 +676,7 @@ void CallTopologyController::MaybeRequestPublisherKeyframe(uint32_t stream_id) {
       return;
     }
   }
-  const std::string call_id = media_.ActiveCallId();
+  const std::string call_id = media_.ActiveSessionId();
   if (call_id.empty()) {
     return;
   }
@@ -717,7 +715,7 @@ void CallTopologyController::NoteRemotePublisherFromAttach(const CallSfuAttachDe
     std::lock_guard lock(publishers_.mu);
     publishers_.remote_stream_ids.insert(attach.publisher_stream_id);
   }
-  if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == attach.call_id) {
+  if (sfu_.attached && media_.IsPacketMode() && media_.ActiveSessionId() == attach.call_id) {
     log().info << "SFU subscribe announced stream=" << attach.publisher_stream_id
                << " call_id=" << attach.call_id;
     SubscribePublisherStream(attach.publisher_stream_id);
@@ -752,7 +750,7 @@ void CallTopologyController::AnnounceLocalPublisher(const std::string& call_id,
 }
 
 void CallTopologyController::SyncSfuSubscriptions(const std::string& call_id) {
-  if (!relay_deps_.relay || !sfu_.attached || !media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
+  if (!relay_deps_.relay || !sfu_.attached || !media_.IsPacketMode() || media_.ActiveSessionId() != call_id) {
     return;
   }
   // Runs on the calls owner: update the stream sets under the lock (read off the owner),
@@ -910,7 +908,7 @@ void CallTopologyController::FinishInviteHintAttach(const std::string& call_id, 
   }
   ReleaseMigrateFlight();
   if (!ok) {
-    if (sfu_.attached && media_.IsSfuMode()) {
+    if (sfu_.attached && media_.IsPacketMode()) {
       SyncSfuSubscriptions(call_id);
       host_.NotifyRingChanged();
       return;
@@ -950,7 +948,7 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
     return;
   case JoinWithoutHintAction::KeepFlight:
     // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes; bumping
-    // the migrate generation would abort that worker before StartSfu (guest stuck Connecting).
+    // the migrate generation would abort that worker before StartDuplex (guest stuck Connecting).
     log().info << "OnLocalAcceptJoined keep in-flight SoftMigrate/attach call_id=" << call_id;
     ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
     return;
@@ -998,8 +996,8 @@ void CallTopologyController::FinishJoinSoftMigrate(const std::string& call_id, u
 
 void CallTopologyController::StayDirectAfterAccept(const std::string& call_id, size_t n_joined) {
   ClearSfuAttachWait();
-  // Cancel any leftover SoftMigrate / inbound AcceptAndAttach so it cannot StartSfu on this 1:1
-  // after ScheduleStartDirectMedia (dogfood: stale gen StartSfu → brief hop audio → "direct").
+  // Cancel any leftover SoftMigrate / inbound AcceptAndAttach so it cannot StartDuplex on this 1:1
+  // after ScheduleStartDirectMedia (dogfood: stale gen StartDuplex → brief hop audio → "direct").
   flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel);
   ReleaseMigrateFlight();
   flight_.attaching_hop_peer_id.clear();
@@ -1022,8 +1020,8 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   const RemoteAcceptHopAction action = DecideRemoteAcceptHop(in);
   switch (action) {
   case RemoteAcceptHopAction::IgnoreNotActive:
-    log().info << "OnRemoteAcceptJoined ignored (not active call) call_id=" << call_id
-               << " joiner=" << joiner_identity << " media_active=" << media_.ActiveCallId();
+    log().info << "OnRemoteAcceptJoined ignored (not active call) call_id=" << call_id << " joiner=" << joiner_identity
+               << " media_active=" << media_.ActiveSessionId();
     return true;  // the caller must not start direct media for a stale / zombie call
   case RemoteAcceptHopAction::StayDirect:
     log().info << "OnRemoteAcceptJoined stay P2P call_id=" << call_id << " n=" << n_joined
@@ -1265,7 +1263,7 @@ bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
   const auto arming_ports = arming_.Get();
   if (!IsActiveCallForTopology(call_id)) {
     log().info << "OnInboundSfuAttach ignored (not active call) call_id=" << call_id
-               << " media_active=" << media_.ActiveCallId();
+               << " media_active=" << media_.ActiveSessionId();
     return false;
   }
   // 1:1 must stay on call-media duplex. Owner SoftMigrate / inflated roster can still fan
@@ -1298,8 +1296,8 @@ void CallTopologyController::DeferInboundSfuAttach(const std::string& call_id, c
 bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string& call_id,
                                                                const CallSfuAttachDetail& attach) {
   const auto seat_ports = seat_.Get();
-  if (sfu_.attached && media_.ActiveCallId() == call_id &&
-      (media_.IsSfuMode() || flight_.attached_hop_peer_id == attach.hop_peer_id)) {
+  if (sfu_.attached && media_.ActiveSessionId() == call_id &&
+      (media_.IsPacketMode() || flight_.attached_hop_peer_id == attach.hop_peer_id)) {
     // Already attached (duplicate fan-out / late roster / peer publisher announce).
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
@@ -1398,7 +1396,7 @@ void CallTopologyController::FinishInboundSfuAttach(const std::string& call_id, 
     host_.NotifyRingChanged();
     return;
   }
-  if (sfu_.attached && media_.IsSfuMode()) {
+  if (sfu_.attached && media_.IsPacketMode()) {
     SyncSfuSubscriptions(call_id);
     host_.NotifyRingChanged();
     return;
@@ -1419,7 +1417,7 @@ void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string&
     ReleaseMigrateFlight();
   }
   if (duplex) {
-    // Attach finished (StartSfu may still be settling on another worker).
+    // Attach finished (StartDuplex may still be settling on another worker).
     inbound_gate_.pending_attach.reset();
     inbound_gate_.pending = false;
     ClearSfuAttachWait();
@@ -1609,8 +1607,8 @@ void CallTopologyController::Defer(std::function<void()> step) {
 
 void CallTopologyController::ReannouncePublisher(const topology_event::ReannouncePublisher& again) {
   // V050: a later joiner's re-pick may have moved the group — never re-announce the old hop.
-  if (!sfu_.attached || media_.ActiveCallId() != again.call_id || flight_.attached_hop_peer_id != again.hop_peer_id ||
-      publishers_.local_stream_id != again.publisher_stream_id) {
+  if (!sfu_.attached || media_.ActiveSessionId() != again.call_id ||
+      flight_.attached_hop_peer_id != again.hop_peer_id || publishers_.local_stream_id != again.publisher_stream_id) {
     return;
   }
   log().info << "AnnounceLocalPublisher re-fan-out call_id=" << again.call_id;

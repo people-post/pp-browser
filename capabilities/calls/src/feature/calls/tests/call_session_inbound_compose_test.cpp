@@ -272,10 +272,10 @@ protected:
 
   void TearDown() override {
     if (csm_) {
-      // Brief wait so Connect/StartSfu workers release profile.db before remove_all (Windows).
+      // Brief wait so Connect/StartDuplex workers release profile.db before remove_all (Windows).
       OnCallsOwner([&] { return device_->PrepareDirectPathForStop(500); });
     }
-    // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
+    // Always Stop — StartDuplex may arm capture after PrepareForTeardown cleared media_call_id_.
     if (media_) {
       media_->Stop();
     }
@@ -693,7 +693,7 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
   // B-CALL-DIRECT offerer glue only: inbound CallAccept → schedule_start(..., offerer=true)
-  // + session/peer Joined. Do not drive Bridge BeginSession / StartSfu / Connect grace —
+  // + session/peer Joined. Do not drive Bridge BeginSession / StartDuplex / Connect grace —
   // those belong to Bridge/engine tests (and TearDown must not inherit an armed Connect).
   const std::string call_id = "call:offerer-accept";
   SeedOffererRingingCall(call_id);

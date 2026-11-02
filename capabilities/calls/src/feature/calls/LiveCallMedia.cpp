@@ -77,7 +77,7 @@ void LiveCallMedia::StopMedia(const std::string& call_id) {
   if (CallMedia* call = Find(call_id)) {
     call->OnMediaStopped();
     call->StopMedia();
-  } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsSfuMode())) {
+  } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsPacketMode())) {
     resources_.engine->Stop(); // a leftover with no live call here
   }
 }
@@ -87,15 +87,15 @@ bool LiveCallMedia::MediaRunning() const {
 }
 
 std::string LiveCallMedia::MediaRunningCallId() const {
-  return resources_.engine ? resources_.engine->ActiveCallId() : std::string{};
+  return resources_.engine ? resources_.engine->ActiveSessionId() : std::string{};
 }
 
 void LiveCallMedia::StopMediaExcept(const std::string& keep_call_id) {
   MediaEngine* engine = resources_.engine;
-  if (!engine || (!engine->IsActive() && !engine->IsSfuMode())) {
+  if (!engine || (!engine->IsActive() && !engine->IsPacketMode())) {
     return;
   }
-  const std::string leftover = engine->ActiveCallId();
+  const std::string leftover = engine->ActiveSessionId();
   if (!leftover.empty() && leftover != keep_call_id) {
     LiveCallMediaLog().info << "stopping leftover media call_id=" << leftover << " for=" << keep_call_id;
     StopMedia(leftover);

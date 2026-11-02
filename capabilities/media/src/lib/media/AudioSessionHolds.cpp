@@ -1,4 +1,4 @@
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 
 #include <atomic>
 #include <thread>
@@ -10,7 +10,7 @@ std::atomic<int> g_tone_holds{0};
 
 } // namespace
 
-namespace CallAudioSession {
+namespace AudioSession {
 
 void BeginToneHold() {
   g_tone_holds.fetch_add(1, std::memory_order_acq_rel);
@@ -31,6 +31,6 @@ void WaitUntilToneHoldsReleased(const std::chrono::milliseconds timeout) {
   }
 }
 
-} // namespace CallAudioSession
+} // namespace AudioSession
 
 } // namespace pbr

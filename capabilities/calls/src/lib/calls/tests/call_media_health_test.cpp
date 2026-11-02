@@ -114,8 +114,8 @@ TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
 
 TEST(CallMediaHealthTest, PathKindMediaRelayWhenHopAttached) {
   auto in = BaseHealthyInput();
-  in.engine.sfu_mode = true;
-  // 1:1 Amp sets sfu_mode without hop attach — must not force media_relay.
+  in.engine.packet_mode = true;
+  // 1:1 Amp sets packet_mode without hop attach — must not force media_relay.
   EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "direct");
   in.hop.attached = true;
   const auto v = EvaluateCallMediaHealth(in);
@@ -125,7 +125,7 @@ TEST(CallMediaHealthTest, PathKindMediaRelayWhenHopAttached) {
 
 TEST(CallMediaHealthTest, PathKindHonorsReachModes) {
   auto in = BaseHealthyInput();
-  in.engine.sfu_mode = true; // 1:1 capture mode — reach label still wins
+  in.engine.packet_mode = true; // 1:1 capture mode — reach label still wins
   in.reach_path_kind = "circuit";
   EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "circuit");
   in.reach_path_kind = "punched";

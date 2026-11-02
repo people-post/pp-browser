@@ -1,6 +1,6 @@
 #if defined(__ANDROID__)
 
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 
 #include <atomic>
 
@@ -8,7 +8,7 @@
 #include <SDL3/SDL.h>
 
 namespace pbr {
-namespace CallAudioSession {
+namespace AudioSession {
 namespace {
 
 /** The call's speaker choice: default earpiece; kept across Deactivate (a media rebuild), cleared when the call ends. */
@@ -45,7 +45,7 @@ void ApplyVoipModeLocked(bool active) {
   if (cls == nullptr) {
     return;
   }
-  jmethodID mid = env->GetMethodID(cls, "setCallAudioSessionActive", "(Z)V");
+  jmethodID mid = env->GetMethodID(cls, "setAudioSessionActive", "(Z)V");
   if (mid == nullptr) {
     env->ExceptionClear();
     env->DeleteLocalRef(cls);
@@ -86,7 +86,7 @@ bool QueryHasEarpieceRoute() {
 
 } // namespace
 
-void ActivateForVoipCall() {
+void ActivateForVoip() {
   const bool was_active = g_session_active.exchange(true);
   ApplyVoipModeLocked(true);
   // Re-applying speaker on every SDL reopen races OEM route changes (Moto) and can
@@ -171,7 +171,7 @@ void ClearCaptureAudioHints() {
   SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "");
 }
 
-} // namespace CallAudioSession
+} // namespace AudioSession
 } // namespace pbr
 
 #endif // defined(__ANDROID__)

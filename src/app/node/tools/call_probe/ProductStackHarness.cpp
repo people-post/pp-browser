@@ -936,7 +936,7 @@ std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
   std::cout << "ok  product-stack AcceptClicked call_id=" << call_id << "\n";
-  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartSfu first, inbound
+  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartDuplex first, inbound
   // hello lands on a pending bundle (offerer=0) and the PeerLink is torn down (HL004 race).
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   return call_id;

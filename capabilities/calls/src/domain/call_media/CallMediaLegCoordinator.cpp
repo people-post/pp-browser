@@ -35,7 +35,7 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-/** Dogfood filter matches CallLifecycle|StartSfu — keep that token in messages. */
+/** Dogfood filter matches CallLifecycle|StartDuplex — keep that token in messages. */
 logging::Logger& CallMediaLegLog() {
   static logging::Logger log = logging::getLogger("CallMediaLeg");
   return log;

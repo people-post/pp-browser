@@ -1,4 +1,4 @@
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 
 #include <TargetConditionals.h>
 
@@ -16,13 +16,13 @@
 #endif
 
 namespace pbr {
-namespace CallAudioSession {
+namespace AudioSession {
 namespace {
 
 /** The call's speaker choice: default earpiece; kept across Deactivate (a media rebuild), cleared when the call ends. */
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
-/** Bumped by every ActivateForVoipCall; a delayed Deactivate retry gives up once it changed. */
+/** Bumped by every ActivateForVoip; a delayed Deactivate retry gives up once it changed. */
 std::atomic<uint64_t> g_session_gen{0};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
@@ -36,7 +36,7 @@ void LogRoute(const char* where) {
   if (session.currentRoute.outputs.count > 0) {
     out = session.currentRoute.outputs.firstObject.portType;
   }
-  NSLog(@"CallAudioSession %s: speaker_flag=%d category=%@ mode=%@ options=0x%lx output=%@", where,
+  NSLog(@"AudioSession %s: speaker_flag=%d category=%@ mode=%@ options=0x%lx output=%@", where,
         g_speakerphone.load() ? 1 : 0, session.category, session.mode,
         static_cast<unsigned long>(session.categoryOptions), out);
 }
@@ -72,28 +72,29 @@ void DeactivateAttempt(uint64_t gen, int attempts_left) {
       return;
     }
     if ([[AVAudioSession sharedInstance] setActive:NO
-                                        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
-                                              error:&error]) {
+                                       withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+                                             error:&error]) {
       return;
     }
   }
   if (error.code == AVAudioSessionErrorCodeIsBusy && attempts_left > 0) {
-    NSLog(@"CallAudioSession Deactivate: IsBusy, retrying (%d left)", attempts_left);
+    NSLog(@"AudioSession Deactivate: IsBusy, retrying (%d left)", attempts_left);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kDeactivateRetryNs),
-                   dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
-                   ^{ DeactivateAttempt(gen, attempts_left - 1); });
+                   dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+                     DeactivateAttempt(gen, attempts_left - 1);
+                   });
     return;
   }
-  NSLog(@"CallAudioSession Deactivate: setActive:NO failed: %@", error);
+  NSLog(@"AudioSession Deactivate: setActive:NO failed: %@", error);
 }
 
 } // namespace
 
-void ActivateForVoipCall() {
+void ActivateForVoip() {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
-  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetoothHFP |
-                                          AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+  AVAudioSessionCategoryOptions options =
+      AVAudioSessionCategoryOptionAllowBluetoothHFP | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
   if (g_speakerphone.load()) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
@@ -109,7 +110,7 @@ void ActivateForVoipCall() {
     g_session_active.store(true);
   }
   ApplyRoute(g_speakerphone.load());
-  LogRoute("ActivateForVoipCall");
+  LogRoute("ActivateForVoip");
   (void)error;
 }
 
@@ -141,11 +142,11 @@ void ActivateVoice(AVAudioSessionCategory category, AVAudioSessionCategoryOption
   }
   g_session_gen.fetch_add(1);
   if (![session setCategory:category mode:AVAudioSessionModeDefault options:options error:&error]) {
-    NSLog(@"CallAudioSession voice: setCategory failed: %@", error);
+    NSLog(@"AudioSession voice: setCategory failed: %@", error);
     error = nil;
   }
   if (![session setActive:YES error:&error]) {
-    NSLog(@"CallAudioSession voice: setActive failed: %@", error);
+    NSLog(@"AudioSession voice: setActive failed: %@", error);
   }
   g_voice_active.store(true);
 }
@@ -185,8 +186,8 @@ void SetSpeakerphoneOn(bool on) {
   }
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
-  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetoothHFP |
-                                          AVAudioSessionCategoryOptionAllowBluetoothA2DP;
+  AVAudioSessionCategoryOptions options =
+      AVAudioSessionCategoryOptionAllowBluetoothHFP | AVAudioSessionCategoryOptionAllowBluetoothA2DP;
   if (on) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
@@ -220,7 +221,7 @@ int CaptureReopenSettleDelayMs() {
 void ApplyCaptureAudioHints() {}
 void ClearCaptureAudioHints() {}
 
-} // namespace CallAudioSession
+} // namespace AudioSession
 } // namespace pbr
 
 #endif

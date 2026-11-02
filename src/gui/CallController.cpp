@@ -2,7 +2,7 @@
 #include "gui/CallController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
 #include "lib/media/IMediaView.h"
 #include "lib/media/CameraCaptureOrientation.h"
@@ -447,7 +447,7 @@ void CallController::StopRingback(CallUiBackend* backend) {
   }
   // The ringback worker itself owns activate/release of the audio session (see
   // CallRingtone::RunLoop) — a fast cancel could otherwise race a Deactivate() here
-  // against the worker's own ActivateForVoipCall() and leave the phone in VoIP mode.
+  // against the worker's own ActivateForVoip() and leave the phone in VoIP mode.
   // The engine owns the session once media is active — release unless the call engine
   // is actually active and owns it (a null/unavailable backend means nobody else does).
   const bool release = !(backend && backend->Available() && backend->Media().IsActive());
@@ -925,8 +925,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     StopCameraOrientationTracking();  // camera off: don't keep the motion sensors running
     pushed_camera_rotation_ = -1;
   }
-  in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
-  in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
+  in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
+  in_call.speaker_on = AudioSession::IsSpeakerphoneOn();
   auto* backend = Backend();
   in_call.video_allowed = false;
   in_call.show_camera = false;

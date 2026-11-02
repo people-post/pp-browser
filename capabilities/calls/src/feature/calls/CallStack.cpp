@@ -768,7 +768,7 @@ void CallStack::ReleaseOnOwner() {
     shared->SetSignalingPunch({});
   }
   // Capture / receive threads call into the bridge (send callback): stop them before it goes.
-  if (call_media_engine_ && (call_media_engine_->IsActive() || call_media_engine_->IsSfuMode())) {
+  if (call_media_engine_ && (call_media_engine_->IsActive() || call_media_engine_->IsPacketMode())) {
     call_media_engine_->Stop();
   }
   if (call_sessions_) {

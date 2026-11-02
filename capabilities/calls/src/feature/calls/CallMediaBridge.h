@@ -381,7 +381,7 @@ private:
     std::atomic<uint64_t> epoch{0}; // bumped by ClearMeshConnectFailed
   };
   std::shared_ptr<SeedParkState> seed_park_state_ = std::make_shared<SeedParkState>();
-  /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
+  /** Bumped by AbortConnectSequence; the StartDuplex send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
   /** Names the current key wait; bumped when the pending (key-deferred) answerer changes. */

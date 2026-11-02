@@ -31,7 +31,7 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   out.engine = in.engine;
   out.hop = in.hop;
   out.link = in.link;
-  // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.sfu_mode for capture.
+  // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.packet_mode for capture.
   if (in.hop.attached) {
     out.path_kind = "media_relay";
   } else if (!in.reach_path_kind.empty()) {
@@ -137,7 +137,7 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
           ? (now_ms - v.engine.last_rx_audio_ms)
           : -1;
   std::ostringstream out;
-  out << (v.path_kind.empty() ? (v.engine.sfu_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
+  out << (v.path_kind.empty() ? (v.engine.packet_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
   out << (v.engine.opus_target_bps / 1000) << "k · p";
   const double p = std::max(v.engine.path_pressure, v.hop.path_pressure);
   {

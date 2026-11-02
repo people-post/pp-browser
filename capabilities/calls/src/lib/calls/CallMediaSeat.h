@@ -60,7 +60,7 @@ public:
   void Release(const Token& token);
 
   /**
-   * Duplex StartSfu succeeded (or send-swap) for call_id — bump epoch so in-flight
+   * Duplex StartDuplex succeeded (or send-swap) for call_id — bump epoch so in-flight
    * Release cannot tear down the new session.
    */
   void NoteStart(const std::string& call_id);
@@ -83,7 +83,7 @@ public:
   /** Strict: epoch + call_id match CurrentToken (Release / stale Stop). */
   bool MatchesToken(const Token& token) const;
   /**
-   * Path ops (Direct StartSfu / ReleaseTransport / Hop CompleteAttach) after NoteStart
+   * Path ops (Direct StartDuplex / ReleaseTransport / Hop CompleteAttach) after NoteStart
    * bumps epoch — still valid while call_id remains bound.
    */
   bool AllowsPathOp(const Token& token) const;

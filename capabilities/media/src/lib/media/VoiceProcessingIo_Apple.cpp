@@ -7,7 +7,7 @@
 #if TARGET_OS_OSX
 #include <CoreAudio/CoreAudio.h>
 #else
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #endif
 
 #include <atomic>
@@ -272,7 +272,7 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   // Re-assert the call session here, on the device thread, right before the unit is built: a
   // ringback / ringtone SDL stream closed just ahead of us in the device queue rewrites the
   // AVAudioSession on close (B36), and VPIO then failed AudioOutputUnitStart with 'what'.
-  CallAudioSession::ActivateForVoipCall();
+  AudioSession::ActivateForVoip();
 #endif
   AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
   if (!comp) {

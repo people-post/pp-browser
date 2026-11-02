@@ -23,7 +23,8 @@
 namespace pbr {
 
 /**
- * 1:1 call media via libp2p/SFU packet transport + Opus + SDL (+ platform HW H264, V014/V017/V019).
+ * A live media session (capture → encode → send, receive → decode → play) over a packet send function +
+ * Opus + SDL (+ platform HW H264). Its users name the session (a call, a broadcast) and carry the packets.
  * Always encodes Opus + H264; mute/camera are content-only.
  *
  * Each Start makes a new media session; Stop (or a Start for another session) retires the running
@@ -52,10 +53,10 @@ public:
   void SetHardwareLimits(const HardwareLimits& limits);
 
   /**
-   * SFU encoded packet (app maps to N021 MediaDataFrame).
+   * An encoded media packet (the session's user carries it, e.g. as an N021 MediaDataFrame).
    * channel: 0 = audio (reliable_ordered), 1 = video_lo (latest_lossy).
    */
-  struct SfuPacket {
+  struct MediaPacket {
     /** Publisher stream id (N021); 0 for 1:1 direct. */
     uint32_t stream_id = 0;
     uint16_t channel_id = 0;
@@ -63,7 +64,7 @@ public:
     uint8_t mark = 0;
     std::vector<uint8_t> payload;
   };
-  using SfuSendFn = std::function<void(const SfuPacket&)>;
+  using PacketSendFn = std::function<void(const MediaPacket&)>;
   /** Remote audio tracks (one Opus decoder + jitter buffer per publisher stream_id) kept at once; packets
    *  for further stream ids are dropped (PB-051). Video decoders have their own cap of 4. */
   static constexpr size_t kMaxRemoteAudioTracks = 8;
@@ -83,28 +84,25 @@ public:
     bool operator==(const SessionSpec& o) const { return capture == o.capture && playback == o.playback; }
   };
 
-  /**
-   * Start capture + duplex send for Amp 1:1 call-media **or** media_relay hop (V038).
-   * Name is historical — not “join SFU” alone; Bridge and Topology both call this.
-   */
-  Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
+  /** Start a duplex session `session_id` (capture + send, receive + play), sending with `send`. */
+  Roe<void> StartDuplex(const std::string& session_id, PacketSendFn send);
   /**
    * Start a media session with only the halves `spec` asks for. `send` is required when
    * capturing and ignored otherwise. Capture-only never opens the speaker or decodes inbound
    * packets; playback-only never opens the mic, activates the VoIP audio session or sends.
-   * `StartSfu` = `Start(call_id, SessionSpec::Duplex(), send)`.
+   * `StartDuplex` = `Start(session_id, SessionSpec::Duplex(), send)`.
    */
-  Roe<void> Start(const std::string& session_id, SessionSpec spec, SfuSendFn send);
+  Roe<void> Start(const std::string& session_id, SessionSpec spec, PacketSendFn send);
   /** Halves of the active session (Duplex when idle). */
   SessionSpec ActiveSpec() const;
-  /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
-  void OnSfuPacket(const SfuPacket& packet);
+  /** An inbound packet (already demuxed for this session; plaintext Opus / H264). */
+  void OnInboundPacket(const MediaPacket& packet);
   /**
    * Drop remote jitter/PLC tracks without stopping capture. SoftMigrate send-swap clears
    * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
    */
   void ClearRemoteAudioTracks();
-  bool IsSfuMode() const;
+  bool IsPacketMode() const;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();
   /**
@@ -196,7 +194,7 @@ public:
   /** Force next encoded AU to be an IDR (SoftMigrate / call_video_refresh). */
   void RequestVideoKeyframe();
   /**
-   * Test-only: StartSfu / SetCameraEnabled skip SDL mic/camera open (silence TX, no device prompts).
+   * Test-only: StartDuplex / SetCameraEnabled skip SDL mic/camera open (silence TX, no device prompts).
    * Audio leases come from a private device-less arbiter, so several engines in one test process
    * never contend. Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
    * Call before Start.
@@ -210,8 +208,8 @@ public:
   std::vector<uint32_t> PendingVideoRefreshStreamsForTest() const;
 
   bool IsActive() const override;
-  std::string ActiveCallId() const override;
-  /** Wall time when StartSfu succeeded (0 if inactive). */
+  std::string ActiveSessionId() const override;
+  /** Wall time when StartDuplex succeeded (0 if inactive). */
   int64_t StartedAtMs() const;
   /** False when mic open failed (silence sent); used for permission hints. */
   bool HasLocalCapture() const override;
@@ -240,7 +238,7 @@ private:
   bool Retire(std::shared_ptr<Impl> session);
   /** Replace an idle session so it takes settings changed before Start. */
   void RefreshIdleSession();
-  void SwapSend(Impl& impl, std::shared_ptr<SfuSendFn> abandoned_send);
+  void SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_send);
 
   std::shared_ptr<Shared> shared_;
   std::shared_ptr<Retirements> retirements_;

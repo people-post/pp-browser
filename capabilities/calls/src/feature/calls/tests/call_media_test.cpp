@@ -60,33 +60,33 @@ protected:
 // A call's media runs the one engine for that call: it takes the seat and starts the engine.
 TEST_F(CallMediaTest, StartTakesTheSeatAndRunsTheEngineOnThePath) {
   CallMedia call("call:1", with_seat_);
-  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::MediaPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:1"));
-  EXPECT_EQ(engine_.ActiveCallId(), "call:1");
+  EXPECT_EQ(engine_.ActiveSessionId(), "call:1");
   const uint64_t direct_epoch = seat_.Epoch();
 
   // Direct → Hop on the same call re-points the running engine; the seat stays this call's.
-  ASSERT_TRUE(call.StartEngine(CallMediaPath::Hop, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Hop, [](const MediaEngine::MediaPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:1"));
   EXPECT_GT(seat_.Epoch(), direct_epoch) << "a release posted before the re-point cannot stop it";
-  EXPECT_EQ(engine_.ActiveCallId(), "call:1");
+  EXPECT_EQ(engine_.ActiveSessionId(), "call:1");
 }
 
 // Another call starting media takes the seat from the first (one call owns media at a time).
 TEST_F(CallMediaTest, ASecondCallTakesTheSeat) {
   CallMedia first("call:1", with_seat_);
   CallMedia second("call:2", with_seat_);
-  ASSERT_TRUE(first.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
-  ASSERT_TRUE(second.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(first.StartEngine(CallMediaPath::Direct, [](const MediaEngine::MediaPacket&) {}));
+  ASSERT_TRUE(second.StartEngine(CallMediaPath::Direct, [](const MediaEngine::MediaPacket&) {}));
   EXPECT_TRUE(seat_.IsBound("call:2"));
   EXPECT_FALSE(seat_.IsBound("call:1"));
-  EXPECT_EQ(engine_.ActiveCallId(), "call:2");
+  EXPECT_EQ(engine_.ActiveSessionId(), "call:2");
 }
 
 TEST_F(CallMediaTest, WithoutASeatOnlyTheEngineIsDriven) {
   CallMedia call("call:1", no_seat_);
-  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::SfuPacket&) {}));
-  EXPECT_EQ(engine_.ActiveCallId(), "call:1");
+  ASSERT_TRUE(call.StartEngine(CallMediaPath::Direct, [](const MediaEngine::MediaPacket&) {}));
+  EXPECT_EQ(engine_.ActiveSessionId(), "call:1");
   call.StopEngine("test");
   EXPECT_FALSE(engine_.IsActive());
 }

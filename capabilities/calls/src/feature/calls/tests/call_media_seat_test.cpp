@@ -43,7 +43,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
 }
 
 TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
-  // Dogfood b60d82: Accept leftover Stop must not kill new StartSfu.
+  // Dogfood b60d82: Accept leftover Stop must not kill new StartDuplex.
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
@@ -64,7 +64,7 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
     seat.Release("call:old");
   });
   AppRuntime::RunUIAndOwnerTasks();
-  // Simulate Accept scheduling Stop, then new call StartSfu + NoteStart before Stop runs.
+  // Simulate Accept scheduling Stop, then new call StartDuplex + NoteStart before Stop runs.
   seat.Acquire("call:new");
   seat.NoteStart("call:new");
   EXPECT_NE(seat.Epoch(), epoch_before_release);

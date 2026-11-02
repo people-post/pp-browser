@@ -61,7 +61,7 @@ public:
    * (releasing any other call's media), start — or, when it already runs this call, re-point — the
    * engine, and mark the seat started. Fails when the seat will not hold this call.
    */
-  Roe<void> StartEngine(CallMediaPath path, MediaEngine::SfuSendFn send);
+  Roe<void> StartEngine(CallMediaPath path, MediaEngine::PacketSendFn send);
 
   /** Stop the engine (capture threads, send). The seat stays bound — the call may restart. */
   void StopEngine(const char* why);

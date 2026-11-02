@@ -1,5 +1,5 @@
 #include "common/ByteRateLimiter.h"
-#include "lib/media/CallMediaPlayout.h"
+#include "lib/media/AudioPlayout.h"
 
 #include <gtest/gtest.h>
 
@@ -18,7 +18,7 @@ TEST(ByteRateLimiterTest, EnforcesRate) {
   ByteRateLimiter lim;
   lim.Configure(/*rate_bps=*/8'000, /*burst_bytes=*/100); // 1000 bytes/s
   EXPECT_TRUE(lim.TryConsume(100, 0));
-  EXPECT_FALSE(lim.TryConsume(100, 0)); // burst spent
+  EXPECT_FALSE(lim.TryConsume(100, 0));  // burst spent
   EXPECT_TRUE(lim.TryConsume(50, 1000)); // +1000ms → +1000 bytes tokens, capped at burst 100
 }
 
@@ -240,7 +240,7 @@ TEST(AudioJitterBufferTest, BackwardSeqRestartReprimes) {
   AudioJitterBuffer buf;
   (void)RunSteady(buf, 1, 1000);
   const uint64_t late_before = buf.drops_late();
-  // Peer re-StartSfu / BeginSession: seq restarts at 1 on the same track.
+  // Peer re-StartDuplex / BeginSession: seq restarts at 1 on the same track.
   uint32_t seq = 1;
   for (size_t i = 0; i < kTarget - 1; ++i) {
     buf.Push(Pkt(seq++));
@@ -331,7 +331,7 @@ TEST(AudioJitterBufferTest, SmallHoleAfterUnderrunIsConcealed) {
     (void)buf.PopForPlayout();
   }
   EXPECT_EQ(buf.PopForPlayout().kind, Kind::Empty); // underrun, queue empty
-  buf.Push(Pkt(kTarget + 2));                        // kTarget + 1 lost, lands in an empty queue
+  buf.Push(Pkt(kTarget + 2));                       // kTarget + 1 lost, lands in an empty queue
   const auto gap = buf.PopForPlayout();
   ASSERT_EQ(gap.kind, Kind::Gap);
   EXPECT_EQ(gap.seq, kTarget + 1);
@@ -384,7 +384,7 @@ uint32_t FeedArrivals(AudioArrivalJitter& j, uint32_t seq, int64_t t0, int n, Ex
 // Every 100 packets (2 s) the network stalls 300 ms, then the backlog arrives at once.
 int64_t StallExtra(int i) {
   const int phase = i % 100;
-  return phase < 15 ? (15 - phase) * 20 : 0;  // packets 0..14 of each cycle arrive together at +300 ms
+  return phase < 15 ? (15 - phase) * 20 : 0; // packets 0..14 of each cycle arrive together at +300 ms
 }
 
 TEST(AudioArrivalJitterTest, WarmUpStartsAtMinimum) {
@@ -396,13 +396,13 @@ TEST(AudioArrivalJitterTest, WarmUpStartsAtMinimum) {
 
 TEST(AudioArrivalJitterTest, SteadyNetworkStaysAtSixtyMs) {
   AudioArrivalJitter j;
-  FeedArrivals(j, 1, 1000, 500, [](int i) { return (i % 3) * 2; });  // ±few ms of noise
+  FeedArrivals(j, 1, 1000, 500, [](int i) { return (i % 3) * 2; }); // ±few ms of noise
   EXPECT_EQ(j.TargetFrames(), 3u);
 }
 
 TEST(AudioArrivalJitterTest, PeriodicStallsRaiseTarget) {
   AudioArrivalJitter j;
-  FeedArrivals(j, 1, 1000, 1000, StallExtra);  // 20 s
+  FeedArrivals(j, 1, 1000, 1000, StallExtra); // 20 s
   EXPECT_GE(j.TargetFrames(), 14u);           // >= 280 ms (99th pct of 15 staggered late packets per 100)
   EXPECT_LE(j.TargetFrames(), 20u);           // <= 400 ms
 }
@@ -410,8 +410,8 @@ TEST(AudioArrivalJitterTest, PeriodicStallsRaiseTarget) {
 TEST(AudioArrivalJitterTest, TargetDecaysAfterNetworkCalms) {
   AudioArrivalJitter j;
   uint32_t seq = FeedArrivals(j, 1, 1000, 1000, StallExtra);
-  FeedArrivals(j, seq, 1000 + 1000 * 20, 1500, [](int) { return 0; });  // 30 s calm
-  EXPECT_LE(j.TargetFrames(), 5u);  // <= 100 ms
+  FeedArrivals(j, seq, 1000 + 1000 * 20, 1500, [](int) { return 0; }); // 30 s calm
+  EXPECT_LE(j.TargetFrames(), 5u);                                     // <= 100 ms
 }
 
 TEST(AudioArrivalJitterTest, SingleLatePacketDoesNotRaiseTarget) {
@@ -429,7 +429,7 @@ TEST(AudioArrivalJitterTest, LargeSeqValuesStayStable) {
 TEST(AudioArrivalJitterTest, ReceiverClockStepRecovers) {
   AudioArrivalJitter j;
   uint32_t seq = FeedArrivals(j, 1, 100'000, 300, [](int) { return 0; });
-  seq = FeedArrivals(j, seq, 50'000, 1500, [](int) { return 0; });  // clock stepped back 50 s, then steady 30 s
+  seq = FeedArrivals(j, seq, 50'000, 1500, [](int) { return 0; }); // clock stepped back 50 s, then steady 30 s
   EXPECT_LE(j.TargetFrames(), 5u);
 }
 
@@ -461,7 +461,7 @@ TEST(AudioJitterBufferTest, StallsRaiseTargetAndStopUnderruns) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
   uint64_t underruns_first_half = 0;
-  for (int i = 0; i < 2000; ++i) {  // 40 s of 20 ms slots; StallExtra from Task 1 shapes arrivals
+  for (int i = 0; i < 2000; ++i) { // 40 s of 20 ms slots; StallExtra from Task 1 shapes arrivals
     const int64_t now = 1000 + static_cast<int64_t>(i) * 20;
     // deliver every packet whose (nominal + stall extra) arrival time has passed
     while (1000 + static_cast<int64_t>(seq - 1) * 20 + StallExtra(static_cast<int>(seq - 1)) <= now) {
@@ -469,7 +469,8 @@ TEST(AudioJitterBufferTest, StallsRaiseTargetAndStopUnderruns) {
       ++seq;
     }
     (void)buf.PopForPlayout();
-    if (i == 999) underruns_first_half = buf.underruns();
+    if (i == 999)
+      underruns_first_half = buf.underruns();
   }
   EXPECT_GE(buf.TargetFrames(), 14u);
   // adapted: the last 20 s (10 stalls) underrun at most ~1 slot per stall (a fixed 60 ms target underruns ~12 per stall)
@@ -479,10 +480,12 @@ TEST(AudioJitterBufferTest, StallsRaiseTargetAndStopUnderruns) {
 TEST(AudioJitterBufferTest, RestartResetsJitterTarget) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
-  for (int i = 0; i < 1000; ++i, ++seq) buf.Push(PktAt(seq, 1000 + i * 20 + StallExtra(i))), (void)buf.PopForPlayout();
+  for (int i = 0; i < 1000; ++i, ++seq)
+    buf.Push(PktAt(seq, 1000 + i * 20 + StallExtra(i))), (void)buf.PopForPlayout();
   ASSERT_GE(buf.TargetFrames(), 14u);
   // Sender restart: large backward jump → Reset()
-  for (uint32_t s = 1; s <= 5; ++s) buf.Push(PktAt(s, 100'000 + s * 20));
+  for (uint32_t s = 1; s <= 5; ++s)
+    buf.Push(PktAt(s, 100'000 + s * 20));
   EXPECT_EQ(buf.TargetFrames(), 3u);
 }
 
@@ -492,7 +495,7 @@ TEST(AudioJitterBufferTest, PrimesAtSixtyMsEvenAfterEarlyOutlier) {
   AudioJitterBuffer buf;
   buf.Push(PktAt(1, 1000));
   buf.Push(PktAt(2, 1020));
-  buf.Push(PktAt(3, 1540)); // 500 ms late outlier: skews the (tiny-sample) adaptive target way up
+  buf.Push(PktAt(3, 1540));           // 500 ms late outlier: skews the (tiny-sample) adaptive target way up
   ASSERT_GE(buf.TargetFrames(), 10u); // sanity: the outlier really did skew the adaptive target
   auto p = buf.PopForPlayout();
   EXPECT_EQ(p.kind, Kind::Packet); // primes at kTargetFrames (3), not the skewed adaptive target
@@ -518,11 +521,12 @@ TEST(AudioJitterBufferTest, DuplicatesDoNotRaiseTarget) {
 
 TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
   AudioJitterBuffer buf;
-  for (uint32_t s = 1; s <= 3; ++s) buf.Push(Pkt(s));
-  EXPECT_FALSE(buf.OverTarget());   // 3 <= 3 + 1
+  for (uint32_t s = 1; s <= 3; ++s)
+    buf.Push(Pkt(s));
+  EXPECT_FALSE(buf.OverTarget()); // 3 <= 3 + 1
   buf.Push(Pkt(4));
   buf.Push(Pkt(5));
-  EXPECT_TRUE(buf.OverTarget());    // 5 > 4
+  EXPECT_TRUE(buf.OverTarget()); // 5 > 4
   buf.NoteSilenceDrop();
   EXPECT_EQ(buf.silence_drops(), 1u);
   EXPECT_EQ(buf.speech_drops(), 0u);
@@ -530,13 +534,13 @@ TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
 
 TEST(CatchUpSilenceTest, QuietFrameIsSilence) {
   std::vector<int16_t> pcm(960, 0);
-  pcm[10] = 200;  // ~ -44 dBFS peak
+  pcm[10] = 200; // ~ -44 dBFS peak
   EXPECT_TRUE(IsCatchUpSilence(pcm, pcm.size()));
 }
 
 TEST(CatchUpSilenceTest, LoudFrameIsNotCatchUpSilence) {
   std::vector<int16_t> pcm(960, 0);
-  pcm[500] = 1000;  // ~ -30 dBFS peak
+  pcm[500] = 1000; // ~ -30 dBFS peak
   EXPECT_FALSE(IsCatchUpSilence(pcm, pcm.size()));
   pcm[500] = 0;
   pcm[600] = -1000;
@@ -546,14 +550,15 @@ TEST(CatchUpSilenceTest, LoudFrameIsNotCatchUpSilence) {
 TEST(CatchUpSilenceTest, OnlyFirstSamplesCount) {
   std::vector<int16_t> pcm(960, 0);
   pcm[900] = 20000;
-  EXPECT_TRUE(IsCatchUpSilence(pcm, 480));  // only the decoded part is inspected
+  EXPECT_TRUE(IsCatchUpSilence(pcm, 480)); // only the decoded part is inspected
 }
 
 TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
-  for (int i = 0; i < 12; ++i) buf.Push(Pkt(seq++));  // 12 queued, target 3 → surplus 9 > 5
-  for (int i = 0; i < 30; ++i) {                       // steady 1-in-1-out for > one 25-pop window
+  for (int i = 0; i < 12; ++i)
+    buf.Push(Pkt(seq++));        // 12 queued, target 3 → surplus 9 > 5
+  for (int i = 0; i < 30; ++i) { // steady 1-in-1-out for > one 25-pop window
     buf.Push(Pkt(seq++));
     (void)buf.PopForPlayout();
   }
@@ -563,17 +568,20 @@ TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
 
 TEST(AudioJitterBufferTest, HardCapIsFortyFrames) {
   AudioJitterBuffer buf;
-  for (uint32_t s = 1; s <= 60; ++s) buf.Push(Pkt(s));
+  for (uint32_t s = 1; s <= 60; ++s)
+    buf.Push(Pkt(s));
   EXPECT_LE(buf.size(), 40u);
   EXPECT_EQ(buf.speech_drops(), 20u);
 }
 
 TEST(AudioJitterBufferTest, PressureStillSignalsAtTwoHundredMs) {
   AudioJitterBuffer buf;
-  for (uint32_t s = 1; s <= 10; ++s) buf.Push(Pkt(s));
+  for (uint32_t s = 1; s <= 10; ++s)
+    buf.Push(Pkt(s));
   EXPECT_GE(buf.Pressure(0), 1.0);
   AudioJitterBuffer buf2;
-  for (uint32_t s = 1; s <= 8; ++s) buf2.Push(Pkt(s));
+  for (uint32_t s = 1; s <= 8; ++s)
+    buf2.Push(Pkt(s));
   EXPECT_EQ(buf2.Pressure(0), 0.0);
 }
 
@@ -625,8 +633,8 @@ TEST(ApplySoftGainTest, LoudSamplesNeverClipAndStayMonotonic) {
   for (size_t i = 1; i < pcm.size(); ++i) {
     EXPECT_GE(pcm[i], pcm[i - 1]) << "at " << i;
   }
-  EXPECT_LT(pcm.back(), 32767);  // soft knee approaches but never reaches full scale (a clamp would)
-  EXPECT_GT(pcm.back(), 29000);  // a boosted full-scale peak lands near, not past, full scale
+  EXPECT_LT(pcm.back(), 32767); // soft knee approaches but never reaches full scale (a clamp would)
+  EXPECT_GT(pcm.back(), 29000); // a boosted full-scale peak lands near, not past, full scale
 }
 
 TEST(ApplySoftGainTest, SymmetricForNegativeSamples) {

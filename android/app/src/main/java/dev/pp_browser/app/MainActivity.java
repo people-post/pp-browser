@@ -567,42 +567,42 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
+     * Called from native {@code AudioSession} when a VoIP call starts/ends.
      * Phones: {@link AudioManager#MODE_IN_COMMUNICATION} for earpiece/speaker routing.
      * Speaker-only tablets (no earpiece): stay in {@link AudioManager#MODE_NORMAL} so
      * SDL AAudio MEDIA streams are not ducked (API &lt; 28 cannot set
      * {@code AAUDIO_USAGE_VOICE_COMMUNICATION} — SM-T380 whisper-quiet dogfood).
      */
-    public void setCallAudioSessionActive(boolean active) {
-        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-        if (am == null) {
-            return;
-        }
-        if (active) {
-            final boolean speakerOnly = !hasCallEarpieceRoute();
-            if (speakerOnly) {
-                am.setMode(AudioManager.MODE_NORMAL);
-                am.setSpeakerphoneOn(true);
-                requestCallAudioFocus(am, true);
-                ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
-                Log.i(TAG, "Speaker-only call audio: MODE_NORMAL + STREAM_MUSIC floor");
-            } else {
-                am.setMode(AudioManager.MODE_IN_COMMUNICATION);
-                requestCallAudioFocus(am, false);
-                ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
-            }
+    public void setAudioSessionActive(boolean active) {
+      AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+      if (am == null) {
+        return;
+      }
+      if (active) {
+        final boolean speakerOnly = !hasCallEarpieceRoute();
+        if (speakerOnly) {
+          am.setMode(AudioManager.MODE_NORMAL);
+          am.setSpeakerphoneOn(true);
+          requestCallAudioFocus(am, true);
+          ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
+          Log.i(TAG, "Speaker-only call audio: MODE_NORMAL + STREAM_MUSIC floor");
         } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                am.clearCommunicationDevice();
-            }
-            am.setSpeakerphoneOn(false);
-            am.setMode(AudioManager.MODE_NORMAL);
-            abandonCallAudioFocus(am);
+          am.setMode(AudioManager.MODE_IN_COMMUNICATION);
+          requestCallAudioFocus(am, false);
+          ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
         }
+      } else {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          am.clearCommunicationDevice();
+        }
+        am.setSpeakerphoneOn(false);
+        am.setMode(AudioManager.MODE_NORMAL);
+        abandonCallAudioFocus(am);
+      }
     }
 
     /**
-     * Called from native {@code CallAudioSession.SupportsSpeakerToggle}.
+     * Called from native {@code AudioSession.SupportsSpeakerToggle}.
      * Phones expose {@link AudioDeviceInfo#TYPE_BUILTIN_EARPIECE}; tablets (e.g. SM-T380)
      * only have the loudspeaker, so FORCE_SPEAKER vs FORCE_NONE is inaudible.
      */
@@ -623,7 +623,7 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} for in-call speaker / earpiece.
+     * Called from native {@code AudioSession} for in-call speaker / earpiece.
      * Synchronous: ToggleSpeaker reopens SDL capture immediately after this returns.
      */
     public void setCallSpeakerphoneOn(boolean on) {
@@ -631,7 +631,7 @@ public class MainActivity extends SDLActivity {
         if (am == null) {
             return;
         }
-        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setCallAudioSessionActive).
+        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setAudioSessionActive).
         if (!hasCallEarpieceRoute()) {
             am.setSpeakerphoneOn(true);
             ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);

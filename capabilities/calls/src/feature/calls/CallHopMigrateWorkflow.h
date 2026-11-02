@@ -312,14 +312,14 @@ private:
   std::function<void(mesh::MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
   void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
   void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
-  /** Calls owner: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
+  /** Calls owner: commit an attached hop (StartDuplex, state, chrome) unless the call moved on. */
   Roe<void> CompleteHopAttach(const HopAttach& at, int64_t a_up_bps);
   void ApplyQuoteAdaptation(int64_t a_up_bps);
   Roe<void> CheckHopAttachStillWanted(const HopAttach& at);
   bool OwnsHopAttachFlight(const HopAttach& at) const;
   /** Detach the relay session and report the attach as aborted. */
   Roe<void> AbortHopAttach();
-  MediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
+  MediaEngine::PacketSendFn MakeHopSendFn(const HopAttach& at);
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);

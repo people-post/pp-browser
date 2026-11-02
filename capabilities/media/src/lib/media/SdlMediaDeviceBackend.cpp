@@ -1,4 +1,4 @@
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #include "lib/media/CameraCandidates.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -427,7 +427,7 @@ public:
 
   std::chrono::milliseconds ReopenSettle(MediaDeviceKind kind) const override {
     // Android: let the OEM speaker route settle before AudioRecord reopens (Moto safety ramp).
-    return kind == MediaDeviceKind::Mic ? std::chrono::milliseconds(CallAudioSession::CaptureReopenSettleDelayMs())
+    return kind == MediaDeviceKind::Mic ? std::chrono::milliseconds(AudioSession::CaptureReopenSettleDelayMs())
                                         : std::chrono::milliseconds(0);
   }
 
@@ -436,9 +436,9 @@ private:
   static SDL_AudioStream* OpenMic(const AudioDeviceFormat& format, const std::function<bool()>& still_wanted,
                                   std::string* error) {
     const SDL_AudioSpec spec = ToSdlSpec(format);
-    const int attempts = CallAudioSession::CaptureOpenAttemptCount();
+    const int attempts = AudioSession::CaptureOpenAttemptCount();
     for (int attempt = 0; attempt < attempts; ++attempt) {
-      if (const int delay_ms = CallAudioSession::CaptureOpenRetryDelayMs(attempt); delay_ms > 0) {
+      if (const int delay_ms = AudioSession::CaptureOpenRetryDelayMs(attempt); delay_ms > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
       }
       if (!still_wanted()) {

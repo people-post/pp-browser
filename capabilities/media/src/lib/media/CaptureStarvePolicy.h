@@ -11,7 +11,7 @@ namespace pbr {
  * then too (a wedged Android AudioRecord never recovers by itself). Voice processing (Apple VPIO)
  * starts slowly: opening takes 1.3–2.5 s on macOS and the first input can lag more than 500 ms.
  * Reopening it at 500 ms restarted it before it warmed up, and each reopen cost another ~2 s —
- * a loop that left the Mac mic silent for 15–60 s at the start of a call.
+ * a loop that left the Mac mic silent for 15–60 s at the start of a session.
  */
 struct CaptureStarvePolicy {
   /** No PCM this long: send silence (and reopen an SDL device). */
@@ -22,7 +22,7 @@ struct CaptureStarvePolicy {
   static constexpr int64_t kVoiceStallMs = 1000;
   /** Starvation reopens only count as "in a row" until the unit has run this long after one. */
   static constexpr int64_t kVoiceHealthyMs = 5000;
-  /** This many starvation reopens in a row: give up on voice processing for the call. */
+  /** This many starvation reopens in a row: give up on voice processing for the session. */
   static constexpr int kVoiceMaxReopens = 3;
 
   /** How long without PCM before a reopen, given how long ago the device was (re)opened. */
