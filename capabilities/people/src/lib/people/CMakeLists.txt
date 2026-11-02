@@ -22,6 +22,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   RegistrationStatus.cpp
   AccountCard.cpp
   DevicePeerId.cpp
+  PeerCards.cpp
   AccountCardRequest.cpp
   PeerKemKeyStore.cpp
   PeerSigningKeyStore.cpp
@@ -36,15 +37,12 @@ pp_browser_add_lib_library(pp_lib_people
     pp_foundation_identity
     sodium)
 
-if(NOT PP_BROWSER_HEADLESS)
-  # Peers' cards in the profile database (SQLite): the app's, not the headless node's, which builds no SQLite.
-  pp_browser_add_lib_library(pp_lib_people_cards
-    SOURCES PeerCardStore.cpp
-    PUBLIC_LIBS
-      pp_lib_people
-      SQLite::SQLite3)
-endif()
-
 if(PP_BROWSER_BUILD_TESTS)
+  # People's stores in memory (peer cards): test binaries only, never linked into the app or pp-node.
+  pp_browser_add_lib_library(pp_lib_people_testing
+    SOURCES
+      testing/InMemoryPeerCards.cpp
+    PUBLIC_LIBS
+      pp_lib_people)
   add_subdirectory(tests)
 endif()

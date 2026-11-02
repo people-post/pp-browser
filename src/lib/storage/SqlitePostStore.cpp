@@ -1,4 +1,4 @@
-#include "lib/posts/PostStore.h"
+#include "lib/storage/SqlitePostStore.h"
 
 #include "lib/posts/PostEntry.h"
 
@@ -101,7 +101,7 @@ StoredPostEntry EntryFromRow(const Stmt& row) {
 
 } // namespace
 
-class PostStore::Db {
+class SqlitePostStore::Db {
 public:
   explicit Db(sqlite3* db) : db_(db) {}
   ~Db() { sqlite3_close(db_); }
@@ -115,11 +115,11 @@ private:
   sqlite3* db_;
 };
 
-PostStore::PostStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {
-  redirectLogger("PostStore");
+SqlitePostStore::SqlitePostStore(std::string profile_db_path) : profile_db_path_(std::move(profile_db_path)) {
+  redirectLogger("SqlitePostStore");
 }
 
-Roe<PostStore::Db> PostStore::Open() const {
+Roe<SqlitePostStore::Db> SqlitePostStore::Open() const {
   sqlite3* raw = nullptr;
   if (sqlite3_open(profile_db_path_.c_str(), &raw) != SQLITE_OK) {
     sqlite3_close(raw);
@@ -139,21 +139,7 @@ Roe<PostStore::Db> PostStore::Open() const {
   return db;
 }
 
-Roe<PostStore::Added> PostStore::AddEntry(const SignedPostEntry& entry, const PostEntry& parsed,
-                                          const PostHash& entry_hash) {
-  StoredPostEntry row{.author = parsed.author,
-                      .lane = parsed.lane,
-                      .seq = parsed.seq,
-                      .entry_hash = entry_hash,
-                      .kind = parsed.kind,
-                      .claimed_at = parsed.claimed_at,
-                      .size = entry.canonical.size() + entry.signature.size(),
-                      .signed_bytes = SerializeSignedPostEntry(entry),
-                      .stub = PostStub::None};
-  return AddStub(row);
-}
-
-Roe<PostStore::Added> PostStore::AddStub(const StoredPostEntry& row) {
+Roe<IPostStore::Added> SqlitePostStore::AddStub(const StoredPostEntry& row) {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -200,7 +186,7 @@ Roe<PostStore::Added> PostStore::AddStub(const StoredPostEntry& row) {
   return fork ? Added::Fork : Added::New;
 }
 
-Roe<void> PostStore::StubOut(const std::string& author, const PostLane& lane, const uint64_t seq,
+Roe<void> SqlitePostStore::StubOut(const std::string& author, const PostLane& lane, const uint64_t seq,
                              const PostHash& entry_hash, const PostStub why) {
   std::lock_guard lock(mutex_);
   auto db = Open();
@@ -221,7 +207,7 @@ Roe<void> PostStore::StubOut(const std::string& author, const PostLane& lane, co
   return {};
 }
 
-Roe<std::vector<StoredPostEntry>> PostStore::At(const std::string& author, const PostLane& lane,
+Roe<std::vector<StoredPostEntry>> SqlitePostStore::At(const std::string& author, const PostLane& lane,
                                                 const uint64_t seq) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
@@ -243,7 +229,7 @@ Roe<std::vector<StoredPostEntry>> PostStore::At(const std::string& author, const
   return out;
 }
 
-Roe<std::vector<StoredPostEntry>> PostStore::Range(const std::string& author, const PostLane& lane,
+Roe<std::vector<StoredPostEntry>> SqlitePostStore::Range(const std::string& author, const PostLane& lane,
                                                    const uint64_t from_seq, const size_t limit) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
@@ -266,7 +252,7 @@ Roe<std::vector<StoredPostEntry>> PostStore::Range(const std::string& author, co
   return out;
 }
 
-Roe<std::vector<PostHeadLane>> PostStore::LanesOf(const std::string& author) const {
+Roe<std::vector<PostHeadLane>> SqlitePostStore::LanesOf(const std::string& author) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -288,7 +274,7 @@ Roe<std::vector<PostHeadLane>> PostStore::LanesOf(const std::string& author) con
   return out;
 }
 
-Roe<bool> PostStore::HasFork(const std::string& author) const {
+Roe<bool> SqlitePostStore::HasFork(const std::string& author) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -303,7 +289,7 @@ Roe<bool> PostStore::HasFork(const std::string& author) const {
   return select.Row();
 }
 
-Roe<void> PostStore::PutHead(const SignedPostHead& head, const PostHead& parsed) {
+Roe<void> SqlitePostStore::PutHead(const SignedPostHead& head, const PostHead& parsed) {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -323,7 +309,7 @@ Roe<void> PostStore::PutHead(const SignedPostHead& head, const PostHead& parsed)
   return {};
 }
 
-Roe<std::optional<SignedPostHead>> PostStore::Head(const std::string& author) const {
+Roe<std::optional<SignedPostHead>> SqlitePostStore::Head(const std::string& author) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -340,7 +326,7 @@ Roe<std::optional<SignedPostHead>> PostStore::Head(const std::string& author) co
   return std::optional<SignedPostHead>(SignedPostHead{select.ColBlob(0), select.ColBlob(1)});
 }
 
-Roe<std::optional<OwnPostLane>> PostStore::OwnLane(const std::string& device) const {
+Roe<std::optional<OwnPostLane>> SqlitePostStore::OwnLane(const std::string& device) const {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {
@@ -362,7 +348,7 @@ Roe<std::optional<OwnPostLane>> PostStore::OwnLane(const std::string& device) co
                                                 .last_claimed_at = select.ColInt(3)});
 }
 
-Roe<void> PostStore::PutOwnLane(const OwnPostLane& lane) {
+Roe<void> SqlitePostStore::PutOwnLane(const OwnPostLane& lane) {
   std::lock_guard lock(mutex_);
   auto db = Open();
   if (!db) {

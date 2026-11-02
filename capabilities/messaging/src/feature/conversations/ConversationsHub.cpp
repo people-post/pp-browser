@@ -31,7 +31,7 @@
 #include "feature/conversations/ContactCardExchange.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
-#include "lib/people/PeerCardStore.h"
+#include "lib/people/PeerCards.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -890,6 +890,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   group_roster_ = std::move(opened_stores->rosters);
   thread_prefs_ = std::move(opened_stores->thread_prefs);
   thread_mentions_ = std::move(opened_stores->thread_mentions);
+  peer_card_rows_ = std::move(opened_stores->peer_cards);
   at_rest_ = std::move(opened_stores->at_rest);
   profile_db_path_ = std::move(opened_stores->profile_db_path);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
@@ -1003,7 +1004,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
   }
   BindPricingFamilies();
-  peer_cards_ = std::make_unique<PeerCardStore>(profile_db_path_);
+  peer_cards_ = std::make_unique<PeerCards>(*peer_card_rows_);
   // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
@@ -3016,6 +3017,7 @@ void ConversationsHub::Shutdown() {
   contact_cards_.reset();
   account_keys_.reset();
   peer_cards_.reset();
+  peer_card_rows_.reset();
   // Participants free the rest (media engine, key and session stores) after DEK unregister above.
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnShutdown();

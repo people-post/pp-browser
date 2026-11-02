@@ -4,6 +4,7 @@
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteControlLaneSeenStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqlitePeerCardStore.h"
 #include "lib/storage/SqlitePeerSessionStore.h"
 #include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "lib/storage/SqliteThreadMentionsStore.h"
@@ -26,6 +27,7 @@ Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, 
   stores.rosters = std::make_unique<SqliteGroupRosterStore>(stores.profile_db_path);
   stores.thread_prefs = std::make_unique<SqliteThreadLocalPrefsStore>(stores.profile_db_path);
   stores.thread_mentions = std::make_unique<SqliteThreadMentionsStore>(stores.profile_db_path);
+  stores.peer_cards = std::make_unique<SqlitePeerCardStore>(stores.profile_db_path);
   return stores;
 }
 

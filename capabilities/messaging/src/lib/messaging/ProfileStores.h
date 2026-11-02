@@ -7,6 +7,7 @@
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/messaging/IThreadMentionsStore.h"
+#include "lib/people/PeerCards.h"
 
 #include "common/Error.h"
 
@@ -29,9 +30,11 @@ struct ProfileStores {
   std::unique_ptr<IGroupRosterStore> rosters;
   std::unique_ptr<IThreadLocalPrefsStore> thread_prefs;
   std::unique_ptr<IThreadMentionsStore> thread_mentions;
+  /** Peers' cards (people's rows; PeerCards is the logic over them). */
+  std::unique_ptr<IPeerCardStore> peer_cards;
   /** The stores above that are encrypted at rest: the hub hands them the profile's data key. */
   std::vector<IDekConsumer*> at_rest;
-  /** The profile database, for the stores not behind ports yet (calls', people's cards: CR024 stages 3–4). */
+  /** The profile database, for what still opens it by path (CR024: content's index). */
   std::string profile_db_path;
 };
 

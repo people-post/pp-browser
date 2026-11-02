@@ -84,7 +84,7 @@ class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
-class PeerCardStore;
+class PeerCards;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -549,7 +549,8 @@ private:
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   /** Account cards this device has checked and kept (profile.db). */
-  std::unique_ptr<PeerCardStore> peer_cards_;
+  std::unique_ptr<IPeerCardStore> peer_card_rows_;
+  std::unique_ptr<PeerCards> peer_cards_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
   Roe<void> KeepLinkedAccountCard(const std::string& card_json);

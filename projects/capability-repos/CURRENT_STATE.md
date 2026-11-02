@@ -118,10 +118,14 @@
   are calls', on the port) handed to `CallStack::InitializeStores` as `CallStores`, which `CallsParticipant` opens
   through storage (`OpenSqliteCallStores`); in-memory ones in `lib/calls/testing`, a contract test on both. Calls
   holds no SQL and no at-rest encryption.
+- **CR024 stage 4, people and posts:** `PeerCardStore` is people's `PeerCards` (the checks, the merge, the floors)
+  over an `IPeerCardStore` port, from `ProfileStores`; `PostStore` is social's `IPostStore` (`AddEntry` on the port).
+  Their SQLite ones are storage's, in-memory ones in each capability's `testing/`, contract tests on both. People and
+  posts hold no SQL; `pp_lib_people_cards` is gone (the cards are plain people code, headless too).
 
 ## Next
 
-1. CR024 stage 4: people's and social's stores (`PeerCardStore`, `PostStore`, `ObjectIndex`) behind ports.
+1. CR024 stage 4, content: `ObjectIndex` (inside `CasStore`, which several places open by path).
 2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
 3. Contracts repo (CR010) when convenient.
 4. P3's namespaces when a second app needs a capability.

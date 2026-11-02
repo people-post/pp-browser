@@ -1,11 +1,11 @@
 #include "lib/posts/PostAuthor.h"
 #include "lib/posts/PostBodies.h"
-#include "lib/posts/PostStore.h"
+#include "lib/posts/IPostStore.h"
+#include "lib/posts/testing/InMemoryPostStore.h"
 #include "lib/posts/tests/PostTestAccount.h"
 
 #include <gtest/gtest.h>
 
-#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -16,24 +16,15 @@ constexpr int64_t kNow = 1'761'235'200'000;
 
 class PostStoreTest : public ::testing::Test {
 protected:
-  void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() / ("pp_posts_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
-    std::filesystem::remove_all(dir_);
-    std::filesystem::create_directories(dir_);
-    store_ = std::make_unique<PostStore>((dir_ / "profile.db").string());
-  }
-  void TearDown() override {
-    store_.reset();
-    std::filesystem::remove_all(dir_);
-  }
+  // The in-memory store: the SQLite one passes the same cases (lib/storage/tests/post_store_contract_test).
+  void SetUp() override { store_ = std::make_unique<InMemoryPostStore>(); }
 
   PostAuthor AuthorOn(const std::string& device, PostLane lane) {
     return PostAuthor(*store_, alice_.account_id, device, alice_.Signer(), [lane]() { return lane; });
   }
   static ByteVector Text(const std::string& text) { return EncodePostBody({.text = text}); }
 
-  std::filesystem::path dir_;
-  std::unique_ptr<PostStore> store_;
+  std::unique_ptr<IPostStore> store_;
   test::PostTestAccount alice_ = test::PostTestAccount::Make();
 };
 
@@ -113,11 +104,11 @@ TEST_F(PostStoreTest, ARivalEntryAtTheSameSeqIsAFork) {
   const SignedPostEntry signed_rival = SignPostEntry(rival, alice_.Signer()).value();
   auto added = store_->AddEntry(signed_rival, rival, PostEntryHash(signed_rival.canonical));
   ASSERT_TRUE(added);
-  EXPECT_EQ(added.value(), PostStore::Added::Fork);
+  EXPECT_EQ(added.value(), IPostStore::Added::Fork);
   EXPECT_TRUE(store_->HasFork(alice_.account_id).value());
   EXPECT_EQ(store_->At(alice_.account_id, PostLane{1}, 1).value().size(), 2u) << "both kept, as proof";
   EXPECT_EQ(store_->AddEntry(signed_rival, rival, PostEntryHash(signed_rival.canonical)).value(),
-            PostStore::Added::Duplicate);
+            IPostStore::Added::Duplicate);
 }
 
 TEST_F(PostStoreTest, StubsKeepThePlaceWithoutTheBytes) {
@@ -144,7 +135,7 @@ TEST_F(PostStoreTest, StubsKeepThePlaceWithoutTheBytes) {
   ASSERT_TRUE(store_->AddStub({.author = alice_.account_id, .lane = PostLane{5}, .seq = 1, .entry_hash = later_hash,
                                .kind = later.kind, .claimed_at = kNow, .size = 100, .stub = PostStub::Unkept}));
   EXPECT_FALSE(store_->At(alice_.account_id, PostLane{5}, 1).value()[0].signed_bytes.has_value());
-  EXPECT_EQ(store_->AddEntry(signed_later, later, later_hash).value(), PostStore::Added::Duplicate);
+  EXPECT_EQ(store_->AddEntry(signed_later, later, later_hash).value(), IPostStore::Added::Duplicate);
   EXPECT_TRUE(store_->At(alice_.account_id, PostLane{5}, 1).value()[0].signed_bytes.has_value());
 }
 
