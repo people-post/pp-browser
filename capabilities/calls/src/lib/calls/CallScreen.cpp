@@ -62,6 +62,10 @@ bool ShowsParticipantCount(const CallScreen& screen) {
   return screen.was_connected && regrouping;
 }
 
+bool ShowsCameraButton(const bool encoder_available, const bool path_allows_video, const bool camera_on) {
+  return encoder_available && (path_allows_video || camera_on);
+}
+
 bool ShowsCameraFlip(const bool mobile, const bool show_camera, const bool camera_on) {
   return mobile && show_camera && camera_on;
 }

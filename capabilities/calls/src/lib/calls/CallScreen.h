@@ -103,6 +103,14 @@ const char* CallScreenStatusName(CallScreen::Status status);
  */
 bool ShowsParticipantCount(const CallScreen& screen);
 
+/**
+ * The camera button: needs a video encoder and a path that allows video — but never hides while the
+ * camera is on. The path verdict follows live jitter pressure and flaps (B130: on a relayed cellular
+ * call it crossed the limit 5 s in and took the off switch and the flip button away from a camera
+ * that kept sending).
+ */
+bool ShowsCameraButton(bool encoder_available, bool path_allows_video, bool camera_on);
+
 /** The flip (front / rear camera) button: phones only, next to a shown camera button that is on. */
 bool ShowsCameraFlip(bool mobile, bool show_camera, bool camera_on);
 

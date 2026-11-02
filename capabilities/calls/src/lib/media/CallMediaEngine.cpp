@@ -540,7 +540,7 @@ struct CallMediaEngine::Impl {
     return underruns;
   }
 
-  void TearDownAudioLocked() {
+  void TearDownAudioLocked(const bool release_session = true) {
     // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
     // OnSfuPacket which need the same mutex (deadlock + SDL double-free on quit).
     capture_running = false;
@@ -572,6 +572,40 @@ struct CallMediaEngine::Impl {
     vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
+    if (release_session) {
+      ReleaseAudioSession();
+    }
+  }
+
+  /**
+   * OS audio session ownership. Stop() deactivates the session after dropping the engine lock (the
+   * call is slow); a Start that interleaves activates it again, and a stale Stop must not undo
+   * that. So activation bumps `session_gen` and Stop deactivates only if the generation is still
+   * the one it saw under the engine lock; both run under `session_mu` (never held with `mutex`
+   * taken after it, so no inversion).
+   */
+  std::mutex session_mu;
+  uint64_t session_gen = 0;
+
+  void ActivateAudioSession() {
+    std::lock_guard lock(session_mu);
+    ++session_gen;
+    CallAudioSession::ActivateForVoipCall();
+  }
+  uint64_t SessionGeneration() {
+    std::lock_guard lock(session_mu);
+    return session_gen;
+  }
+  /** Stop(): deactivate the session unless a Start activated it since `seen_gen`. */
+  void ReleaseAudioSessionIfUnchanged(const uint64_t seen_gen) {
+    std::lock_guard lock(session_mu);
+    if (session_gen == seen_gen) {
+      ReleaseAudioSession();
+    }
+  }
+
+  /** Touches the OS audio session only, not Impl: Stop() runs it after dropping the lock. */
+  static void ReleaseAudioSession() {
     CallAudioSession::Deactivate();
     CallAudioSession::ClearCaptureAudioHints();
   }
@@ -907,7 +941,7 @@ struct CallMediaEngine::Impl {
         return Error("call media stopped");
       }
       CallAudioSession::ApplyCaptureAudioHints();
-      CallAudioSession::ActivateForVoipCall();
+      ActivateAudioSession();
     }
     TryAcquireVoiceDuplex(want_spec, holder, mic, speaker);
     const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
@@ -931,7 +965,7 @@ struct CallMediaEngine::Impl {
     if (voip && !voice) {
       // SDL's coreaudio backend rewrites the AVAudioSession category/options with ModeDefault and
       // DefaultToSpeaker when it opens devices (B36). Re-apply our VoiceChat mode + earpiece route.
-      CallAudioSession::ActivateForVoipCall();
+      ActivateAudioSession();
     }
     if (speaker && !speaker->HasDevice()) {
       // Headless CI / no default device: still run silence TX (same as no-capture path).
@@ -1896,13 +1930,30 @@ void CallMediaEngine::Stop() {
   timed_step("join_capture", [&] { impl_->JoinCaptureThread("media stop"); });
   timed_step("join_playout", [&] { impl_->JoinPlayoutThread("media stop"); });
   timed_step("join_video", [&] { impl_->JoinVideoThread("media stop"); });
+  // B125: on phones teardown takes ~1 s (OS audio session deactivation, hardware codec teardown) and
+  // UI getters wait for the engine mutex meanwhile. Capture / playout / video are already joined, so
+  // the codec is detached under the lock (the video loop makes a fresh one next call) and both slow
+  // parts run after it is released.
+  std::unique_ptr<IVideoCodec> doomed_codec;
   timed_step("teardown_audio", [&] {
-    std::lock_guard lock(impl_->mutex);
-    impl_->TearDownAudioLocked();
-    impl_->call_id.clear();
-    impl_->spec = SessionSpec::Duplex();
-    impl_->ApplyStateLocked("closed");
-    state_cb = impl_->on_state_changed;
+    uint64_t session_seen = 0;
+    {
+      std::lock_guard lock(impl_->mutex);
+      if (!impl_->video_thread.joinable()) {
+        doomed_codec = std::move(impl_->video_codec);
+      } else {
+        // Something restarted the video loop after the join: it owns the codec now.
+        log().warning << "media stop: video thread running again, codec left in place";
+      }
+      session_seen = impl_->SessionGeneration();
+      impl_->TearDownAudioLocked(/*release_session=*/false);
+      impl_->call_id.clear();
+      impl_->spec = SessionSpec::Duplex();
+      impl_->ApplyStateLocked("closed");
+      state_cb = impl_->on_state_changed;
+    }
+    doomed_codec.reset();
+    impl_->ReleaseAudioSessionIfUnchanged(session_seen);
   });
   log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
   if (state_cb) {
