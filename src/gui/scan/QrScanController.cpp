@@ -6,10 +6,19 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/media/CameraCaptureOrientation.h"
 
+#include "common/Logger.h"
+
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
 
 namespace pbr {
+
+namespace {
+logging::Logger& ScanLog() {
+  static logging::Logger log = logging::getLogger("Gui.QrScan");
+  return log;
+}
+} // namespace
 
 QrScanController::QrScanController(MediaDeviceArbiter& devices) : scanner_(devices) {
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { Close(); });
@@ -42,7 +51,16 @@ bool QrScanController::RegisterModel(ui::Context* context) {
 
 void QrScanController::Open(QrScanResultCallback on_result) {
   Close();
-  if (!navigation_.push_layer || !on_result || !AppLifecycle::IsForeground()) {
+  if (!navigation_.push_layer) {
+    ScanLog().warning << "Open ignored: push_layer is not bound";
+    return;
+  }
+  if (!on_result) {
+    ScanLog().warning << "Open ignored: empty result callback";
+    return;
+  }
+  if (!AppLifecycle::IsForeground()) {
+    ScanLog().warning << "Open ignored: app is not in the foreground";
     return;
   }
   PaneSpec spec;
@@ -51,6 +69,7 @@ void QrScanController::Open(QrScanResultCallback on_result) {
   spec.role = PaneRole::Transient;
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
+    ScanLog().warning << "Open ignored: push_layer returned no layer";
     return;
   }
   on_result_ = std::move(on_result);
