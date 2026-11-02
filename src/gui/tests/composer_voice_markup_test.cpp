@@ -76,7 +76,7 @@ protected:
     for (const char* key : {"show_voice", "voice_mode", "draft", "loading", "voice_recording", "voice_click_mode",
                             "show_attach_button", "show_capture", "attachment_uploading", "attachment_failed",
                             "attachment_draft_name", "attachment_status", "image_chip", "image_thumb_ready",
-                            "image_preparing", "voice_blocked", "voice_countdown", "voice_cancel_zone"}) {
+                            "image_preparing", "voice_blocked", "voice_countdown", "voice_cancel_zone", "voice_timer", "voice_hint"}) {
       DataModelHost::Instance().Dirty("chat", key);
     }
     context->Update();
@@ -243,6 +243,34 @@ TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
   EXPECT_EQ(Shown("prompt-composer-status"), 1);
   EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
   EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+}
+
+TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
+  state.attachment_uploading = true;
+  state.attachment_draft_name = "clip.mp4";
+  state.attachment_status = "Uploading";
+  Apply();
+  context->Update();
+  ui::ElementList chips;
+  document->GetElementsByClassName(chips, "prompt-attachment-chip-status");
+  ASSERT_GE(chips.size(), 1u);
+  EXPECT_EQ(chips[0]->GetInnerRML(), "Uploading");
+  ui::ElementList names;
+  document->GetElementsByClassName(names, "prompt-attachment-chip-name");
+  ASSERT_GE(names.size(), 1u);
+  EXPECT_EQ(names[0]->GetInnerRML(), "clip.mp4");
+  // The recording row's timer and hint are text too.
+  state.attachment_uploading = false;
+  state.show_voice = true;
+  state.voice_mode = true;
+  state.voice_recording = true;
+  state.voice_timer = "0:07";
+  state.voice_hint = "Slide up to cancel";
+  Apply();
+  ui::ElementList timer;
+  document->GetElementsByClassName(timer, "prompt-voice-timer");
+  ASSERT_GE(timer.size(), 1u);
+  EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheAiPictureThumbnailSitsInTheStatusRow) {
