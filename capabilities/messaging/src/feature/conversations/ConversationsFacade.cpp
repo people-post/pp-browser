@@ -316,6 +316,10 @@ Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessagesPage(const std::
   return hub_.Store().GetMessagesPage(thread_id, before, limit);
 }
 
+Roe<std::vector<ThreadMessage>> ConversationsFacade::GetMessages(const std::string& thread_id) {
+  return hub_.Store().GetMessages(thread_id);
+}
+
 Roe<ThreadMessage> ConversationsFacade::AppendMessage(const ThreadMessage& message) {
   return hub_.Store().AppendMessage(message);
 }

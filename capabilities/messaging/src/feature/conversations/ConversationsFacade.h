@@ -141,6 +141,8 @@ public:
   Roe<std::optional<Thread>> GetThread(const std::string& thread_id);
   Roe<std::vector<ThreadMessage>> GetMessagesPage(const std::string& thread_id, std::optional<int64_t> before,
                                                   int limit);
+  /** Every message of the thread, oldest first (search inside a chat). Reads and decrypts it all: off the UI thread. */
+  Roe<std::vector<ThreadMessage>> GetMessages(const std::string& thread_id);
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message);
   Roe<bool> UpdateMessage(const ThreadMessage& message);
   Roe<uint32_t> GetChatTargetSessionEpoch(const std::string& thread_id);
