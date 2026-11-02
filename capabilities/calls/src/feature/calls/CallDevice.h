@@ -229,7 +229,8 @@ private:
   void OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity);
   void BindWorkflowHostPorts();
   CallSessionWorkflow::WirePorts MakeWorkflowWirePorts();
-  CallSessionWorkflow::HopPathPorts MakeWorkflowHopPorts();
+  /** What the session workflow reported (events up). */
+  void OnWorkflowReport(const WorkflowReport& report);
   CallSessionWorkflow::ReachPorts MakeWorkflowReachPorts();
   void BindReachSignalPorts();
   CallHopArmingPorts MakeHopArmingPorts();

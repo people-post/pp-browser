@@ -81,7 +81,7 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
                      const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
       billing_(account),
       reach_signals_(control_),
-      workflow_(threads, sessions, reads, key_exchange_, billing_, live_calls_, call_media_),
+      workflow_(threads, sessions, reads, hop_service_, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallDevice");
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -147,7 +147,6 @@ void CallDevice::BindWorkflowHostPorts() {
   ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
     ScheduleStartDirectMedia(call_id, peer, offerer);
   };
-  ports.hop = MakeWorkflowHopPorts();
   ports.reach = MakeWorkflowReachPorts();
   workflow_.SetHostPorts(std::move(ports));
 }
@@ -155,7 +154,6 @@ void CallDevice::BindWorkflowHostPorts() {
 CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   CallSessionWorkflow::WirePorts ports;
   ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
-  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) { return control_.SendDirect(peer, type, detail, display); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -187,59 +185,27 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
-  ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
-  ports.sync_inbox_from_wake = [this]() {
-    if (delivery_.sync_inbox_from_wake) {
-      delivery_.sync_inbox_from_wake(true);
-    }
-  };
   return ports;
 }
 
-CallSessionWorkflow::HopPathPorts CallDevice::MakeWorkflowHopPorts() {
-  CallSessionWorkflow::HopPathPorts ports;
-  ports.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
-    if (CallMedia* call = call_media_.Media(call_id)) {
-      call->OnJoinedCountObserved(n);
-    }
-  };
-  ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
-    return hop_service_.Planning().Plan(invitees, local);
-  };
-  ports.probe_invite_hops = [this](const std::string& call_id) { hop_service_.Planning().ProbeInvite(call_id); };
-  ports.hop_report_for_accept = [this](const std::string& call_id) {
-    return hop_service_.Planning().ReportForAccept(call_id);
-  };
-  ports.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
-                                        const CallHopReport& report) {
-    hop_service_.Planning().NoteAcceptReport(call_id, identity, report);
-  };
-  ports.clear_sfu_attach_wait = [this](const std::string& call_id) {
-    if (CallMedia* call = call_media_.Find(call_id)) {
-      call->ClearSfuAttachWait();
-    }
-  };
-  ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
-                                       const std::string& sender) -> Roe<void> {
-    CallMedia* call = call_media_.Media(call_id);
-    return call ? call->OnInboundSfuAttach(d, sender) : Roe<void>(Error("no live call for the attach"));
-  };
-  ports.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
-    if (CallMedia* call = call_media_.Find(d.call_id)) {
-      call->OnInboundSfuAttachFailed(d);
-    }
-  };
-  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) {
-    if (CallMedia* call = call_media_.Find(d.call_id)) {
-      call->OnInboundHopRefuse(d);
-    }
-  };
-  ports.is_on_sfu_for_call = [this](const std::string& call_id) {
-    CallMedia* call = call_media_.Find(call_id);
-    return call && call->IsOnHop();
-  };
-  ports.has_media_relay_hop_candidates = [this]() { return hop_service_.Ranking().HasCandidates(); };
-  return ports;
+void CallDevice::OnWorkflowReport(const WorkflowReport& report) {
+  std::visit(
+      [this](const auto& r) {
+        using R = std::decay_t<decltype(r)>;
+        if constexpr (std::is_same_v<R, workflow_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, workflow_report::Notice>) {
+          last_error_ = r.message;
+          NotifyCallStateChanged();
+        } else if constexpr (std::is_same_v<R, workflow_report::InboxSyncFromWake>) {
+          if (delivery_.sync_inbox_from_wake) {
+            delivery_.sync_inbox_from_wake(true);
+          }
+        } else {
+          static_assert(!sizeof(R), "take every WorkflowReport");
+        }
+      },
+      report);
 }
 
 CallSessionWorkflow::ReachPorts CallDevice::MakeWorkflowReachPorts() {
@@ -414,6 +380,8 @@ void CallDevice::RetryAnswererKick(const std::string& call_id) {
 void CallDevice::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
+  workflow_.SetReports(outbox_.For<WorkflowReport>(
+      [](WorkflowReport report) { return SessionEvent{session_event::FromWorkflow{std::move(report)}}; }));
   hop_service_.SetOutbox(outbox_.For<PlanningEvent>(
       [](PlanningEvent event) { return SessionEvent{session_event::ForHopService{std::move(event)}}; }));
 }
@@ -448,6 +416,8 @@ void CallDevice::Handle(SessionEvent& event) {
           }
         } else if constexpr (std::is_same_v<E, session_event::FromHopPath>) {
           OnHopReport(e.report);
+        } else if constexpr (std::is_same_v<E, session_event::FromWorkflow>) {
+          OnWorkflowReport(e.report);
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }

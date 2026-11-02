@@ -55,6 +55,23 @@ struct RosterAfterRemoteAccept {
 
 using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
 
+/** What the session workflow tells the device (V057 2): events on the calls owner's queue. */
+namespace workflow_report {
+
+/** What the device shows about the calls may have changed (the ring / call chrome refreshes). */
+struct Changed {};
+/** A one-shot notice for the screen ("That call has ended"). */
+struct Notice {
+  std::string message;
+};
+/** A push woke us for a call: fetch the relay inbox now. */
+struct InboxSyncFromWake {};
+
+} // namespace workflow_report
+
+using WorkflowReport =
+    std::variant<workflow_report::Changed, workflow_report::Notice, workflow_report::InboxSyncFromWake>;
+
 /** The hop-migrate workflow's own events (V050 group hop flows). */
 namespace hop_migrate_event {
 
@@ -439,6 +456,10 @@ struct FromHopPath {
 struct ForHopService {
   PlanningEvent event;
 };
+/** What the session workflow reported. */
+struct FromWorkflow {
+  WorkflowReport report;
+};
 /** An event of the inbound doorway `generation` (one built since drops it). */
 struct ForDoorway {
   uint64_t generation = 0;
@@ -447,9 +468,9 @@ struct ForDoorway {
 
 } // namespace session_event
 
-using SessionEvent =
-    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
-                 session_event::ForHopPath, session_event::ForDirectPath, session_event::FromDirectPath,
-                 session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
+using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                                  session_event::ForHopPath, session_event::ForDirectPath,
+                                  session_event::FromDirectPath, session_event::FromHopPath, session_event::ForDoorway,
+                                  session_event::ForHopService, session_event::FromWorkflow>;
 
 } // namespace pbr

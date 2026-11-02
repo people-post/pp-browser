@@ -14,6 +14,7 @@
 #include "common/runtime/OwnerOutbox.h"
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallReads.h"
+#include "feature/calls/CallHopService.h"
 #include "feature/calls/ICallSessionNotes.h"
 
 #include <functional>
@@ -38,7 +39,6 @@ public:
   /** Delivery / roster wire + chrome activity banners. */
   struct WirePorts {
     std::function<Roe<std::string>()> local_relay_identity;
-    std::function<void()> notify_ring_changed;
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
@@ -64,9 +64,7 @@ public:
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
     /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
     std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
-    std::function<void()> sync_inbox_from_wake;
     /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
-    std::function<void(std::string message)> set_last_error;
 
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
@@ -78,28 +76,6 @@ public:
   };
 
   /** Hop-path / SFU attach outcomes observed by durable session. */
-  struct HopPathPorts {
-    std::function<void(const std::string& call_id, size_t n_joined)> on_joined_count_observed;
-    std::function<void(const std::string& call_id)> clear_sfu_attach_wait;
-    /** `sender`: who fanned it out — a hop change is followed only from the hop owner (V050). */
-    std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&, const std::string& sender)>
-        on_inbound_sfu_attach;
-    std::function<void(const CallSfuAttachFailedDetail&)> on_inbound_sfu_attach_failed;
-    std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
-    std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
-    std::function<bool()> has_media_relay_hop_candidates;
-    /** V050: hop planned from the invite list at StartCall (no attach); nullopt = none. */
-    std::function<std::optional<CallPlannedHop>(const std::vector<std::string>& invitees,
-                                                const std::string& local_identity)>
-        plan_hop_for_invitees;
-    /** V050 gt4 invitee: probe the planned hop (+ a few others) while ringing. */
-    std::function<void(const std::string& call_id)> probe_invite_hops;
-    /** V050 gt4 invitee: the report our CallAccept carries. */
-    std::function<CallHopReport(const std::string& call_id)> hop_report_for_accept;
-    /** V050 gt4 initiator: a joiner's CallAccept report (before the join decision). */
-    std::function<void(const std::string& call_id, const std::string& identity, const CallHopReport& report)>
-        note_accept_hop_report;
-  };
 
   /** Peer reach, caps, listen addrs. */
   struct ReachPorts {
@@ -132,20 +108,21 @@ public:
   struct HostPorts {
     WirePorts wire;
     DuplexPorts duplex;
-    HopPathPorts hop;
     ReachPorts reach;
 
     bool IsBound() const { return wire.IsBound(); }
   };
 
   CallSessionWorkflow(const IThreadCatalog& threads, ICallSessionStore& sessions, const CallReads& reads,
-                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
-                      LiveCallMedia& call_media);
+                      CallHopService& hops, CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing,
+                      LiveCalls& live_calls, LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
   /** Where the workflow reports its follow-ups (its parent binds it). */
   void SetOutbox(OwnerOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
+  /** Where it tells the device what changed (V057 2; its parent binds it). */
+  void SetReports(OwnerOutbox<WorkflowReport> reports) { reports_ = std::move(reports); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(WorkflowEvent& event);
   /**
@@ -364,6 +341,8 @@ private:
   ICallSessionStore& sessions_;
   /** The calls' durable reads (the stack's): what this device is in, what it may join. */
   const CallReads& reads_;
+  /** The device's hop side (planning, ranking): the group hop at a placed call, an accept's report. */
+  CallHopService& hops_;
   /** The call's media keys between the peers (owned by CallDevice). */
   CallMediaKeyExchange& key_exchange_;
   /** P001 initiation pricing on invite / accept (owned by CallDevice). */
@@ -373,6 +352,7 @@ private:
   LiveCallMedia& call_media_;
   HostPorts host_;
   OwnerOutbox<WorkflowEvent> outbox_;
+  OwnerOutbox<WorkflowReport> reports_;
   /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
   uint64_t followup_epoch_ = 0;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
