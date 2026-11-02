@@ -123,8 +123,8 @@ struct AgentSession::Impl : public Module {
 
   logging::Logger& Log() const { return log(); }
 
-  std::mutex event_mutex;
-  std::vector<AgentEvent> pending_events;
+  /** The event queue and the last-role memory; shared with the other sessions of an AgentSessions. */
+  std::shared_ptr<AgentSessionShared> shared;
 
   std::atomic<bool> cancelled{false};
   /** Streamed turns: a fresh cancel flag per submit, so a stopped stream can never act on a later turn. */
@@ -188,6 +188,8 @@ struct AgentSession::Impl : public Module {
     bool asked_twice = false;
   };
   std::optional<PendingLocalAction> pending_local_action;
+  /** pending_local_action's expiry for CanClose on the UI thread; 0 = none. */
+  std::atomic<int64_t> local_ask_expires_ms{0};
   std::chrono::milliseconds local_ask_ttl{2 * 60 * 1000};
   LocalContactsFn local_contacts;
   /** A button's direct action for the turn SubmitLocalAction started: tool + arguments. */
@@ -200,9 +202,6 @@ struct AgentSession::Impl : public Module {
   std::vector<std::string> local_raw_results;
   /** The planner context of this turn (contacts loaded only for contact tools), reused for the answer. */
   std::optional<LocalPlanContext> local_ctx;
-  /** brief_AI role that answered the last completed turn of each AI thread; memory only. Guarded by `last_role_mutex`. */
-  std::mutex last_role_mutex;
-  std::unordered_map<std::string, std::string> last_role_by_thread;
   /** For IsAppActionRequest on the UI thread: the preset and the declared tools as of the last configure. */
   mutable std::mutex app_action_mutex;
   bool app_action_brief = false;
@@ -220,9 +219,9 @@ ToolMeta AgentSession::MetaForTool(const std::shared_ptr<Impl>& state, const std
 }
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
-  AppRuntime::PostUI([state, event = std::move(event)]() mutable {
-    std::lock_guard lock(state->event_mutex);
-    state->pending_events.push_back(std::move(event));
+  AppRuntime::PostUI([shared = state->shared, event = std::move(event)]() mutable {
+    std::lock_guard lock(shared->event_mutex);
+    shared->pending_events.push_back(std::move(event));
   });
 }
 
@@ -1216,6 +1215,7 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
     return false; // a message elsewhere leaves the question open
   }
   const Impl::PendingLocalAction taken = *std::exchange(state->pending_local_action, std::nullopt);
+  state->local_ask_expires_ms = 0;
   if (util::NowUnixMs() > taken.expires_at_ms) {
     state->Log().info << "local action question expired (" << taken.ask.tool << "); routing the message normally";
     return false;
@@ -1311,6 +1311,7 @@ void AgentSession::HandleLocalPlan(const std::shared_ptr<Impl>& state, LocalPlan
         .expires_at_ms = util::NowUnixMs() + static_cast<int64_t>(state->local_ask_ttl.count()),
         .asked_twice = asked_twice,
     };
+    state->local_ask_expires_ms = state->pending_local_action->expires_at_ms;
     FinishLocalAnswer(state, RenderLocalAsk(*ask), RenderMode::Markdown);
     return;
   }
@@ -1510,8 +1511,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   const std::string role_thread_id =
       state->turn_mode == AgentTurnMode::Conversation ? std::string() : state->pending_thread_id;
   if (!role_thread_id.empty()) {
-    std::lock_guard lock(state->last_role_mutex);
-    if (const auto it = state->last_role_by_thread.find(role_thread_id); it != state->last_role_by_thread.end()) {
+    std::lock_guard lock(state->shared->last_role_mutex);
+    if (const auto it = state->shared->last_role_by_thread.find(role_thread_id);
+        it != state->shared->last_role_by_thread.end()) {
       request.last_role = it->second;
     }
   }
@@ -1603,11 +1605,11 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
       return;
     }
     if (!role_thread_id.empty()) {
-      std::lock_guard lock(state->last_role_mutex);
+      std::lock_guard lock(state->shared->last_role_mutex);
       if (role.empty()) {
-        state->last_role_by_thread.erase(role_thread_id); // the last answer named no role: nothing to hand back
+        state->shared->last_role_by_thread.erase(role_thread_id); // the last answer named no role: nothing to hand back
       } else {
-        state->last_role_by_thread[role_thread_id] = role;
+        state->shared->last_role_by_thread[role_thread_id] = role;
       }
     }
     EmitStreamedAnswer(state, response, finish, sources);
@@ -2016,7 +2018,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   }
 }
 
-AgentSession::AgentSession() : impl_(std::make_shared<Impl>()) {
+AgentSession::AgentSession() : AgentSession(std::make_shared<AgentSessionShared>()) {}
+
+AgentSession::AgentSession(std::shared_ptr<AgentSessionShared> shared) : impl_(std::make_shared<Impl>()) {
+  impl_->shared = std::move(shared);
   impl_->conversation.StartNewConversation();
 }
 
@@ -2078,15 +2083,15 @@ bool AgentSession::IsAppActionRequest(const std::string& text) const {
   return impl_->app_action_brief && ClassifyAppActionMatch(text, impl_->app_action_tools).has_value();
 }
 
-void AgentSession::SubmitLocalAction(const std::string& thread_id, const std::string& user_text,
-                                     const std::string& tool, Object args, const bool in_peer_chat) {
+SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, const std::string& user_text,
+                                              const std::string& tool, Object args, const bool in_peer_chat) {
   if (!IsDirectActionTool(tool)) {
     impl_->Log().warning << "local action payload with a tool outside the whitelist ignored: " << tool;
-    return;
+    return SubmitOutcome::Ignored;
   }
   if (impl_->busy.exchange(true)) {
-    impl_->Log().warning << "local action dropped: a turn is still running (" << tool << ")";
-    return;
+    impl_->Log().info << "local action not taken: a turn runs in this session (" << tool << ")";
+    return SubmitOutcome::BusyHere;
   }
 
   impl_->cancelled = false;
@@ -2106,6 +2111,7 @@ void AgentSession::SubmitLocalAction(const std::string& thread_id, const std::st
     }
     StartTurn(impl);
   });
+  return SubmitOutcome::Started;
 }
 
 void AgentSession::SetToolPermissions(ToolPermissionsPrefs permissions) {
@@ -2145,6 +2151,31 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
   return {};
 }
 
+bool AgentSession::HoldsApproval(const std::string& approval_id) const {
+  std::lock_guard lock(impl_->park_mutex);
+  return impl_->parked_approval && impl_->parked_approval->id == approval_id;
+}
+
+bool AgentSession::CanClose() const {
+  if (impl_->busy.load()) {
+    return false;
+  }
+  {
+    std::lock_guard lock(impl_->configure_mutex);
+    if (impl_->configure_inflight > 0) {
+      return false;
+    }
+  }
+  {
+    std::lock_guard lock(impl_->park_mutex);
+    if (impl_->parked_approval && (impl_->parked_approval->state == ParkedApprovalState::Pending ||
+                                   impl_->parked_approval->state == ParkedApprovalState::Executing)) {
+      return false;
+    }
+  }
+  return impl_->local_ask_expires_ms.load() <= util::NowUnixMs();
+}
+
 bool AgentSession::IsConfigured() const {
   return impl_->configured;
 }
@@ -2178,14 +2209,13 @@ void AgentSession::BeginStreamTurn() {
   impl_->turn_generation.fetch_add(1, std::memory_order_acq_rel);
 }
 
-void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
+SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
   if (user_text.empty()) {
-    return;
+    return SubmitOutcome::Ignored;
   }
   if (impl_->busy.exchange(true)) {
-    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
-    impl_->Log().warning << "send dropped: a turn is still running";
-    return;
+    impl_->Log().info << "send not taken: a turn runs in this session";
+    return SubmitOutcome::BusyHere;
   }
 
   impl_->cancelled = false;
@@ -2203,17 +2233,18 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
     }
     StartTurn(impl);
   });
+  return SubmitOutcome::Started;
 }
 
-void AgentSession::SubmitToThread(const std::string& thread_id, const std::string& user_text,
-                                  std::optional<std::string> user_payload, std::optional<AgentImageTurn> image) {
+SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const std::string& user_text,
+                                           std::optional<std::string> user_payload,
+                                           std::optional<AgentImageTurn> image) {
   if (user_text.empty()) {
-    return;
+    return SubmitOutcome::Ignored;
   }
   if (impl_->busy.exchange(true)) {
-    // The UI queues AI sends while a turn runs (B112); reaching this means a send slipped past it.
-    impl_->Log().warning << "send dropped: a turn is still running";
-    return;
+    impl_->Log().info << "send not taken: a turn runs in this session";
+    return SubmitOutcome::BusyHere;
   }
 
   impl_->cancelled = false;
@@ -2231,17 +2262,18 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
     }
     StartTurn(impl);
   });
+  return SubmitOutcome::Started;
 }
 
-void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
-                                      std::optional<std::string> user_payload, const AtAiMode mode) {
+SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
+                                               std::optional<std::string> user_payload, const AtAiMode mode) {
   if (prompt.empty()) {
-    return;
+    return SubmitOutcome::Ignored;
   }
   if (impl_->busy.exchange(true)) {
-    // The chat already shows "thinking" for this send; say why nothing follows.
-    impl_->Log().warning << "scoped assist dropped: a turn is still running (mode=" << static_cast<int>(mode) << ")";
-    return;
+    impl_->Log().info << "scoped assist not taken: a turn runs in this session (mode=" << static_cast<int>(mode)
+                      << ")";
+    return SubmitOutcome::BusyHere;
   }
   impl_->Log().info << "scoped assist mode=" << static_cast<int>(mode) << " prompt_chars=" << prompt.size()
                     << " configured=" << (impl_->configured ? 1 : 0);
@@ -2262,12 +2294,14 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
     }
     StartTurn(impl);
   });
+  return SubmitOutcome::Started;
 }
 
 void AgentSession::PollEvents(std::vector<AgentEvent>& out) {
-  std::lock_guard lock(impl_->event_mutex);
-  out.insert(out.end(), impl_->pending_events.begin(), impl_->pending_events.end());
-  impl_->pending_events.clear();
+  AgentSessionShared& shared = *impl_->shared;
+  std::lock_guard lock(shared.event_mutex);
+  out.insert(out.end(), shared.pending_events.begin(), shared.pending_events.end());
+  shared.pending_events.clear();
 }
 
 void AgentSession::Cancel() {
@@ -2288,8 +2322,8 @@ void AgentSession::WaitForConfigureIdle() {
 }
 
 void AgentSession::ForgetThread(const std::string& thread_id) {
-  std::lock_guard lock(impl_->last_role_mutex);
-  impl_->last_role_by_thread.erase(thread_id);
+  std::lock_guard lock(impl_->shared->last_role_mutex);
+  impl_->shared->last_role_by_thread.erase(thread_id);
 }
 
 void AgentSession::StartNewConversation() {
@@ -2297,6 +2331,7 @@ void AgentSession::StartNewConversation() {
     CancelParkedApproval(impl, ParkedApprovalState::Cancelled);
     impl->conversation.StartNewConversation();
     impl->pending_local_action.reset(); // a question asked in the old conversation is not answered in the new one
+    impl->local_ask_expires_ms = 0;
     impl->turn_scratch.clear();
     impl->pending_entry_id.clear();
     impl->pending_user_text.clear();

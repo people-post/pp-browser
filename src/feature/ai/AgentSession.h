@@ -19,8 +19,10 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -81,9 +83,30 @@ struct AgentImageTurn {
   std::string ai_image_json;
 };
 
+/** What a Submit* did with the question. */
+enum class SubmitOutcome {
+  Started,  // the turn runs (or starts as soon as this session finishes configuring)
+  Full,     // AgentSessions: as many thread turns run as allowed; nothing was taken, the UI queues it
+  BusyHere, // a turn already runs in this session (this thread); nothing was taken
+  Ignored,  // nothing to run (empty text, a button tool outside the whitelist); logged
+};
+
+/**
+ * What the sessions of one AgentSessions share: the queue the UI polls their events from (events carry their
+ * thread) and, per chat, the brief_AI role that answered its last turn (memory only). A lone AgentSession has its
+ * own.
+ */
+struct AgentSessionShared {
+  std::mutex event_mutex;
+  std::vector<AgentEvent> pending_events;
+  std::mutex last_role_mutex;
+  std::unordered_map<std::string, std::string> last_role_by_thread;
+};
+
 class AgentSession {
 public:
   AgentSession();
+  explicit AgentSession(std::shared_ptr<AgentSessionShared> shared);
   ~AgentSession();
 
   AgentSession(const AgentSession&) = delete;
@@ -115,33 +138,40 @@ public:
    * ignored with a warning. `user_text` is the button's label (stored as the user's turn in an AI thread).
    * `in_peer_chat`: the button sits in a person-to-person chat; the answer stays on this device there, like "@ai".
    */
-  void SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
-                         Object args, bool in_peer_chat = false);
+  SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
+                                  Object args, bool in_peer_chat = false);
   /**
    * Brief preset only: does `text` ask to operate the app (the wordlist hits a declared tool)? A shared "@ai+" /
    * "@ai++" with such a request is answered on the device and never relayed. Safe from the UI thread.
    */
   bool IsAppActionRequest(const std::string& text) const;
-  void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
+  SubmitOutcome Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
    * The thread stores the question as kAiImageTurnMarker + text, never the bytes.
    */
-  void SubmitToThread(const std::string& thread_id, const std::string& user_text,
-                      std::optional<std::string> user_payload = std::nullopt,
-                      std::optional<AgentImageTurn> image = std::nullopt);
-  void SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
-                          std::optional<std::string> user_payload = std::nullopt,
-                          AtAiMode mode = AtAiMode::Local);
+  SubmitOutcome SubmitToThread(const std::string& thread_id, const std::string& user_text,
+                               std::optional<std::string> user_payload = std::nullopt,
+                               std::optional<AgentImageTurn> image = std::nullopt);
+  SubmitOutcome SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
+                                   std::optional<std::string> user_payload = std::nullopt,
+                                   AtAiMode mode = AtAiMode::Local);
   /**
    * Resume a parked tool-permission confirm from an in-chat choice payload.
    * decision: allow_once | allow_always | deny
    */
   Roe<void> ResumeToolPermission(const std::string& approval_id, const std::string& decision,
                                  const std::string& decision_label = {});
+  /** The permission card waiting here (pending or being resumed) has this id. */
+  bool HoldsApproval(const std::string& approval_id) const;
+  /**
+   * Closing this session loses nothing: no turn, no configure in flight, no permission card waiting and no
+   * unexpired question the app asked back. UI thread.
+   */
+  bool CanClose() const;
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
-  /** A turn is running (any thread). The UI checks it before routing an AI send so nothing is dropped (B112). */
+  /** A turn runs in this session. */
   bool IsBusy() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();

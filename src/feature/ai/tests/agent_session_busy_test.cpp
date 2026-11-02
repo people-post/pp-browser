@@ -145,7 +145,7 @@ TEST_F(AgentSessionBusyTest, ASecondSendWhileBusyIsRefusedAndKeepsTheFirstTurnsT
   ScriptHeldStream(started, release);
   session_->SubmitToThread("thread-1", "first");
   WaitUntil(started);
-  session_->SubmitToThread("thread-2", "second"); // dropped with a warning: the UI queues instead
+  EXPECT_EQ(session_->SubmitToThread("thread-2", "second"), SubmitOutcome::BusyHere) << "refused, not dropped";
   release = true;
 
   const auto events = WaitForTurn();
