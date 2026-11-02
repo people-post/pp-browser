@@ -8,6 +8,7 @@
 #include "lib/calls/CallHopPlannerLogic.h"
 #include "lib/calls/ICallSessionReader.h"
 #include "feature/calls/ICallSessionNotes.h"
+#include "feature/calls/CallEngine.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -218,7 +219,7 @@ public:
   };
 
   CallHopMigrateWorkflow(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
-                         MediaEngine& media);
+                         std::shared_ptr<CallEngine> engine);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
@@ -347,7 +348,8 @@ private:
   const ICallSessionReader& sessions_;
   /** The hop the call is on goes to the rows' one writer (the session workflow). */
   ICallSessionNotes& notes_;
-  MediaEngine& media_;
+  /** This call's handle on the engine (V057). */
+  std::shared_ptr<CallEngine> engine_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   const CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;

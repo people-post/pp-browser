@@ -7,6 +7,7 @@
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/ICallSessionReader.h"
 #include "feature/calls/ICallSessionNotes.h"
+#include "feature/calls/CallEngine.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/people/IContactBook.h"
@@ -93,7 +94,7 @@ public:
 
   /** The group path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
   CallTopologyController(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
-                         const IContactBook& contacts, MediaEngine& media, CallHopService& hops);
+                         const IContactBook& contacts, std::shared_ptr<CallEngine> engine, CallHopService& hops);
   const std::string& CallId() const { return call_id_; }
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
@@ -313,7 +314,8 @@ private:
   /** The call's row changes go to its one writer (the session workflow). */
   ICallSessionNotes& notes_;
   const IContactBook& contacts_;
-  MediaEngine& media_;
+  /** This call's handle on the engine (V057), shared with the migrate workflow. */
+  std::shared_ptr<CallEngine> engine_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   SharedPorts<CallTopologySeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;

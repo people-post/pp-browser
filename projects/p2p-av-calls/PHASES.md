@@ -306,6 +306,18 @@ One PR per phase; compose tests + call lab scenarios each time.
   - [x] cm5a — Media speaks sessions: `MediaEngine::StartDuplex(session_id)` (was `StartSfu(call_id)`), `ActiveSessionId`, `MediaPacket` / `PacketSendFn` / `OnInboundPacket` / `IsPacketMode` (was SFU-named); `AudioSession` / `ActivateForVoip` (was `CallAudioSession` / `ActivateForVoipCall`, which voice clips already shared); `AudioPlayout.h`
   - [x] cm5b — Base, people, delivery: `AppLifecycle::SetLiveSessionOn` (was `SetCallInProgress`), `RequestUrgentWakeSync` / `ConsumeUrgentWake`, `VoipPushToken` / `kVoipPushPlatform` (wire value `ios_voip` kept), `kLiveChromeFrameIntervalSec`, `ShareableLine::RandomId` / `ShortRandomId` (the unused `MetricsCallId` gone); people's `DurableRelaysFirst` moved to calls (`lib/calls/CallHopPlan`); delivery's names were neutral — its comments now define the urgent wake and the critical lane on their own terms, calls as the example
 
+## cn — Call model, second pass (V057)
+
+[V057](DECISIONS.md#v057--the-calls-media-is-the-paths-only-way-to-the-engine-parts-report-events).
+
+- [x] cn1 — `CallEngine`: the paths ask their call's engine handle (runs this call / on which path, the data plane); no session-id reads, no starts / stops from a path. Done: about 87 engine uses in the 1:1 path, the topology and the migrate workflow became the handle's `Runs` / `RunsOn` / `RunsAnother` and its data plane; a path stops only its own call's engine, through its `CallMedia`; the dead `media_active_mesh_for_call` (a 1:1 still connecting) is real now (`RunsOn(Direct)`)
+- [ ] cn2 — Per-call screen facts on `LiveCall` (activity line, media error, failed accept)
+- [ ] cn3 — Parts report events: `CallMediaHost` and the port bags shrink to queries and the capability edges
+- [ ] cn4 — Inbound call control as a table in the router (type → sender gate → handler)
+- [ ] cn5 — Names: `CallDirectPath` / `CallHopPath`; no `P2p` prefixes
+- [ ] cn6 — The group path's hop state has one owner
+- [ ] cn7 — Compose tests through events; fewer `*ForTest` hooks; the group split race: one member not on the group's hop — seen as `group_call_three` (1 in 12, during cm5a: a member left on its 1:1 link) and `group_call_weak_upload` (1 in 8, during cn1: the weak-upload member live on a hop nobody else heard, receiving nothing)
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

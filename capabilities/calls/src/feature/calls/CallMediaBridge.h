@@ -4,6 +4,7 @@
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionReader.h"
 #include "lib/calls/ICallMediaKeyStore.h"
+#include "feature/calls/CallEngine.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "lib/calls/CallMediaSeat.h"
@@ -59,14 +60,14 @@ struct CallDirectSeatPorts {
 
 /**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
- * Uses MediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
+ * Runs the engine through its call's CallEngine (V057) with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   /** The 1:1 path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
   CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
-                  ICallMediaKeyStore& media_keys, MediaEngine& media, ICallMediaTransport& direct,
+                  ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine, ICallMediaTransport& direct,
                   mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
   /** The call's "the hop carries its media" flag: once set, 1:1 frames are dropped (before any traffic). */
@@ -274,7 +275,7 @@ private:
   void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
-  static void ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, const CallMediaHost& host,
+  static void ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const CallMediaHost& host,
                                  const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                  uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
                                  const std::vector<uint8_t>& payload);
@@ -330,8 +331,8 @@ private:
   bool HopAttachedFor(const std::string& call_id);
   /** Media flows on the call's path: this path's stream committed connected, or the hop carries it. */
   bool MediaConnected(const std::string& call_id);
-  /** Stop the engine through `call_id`'s `CallMedia` (a leftover without one: directly). */
-  void StopEngineFor(const std::string& call_id, const char* why);
+  /** Stop the engine through this call's `CallMedia` (V057: a path never stops it itself). */
+  void StopOwnEngine(const char* why);
   /** `call_id` is this path's call; else logs `what` and says no (a mis-routed call). */
   bool ForThisCall(const std::string& call_id, const char* what) const;
   /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
@@ -343,7 +344,8 @@ private:
   CallMediaHost& host_;
   const ICallSessionReader& sessions_;
   ICallMediaKeyStore& media_keys_;
-  MediaEngine& media_;
+  /** This call's handle on the engine (V057): whether it runs this call, and the data plane. */
+  std::shared_ptr<CallEngine> engine_;
   ICallMediaTransport& direct_;
   CallDirectArmingPorts arming_;
   OwnerOutbox<DirectReport> reports_;

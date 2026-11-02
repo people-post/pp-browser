@@ -28,14 +28,16 @@ const char* PathName(const CallMediaPath path) {
 } // namespace
 
 CallMedia::CallMedia(std::string call_id, CallMediaResources& resources)
-    : call_id_(std::move(call_id)), resources_(resources) {}
+    : call_id_(std::move(call_id)),
+      resources_(resources),
+      engine_(std::make_shared<CallEngine>(call_id_, *resources.engine)) {}
 
 CallMedia::~CallMedia() = default;
 
 CallHopDriver* CallMedia::Hop() {
   if (!hop_ && resources_.make_hop) {
     hop_serial_ = ++resources_.next_path_serial;
-    hop_ = resources_.make_hop(call_id_, hop_serial_, hop_carries_media_);
+    hop_ = resources_.make_hop(call_id_, hop_serial_, engine_, hop_carries_media_);
     if (hop_) {
       CallMediaLog().info << "group path built call_id=" << call_id_ << " serial=" << hop_serial_;
     }
@@ -46,7 +48,7 @@ CallHopDriver* CallMedia::Hop() {
 CallDirectDriver* CallMedia::Direct() {
   if (!direct_ && resources_.make_direct) {
     direct_serial_ = ++resources_.next_path_serial;
-    direct_ = resources_.make_direct(call_id_, direct_serial_, hop_carries_media_);
+    direct_ = resources_.make_direct(call_id_, direct_serial_, engine_, hop_carries_media_);
     if (direct_) {
       CallMediaLog().info << "1:1 path built call_id=" << call_id_ << " serial=" << direct_serial_;
     }
@@ -75,6 +77,7 @@ Roe<void> CallMedia::StartEngine(const CallMediaPath path, MediaEngine::PacketSe
       return Error("media seat lost call " + call_id_ + " during start");
     }
   }
+  engine_->NoteStarted(path);
   CallMediaLog().info << "engine started call_id=" << call_id_ << " path=" << PathName(path);
   return {};
 }

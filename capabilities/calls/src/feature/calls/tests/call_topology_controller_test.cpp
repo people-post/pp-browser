@@ -502,7 +502,8 @@ protected:
 
   /** `call_id`'s group path (V056: one per call), wired as the session manager builds it. */
   std::unique_ptr<CallTopologyController> BuildTopology(const std::string& call_id, OwnerOutbox<TopologyEvent> events) {
-    auto topo = std::make_unique<CallTopologyController>(call_id, *sessions_, *notes_, *contacts_, *media_, *hops_);
+    auto topo = std::make_unique<CallTopologyController>(call_id, *sessions_, *notes_, *contacts_,
+                                                         std::make_shared<CallEngine>(call_id, *media_), *hops_);
     topo->SetOutbox(std::move(events)); // the fixture plays the session manager
     topo->SetReports(topo_reports_.Get());
     topo->SetMediaKeyStore(keys_.get());

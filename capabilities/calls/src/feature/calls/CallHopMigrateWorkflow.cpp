@@ -51,8 +51,8 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 } // namespace
 
 CallHopMigrateWorkflow::CallHopMigrateWorkflow(std::string call_id, const ICallSessionReader& sessions,
-                                               ICallSessionNotes& notes, MediaEngine& media)
-    : call_id_(std::move(call_id)), sessions_(sessions), notes_(notes), media_(media) {
+                                               ICallSessionNotes& notes, std::shared_ptr<CallEngine> engine)
+    : call_id_(std::move(call_id)), sessions_(sessions), notes_(notes), engine_(std::move(engine)) {
   redirectLogger("CallHopMigrateWorkflow");
 }
 
@@ -97,7 +97,7 @@ struct CallHopMigrateWorkflow::HopPick {
 };
 
 bool CallHopMigrateWorkflow::IsLiveOnHopFor(const std::string& call_id) const {
-  return sfu_.attached && media_.IsPacketMode() && media_.ActiveSessionId() == call_id;
+  return sfu_.attached && engine_->Runs();
 }
 
 void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_id,
@@ -684,7 +684,7 @@ std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSi
     const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
     if (open_with.empty()) {
       pkt.payload = std::move(frame.payload);
-      media_.OnInboundPacket(pkt);
+      (void)engine_->Deliver(pkt);
       return;
     }
     // The newest epoch first; the previous one while the others switch to it.
@@ -707,7 +707,7 @@ std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSi
       return;
     }
     pkt.payload = std::move(plain->payload);
-    media_.OnInboundPacket(pkt);
+    (void)engine_->Deliver(pkt);
   };
 }
 
@@ -770,15 +770,14 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   if (!gen_current) {
     log().info << "AttachLocalToSfu stale migrate gen want=" << at.gen_at_start
                << " have=" << flight_.migrate_generation.load(std::memory_order_acquire) << " call_id=" << call_id
-               << " sfu=" << (sfu_.attached ? 1 : 0) << " media=" << media_.ActiveSessionId();
+               << " sfu=" << (sfu_.attached ? 1 : 0) << " media=" << engine_->RunningSessionForLog();
   }
   // Dogfood: parallel CallSfuAttach AcceptAndAttach storms re-enter StartDuplex → send-swap /
   // Detach clears RX (quality flips, brief audio, reconnecting flash). Once this call already
   // owns SFU duplex, skip StartDuplex when duplex is live on this hop, or when this worker is stale
   // (newer SoftMigrate/attach owns the generation). Intentional hop switch (current gen,
   // different hop) still StartDuplex send-swap so TX follows the new AcceptAndAttach.
-  const bool duplex_live =
-      media_.IsPacketMode() && media_.ActiveSessionId() == call_id && (sfu_.attached || media_.IsActive());
+  const bool duplex_live = engine_->Runs();
   const bool same_hop =
       !flight_.attached_hop_peer_id.empty() && flight_.attached_hop_peer_id == at.attach.hop_peer_id;
   if (duplex_live && (same_hop || !gen_current)) {
@@ -820,9 +819,9 @@ void CallHopMigrateWorkflow::ApplyQuoteAdaptation(int64_t a_up_bps) {
   sfu_.last_quote_a_up_bps = a_up_bps;
   CallAdaptationInput in;
   in.per_user_up_bps = a_up_bps;
-  in.camera_user_wants = media_.IsCameraEnabled();
-  in.path_pressure = media_.PathPressure();
-  media_.ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
+  in.camera_user_wants = engine_->IsCameraEnabled();
+  in.path_pressure = engine_->PathPressure();
+  engine_->ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
 }
 
 Roe<void> CallHopMigrateWorkflow::AbortHopAttach() {
@@ -887,7 +886,7 @@ MediaEngine::PacketSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach&
       auto sealed = EncryptCallMediaSfuFrame(key.key, call_id, key.epoch, pub, pkt.seq, pkt.mark,
                                              static_cast<uint8_t>(pkt.channel_id), pkt.payload);
       if (!sealed) {
-        media_.NoteOutboundDrop();
+        engine_->NoteOutboundDrop();
         return;
       }
       frame.payload = std::move(*sealed);
@@ -895,7 +894,7 @@ MediaEngine::PacketSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach&
       frame.payload = pkt.payload;
     }
     if (!relay_deps_->relay->SendFrame(frame)) {
-      media_.NoteOutboundDrop();
+      engine_->NoteOutboundDrop();
     }
   };
 }
@@ -1033,8 +1032,7 @@ void CallHopMigrateWorkflow::OnRelayAttached(const hop_migrate_event::RelayAttac
 void CallHopMigrateWorkflow::RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again) {
   // V050: the group may have moved since (a later joiner's re-pick) — re-announcing this hop would
   // send everyone back to it.
-  if (!sfu_.attached || media_.ActiveSessionId() != again.call_id ||
-      flight_.attached_hop_peer_id != again.hop_peer_id) {
+  if (!sfu_.attached || !engine_->Runs() || flight_.attached_hop_peer_id != again.hop_peer_id) {
     return;
   }
   log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << again.call_id;
@@ -1043,7 +1041,7 @@ void CallHopMigrateWorkflow::RefanOutPickedHop(const hop_migrate_event::RefanOut
 }
 
 void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release) {
-  if (!sfu_.attached || media_.ActiveSessionId() != release.call_id) {
+  if (!sfu_.attached || !engine_->Runs()) {
     return;
   }
   // The guest's hop transport went down since this attach (a reattach is under way, or gave up):
@@ -1066,10 +1064,10 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
 }
 
 void CallHopMigrateWorkflow::ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait) {
-  const bool still_on_hop = sfu_.attached && media_.ActiveSessionId() == wait.call_id;
+  const bool still_on_hop = sfu_.attached && engine_->Runs();
   std::vector<int64_t> heard_ms;
   if (still_on_hop) {
-    const MediaEngineHealth health = media_.HealthSnapshot();
+    const MediaEngineHealth health = engine_->HealthSnapshot();
     if (health.packet_mode) {
       for (const MediaStreamHealth& stream : health.streams) {
         heard_ms.push_back(stream.last_rx_ms);
@@ -1113,7 +1111,7 @@ std::optional<std::string> CallHopMigrateWorkflow::GuestReattachCallId() const {
   if (!guest_.active_attach || !guest_.active) {
     return std::nullopt;
   }
-  if (!media_.IsPacketMode() || media_.ActiveSessionId() != (guest_.active ? call_id_ : std::string{})) {
+  if (!guest_.active || !engine_->Runs()) {
     return std::nullopt;
   }
   return guest_.active ? call_id_ : std::string{};

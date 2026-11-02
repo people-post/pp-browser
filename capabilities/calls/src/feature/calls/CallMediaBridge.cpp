@@ -49,13 +49,13 @@ logging::Logger& DirectReceiveLog() {
 } // namespace
 
 CallMediaBridge::CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
-                                 ICallMediaKeyStore& media_keys, MediaEngine& media, ICallMediaTransport& direct,
-                                 mesh::PeerReachPorts reach)
+                                 ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine,
+                                 ICallMediaTransport& direct, mesh::PeerReachPorts reach)
     : call_id_(std::move(call_id)),
       host_(host),
       sessions_(sessions),
       media_keys_(media_keys),
-      media_(media),
+      engine_(std::move(engine)),
       direct_(direct),
       reach_(std::move(reach)),
       connect_(direct, reach_),
@@ -139,9 +139,9 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   cbs.on_connected = [outbox = outbox_, call_id, label]() {
     outbox.Emit(direct_event::BundleConnected{call_id, label});
   };
-  cbs.on_media = [gate = receive_, &media = media_, &host = host_, outbox = outbox_, call_id,
-                 fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
-    ReceiveDirectMedia(*gate, media, host, outbox, call_id, fixed_stream, channel, seq, mark, payload);
+  cbs.on_media = [gate = receive_, engine = engine_, &host = host_, outbox = outbox_, call_id, fixed_stream](
+                     uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
+    ReceiveDirectMedia(*gate, *engine, host, outbox, call_id, fixed_stream, channel, seq, mark, payload);
   };
   cbs.on_failed = [outbox = outbox_, call_id](const CallMediaFailure& failure) {
     outbox.Emit(direct_event::BundleFailed{call_id, failure.message, failure.GetCode()});
@@ -156,10 +156,10 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
 }
 
 void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason, const CallMediaErr code) {
-  CallMedia* call_media = media_.ActiveSessionId() == call_id ? CallMediaFor(call_id) : nullptr;
+  CallMedia* call_media = engine_->Runs() ? CallMediaFor(call_id) : nullptr;
   BundleFailureInput in;
-  in.engine_call = media_.ActiveSessionId() == call_id;
-  in.engine_running = media_.IsActive();
+  in.engine_call = engine_->Runs();
+  in.engine_running = engine_->Runs() || engine_->RunsAnother();
   in.direct_ready = DirectMediaReady();
   // IsPacketMode() is also true for 1:1 capture — the hop must be attached.
   in.hop_attached = call_media && call_media->HopAttached();
@@ -302,8 +302,7 @@ CallDirectPlannerApplyContext CallMediaBridge::BuildDirectPlannerContext(const s
   ctx.allows_direct_path = !arming_.IsBound() || (arming_.direct_ops_allowed && arming_.direct_ops_allowed());
   ctx.stopping = stopping_.load(std::memory_order_acquire);
   ctx.peer_nonempty = !peer_identity.empty();
-  if (!call_id.empty() && media_.IsActive() && media_.ActiveSessionId() == call_id &&
-      (DirectMediaReady() || MediaConnected(call_id))) {
+  if (!call_id.empty() && engine_->Runs() && (DirectMediaReady() || MediaConnected(call_id))) {
     ctx.media_live_same_call = true;
   }
   if (!call_id.empty()) {
@@ -355,7 +354,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   case CallDirectPlannerEvent::TxOnlyGraceExpired:
     if (direct_planner_phase_ == CallDirectPlannerPhase::DegradedTxOnly) {
       std::string peer = peer_identity.empty() ? media_peer_identity_ : peer_identity;
-      const std::string cid = call_id.empty() ? media_.ActiveSessionId() : call_id;
+      const std::string cid = call_id.empty() ? call_id_ : call_id;
       if (peer.empty() && !cid.empty()) {
         if (auto resolved = host_.P2pPeerIdentityForCall(cid); resolved && resolved->has_value()) {
           peer = **resolved;
@@ -746,8 +745,7 @@ void CallMediaBridge::CancelReanchor() {
 }
 
 void CallMediaBridge::Reanchor(const std::string& call_id) {
-  if (stopping_.load() || media_.ActiveSessionId() != call_id ||
-      direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
+  if (stopping_.load() || !engine_->Runs() || direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
     return;
   }
   const std::string peer_id = CallPeerMeshId();
@@ -836,13 +834,13 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   host_.P2pNotifyRingChanged();
 }
 
-void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, const CallMediaHost& host,
+void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const CallMediaHost& host,
                                          const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                          const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
                                          const uint8_t mark, const std::vector<uint8_t>& payload) {
   // The data plane stays on I/O, like the hop's frames: only atomics and the engine's thread-safe
   // surface here. Owner state it needs (the bound stream) is published into the gate.
-  if (!gate.open.load(std::memory_order_acquire) || !media.IsActive() || media.ActiveSessionId() != call_id ||
+  if (!gate.open.load(std::memory_order_acquire) || !engine.Runs() ||
       (gate.hop_carries_media && gate.hop_carries_media->load(std::memory_order_acquire))) {
     return;
   }
@@ -869,11 +867,11 @@ void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, 
   pkt.seq = seq;
   pkt.mark = mark;
   pkt.payload = payload;
-  media.OnInboundPacket(pkt);
+  (void)engine.Deliver(pkt);
 }
 
 void CallMediaBridge::RebindInboundStream(const std::string& call_id) {
-  if (receive_->remote_stream.load(std::memory_order_acquire) != 0 || media_.ActiveSessionId() != call_id) {
+  if (receive_->remote_stream.load(std::memory_order_acquire) != 0 || !engine_->Runs()) {
     return;
   }
   std::string account = media_peer_identity_;
@@ -916,10 +914,10 @@ void CallMediaBridge::ClearMeshConnectFailed() {
 }
 
 void CallMediaBridge::PollMeshConnectHealth() {
-  const std::string call_id = media_.ActiveSessionId();
+  const std::string& call_id = call_id_;
   DirectHealthInput in;
   in.already_failed = mesh_connect_failed_;
-  in.engine_running = media_.IsActive() && media_.IsPacketMode();
+  in.engine_running = engine_->Runs();
   if (in.engine_running && !in.already_failed) {
     CallMedia* call_media = CallMediaFor(call_id);
     in.hop_in_flight = call_media && call_media->HopInFlight();
@@ -932,7 +930,7 @@ void CallMediaBridge::PollMeshConnectHealth() {
         in.n_joined = *joined;
       }
     }
-    in.started_at_ms = media_.StartedAtMs();
+    in.started_at_ms = engine_->StartedAtMs();
     in.now_ms = util::NowUnixMs();
     in.timeout_ms = kMeshConnectTimeoutMs;
   }
@@ -953,22 +951,22 @@ void CallMediaBridge::PollMeshConnectHealth() {
     break;
   }
   log().warning << "Mesh connect timeout call_id=" << call_id;
-  mesh_connect_missing_mic_ = !media_.HasLocalCapture();
+  mesh_connect_missing_mic_ = !engine_->HasLocalCapture();
   SurfaceConnectFailed(call_id, "mesh connect timeout", /*stop_media=*/true);
 }
 
 void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   std::string peer = media_peer_identity_;
-  const std::string call_id = media_.ActiveSessionId();
+  const std::string& call_id = call_id_;
   if (peer.empty() && !call_id.empty()) {
     if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
     }
   }
-  const auto snap = media_.HealthSnapshot();
+  const auto snap = engine_->HealthSnapshot();
   CallTxOnlyEscalateDecisionInput in;
   in.already_done = tx_only_escalation_done_;
-  in.sfu_attached = HopAttachedFor(media_.ActiveSessionId());
+  in.sfu_attached = HopAttachedFor(call_id_);
   in.stopping = stopping_.load();
   // Bound-link truth: never "escalate via circuit" when media already rides a relay carrier.
   in.media_path_kind = MediaPathKind();
@@ -1007,8 +1005,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
   escalate_reach_id_ = reach_.Ensure(
       std::move(request), OnOwner<mesh::PeerReachCoordinator::ReachRoe>([this, call_id, peer](mesh::PeerReachCoordinator::ReachRoe reached) {
       escalate_reach_id_ = 0;
-      if (stopping_.load() || media_.ActiveSessionId() != call_id ||
-          direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
+      if (stopping_.load() || !engine_->Runs() || direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
         return;
       }
       if (!reached) {
@@ -1017,7 +1014,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
         return;
       }
       direct_.MigrateTo(CallMediaLinkKind::Relayed, OnOwner<Roe<void>>([this, call_id, peer](Roe<void> moved) {
-                          if (stopping_.load() || media_.ActiveSessionId() != call_id) {
+                          if (stopping_.load() || !engine_->Runs()) {
                             return;
                           }
                           if (moved) {
@@ -1046,7 +1043,7 @@ void CallMediaBridge::EscalateBreakBeforeMake(const std::string& call_id, const 
 }
 
 void CallMediaBridge::RestartAfterEscalate(const std::string& call_id, const std::string& peer) {
-  if (stopping_.load() || media_.ActiveSessionId() != call_id) {
+  if (stopping_.load() || !engine_->Runs()) {
     return;
   }
   log().info << "TX-only escalate BeginSession role=" << (session_offerer_ ? "offerer" : "answerer")
@@ -1106,7 +1103,7 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   // StopMeshMedia also resets the seed-park outcome; this failure is what it explains (dogfood 2026-10-01:
   // the "turn off your VPN" hint never showed because the stop ran first).
   const bool seed_unreachable = MeshConnectSeedUnreachable();
-  if (stop_media && (media_.IsActive() || media_.IsPacketMode())) {
+  if (stop_media && engine_->Runs()) {
     // StopMeshMedia clears mesh_connect_failed_ and the attempted mark for Leave hygiene — the call
     // is still open, so both are re-asserted below.
     StopMeshMedia(call_id);
@@ -1307,9 +1304,9 @@ bool CallMediaBridge::StopPriorDirectAttempt(bool offerer) {
   // answerer-only dial often negotiates the stream before BeginSession runs on the offerer
   // (dogfood: Detach raced inbound → phone never read hello → "Failed to read call-media frame header").
   const bool keep_inbound = direct_.IsActive();
-  const bool restarting = media_.IsActive() || connect_.InFlight();
-  if (media_.IsActive()) {
-    StopEngineFor(media_.ActiveSessionId(), "prior direct attempt");
+  const bool restarting = engine_->Runs() || connect_.InFlight();
+  if (engine_->Runs()) {
+    StopOwnEngine("prior direct attempt");
   }
   if (!offerer && !keep_inbound) {
     direct_.Detach();
@@ -1437,7 +1434,7 @@ void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::str
     Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
     return;
   }
-  if (media_.IsActive() && media_.ActiveSessionId() == call_id) {
+  if (engine_->Runs()) {
     log().info << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
     return;
   }
@@ -1474,9 +1471,9 @@ void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::st
     Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
     return;
   }
-  if (media_.IsActive() && media_.ActiveSessionId() == call_id) {
+  if (engine_->Runs()) {
     log().info << "ScheduleStartMediaAsAnswerer skip (already active) call_id=" << call_id
-               << " packet_mode=" << (media_.IsPacketMode() ? 1 : 0) << " direct=" << (direct_.IsActive() ? 1 : 0);
+               << " engine=" << (engine_->Runs() ? 1 : 0) << " direct=" << (direct_.IsActive() ? 1 : 0);
     return;
   }
   if (auto key = LoadActiveMediaKey(call_id); !key) {
@@ -1490,7 +1487,7 @@ void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::st
     SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
   } else {
     log().info << "answerer StartDuplex ok call_id=" << call_id << " direct=" << (direct_.IsActive() ? 1 : 0)
-               << " engine=" << (media_.IsActive() ? 1 : 0);
+               << " engine=" << (engine_->Runs() ? 1 : 0);
   }
 }
 
@@ -1615,19 +1612,14 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   ClearMeshConnectFailed();
   failed_open_.reset();
 
-  // Always stop leftover media_relay even when ActiveCallId drifted or is empty
-  // (dogfood cbe535: End left SFU capture running → next call Connected/reconnecting,
-  // zombie RX stream, no audio). One engine serves one call.
-  if (!media_.IsActive() && !media_.IsPacketMode()) {
+  // This call's media only (V057): another call's leftover is the device's to stop (the seat and
+  // LiveCallMedia::StopMediaExcept, before a call takes media — dogfood cbe535). The call's media
+  // stops whatever the engine still runs.
+  if (!engine_->Runs()) {
     return;
   }
-  const std::string active = media_.ActiveSessionId();
-  if (!active.empty() && !call_id.empty() && active != call_id) {
-    log().warning << "StopMeshMedia stopping mismatched engine call_id=" << active << " leave=" << call_id;
-  } else {
-    log().info << "StopMeshMedia stopping engine call_id=" << active << " leave=" << call_id;
-  }
-  StopEngineFor(call_id.empty() ? active : call_id, "stop mesh media");
+  log().info << "StopMeshMedia stopping engine call_id=" << call_id_ << " leave=" << call_id;
+  StopOwnEngine("stop mesh media");
 }
 
 CallMedia* CallMediaBridge::CallMediaFor(const std::string& call_id) {
@@ -1644,14 +1636,13 @@ bool CallMediaBridge::HopAttachedFor(const std::string& call_id) {
   return call_media && call_media->HopAttached();
 }
 
-void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
-  if (CallMedia* call_media = CallMediaFor(call_id)) {
+void CallMediaBridge::StopOwnEngine(const char* why) {
+  if (CallMedia* call_media = CallMediaFor(call_id_)) {
     call_media->StopEngine(why);
     return;
   }
-  // Leftover media of a call not admitted here (e.g. from before a restart): still stop it.
-  log().info << "engine stop without a live call call_id=" << call_id << " (" << why << ")";
-  media_.Stop();
+  // The call is gone from LiveCalls (its media is being dropped): nothing of it to stop here.
+  log().info << "engine stop without a live call call_id=" << call_id_ << " (" << why << ")";
 }
 
 void CallMediaBridge::ReleaseDirectTransport() {
@@ -1690,8 +1681,8 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();
   // The hop's attach completion reports the call live (LiveCall Status) — not ReleaseDirect alone.
-  if (media_.IsActive() && media_.IsPacketMode()) {
-    reports_.Emit(direct_report::Connected{media_.ActiveSessionId()});
+  if (engine_->Runs()) {
+    reports_.Emit(direct_report::Connected{call_id_});
   }
   host_.P2pNotifyRingChanged();
 }
@@ -1764,8 +1755,8 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   media_session_ = false;
   ClearMeshConnectFailed();
 
-  if (!call_id.empty() && media_.IsActive() && media_.ActiveSessionId() == call_id) {
-    media_.Stop();
+  if (!call_id.empty() && engine_->Runs()) {
+    StopOwnEngine("1:1 stop");
   }
 }
 
@@ -1798,8 +1789,8 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
   }
   ClearMeshConnectFailed();
   reach_.ForgetPath(peer);
-  if (media_.IsActive() && media_.ActiveSessionId() == call_id) {
-    StopEngineFor(call_id, "retry");
+  if (engine_->Runs()) {
+    StopOwnEngine("retry");
   }
   direct_.Detach();
   ArmPlannerForRestart(call_id, peer, true);

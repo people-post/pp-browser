@@ -243,9 +243,11 @@ private:
   CallDirectSeatPorts DirectSeatPorts();
   /** The device-level 1:1 deps (V056): each call's path is built from them. */
   std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial,
+                                                   std::shared_ptr<CallEngine> engine,
                                                    std::shared_ptr<std::atomic<bool>> hop_carries_media);
   /** Each call's group path is built from the device's hop service (V056). */
   std::unique_ptr<CallHopDriver> MakeHopPath(const std::string& call_id, uint64_t serial,
+                                             std::shared_ptr<CallEngine> engine,
                                              std::shared_ptr<std::atomic<bool>> hop_carries_media);
 
   /** What the screen reads of the active call's media paths. */

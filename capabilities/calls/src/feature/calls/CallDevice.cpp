@@ -93,10 +93,11 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
     }
   });
   BindSeat();
-  call_media_.BindHopPathFactory(
-      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-        return MakeHopPath(call_id, serial, std::move(carries));
-      });
+  call_media_.BindHopPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                        std::shared_ptr<CallEngine> engine,
+                                        std::shared_ptr<std::atomic<bool>> carries) {
+    return MakeHopPath(call_id, serial, std::move(engine), std::move(carries));
+  });
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   BindWorkflowHostPorts();
   BindReachSignalPorts();
@@ -546,18 +547,20 @@ void CallDevice::AttachDirectPath(CallDirectPathDeps deps) {
     call_media_.ForEachDirectPath([&deps](CallDirectDriver& path) { path.AttachReach(deps); });
   }
   direct_deps_ = std::move(deps);
-  call_media_.BindDirectPathFactory(
-      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-        return MakeDirectPath(call_id, serial, std::move(carries));
-      });
+  call_media_.BindDirectPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                           std::shared_ptr<CallEngine> engine,
+                                           std::shared_ptr<std::atomic<bool>> carries) {
+    return MakeDirectPath(call_id, serial, std::move(engine), std::move(carries));
+  });
 }
 
 std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& call_id, const uint64_t serial,
+                                                             std::shared_ptr<CallEngine> engine,
                                                              std::shared_ptr<std::atomic<bool>> hop_carries_media) {
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
-  auto path = std::make_unique<CallMediaBridge>(call_id, AsMediaHost(), sessions_, media_keys_, media_,
+  auto path = std::make_unique<CallMediaBridge>(call_id, AsMediaHost(), sessions_, media_keys_, std::move(engine),
                                                 *direct_deps_.transport, direct_deps_.Reach());
   path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
     return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
@@ -573,8 +576,10 @@ std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& 
 }
 
 std::unique_ptr<CallHopDriver> CallDevice::MakeHopPath(const std::string& call_id, const uint64_t serial,
+                                                       std::shared_ptr<CallEngine> engine,
                                                        std::shared_ptr<std::atomic<bool>> hop_carries_media) {
-  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, workflow_, contacts_, media_, hop_service_);
+  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, workflow_, contacts_, std::move(engine),
+                                                       hop_service_);
   path->SetCarriesMediaFlag(std::move(hop_carries_media));
   path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
     return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};
@@ -605,10 +610,11 @@ void CallDevice::SetDirectPathFactoryForTest(CallDirectPathFactory make) {
   if (make) {
     call_media_.BindDirectPathFactory(std::move(make));
   } else if (direct_deps_.IsUsable()) {
-    call_media_.BindDirectPathFactory(
-        [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
-          return MakeDirectPath(call_id, serial, std::move(carries));
-        });
+    call_media_.BindDirectPathFactory([this](const std::string& call_id, const uint64_t serial,
+                                             std::shared_ptr<CallEngine> engine,
+                                             std::shared_ptr<std::atomic<bool>> carries) {
+      return MakeDirectPath(call_id, serial, std::move(engine), std::move(carries));
+    });
   } else {
     call_media_.BindDirectPathFactory({});
   }

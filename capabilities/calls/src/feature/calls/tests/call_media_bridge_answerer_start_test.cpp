@@ -463,7 +463,7 @@ protected:
   /** The call's 1:1 path (V056: one per call), as its `CallMedia` builds it; the fixture plays the owner. */
   void BuildBridge(const std::string& call_id) {
     bridge_ = std::make_unique<CallMediaBridge>(
-        call_id, *host_, *sessions_, *keys_, *media_, *transport_,
+        call_id, *host_, *sessions_, *keys_, std::make_shared<CallEngine>(call_id, *media_), *transport_,
         mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
     bridge_->SetOutbox(bridge_events_.Get());
