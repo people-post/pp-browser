@@ -330,11 +330,6 @@ protected:
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
     hops_ = std::make_unique<CallHopService>(*sessions_, *contacts_);
-    topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_, *hops_);
-    topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
-    topo_->SetReports(topo_reports_.Get());
-    topo_->SetMediaKeyStore(keys_.get());
-    topo_->SetHostPorts(host_->MakeHostPorts());
 
     CallTopologyController::MediaRelayDeps deps;
     deps.relay = relay_.get();
@@ -409,6 +404,7 @@ protected:
 
   void SeedJoinedCall(const std::string& call_id, const std::vector<std::string>& identities,
                       int64_t base_joined_at) {
+    UseCall(call_id); // the first seeded call is the test's group path
     CallSession session;
     session.call_id = call_id;
     session.origin_thread_id = "thread-1";
@@ -462,9 +458,31 @@ protected:
 
   /** As the session manager installs relay deps: unwatch (old relay alive), swap, watch again. */
   void SetRelayDeps(CallTopologyController::MediaRelayDeps deps) {
-    topo_->UnwatchRelay();
+    if (topo_) {
+      topo_->UnwatchRelay();
+    }
     hops_->SetMediaRelayDeps(std::move(deps));
-    topo_->OnRelayDepsChanged();
+    if (topo_) {
+      topo_->OnRelayDepsChanged();
+    }
+  }
+
+  /** `call_id`'s group path (V056: one per call), wired as the session manager builds it. */
+  std::unique_ptr<CallTopologyController> BuildTopology(const std::string& call_id, OwnerOutbox<TopologyEvent> events) {
+    auto topo = std::make_unique<CallTopologyController>(call_id, *sessions_, *contacts_, *media_, *hops_);
+    topo->SetOutbox(std::move(events)); // the fixture plays the session manager
+    topo->SetReports(topo_reports_.Get());
+    topo->SetMediaKeyStore(keys_.get());
+    topo->SetHostPorts(host_->MakeHostPorts());
+    topo->OnRelayDepsChanged();
+    return topo;
+  }
+
+  /** The test's call's group path (built on first use). */
+  void UseCall(const std::string& call_id) {
+    if (!topo_) {
+      topo_ = BuildTopology(call_id, topo_events_.Get());
+    }
   }
   CallsLoopbackOutbox<TopologyEvent> topo_events_{[this](TopologyEvent& event) {
     if (topo_) {
@@ -1228,7 +1246,8 @@ TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
   const std::string call_id = "call:gen-stampede";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
-  // Prime migrate_generation_ — IsMigrateGenerationCurrent treats gen==0 as always current.
+  // V056: the path is this call's, so an unrelated call's stop never reaches it (the dogfood stampede
+  // came from one topology for every call). The stops below are ignored; the attach still StartSfu's.
   topo_->OnMediaStopped("call:prime");
   topo_->BeginSfuAttachWait(call_id);
 
@@ -1516,6 +1535,7 @@ TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach
 // The observer follows the deps: swapping or clearing them unwatches the old relay (mesh stop
 // clears them before the relay goes), and a notice queued for a destroyed topology is dropped.
 TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
+  UseCall("call:relay-watch");
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
@@ -1605,11 +1625,12 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
+  const std::string old_id = "call:leftover-old";
+  UseCall(old_id);
   CallMediaSeat seat;
   topo_->SetSeatPorts(TestTopologySeatPorts(&seat));
   host_->call_media.BindMediaResources(media_.get(), &seat);
 
-  const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";
   SeedJoinedCall(old_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
@@ -1647,7 +1668,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   const int attaches_old = relay_->attach_calls;
 
   // End disk session + Release seat (Leave/EndCallLocal path). Engine may still hold call:old
-  // if Stop was skipped — seat bind clear is what unblocks call:new.
+  // if Stop was skipped — seat bind clear is what unblocks call:new. call:new has its own group path.
   auto old_session = sessions_->LoadSession(old_id);
   ASSERT_TRUE(old_session && old_session->has_value());
   (**old_session).state = CallSessionState::Ended;
@@ -1657,10 +1678,15 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   EXPECT_EQ(media_->ActiveCallId(), old_id) << "engine leftover without Stop is the dogfood case";
 
   SeedJoinedCall(new_id, {"account:A", "account:B", "account:C"}, 2000);
+  CallsLoopbackOutbox<TopologyEvent> new_events{[](TopologyEvent&) {}};
+  std::unique_ptr<CallTopologyController> new_topo = BuildTopology(new_id, new_events.Get());
+  CallsLoopbackOutbox<TopologyEvent> routed{[&new_topo](TopologyEvent& event) { new_topo->Handle(event); }};
+  new_topo->SetOutbox(routed.Get());
+  new_topo->SetSeatPorts(TestTopologySeatPorts(&seat));
 
   CallSfuAttachDetail new_attach = old_attach;
   new_attach.call_id = new_id;
-  ASSERT_TRUE(topo_->OnInboundSfuAttach(new_id, new_attach));
+  ASSERT_TRUE(new_topo->OnInboundSfuAttach(new_id, new_attach));
 
   bool new_attached = false;
   for (int i = 0; i < 200; ++i) {
@@ -1676,8 +1702,10 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   EXPECT_GT(relay_->attach_calls, attaches_old);
   EXPECT_TRUE(seat.IsBound(new_id));
 
+  media_->Stop(); // the capture thread runs the new path's send fn
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
+  new_topo.reset();
 }
 
 } // namespace

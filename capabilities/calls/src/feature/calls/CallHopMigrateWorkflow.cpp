@@ -50,8 +50,8 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 
 } // namespace
 
-CallHopMigrateWorkflow::CallHopMigrateWorkflow(ICallSessionStore& sessions, MediaEngine& media)
-    : sessions_(sessions), media_(media) {
+CallHopMigrateWorkflow::CallHopMigrateWorkflow(std::string call_id, ICallSessionStore& sessions, MediaEngine& media)
+    : call_id_(std::move(call_id)), sessions_(sessions), media_(media) {
   redirectLogger("CallHopMigrateWorkflow");
 }
 
@@ -588,7 +588,7 @@ Roe<bool> CallHopMigrateWorkflow::ClaimHopAttachFlight(const std::string& call_i
         log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
                    << " in_flight_hop=" << seat_ports->attaching_hop() << " requested=" << attach.hop_peer_id;
         inbound_gate_.pending_attach = attach;
-        inbound_gate_.pending_call_id = call_id;
+        inbound_gate_.pending = true;
         ops_.note_remote_publisher_from_attach(attach);
         ops_.begin_sfu_attach_wait(call_id);
         return false;
@@ -869,7 +869,7 @@ bool CallHopMigrateWorkflow::OwnsHopAttachFlight(const HopAttach& at) const {
   return flight_.flight_gen == at.gen_at_start ||
          (!flight_.attaching_hop_peer_id.empty() && flight_.attaching_hop_peer_id == at.attach.hop_peer_id) ||
          // Stampede may Leave-bump gen while guest WaitForAttach is still armed for this call.
-         attach_wait_.call_id == at.call_id;
+         (attach_wait_.waiting && at.call_id == call_id_);
 }
 
 MediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach& at) {
@@ -943,11 +943,11 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   flight_.attaching_hop_peer_id.clear();
   if (!at.self_hop) {
     guest_.active_attach = at.attach;
-    guest_.active_call_id = call_id;
+    guest_.active = true;
     guest_.reattach_attempts = 0;
   } else if (fresh_start) {
     guest_.active_attach.reset();
-    guest_.active_call_id.clear();
+    guest_.active = false;
   }
   ops_.note_remote_publisher_from_attach(at.attach);
   ops_.sync_sfu_subscriptions(call_id);
@@ -1049,7 +1049,7 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
   // The guest's hop transport went down since this attach (a reattach is under way, or gave up):
   // the settle of the attach that was lost must not read the call as connected again. The direct
   // transport was released when the attach completed; a reattach that succeeds reports Live.
-  if (guest_.active_call_id == release.call_id && (guest_.reattach_in_flight || guest_.reattach_attempts > 0)) {
+  if ((guest_.active && release.call_id == call_id_) && (guest_.reattach_in_flight || guest_.reattach_attempts > 0)) {
     log().info << "ReleaseDirect settle skipped (hop transport lost) call_id=" << release.call_id;
     return;
   }
@@ -1110,13 +1110,13 @@ std::optional<std::string> CallHopMigrateWorkflow::GuestReattachCallId() const {
   if (!relay_deps_->relay || relay_deps_->relay->IsLocalHopAttached()) {
     return std::nullopt;
   }
-  if (!guest_.active_attach || guest_.active_call_id.empty()) {
+  if (!guest_.active_attach || !guest_.active) {
     return std::nullopt;
   }
-  if (!media_.IsSfuMode() || media_.ActiveCallId() != guest_.active_call_id) {
+  if (!media_.IsSfuMode() || media_.ActiveCallId() != (guest_.active ? call_id_ : std::string{})) {
     return std::nullopt;
   }
-  return guest_.active_call_id;
+  return guest_.active ? call_id_ : std::string{};
 }
 
 void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
@@ -1199,7 +1199,7 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
 }
 
 void CallHopMigrateWorkflow::OnLocalNetworkMoved() {
-  if (!guest_.active_attach || guest_.active_call_id.empty()) {
+  if (!guest_.active_attach || !guest_.active) {
     return;
   }
   // Attempts spent while the network was down say nothing about the network now: a fresh budget,
@@ -1207,7 +1207,7 @@ void CallHopMigrateWorkflow::OnLocalNetworkMoved() {
   const bool gave_up = guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts && !guest_.reattach_in_flight;
   guest_.reattach_attempts = 0;
   if (gave_up) {
-    log().info << "Guest SFU reattach again: the local network moved call_id=" << guest_.active_call_id;
+    log().info << "Guest SFU reattach again: the local network moved call_id=" << call_id_;
     OnGuestSfuTransportLost();
   }
 }
@@ -1279,7 +1279,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int
   relay_deps_->relay->StartClientFrameReader();
   sfu_.last_quote_a_up_bps = a_up_bps;
   guest_.active_attach = at.attach;
-  guest_.active_call_id = at.call_id;
+  guest_.active = true;
   ops_.note_remote_publisher_from_attach(at.attach);
   ops_.sync_sfu_subscriptions(at.call_id);
   ops_.announce_local_publisher(at.call_id, at.attach);

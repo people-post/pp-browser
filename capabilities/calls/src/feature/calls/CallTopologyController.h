@@ -90,8 +90,10 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts, MediaEngine& media,
-                         CallHopService& hops);
+  /** The group path of `call_id` (V056): built for that call by its media coordinator, lives with it. */
+  CallTopologyController(std::string call_id, ICallSessionStore& sessions, const IContactBook& contacts,
+                         MediaEngine& media, CallHopService& hops);
+  const std::string& CallId() const { return call_id_; }
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
   CallTopologyController& operator=(const CallTopologyController&) = delete;
@@ -108,7 +110,11 @@ public:
   /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
   void OnLocalNetworkMoved() override;
   /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
-  void OnMediaKeyInstalled(const std::string& call_id) override { hop_migrate_.InstallMediaKey(call_id); }
+  void OnMediaKeyInstalled(const std::string& call_id) override {
+    if (call_id == call_id_) {
+      hop_migrate_.InstallMediaKey(call_id);
+    }
+  }
   /** V046 exclusive media bind / epoch via ports. */
   void SetSeatPorts(CallTopologySeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
@@ -296,6 +302,11 @@ private:
   PublisherStreams& publishers_;
   SfuSurface& sfu_;
 
+  /** `call_id` is this path's call; else logs `what` and says no (a mis-routed call). */
+  bool ForThisCall(const std::string& call_id, const char* what) const;
+
+  /** The one call this path serves. */
+  const std::string call_id_;
   HostPorts host_;
   ICallSessionStore& sessions_;
   const IContactBook& contacts_;
@@ -327,7 +338,8 @@ private:
   /** Joined remotes of the call other than `guest` (the members a hop change must suit). */
   std::vector<std::string> JoinedMembersOtherThan(const std::string& call_id, const std::string& guest) const;
   /** V050: per call, guest → the hop the group moved to for it (one change per joiner). */
-  std::unordered_map<std::string, std::map<std::string, std::string>> hop_hint_repicked_;
+  /** Guest → the hop it was moved to after its attach failed (this call). */
+  std::map<std::string, std::string> hop_hint_repicked_;
   /** V050: a joined remote this device invited whose CallAccept has not arrived yet. */
   bool AwaitsOwnInviteeAccept(const std::string& call_id, const std::string& local_identity) const;
 

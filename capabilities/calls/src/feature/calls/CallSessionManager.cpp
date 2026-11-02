@@ -689,7 +689,7 @@ std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(
 
 std::unique_ptr<CallHopDriver> CallSessionManager::MakeHopPath(const std::string& call_id, const uint64_t serial,
                                                                std::shared_ptr<std::atomic<bool>> hop_carries_media) {
-  auto path = std::make_unique<CallTopologyController>(sessions_, contacts_, media_, hop_service_);
+  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, contacts_, media_, hop_service_);
   path->SetCarriesMediaFlag(std::move(hop_carries_media));
   path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
     return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};

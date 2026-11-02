@@ -127,7 +127,8 @@ public:
   struct SoftMigrateFlight {
     bool in_flight = false;
     uint64_t flight_gen = 0;
-    std::string call_id;
+    /** The flight is this path's call's. */
+    bool for_call = false;
     std::atomic<uint64_t> migrate_generation{0};
     std::string attaching_hop_peer_id;
     std::string attached_hop_peer_id;
@@ -135,7 +136,8 @@ public:
   };
 
   struct AttachWait {
-    std::string call_id;
+    /** This path's call waits for the hop's attach. */
+    bool waiting = false;
     int64_t deadline_ms = 0;
     uint64_t timer_id = 0;
     /** Bumped at each arm: a deadline event for an earlier arm is stale. */
@@ -145,14 +147,17 @@ public:
   /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
   struct InboundAttachGate {
     std::optional<CallSfuAttachDetail> pending_attach;
-    std::string pending_call_id;
-    std::string last_fail_call_id;
+    /** A CallSfuAttach for this path's call is deferred. */
+    bool pending = false;
+    /** This path's call's last attach failed (on last_fail_hop). */
+    bool last_failed = false;
     std::string last_fail_hop;
   };
 
   struct GuestSfuSession {
     std::optional<CallSfuAttachDetail> active_attach;
-    std::string active_call_id;
+    /** This path's call is a guest on the hop. */
+    bool active = false;
     int reattach_attempts = 0;
     bool reattach_in_flight = false;
     /** A steady-pace retry is scheduled (the quick attempts are spent). */
@@ -211,7 +216,7 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(ICallSessionStore& sessions, MediaEngine& media);
+  CallHopMigrateWorkflow(std::string call_id, ICallSessionStore& sessions, MediaEngine& media);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
@@ -335,6 +340,8 @@ private:
   mesh::MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
   static std::function<Roe<void>(const mesh::MediaRelayQuote&)> RelayQuotePricingGate();
 
+  /** The one call this workflow's hop flows serve (its group path's). */
+  const std::string call_id_;
   ICallSessionStore& sessions_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
