@@ -20,6 +20,7 @@
 @interface PPPickDelegate : NSObject <PHPickerViewControllerDelegate, UIDocumentPickerDelegate> {
 @public
   pbr::NativeFileDialogCallback callback;
+  std::function<void()> preparing; // a video was chosen and is being copied (may be empty)
 }
 @end
 
@@ -116,6 +117,7 @@ std::string ConvertHeicToJpeg(const std::string& path) {
 void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
+  delegate->preparing = nullptr;
   if (ActivePicker() == delegate) {
     SetActivePicker(nil);
     [delegate release];
@@ -155,6 +157,9 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
   NSString* type = UTTypeImage.identifier;
   if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
     type = UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
+    if (preparing) {
+      preparing(); // the copy below can take a while: the caller says "Sending…" meanwhile
+    }
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
     type = UTTypeJPEG.identifier;
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
@@ -256,7 +261,8 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   }
 }
 
-void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
+                                std::function<void()> on_preparing) {
   if (!callback) {
     return;
   }
@@ -267,6 +273,7 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
       return;
     }
     PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
+    delegate->preparing = std::move(on_preparing);
     config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter],
                                                                     [PHPickerFilter videosFilter] ]];
     config.selectionLimit = 1;

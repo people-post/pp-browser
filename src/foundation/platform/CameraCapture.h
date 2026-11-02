@@ -29,9 +29,11 @@ using CameraCaptureCallback = std::function<void(CameraCaptureOutcome outcome, s
  * (location included) stripped without re-encoding and keep their orientation. A video is limited to
  * `max_video_seconds` and `max_video_bytes` as far as the platform camera honours them; the caller checks the size
  * again. The callback may run on any thread.
+ * `on_preparing` (iOS only, main thread; other platforms never call it) fires when the person has accepted a video,
+ * before it is copied out: the caller can say "Sending…" while the callback is still to come.
  */
 void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video_seconds, uint64_t max_video_bytes,
-                       CameraCaptureCallback callback);
+                       CameraCaptureCallback callback, std::function<void()> on_preparing = nullptr);
 
 /**
  * The directory captured files live in: Android the app's cache `capture/`, iOS `tmp/pp-picks` (shared with the

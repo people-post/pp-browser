@@ -23,9 +23,11 @@ void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
  * The "Photo" entry of a chat: a picture or a video from the phone's library. iOS: PHPicker offering images and
  * videos; a video is kept as the library has it (.mov, HEVC) and a HEIC photo is handed over as JPEG. Android and
  * desktop: the system dialog filtered to pictures and video. Empty paths = cancel; same path rules as
- * ShowOpenImageFileDialog.
+ * ShowOpenImageFileDialog. `on_preparing` (iOS only, main thread; other platforms never call it) fires when a video
+ * was chosen, before it is copied out of the library: the caller can say "Sending…" while the callback is still to come.
  */
-void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback);
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
+                                std::function<void()> on_preparing = nullptr);
 /**
  * An image kept as a file (not in the photo library): on iOS the Files picker limited to JPEG / PNG / GIF /
  * WebP; elsewhere the same dialog as ShowOpenImageFileDialog.

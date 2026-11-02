@@ -9,6 +9,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/VoiceComposer.h"
@@ -201,6 +202,10 @@ private:
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
   void ShowPictureSendChoice(std::string path);
   void ToggleVoiceMode();
+  /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
+  void BeginAttachmentPreparing();
+  /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
+  void EndAttachmentPreparing(AttachmentPrepareOutcome outcome);
   /**
    * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
    * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
@@ -267,6 +272,7 @@ private:
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
   /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
   std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
+  AttachmentPreparing preparing_;
   int attach_menu_x_ = 12;
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */

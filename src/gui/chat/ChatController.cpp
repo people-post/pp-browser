@@ -355,7 +355,7 @@ ChatController::ChatController()
   };
   voice_ports.thread_id = [this]() { return ActiveThreadId(); };
   voice_ports.send = [this](const std::string& thread_id, const std::string& path) {
-    if (chat_.attachment_uploading) {
+    if (chat_.attachment_uploading || chat_.attachment_preparing) {
       KeepVoiceForRetry(path, thread_id); // another send is on: this one waits behind Retry
       UserFeedback::Fail(Tr("chat.voice.upload_busy"));
       return;
@@ -364,7 +364,8 @@ ChatController::ChatController()
   };
   voice_ports.eligible = [this]() {
     return messaging_ready_ && facade_ && chat_.show_attach_button && !InAiComposerContext() &&
-           !chat_.attachment_uploading && !chat_.attachment_failed && !ActiveThreadId().empty();
+           !chat_.attachment_uploading && !chat_.attachment_preparing && !chat_.attachment_failed &&
+           !ActiveThreadId().empty();
   };
   voice_ports.dirty = [this]() {
     SyncComposerInputState(); // the input is off while recording
@@ -1177,9 +1178,10 @@ void ChatController::UpdateThreadChrome() {
 }
 
 void ChatController::RefreshShowCapture() {
-  const bool show = chat_.show_attach_button &&
-                    ShowCaptureEntry(Platform::IsMobile(), facade_ && facade_->AnyCallLive(), InAiComposerContext(),
-                                     chat_.attachment_uploading || chat_.attachment_failed);
+  const bool show =
+      chat_.show_attach_button &&
+      ShowCaptureEntry(Platform::IsMobile(), facade_ && facade_->AnyCallLive(), InAiComposerContext(),
+                       chat_.attachment_uploading || chat_.attachment_preparing || chat_.attachment_failed);
   if (chat_.show_capture != show) {
     chat_.show_capture = show;
     DataModelHost::Instance().Dirty("chat", "show_capture");
@@ -1200,9 +1202,34 @@ void ChatController::ToggleVoiceMode() {
   DataModelHost::Instance().Dirty("chat", "voice_mode");
 }
 
+void ChatController::BeginAttachmentPreparing() {
+  if (!preparing_.Begin() || chat_.attachment_uploading) {
+    return;
+  }
+  chat_.attachment_preparing = true;
+  chat_.attachment_failed = false;
+  chat_.attachment_draft_name = "";
+  chat_.attachment_status = Tr("chat.attachment.sending").c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void ChatController::EndAttachmentPreparing(const AttachmentPrepareOutcome outcome) {
+  preparing_.End(outcome);
+  if (!chat_.attachment_preparing) {
+    return;
+  }
+  chat_.attachment_preparing = false;
+  chat_.attachment_status = "";
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
 void ChatController::SyncComposerInputState() {
-  chat_.composer_input_disabled =
-      chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing || chat_.voice_recording;
+  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
+                                  chat_.image_preparing || chat_.voice_recording;
   // Whether a voice message can be sent depends on the same upload state: a toggle that went away while a file
   // was being sent must come back when the upload ends, not at the next chrome update.
   if (voice_) {
@@ -1215,7 +1242,8 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   if (!messaging_ready_ || !facade_) {
     return;
   }
-  if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
+  if (chat_.composer_input_disabled || chat_.attachment_uploading || chat_.attachment_preparing ||
+      !chat_.show_attach_button) {
     return;
   }
   // B90: the menu opens at the attach button, not at a fixed corner (which was behind the keyboard on a phone).
@@ -1237,6 +1265,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   const auto picked = [this](const OutgoingPickSource source) {
     return [this, source](std::vector<std::string> paths) {
       AppRuntime::PostUI([this, source, paths = std::move(paths)]() mutable {
+        EndAttachmentPreparing(paths.empty() ? AttachmentPrepareOutcome::NoFile : AttachmentPrepareOutcome::Delivered);
         if (paths.empty()) {
           return;
         }
@@ -1249,6 +1278,7 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   const auto picked_picture = [this]() {
     return [this](std::vector<std::string> paths) {
       AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+        EndAttachmentPreparing(paths.empty() ? AttachmentPrepareOutcome::NoFile : AttachmentPrepareOutcome::Delivered);
         if (paths.empty()) {
           return;
         }
@@ -1262,8 +1292,11 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     };
   };
   // "Photo" on a phone: the library with pictures and videos.
-  const auto pick_photo_or_video = [picked_picture]() {
-    return [on_picked = picked_picture()]() { ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked); };
+  const auto pick_photo_or_video = [this, picked_picture]() {
+    return [this, on_picked = picked_picture()]() {
+      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked,
+                                 [this]() { AppRuntime::PostUI([this]() { BeginAttachmentPreparing(); }); });
+    };
   };
   // "Picture" on the desktop: the image-file dialog.
   const auto pick_image = [picked_picture]() {
@@ -1302,7 +1335,7 @@ void ChatController::ShowPictureSendChoice(std::string path) {
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
   if (!messaging_ready_ || !facade_ || !chat_.show_capture || chat_.composer_input_disabled ||
-      chat_.attachment_uploading || InAiComposerContext() || ActiveThreadId().empty()) {
+      chat_.attachment_uploading || chat_.attachment_preparing || InAiComposerContext() || ActiveThreadId().empty()) {
     return;
   }
   if (ev) {
@@ -1329,12 +1362,19 @@ void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
     return;
   }
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
-  ShowCameraCapture(Backend::GetWindow(), kind, limits.video_max_seconds, limits.max_video_bytes,
-                    [this](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
-                      AppRuntime::PostUI([this, outcome, paths = std::move(paths)]() mutable {
-                        HandleCaptureResult(MakeCaptureFlowPorts(), outcome, std::move(paths));
-                      });
-                    });
+  ShowCameraCapture(
+      Backend::GetWindow(), kind, limits.video_max_seconds, limits.max_video_bytes,
+      [this](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+        AppRuntime::PostUI([this, outcome, paths = std::move(paths)]() mutable {
+          EndAttachmentPreparing(outcome == CameraCaptureOutcome::Picked      ? AttachmentPrepareOutcome::Delivered
+                                 : outcome == CameraCaptureOutcome::Cancelled ? AttachmentPrepareOutcome::Cancelled
+                                 : outcome == CameraCaptureOutcome::Unprocessable
+                                     ? AttachmentPrepareOutcome::Unprocessable
+                                     : AttachmentPrepareOutcome::Unavailable);
+          HandleCaptureResult(MakeCaptureFlowPorts(), outcome, std::move(paths));
+        });
+      },
+      [this]() { AppRuntime::PostUI([this]() { BeginAttachmentPreparing(); }); });
 }
 
 CaptureFlowPorts ChatController::MakeCaptureFlowPorts() {
@@ -1403,7 +1443,7 @@ void ChatController::ShowFailedAttachment(const std::string& record_id, const st
 }
 
 void ChatController::RefreshPendingAttachmentChip(const bool force) {
-  if (!facade_ || !messaging_ready_ || chat_.attachment_uploading) {
+  if (!facade_ || !messaging_ready_ || chat_.attachment_uploading || chat_.attachment_preparing) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
@@ -1524,7 +1564,7 @@ void ChatController::OnRetryAttachmentSend() {
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
                                            const bool voice_file, const std::string& voice_thread_id) {
-  if (!facade_ || chat_.attachment_uploading) {
+  if (!facade_ || chat_.attachment_uploading || chat_.attachment_preparing) {
     release_pick_(path);
     return;
   }
