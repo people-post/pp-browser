@@ -10,6 +10,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallMediaPlane.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
+    CallDevice.cpp
     CallSessionManager.cpp
     CallReads.cpp
     CallStack.cpp

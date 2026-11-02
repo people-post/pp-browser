@@ -31,7 +31,7 @@ namespace pbr {
  * Durable session / roster / invite-leave workflow (V044).
  * The session rows' one writer (V055) + CallSessionLogic transitions: the rest of calls reads the rows,
  * and a call's group path records its hop through ICallSessionNotes. Side effects via HostPorts from
- * CallSessionManager — not a second chrome SM. Nested clusters speak session needs (V048).
+ * CallDevice — not a second chrome SM. Nested clusters speak session needs (V048).
  */
 class CallSessionWorkflow : public Module, public ICallSessionNotes {
 public:
@@ -150,7 +150,7 @@ public:
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(WorkflowEvent& event);
   /**
-   * Drop the follow-ups still to come (CSM teardown): roster fan-outs already reported — they must not
+   * Drop the follow-ups still to come (device teardown): roster fan-outs already reported — they must not
    * run against a store / delivery being torn down.
    */
   void DropFollowUps();
@@ -365,11 +365,11 @@ private:
   ICallSessionStore& sessions_;
   /** The calls' durable reads (the stack's): what this device is in, what it may join. */
   const CallReads& reads_;
-  /** The call's media keys between the peers (owned by CallSessionManager). */
+  /** The call's media keys between the peers (owned by CallDevice). */
   CallMediaKeyExchange& key_exchange_;
-  /** P001 initiation pricing on invite / accept (owned by CallSessionManager). */
+  /** P001 initiation pricing on invite / accept (owned by CallDevice). */
   CallInitiationBilling& billing_;
-  /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
+  /** The calls live on this device (owned by CallDevice); driven where the store rows change. */
   LiveCalls& live_calls_;
   LiveCallMedia& call_media_;
   HostPorts host_;

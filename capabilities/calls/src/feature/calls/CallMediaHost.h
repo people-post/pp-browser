@@ -12,7 +12,7 @@
 
 namespace pbr {
 
-/** Narrow façade for call media side effects owned by CallSessionManager. */
+/** Narrow façade for call media side effects owned by CallDevice. */
 class CallMediaHost {
 public:
   virtual ~CallMediaHost() = default;

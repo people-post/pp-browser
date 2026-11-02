@@ -25,7 +25,7 @@ namespace pbr {
  */
 class CallReachSignals : public Module {
 public:
-  /** The call session side (CallSessionManager binds). */
+  /** The call session side (CallDevice binds). */
   struct CallPorts {
     std::function<std::optional<std::string>()> active_call_id;
     /** The 1:1 peer of `call_id` — who the signals go to. */

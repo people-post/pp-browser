@@ -255,15 +255,16 @@ protected:
     delivery.ensure_peer_session_key = [this](const std::string& peer) { return test::SeededSessionKey(*psk_, peer); };
 
     reads_ = std::make_unique<CallReads>(*sessions_, *identity_, *store_, delivery.group_members, nullptr);
-    csm_ = std::make_unique<CallSessionManager>(*store_, *store_, *contacts_, *identity_, *sessions_, *reads_, *keys_,
-                                                std::move(delivery), *media_);
-    csm_->SetOutbox(csm_events_.Get());  // the fixture plays the stack
+    device_ = std::make_unique<CallDevice>(*store_, *store_, *contacts_, *identity_, *sessions_, *reads_, *keys_,
+                                           std::move(delivery), *media_);
+    csm_ = std::make_unique<CallSessionManager>(*device_);
+    device_->SetOutbox(csm_events_.Get()); // the fixture plays the stack
     // The manager owns the 1:1 path, as in the product: attach it on the fake transport.
     CallDirectPathDeps direct;
     direct.transport = transport_.get();
     direct.dial = dial_.get();
     direct.lane = AppRuntime::MakeLaneForTesting();  // stands in for the mesh's io lane
-    csm_->AttachDirectPath(std::move(direct));
+    device_->AttachDirectPath(std::move(direct));
 
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
@@ -272,7 +273,7 @@ protected:
   void TearDown() override {
     if (csm_) {
       // Brief wait so Connect/StartSfu workers release profile.db before remove_all (Windows).
-      OnCallsOwner([&] { return csm_->PrepareDirectPathForStop(500); });
+      OnCallsOwner([&] { return device_->PrepareDirectPathForStop(500); });
     }
     // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
     if (media_) {
@@ -287,6 +288,7 @@ protected:
     // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
     AppRuntime::Shutdown();
     csm_.reset();
+    device_.reset();
     reads_.reset();
     transport_.reset();
     dial_.reset();
@@ -342,16 +344,16 @@ protected:
     OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
     OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
     DrainUntil([&]() {
-      return csm_->Live().Phase() == CallPhase::JoinedLocal || csm_->Live().Phase() == CallPhase::MediaPending ||
-             csm_->Live().Phase() == CallPhase::MediaConnecting || csm_->Live().Phase() == CallPhase::InCall ||
+      return device_->Live().Phase() == CallPhase::JoinedLocal || device_->Live().Phase() == CallPhase::MediaPending ||
+             device_->Live().Phase() == CallPhase::MediaConnecting || device_->Live().Phase() == CallPhase::InCall ||
              media_->IsActive();
     });
-    ASSERT_NE(csm_->Live().Phase(), CallPhase::Accepting) << csm_->LastError();
-    ASSERT_NE(csm_->Live().Phase(), CallPhase::Ringing) << csm_->LastError();
-    EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
+    ASSERT_NE(device_->Live().Phase(), CallPhase::Accepting) << device_->LastError();
+    ASSERT_NE(device_->Live().Phase(), CallPhase::Ringing) << device_->LastError();
+    EXPECT_TRUE(device_->Live().MediaAttempted(call_id));
 
     OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::LeaveClicked, call_id); });
-    EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+    EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
     DrainUntil([&]() {
       auto session = sessions_->LoadSession(call_id);
       return session && session->has_value() && (*session)->state == CallSessionState::Ended;
@@ -367,7 +369,7 @@ protected:
 
   /** The call the device shows (active, else the ring); empty when idle. */
   std::string ShownCallId() const {
-    const LiveCall* shown = csm_->Live().Shown();
+    const LiveCall* shown = device_->Live().Shown();
     return shown ? shown->Id() : std::string{};
   }
 
@@ -394,7 +396,7 @@ protected:
     peer.state = CallParticipantState::Ringing;
     ASSERT_TRUE(sessions_->UpsertParticipant(peer));
     ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
-    csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
+    device_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"}); // as StartCall does
   }
 
   std::filesystem::path data_dir_;
@@ -409,10 +411,11 @@ protected:
   std::unique_ptr<FakeCallMediaTransport> transport_;
   /** The manager's 1:1 path (owned by csm_). */
   std::unique_ptr<CallReads> reads_;
+  std::unique_ptr<CallDevice> device_;
   std::unique_ptr<CallSessionManager> csm_;
   CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
     if (csm_) {
-      csm_->Handle(event);
+      device_->Handle(event);
     }
   }};
   std::string local_identity_;
@@ -500,15 +503,15 @@ TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   int parks = 0;
-  csm_->MeshGlue().park_circuit = ([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
+  device_->MeshGlue().park_circuit = ([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, {}); });  // the ring's call
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   AppRuntime::RunAllOwnerTasks();
   EXPECT_EQ(parks, 1) << "the second click started no second accept";
-  EXPECT_TRUE(csm_->AcceptingCallId().empty());
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing);
-  EXPECT_TRUE(csm_->LastError().empty()) << csm_->LastError();
+  EXPECT_TRUE(device_->AcceptingCallId().empty());
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Ringing);
+  EXPECT_TRUE(device_->LastError().empty()) << device_->LastError();
 }
 
 // PR #239 review: two inbound bundles can each raise PeerReconnected before the first queued resume
@@ -517,17 +520,17 @@ TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
 TEST_F(CallSessionInboundComposeTest, ADuplicateResumeThatFailsLeavesTheResumedCallInCall) {
   const std::string call_id = "call:resume-dup";
   SeedOffererRingingCall(call_id);
-  LiveCalls& live = csm_->LiveCallsForTest();
+  LiveCalls& live = device_->LiveCallsForTest();
   live.MarkJoined(call_id);
   live.NoteMediaConnected(call_id);
   live.NoteMediaFailed(call_id);
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::ConnectFailed);
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::ConnectFailed);
 
-  OnCallsOwner([&] { csm_->PeerReconnectedForTest(call_id); });
-  OnCallsOwner([&] { csm_->PeerReconnectedForTest(call_id); }); // ignored: no longer failed
+  OnCallsOwner([&] { device_->PeerReconnectedForTest(call_id); });
+  OnCallsOwner([&] { device_->PeerReconnectedForTest(call_id); }); // ignored: no longer failed
   live.NoteMediaConnected(call_id);  // the first resume committed the peer's stream
   AppRuntime::RunAllOwnerTasks();    // the queued resume finds nothing to resume and fails
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::InCall);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::InCall);
 }
 
 // Accept asks for the circuit park but does not wait for it: a seed silently gone held every
@@ -540,7 +543,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptParksWithoutWaitingForThePark) {
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
 
   std::function<void(bool)> park_done;
-  csm_->MeshGlue().park_circuit =
+  device_->MeshGlue().park_circuit =
       ([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
   const Roe<void> accepted = OnCallsOwner([&] { return csm_->AcceptInvite(call_id); });
   AppRuntime::RunAllOwnerTasks();
@@ -567,22 +570,22 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Ringing);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Ringing);
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   // The accept runs on the calls owner at once (no park here): the ring is gone, the call connecting.
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing);
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Idle);
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Ringing);
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Idle);
 
   DrainUntil([&]() {
-    return csm_->Live().Phase() == CallPhase::JoinedLocal || csm_->Live().Phase() == CallPhase::MediaPending ||
-           csm_->Live().Phase() == CallPhase::MediaConnecting || csm_->Live().Phase() == CallPhase::InCall ||
+    return device_->Live().Phase() == CallPhase::JoinedLocal || device_->Live().Phase() == CallPhase::MediaPending ||
+           device_->Live().Phase() == CallPhase::MediaConnecting || device_->Live().Phase() == CallPhase::InCall ||
            media_->IsActive();
   });
 
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Accepting) << csm_->LastError();
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing) << csm_->LastError();
-  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Accepting) << device_->LastError();
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Ringing) << device_->LastError();
+  EXPECT_TRUE(device_->Live().MediaAttempted(call_id));
 
   auto active = reads_->ActiveLocalCall();
   ASSERT_TRUE(active && active->has_value());
@@ -597,7 +600,7 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
   EXPECT_EQ((*self)->state, CallParticipantState::Joined);
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::LeaveClicked, call_id); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
   DrainUntil([&]() {
     auto session = sessions_->LoadSession(call_id);
     return session && session->has_value() && (*session)->state == CallSessionState::Ended;
@@ -619,11 +622,11 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
 TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveKCycleTeardown) {
   // B-TEARDOWN: Leave→Idle then a second Invite→Accept→Leave must succeed (no orphan bind).
   RunAnswererInviteAcceptLeave("call:cycle-1");
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::Idle);
-  EXPECT_FALSE(csm_->Seat().IsBound("call:cycle-1"));
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::Idle);
+  EXPECT_FALSE(device_->Seat().IsBound("call:cycle-1"));
 
   RunAnswererInviteAcceptLeave("call:cycle-2");
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::Idle);
   auto after = reads_->ActiveLocalCall();
   ASSERT_TRUE(after);
   EXPECT_FALSE(after->has_value());
@@ -665,10 +668,10 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   peer.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(peer));
 
-  csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteMediaConnected(call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::InCall);
+  device_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"}); // as StartCall does
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteMediaConnected(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::InCall);
 
   CallEndedDetail ended;
   ended.call_id = call_id;
@@ -683,7 +686,7 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle)
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
       << "CallEnded → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
   EXPECT_TRUE(ShownCallId().empty());
 }
@@ -712,10 +715,10 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
     scheduled_peer = peer;
     scheduled_offerer = offerer;
   };
-  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
 
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  csm_->LiveCallsForTest().SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  device_->LiveCallsForTest().SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
 
   CallAcceptDetail accept;
   accept.call_id = call_id;
@@ -733,7 +736,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   EXPECT_EQ(scheduled_call, call_id);
   EXPECT_EQ(scheduled_peer, "account:peer");
   EXPECT_TRUE(scheduled_offerer);
-  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());
@@ -747,7 +750,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
 TEST_F(CallSessionInboundComposeTest, AcceptAdvertisesTheRelaysWeAreParkedOn) {
   const std::string call_id = "call:advertise-parked";
   OnCallsOwner([&] {
-    csm_->MeshGlue().parked_relays = ([]() { return std::vector<std::string>{"QmRelayA", "QmRelayB"}; });
+    device_->MeshGlue().parked_relays = ([]() { return std::vector<std::string>{"QmRelayA", "QmRelayB"}; });
     return Roe<void>{};
   });
   auto msg = MakeInviteMessage(call_id);
@@ -767,15 +770,15 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRela
   const std::string call_id = "call:peer-parked";
   SeedOffererRingingCall(call_id);
   test::NullDirectDriver spy;
-  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
   std::string noted_call;
   std::vector<std::string> noted_relays;
   OnCallsOwner([&] {
-    csm_->MeshGlue().on_peer_parked_relays = ([&](const std::string& cid, const std::vector<std::string>& relays) {
+    device_->MeshGlue().on_peer_parked_relays = ([&](const std::string& cid, const std::vector<std::string>& relays) {
       noted_call = cid;
       noted_relays = relays;
     });
-    csm_->LiveCallsForTest().NoteOutboundStarted(call_id);
+    device_->LiveCallsForTest().NoteOutboundStarted(call_id);
   });
 
   CallAcceptDetail accept;
@@ -788,7 +791,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRela
                                                   "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
-  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
+  OnCallsOwner([&] { device_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
   EXPECT_EQ(noted_call, call_id);
   EXPECT_EQ(noted_relays, (std::vector<std::string>{"QmRelayC", "QmRelayD"}));
 }
@@ -808,7 +811,7 @@ TEST_F(CallSessionInboundComposeTest, AConnectGiveUpFromSomeoneElseIsIgnored) {
                                                   "account:mallory");
   ASSERT_TRUE(msg);
   EXPECT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); }));
-  EXPECT_FALSE(csm_->IsP2pConnectFailed());
+  EXPECT_FALSE(device_->IsP2pConnectFailed());
 }
 
 // video-voice-choice: callee answers an incoming video invite as voice-only. AcceptInvite must
@@ -878,7 +881,7 @@ TEST_F(CallSessionInboundComposeTest, DropFollowUpsDropsAQueuedRosterFanOut) {
   bool accepted = false;
   OnCallsOwner([&] {
     accepted = static_cast<bool>(csm_->AcceptInvite(call_id));
-    csm_->DropFollowUps(); // the roster follow-up is queued, not yet run
+    device_->DropFollowUps(); // the roster follow-up is queued, not yet run
   });
   DrainUntil([] { return false; }, 200);
   ASSERT_TRUE(accepted);
@@ -1051,7 +1054,7 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   peer2.identity = "account:peer2";
   peer2.state = CallParticipantState::Ringing;
   ASSERT_TRUE(sessions_->UpsertParticipant(peer2));
-  csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer1", "account:peer2"});  // as StartCall does
+  device_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer1", "account:peer2"}); // as StartCall does
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
 
   CallAcceptDetail accept;
@@ -1124,17 +1127,17 @@ TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   DrainUntil([&]() {
-    return csm_->Live().Phase() == CallPhase::JoinedLocal || csm_->Live().Phase() == CallPhase::MediaPending ||
-           csm_->Live().Phase() == CallPhase::MediaConnecting || media_->IsActive();
+    return device_->Live().Phase() == CallPhase::JoinedLocal || device_->Live().Phase() == CallPhase::MediaPending ||
+           device_->Live().Phase() == CallPhase::MediaConnecting || media_->IsActive();
   });
   // Accept without pre-seeded key → MediaPending / KeyWait.
-  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
+  EXPECT_TRUE(device_->Live().MediaAttempted(call_id));
   if (media_->IsActive()) {
     // Rare: key race; still exercise unwrap path below.
   } else {
-    EXPECT_TRUE(csm_->Live().Phase() == CallPhase::MediaPending ||
-                csm_->Live().Phase() == CallPhase::JoinedLocal ||
-                csm_->Live().Phase() == CallPhase::MediaConnecting);
+    EXPECT_TRUE(device_->Live().Phase() == CallPhase::MediaPending ||
+                device_->Live().Phase() == CallPhase::JoinedLocal ||
+                device_->Live().Phase() == CallPhase::MediaConnecting);
   }
 
   auto session_key = SessionKeyDeriver::Derive(master, CryptoChannel::E2ePublic, 1);
@@ -1194,10 +1197,10 @@ TEST_F(CallSessionInboundComposeTest, InboundPeerLeaveEndsActiveOneToOne) {
   peer.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(peer));
 
-  csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteMediaConnected(call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::InCall);
+  device_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"}); // as StartCall does
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteMediaConnected(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::InCall);
   ASSERT_EQ(ShownCallId(), call_id);
 
   CallLeaveDetail leave;
@@ -1213,10 +1216,10 @@ TEST_F(CallSessionInboundComposeTest, InboundPeerLeaveEndsActiveOneToOne) {
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle)
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
       << "peer Leave → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
   EXPECT_TRUE(ShownCallId().empty());
-  EXPECT_FALSE((csm_->Live().Phase() != CallPhase::Idle));
+  EXPECT_FALSE((device_->Live().Phase() != CallPhase::Idle));
 }
 
 TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
@@ -1234,7 +1237,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
     auto active = reads_->ActiveLocalCall();
     // Wait for AcceptInvite UI completion — reduces SQLITE_BUSY vs concurrent invite B upsert.
     return active && active->has_value() && (*active)->call_id == call_a &&
-           csm_->Live().Phase() != CallPhase::Accepting;
+           device_->Live().Phase() != CallPhase::Accepting;
   });
   ASSERT_TRUE(reads_->ActiveLocalCall()->has_value());
 
@@ -1262,7 +1265,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, call_b);
   // Ending A must not RemoteEnded-clobber Accepting/Joined B.
-  EXPECT_NE(csm_->Live().Phase(), CallPhase::Idle);
+  EXPECT_NE(device_->Live().Phase(), CallPhase::Idle);
   EXPECT_EQ(ShownCallId(), call_b);
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::LeaveClicked, call_b); });
@@ -1330,10 +1333,10 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesMarksMissed) {
   session.created_at = pending.created_at;
   ASSERT_TRUE(sessions_->UpsertSession(session));
 
-  csm_->LiveCallsForTest().AdmitInvited(pending.call_id, {"account:peer"});  // as the inbound invite does
+  device_->LiveCallsForTest().AdmitInvited(pending.call_id, {"account:peer"}); // as the inbound invite does
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, pending.call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::Ringing);
-  ASSERT_TRUE((csm_->Live().Phase() != CallPhase::Idle));
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::Ringing);
+  ASSERT_TRUE((device_->Live().Phase() != CallPhase::Idle));
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
 
@@ -1346,9 +1349,9 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesMarksMissed) {
   auto loaded = sessions_->LoadSession(pending.call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle)
-      << "CALLS expire → Idle (no DeclineClicked); got " << CallPhaseName(csm_->Live().Phase());
-  EXPECT_FALSE((csm_->Live().Phase() != CallPhase::Idle));
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle)
+      << "CALLS expire → Idle (no DeclineClicked); got " << CallPhaseName(device_->Live().Phase());
+  EXPECT_FALSE((device_->Live().Phase() != CallPhase::Idle));
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecting) {
@@ -1359,8 +1362,8 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecti
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  DrainUntil([&]() { return csm_->Live().MediaAttempted(call_id) || media_->IsActive(); });
-  ASSERT_TRUE(csm_->Live().AllowsDirectPath());
+  DrainUntil([&]() { return device_->Live().MediaAttempted(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(device_->Live().AllowsDirectPath());
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1377,9 +1380,9 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecti
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*attach_msg, "account:peer"); }));
 
   // V037/V038: DirectConnecting Status must not flip to hop attach.
-  EXPECT_TRUE(csm_->Live().AllowsDirectPath());
-  EXPECT_FALSE(csm_->Live().AllowsHopPath());
-  EXPECT_FALSE(csm_->IsSfuAttached());
+  EXPECT_TRUE(device_->Live().AllowsDirectPath());
+  EXPECT_FALSE(device_->Live().AllowsHopPath());
+  EXPECT_FALSE(device_->IsSfuAttached());
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
@@ -1390,8 +1393,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  DrainUntil([&]() { return csm_->Seat().IsBound(call_id) || media_->IsActive(); });
-  ASSERT_TRUE(csm_->Seat().IsBound(call_id) || media_->IsActive());
+  DrainUntil([&]() { return device_->Seat().IsBound(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(device_->Seat().IsBound(call_id) || media_->IsActive());
 
   CallHopRefuseDetail refuse;
   refuse.call_id = call_id;
@@ -1413,7 +1416,7 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  auto err = csm_->TakeLastMediaError();
+  auto err = device_->TakeLastMediaError();
   ASSERT_TRUE(err.has_value());
   EXPECT_EQ(*err, "No shared hop");
 }
@@ -1442,15 +1445,15 @@ TEST_F(CallSessionInboundComposeTest, DeclineClickedClearsPendingViaLifecycle) {
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Ringing);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Ringing);
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::DeclineClicked, call_id); });
   DrainUntil([&]() {
     auto pending = reads_->TopPendingInvite();
-    return pending && !pending->has_value() && csm_->Live().Phase() == CallPhase::Idle;
+    return pending && !pending->has_value() && device_->Live().Phase() == CallPhase::Idle;
   });
   EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
   auto pending = reads_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
@@ -1460,8 +1463,8 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling
   // CALLS: peer Decline → offerer Idle (no local LeaveClicked / TTL wait).
   const std::string call_id = "call:inbound-decline";
   SeedOffererRingingCall(call_id);
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
   ASSERT_TRUE(reads_->ActiveLocalCall()->has_value());
 
   CallDeclineDetail decline;
@@ -1477,8 +1480,7 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle)
-      << "inbound CallDecline must EndCallLocal → RemoteEnded";
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle) << "inbound CallDecline must EndCallLocal → RemoteEnded";
   EXPECT_TRUE(ShownCallId().empty());
   auto active = reads_->ActiveLocalCall();
   ASSERT_TRUE(active);
@@ -1495,8 +1497,8 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineKeepsCallWhenOtherInviteeSti
   other.state = CallParticipantState::Ringing;
   ASSERT_TRUE(sessions_->UpsertParticipant(other));
 
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
 
   CallDeclineDetail decline;
   decline.call_id = call_id;
@@ -1512,8 +1514,8 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineKeepsCallWhenOtherInviteeSti
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_NE((*loaded)->state, CallSessionState::Ended)
       << "first Decline must keep session while account:other still Ringing";
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling)
-      << "got phase=" << CallPhaseName(csm_->Live().Phase());
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling)
+      << "got phase=" << CallPhaseName(device_->Live().Phase());
   EXPECT_EQ(ShownCallId(), call_id);
 
   CallDeclineDetail decline_other;
@@ -1529,7 +1531,7 @@ TEST_F(CallSessionInboundComposeTest, InboundDeclineKeepsCallWhenOtherInviteeSti
   loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedActive) {
@@ -1551,7 +1553,7 @@ TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedAc
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  DrainUntil([&]() { return media_->IsActive() || csm_->Live().MediaAttempted(call_id); });
+  DrainUntil([&]() { return media_->IsActive() || device_->Live().MediaAttempted(call_id); });
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 }
@@ -1559,7 +1561,7 @@ TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedAc
 TEST_F(CallSessionInboundComposeTest, InboundSfuAttachFailedDispatched) {
   const std::string call_id = "call:sfu-fail";
   SeedOffererRingingCall(call_id);
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
 
   CallSfuAttachFailedDetail fail;
   fail.call_id = call_id;
@@ -1577,8 +1579,8 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachFailedDispatched) {
 TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
   const std::string call_id = "call:retry";
   SeedOffererRingingCall(call_id);
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  csm_->LiveCallsForTest().SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  device_->LiveCallsForTest().SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
 
   CallAcceptDetail accept;
   accept.call_id = call_id;
@@ -1589,21 +1591,20 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
                                                   "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
-  DrainUntil([&]() { return csm_->Live().MediaAttempted(call_id) || media_->IsActive(); });
-  ASSERT_TRUE(csm_->Live().MediaAttempted(call_id));
+  DrainUntil([&]() { return device_->Live().MediaAttempted(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(device_->Live().MediaAttempted(call_id));
 
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteMediaFailed(call_id); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::ConnectFailed);
-  EXPECT_FALSE(csm_->Live().AllowsDirectPath());
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteMediaFailed(call_id); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::ConnectFailed);
+  EXPECT_FALSE(device_->Live().AllowsDirectPath());
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::RetryClicked, call_id); });
-  EXPECT_TRUE(csm_->Live().AllowsDirectPath()) << "RetryClicked re-arms DirectConnecting";
+  EXPECT_TRUE(device_->Live().AllowsDirectPath()) << "RetryClicked re-arms DirectConnecting";
   DrainUntil([&]() {
-    return csm_->Live().Phase() == CallPhase::MediaConnecting || csm_->Live().Phase() == CallPhase::InCall;
+    return device_->Live().Phase() == CallPhase::MediaConnecting || device_->Live().Phase() == CallPhase::InCall;
   });
-  EXPECT_TRUE(csm_->Live().Phase() == CallPhase::MediaConnecting ||
-              csm_->Live().Phase() == CallPhase::InCall)
-      << "phase=" << CallPhaseName(csm_->Live().Phase()) << " err=" << csm_->LastError();
+  EXPECT_TRUE(device_->Live().Phase() == CallPhase::MediaConnecting || device_->Live().Phase() == CallPhase::InCall)
+      << "phase=" << CallPhaseName(device_->Live().Phase()) << " err=" << device_->LastError();
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::LeaveClicked, call_id); });
   DrainUntil([&]() {
@@ -1653,7 +1654,7 @@ TEST_F(CallSessionInboundComposeTest, StartCallThatCannotInviteKeepsTheCurrentCa
   auto b = OnCallsOwner([&] { return csm_->StartCall("thread-dm-b", false, {"account:other"}); });
   ASSERT_FALSE(b) << "the invite could not be sent";
 
-  const LiveCall* active = csm_->Live().Active();
+  const LiveCall* active = device_->Live().Active();
   ASSERT_NE(active, nullptr);
   EXPECT_EQ(active->Id(), a->call_id) << "the current call is still the one this device is in";
   auto a_row = sessions_->LoadSession(a->call_id);
@@ -1679,8 +1680,8 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
   auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
 
   // Age the session past invite TTL without waiting 60s.
   auto session = sessions_->LoadSession(call_id);
@@ -1689,12 +1690,12 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
   ASSERT_TRUE(sessions_->UpsertSession(**session));
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
-  DrainUntil([&]() { return csm_->Live().Phase() == CallPhase::Idle && !reads_->ActiveLocalCall()->has_value(); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
+  DrainUntil([&]() { return device_->Live().Phase() == CallPhase::Idle && !reads_->ActiveLocalCall()->has_value(); });
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::Idle);
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
-  EXPECT_FALSE((csm_->Live().Phase() != CallPhase::Idle));
+  EXPECT_FALSE((device_->Live().Phase() != CallPhase::Idle));
 }
 
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl) {
@@ -1707,11 +1708,11 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl)
 
   auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
   ASSERT_TRUE(started) << started.error().message;
-  OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(started->call_id); });
-  ASSERT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
+  OnCallsOwner([&] { device_->LiveCallsForTest().NoteOutboundStarted(started->call_id); });
+  ASSERT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
 
   OnCallsOwner([&] { return csm_->SweepExpiredInvites(); });
-  EXPECT_EQ(csm_->Live().Phase(), CallPhase::OutboundCalling);
+  EXPECT_EQ(device_->Live().Phase(), CallPhase::OutboundCalling);
   EXPECT_TRUE(reads_->ActiveLocalCall()->has_value());
 }
 
@@ -1731,7 +1732,7 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   DrainUntil([&]() { return media_->IsActive(); });
   ASSERT_TRUE(media_->IsActive());
-  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
+  EXPECT_TRUE(device_->Live().MediaAttempted(call_id));
 
   auto peer = reads_->PeerIdentityForCall(call_id);
   ASSERT_TRUE(peer && peer->has_value());

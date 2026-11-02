@@ -1,302 +1,90 @@
 #pragma once
 
-#include "mesh/types/AddressDisclosure.h"
-#include "lib/media/MediaEngine.h"
-#include "lib/calls/CallControlCodec.h"
+#include "feature/calls/CallDevice.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/calls/ICallSessionStore.h"
-#include "feature/calls/CallReads.h"
-#include "feature/calls/CallMeshGlue.h"
+#include "lib/calls/CallTypes.h"
 #include "lib/pricing/PricingTypes.h"
-#include "lib/pricing/IInitiationBillingBook.h"
-#include "common/thread/IThreadCatalog.h"
-#include "common/thread/IThreadTranscript.h"
-#include "lib/people/IContactBook.h"
-#include "common/directory/ILocalAccount.h"
-#include "lib/calls/ICallMediaKeyStore.h"
-#include "feature/calls/CallControlClient.h"
-#include "feature/calls/CallDeliveryPorts.h"
-#include "mesh/reach/PeerMediaRelayCaps.h"
-#include "lib/people/PeerAccountBook.h"
-#include "feature/calls/CallInitiationBilling.h"
-#include "lib/calls/CallMediaKeyExchange.h"
-#include "feature/calls/CallReachSignals.h"
-#include "feature/calls/CallSessionEvents.h"
-#include "common/runtime/OwnerOutbox.h"
-#include "lib/calls/CallMediaSeat.h"
-#include "feature/calls/CallDirectPathDeps.h"
-#include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaHost.h"
-#include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallSessionWorkflow.h"
-#include "feature/calls/LiveCallMedia.h"
-#include "feature/calls/SharedPorts.h"
-
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/thread/ThreadRecordTypes.h"
 
-#include <functional>
-#include <mutex>
+#include <cstdint>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
 
-class CallMediaBridge;
-
 /**
- * The calls on this device (a2 / V014 / a4): intents from the UI (`Apply`), inbound call control, and the parts
- * that run them, which it owns — the durable session workflow, the live calls, each call's media
- * (LiveCallMedia: the call's `CallMedia`, which owns its 1:1 and group paths), the seat, the hop service
- * and the inbound doorway. It reaches a path only through the call's `CallMedia`. Being thinned to an
- * intent / inbound router (p2p-av-calls V055, PHASES § cm4).
+ * The calls on this device as the user and the peers ask for them (a2 / V014 / a4; p2p-av-calls V055,
+ * PHASES § cm4): intents from the UI (`Apply`, start / accept / decline / leave, mic / camera) and
+ * inbound call control (`ApplyInboundControl`: who may send what, then the workflow and the call's
+ * media). It owns nothing: the parts are the device's (CallDevice), which it drives. Owned by
+ * CallStack; calls owner only.
  */
-class CallSessionManager : public Module, private CallMediaHost {
+class CallSessionManager : public Module {
 public:
-  using RingChangedFn = std::function<void()>;
-  using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
+  explicit CallSessionManager(CallDevice& device);
 
-  CallSessionManager(const IThreadCatalog& threads, IThreadTranscript& transcript, IContactBook& contacts,
-                     const ILocalAccount& account, ICallSessionStore& sessions, const CallReads& reads,
-                     ICallMediaKeyStore& media_keys, CallDeliveryPorts delivery, MediaEngine& media);
-
-  void SetOnRingChanged(RingChangedFn callback);
-  /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
-  void SetOnRingChangedMesh(RingChangedFn callback);
-  /** projects/privacy T3: who may call us; an invite from outside is dropped silently. Owner thread. */
-  void SetInboundCallAudience(mesh::InboundAudience audience) { inbound_call_audience_ = audience; }
-  /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
-  bool AllowsInboundCall(const std::string& caller) const;
-  /** The mesh's reach signals (H011 R1, H012 punch, K005 caps) carried to the active call's peer. */
-  CallReachSignals& ReachSignals() { return reach_signals_; }
-  /** What calls asks of this node's mesh and tells it (the stack's, once at build). Owner thread. */
-  void SetMeshGlue(CallMeshGlue glue) { mesh_ = std::move(glue); }
-  /** The glue, for a harness that adjusts one of it after the build. */
-  CallMeshGlue& MeshGlue() { return mesh_; }
-  /** Cache media_relay ads from invite/accept caps (keyed by mesh PeerId). */
-  void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
+  // --- What the user does (V037) ---------------------------------------------------------------
   /**
-   * Remember mesh PeerId ↔ relay: for call-media stream ids (contacts often lack PeerId —
-   * PreferLocal dogfood: Moto contact had only relay: so inbound hashed PeerId ≠ SFU stream).
+   * A UI event for `call_id` (empty: the ring for Accept / Decline, else the active call): a click runs
+   * its session op. What the device shows is projected from the calls (LiveCalls::Phase / Status).
    */
-  void NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id);
-  bool PeerHasMediaRelayCap(const std::string& peer_id) const;
-  std::vector<std::string> ListMediaRelayCapablePeerIds() const;
-  void SetMediaRelayDeps(MediaRelayDeps deps);
-  /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
-  /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
-  CallDirectArmingPorts DirectArmingPorts();
-  /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
-  const CallMediaSeat& Seat() const { return seat_; }
-  CallMediaSeat& SeatForTest() { return seat_; }
-  // --- The 1:1 path (CallMediaBridge), owned here like the group path (topology) -------------------
-  /**
-   * Mesh media is wired: run the 1:1 path on `deps` — built on first use or a new transport, else
-   * re-pointed at the new reach. Without a usable transport the path is dropped.
-   */
-  void AttachDirectPath(CallDirectPathDeps deps);
-  /** Mesh media objects are being replaced: the path lets go of dial / reach (kept otherwise). */
-  void DetachDirectPathReach();
-  /** Before the transport stops: abort connects and let go of the path's streams. */
-  void PrepareDirectPathForStop(int wait_ms = 0);
-  /** After the transport stopped (or at teardown): drop the path. */
-  void DropDirectPath();
-  /** k5: the device's addresses moved. */
-  void OnLocalNetworkMoved();
-  /** k6: a call's path policy may have changed. */
-  void OnPathPolicyChanged(const std::string& call_id);
-  bool IsDirectConnectInFlight() const;
-  /** `call_id`'s 1:1 path if built (tests). */
-  CallMediaBridge* DirectPathForTest(const std::string& call_id);
-  /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
-  void SetDirectPathFactoryForTest(CallDirectPathFactory make);
-  /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
-  void SetInitiationBillingStore(IInitiationBillingBook* store);
-  /** Set before AcceptClicked — consumed by AcceptInvite. */
-  void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
-  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
-  void SetPendingAcceptVoiceOnly(bool voice_only);
-  /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
-  CallMediaHost& AsMediaHost() { return *this; }
-
+  void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
-
   /** Accept a pending invite (the workflow's; own devices hear it was answered here). */
   Roe<void> AcceptInvite(const std::string& call_id,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
-  // --- What the user does, and what the device shows (V037) ------------------------------------
-  /**
-   * A UI event for `call_id` (empty: the ring for Accept / Decline, else the active call): a click runs
-   * its session op. What the device shows is projected from the calls (LiveCalls::Phase / Status).
-   * Calls owner.
-   */
-  void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
-  /** Where this subtree reports its events (the stack binds it at build). */
-  void SetOutbox(OwnerOutbox<SessionEvent> outbox);
-  /** An event this subtree reported, back from the calls owner's queue. */
-  void Handle(SessionEvent& event);
-  /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
-  void SetOnCallStateChanged(std::function<void()> fn) { on_call_state_changed_ = std::move(fn); }
-  /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
-  std::string AcceptingCallId() const;
-  /** Why the last accept failed; empty when it did not. */
-  const std::string& LastError() const { return last_error_; }
-  void ClearLastError() { last_error_.clear(); }
-
-  /** The calls live on this device (admission → close). Calls owner only. */
-  const LiveCalls& Live() const { return live_calls_; }
-  /** Harnesses that seed store rows directly admit the call the way the workflow would. */
-  LiveCalls& LiveCallsForTest() { return live_calls_; }
-  /** What the direct path reports when the peer's connection for a failed call reaches us. */
-  void PeerReconnectedForTest(const std::string& call_id) { RestartMedia(call_id, true); }
-  /** Detach SFU + stop capture. Calls owner only — call before LeaveCall worker / app quit. */
-  void StopCallMedia(const std::string& call_id);
-
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
-
-  int64_t AloneUntilMs(const std::string& call_id) const { return workflow_.AloneUntilMs(call_id); }
-
-  /**
-   * V037: Lifecycle AcceptSucceeded (UI) re-arms answerer ScheduleStart when Status already
-   * AllowsDirectPath — covers worker PostUI races that left seat bound Idle / no BeginSession.
-   */
-  void KickAnswererDirectMediaIfArmed(const std::string& call_id);
-
-  bool IsAwaitingSfuRecovery() const;
-  /** Why the hop path is being recovered (the screen's status line). */
-  CallRecovery Recovery() const;
-  bool IsP2pConnectFailed() const;
-  bool P2pConnectMissingMic() const;
-  bool P2pConnectSeedUnreachable() const;
-  Roe<void> RetryP2pMedia(const std::string& call_id);
-  /** A failed, open call: the peer's connection reached us — restart media keeping its stream. */
-  Roe<void> ResumeP2pMedia(const std::string& call_id);
-
-  std::optional<std::string> TakeLastMediaError();
-  /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
-  std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
-  /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
-  void ClearLastMediaErrorIf(const std::string& seen);
-  /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
-  std::string PeekMediaActivity() const;
-  void ClearMediaActivity();
-
-  void SweepExpiredInvites();
-  void AbandonOrphanedCallsAfterRestart();
-  /** A stored Active call this process never had and nothing runs for: leave it (Orphaned). Calls owner. */
-  void LeaveIfOrphaned(const std::string& call_id);
-
-  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
-                                std::optional<int64_t> relay_created_at_ms = std::nullopt,
-                                std::optional<int64_t> relay_server_time_ms = std::nullopt);
-
-  /** Combined hop health when SFU attached (empty otherwise). */
-  CallHopHealth HopHealth() const;
-  /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
-  std::string MediaPathKind() const;
-  CallLinkCounters MediaLinkCounters() const;
-  bool IsSfuAttached() const;
-
+  /** Set before AcceptClicked — consumed by AcceptInvite. */
+  void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
+  /** Detach SFU + stop capture. Call before LeaveCall worker / app quit. */
+  void StopCallMedia(const std::string& call_id);
   Roe<void> SetLocalAudioMuted(bool muted);
   /** `display_rotation_degrees` read on UI by the caller (L012). */
   Roe<void> SetLocalVideoEnabled(bool enabled, int display_rotation_degrees);
   /** Ask publisher for an IDR (empty identity = local encoder). */
   Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
+  void SweepExpiredInvites();
+  void AbandonOrphanedCallsAfterRestart();
+  /** A stored Active call this process never had and nothing runs for: leave it (Orphaned). */
+  void LeaveIfOrphaned(const std::string& call_id);
+  // What the screen has shown (it takes each once).
+  void ClearLastError() { device_.ClearLastError(); }
+  void ClearMediaActivity() { device_.ClearMediaActivity(); }
+  /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
+  void ClearLastMediaErrorIf(const std::string& seen) { device_.ClearLastMediaErrorIf(seen); }
 
-  /** Hub teardown: drop queued follow-ups (a roster fan-out) before the store and delivery go. */
-  void DropFollowUps();
+  // --- What the peers send ---------------------------------------------------------------------
+  Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
+                                std::optional<int64_t> relay_created_at_ms = std::nullopt,
+                                std::optional<int64_t> relay_server_time_ms = std::nullopt);
+  /** projects/privacy T3: who may call us; an invite from outside is dropped silently. */
+  void SetInboundCallAudience(mesh::InboundAudience audience) { inbound_call_audience_ = audience; }
+  /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
+  bool AllowsInboundCall(const std::string& caller) const;
 
 private:
-  // Effects the owned parts ask for (topology / workflow host ports, CallMediaHost): one body each
+  void ClickAccept(const std::string& call_id);
+  void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
+  void ClickDecline(const std::string& call_id);
+  void ClickLeave(const std::string& call_id);
+  /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
+  void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
+
   /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
   bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
   /** V053: the call was offered to the sender (a group call): it may ask to join, or say it ended. */
   bool SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const;
-  Roe<std::string> LocalIdentity() const;
-  Roe<void> TopologyLeaveCall(const std::string& call_id);
-  Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
-                                   const std::string& detail_json, const std::string& display,
-                                   const std::string& skip_identity);
-  Roe<void> SendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
-                       const std::string& display);
-  void SetLastMediaError(std::string message);
-  void SetMediaActivity(std::string message);
-  void TopologyNoteMediaAttempted(const std::string& call_id);
-  void RequestInboxSync();
-  CallTopologyController::HostPorts MakeTopologyHostPorts();
-
-  // CallMediaHost
-  Roe<std::string> P2pLocalIdentity() const override;
-  Roe<void> P2pSendDirect(const std::string& peer_identity, CallControlType type,
-                          const std::string& detail_json, const std::string& display) override;
-  void P2pNotifyRingChanged() override;
-  void P2pSetLastMediaError(std::string message) override;
-  Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
-  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
-  Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
-                                                                  const std::string& peer_id) const override;
-  void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
-  void P2pRequestInboxSync() override;
-  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
-  CallMedia* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
-  void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
-                           const std::string& peer_id) override;
-
-  Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
-  Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
-  Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
-  void NotifyRingChanged();
-
-  void StopMediaIfCall(const std::string& call_id);
-  void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  /** Build the inbound doorway on `transport` (with the 1:1 path that takes its bundles). */
-  void BuildDoorway(ICallMediaTransport& transport);
-  CallMediaInboundPorts MakeDoorwayPorts();
-  /** What the 1:1 path reported (events up): move the call's state, or call the path down. */
-  void OnDirectReport(const DirectReport& report);
-  void OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity);
-  void BindWorkflowHostPorts();
-  CallSessionWorkflow::WirePorts MakeWorkflowWirePorts();
-  CallSessionWorkflow::HopPathPorts MakeWorkflowHopPorts();
-  CallSessionWorkflow::ReachPorts MakeWorkflowReachPorts();
-  void BindReachSignalPorts();
-  void NotifyCallStateChanged();
-  CallHopArmingPorts MakeHopArmingPorts();
-  CallTopologySeatPorts MakeTopologySeatPorts();
-  CallDirectSeatPorts DirectSeatPorts();
-  /** The device-level 1:1 deps (V056): each call's path is built from them. */
-  std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial,
-                                                   std::shared_ptr<std::atomic<bool>> hop_carries_media);
-  /** Each call's group path is built from the device's hop service (V056). */
-  std::unique_ptr<CallHopDriver> MakeHopPath(const std::string& call_id, uint64_t serial,
-                                             std::shared_ptr<std::atomic<bool>> hop_carries_media);
-
-  /** What the screen reads of the active call's media paths. */
-  CallMedia::View ActivePathsView() const;
-  void BindSeat();
-  /** The seat released (or was taken over): stop that call's media. */
-  void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
-  void ClickAccept(const std::string& call_id);
-  void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
-  /** Our accept landed: kick the answerer's 1:1 start (and once more if it did not take). */
-  void KickAnswererAfterAccept(const std::string& call_id);
-  void ClickDecline(const std::string& call_id);
-  void ClickLeave(const std::string& call_id);
-  /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
-  void RestartMedia(const std::string& call_id, bool resume);
-  void RunMediaRestart(const std::string& call_id, bool resume);
-  void RetryAnswererKick(const std::string& call_id);
-  /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
-  void MaybeCatchUpAfterCall();
-
-  // Inbound call-control arms — thin delegates to CallSessionWorkflow.
+  // Inbound call-control arms — thin delegates to the workflow and the call's media.
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                 const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
                                 std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
@@ -314,60 +102,21 @@ private:
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   /** H013: our 1:1 caller stopped trying to reach us; the answerer stops waiting. */
   Roe<void> HandleInboundConnectGiveUp(const std::string& detail_json, const std::string& sender_identity);
-  /** H013: we placed this 1:1 call and our connect gave up — tell the peer. */
-  void SendConnectGiveUp(const std::string& call_id, const std::string& peer_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
   /** M021 d5: a sibling's notice (our own account only) that it took / declined a call ringing here too. */
   Roe<void> HandleAnsweredElsewhere(const std::string& detail_json, const std::string& sender_identity,
                                     const std::string& local_identity);
-  /** M021 d5: this device took / declined an incoming call — tell our other devices, so theirs stop ringing. */
-  void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
-  IContactBook& contacts_;
-  /** Read-only here: the workflow writes the rows (V055). */
+  CallDevice& device_;
+  // The device's parts this router drives (bound from it once).
   const ICallSessionReader& sessions_;
-  /** The calls' durable reads (the stack's; the screen asks the same). */
-  const CallReads& reads_;
-  ICallMediaKeyStore& media_keys_;
-  CallDeliveryPorts delivery_;
-  MediaEngine& media_;
-  /** Before live_calls_ and the calls' media (they hold it: ports / media resources). */
-  CallMediaSeat seat_;
-  uint64_t doorway_generation_ = 0;
-  /** The device's hop side (V056): relay deps, hop ranking and planning; the hop path reads it. */
-  CallHopService hop_service_;
-  /** Before workflow_: the workflow drives it. */
-  LiveCalls live_calls_;
-  /** Each live call's `CallMedia` (after live_calls_, which it reads). */
-  LiveCallMedia call_media_{live_calls_};
-  /** Outbound call-control I/O (after delivery_ / the stores it borrows). */
-  CallControlClient control_;
-  /** The call's media keys between the peers (after control_, which carries them). */
-  CallMediaKeyExchange key_exchange_;
-  /** P001 initiation pricing the workflow applies on invite / accept. */
-  CallInitiationBilling billing_;
-  /** Reach signals over call-control (after control_, their carrier). */
-  CallReachSignals reach_signals_;
-  CallSessionWorkflow workflow_;
-  // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
-  RingChangedFn on_ring_changed_;
-  RingChangedFn on_ring_changed_mesh_;
+  LiveCalls& live_calls_;
+  LiveCallMedia& call_media_;
+  CallSessionWorkflow& workflow_;
+  CallControlClient& control_;
+  CallMediaKeyExchange& key_exchange_;
+  CallReachSignals& reach_signals_;
   mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
-  CallMeshGlue mesh_;
-  /** PeerId → advertised media_relay (V030). Unknown = fail closed. */
-  mesh::PeerMediaRelayCaps media_relay_caps_;
-  /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
-  PeerAccountBook peer_accounts_;
-  std::optional<std::string> last_media_error_;
-  // --- UI intents (V037) ---
-  std::string last_error_;
-  std::function<void()> on_call_state_changed_;
-  OwnerOutbox<SessionEvent> outbox_;
-  /** The device's doorway for inbound call media, on the 1:1 path's transport (V056). */
-  std::unique_ptr<CallMediaDoorway> doorway_;
-  /** What each call's 1:1 path is built from (device level, V056); empty: none attached. */
-  CallDirectPathDeps direct_deps_;
-  std::string media_activity_;
 };
 
 } // namespace pbr

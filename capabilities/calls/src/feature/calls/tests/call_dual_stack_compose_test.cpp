@@ -69,7 +69,7 @@ protected:
   }
 
   static const LiveCall* Live(StackSide& side, const std::string& call_id) {
-    return side.stack->Calls() ? side.stack->Calls()->Live().Find(call_id) : nullptr;
+    return side.stack->Calls() ? side.stack->Device()->Live().Find(call_id) : nullptr;
   }
   static void ExpectLive(StackSide& side, const std::string& call_id, const LiveCallState state,
                          const LiveCallEndReason reason, const char* who) {
@@ -455,12 +455,12 @@ TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
       done(Roe<void>{});
     };
     ports.prefer_late_reserve = [fake](const std::string& r1) { fake->preferred.push_back(r1); };
-    side->stack->Calls()->ReachSignals().SetMeshPorts(std::move(ports));
+    side->stack->Device()->ReachSignals().SetMeshPorts(std::move(ports));
   }
 
   std::optional<bool> punched;
-  offer_.stack->Calls()->ReachSignals().RequestSignalingPunch("12D3KooWAnswer", offer_mesh.candidates,
-                                                              [&](Roe<void> r) { punched = static_cast<bool>(r); });
+  offer_.stack->Device()->ReachSignals().RequestSignalingPunch("12D3KooWAnswer", offer_mesh.candidates,
+                                                               [&](Roe<void> r) { punched = static_cast<bool>(r); });
   PumpWire();
   ASSERT_EQ(answer_mesh.bursts.size(), 1u) << "the answer side bursts at the offer's candidates";
   EXPECT_EQ(answer_mesh.bursts[0], offer_mesh.candidates);
@@ -469,7 +469,7 @@ TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
   ASSERT_TRUE(punched);
   EXPECT_TRUE(*punched);
 
-  offer_.stack->Calls()->ReachSignals().AnnounceCircuitR1("12D3KooWR1");
+  offer_.stack->Device()->ReachSignals().AnnounceCircuitR1("12D3KooWR1");
   PumpWire();
   EXPECT_EQ(answer_mesh.preferred, std::vector<std::string>{"12D3KooWR1"});
   FinishAnswerLeaveExpectBothIdle(call_id);

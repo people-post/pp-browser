@@ -14,7 +14,7 @@
 namespace pbr {
 
 /**
- * Delivery ops CallSessionManager needs from conversations (consumer-declared).
+ * Delivery ops the calls (CallDevice) need from conversations (consumer-declared).
  * Softens calls→conversations: calls must not include MeshDeliveryOrchestrator.
  */
 struct CallDeliveryPorts {

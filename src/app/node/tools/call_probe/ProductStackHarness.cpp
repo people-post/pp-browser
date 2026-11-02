@@ -267,7 +267,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   }
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
   // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
-  stack_->RunOnOwner([this](CallSessionManager& calls) {
+  stack_->RunOnOwner([this](CallDevice& calls) {
     calls.MeshGlue().register_peer_listen_multiaddrs =
         ([this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
           std::vector<std::string> dialable;
@@ -426,9 +426,7 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
     hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
   LearnAccountPeerId(account_id, peer_id);
   // Dual-SNAT: do not RegisterEndpoint private advertise MAs — that poisons dial book and
@@ -558,9 +556,7 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
   }
   account_to_peer_id_[account_id] = peer_id;
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
 }
 

@@ -120,7 +120,7 @@ public:
   void SetSeatPorts(CallTopologySeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
   void SetHopArmingPorts(CallHopArmingPorts ports);
-  /** Where topology (and hop migrate under it) reports its events (the session manager binds it). */
+  /** Where topology (and hop migrate under it) reports its events (the device binds it). */
   void SetOutbox(OwnerOutbox<TopologyEvent> outbox);
   /** Where the hop path reports to the calls it serves (events up; V055). */
   void SetReports(OwnerOutbox<HopReport> reports);

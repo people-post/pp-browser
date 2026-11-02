@@ -17,7 +17,7 @@
 
 namespace pbr {
 
-/** What the call session manager's subtree reports to itself through the calls owner's queue. */
+/** What the calls' parts (CallDevice's subtree) report through the calls owner's queue. */
 namespace session_event {
 
 /** Our accept landed: kick the answerer's 1:1 start once more (the first kick can precede its arming). */

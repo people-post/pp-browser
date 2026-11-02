@@ -43,7 +43,7 @@ const void* CallUiBackend::SessionsIdentity() const {
 
 void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
   // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
-  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallSessionManager& calls) { calls.SetOnRingChanged(ring); });
+  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallDevice& calls) { calls.SetOnRingChanged(ring); });
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {

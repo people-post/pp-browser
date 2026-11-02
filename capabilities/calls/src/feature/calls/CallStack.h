@@ -44,7 +44,7 @@ namespace pbr {
 
 /**
  * The calls capability assembled (Wave 3 / V040): the owner thread and its event loop, the call stores, the media
- * engine, the session manager (which owns the live calls, the seat and both media paths) and `CallMediaPlane`
+ * engine, the device (CallDevice: the live calls, the seat, each call's media and the other parts), the session manager over it (the UI's intents, inbound call control) and `CallMediaPlane`
  * (the call_media transport) over the hub's borrowed `MeshConnectivity` / `MeshMediaRelay` (L015). The app's
  * `CallsParticipant` owns it and maps the hub's lifecycle onto it; CallStackDeps brings the mesh / config glue.
  * It publishes the calls' UI snapshot (`UiState`).
@@ -62,7 +62,7 @@ struct CallStackDeps {
   IInitiationBillingBook* initiation_billing = nullptr;
   /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
-  /** Where call control is bound as a system-control family (after the CSM is built; unbound with it). */
+  /** Where call control is bound as a system-control family (after the session manager is built; unbound with it). */
   SystemControlRegistry* system_controls = nullptr;
 
   /** Current MeshHost (null before StartMesh, reset on stop). */
@@ -103,7 +103,7 @@ public:
   /** Phase A (profile init, no mesh): take the call stores (the app's storage opens them), create the media engine. */
   Roe<void> InitializeStores(CallStores stores);
   /**
-   * Phase A: build the CSM against `deps`, wire providers, bind call state + media plane. Once:
+   * Phase A: build the device and the session manager against `deps`, wire providers, bind call state + media plane. Once:
    * while sessions exist (until ResetSessions) a further call keeps them — rebuilding would end
    * every live call. `deps` must therefore reach late-bound objects (delivery through the owner).
    */
@@ -144,7 +144,7 @@ public:
   void DetachMeshMedia();
   /** After the owner rewired mesh media: rebind bridge + topology to the new objects. */
   void RebindMeshMedia();
-  /** Reset the call session manager (Hub teardown ordering before p2p reset). */
+  /** Reset the session manager and the device (Hub teardown ordering before p2p reset). */
   void ResetSessions();
   /** Final teardown: reset media engine / key store / session store. */
   void Shutdown();
@@ -159,6 +159,8 @@ public:
    * hub's UI thread: those edges wait on the owner) and only for durable-store reads.
    */
   CallSessionManager* Calls();
+  /** The calls' parts (the session manager drives them). Owner objects, like Calls(). */
+  CallDevice* Device();
   /**
    * The calls' durable state, read-only (any thread; null before BuildSessions): what the screen and
    * the hub read — never the session manager.
@@ -172,10 +174,10 @@ public:
   MediaEngine* Engine() { return call_media_engine_.get(); }
 
   /**
-   * Run `op` on the calls owner and wait (hub wiring that must touch the session manager, e.g.
+   * Run `op` on the calls owner and wait (hub wiring that must touch the device's parts, e.g.
    * billing store, media callbacks). No-op without sessions.
    */
-  void RunOnOwner(const std::function<void(CallSessionManager&)>& op);
+  void RunOnOwner(const std::function<void(CallDevice&)>& op);
   /** The UI edge's commands: queued behind the owner's events; `calls` is null without sessions. */
   void PostToSessions(std::function<void(CallSessionManager* calls)> run);
 
@@ -184,7 +186,7 @@ public:
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
   /**
-   * Bind the session manager's call-state hook (chrome refresh, N025 listen). Calls owner only, at the bind
+   * Bind the device's call-state hook (chrome refresh, N025 listen). Calls owner only, at the bind
    * points (BuildSessions / BindMediaProducts) — never per ring change: the hook runs on the owner, so
    * re-binding elsewhere would swap a std::function while it runs (B49).
    */
@@ -209,7 +211,7 @@ private:
   void BuildSessionsOnOwner(const CallStackDeps& deps);
   void BindSessionOutbox();
   void BindCallControlInbound();
-  /** What the sessions ask of this node's mesh and tell it (built once per session manager). */
+  /** What the sessions ask of this node's mesh and tell it (built once per device). */
   CallMeshGlue MakeMeshGlue();
   CallPeerCaps LocalPeerCaps() const;
   void BindSessionMeshReach();
@@ -232,7 +234,7 @@ private:
   /** Mesh config snapshot (defaults when none is wired). */
   std::shared_ptr<const MeshConfig> mesh_config() const;
   void SyncMediaPlaneDeps();
-  /** The session manager's 1:1 path (on the plane's transport) + its topology relay deps. */
+  /** The device's 1:1 deps (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
   /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
@@ -247,7 +249,7 @@ private:
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
-  /** Written by the owner of the settings (UI), read when the calls owner rebuilds its CSM. */
+  /** Written by the owner of the settings (UI), read when the calls owner rebuilds its session manager. */
   std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
   std::unique_ptr<ICallSessionStore> call_session_store_;
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
@@ -255,6 +257,8 @@ private:
   std::unique_ptr<MediaEngine> call_media_engine_;
   /** Before call_sessions_, which reads through it. */
   std::unique_ptr<CallReads> reads_;
+  /** The parts (before the session manager, which drives them). */
+  std::unique_ptr<CallDevice> call_device_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
@@ -269,7 +273,7 @@ private:
   };
   PeerParkedRelays peer_parked_;
   CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
-  /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
+  /** Names the current device: its parts' events carry it (a rebuilt one drops the old ones). */
   uint64_t sessions_generation_ = 0;
   void ApplyMobilityOverrideOnOwner();
   /** Route one event to the child it is for (owner). */

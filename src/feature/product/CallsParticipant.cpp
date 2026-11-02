@@ -202,7 +202,7 @@ void CallsParticipant::OnPolicyPrefs(const HubPolicyPrefs& prefs) {
 }
 
 void CallsParticipant::OnTeardownStarting() {
-  stack_.RunOnOwner([](CallSessionManager& calls) { calls.DropFollowUps(); });
+  stack_.RunOnOwner([](CallDevice& calls) { calls.DropFollowUps(); });
 }
 
 void CallsParticipant::OnMessagingDropped() {

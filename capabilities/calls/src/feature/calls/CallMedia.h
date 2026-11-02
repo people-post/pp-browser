@@ -43,7 +43,7 @@ struct CallMediaResources {
  * One call's media (V056, call level): this call's use of the one media engine and the seat, and
  * the call's paths — it builds and owns its 1:1 path (CallMediaBridge) and its group path (hop
  * topology + migrate), both naming this call. Owned by LiveCallMedia for one admission of the call.
- * The session manager reaches a path only through this object; the paths start and stop the engine
+ * The session manager and the device reach a path only through this object; the paths start and stop the engine
  * through it. Direct → Hop is a hand-off: both paths live until the hop is heard. Calls owner only.
  */
 class CallMedia {

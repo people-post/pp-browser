@@ -12,7 +12,7 @@
 namespace pbr {
 
 /**
- * CSM → Topology side effects (V046).
+ * CallDevice → Topology side effects (V046).
  * Topology projects a migrate subset into CallHopMigrateHostPorts for owned Workflow.
  */
 struct CallTopologyHostPorts {
