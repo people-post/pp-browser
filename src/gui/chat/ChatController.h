@@ -316,6 +316,8 @@ private:
    *  `refocus_composer`: the user closed it, so typing goes on in the composer. */
   void CloseSearch(bool refocus_composer = false);
   void OnSearchQueryChanged();
+  /** Enter in the search box: searches what was just typed, else steps to the next older hit. */
+  void OnSearchEnter();
   void OnSearchOlder();
   void OnSearchNewer();
   /** Copies the session's view into the data model and marks the shown rows again (no rows rebuilt). */

@@ -322,9 +322,12 @@ select selectbox option:hover {
   color: #1a1a1a;
 }
 
-.chat-search-cancel,
-.chat-search-count {
+.chat-search-cancel {
   color: #1a1a1a;
+}
+
+.chat-search-count {
+  color: #6b7280;
 }
 
 .chat-search-step svg {

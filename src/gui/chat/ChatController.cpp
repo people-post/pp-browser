@@ -3140,6 +3140,26 @@ bool ChatController::Setup(ui::Context* context) {
   register_enter_send(ui::Input::KI_RETURN);
   register_enter_send(ui::Input::KI_NUMPADENTER);
   RegisterMentionPickerKeys();
+  // Enter in the chat's search box: the next older hit (the query just typed is searched first).
+  for (const ui::Input::KeyIdentifier key : {ui::Input::KI_RETURN, ui::Input::KI_NUMPADENTER}) {
+    if (!input_) {
+      break;
+    }
+    input_->Register(KeyBinding{
+        .key = key,
+        .when =
+            [](ui::Context* ctx) {
+              ui::Element* focus = ctx ? ctx->GetFocusElement() : nullptr;
+              return focus && focus->GetId() == "search-input";
+            },
+        .action =
+            [this]() {
+              OnSearchEnter();
+              return false;
+            },
+        .priority = 50,
+    });
+  }
 
   if (!DataModelHost::Instance().Register(context, "chat", [this](ui::DataModelConstructor& ctor) {
         BindChatScreenState(ctor, chat_);
@@ -3515,6 +3535,20 @@ void ChatController::OnSearchQueryChanged() {
     return;
   }
   search_query_due_ = std::chrono::steady_clock::now() + kSearchDebounce;
+}
+
+void ChatController::OnSearchEnter() {
+  if (!search_.view().open) {
+    return;
+  }
+  if (search_query_due_ || chat_.search_query.c_str() != search_.view().query) {
+    search_query_due_.reset(); // typed and not yet searched: search it now, at its newest hit
+    search_.SetQuery(chat_.search_query.c_str());
+    ApplySearchView();
+    JumpToSearchHit();
+    return;
+  }
+  OnSearchOlder();
 }
 
 void ChatController::OnSearchOlder() {

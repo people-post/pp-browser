@@ -5,10 +5,20 @@
      data-class-chat-shell--group="thread_is_group"
      data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
-    <!-- Search inside the chat: the search box takes the title row's place while it is open. -->
-    <div class="chat-search-bar" data-if="search_open">
+    <!-- Search inside the chat, one row in the title row's place: box, "3 of 12", older (up) / newer (down), Cancel.
+         Enter in the box steps to the next older hit. -->
+    <div class="chat-search-bar" data-if="search_open" keep-focus="">
       <input id="search-input" class="field chat-search-input" type="text" data-value="search_query"
              data-event-change="search_query_changed()" placeholder="{{i18n:chat.search.placeholder}}"/>
+      <span class="chat-search-count muted" data-if="search_count_label != ''">{{search_count_label}}</span>
+      <button class="chat-search-step" type="button" data-event-click="search_older()"
+              data-attrif-disabled="!search_can_older">
+        <svg src="../icons/chevron-up.svg" width="16" height="16" crop-to-content="true"></svg>
+      </button>
+      <button class="chat-search-step" type="button" data-event-click="search_newer()"
+              data-attrif-disabled="!search_can_newer">
+        <svg src="../icons/chevron-down.svg" width="16" height="16" crop-to-content="true"></svg>
+      </button>
       <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
     </div>
     <div class="chat-header-main" data-if="!search_open">

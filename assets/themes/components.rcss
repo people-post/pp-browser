@@ -166,62 +166,60 @@ select selectbox option {
   min-width: 0;
 }
 
-/* Search inside the chat: the box and "Cancel" in the title row's place. */
+/* Search inside the chat: one row in the title row's place — box, count, older / newer, Cancel. On a narrow
+   screen the box gives way first (down to its minimum), then the count is cut with an ellipsis. */
 .chat-search-bar {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8dp;
+  gap: 6dp;
 }
 
 .chat-search-input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: 72dp;
   width: auto;
   margin-bottom: 0;
 }
 
-.chat-search-cancel {
-  flex-shrink: 0;
-  padding: 6dp 12dp;
-  border: 0;
-  border-radius: 16dp;
-  font-size: 14dp;
-  background-color: transparent;
-  cursor: pointer;
-}
-
-/* "3 of 12" and the steps in the composer's place. */
-.chat-search-steps {
-  flex-shrink: 0;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8dp;
-  min-height: 40dp;
-  margin: 0 8dp 8dp 8dp;
-  padding: 0 4dp 0 14dp;
-}
-
 .chat-search-count {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
-  font-size: 14dp;
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* A thin chevron, no background of its own. */
 .chat-search-step {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36dp;
-  height: 36dp;
+  width: 28dp;
+  height: 28dp;
+  padding: 0;
   border: 0;
-  border-radius: 18dp;
-  background-color: rgba(128, 128, 128, 0.2);
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-search-step:disabled {
+  opacity: 0.35;
+  cursor: auto;
+}
+
+.chat-search-cancel {
+  flex-shrink: 0;
+  padding: 6dp 8dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 14dp;
+  white-space: nowrap;
+  background-color: transparent;
   cursor: pointer;
 }
 
@@ -229,11 +227,6 @@ select selectbox option {
 .search-mark {
   padding: 0 1dp;
   border-radius: 3dp;
-}
-
-.chat-search-step:disabled {
-  opacity: 0.35;
-  cursor: auto;
 }
 
 .chat-header-meta-row {
