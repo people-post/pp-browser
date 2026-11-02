@@ -2365,7 +2365,8 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
         (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *job->plaintext, attachment_dek,
                                       max_receive_bytes);
       } else if (!job->record_id.empty()) {
-        // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key.
+        // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key. The
+        // ciphertext is moved into Decrypt, which frees it before returning: only the plaintext is held for the copy.
         if (auto cipher = job->store->ReadCipher(job->record_id)) {
           if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce,
                                                             std::move(*cipher), fields->content_hash)) {
