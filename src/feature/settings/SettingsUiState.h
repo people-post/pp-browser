@@ -67,7 +67,6 @@ struct SettingsUiState {
   std::string profile_contact_locator;
   /** Account id for avatar tone seed; not shown in RML. */
   std::string profile_account_id;
-  std::string profile_public_key;
   std::string profile_registered = "no";
   std::string profile_registration_status = "not registered";
   std::string profile_registration_expires;

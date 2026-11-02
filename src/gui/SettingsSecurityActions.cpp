@@ -6,6 +6,7 @@
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -277,11 +278,7 @@ namespace {
 std::string AccountCopyFileName() {
   const std::time_t now = std::time(nullptr);
   std::tm local{};
-#if defined(_WIN32)
-  localtime_s(&local, &now);
-#else
-  localtime_r(&now, &local);
-#endif
+  (void)os::LocalTime(now, &local);
   char day[16] = {};
   std::strftime(day, sizeof(day), "%Y-%m-%d", &local);
   return std::string("pp-account-") + day + ".json";
