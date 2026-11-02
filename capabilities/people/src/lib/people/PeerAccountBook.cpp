@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-PeerAccountBook::PeerAccountBook(ContactsStore& contacts) : contacts_(contacts) {
+PeerAccountBook::PeerAccountBook(IContactBook& contacts) : contacts_(contacts) {
   redirectLogger("PeerAccountBook");
 }
 

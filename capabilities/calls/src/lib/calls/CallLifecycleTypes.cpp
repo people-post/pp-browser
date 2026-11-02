@@ -70,6 +70,18 @@ const char* CallMediaStatusName(const CallMediaStatus status) {
   return "Unknown";
 }
 
+const char* CallMediaPathName(const CallMediaPath path) {
+  switch (path) {
+    case CallMediaPath::Undecided:
+      return "undecided";
+    case CallMediaPath::Direct:
+      return "direct";
+    case CallMediaPath::Hop:
+      return "hop";
+  }
+  return "?";
+}
+
 const char* CallArmedPlannerName(const CallArmedPlanner planner) {
   switch (planner) {
   case CallArmedPlanner::None:
@@ -80,36 +92,6 @@ const char* CallArmedPlannerName(const CallArmedPlanner planner) {
     return "Bridge";
   case CallArmedPlanner::Topology:
     return "Topology";
-  }
-  return "Unknown";
-}
-
-const char* CallLifecycleEventName(const CallLifecycleEvent ev) {
-  switch (ev) {
-  case CallLifecycleEvent::InviteSeen:
-    return "InviteSeen";
-  case CallLifecycleEvent::InviteCleared:
-    return "InviteCleared";
-  case CallLifecycleEvent::OutboundStarted:
-    return "OutboundStarted";
-  case CallLifecycleEvent::AcceptClicked:
-    return "AcceptClicked";
-  case CallLifecycleEvent::DeclineClicked:
-    return "DeclineClicked";
-  case CallLifecycleEvent::LeaveClicked:
-    return "LeaveClicked";
-  case CallLifecycleEvent::RetryClicked:
-    return "RetryClicked";
-  case CallLifecycleEvent::MediaDeferred:
-    return "MediaDeferred";
-  case CallLifecycleEvent::MediaKeyReady:
-    return "MediaKeyReady";
-  case CallLifecycleEvent::DirectConnected:
-    return "DirectConnected";
-  case CallLifecycleEvent::ConnectFailedEvt:
-    return "ConnectFailed";
-  case CallLifecycleEvent::PeerReconnected:
-    return "PeerReconnected";
   }
   return "Unknown";
 }

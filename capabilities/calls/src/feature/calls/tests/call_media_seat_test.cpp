@@ -27,7 +27,6 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
   auto a = seat.Acquire("call:a");
   EXPECT_EQ(a.call_id, "call:a");
   EXPECT_TRUE(seat.IsBound("call:a"));
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
 
   auto b = seat.Acquire("call:b");
   AppRuntime::RunUIAndOwnerTasks();
@@ -44,7 +43,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
 }
 
 TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
-  // Dogfood b60d82: Accept leftover Stop must not kill new StartSfu.
+  // Dogfood b60d82: Accept leftover Stop must not kill new StartDuplex.
   AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
@@ -65,13 +64,11 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
     seat.Release("call:old");
   });
   AppRuntime::RunUIAndOwnerTasks();
-  // Simulate Accept scheduling Stop, then new call StartSfu + NoteStart before Stop runs.
+  // Simulate Accept scheduling Stop, then new call StartDuplex + NoteStart before Stop runs.
   seat.Acquire("call:new");
   seat.NoteStart("call:new");
   EXPECT_NE(seat.Epoch(), epoch_before_release);
   EXPECT_TRUE(seat.IsBound("call:new"));
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
-  EXPECT_FALSE(seat.IsLive("call:new"));
 
   AppRuntime::RunUIAndOwnerTasks();
   // Force prior Acquire teardown may have stopped old; the Release stop for old must no-op
@@ -92,39 +89,6 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
-}
-
-TEST(CallMediaSeatTest, NotePathDoesNotRelease) {
-  CallMediaSeat seat;
-  int stops = 0;
-  seat.SetTeardownHooks({}, [&](const std::string&, uint64_t, bool) { ++stops; });
-  seat.Acquire("call:1");
-  seat.NoteStart("call:1");
-  seat.NotePath(CallMediaSeat::PathKind::Hop);
-  EXPECT_EQ(seat.Path(), CallMediaSeat::PathKind::Hop);
-  EXPECT_TRUE(seat.IsBound("call:1"));
-  EXPECT_EQ(stops, 0);
-}
-
-TEST(CallMediaSeatTest, DualFsmNoteLiveAndRelease) {
-  // Phase 2: Connected chrome requires Live; NoteStart alone stays Connecting.
-  CallMediaSeat seat;
-  seat.Acquire("call:1");
-  seat.NoteStart("call:1");
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
-  EXPECT_FALSE(seat.IsLive("call:1"));
-
-  seat.NoteLive("call:1");
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Live);
-  EXPECT_TRUE(seat.IsLive("call:1"));
-
-  // SoftMigrate reattach must not demote Live (health owns reconnecting chrome).
-  seat.NoteConnecting("call:1");
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Live);
-
-  seat.Release("call:1");
-  EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Idle);
-  EXPECT_FALSE(seat.IsLive("call:1"));
 }
 
 TEST(CallMediaSeatTest, PathTokenAllowsAfterNoteStart) {

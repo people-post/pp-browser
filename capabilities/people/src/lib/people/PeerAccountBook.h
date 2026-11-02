@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "lib/people/ContactsStore.h"
+#include "lib/people/IContactBook.h"
 
 #include <optional>
 #include <string>
@@ -20,7 +20,7 @@ namespace pbr {
  */
 class PeerAccountBook : public Module {
 public:
-  explicit PeerAccountBook(ContactsStore& contacts);
+  explicit PeerAccountBook(IContactBook& contacts);
 
   /**
    * `account` announced `peer_id`: remembered, and added to its contact's ids when missing.
@@ -39,7 +39,7 @@ public:
 private:
   void LearnIntoContact(const std::string& account, const std::string& peer_id);
 
-  ContactsStore& contacts_;
+  IContactBook& contacts_;
   std::unordered_map<std::string, std::string> account_by_peer_id_;
 };
 

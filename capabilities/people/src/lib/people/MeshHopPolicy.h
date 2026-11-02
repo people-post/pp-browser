@@ -84,13 +84,6 @@ std::vector<mesh::MeshHopCandidate> RankMediaHopsEscalating(
     const std::string& local_listen_multiaddr = {},
     mesh::RelayScopeMask consumer_scopes = mesh::kRelayScopeShortTerm);
 
-/**
- * A group call's SFU hop: durable relays (org seeds, directory and DHT nodes) before contacts' nodes,
- * each part in its order (#385). An SFU's upload grows with the square of the members, which a home
- * node runs out of first; a contact's node stays a fallback.
- */
-std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops);
-
 /** Scope tags for a candidate (eligible closed-set peers only). */
 mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr = {});
@@ -105,14 +98,6 @@ std::vector<mesh::MeshHopCandidate> ExcludeSelfHop(std::vector<mesh::MeshHopCand
 /** Drop hops whose peer_id is in `excluded`. */
 std::vector<mesh::MeshHopCandidate> ExcludePeerIds(std::vector<mesh::MeshHopCandidate> candidates,
                                              const std::unordered_set<std::string>& excluded);
-
-/**
- * Soft-migrate preference: dialable in-call peers first (e.g. Windows already on the call
- * with Media relay), then remaining ranked hops (out-of-call Linux, org seed, …).
- * Peers without multiaddr stay in place but SoftMigrate will skip them quickly.
- */
-std::vector<mesh::MeshHopCandidate> PreferInCallMediaHops(std::vector<mesh::MeshHopCandidate> ranked,
-                                                   const std::unordered_set<std::string>& in_call_peer_ids);
 
 /** Preferred PeerId from a contact (newest directory endpoint, else first PeerId / multiaddr). */
 std::string PeerIdFromContact(const Contact& contact);

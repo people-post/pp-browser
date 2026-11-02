@@ -23,7 +23,7 @@ struct SendRelayOptions {
    */
   std::optional<std::string> stored_payload_json;
   /**
-   * Route outbound send onto Critical workers (call-control / charge_required).
+   * Route outbound send onto Critical workers (time-critical signaling: call control, charge_required).
    * Avoids Accept/MediaKey sitting behind PollInbox. Transport is still Amp-first when dialable,
    * then Brief when a `relay:` route is known.
    */

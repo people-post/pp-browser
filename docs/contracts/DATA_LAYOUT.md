@@ -150,6 +150,8 @@ Each backend (Me → Network → Service, `backend.env`) has its own profile, so
 
 At startup, after the config is loaded, the registry selects the active profile for the key: the active one when it matches; else the existing profile recorded for the key; else a new profile with the key as its id. A profile with no recorded backend (made before this field) is adopted in place as the key (as `prod` when the key is `qa`), so an existing user keeps their `default` profile as the prod one without moving data. `manifest.backend` is never overwritten once set. A `--profile` override is not redirected. The backend is chosen once per run; changing it takes effect on the next start.
 
+Saving a backend switch also removes the device's push bindings from the running backend ([SERVICE_ENDPOINTS.md](SERVICE_ENDPOINTS.md)); the other profile registers its own after the restart.
+
 There is no account-switcher UI: the profile follows the backend. Use `--profile NAME` for dev isolation. A `mesh_directory_nodes.json` left at the data root by older builds is no longer read.
 
 ## Schema versioning

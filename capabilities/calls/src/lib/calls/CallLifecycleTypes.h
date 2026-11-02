@@ -57,6 +57,16 @@ enum class CallMediaStatus {
   Reconnecting,
 };
 
+/** Which path carries a call's media — the call's one value (V055). A group call never goes back to Direct. */
+enum class CallMediaPath {
+  /** Not decided yet (before a join). */
+  Undecided,
+  /** 1:1 direct / punched / relayed carrier (Bridge). */
+  Direct,
+  /** Group, on a hop / media_relay (Topology). */
+  Hop,
+};
+
 enum class CallArmedPlanner {
   None = 0,
   Lifecycle,
@@ -65,28 +75,22 @@ enum class CallArmedPlanner {
 };
 
 /**
- * What happens to the shown call (V037): the user's clicks, and the media path's events. The device
- * shows a projection of its calls (LiveCalls) — these only drive the calls.
+ * What the UI does to the shown call (V037): the ring it saw or lost, and the user's clicks. The device
+ * shows a projection of its calls (LiveCalls) — these only drive the calls; the media path reports to
+ * them itself.
  */
 enum class CallLifecycleEvent {
   InviteSeen = 0,
   InviteCleared,
-  OutboundStarted,
   AcceptClicked,
   DeclineClicked,
   LeaveClicked,
   RetryClicked,
-  MediaDeferred,
-  MediaKeyReady,
-  DirectConnected,
-  ConnectFailedEvt,
-  /** The peer's connection for a failed, still-open call reached us (its retry): resume media. */
-  PeerReconnected,
 };
 
 const char* CallPhaseName(CallPhase phase);
 const char* CallMediaStatusName(CallMediaStatus status);
 const char* CallArmedPlannerName(CallArmedPlanner planner);
-const char* CallLifecycleEventName(CallLifecycleEvent ev);
+const char* CallMediaPathName(CallMediaPath path);
 
 } // namespace pbr

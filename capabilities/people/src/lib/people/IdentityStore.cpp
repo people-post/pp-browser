@@ -702,4 +702,13 @@ Roe<std::string> IdentityStore::GetAccountId() const {
   return identity_.account_id;
 }
 
+Roe<int64_t> IdentityStore::InitiationFloor() const {
+  std::lock_guard lock(mutex_);
+  auto load = EnsureLoaded();
+  if (!load) {
+    return load.error();
+  }
+  return identity_.initiation_floor;
+}
+
 } // namespace pbr

@@ -1,7 +1,7 @@
 #include "feature/calls/CallInitiationBilling.h"
 
 #include "common/Utilities.h"
-#include "foundation/crypto/CryptoConstants.h"
+#include "lib/pricing/InitiationBillingStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -10,40 +10,32 @@
 namespace pbr {
 namespace {
 
-ByteVector TestDek() {
-  ByteVector dek(kDataEncryptionKeySize);
-  for (size_t i = 0; i < dek.size(); ++i) {
-    dek[i] = static_cast<uint8_t>(0xc0 + i);
-  }
-  return dek;
-}
+/** This device's account: an id and the floor a stranger's invite must offer. */
+class FakeAccount final : public ILocalAccount {
+public:
+  Roe<std::string> GetAccountId() const override { return std::string("me"); }
+  Roe<int64_t> InitiationFloor() const override { return floor; }
+  int64_t floor = 0;
+};
 
 // P001 initiation pricing as the call's invite / accept apply it (payment rails are not live yet).
 class CallInitiationBillingTest : public ::testing::Test {
 protected:
   void SetUp() override {
     dir_ = std::filesystem::temp_directory_path() / ("pp_browser_call_billing_" + util::GenerateUuid());
-    identity_ = std::make_unique<IdentityStore>(dir_.string(), "test");
-    ASSERT_TRUE(identity_->SetDek(TestDek()));
-    ASSERT_TRUE(identity_->LoadOrCreate());
     store_ = std::make_unique<InitiationBillingStore>(dir_.string());
-    billing_ = std::make_unique<CallInitiationBilling>(*identity_);
+    billing_ = std::make_unique<CallInitiationBilling>(account_);
   }
   void TearDown() override {
     billing_.reset();
     store_.reset();
-    identity_.reset();
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }
-  void SetLocalFloor(int64_t floor) {
-    LocalIdentity updated = *identity_->Get();
-    updated.initiation_floor = floor;
-    ASSERT_TRUE(identity_->Update(updated));
-  }
+  void SetLocalFloor(int64_t floor) { account_.floor = floor; }
 
   std::filesystem::path dir_;
-  std::unique_ptr<IdentityStore> identity_;
+  FakeAccount account_;
   std::unique_ptr<InitiationBillingStore> store_;
   std::unique_ptr<CallInitiationBilling> billing_;
 };
@@ -100,7 +92,7 @@ TEST_F(CallInitiationBillingTest, InboundOfferBelowOurFloorIsRefusedElseBooked) 
   CallAcceptDetail accept;
   billing_->FillAccept(10, InitiationChargeDecision::Waive, accept);
   EXPECT_EQ(accept.offer_amount_minor, 10);
-  EXPECT_EQ(accept.charge_decision, InitiationChargeDecisionToWire(InitiationChargeDecision::Waive));
+  EXPECT_EQ(accept.charge_decision, InitiationChargeDecision::Waive);
   billing_->NoteAccepted("caller");
   EXPECT_TRUE(store_->IsOpen("caller"));
 }

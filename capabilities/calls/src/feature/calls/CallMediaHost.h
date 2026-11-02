@@ -2,7 +2,7 @@
 
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/LiveCall.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 
 #include "common/Error.h"
 
@@ -12,7 +12,7 @@
 
 namespace pbr {
 
-/** Narrow façade for call media side effects owned by CallSessionManager. */
+/** Narrow façade for call media side effects owned by CallDevice. */
 class CallMediaHost {
 public:
   virtual ~CallMediaHost() = default;
@@ -24,8 +24,8 @@ public:
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
   /** The call as it lives on this device (peers, who placed it, open or ended); null if unknown. */
   virtual const LiveCall* P2pLiveCall(const std::string& call_id) const = 0;
-  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
-  virtual CallMediaCoordinator* P2pCallMedia(const std::string& call_id) = 0;
+  /** The call's `CallMedia` (engine + seat use); null for a call not admitted here. */
+  virtual CallMedia* P2pCallMedia(const std::string& call_id) = 0;
   /**
    * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
    * Do not use P2pPeerIdentityForCall for this — that returns an arbitrary remote and
@@ -48,8 +48,6 @@ public:
    */
   virtual void P2pNoteInboundHello(const std::string& /*call_id*/, const std::string& /*identity*/,
                                    const std::string& /*peer_id*/) {}
-  /** The group hop carries the active call's media (1:1 frames are dropped). Any thread. */
-  virtual bool HopCarriesMedia() const { return false; }
 };
 
 } // namespace pbr

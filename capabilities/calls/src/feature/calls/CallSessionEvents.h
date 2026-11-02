@@ -3,6 +3,8 @@
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/calls/CallTypes.h"
+#include "lib/calls/CallDirectPlannerLogic.h"
+#include "lib/calls/CallHopPlannerLogic.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "common/runtime/OwnerSteps.h"
 
@@ -15,7 +17,7 @@
 
 namespace pbr {
 
-/** What the call session manager's subtree reports to itself through the calls owner's queue. */
+/** What the calls' parts (CallDevice's subtree) report through the calls owner's queue. */
 namespace session_event {
 
 /** Our accept landed: kick the answerer's 1:1 start once more (the first kick can precede its arming). */
@@ -49,15 +51,9 @@ struct RosterAfterRemoteAccept {
   uint64_t epoch = 0;
 };
 
-/** A waiting step's result arrived (the accept's circuit park). */
-struct Continue {
-  OwnerStepReady step;
-};
-
 } // namespace workflow_event
 
-using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept,
-                                   workflow_event::Continue>;
+using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
 
 /** The hop-migrate workflow's own events (V050 group hop flows). */
 namespace hop_migrate_event {
@@ -155,11 +151,12 @@ struct Continue {
 
 using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
                                    topology_event::ReannouncePublisher, topology_event::RefuseGuest,
-                                   topology_event::Continue, HopMigrateEvent, PlanningEvent>;
+                                   topology_event::Continue, HopMigrateEvent>;
 
 /** The 1:1 path's (CallMediaBridge) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
-namespace connect_event {
+/** The device's doorway for inbound call media (V056). */
+namespace doorway_event {
 
 /** An inbound hello arrived (transport I/O). */
 struct InboundHello {
@@ -169,6 +166,13 @@ struct InboundHello {
 struct KeyAvailable {};
 /** Re-check parked hellos (re-armed while any is parked). */
 struct KeyPollTick {};
+
+} // namespace doorway_event
+
+using DoorwayEvent = std::variant<doorway_event::InboundHello, doorway_event::KeyAvailable, doorway_event::KeyPollTick>;
+
+namespace connect_event {
+
 /** Attempt `attempt` of sequence `seq` has its link (or failed to get one). */
 struct LinkReady {
   uint64_t seq = 0;
@@ -199,10 +203,8 @@ struct Finished {
 
 } // namespace connect_event
 
-using ConnectEvent =
-    std::variant<connect_event::InboundHello, connect_event::KeyAvailable, connect_event::KeyPollTick,
-                 connect_event::LinkReady, connect_event::AttemptDone, connect_event::WatchdogDue,
-                 connect_event::RetryDue, connect_event::Finished>;
+using ConnectEvent = std::variant<connect_event::LinkReady, connect_event::AttemptDone, connect_event::WatchdogDue,
+                                  connect_event::RetryDue, connect_event::Finished>;
 
 namespace direct_event {
 
@@ -286,17 +288,104 @@ using DirectPathEvent =
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
                  direct_event::RebindInboundStream, direct_event::ForConnect, direct_event::StepReady>;
 
+/**
+ * What the 1:1 path reports to the calls it serves (V055: events up, in its own terms). The calls'
+ * owner moves the call's state on them; the path never writes it.
+ */
+namespace direct_report {
+
+/** The path's planner moved (Reconnecting, DegradedTxOnly, …). */
+struct Progress {
+  std::string call_id;
+  CallDirectPlannerPhase phase = CallDirectPlannerPhase::Idle;
+};
+/** Media flows over the 1:1 path (or over the hop that replaced it). */
+struct Connected {
+  std::string call_id;
+};
+/** The 1:1 stream ended because the call moves onto a hop not attached yet (nothing is live). */
+struct HandedToHop {
+  std::string call_id;
+};
+/** No 1:1 path could be kept: the call stays open, failed. */
+struct ConnectFailed {
+  std::string call_id;
+};
+/** H013: we placed this 1:1 call and stopped trying to reach `peer_identity` — tell it. */
+struct GaveUpReaching {
+  std::string call_id;
+  std::string peer_identity;
+};
+/** A connection for this failed call came up (the peer's retry). */
+struct PeerReconnected {
+  std::string call_id;
+};
+/** The path started trying media for the call (connect, key wait or failure). */
+struct MediaAttempted {
+  std::string call_id;
+};
+/** The answerer's media waits for the call's key. */
+struct MediaDeferred {
+  std::string call_id;
+};
+/** The key the answerer waited for landed: its 1:1 start can go ahead with `peer_identity`. */
+struct MediaKeyReady {
+  std::string call_id;
+  std::string peer_identity;
+};
+
+} // namespace direct_report
+
+using DirectReport =
+    std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
+                 direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
+                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady>;
+
+/** What the group (hop) path reports to the calls it serves: its planner moved. */
+struct HopReport {
+  std::string call_id;
+  CallHopPlannerPhase phase = CallHopPlannerPhase::Idle;
+};
+
 namespace session_event {
 
-/** An event of the 1:1 path; `generation` names that path (one built since drops it). */
+/** An event of `call_id`'s 1:1 path `serial` (a path built since, or the call gone, drops it). */
 struct ForDirectPath {
-  uint64_t generation = 0;
+  std::string call_id;
+  uint64_t serial = 0;
   DirectPathEvent event;
+};
+/** A report of `call_id`'s 1:1 path `serial` (dropped as above). */
+struct FromDirectPath {
+  std::string call_id;
+  uint64_t serial = 0;
+  DirectReport report;
+};
+/** An event of `call_id`'s group path `serial` (a path built since, or the call gone, drops it). */
+struct ForHopPath {
+  std::string call_id;
+  uint64_t serial = 0;
+  TopologyEvent event;
+};
+/** A report of the group path. */
+struct FromHopPath {
+  HopReport report;
+};
+/** An event of the device's hop service (planning's probe answers). */
+struct ForHopService {
+  PlanningEvent event;
+};
+/** An event of the inbound doorway `generation` (one built since drops it). */
+struct ForDoorway {
+  uint64_t generation = 0;
+  DoorwayEvent event;
 };
 
 } // namespace session_event
 
-using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
-                                  TopologyEvent, session_event::ForDirectPath>;
+using SessionEvent =
+    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                 session_event::ForHopPath, session_event::ForDirectPath, session_event::FromDirectPath,
+                 session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
 
 } // namespace pbr

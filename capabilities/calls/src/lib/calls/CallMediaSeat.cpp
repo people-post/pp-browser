@@ -1,25 +1,6 @@
 #include "lib/calls/CallMediaSeat.h"
 
-
 namespace pbr {
-namespace {
-
-const char* MediaStateName(CallMediaSeat::MediaState s) {
-  switch (s) {
-  case CallMediaSeat::MediaState::Idle:
-    return "Idle";
-  case CallMediaSeat::MediaState::Connecting:
-    return "Connecting";
-  case CallMediaSeat::MediaState::Live:
-    return "Live";
-  case CallMediaSeat::MediaState::Failed:
-    return "Failed";
-  }
-  return "?";
-}
-
-} // namespace
-
 CallMediaSeat::CallMediaSeat() {
   redirectLogger("CallMediaSeat");
 }
@@ -38,9 +19,6 @@ CallMediaSeat::Token CallMediaSeat::Acquire(const std::string& call_id) {
   {
     std::lock_guard lock(mu_);
     if (bound_call_id_ == call_id) {
-      if (state_ == MediaState::Idle || state_ == MediaState::Failed) {
-        state_ = MediaState::Connecting;
-      }
       Token out;
       out.epoch = epoch_;
       out.call_id = bound_call_id_;
@@ -49,8 +27,6 @@ CallMediaSeat::Token CallMediaSeat::Acquire(const std::string& call_id) {
     if (!bound_call_id_.empty()) {
       release_other = bound_call_id_;
       bound_call_id_.clear();
-      path_ = PathKind::None;
-      state_ = MediaState::Idle;
       ClearAttachLocked();
     }
   }
@@ -66,13 +42,10 @@ CallMediaSeat::Token CallMediaSeat::Acquire(const std::string& call_id) {
     std::lock_guard lock(mu_);
     ++epoch_;
     bound_call_id_ = call_id;
-    path_ = PathKind::None;
-    state_ = MediaState::Connecting;
     ClearAttachLocked();
     out.epoch = epoch_;
     out.call_id = call_id;
-    log().info << "Acquire call_id=" << call_id << " epoch=" << epoch_
-               << " media=" << MediaStateName(state_);
+    log().info << "Acquire call_id=" << call_id << " epoch=" << epoch_;
   }
   return out;
 }
@@ -88,15 +61,12 @@ void CallMediaSeat::Release(const std::string& call_id) {
     epoch_at_post = epoch_;
     if (target.empty() || bound_call_id_ == target) {
       bound_call_id_.clear();
-      path_ = PathKind::None;
-      state_ = MediaState::Idle;
       ClearAttachLocked();
     } else if (attach_call_id_ == target) {
       ClearAttachLocked();
     }
     // Epoch stays put — NoteStart/Acquire bump to invalidate in-flight Stop.
-    log().info << "Release call_id=" << target << " epoch=" << epoch_at_post
-               << " bound_now=" << bound_call_id_ << " media=" << MediaStateName(state_);
+    log().info << "Release call_id=" << target << " epoch=" << epoch_at_post << " bound_now=" << bound_call_id_;
     // B24: a stale Leave/Ended for an *older* call (relay inbox replays them on every poll)
     // must not stop the engine that a live, different call is holding.
     if (!bound_call_id_.empty() && bound_call_id_ != target && attach_call_id_ != target) {
@@ -128,85 +98,13 @@ void CallMediaSeat::NoteStart(const std::string& call_id) {
     return;
   }
   std::lock_guard lock(mu_);
-  if (bound_call_id_ != call_id) {
-    ++epoch_;
-    bound_call_id_ = call_id;
-    if (path_ == PathKind::None) {
-      path_ = PathKind::Direct;
-    }
-    // StartSfu alone is not duplex Live — chrome waits for NoteLive.
-    if (state_ != MediaState::Live) {
-      state_ = MediaState::Connecting;
-    }
-    log().info << "NoteStart bind call_id=" << call_id << " epoch=" << epoch_
-               << " media=" << MediaStateName(state_);
-    return;
-  }
   ++epoch_;
-  if (path_ == PathKind::None) {
-    path_ = PathKind::Direct;
-  }
-  if (state_ != MediaState::Live) {
-    state_ = MediaState::Connecting;
-  }
-  log().info << "NoteStart call_id=" << call_id << " epoch=" << epoch_
-             << " path=" << (path_ == PathKind::Hop ? "hop" : "direct")
-             << " media=" << MediaStateName(state_);
-}
-
-void CallMediaSeat::NotePath(PathKind kind) {
-  std::lock_guard lock(mu_);
-  path_ = kind;
-  log().info << "NotePath call_id=" << bound_call_id_
-             << " path=" << (kind == PathKind::Hop ? "hop"
-                                                   : kind == PathKind::Direct ? "direct" : "none");
-}
-
-void CallMediaSeat::NoteConnecting(const std::string& call_id) {
-  if (call_id.empty()) {
-    return;
-  }
-  std::lock_guard lock(mu_);
   if (bound_call_id_ != call_id) {
+    bound_call_id_ = call_id;
+    log().info << "NoteStart bind call_id=" << call_id << " epoch=" << epoch_;
     return;
   }
-  // SoftMigrate / reattach: stay Live so chrome uses health for reconnecting, not demote.
-  if (state_ == MediaState::Live) {
-    return;
-  }
-  state_ = MediaState::Connecting;
-  log().info << "NoteConnecting call_id=" << call_id << " media=" << MediaStateName(state_);
-}
-
-void CallMediaSeat::NoteLive(const std::string& call_id) {
-  if (call_id.empty()) {
-    return;
-  }
-  std::lock_guard lock(mu_);
-  if (bound_call_id_ != call_id) {
-    log().info << "NoteLive ignored (not bound) call_id=" << call_id
-               << " bound=" << bound_call_id_;
-    return;
-  }
-  if (state_ == MediaState::Live) {
-    return;
-  }
-  state_ = MediaState::Live;
-  log().info << "NoteLive call_id=" << call_id << " epoch=" << epoch_
-             << " path=" << (path_ == PathKind::Hop ? "hop" : "direct");
-}
-
-void CallMediaSeat::NoteFailed(const std::string& call_id) {
-  if (call_id.empty()) {
-    return;
-  }
-  std::lock_guard lock(mu_);
-  if (bound_call_id_ != call_id) {
-    return;
-  }
-  state_ = MediaState::Failed;
-  ClearAttachLocked();
-  log().info << "NoteFailed call_id=" << call_id;
+  log().info << "NoteStart call_id=" << call_id << " epoch=" << epoch_;
 }
 
 CallMediaSeat::AttachBeginResult CallMediaSeat::BeginAttach(const std::string& call_id,
@@ -235,9 +133,6 @@ CallMediaSeat::AttachBeginResult CallMediaSeat::BeginAttach(const std::string& c
   out->gen = attach_gen_;
   out->call_id = call_id;
   out->hop_peer_id = hop_peer_id;
-  if (bound_call_id_ == call_id && state_ != MediaState::Live) {
-    state_ = MediaState::Connecting;
-  }
   log().info << "BeginAttach call_id=" << call_id << " hop=" << hop_peer_id
              << " gen=" << attach_gen_;
   return AttachBeginResult::Started;
@@ -296,11 +191,6 @@ bool CallMediaSeat::IsBound(const std::string& call_id) const {
   return !call_id.empty() && bound_call_id_ == call_id;
 }
 
-bool CallMediaSeat::IsLive(const std::string& call_id) const {
-  std::lock_guard lock(mu_);
-  return !call_id.empty() && bound_call_id_ == call_id && state_ == MediaState::Live;
-}
-
 bool CallMediaSeat::MatchesToken(const Token& token) const {
   std::lock_guard lock(mu_);
   return !token.call_id.empty() && token.call_id == bound_call_id_ && token.epoch == epoch_;
@@ -319,16 +209,6 @@ std::string CallMediaSeat::BoundCallId() const {
 uint64_t CallMediaSeat::Epoch() const {
   std::lock_guard lock(mu_);
   return epoch_;
-}
-
-CallMediaSeat::PathKind CallMediaSeat::Path() const {
-  std::lock_guard lock(mu_);
-  return path_;
-}
-
-CallMediaSeat::MediaState CallMediaSeat::State() const {
-  std::lock_guard lock(mu_);
-  return state_;
 }
 
 CallMediaSeat::Token CallMediaSeat::CurrentToken() const {

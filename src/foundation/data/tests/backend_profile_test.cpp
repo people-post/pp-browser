@@ -70,6 +70,35 @@ TEST_F(BackendProfileTest, ProdKeyAndEnvOriginKey) {
   SetOriginEnv(nullptr);
 }
 
+TEST_F(BackendProfileTest, SavedKeyDiffersFromRunningOneOnlyAfterASwitch) {
+  pbr::AppConfig config;
+  pbr::LatchActiveBackend(pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::SavedBackendKey(config), pbr::BackendProfileKey(config));
+
+  config.backend.env = "custom";
+  config.registration.base_url = "https://custom.example.test/api/relay";
+  const std::string custom = pbr::SavedBackendKey(config);
+  EXPECT_EQ(custom.rfind("custom-", 0), 0u);
+  EXPECT_NE(custom, pbr::BackendProfileKey(config));
+
+  // Under an origin the loaded URLs are replaced; the saved copies name the custom backend.
+  config.registration.base_url = "https://origin.example.test/api/relay";
+  config.backend.has_saved_urls = true;
+  config.backend.saved_registration.base_url = "https://Custom.Example.test/api/relay/";
+  EXPECT_EQ(pbr::SavedBackendKey(config), custom);
+
+  config.backend.env = "prod";
+  EXPECT_EQ(pbr::SavedBackendKey(config), pbr::BackendProfileKey(config));
+}
+
+TEST_F(BackendProfileTest, SavedKeyIsConstantUnderAnOriginOverride) {
+  SetOriginEnv("https://backend.example.test");
+  pbr::AppConfig config;
+  config.backend.env = "custom";
+  EXPECT_EQ(pbr::SavedBackendKey(config), pbr::BackendProfileKey(config));
+  SetOriginEnv(nullptr);
+}
+
 TEST_F(BackendProfileTest, ExistingProfileIsAdoptedAsProdWithoutMovingData) {
   auto registry = pbr::ProfileRegistry::Load(data_dir_);
   ASSERT_TRUE(static_cast<bool>(registry));

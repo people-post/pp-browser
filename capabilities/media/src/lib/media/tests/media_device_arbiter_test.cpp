@@ -552,15 +552,15 @@ protected:
     }
     return done();
   }
-  static MediaEngine::SfuSendFn NoopSend() {
-    return [](const MediaEngine::SfuPacket&) {};
+  static MediaEngine::PacketSendFn NoopSend() {
+    return [](const MediaEngine::MediaPacket&) {};
   }
 };
 
 TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic).front(), "call:1");
@@ -577,7 +577,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexCallUsesTheVoiceProcessingUnit) {
   backend_->duplex = true;
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(WaitUntil([&] { return engine.HasLocalCapture(); }));
   EXPECT_EQ(engine.HealthSnapshot().audio_io, "vpio");
   EXPECT_EQ(engine.HealthSnapshot().io_underruns, 7u);
@@ -594,7 +594,7 @@ TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
   backend_->duplex = true;
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "vpio"; }));
   auto unit = backend_->LastUnit();
   ASSERT_NE(unit, nullptr);
@@ -620,7 +620,7 @@ TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
 TEST_F(EngineDeviceLeaseTest, DuplexCallFallsBackToSeparateLeasesWithoutVoiceProcessing) {
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   EXPECT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "sdl"; }));
   engine.Stop();
 }
@@ -642,9 +642,9 @@ TEST_F(EngineDeviceLeaseTest, SecondDuplexSessionIsRefusedTheMicButKeepsTheSpeak
   MediaEngine& first = *first_owned;
   auto second_owned = MakeEngine();
   MediaEngine& second = *second_owned;
-  ASSERT_TRUE(first.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(first.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
-  ASSERT_TRUE(second.StartSfu("call:2", NoopSend()));
+  ASSERT_TRUE(second.StartDuplex("call:2", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 2));
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic), std::vector<std::string>{"call:1"});
   EXPECT_FALSE(second.HasLocalCapture());
@@ -656,7 +656,7 @@ TEST_F(EngineDeviceLeaseTest, SecondDuplexSessionIsRefusedTheMicButKeepsTheSpeak
 TEST_F(EngineDeviceLeaseTest, CameraOpensOffTheCallerThreadAndPublishesAPreview) {
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   backend_->camera_open_delay = std::chrono::milliseconds(300);
   const auto t0 = std::chrono::steady_clock::now();
   ASSERT_TRUE(engine.SetCameraEnabled(true));
@@ -692,7 +692,7 @@ TEST_F(EngineDeviceLeaseTest, FailedCameraOpenFlipsBackAndIsReportedOnce) {
   backend_->camera_present = false;
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   std::optional<std::string> failure;
   for (int i = 0; i < 200 && !failure; ++i) {
@@ -714,7 +714,7 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
   };
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1; }));
   EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "calls open the front camera first";
@@ -737,7 +737,7 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraReopensWithTheOtherFacing) {
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 4; }));
   engine.Stop();
 
-  ASSERT_TRUE(engine.StartSfu("call:2", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:2", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 5; }));
   EXPECT_EQ(backend_->last_prefer_front.load(), 1) << "a new call starts with the front camera";
@@ -752,7 +752,7 @@ TEST_F(EngineDeviceLeaseTest, AFailedReopenAfterAFlipGoesBackToTheFrontCamera) {
   };
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 1; }));
   EXPECT_TRUE(WaitUntil([&] { return engine.CameraFrontFacing(); }));
@@ -785,7 +785,7 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraWhileStillOpeningIsRefused) {
   backend_->camera_open_delay = std::chrono::milliseconds(300);
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_FALSE(engine.FlipCamera()) << "still opening";
@@ -800,7 +800,7 @@ TEST_F(EngineDeviceLeaseTest, FlipCameraWhileTheCameraIsOffAsksForNothing) {
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
   EXPECT_FALSE(engine.FlipCamera()) << "no call media";
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   EXPECT_FALSE(engine.FlipCamera()) << "camera off";
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_EQ(backend_->last_prefer_front.load(), -1);
@@ -817,7 +817,7 @@ TEST_F(EngineDeviceLeaseTest, StopDuringACameraOpenReleasesEverything) {
   {
     auto engine_owned = MakeEngine();
     MediaEngine& engine = *engine_owned;
-    ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+    ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
     ASSERT_TRUE(engine.SetCameraEnabled(true));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     engine.Stop();
@@ -833,7 +833,7 @@ TEST_F(EngineDeviceLeaseTest, EncoderAvailabilityIsAHostCapabilityNotSessionStat
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
   EXPECT_EQ(engine.VideoEncoderAvailable(), PlatformVideoEncoderSupported());
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   EXPECT_EQ(engine.VideoEncoderAvailable(), PlatformVideoEncoderSupported());
   engine.Stop();
 }
@@ -841,7 +841,7 @@ TEST_F(EngineDeviceLeaseTest, EncoderAvailabilityIsAHostCapabilityNotSessionStat
 TEST_F(EngineDeviceLeaseTest, ReopenKeepsLeasesAndReplacesEndpoints) {
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
   const auto opens_before = [this]() {
     int n = 0;
@@ -917,7 +917,7 @@ TEST_F(EngineDeviceLeaseTest, StopNeverWaitsOnAStuckCameraAndTheNextCallGetsTheM
   auto gate = std::make_shared<HangingEncoder::Gate>();
   auto engine = std::make_unique<MediaEngine>(*arbiter_);
   engine->SetVideoCodecFactoryForTest([gate] { return std::make_unique<HangingEncoder>(gate); });
-  ASSERT_TRUE(engine->StartSfu("call:stuck", NoopSend()));
+  ASSERT_TRUE(engine->StartDuplex("call:stuck", NoopSend()));
   ASSERT_TRUE(engine->SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return gate->entered.load(); })) << "the video thread reached the encoder";
 
@@ -935,7 +935,7 @@ TEST_F(EngineDeviceLeaseTest, StopNeverWaitsOnAStuckCameraAndTheNextCallGetsTheM
   EXPECT_FALSE(engine->WaitForRetiredSessions(std::chrono::milliseconds(0))) << "still stuck";
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty()) << "the stuck session let the mic go";
 
-  ASSERT_TRUE(engine->StartSfu("call:next", NoopSend()));
+  ASSERT_TRUE(engine->StartDuplex("call:next", NoopSend()));
   EXPECT_TRUE(WaitUntil([&] { return engine->HasLocalCapture(); })) << "the next call has a mic";
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic), std::vector<std::string>{"call:next"});
 
@@ -952,7 +952,7 @@ TEST_F(EngineDeviceLeaseTest, ABusyCameraComesOnByItselfWhenItIsFree) {
   ASSERT_TRUE(scanner) << scanner.error().message;
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return engine.CameraWaitingForDevice(); }));
   EXPECT_TRUE(engine.IsCameraEnabled()) << "still wanted";
@@ -975,7 +975,7 @@ TEST_F(EngineDeviceLeaseTest, TurningAWaitingCameraOffWithdrawsIt) {
   ASSERT_TRUE(scanner);
   auto engine_owned = MakeEngine();
   MediaEngine& engine = *engine_owned;
-  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return engine.CameraWaitingForDevice(); }));
   ASSERT_TRUE(engine.SetCameraEnabled(false));
@@ -1043,7 +1043,7 @@ TEST_F(EngineDeviceLeaseTest, AHungEncoderIsReplacedAndVideoGoesOn) {
   engine->SetHardwareLimits(ShortHardwareLimits());
   engine->SetVideoCodecFactoryForTest([control] { return std::make_unique<FlakyEncoder>(control); });
   std::atomic<int> video_sent{0};
-  ASSERT_TRUE(engine->StartSfu("call:1", [&](const MediaEngine::SfuPacket& packet) {
+  ASSERT_TRUE(engine->StartDuplex("call:1", [&](const MediaEngine::MediaPacket& packet) {
     if (mesh::IsVideoChannel(packet.channel_id)) {
       video_sent.fetch_add(1);
     }
@@ -1064,7 +1064,7 @@ TEST_F(EngineDeviceLeaseTest, AnEncoderThatKeepsHangingGivesTheCameraUp) {
   auto engine = std::make_unique<MediaEngine>(*arbiter_);
   engine->SetHardwareLimits(ShortHardwareLimits());
   engine->SetVideoCodecFactoryForTest([control] { return std::make_unique<FlakyEncoder>(control); });
-  ASSERT_TRUE(engine->StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine->StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine->SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return !engine->IsCameraEnabled(); })) << "given up";
   EXPECT_EQ(control->made.load(), 4) << "the first encoder and three replacements";
@@ -1082,7 +1082,7 @@ TEST_F(StuckDeviceTest, ACameraStuckTooLongIsGivenUpWithARestartHint) {
   MediaEngine engine(*arbiter_);
   engine.SetHardwareLimits(ShortHardwareLimits());
   engine.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test stub"); });
-  ASSERT_TRUE(engine.StartSfu("call:b", [](const MediaEngine::SfuPacket&) {}));
+  ASSERT_TRUE(engine.StartDuplex("call:b", [](const MediaEngine::MediaPacket&) {}));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return !engine.IsCameraEnabled(); })) << "given up";
   std::optional<std::string> failure;

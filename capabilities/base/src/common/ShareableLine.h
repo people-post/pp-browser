@@ -93,8 +93,11 @@ public:
    */
   ShareableLine& Ref(ShareWord key, std::string_view id);
 
-  /** A random call id's first 8 hex: both sides of a call log the same value, so their lines can be joined. */
-  ShareableLine& Call(ShareWord key, std::string_view call_id);
+  /**
+   * A random id's first 8 hex (a call's): every device that has it logs the same value, so their lines can be
+   * joined. Not hex: `?`.
+   */
+  ShareableLine& RandomId(ShareWord key, std::string_view id);
 
   /** An error as `category.code` (foundation/error/AppError) — never its message. */
   ShareableLine& Fail(ShareWord key, const Error& error);
@@ -116,8 +119,8 @@ private:
   std::string text_;
 };
 
-/** The first 8 hex of a random call id, without its `call:` scheme. */
-std::string ShortCallId(std::string_view call_id);
+/** The first 8 chars of a random id, without its scheme (`call:` …). */
+std::string ShortRandomId(std::string_view id);
 
 /** Ref's value for `id` in this process (tests; the same function Ref uses). */
 std::string ShareableRef(std::string_view id);

@@ -75,8 +75,8 @@ std::string EndCall(Tracker& t, int64_t& now, const DeviceVitals& v = Vitals()) 
 TEST(CallMetricsLineTest, FormatsKeyValuesAndShortCallId) {
   const std::string line = MetricsLine("x.y").Add("a", "b").Add("n", int64_t{3}).Add("f", 2.25).str();
   EXPECT_EQ(line, "event=x.y a=b n=3 f=2.2");  // one decimal
-  EXPECT_EQ(MetricsCallId(kCall), "01234567");
-  EXPECT_EQ(MetricsCallId("abc"), "abc");
+  EXPECT_EQ(ShortRandomId(kCall), "01234567");
+  EXPECT_EQ(ShortRandomId("abc"), "abc");
 }
 
 TEST(CallMetricsTrackerTest, CalleeConnectedCallReportsSetupAndSummary) {

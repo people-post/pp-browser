@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #include "lib/media/MediaDeviceArbiter.h"
 
 #include <atomic>
@@ -19,7 +19,7 @@ namespace pbr {
  *
  * Tone::IncomingRing loops assets/sounds/call_ring.wav. Tone::OutgoingRingback synthesizes the
  * caller ringback (450 Hz 1.0 s on / 4.0 s off) and, on phones, routes it to the earpiece via
- * CallAudioSession::ActivateForVoipCall() like an in-call session. For this tone the worker thread
+ * AudioSession::ActivateForVoip() like an in-call session. For this tone the worker thread
  * itself owns activate/release of the audio session (see RunLoop and SetReleaseSessionOnStop) so
  * a caller-side Stop() can never race a late activate that lands after the UI already decided to
  * release the session. Each Start() hands its worker a fresh, per-generation stop flag, release
@@ -59,7 +59,7 @@ public:
   bool IsPlaying() const { return playing_.load(); }
   /**
    * Tone::OutgoingRingback only: whether the CURRENT (most recently Start()'d) worker should
-   * release the phone audio session (CallAudioSession::Deactivate()) when it stops, having
+   * release the phone audio session (AudioSession::Deactivate()) when it stops, having
    * activated it. Call before Stop() for that same worker — false when media is taking over the
    * session (the engine owns it from here), true (the default) to release it. Writes to a flag
    * private to that worker's generation, so a still-tearing-down older worker can never pick up a
@@ -68,11 +68,11 @@ public:
   void SetReleaseSessionOnStop(bool release);
   /**
    * True while a ringback worker holds the phone audio session it activated and may still
-   * Deactivate() it (a tone hold, CallAudioSession::BeginToneHold). Call media waits for the holds to
+   * Deactivate() it (a tone hold, AudioSession::BeginToneHold). Call media waits for the holds to
    * end before activating its own session, so a late ringback release can never kill a call that just
    * started.
    */
-  static bool RingbackSessionHeld() { return CallAudioSession::ToneHoldsSession(); }
+  static bool RingbackSessionHeld() { return AudioSession::ToneHoldsSession(); }
 
 private:
   void RequestStop(bool wait);

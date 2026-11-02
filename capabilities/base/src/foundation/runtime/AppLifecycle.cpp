@@ -28,7 +28,7 @@ struct StayConnectedListener {
 };
 std::vector<StayConnectedListener> g_stay_connected_listeners;
 std::atomic<bool> g_stay_connected{false};
-std::atomic<bool> g_call_in_progress{false};
+std::atomic<bool> g_live_session_on{false};
 AppLifecycle::ListenerId g_next_listener_id = 1;
 
 /**
@@ -78,8 +78,8 @@ const char* KeepsWorkingReason() {
   if (g_stay_connected.load()) {
     return "stay connected";
   }
-  if (g_call_in_progress.load()) {
-    return "call";
+  if (g_live_session_on.load()) {
+    return "live session";
   }
   if (g_wake_window != 0) {
     return "wake window";
@@ -198,20 +198,20 @@ AppLifecycle::ListenerId AppLifecycle::AddStayConnectedListener(std::function<vo
   return id;
 }
 
-void AppLifecycle::SetCallInProgress(const bool on) {
-  if (g_call_in_progress.exchange(on) == on) {
+void AppLifecycle::SetLiveSessionOn(const bool on) {
+  if (g_live_session_on.exchange(on) == on) {
     return;
   }
   if (on) {
     ReconcileWork();
     return;
   }
-  // Not paused at once: the call's last signaling (the leave, an ack) is still going out.
-  OpenWakeWindow(kCallEndGraceMs);
+  // Not paused at once: the session's last signaling (a call's leave, an ack) is still going out.
+  OpenWakeWindow(kLiveSessionEndGraceMs);
 }
 
-bool AppLifecycle::CallInProgress() {
-  return g_call_in_progress.load();
+bool AppLifecycle::LiveSessionOn() {
+  return g_live_session_on.load();
 }
 
 void AppLifecycle::OpenWakeWindow(const std::chrono::milliseconds window) {

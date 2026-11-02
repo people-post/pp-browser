@@ -2,7 +2,7 @@
 
 #include "common/Module.h"
 #include "lib/calls/CallHopPlan.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
 #include "lib/calls/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -29,13 +29,18 @@ namespace pbr {
 class CallHopPlanning : public Module {
 public:
   /** At the first group migrate. */
-  enum class JoinOutcome {
-    Proceed,
-    /** No hop every participant reaches: refuse the joiner (no migration now). */
-    RefuseJoiner,
+  struct JoinOutcome {
+    enum class Action {
+      Proceed,
+      /** No hop every participant reaches: refuse the joiner (no migration now). */
+      RefuseJoiner,
+    };
+    Action action = Action::Proceed;
+    /** The one adjustment: the group's new planned hop, for the caller to record on the session. */
+    std::optional<CallPlannedHop> adjusted_plan;
   };
 
-  CallHopPlanning(ICallSessionStore& sessions, const CallHopRanking& ranking);
+  CallHopPlanning(const ICallSessionReader& sessions, const CallHopRanking& ranking);
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
   /** Where planning reports its probe answers (its parent binds it). */
@@ -62,7 +67,7 @@ public:
 
   /**
    * The first group migrate with these joined remotes: keep the planned hop, make the one adjustment
-   * (replaces the session's planned hop), or refuse the joiner. Settled once per call.
+   * (the session's new planned hop, returned to be recorded), or refuse the joiner. Settled once per call.
    */
   JoinOutcome ResolveAtJoin(const std::string& call_id, const std::string& joiner_identity,
                             const std::vector<std::string>& joined_remotes);
@@ -76,7 +81,7 @@ private:
   void QuoteProbe(const std::string& call_id, const std::string& hop_peer_id, const std::string& hop_multiaddr);
   void OnProbeAnswered(const planning_event::ProbeAnswered& answer);
 
-  ICallSessionStore& sessions_;
+  const ICallSessionReader& sessions_;
   const CallHopRanking& ranking_;
   const CallTopologyMediaRelayDeps* deps_ = nullptr;
   /** Invitee: hop PeerId → quote ok (nullopt while in flight), per call. */

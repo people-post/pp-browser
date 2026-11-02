@@ -70,7 +70,7 @@ private:
   std::array<double, kMaxTargetFrames + 1> hist_{};
   double mass_ = 0.0;
   uint64_t arrivals_ = 0;
-  std::deque<std::pair<uint64_t, int64_t>> mins_;  // (arrival index, d) — monotonic sliding minimum
+  std::deque<std::pair<uint64_t, int64_t>> mins_; // (arrival index, d) — monotonic sliding minimum
 };
 
 /** One received Opus packet (channel 0) for the jitter buffer. */
@@ -109,7 +109,8 @@ public:
   static constexpr size_t kMaxFrames = 40;
   /** Surplus above target this size is treated as speech content (unknown), not pure jitter slack. */
   static constexpr size_t kSpeechTrimSurplus = 5;
-  static constexpr size_t kPressureFullFrames = 10; // the pre-adaptive 200 ms cap: congestion signal for bitrate adaptation
+  static constexpr size_t kPressureFullFrames =
+      10; // the pre-adaptive 200 ms cap: congestion signal for bitrate adaptation
   /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (nominally 500 ms; a pop is a pop, so silence
@@ -117,9 +118,9 @@ public:
    *  back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
   /** This many late packets in a row with a restarted stream's low seqs (< kResyncJump) is a
-   *  sender restart even when the backward step is small (early in a call next_seq_ < kResyncJump,
+   *  sender restart even when the backward step is small (early in a session next_seq_ < kResyncJump,
    *  so the jump test alone would drop ~1 s of the new stream). Late stragglers with higher seqs —
-   *  e.g. a reorder burst from path migration mid-call — are never a restart. */
+   *  e.g. a reorder burst from path migration mid-session — are never a restart. */
   static constexpr uint32_t kRestartLateRun = 3;
 
   void Push(AudioPacket packet) {
@@ -135,7 +136,7 @@ public:
           return;
         }
       }
-      Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
+      Reset(); // sender restarted its seq (re-StartDuplex / BeginSession): re-prime on the new stream
     }
     late_run_ = 0;
     auto it = queue_.begin();
@@ -197,8 +198,7 @@ public:
       return out;
     }
     AudioPacket& front = queue_.front();
-    if (front.seq > next_seq_ &&
-        (queue_.size() > TargetFrames() || front.seq - next_seq_ > TargetFrames())) {
+    if (front.seq > next_seq_ && (queue_.size() > TargetFrames() || front.seq - next_seq_ > TargetFrames())) {
       next_seq_ = front.seq; // enough audio buffered, or hole too wide to conceal usefully
     }
     if (front.seq == next_seq_) {
@@ -290,7 +290,7 @@ private:
 };
 
 /** Peak below 1 % of full scale (≈ −40 dBFS): safe to skip when catching up (adaptive jitter §2). */
-constexpr int kCatchUpSilencePeak = 328;  // 0.01 × 32768
+constexpr int kCatchUpSilencePeak = 328; // 0.01 × 32768
 inline bool IsCatchUpSilence(const std::vector<int16_t>& pcm, size_t samples) {
   const size_t n = std::min(samples, pcm.size());
   for (size_t i = 0; i < n; ++i) {

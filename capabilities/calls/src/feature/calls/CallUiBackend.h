@@ -7,6 +7,7 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
+#include "lib/media/IMediaView.h"
 #include "lib/calls/LiveCall.h"
 
 #include <functional>
@@ -18,7 +19,6 @@
 
 namespace pbr {
 
-class MediaEngine;
 class CallSessionManager;
 class CallStack;
 
@@ -28,9 +28,11 @@ class CallStack;
  * - **intents** post to the owner; ones with a result deliver it on UI through `on_done`;
  * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
  *   publishes after each step (`CallStack::UiState`);
- * - **durable state** (invites, sessions, participants) reads the stores directly (read-only);
- * - `Media()` is the engine, which synchronizes itself (levels, video, health for the GUI).
- * Queries go through stack.Calls() per call so stack rebuilds stay transparent. Application owns
+ * - **durable state** (invites, sessions, participants) reads the stores through the stack's CallReads
+ *   (read-only) — never the session manager;
+ * - `Media()` is the engine as the screen sees it (`IMediaView`: levels, video, health, device-local
+ *   knobs), which synchronizes itself — never session control.
+ * Reads go through stack.Reads() per call so stack rebuilds stay transparent. Application owns
  * the instance (bound to ConversationsHub::CallStackRef()); CallController binds via
  * CallFunctionalPorts. UI thread.
  */
@@ -48,7 +50,6 @@ public:
 
   // --- Intents (posted to the calls owner) -----------------------------------------------------
   void SweepExpiredInvites();
-  void PollP2pConnectHealth();
   void ClearMediaActivity();
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   void ClearLastError();
@@ -109,7 +110,6 @@ public:
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
-  bool MediaAttemptedThisProcess(const std::string& call_id) const;
 
   // --- Owner state (published snapshot) ----------------------------------------------------------
   /** The whole snapshot, for readers that want one consistent view. */
@@ -136,13 +136,14 @@ public:
     return !call_id.empty() && state->active_call_id == call_id ? state->live_since_ms : 0;
   }
   CallMediaStatus MediaStatus() const { return State()->media_status; }
+  CallMediaPath MediaPath() const { return State()->media_path; }
   std::string LastError() const { return State()->last_error; }
   bool ShouldSuppressRing(const std::string& call_id) const { return State()->ShouldSuppressRing(call_id); }
   CallPhase Phase() const { return State()->phase; }
   std::string LastRingCallId() const { return State()->last_ring_call_id; }
   std::string ActiveCallId() const { return State()->active_call_id; }
 
-  MediaEngine& Media();
+  IMediaView& Media();
 
 private:
   /** Run `op` on the calls owner with the current session manager (skipped when there is none). */

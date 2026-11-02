@@ -191,10 +191,10 @@ protected:
     EXPECT_FALSE(ui_->Available()) << "before BuildSessions";
 
     CallStackDeps deps;
-    deps.store = store_.get();
+    deps.threads = store_.get();
+    deps.transcript = store_.get();
     deps.contacts = contacts_.get();
-    deps.identity = identity_.get();
-    deps.psk = store_.get();
+    deps.account = identity_.get();
     deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
                                         const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
       ++sent_control_;
@@ -506,7 +506,7 @@ TEST_F(CallUiBackendStackTest, InviteMobilitySetsTheCallsPolicy) {
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
-  // BindTestMediaPath: full CallStack → Bridge → StartSfu → ConnectAsync → Leave.
+  // BindTestMediaPath: full CallStack → Bridge → StartDuplex → ConnectAsync → Leave.
   const std::string call_id = "call:ui-media";
   ASSERT_TRUE(IngestInvite(call_id));
   ASSERT_TRUE(stack_->MediaKeys()->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -515,14 +515,14 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 
   DrainUntil([&]() {
-    return (stack_->Engine() && stack_->Engine()->IsActive() && stack_->Engine()->ActiveCallId() == call_id) ||
+    return (stack_->Engine() && stack_->Engine()->IsActive() && stack_->Engine()->ActiveSessionId() == call_id) ||
            ui_->Phase() == CallPhase::InCall || ui_->Phase() == CallPhase::MediaConnecting ||
            ui_->Phase() == CallPhase::ConnectFailed;
   });
   ASSERT_TRUE(stack_->Engine());
   EXPECT_TRUE(stack_->Engine()->IsActive()) << "phase=" << CallPhaseName(ui_->Phase()) << " err=" << ui_->LastError();
-  EXPECT_EQ(stack_->Engine()->ActiveCallId(), call_id);
-  // Peer reach settles on its lane, so the dial follows StartSfu asynchronously.
+  EXPECT_EQ(stack_->Engine()->ActiveSessionId(), call_id);
+  // Peer reach settles on its lane, so the dial follows StartDuplex asynchronously.
   DrainUntil([&]() { return transport_->connect_async_calls >= 1 || ui_->Phase() == CallPhase::ConnectFailed; });
   EXPECT_GE(transport_->connect_async_calls, 1) << "phase=" << CallPhaseName(ui_->Phase())
                                                 << " err=" << ui_->LastError();

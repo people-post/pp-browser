@@ -28,7 +28,7 @@ struct DeliveryRequest {
   std::string amp_peer_key;
   /** The peer's Brief `relay:` route; none: Amp only. */
   std::optional<std::string> relay_route;
-  /** Call signaling: the critical worker lane, and the relay first when a route is known. */
+  /** Time-critical signaling (a call's): the critical worker lane, and the relay first when a route is known. */
   bool critical_lane = false;
   /** One member's copy of a group message (their account): its outcome is that member's, not the row's. */
   std::string group_member;

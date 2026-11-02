@@ -38,11 +38,11 @@ TEST(CallDirectPathLogicTest, ConnectHealth) {
 
   in.direct_ready = true;
   EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::HealConnected) << "the stream is up, the engine lags";
-  in.engine_connected = true;
+  in.media_connected = true;
   EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::Healthy);
   in.has_call = false;
   EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::Healthy);
-  in.engine_connected = false;
+  in.media_connected = false;
   EXPECT_EQ(DecideDirectHealth(in), DirectHealthAction::None) << "nothing to commit without a call";
 }
 
@@ -53,7 +53,7 @@ TEST(CallDirectPathLogicTest, AFailedCarrier) {
   EXPECT_EQ(DecideBundleFailure(in), BundleFailureAction::Fail);
   in.soft_close = true;
   EXPECT_EQ(DecideBundleFailure(in), BundleFailureAction::Fail) << "a clean close before media connected";
-  in.engine_connected = true;
+  in.media_connected = true;
   EXPECT_EQ(DecideBundleFailure(in), BundleFailureAction::AwaitHop) << "PreferLocal released the 1:1 stream";
   in.hop_attached = true;
   EXPECT_EQ(DecideBundleFailure(in), BundleFailureAction::CarriedByHop);

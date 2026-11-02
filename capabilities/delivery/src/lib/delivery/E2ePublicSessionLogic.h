@@ -6,6 +6,7 @@
 #include "common/Error.h"
 #include "common/PbrCompat.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 
@@ -31,7 +32,7 @@ struct AutoKeyRead {
   bool via_key_init = false;
 };
 
-/** Session key for CallMediaKey wrap, plus optional first-send AutoKey `key_init`. */
+/** The session key a feature wraps its own keys under (a call's media key), plus optional first-send AutoKey `key_init`. */
 struct EnsuredE2ePublicSessionKey {
   ByteVector session_key;
   std::optional<std::string> first_message_key_init_b64;
@@ -46,6 +47,13 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
                                                       const PeerSessionKey& target_key,
                                                       uint32_t session_epoch,
                                                       const ByteVector& peer_kem_public);
+/**
+ * Same, asking for the peer's KEM public key only when the session has to be opened: an open session
+ * never waits on a directory lookup for a key it does not need.
+ */
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                       uint32_t session_epoch,
+                                                       const std::function<Roe<ByteVector>()>& peer_kem_public);
 
 /**
  * What reading an authenticated envelope (signature verified) proves about the pair's session, and
@@ -64,7 +72,6 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
                                     const std::optional<std::string>& envelope_key_init_b64,
                                     int64_t envelope_timestamp_ms);
 
-/** Derive the pairwise session key used for CallMediaKey wrap (channel e2e_public). */
 /**
  * The pair moved from `old_epoch` to `new_epoch` because this device lost its numbering (D014, #378): the
  * session is retired at `old_epoch` (late messages still read), none is current — the next send opens one

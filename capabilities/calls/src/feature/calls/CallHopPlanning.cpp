@@ -19,7 +19,7 @@ constexpr size_t kOtherProbedHops = 2;
 
 } // namespace
 
-CallHopPlanning::CallHopPlanning(ICallSessionStore& sessions, const CallHopRanking& ranking)
+CallHopPlanning::CallHopPlanning(const ICallSessionReader& sessions, const CallHopRanking& ranking)
     : sessions_(sessions), ranking_(ranking) {
   redirectLogger("CallHopPlanning");
 }
@@ -156,11 +156,11 @@ CallHopPlanning::JoinOutcome CallHopPlanning::ResolveAtJoin(const std::string& c
                                                             const std::string& joiner_identity,
                                                             const std::vector<std::string>& joined_remotes) {
   if (resolved_.count(call_id) != 0) {
-    return JoinOutcome::Proceed;  // one resolution (and at most one adjustment) per call
+    return {}; // one resolution (and at most one adjustment) per call
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || !(*session)->planned_hop) {
-    return JoinOutcome::Proceed;
+    return {};
   }
   if (resolved_.size() > kMaxTrackedCalls) {
     resolved_.clear();
@@ -184,23 +184,20 @@ CallHopPlanning::JoinOutcome CallHopPlanning::ResolveAtJoin(const std::string& c
   }
   switch (decision.action) {
   case GroupHopAtJoin::UsePlanned:
-    return JoinOutcome::Proceed;
+    return {};
   case GroupHopAtJoin::UseAlternative: {
     // The one adjustment replaces the plan (not a re-pick): SoftMigrate ranks the planned hop first.
     log().info << "group hop adjustment call_id=" << call_id << " planned=" << in.planned_hop << " → " << decision.hop
                << " (a participant cannot reach the planned hop)";
-    CallSession adjusted = **session;
-    adjusted.planned_hop = CallPlannedHop{decision.hop, ranking_.HopMultiaddr(decision.hop)};
-    (void)sessions_.UpsertSession(adjusted);
-    return JoinOutcome::Proceed;
+    return JoinOutcome{JoinOutcome::Action::Proceed, CallPlannedHop{decision.hop, ranking_.HopMultiaddr(decision.hop)}};
   }
   case GroupHopAtJoin::RefuseJoiner:
     log().warning << "group hop: no hop every participant reaches — refuse joiner=" << joiner_identity
                   << " call_id=" << call_id << " planned=" << in.planned_hop << " ranked=" << in.ranked_hops.size()
                   << " reports=" << in.reports.size();
-    return JoinOutcome::RefuseJoiner;
+    return JoinOutcome{JoinOutcome::Action::RefuseJoiner, std::nullopt};
   }
-  return JoinOutcome::Proceed;
+  return {};
 }
 
 std::vector<std::string> CallHopPlanning::UsableForMembers(const std::string& call_id,

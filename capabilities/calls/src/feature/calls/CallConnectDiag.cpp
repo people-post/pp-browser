@@ -33,7 +33,7 @@ int AddrFamily(const std::string& multiaddr) {
 }
 
 bool CallDiagBudget::Allow(const std::string_view call_id, const CallDiagEvent event) {
-  const std::string key = ShortCallId(call_id);
+  const std::string key = ShortRandomId(call_id);
   std::lock_guard lock(mu_);
   auto it = counts_.find(key);
   if (it == counts_.end()) {
@@ -202,7 +202,7 @@ void AddCounts(DiagLine& line, const AddrCounts& counts) {
 
 DiagLine CallNetLine(const std::string_view call_id, const bool offerer, const CallConnectEnv& env) {
   DiagLine line("call.net");
-  line.Call("call", call_id).Add("role", Role(offerer));
+  line.RandomId("call", call_id).Add("role", Role(offerer));
   line.Add("known", env.attachment_known)
       .Add("online", env.attachment.online)
       .Add("cellular", env.attachment.cellular)
@@ -220,7 +220,10 @@ DiagLine CallNetLine(const std::string_view call_id, const bool offerer, const C
 DiagLine CallSignalLine(const ShareWord phase, const std::string_view call_id, const std::vector<std::string>& addrs,
                         const int64_t age_ms, const bool implicit) {
   DiagLine line("call.signal");
-  line.Call("call", call_id).Add("phase", phase).Add("age_ms", std::max<int64_t>(age_ms, 0)).Add("implicit", implicit);
+  line.RandomId("call", call_id)
+      .Add("phase", phase)
+      .Add("age_ms", std::max<int64_t>(age_ms, 0))
+      .Add("implicit", implicit);
   AddCounts(line, CountAddrs(addrs));
   return line;
 }
@@ -228,7 +231,7 @@ DiagLine CallSignalLine(const ShareWord phase, const std::string_view call_id, c
 DiagLine CallReachOkLine(const std::string_view call_id, const bool offerer, const int attempt,
                          const mesh::PeerLinkKind kind, const bool reused, const int family, const int64_t ms) {
   DiagLine line("call.reach");
-  line.Call("call", call_id)
+  line.RandomId("call", call_id)
       .Add("role", Role(offerer))
       .Add("attempt", attempt)
       .Add("ok", true)
@@ -242,7 +245,7 @@ DiagLine CallReachOkLine(const std::string_view call_id, const bool offerer, con
 DiagLine CallReachFailLine(const std::string_view call_id, const bool offerer, const int attempt,
                            const mesh::PeerReachCoordinator::Failure& failure, const int64_t ms) {
   DiagLine line("call.reach");
-  line.Call("call", call_id)
+  line.RandomId("call", call_id)
       .Add("role", Role(offerer))
       .Add("attempt", attempt)
       .Add("ok", false)
@@ -254,14 +257,14 @@ DiagLine CallReachFailLine(const std::string_view call_id, const bool offerer, c
 
 DiagLine CallRelayLine(const ShareWord dir, const std::string_view call_id, const std::string_view relay_peer) {
   DiagLine line("call.relay");
-  line.Call("call", call_id).Add("dir", dir).Ref("relay", relay_peer);
+  line.RandomId("call", call_id).Add("dir", dir).Ref("relay", relay_peer);
   return line;
 }
 
 DiagLine CallPunchLine(const ShareWord phase, const std::string_view call_id, const int window_ms, const size_t addrs,
                        const int64_t ms) {
   DiagLine line("call.punch");
-  line.Call("call", call_id)
+  line.RandomId("call", call_id)
       .Add("phase", phase)
       .Add("window_ms", window_ms)
       .Add("addrs", addrs)
@@ -271,7 +274,7 @@ DiagLine CallPunchLine(const ShareWord phase, const std::string_view call_id, co
 
 DiagLine CallResultLine(const std::string_view call_id, const CallResultFacts& facts, const CallConnectEnv& env) {
   DiagLine line("call.result");
-  line.Call("call", call_id)
+  line.RandomId("call", call_id)
       .Add("role", Role(facts.offerer))
       .Add("ok", facts.ok)
       .Add("attempts", facts.attempts)

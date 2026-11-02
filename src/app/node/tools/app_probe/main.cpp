@@ -69,7 +69,7 @@
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/media/MediaEngine.h"
+#include "lib/media/IMediaView.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -312,21 +312,21 @@ public:
     out.set("show_invite", screen.show_invite);
     out.set("group", screen.group);
     if (calls_->Available()) {
-      if (MediaEngine* media = product_->Calls().Stack().Engine()) {
-        const auto health = media->HealthSnapshot();
-        out.set("media_active", media->IsActive());
-        out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
-        out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
-        out.set("sfu_mode", health.sfu_mode);
-        std::vector<Value> streams;
-        for (const MediaStreamHealth& stream : health.streams) {
-          Object row;
-          row.set("stream_id", static_cast<int64_t>(stream.stream_id));
-          row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
-          streams.push_back(ObjectValue(std::move(row)));
-        }
-        out.set("streams", ArrayValue(std::move(streams)));
+      IMediaView& media = calls_->Media();
+      const auto health = media.HealthSnapshot();
+      out.set("media_active", media.IsActive());
+      out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
+      out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
+      out.set("sfu_mode", health.packet_mode);
+      out.set("path", CallMediaPathName(calls_->MediaPath()));
+      std::vector<Value> streams;
+      for (const MediaStreamHealth& stream : health.streams) {
+        Object row;
+        row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+        row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
+        streams.push_back(ObjectValue(std::move(row)));
       }
+      out.set("streams", ArrayValue(std::move(streams)));
       std::vector<Value> joined;
       if (!last_call_id_.empty()) {
         if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {
@@ -898,8 +898,8 @@ public:
         Emit(out);
       }
     } else if (cmd == "push_wake") {
-      // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
-      BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      // A call push arrived (PushWakeJni: FCM → RequestUrgentWakeSync).
+      BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
       Emit(Reply(id, true));
     } else if (cmd == "warm_seeds") {
       if (!Hub().IsMeshReady()) {
@@ -1385,10 +1385,10 @@ int main(int argc, char** argv) {
     pbr::Emit(out);
   }
   // Frames as the app runs them (Application's loop, BrowserHost's power save): at once when UI
-  // work is posted, else after kCallChromeFrameIntervalSec while a ring / call panel shows, or
+  // work is posted, else after kLiveChromeFrameIntervalSec while a ring / call panel shows, or
   // kIdleFrameMaxWaitSec when idle. Each frame runs the UI tasks, then ticks (CallController::Tick).
   while (!probe->QuitRequested() && !stdin_closed) {
-    const double wait_sec = probe->CallShown() ? pbr::kCallChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
+    const double wait_sec = probe->CallShown() ? pbr::kLiveChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(wait_sec * 1000.0));
     while (!pbr::AppRuntime::HasPendingUITasks() && std::chrono::steady_clock::now() < deadline &&

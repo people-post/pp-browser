@@ -16,6 +16,7 @@
 #include <functional>
 #include "feature/calls/tests/call_media_inbound_fake.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/CallMediaDoorway.h"
 #include "feature/calls/tests/calls_on_owner.h"
 #include "common/MeshAlias.h"
 
@@ -147,14 +148,21 @@ protected:
     transport_ = std::make_unique<FakeTransport>();
     connect_ = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
     events_ = Loopback(connect_.get());
+    doorway_ = std::make_unique<CallMediaDoorway>(*transport_);
+    doorway_events_ = DoorwayLoopback(doorway_.get());
     dial_->connected.insert(kPeer);
   }
 
   void TearDown() override {
-    OnCallsOwner([&] { connect_->Shutdown(); });
+    OnCallsOwner([&] {
+      connect_->Shutdown();
+      doorway_->Shutdown();
+    });
     reach_->CancelAll();
     AppRuntime::Shutdown();
     events_.reset();
+    doorway_events_.reset();
+    doorway_.reset();
     connect_.reset();
     transport_.reset();
     reach_.reset();
@@ -192,6 +200,14 @@ protected:
     return loop;
   }
 
+  /** The fixture plays the session manager for the doorway. */
+  static std::unique_ptr<CallsLoopbackOutbox<DoorwayEvent>> DoorwayLoopback(CallMediaDoorway* doorway) {
+    auto loop =
+        std::make_unique<CallsLoopbackOutbox<DoorwayEvent>>([doorway](DoorwayEvent& event) { doorway->Handle(event); });
+    doorway->SetOutbox(loop->Get());
+    return loop;
+  }
+
   /** Pump UI and the calls owner until `done` or the budget runs out. */
   static bool PumpUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
     const auto until = std::chrono::steady_clock::now() + budget;
@@ -217,6 +233,9 @@ protected:
   std::unique_ptr<CallMediaConnectCoordinator> connect_;
   /** Reset before `connect_`: its queued events point at the coordinator. */
   std::unique_ptr<CallsLoopbackOutbox<ConnectEvent>> events_;
+  /** The device's inbound doorway on the same transport (its own loopback, reset before it). */
+  std::unique_ptr<CallMediaDoorway> doorway_;
+  std::unique_ptr<CallsLoopbackOutbox<DoorwayEvent>> doorway_events_;
   int before_attempts_ = 0;
   int finished_ = 0;
   std::optional<CallMediaRoe> result_;
@@ -482,7 +501,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
   EXPECT_EQ(transport_->connect_calls, 0);
 }
 
-// --- Inbound ---------------------------------------------------------------------------
+// --- Inbound (the device's doorway, V056) -------------------------------------------------
 
 /** Ports backed by test state (read on the calls owner). */
 struct InboundFixture {
@@ -530,7 +549,7 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundRejectedWithoutOpenSession) {
   InboundFixture fx;
   fx.session_open = false;
   fx.key_stored = true;
-  connect_->SetInboundPorts(fx.Ports());
+  doorway_->SetPorts(fx.Ports());
   auto params = InboundParams();
   CallMediaDirectCallbacks cbs;
   ASSERT_TRUE(transport_->DeliverHello(params, cbs));
@@ -542,7 +561,7 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundRejectedWithoutOpenSession) {
 TEST_F(CallMediaConnectCoordinatorTest, InboundAcceptedWhenKeyStored) {
   InboundFixture fx;
   fx.key_stored = true;
-  connect_->SetInboundPorts(fx.Ports());
+  doorway_->SetPorts(fx.Ports());
   auto params = InboundParams();
   CallMediaDirectCallbacks cbs;
   ASSERT_TRUE(transport_->DeliverHello(params, cbs));
@@ -557,14 +576,14 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundAcceptedWhenKeyStored) {
 // waits), asking for the key, and answered as soon as it lands.
 TEST_F(CallMediaConnectCoordinatorTest, InboundWaitsForKeyAndWakesOnNotify) {
   InboundFixture fx;
-  connect_->SetInboundKeyWaitMsForTest(10000);
-  connect_->SetInboundPorts(fx.Ports());
+  doorway_->SetKeyWaitMsForTest(10000);
+  doorway_->SetPorts(fx.Ports());
   auto answer = transport_->inbound.Deliver(InboundParams());
   ASSERT_TRUE(answer);
   ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
   EXPECT_FALSE(test::InboundHelloFake::Answered(answer)) << "parked until the key lands";
   fx.key_stored = true;
-  connect_->NotifyKeyAvailable();
+  doorway_->NotifyKeyAvailable();
   AppRuntime::RunUIAndOwnerTasks();
   ASSERT_TRUE(test::InboundHelloFake::Answered(answer)) << "the notify answers at once, not at the next poll";
   EXPECT_EQ(answer->params.media_key.size(), 32u);
@@ -573,8 +592,8 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundWaitsForKeyAndWakesOnNotify) {
 
 TEST_F(CallMediaConnectCoordinatorTest, InboundKeyTimeoutRejects) {
   InboundFixture fx;
-  connect_->SetInboundKeyWaitMsForTest(100);
-  connect_->SetInboundPorts(fx.Ports());
+  doorway_->SetKeyWaitMsForTest(100);
+  doorway_->SetPorts(fx.Ports());
   auto params = InboundParams();
   CallMediaDirectCallbacks cbs;
   ASSERT_TRUE(transport_->DeliverHello(params, cbs));
@@ -586,12 +605,12 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundKeyTimeoutRejects) {
 // THREADING.md: teardown answers (NACKs) a hello parked on the key and drops the raw-this handler.
 TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHandler) {
   InboundFixture fx;
-  connect_->SetInboundKeyWaitMsForTest(10000);
-  connect_->SetInboundPorts(fx.Ports());
+  doorway_->SetKeyWaitMsForTest(10000);
+  doorway_->SetPorts(fx.Ports());
   auto answer = transport_->inbound.Deliver(InboundParams());
   ASSERT_TRUE(answer);
   ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
-  OnCallsOwner([&] { connect_->Shutdown(); });
+  OnCallsOwner([&] { doorway_->Shutdown(); });
   ASSERT_TRUE(test::InboundHelloFake::Answered(answer)) << "answered by Shutdown itself";
   EXPECT_TRUE(answer->params.media_key.empty()) << "NACK";
   EXPECT_EQ(fx.accepted.load(), 0);
@@ -600,18 +619,19 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHand
   EXPECT_FALSE(transport_->DeliverHello(again, again_cbs)) << "handler cleared";
 }
 
-// CallSessionManager::AttachDirectPath builds the replacement path before destroying the old one.
-TEST_F(CallMediaConnectCoordinatorTest, DestroyingOldOwnerKeepsReplacementHandler) {
+// A replacement doorway installs its handler before the old one is destroyed: the old one must not
+// clear it on its way out.
+TEST_F(CallMediaConnectCoordinatorTest, DestroyingOldDoorwayKeepsReplacementHandler) {
   InboundFixture old_fx;
   InboundFixture new_fx;
   new_fx.key_stored = true;
-  connect_->SetInboundPorts(old_fx.Ports());
-  auto replacement = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
-  auto replacement_events = Loopback(replacement.get());
-  replacement->SetInboundPorts(new_fx.Ports());
-  events_.reset();
-  OnCallsOwner([&] { connect_ = std::move(replacement); });  // destroys the old owner
-  events_ = std::move(replacement_events);
+  doorway_->SetPorts(old_fx.Ports());
+  auto replacement = std::make_unique<CallMediaDoorway>(*transport_);
+  auto replacement_events = DoorwayLoopback(replacement.get());
+  replacement->SetPorts(new_fx.Ports());
+  doorway_events_.reset();
+  OnCallsOwner([&] { doorway_ = std::move(replacement); }); // destroys the old doorway
+  doorway_events_ = std::move(replacement_events);
   auto params = InboundParams();
   CallMediaDirectCallbacks cbs;
   ASSERT_TRUE(transport_->DeliverHello(params, cbs));

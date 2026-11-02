@@ -113,6 +113,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
+0. **Call model (V055)** — [PHASES § cm](PHASES.md#cm--call-model-v055): cm0 hygiene (done) → cm1 narrow interfaces (done) → cm2 one owner per fact (done) → cm3 per-call media paths (done) → cm4 thin session manager (done) → cm5 call concepts out of the layers below (done).
 1. Keep **pm** / **rd** / **cs** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
 2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
@@ -125,13 +126,12 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../capabilities/calls/src/lib/calls/CallMediaPlannerSelectLogic.h) |
-| Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
-| Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
+| Invent N025 listen from `TopPendingInvite` on tick | `CallStack::WantEphemeralListen` (a call is shown) only |
+| Duplicate listen desire elsewhere | The stack's desire only; it syncs the hub's N025 execution |
 | Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
 | Cache CSM/stores/seat/lifecycle on the plane (`LiveRefs`) | Stack `BindMediaProducts` + deps callbacks only; plane `BindBridge` takes args per call |
-| Hold `CallSessionManager*` on CallLifecycle | **V041** — `CallLifecycleSignalingPorts` from Stack |
-| Hold `CallMediaBridge*` on CallSessionManager | **V042** — `CallDirectMediaPorts` from Stack |
-| Hold `CallLifecycle*` / `CallMediaSeat*` on CSM | **V043** — Lifecycle/Seat ports + `WireTopology*` for child only |
+| Add a port bag through which an owned part calls back into its owner | **V055** — the owner calls what it owns; the part reports events on the owner's queue (V042 / V043's "no pointer" rule is withdrawn for owned children) |
+| Store a call fact (active call, path, failure, recovery) beside its owner | **V055** — one writer per fact (`LiveCall`; the rows: the session workflow); others read or send events |
 | Split one class across `.cpp` files for size | Helpers in same TU or a new type — [AGENTS.md](../../AGENTS.md#conventions); inbound arms merged into `CallSessionManager.cpp` |
 | Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` mesh-only; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
@@ -183,10 +183,17 @@ shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*Pl
    `CallTopologyController::Recovery()` replaces the four recovery flags the screen read;
    `RecoveryInFlight` is the old "awaiting SFU recovery".
 
-**Next, in order:** fold `accept_in_flight_` into `LiveCallState::Accepting`; make the seat's
-Live / Failed derive from `LiveCall` (drop the hand-paired `note_live` + `on_connected` writes);
-planners emit events into `LiveCall` (drop `report_progress` beside `Apply`); feed the engine's
-connection state in as an event (the screen stops reading the engine); one path value.
+**Landed in cm2 (V055):** the accept flag is `LiveCallState::Accepting`; the seat is the lock only
+(its media state and path, write-only, are gone — cm2a); the paths report as events (`DirectReport`,
+`HopReport`) instead of `report_progress` / `on_*` ports, and the owner arms and starts the deferred
+answerer itself (cm2b); the engine holds no call connection state — the bridge uses its own facts
+(stream committed, hop attached), the screen and the health bars read the call, and the dead "failed" /
+"disconnected" / raw-state branches are gone (cm2c); the path is one value on `LiveCall` — the
+coordinator's copy is gone and the screen reads the call's path, not the engine's packet mode (cm2d).
+
+**Landed in cm3 (V056):** each call's `CallMedia` (the coordinator, renamed) builds and owns its 1:1
+path and its group path; the bridge's and the hop's own call ids became per-path flags; the device keeps
+the doorway and the hop service; the session manager reaches a path only through the call's media.
 
 End state: [CALLS.md § Call state: one owner](../../docs/architecture/CALLS.md#call-state-one-owner).
 

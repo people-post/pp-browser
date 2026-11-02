@@ -814,6 +814,29 @@ TEST_F(CallGroupStackComposeTest, LeaveRotatesTheMediaKeyForTheRest) {
   EXPECT_EQ(**b, **c) << "B and C must share the rotated key";
 }
 
+// V055: the session workflow writes the call's row; the hop path only notes the hop. Each fact lands on
+// the row as it is then — the hop the call is on survives the rotation, and the rotated epoch is not
+// undone by a hop recorded from a row read before it.
+TEST_F(CallGroupStackComposeTest, TheRowKeepsTheHopAndTheRotatedEpoch) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  auto row = [&](size_t i) { return sides_[i].stack->Sessions()->LoadSession(call_id); };
+  DrainUntil([&]() {
+    PumpWire();
+    auto b = row(kB);
+    auto c = row(kC);
+    return b && b->has_value() && (*b)->media_epoch == 2 && c && c->has_value() && (*c)->media_epoch == 2;
+  });
+  for (size_t i : {kB, kC}) {
+    auto session = row(i);
+    ASSERT_TRUE(session && session->has_value()) << "side " << i;
+    EXPECT_EQ((*session)->media_epoch, 2u) << "side " << i << " is not on the rotated epoch:" << Describe(call_id);
+    EXPECT_EQ((*session)->sfu_hint.value_or(""), kHopPeerId) << "side " << i << " lost the hop the call is on";
+  }
+}
+
 // V050 gt3: the initiator plans the hop from the invite list at StartCall — every invitee holds it
 // before anyone accepts, nobody attaches during the 1:1 phase, and the third join migrates onto
 // the planned hop even when another hop ranks first by then.

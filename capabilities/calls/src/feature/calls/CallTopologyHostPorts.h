@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 
 #include "common/Error.h"
 
@@ -12,7 +12,7 @@
 namespace pbr {
 
 /**
- * CSM → Topology side effects (V046).
+ * CallDevice → Topology side effects (V046).
  * Topology projects a migrate subset into CallHopMigrateHostPorts for owned Workflow.
  */
 struct CallTopologyHostPorts {
@@ -30,9 +30,8 @@ struct CallTopologyHostPorts {
   std::function<void(std::string message)> set_media_activity;
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
-  std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
-  std::function<void()> clear_media_peer_identity;
+  /** The call's `CallMedia` (engine + seat use); null for a call not admitted here. */
+  std::function<CallMedia*(const std::string& call_id)> call_media;
   /** Guest WaitForAttach — force relay inbox poll for CallSfuAttach. */
   std::function<void()> request_inbox_sync;
 
@@ -47,11 +46,6 @@ struct CallTopologyHostPorts {
   void NotifyRingChanged() const {
     if (notify_ring_changed) {
       notify_ring_changed();
-    }
-  }
-  void ClearMediaPeerIdentity() const {
-    if (clear_media_peer_identity) {
-      clear_media_peer_identity();
     }
   }
   void RequestInboxSync() const {

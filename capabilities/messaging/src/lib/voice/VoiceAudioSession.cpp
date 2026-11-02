@@ -1,24 +1,24 @@
 #include "lib/voice/VoiceAudioSession.h"
 
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 
 namespace pbr {
 namespace VoiceAudioSession {
 
 void ActivateForPlayback() {
-  CallAudioSession::ActivateForVoicePlayback();
+  AudioSession::ActivateForVoicePlayback();
 }
 
 void ActivateForRecording() {
-  CallAudioSession::ActivateForVoiceRecording();
+  AudioSession::ActivateForVoiceRecording();
 }
 
 void RestoreForPlayback() {
-  CallAudioSession::ActivateForVoicePlayback();
+  AudioSession::ActivateForVoicePlayback();
 }
 
 void Release() {
-  CallAudioSession::ReleaseVoice();
+  AudioSession::ReleaseVoice();
 }
 
 } // namespace VoiceAudioSession

@@ -43,7 +43,7 @@ const void* CallUiBackend::SessionsIdentity() const {
 
 void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
   // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
-  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallSessionManager& calls) { calls.SetOnRingChanged(ring); });
+  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallDevice& calls) { calls.SetOnRingChanged(ring); });
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
@@ -76,10 +76,6 @@ std::function<void(R)> CallUiBackend::ReplyOnUi(std::function<void(R)> on_done) 
 
 void CallUiBackend::SweepExpiredInvites() {
   OnOwner([](CallSessionManager& calls) { calls.SweepExpiredInvites(); });
-}
-
-void CallUiBackend::PollP2pConnectHealth() {
-  OnOwner([](CallSessionManager& calls) { calls.PollP2pConnectHealth(); });
 }
 
 void CallUiBackend::ClearMediaActivity() {
@@ -209,19 +205,12 @@ CallUiBackend::Surface CallUiBackend::Settle() {
     // LeaveClicked sets Idle before LeaveCall IO finishes: do not resurrect the panel from the
     // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
     if (Phase() == CallPhase::Idle) {
-      if (call.state == CallSessionState::Active && !Media().IsActive() &&
-          !MediaAttemptedThisProcess(call.call_id) && !IsAwaitingSfuRecovery()) {
-        LeaveCall(call.call_id, LiveCallEndReason::Orphaned);  // a true orphan: force-quit / restart
+      if (call.state == CallSessionState::Active) {
+        // A true orphan (force-quit / restart) is the calls owner's to judge and leave.
+        OnOwner([call_id = call.call_id](CallSessionManager& calls) { calls.LeaveIfOrphaned(call_id); });
       }
       surface.active.reset();
       return surface;
-    }
-    // Direct connect failed: the state callback may not have marked it yet (ordering). Never leave
-    // on `failed` here: that erased the session before the user could retry.
-    if (Media().IsActive() && Media().ActiveCallId() == call.call_id &&
-        Media().ConnectionState() == "failed" && !IsAwaitingSfuRecovery() && !Media().IsSfuMode() &&
-        !IsP2pConnectFailed()) {
-      PollP2pConnectHealth();
     }
     surface.kind = Surface::Kind::InCall;
     return surface;
@@ -235,81 +224,71 @@ CallUiBackend::Surface CallUiBackend::Settle() {
 // --- durable state -------------------------------------------------------------------------------
 
 Roe<std::optional<PendingCallInvite>> CallUiBackend::TopPendingInvite() {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeekTopPendingInvite();
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->TopPendingInvite();
   }
   return UnavailableError();
 }
 
 std::optional<std::string> CallUiBackend::JoinableCallInThread(const std::string& thread_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->JoinableCallInThread(thread_id);
-  }
-  return std::nullopt;
+  const CallReads* reads = stack_.Reads();
+  auto call = reads ? reads->JoinableCallInThread(thread_id) : std::nullopt;
+  return call ? std::optional<std::string>(call->call_id) : std::nullopt;
 }
 
 Roe<std::optional<CallSession>> CallUiBackend::ActiveLocalCall() {
-  if (auto* calls = stack_.Calls()) {
-    return calls->ActiveLocalCall();
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->ActiveLocalCall();
   }
   return UnavailableError();
 }
 
 Roe<std::optional<std::string>> CallUiBackend::PeerIdentityForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeerIdentityForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->PeerIdentityForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeerVideoEnabledForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->PeerVideoEnabledForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->VideoAllowedForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->VideoAllowedForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<bool> CallUiBackend::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->AwaitingExplicitAnswerForCall(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->AwaitingExplicitAnswerForCall(call_id);
   }
   return UnavailableError();
 }
 
 Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->ListJoinedParticipants(call_id);
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->JoinedParticipants(call_id);
   }
   return UnavailableError();
 }
 
 int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->InitiationOfferMinorForPeer(peer_identity);
-  }
-  return 0;
+  const CallReads* reads = stack_.Reads();
+  return reads ? reads->InitiationOfferMinorForPeer(peer_identity) : 0;
 }
 
-bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->MediaAttemptedThisProcess(call_id);
-  }
-  return false;
-}
-
-MediaEngine& CallUiBackend::Media() {
-  auto* calls = stack_.Calls();
-  if (!calls) {
+IMediaView& CallUiBackend::Media() {
+  MediaEngine* engine = stack_.Engine();
+  if (!engine) {
     throw std::runtime_error("CallUiBackend::Media unavailable");
   }
-  return calls->Media();
+  return *engine;
 }
 
 } // namespace pbr

@@ -16,7 +16,7 @@
 namespace pbr {
 
 /**
- * What the 1:1 path runs on, handed to the session manager (which owns the path) when mesh media is
+ * What the 1:1 path runs on, handed to the device (CallDevice builds each call's path from it) when mesh media is
  * wired: the call-media transport and the mesh reach it dials through (not owned), the rendezvous
  * seed hooks, and this pair's path policy.
  */

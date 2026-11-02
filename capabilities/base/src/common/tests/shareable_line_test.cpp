@@ -57,9 +57,9 @@ TEST(ShareableLineTest, RefJoinsOneRunWithoutShowingTheId) {
 }
 
 TEST(ShareableLineTest, CallKeepsEightHexOfARandomCallIdOnly) {
-  EXPECT_EQ(DiagLine("x").Call("call", "call:0123456789abcdef0123456789abcdef").str(), "event=x call=01234567");
-  EXPECT_EQ(DiagLine("x").Call("call", "alice@example.com").str(), "event=x call=?");
-  EXPECT_EQ(MetricsCallId("call:89abcdef01234567"), "89abcdef");
+  EXPECT_EQ(DiagLine("x").RandomId("call", "call:0123456789abcdef0123456789abcdef").str(), "event=x call=01234567");
+  EXPECT_EQ(DiagLine("x").RandomId("call", "alice@example.com").str(), "event=x call=?");
+  EXPECT_EQ(ShortRandomId("call:89abcdef01234567"), "89abcdef");
 }
 
 TEST(ShareableLineTest, FailWritesCategoryAndCodeNeverTheMessage) {

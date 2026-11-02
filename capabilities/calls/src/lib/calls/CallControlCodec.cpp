@@ -166,7 +166,7 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   if (detail.offer_amount_minor > 0 || detail.floor_minor > 0) {
     json.set("offer_amount_minor", detail.offer_amount_minor);
     json.set("floor_minor", detail.floor_minor);
-    json.set("currency", detail.currency.empty() ? "pp_credit" : detail.currency);
+    json.set("currency", detail.currency.empty() ? std::string(kPricingCurrencyId) : detail.currency);
   }
   json.set("video_allowed", detail.video_allowed);
   return DumpJson(json);
@@ -198,7 +198,7 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.caps = ReadPeerCaps(*json);
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
   detail.floor_minor = json->getIf<int64_t>("floor_minor").value_or(0);
-  detail.currency = json->getString("currency").value_or("pp_credit");
+  detail.currency = json->getString("currency").value_or(std::string(kPricingCurrencyId));
   if (json->contains("video_allowed")) {
     detail.video_allowed = json->getIf<bool>("video_allowed").value_or(false);
   } else {
@@ -218,8 +218,8 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("libp2p_peer_id", detail.libp2p_peer_id);
   }
   WritePeerCaps(json, detail.caps);
-  if (detail.offer_amount_minor > 0 || detail.charge_decision == "take_all") {
-    json.set("charge_decision", detail.charge_decision.empty() ? "waive" : detail.charge_decision);
+  if (detail.offer_amount_minor > 0 || detail.charge_decision == InitiationChargeDecision::TakeAll) {
+    json.set("charge_decision", InitiationChargeDecisionToWire(detail.charge_decision));
     json.set("offer_amount_minor", detail.offer_amount_minor);
   }
   if (detail.video_allowed.has_value()) {
@@ -248,7 +248,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.listen_multiaddrs = ReadStringArray(*json, "listen_multiaddrs");
   detail.libp2p_peer_id = json->getString("libp2p_peer_id").value_or("");
   detail.caps = ReadPeerCaps(*json);
-  detail.charge_decision = json->getString("charge_decision").value_or("waive");
+  detail.charge_decision = InitiationChargeDecisionFromWire(json->getString("charge_decision").value_or(""));
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
   if (auto v = json->getIf<bool>("video_allowed")) {
     detail.video_allowed = *v;

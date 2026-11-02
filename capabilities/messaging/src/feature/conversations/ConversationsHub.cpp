@@ -1415,7 +1415,7 @@ void ConversationsHub::StartCoordinatorTimers() {
   // Relay poll must not depend on ChatController::WireMessagingBindings (can skip if UI
   // wiring races unlock). Own the sync handler here as soon as messaging is ready.
   BackgroundSyncScheduler::Instance().SetSyncHandler([this](bool force) {
-    const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeCallWake();
+    const bool call_wake = BackgroundSyncScheduler::Instance().ConsumeUrgentWake();
     if (call_wake && on_call_wake_) {
       AppRuntime::PostUI([this]() {
         if (on_call_wake_) {

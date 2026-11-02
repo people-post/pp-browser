@@ -73,13 +73,13 @@ struct BroadcastViewerWorkflow::FrameSink {
       rejected.fetch_add(1, std::memory_order_relaxed);
       return;
     }
-    MediaEngine::SfuPacket packet;
+    MediaEngine::MediaPacket packet;
     packet.stream_id = stream_id;
     packet.channel_id = frame.channel_id;
     packet.seq = opened->seq;
     packet.mark = opened->mark;
     packet.payload = std::move(opened->payload);
-    engine->OnSfuPacket(packet);
+    engine->OnInboundPacket(packet);
   }
 };
 

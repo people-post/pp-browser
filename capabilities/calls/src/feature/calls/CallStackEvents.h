@@ -66,7 +66,7 @@ struct SessionsCommand {
   std::function<void(CallSessionManager* calls)> run;
 };
 
-/** An event the session manager's subtree reported to itself; `generation` names that manager. */
+/** An event the device's parts reported; `generation` names that device. */
 struct ForSessions {
   uint64_t generation = 0;
   SessionEvent event;

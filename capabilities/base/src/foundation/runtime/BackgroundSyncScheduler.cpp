@@ -62,14 +62,14 @@ void BackgroundSyncScheduler::RequestWakeSync() {
   AppRuntime::PostCoordinatorCritical([this]() { RunScheduledSync(true); });
 }
 
-void BackgroundSyncScheduler::RequestCallWakeSync() {
-  pending_call_wake_ = true;
+void BackgroundSyncScheduler::RequestUrgentWakeSync() {
+  pending_urgent_wake_ = true;
   RequestWakeSync();
 }
 
-bool BackgroundSyncScheduler::ConsumeCallWake() {
-  const bool was = pending_call_wake_;
-  pending_call_wake_ = false;
+bool BackgroundSyncScheduler::ConsumeUrgentWake() {
+  const bool was = pending_urgent_wake_;
+  pending_urgent_wake_ = false;
   return was;
 }
 
@@ -83,16 +83,15 @@ void BackgroundSyncScheduler::RunScheduledSync(bool force) {
   }
   if (!force) {
     // In the background a phone is reached by push only (P010): no poll of its own, even inside a
-    // wake window (the wake's own sync fetched the inbox) — unless a call is on (its signaling may
-    // come through the relay) or it stays connected (P011).
+    // wake window (the wake's own sync fetched the inbox) — unless a live session is on (a call: its
+    // signaling may come through the relay) or it stays connected (P011).
     const bool foreground = AppLifecycle::IsForeground();
-    const bool call = AppLifecycle::CallInProgress();
-    if (!foreground && !call && !AppLifecycle::StaysConnected()) {
+    const bool live = AppLifecycle::LiveSessionOn();
+    if (!foreground && !live && !AppLifecycle::StaysConnected()) {
       return;
     }
     const uint64_t now = util::NowUnixMs();
-    const uint64_t interval =
-        foreground || call ? kForegroundRelayPollIntervalMs : kStayConnectedRelayPollIntervalMs;
+    const uint64_t interval = foreground || live ? kForegroundRelayPollIntervalMs : kStayConnectedRelayPollIntervalMs;
     if (now - last_poll_ms_ < interval) {
       return;
     }

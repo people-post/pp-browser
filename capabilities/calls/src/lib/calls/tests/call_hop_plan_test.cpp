@@ -279,5 +279,23 @@ TEST(CallHopReportTest, WhatAnInviteeReports) {
   EXPECT_EQ(report.planned_hop_ok, std::optional<bool>(false));
 }
 
+// #385: a group call's SFU hop is a durable relay when one is usable; a contact's node is the fallback.
+TEST(CallHopPlanTest, DurableRelaysComeBeforeContactsNodes) {
+  auto hop = [](const std::string& id, mesh::MeshHopAffinity affinity) {
+    mesh::MeshHopCandidate c;
+    c.peer_id = id;
+    c.affinity = affinity;
+    return c;
+  };
+  const auto ranked = DurableRelaysFirst(
+      {hop("friend-lan", mesh::MeshHopAffinity::Contact), hop("dir", mesh::MeshHopAffinity::DirectoryNode),
+       hop("friend", mesh::MeshHopAffinity::Contact), hop("seed", mesh::MeshHopAffinity::OrgSeed)});
+  std::vector<std::string> ids;
+  for (const auto& c : ranked) {
+    ids.push_back(c.peer_id);
+  }
+  EXPECT_EQ(ids, (std::vector<std::string>{"dir", "seed", "friend-lan", "friend"})) << "each part keeps its order";
+}
+
 } // namespace
 } // namespace pbr

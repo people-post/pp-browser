@@ -23,6 +23,7 @@
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "feature/calls/tests/call_media_inbound_fake.h"
+#include "feature/calls/tests/seeded_session_key.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -233,10 +234,13 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   side.ui = std::make_unique<CallUiBackend>(*side.stack);
 
   CallStackDeps deps;
-  deps.store = side.store.get();
+  deps.threads = side.store.get();
+  deps.transcript = side.store.get();
   deps.contacts = side.contacts.get();
-  deps.identity = side.identity.get();
-  deps.psk = side.psk;
+  deps.account = side.identity.get();
+  deps.delivery.ensure_peer_session_key = [&side](const std::string& peer) {
+    return SeededSessionKey(*side.psk, peer);
+  };
   deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
                                        const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
     if (side.on_send) {

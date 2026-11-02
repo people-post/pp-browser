@@ -6,6 +6,14 @@
 #include <algorithm>
 
 namespace pbr {
+
+std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops) {
+  std::stable_partition(hops.begin(), hops.end(), [](const mesh::MeshHopCandidate& hop) {
+    return hop.affinity == mesh::MeshHopAffinity::OrgSeed || hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
+           hop.affinity == mesh::MeshHopAffinity::DhtDiscovered;
+  });
+  return hops;
+}
 namespace {
 
 bool AnySameSubnet24(const std::vector<std::string>& local_mas, const std::string& remote_ma) {

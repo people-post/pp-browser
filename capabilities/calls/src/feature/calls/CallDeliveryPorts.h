@@ -14,7 +14,7 @@
 namespace pbr {
 
 /**
- * Delivery ops CallSessionManager needs from conversations (consumer-declared).
+ * Delivery ops the calls (CallDevice) need from conversations (consumer-declared).
  * Softens calls→conversations: calls must not include MeshDeliveryOrchestrator.
  */
 struct CallDeliveryPorts {
@@ -42,8 +42,6 @@ struct CallDeliveryPorts {
   /** Who is in a group now (identities); none when this device does not know the group. */
   std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
   std::function<void(bool force)> sync_inbox_from_wake;
-  /** Register a dialable multiaddr for a peer identity (call listen bootstrap). */
-  std::function<void(const std::string& identity, const std::string& multiaddr)> register_peer_direct_endpoint;
   /**
    * Ensure e2e_public session key for media-key wrap (AutoKey if missing).
    * When `first_message_key_init_b64` is set, it rides the next control-lane send to that peer.

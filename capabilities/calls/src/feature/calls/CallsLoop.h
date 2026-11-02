@@ -45,13 +45,9 @@ public:
 
   /** From any thread. */
   void Enqueue(CallStackEvent event);
-  /** Ahead of queued events — only for an ordering the owner documents at the call site. */
-  void EnqueueFront(CallStackEvent event);
   /** `event` after `delay` (owner); 0 when not scheduled. */
   OwnerExecutor::TimerId After(std::chrono::milliseconds delay, CallStackEvent event);
   void Cancel(OwnerExecutor::TimerId& id) { tasks_.Cancel(id); }
-  /** Drop what is queued or scheduled; later events run normally. */
-  void DropPending() { tasks_.DropPending(); }
   /** Teardown, on the owner: drop everything and refuse more (refs included). */
   void Close() { tasks_.Close(); }
   Ref Share() { return Ref(tasks_.Share(), this); }

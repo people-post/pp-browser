@@ -2,7 +2,7 @@
 # the platform's) and the media engine (MediaEngine: capture, encode, send / receive, decode, play).
 pp_browser_add_lib_library(pp_lib_media
   SOURCES
-    CallAudioSessionHolds.cpp
+    AudioSessionHolds.cpp
     DecodeStallPolicy.h
     GuardedVideoCodec.cpp
     MediaDeviceArbiter.cpp
@@ -25,7 +25,7 @@ if(WIN32)
     VideoCodec_Win32.cpp
     CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
-    CallAudioSession_Default.cpp
+    AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Default.cpp
     MicPermission_Default.cpp
@@ -41,7 +41,7 @@ elseif(APPLE)
     "-framework CoreFoundation")
   if(PP_BROWSER_IS_IOS)
     target_sources(pp_lib_media PRIVATE
-      CallAudioSession_Ios.mm
+      AudioSession_Ios.mm
       CameraCandidates_Default.cpp
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
@@ -49,7 +49,7 @@ elseif(APPLE)
     target_link_libraries(pp_lib_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox" "-framework CoreMotion")
   else()
     target_sources(pp_lib_media PRIVATE
-      CallAudioSession_Default.cpp
+      AudioSession_Default.cpp
       CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
       SdlAudioBootstrap_Default.cpp
@@ -61,7 +61,7 @@ elseif(ANDROID)
     VideoCodec_Android.cpp
     CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
-    CallAudioSession_Android.cpp
+    AudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
     SdlAudioBootstrap_Default.cpp
     MicPermission_Android.cpp
@@ -72,7 +72,7 @@ else()
     VideoCodec_Linux.cpp
     CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
-    CallAudioSession_Default.cpp
+    AudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
     SdlAudioBootstrap_Linux.cpp
     MicPermission_Default.cpp

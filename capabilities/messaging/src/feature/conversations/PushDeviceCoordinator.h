@@ -15,6 +15,10 @@ class ConversationsHub;
 class PushDeviceCoordinator {
 public:
   static Roe<void> Register(ConversationsHub& hub);
+  /** Removes this device's bindings from the running backend (a failed one leaves them there). */
+  static Roe<void> Unregister(ConversationsHub& hub);
+  /** A saved backend switch (applied on restart) removes the binding now; undoing it registers again. */
+  static void OnBackendSwitchPending(ConversationsHub& hub, bool pending);
 };
 
 } // namespace pbr

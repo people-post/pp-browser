@@ -15,7 +15,7 @@ TEST(LiveCallMediaTest, OneCoordinatorPerAdmission) {
   live.AdmitPlaced("call:a", {"account:peer"});
   EXPECT_EQ(media.Media("call:a"), nullptr) << "no engine bound yet";
   media.BindMediaResources(&engine, nullptr);
-  CallMediaCoordinator* first = media.Media("call:a");
+  CallMedia* first = media.Media("call:a");
   ASSERT_NE(first, nullptr);
   EXPECT_EQ(media.Media("call:a"), first) << "the same admission keeps it";
   EXPECT_EQ(media.Media("call:unknown"), nullptr) << "never admitted here";
@@ -25,9 +25,9 @@ TEST(LiveCallMediaTest, OneCoordinatorPerAdmission) {
   EXPECT_EQ(media.Media("call:a"), first) << "an ended call keeps it for its stops";
 
   live.AdmitPlaced("call:a", {"account:peer"});
-  CallMediaCoordinator* second = media.Media("call:a");
+  CallMedia* second = media.Media("call:a");
   ASSERT_NE(second, nullptr);
-  EXPECT_EQ(second->MediaPath(), CallMediaPath::Undecided) << "a re-admitted id starts fresh";
+  EXPECT_EQ(live.Path("call:a"), CallMediaPath::Undecided) << "a re-admitted id starts fresh";
 }
 
 } // namespace

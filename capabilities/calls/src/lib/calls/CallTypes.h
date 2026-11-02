@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallMobility.h"
+#include "lib/pricing/PricingTypes.h"
 
 #include <cstdint>
 #include <optional>
@@ -234,7 +235,7 @@ struct CallInviteDetail {
   int64_t offer_amount_minor = 0;
   /** Peer's advertised floor used when preparing the offer (informational). */
   int64_t floor_minor = 0;
-  std::string currency = "pp_credit";
+  std::string currency = kPricingCurrencyId;
 };
 
 /**
@@ -260,11 +261,8 @@ struct CallAcceptDetail {
   std::string libp2p_peer_id;
   /** Optional capability ads (additive; old peers ignore). */
   CallPeerCaps caps;
-  /**
-   * Recipient charge decision for initiation offer (P001).
-   * "waive" | "take_all"; missing → waive (compat / free path).
-   */
-  std::string charge_decision = "waive";
+  /** Recipient charge decision for initiation offer (P001); missing on the wire → waive (compat / free path). */
+  InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive;
   /** Echo of offer amount being waived or taken. */
   int64_t offer_amount_minor = 0;
   /** Callee's answer mode: absent = unchanged (old peers, video answer); false = answered as voice

@@ -67,6 +67,8 @@ public:
   Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string& thread_id,
                                                                   int64_t after_display_order) const override;
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;
+  /** One step under the store's lock, as the SQLite store's single statement: two writers never both append. */
+  Roe<ThreadMessage> UpsertMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
   Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const override;
   Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) override;
@@ -143,6 +145,7 @@ private:
   std::optional<Thread> FindDirectThreadLocked(const DirectChatTarget& target) const;
   Thread UpsertThreadLocked(const Thread& thread);
   Roe<ThreadMessage> AppendMessageLocked(const ThreadMessage& message);
+  bool UpdateMessageLocked(const ThreadMessage& message);
 
   mutable std::mutex mutex_;
   std::map<std::string, Thread> threads_;

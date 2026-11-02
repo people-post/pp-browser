@@ -25,7 +25,7 @@ enum class InterruptionKind {
   OverlayLayer,
   Dialog,
   CallRing,
-  CallInProgress,
+  LiveSessionOn,
   PinGate,
 };
 

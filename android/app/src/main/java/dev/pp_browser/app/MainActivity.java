@@ -567,19 +567,19 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
+     * Called from native {@code AudioSession} when a VoIP call starts/ends.
      * Phones: {@link AudioManager#MODE_IN_COMMUNICATION} for earpiece/speaker routing.
      * Speaker-only tablets (no earpiece): stay in {@link AudioManager#MODE_NORMAL} so
      * SDL AAudio MEDIA streams are not ducked (API &lt; 28 cannot set
      * {@code AAUDIO_USAGE_VOICE_COMMUNICATION} — SM-T380 whisper-quiet dogfood).
      */
-    public void setCallAudioSessionActive(boolean active) {
+    public void setAudioSessionActive(boolean active) {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return;
         }
         if (active) {
-            final boolean speakerOnly = !hasCallEarpieceRoute();
+            final boolean speakerOnly = !hasEarpieceRoute();
             if (speakerOnly) {
                 am.setMode(AudioManager.MODE_NORMAL);
                 am.setSpeakerphoneOn(true);
@@ -602,11 +602,11 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession.SupportsSpeakerToggle}.
+     * Called from native {@code AudioSession.SupportsSpeakerToggle}.
      * Phones expose {@link AudioDeviceInfo#TYPE_BUILTIN_EARPIECE}; tablets (e.g. SM-T380)
      * only have the loudspeaker, so FORCE_SPEAKER vs FORCE_NONE is inaudible.
      */
-    public boolean hasCallEarpieceRoute() {
+    public boolean hasEarpieceRoute() {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return false;
@@ -623,16 +623,16 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} for in-call speaker / earpiece.
+     * Called from native {@code AudioSession} for in-call speaker / earpiece.
      * Synchronous: ToggleSpeaker reopens SDL capture immediately after this returns.
      */
-    public void setCallSpeakerphoneOn(boolean on) {
+    public void setVoipSpeakerphoneOn(boolean on) {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return;
         }
-        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setCallAudioSessionActive).
-        if (!hasCallEarpieceRoute()) {
+        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setAudioSessionActive).
+        if (!hasEarpieceRoute()) {
             am.setSpeakerphoneOn(true);
             ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
             return;
@@ -712,7 +712,7 @@ public class MainActivity extends SDLActivity {
      * API 31+: the call's communication device — the loudspeaker when chosen, else a connected
      * headset, else the earpiece, as the phone's own calls do. A no-op when already there:
      * re-applying a route retriggers OEM device changes (Moto MotSpeakerHelper, see
-     * setCallSpeakerphoneOn).
+     * setVoipSpeakerphoneOn).
      */
     @TargetApi(Build.VERSION_CODES.S)
     private void setCommunicationRoute(AudioManager am, boolean speakerOn) {

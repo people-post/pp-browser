@@ -110,13 +110,13 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
                                   uint64_t order_key);
 
 /**
- * Call control prefers the relay when a route is known (Amp's open + ack per message races the
+ * Control-lane signaling (call control) prefers the relay when a route is known (Amp's open + ack per message races the
  * media setup); everything else tries Amp first when the peer is reachable there.
  */
 bool DirectSendTriesAmpFirst(bool amp_reachable, bool has_relay_route, bool critical_lane);
 
 /**
- * #431 (a): call control to a peer with a live link goes over it as well as by the relay — at once,
+ * #431 (a): control-lane signaling to a peer with a live link goes over it as well as by the relay — at once,
  * not after a relay failure. The relay is kept (it reaches every device and survives a link that is
  * about to drop); the receiver's control lane takes the first copy and drops the other.
  */

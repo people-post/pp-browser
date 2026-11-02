@@ -49,11 +49,9 @@ std::string ShareableRef(std::string_view id) {
   return hex;
 }
 
-std::string ShortCallId(std::string_view call_id) {
-  if (call_id.substr(0, 5) == "call:") {
-    call_id.remove_prefix(5);
-  }
-  return std::string(call_id.substr(0, 8));
+std::string ShortRandomId(std::string_view id) {
+  id = WithoutScheme(id);
+  return std::string(id.substr(0, 8));
 }
 
 ShareableLine::ShareableLine(logging::Logger& sink, const ShareWord event) : sink_(&sink) {
@@ -102,9 +100,9 @@ ShareableLine& ShareableLine::Ref(const ShareWord key, const std::string_view id
   return AddRaw(key, ShareableRef(id));
 }
 
-ShareableLine& ShareableLine::Call(const ShareWord key, const std::string_view call_id) {
-  // Hex only: a call id is random hex, and anything else must not slip through as a "call id".
-  std::string short_id = ShortCallId(call_id);
+ShareableLine& ShareableLine::RandomId(const ShareWord key, const std::string_view id) {
+  // Hex only: a random id is hex, and anything else must not slip through as one.
+  std::string short_id = ShortRandomId(id);
   for (const char c : short_id) {
     const bool hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     if (!hex) {
