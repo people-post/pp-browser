@@ -13,23 +13,24 @@ TEST(AttachmentLimitsTest, VideoSecondsDefaultToTwelveAndVideoWithinLimitIsInclu
   EXPECT_TRUE(VideoWithinLimit(0, limits));
   EXPECT_TRUE(VideoWithinLimit(limits.max_video_bytes, limits));
   EXPECT_FALSE(VideoWithinLimit(limits.max_video_bytes + 1, limits));
-  limits.max_video_bytes = kLargeAttachmentMaxBytes;
-  EXPECT_TRUE(VideoWithinLimit(kLargeAttachmentMaxBytes - 1, limits)) << "follows the video limit, not the 4 MB default";
+  limits.max_video_bytes = 100'000'000;
+  EXPECT_TRUE(VideoWithinLimit(100'000'000 - 1, limits)) << "follows the video limit, not the default";
 }
 
-TEST(AttachmentLimitsTest, ShippingDefaultsAreFourMegabytesAndTheLargeSizeIsNamed) {
+TEST(AttachmentLimitsTest, ShippingDefaultsAreFiftyMegabytesForSendAndReceive) {
   const AttachmentLimits limits = DefaultAttachmentLimits();
-  // Step 1 ships the small size for send and receive; the 100 MB default arrives with streaming (step 2),
-  // which flips only these two constants.
-  EXPECT_EQ(kDefaultAttachmentSendMaxBytes, 4'000'000u);
-  EXPECT_EQ(kDefaultAttachmentReceiveMaxBytes, 4'000'000u);
-  EXPECT_EQ(kLargeAttachmentMaxBytes, 100'000'000u);
+  // One 50 MB limit for send and receive; shrunk pictures and automatic downloads stay at 4 MB.
+  EXPECT_EQ(kLargeAttachmentMaxBytes, 50'000'000u);
+  EXPECT_EQ(kDefaultAttachmentSendMaxBytes, kLargeAttachmentMaxBytes);
+  EXPECT_EQ(kDefaultAttachmentReceiveMaxBytes, kLargeAttachmentMaxBytes);
   EXPECT_EQ(limits.max_original_image_bytes, kDefaultAttachmentSendMaxBytes);
   EXPECT_EQ(limits.max_file_bytes, kDefaultAttachmentSendMaxBytes);
   EXPECT_EQ(limits.max_video_bytes, kDefaultAttachmentSendMaxBytes);
   EXPECT_EQ(limits.max_audio_bytes, kDefaultAttachmentSendMaxBytes);
   EXPECT_EQ(limits.max_receive_bytes, kDefaultAttachmentReceiveMaxBytes);
   EXPECT_EQ(limits.max_image_bytes, 4'000'000u);
+  EXPECT_EQ(limits.auto_download_max_bytes, 4'000'000u);
+  EXPECT_EQ(limits.stay_hint_bytes, 10'000'000u);
   EXPECT_EQ(limits.voice_max_seconds, 120);
   EXPECT_EQ(limits.warn_percent_low, 80);
   EXPECT_EQ(limits.warn_percent_high, 90);
@@ -60,6 +61,7 @@ TEST(AttachmentLimitsTest, EachKindHasItsOwnSendLimit) {
 
 TEST(AttachmentLimitsTest, LimitIsWrittenInDecimalMegabytes) {
   EXPECT_EQ(FormatAttachmentLimit(4'000'000), "4 MB");
+  EXPECT_EQ(FormatAttachmentLimit(kLargeAttachmentMaxBytes), "50 MB");
   EXPECT_EQ(FormatAttachmentLimit(100'000'000), "100 MB");
 }
 

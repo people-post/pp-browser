@@ -11,14 +11,13 @@ namespace pbr {
 /** One user-facing megabyte: decimal, the same unit the on-screen limits are written in. */
 inline constexpr uint64_t kAttachmentMegabyte = 1000ULL * 1000ULL;
 
-/** The size the larger tiers are planned for (video, files, audio, original pictures, receiving). */
-inline constexpr uint64_t kLargeAttachmentMaxBytes = 100ULL * kAttachmentMegabyte;
 /**
- * What ships today. Streaming upload / download (step 2) is not in yet, so send and receive stay at the
- * small size; step 2 only changes these two to `kLargeAttachmentMaxBytes`.
+ * The one size limit today for video, files, audio, original pictures and receiving (over 16 MiB of ciphertext
+ * goes to the relay in parts). Later it is raised by account level: only the source of `AttachmentLimits` changes.
  */
-inline constexpr uint64_t kDefaultAttachmentSendMaxBytes = 4ULL * kAttachmentMegabyte;
-inline constexpr uint64_t kDefaultAttachmentReceiveMaxBytes = 4ULL * kAttachmentMegabyte;
+inline constexpr uint64_t kLargeAttachmentMaxBytes = 50ULL * kAttachmentMegabyte;
+inline constexpr uint64_t kDefaultAttachmentSendMaxBytes = kLargeAttachmentMaxBytes;
+inline constexpr uint64_t kDefaultAttachmentReceiveMaxBytes = kLargeAttachmentMaxBytes;
 
 /**
  * Every number that limits what a person may send, receive or keep, behind one value so a later tier
@@ -39,7 +38,7 @@ struct AttachmentLimits {
   /**
    * The longest clip the system camera is asked to record (iOS `videoMaximumDuration`, Android
    * `EXTRA_DURATION_LIMIT`). Set from device measurements (worst-case bit rate of an iPhone 11 / vivo S15e,
-   * 70% of `max_video_bytes`), so it moves together with `max_video_bytes` when the 100 MB limit is switched on.
+   * 70% of the then 4 MB `max_video_bytes`); not raised with the 50 MB limit (recording length is its own decision).
    */
   int video_max_seconds = 12;
   /** A send of at least this many bytes tells the person to stay in the app until it is done. */
