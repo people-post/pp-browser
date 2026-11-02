@@ -50,6 +50,7 @@
 #include "lib/net/OrgBackendClientsImpl.h"
 #include "lib/net/SwitchableDirectoryClient.h"
 #include "lib/net/IPushDeviceClient.h"
+#include "feature/conversations/PushBindingGate.h"
 #include "mesh/l4/circuit/CircuitRelayTypes.h"
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/reachability/Reachability.h"
@@ -259,6 +260,7 @@ public:
   IRegistrationClient& Registration();
   IBlobClient& Blob();
   IPushDeviceClient* PushDevices();
+  PushBindingGate& PushGate() { return push_gate_; }
   IClientCompatClient* ClientCompat();
   /** Profile data directory used for stores and client-compat cache. */
   const std::string& ProfileDataDir() const { return data_dir_; }
@@ -584,6 +586,7 @@ private:
                             const std::function<void(Roe<ThreadMessage>)>& finish);
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
+  PushBindingGate push_gate_;
   /** The one directory client everything keeps; its backend follows the configuration (none: not configured). */
   SwitchableDirectoryClient directory_;
   /** The backend's clients, built from the config's endpoints (the app's defaults fill empty ones). */

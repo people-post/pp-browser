@@ -16,4 +16,7 @@ std::string NormalizeBackendUrl(const std::string& url);
  */
 std::string BackendProfileKey(const AppConfig& config);
 
+/** The key of the backend a saved config selects: differs from the running one once a switch awaits restart. */
+std::string SavedBackendKey(const AppConfig& config);
+
 } // namespace pbr

@@ -23,6 +23,18 @@ std::string CustomKey(const std::string& url) {
   return key;
 }
 
+std::string KeyFor(const BackendEnv env, const std::string& registration_url) {
+  switch (env) {
+  case BackendEnv::Qa:
+    return "qa";
+  case BackendEnv::Custom:
+    return CustomKey(registration_url);
+  case BackendEnv::Prod:
+    break;
+  }
+  return "prod";
+}
+
 } // namespace
 
 std::string NormalizeBackendUrl(const std::string& url) {
@@ -48,15 +60,19 @@ std::string BackendProfileKey(const AppConfig& config) {
   if (OriginEnvOverrideActive()) {
     return CustomKey(BriefOrigin());
   }
-  switch (ActiveBackend()) {
-  case BackendEnv::Qa:
-    return "qa";
-  case BackendEnv::Custom:
-    return CustomKey(config.registration.base_url);
-  case BackendEnv::Prod:
-    break;
+  return KeyFor(ActiveBackend(), config.registration.base_url);
+}
+
+std::string SavedBackendKey(const AppConfig& config) {
+  if (OriginEnvOverrideActive()) {
+    return CustomKey(BriefOrigin());
   }
-  return "prod";
+  BackendEnv env = ParseBackendEnv(config.backend.env);
+  if (env == BackendEnv::Qa && !QaBackendAvailable()) {
+    env = BackendEnv::Prod;
+  }
+  return KeyFor(env, config.backend.has_saved_urls ? config.backend.saved_registration.base_url
+                                                   : config.registration.base_url);
 }
 
 } // namespace pbr
