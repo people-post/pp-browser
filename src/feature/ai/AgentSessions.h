@@ -27,6 +27,8 @@ inline constexpr size_t kMaxConcurrentTurns = 1;
 inline constexpr size_t kSoftMaxLiveSessions = 6;
 /** A thread's session that could close (AgentSession::CanClose) is closed after this long without a turn. */
 inline constexpr std::chrono::minutes kSessionIdleTimeout{10};
+/** How long closing the sessions waits for stopped turns to leave their threads. */
+inline constexpr std::chrono::milliseconds kTurnStopBudget{2000};
 
 /** May a turn start in a thread now? */
 enum class TurnStart {
@@ -56,6 +58,7 @@ public:
 
   /** `max_concurrent_turns` and `clock` are for tests (the clock times idle sessions). */
   explicit AgentSessions(size_t max_concurrent_turns = kMaxConcurrentTurns, Clock clock = {});
+  /** Stops every turn and waits briefly for their threads. */
   ~AgentSessions();
 
   AgentSessions(const AgentSessions&) = delete;
@@ -107,6 +110,11 @@ public:
   bool ThreadTurnsFull() const;
   /** Block until no session is configuring (not callable from a worker). */
   void WaitForConfigureIdle();
+  /**
+   * Stops every turn and waits up to `budget` until none is still running on the turns' threads (they are not
+   * behind the runtime's teardown gate). Before what the turns use goes away (profile reset); false: still running.
+   */
+  bool StopTurnsAndWait(std::chrono::milliseconds budget);
   /** The thread was cleared or deleted: forget its last brief_AI role, its card and its question asked back. */
   void ForgetThread(const std::string& thread_id);
 
@@ -142,6 +150,7 @@ private:
 
   const size_t max_concurrent_turns_;
   const Clock clock_;
+  /** Its turn_pool: the most thread turns at once plus Home's. */
   std::shared_ptr<AgentSessionShared> shared_ = std::make_shared<AgentSessionShared>();
 
   // What a new session gets.

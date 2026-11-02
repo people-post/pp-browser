@@ -1,4 +1,5 @@
 #include "feature/ai/AgentSession.h"
+#include "feature/ai/AiTurnPool.h"
 #include "foundation/platform/Platform.h"
 
 #include "lib/ai/AppActionClassifier.h"
@@ -701,7 +702,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   assistant_message.tool_calls = ToolCallsToJson(tool_calls);
   state->turn_scratch.push_back(std::move(assistant_message));
 
-  AppRuntime::PostWorkerNormal([state, tool_calls]() {
+  PostTurnTask(state, [state, tool_calls]() {
     if (state->cancelled) {
       AgentSession::FinishTurn(state);
       return;
@@ -2007,7 +2008,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     return;
   }
   if (!state->cancelled) {
-    StartTurn(state);
+    PostTurnTask(state, [state] { StartTurn(state); }); // a turn does not hold the app's worker
   } else {
     // A Cancel raced configure; do not leave busy stuck from Submit, and tell the UI the turn is over (it shows
     // "thinking" in that thread until it hears so).
@@ -2108,7 +2109,7 @@ SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, cons
   impl_->assist_mode = AtAiMode::Local;
   impl_->pending_direct_action = std::make_pair(tool, std::move(args));
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2152,7 +2153,7 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
     }
   }
 
-  AppRuntime::PostWorkerNormal(
+  PostTurnTask(impl_,
       [impl = impl_, approval_id, decision, decision_label]() {
         ResumeToolPermissionOnWorker(impl, approval_id, decision, decision_label);
       });
@@ -2222,6 +2223,14 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
   RefreshCompactionService(impl_);
 }
 
+void AgentSession::PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task) {
+  if (const std::shared_ptr<AiTurnPool>& pool = state->shared->turn_pool) {
+    pool->Post(std::move(task));
+    return;
+  }
+  AppRuntime::PostWorkerNormal(std::move(task));
+}
+
 void AgentSession::BeginStreamTurn() {
   std::lock_guard lock(impl_->stream_cancel_mutex);
   impl_->stream_cancel = std::make_shared<std::atomic<bool>>(false);
@@ -2246,7 +2255,7 @@ SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<s
   impl_->turn_mode = AgentTurnMode::Conversation;
   impl_->pending_thread_id.clear();
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2275,7 +2284,7 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2307,7 +2316,7 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
   impl_->assist_mode = mode;
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }

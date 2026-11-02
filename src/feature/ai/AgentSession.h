@@ -28,6 +28,7 @@
 
 namespace pbr {
 
+class AiTurnPool;
 class Conversation;
 class IThreadStore;
 
@@ -92,11 +93,13 @@ enum class SubmitOutcome {
 };
 
 /**
- * What the sessions of one AgentSessions share: the queue the UI polls their events from (events carry their
- * thread) and, per chat, the brief_AI role that answered its last turn (memory only). A lone AgentSession has its
- * own.
+ * What the sessions of one AgentSessions share: the threads their turns run on, the queue the UI polls their events
+ * from (events carry their thread) and, per chat, the brief_AI role that answered its last turn (memory only). A
+ * lone AgentSession has its own.
  */
 struct AgentSessionShared {
+  /** Where turns run (AgentSessions' own threads); unset (a lone session): the app's worker pool. */
+  std::shared_ptr<AiTurnPool> turn_pool;
   std::mutex event_mutex;
   std::vector<AgentEvent> pending_events;
   std::mutex last_role_mutex;
@@ -197,6 +200,8 @@ private:
   struct Impl;
 
   void BeginStreamTurn();
+  /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
+  static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
   static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);

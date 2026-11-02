@@ -3,6 +3,7 @@ pp_browser_add_feature_library(pp_feature_ai
     AgentSession.cpp
     AgentSessions.cpp
     AgentUiPorts.cpp
+    AiTurnPool.cpp
     TurnExecutor.cpp
   PUBLIC_LIBS
     pp_lib_ai_tools

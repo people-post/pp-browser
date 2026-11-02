@@ -1,5 +1,7 @@
 #include "feature/ai/AgentSessions.h"
 
+#include "feature/ai/AiTurnPool.h"
+
 #include "lib/ai/ParkedApproval.h"
 
 #include <algorithm>
@@ -11,10 +13,15 @@ namespace pbr {
 AgentSessions::AgentSessions(const size_t max_concurrent_turns, Clock clock)
     : max_concurrent_turns_(max_concurrent_turns), clock_(std::move(clock)) {
   redirectLogger("AgentSessions");
+  shared_->turn_pool = std::make_shared<AiTurnPool>(max_concurrent_turns_ + 1);
   home_ = MakeSession();
 }
 
-AgentSessions::~AgentSessions() = default;
+AgentSessions::~AgentSessions() {
+  CancelAll();
+  // Joined here, on the owner's thread: a turn holding the last reference must never destroy the pool it runs on.
+  shared_->turn_pool->Shutdown(kTurnStopBudget);
+}
 
 std::chrono::steady_clock::time_point AgentSessions::Now() const {
   return clock_ ? clock_() : std::chrono::steady_clock::now();
@@ -272,6 +279,15 @@ bool AgentSessions::ThreadTurnsFull() const {
 
 void AgentSessions::WaitForConfigureIdle() {
   ForEach([](AgentSession& session) { session.WaitForConfigureIdle(); });
+}
+
+bool AgentSessions::StopTurnsAndWait(const std::chrono::milliseconds budget) {
+  CancelAll();
+  if (shared_->turn_pool->WaitIdle(budget)) {
+    return true;
+  }
+  log().warning << "an AI turn was still running " << budget.count() << " ms after it was stopped";
+  return false;
 }
 
 void AgentSessions::ForgetThread(const std::string& thread_id) {

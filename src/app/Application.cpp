@@ -477,6 +477,10 @@ Roe<void> Application::ResetChatData() {
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  // AI turns run on threads of their own, which the runtime's quiesce does not wait for, and read the thread store.
+  if (agent_sessions_ && !agent_sessions_->StopTurnsAndWait(kProfileResetQuiesceBudget)) {
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
   qr_scan_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();

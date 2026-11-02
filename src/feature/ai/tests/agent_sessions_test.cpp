@@ -605,4 +605,35 @@ TEST_F(AgentSessionsTest, TwoThreadsUiToolsRunInOrderOnTheUiThread) {
   EXPECT_EQ(on_ui_, (std::vector<bool>{true, true})) << "the turns' workers handed them to the UI thread";
 }
 
+// Step 2b: streamed turns hold their thread for the whole answer; they run on the sessions' own threads, so the app's
+// worker pool stays free for everything else.
+TEST_F(AgentSessionsTest, FourTurnsLeaveTheWorkerPoolFree) {
+  Make(3);
+  EXPECT_EQ(sessions_->Submit("hold home"), SubmitOutcome::Started);
+  for (const char* thread : {"t1", "t2", "t3"}) {
+    EXPECT_EQ(sessions_->SubmitToThread(thread, "hold"), SubmitOutcome::Started) << thread;
+  }
+  WaitRequests(4); // four streams open at once
+
+  std::atomic<bool> ran{false};
+  const auto posted = std::chrono::steady_clock::now();
+  AppRuntime::PostWorkerNormal([&ran] { ran = true; });
+  while (!ran.load() && std::chrono::steady_clock::now() - posted < std::chrono::milliseconds(100)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_TRUE(ran.load()) << "a plain worker task waited for the AI answers";
+
+  release_ = true;
+  PumpUntil([&] { return !sessions_->AnyBusy(); }, "every turn to end");
+}
+
+TEST_F(AgentSessionsTest, StopTurnsAndWaitEndsEveryRunningTurn) {
+  Make(3);
+  EXPECT_EQ(sessions_->Submit("hold home"), SubmitOutcome::Started);
+  EXPECT_EQ(sessions_->SubmitToThread("t1", "hold"), SubmitOutcome::Started);
+  WaitRequests(2);
+  EXPECT_TRUE(sessions_->StopTurnsAndWait(std::chrono::seconds(2)));
+  EXPECT_FALSE(sessions_->AnyBusy());
+}
+
 } // namespace
