@@ -69,6 +69,8 @@ public:
   void BindAgentInbound(AgentInboundPorts ports);
   Roe<bool> MaybeAutoRenewRegistration(bool auto_renew_registration);
   Roe<void> SyncPushDevices();
+  /** Whether the saved backend differs from the running one: push is unbound from the running backend meanwhile. */
+  void SetBackendSwitchPending(bool pending);
   Roe<std::string> ExportLinkDevice();
   /**
    * The account's recovery phrase (multi-device M023 §2), once `pin` proves to be this profile's PIN; nullopt when the

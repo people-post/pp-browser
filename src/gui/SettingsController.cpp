@@ -6,6 +6,7 @@
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/data/LlmPreset.h"
 #include "common/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
@@ -1035,6 +1036,10 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   dirty_sections_.erase(section_id);
   if (dirty_sections_.empty()) {
     debounce_deadline_ms_ = 0;
+  }
+  if (section_id == "network" && commands_.set_backend_switch_pending) {
+    const BootstrapResult& saved = Store().Snapshot();
+    commands_.set_backend_switch_pending(SavedBackendKey(saved.config) != saved.backend_key);
   }
 
   status_ = "";

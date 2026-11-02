@@ -52,7 +52,8 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return ensured.error();
   }
 
-  if (auto selected = registry->SelectProfileForBackend(BackendProfileKey(*config)); !selected) {
+  const std::string backend_key = BackendProfileKey(*config);
+  if (auto selected = registry->SelectProfileForBackend(backend_key); !selected) {
     return selected.error();
   }
 
@@ -112,6 +113,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   result.profile_registry = std::move(*registry);
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;
+  result.backend_key = backend_key;
   result.config_path = Config::DiscoverConfigPath(options.argc, options.argv);
   if (result.config_path.empty()) {
     result.config_path = AppPaths::ConfigFilePath();

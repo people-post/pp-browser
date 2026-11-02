@@ -55,6 +55,10 @@ Roe<void> ConversationsFacade::SyncPushDevices() {
   return PushDeviceCoordinator::Register(hub_);
 }
 
+void ConversationsFacade::SetBackendSwitchPending(const bool pending) {
+  PushDeviceCoordinator::OnBackendSwitchPending(hub_, pending);
+}
+
 Roe<std::optional<SecretText>> ConversationsFacade::RecoveryPhrase(const SecretText& pin) {
   if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr) {
     return Error("Messaging is not ready");
