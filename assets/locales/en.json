@@ -573,6 +573,7 @@
     "chat.permission.not_ready": "Assistant is not ready for permission decisions.",
     "chat.ai_busy_elsewhere": "The assistant is answering another chat…",
     "chat.ai_queue.pending": "Queued · waits for the answer in another chat",
+    "chat.ai_queue.pending_cap": "Up to {count} chats answer at once — queued",
     "chat.ai_queue.cancel": "Cancel",
     "chat.ai_queue.already": "This chat already has a question waiting.",
     "chat.ai_queue.image_busy": "The assistant is answering another chat. Send the picture when it has finished.",

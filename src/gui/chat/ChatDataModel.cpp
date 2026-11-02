@@ -16,6 +16,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("has_queued", &state.has_queued);
   ctor.Bind("busy_elsewhere", &state.busy_elsewhere);
   ctor.Bind("queued_text", &state.queued_text);
+  ctor.Bind("queued_note", &state.queued_note);
   ctor.Bind("has_turns", &state.has_turns);
   ctor.Bind("turns", &state.turns);
   ctor.Bind("messages", &state.messages);
@@ -129,6 +130,7 @@ void DirtyChatChrome() {
   DataModelHost::Instance().Dirty("chat", "has_queued");
   DataModelHost::Instance().Dirty("chat", "busy_elsewhere");
   DataModelHost::Instance().Dirty("chat", "queued_text");
+  DataModelHost::Instance().Dirty("chat", "queued_note");
   DataModelHost::Instance().Dirty("chat", "has_turns");
 }
 

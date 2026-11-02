@@ -477,6 +477,10 @@ Roe<void> Application::ResetChatData() {
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  // AI turns run on threads of their own, which the runtime's quiesce does not wait for, and read the thread store.
+  if (agent_sessions_ && !agent_sessions_->StopTurnsAndWait(kProfileResetQuiesceBudget)) {
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
   qr_scan_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
@@ -1368,8 +1372,10 @@ void Application::WireAgentAndConfig() {
         log_not_started(agent_sessions_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode));
       }
     };
-    // Asked before anything is stored or sent. With kMaxConcurrentTurns = 1 "full" also covers the target thread.
-    inbound.is_busy = [this]() { return agent_sessions_ && agent_sessions_->ThreadTurnsFull(); };
+    // Asked before anything is stored or sent: a turn already runs in that thread, or as many as allowed run.
+    inbound.is_busy = [this](const std::string& thread_id) {
+      return agent_sessions_ && agent_sessions_->CanStart(thread_id) != TurnStart::Yes;
+    };
     inbound.submit_to_thread = [this, log_not_started](const std::string& thread_id, const std::string& user_text,
                                                        std::optional<std::string> user_payload) {
       if (agent_sessions_) {

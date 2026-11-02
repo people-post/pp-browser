@@ -97,9 +97,10 @@ struct ChatScreenState {
   bool use_messages_layout = true;
   bool loading = false; // a turn runs in THIS thread (thinking + stop key); other threads keep sending (B112)
   bool has_turns = false;
-  bool has_queued = false;  // this thread has an AI send waiting for another thread's turn
-  bool busy_elsewhere = false; // the AI is answering another conversation (shown above the composer)
+  bool has_queued = false;  // this thread has an AI send waiting for a free turn
+  bool busy_elsewhere = false; // other chats take every turn: a question here would wait (shown above the composer)
   ui::String queued_text;   // its text, shown as a dimmed "me" bubble with "queued" and a cancel link
+  ui::String queued_note;   // the line under it: why it waits ("Up to 3 chats answer at once — queued")
 };
 
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */

@@ -29,6 +29,8 @@ enum class Auth : int32_t {
   Forbidden = 2,
   Expired = 3,
   RateLimited = 4,
+  /** HTTP 429 with code "server_busy": brief_AI as a whole is busy, not this user (brief_AI contract section 8). */
+  ServerBusy = 5,
 };
 
 enum class Network : int32_t {

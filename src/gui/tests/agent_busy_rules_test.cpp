@@ -5,56 +5,46 @@
 namespace pbr {
 namespace {
 
-AgentBusyState Idle() { return {}; }
-AgentBusyState BusyIn(const std::string& thread) { return {.busy = true, .thread_id = thread}; }
-
 TEST(DecideSendTest, MessagesThatDoNotUseTheAiAlwaysGoOut) {
-  for (const AgentBusyState& state : {Idle(), BusyIn("A"), BusyIn("B"), BusyIn("")}) {
-    EXPECT_EQ(DecideSend(false, state, "A", false), SendDecision::Send);
+  for (const TurnStart start : {TurnStart::Yes, TurnStart::Full, TurnStart::BusyHere}) {
+    EXPECT_EQ(DecideSend(false, start, false, false), SendDecision::Send);
+    EXPECT_EQ(DecideSend(false, start, true, false), SendDecision::Send);
   }
   // Even with a queued AI send waiting in the target thread.
-  EXPECT_EQ(DecideSend(false, BusyIn("B"), "A", true), SendDecision::Send);
+  EXPECT_EQ(DecideSend(false, TurnStart::Full, false, true), SendDecision::Send);
 }
 
-TEST(DecideSendTest, AiSendWhileIdleGoesOut) {
-  EXPECT_EQ(DecideSend(true, Idle(), "A", false), SendDecision::Send);
+TEST(DecideSendTest, AiSendTheSessionsCanStartGoesOut) {
+  EXPECT_EQ(DecideSend(true, TurnStart::Yes, false, false), SendDecision::Send);
 }
 
-TEST(DecideSendTest, AiSendWhileAnotherThreadRunsIsQueued) {
-  EXPECT_EQ(DecideSend(true, BusyIn("B"), "A", false), SendDecision::Queue);
+TEST(DecideSendTest, AiSendWhileTheSessionsAreFullIsQueued) {
+  EXPECT_EQ(DecideSend(true, TurnStart::Full, false, false), SendDecision::Queue);
 }
 
-TEST(DecideSendTest, AiSendInTheRunningThreadIsBlocked) {
-  EXPECT_EQ(DecideSend(true, BusyIn("A"), "A", false), SendDecision::BlockedHere);
-}
-
-TEST(DecideSendTest, BusyWithoutAThreadQueuesInsteadOfDropping) {
-  EXPECT_EQ(DecideSend(true, BusyIn(""), "A", false), SendDecision::Queue);
+TEST(DecideSendTest, AiSendInARunningThreadIsBlocked) {
+  EXPECT_EQ(DecideSend(true, TurnStart::BusyHere, false, false), SendDecision::BlockedHere);
+  // The screen still shows a turn there (its end not heard yet), whatever the sessions say.
+  EXPECT_EQ(DecideSend(true, TurnStart::Yes, true, false), SendDecision::BlockedHere);
+  EXPECT_EQ(DecideSend(true, TurnStart::Full, true, false), SendDecision::BlockedHere);
 }
 
 TEST(DecideSendTest, TargetWithAQueuedSendIsAlreadyQueued) {
-  EXPECT_EQ(DecideSend(true, BusyIn("B"), "A", true), SendDecision::AlreadyQueued);
-  EXPECT_EQ(DecideSend(true, Idle(), "A", true), SendDecision::AlreadyQueued);
-  EXPECT_EQ(DecideSend(true, BusyIn(""), "A", true), SendDecision::AlreadyQueued);
+  for (const TurnStart start : {TurnStart::Yes, TurnStart::Full, TurnStart::BusyHere}) {
+    EXPECT_EQ(DecideSend(true, start, false, true), SendDecision::AlreadyQueued);
+  }
 }
 
-TEST(AgentBusyStateTest, BusyInAndBusyElsewhere) {
-  EXPECT_FALSE(Idle().BusyIn("A"));
-  EXPECT_FALSE(Idle().BusyElsewhere("A"));
-
-  EXPECT_TRUE(BusyIn("A").BusyIn("A"));
-  EXPECT_FALSE(BusyIn("A").BusyIn("B"));
-  EXPECT_FALSE(BusyIn("A").BusyElsewhere("A"));
-  EXPECT_TRUE(BusyIn("A").BusyElsewhere("B"));
-
-  // Unknown thread: busy in every thread, elsewhere in none.
-  EXPECT_TRUE(BusyIn("").BusyIn("A"));
-  EXPECT_TRUE(BusyIn("").BusyIn(""));
-  EXPECT_FALSE(BusyIn("").BusyElsewhere("A"));
-
-  // A stale thread id on an idle state means nothing.
-  AgentBusyState stale{.busy = false, .thread_id = "A"};
-  EXPECT_FALSE(stale.BusyIn("A"));
+TEST(AgentBusyStateTest, SeveralThreadsAtOnce) {
+  AgentBusyState busy;
+  EXPECT_FALSE(busy.Any());
+  EXPECT_FALSE(busy.BusyIn("A"));
+  busy.threads = {"A", "B"};
+  EXPECT_TRUE(busy.Any());
+  EXPECT_TRUE(busy.BusyIn("A"));
+  EXPECT_TRUE(busy.BusyIn("B"));
+  EXPECT_FALSE(busy.BusyIn("C"));
+  EXPECT_FALSE(busy.BusyIn(""));
 }
 
 TEST(DecideEscapeTest, SinglePressCancelsQueuedOrDoesNothing) {

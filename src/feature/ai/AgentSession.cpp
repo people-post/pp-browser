@@ -1,4 +1,5 @@
 #include "feature/ai/AgentSession.h"
+#include "feature/ai/AiTurnPool.h"
 #include "foundation/platform/Platform.h"
 
 #include "lib/ai/AppActionClassifier.h"
@@ -250,7 +251,10 @@ void AgentSession::PushApprovalClosed(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                     const std::string& status) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::ToolActivity, .tool_name = tool_name, .status = status});
+  PushEvent(state, AgentEvent{.type = AgentEventType::ToolActivity,
+                              .tool_name = tool_name,
+                              .status = status,
+                              .thread_id = state->pending_thread_id}); // shown in that chat only
 }
 
 void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
@@ -508,6 +512,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   TurnExecutionOptions options;
   options.start_index = park.next_tool_index;
   options.permissions = state->tool_permissions;
+  options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -701,7 +706,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   assistant_message.tool_calls = ToolCallsToJson(tool_calls);
   state->turn_scratch.push_back(std::move(assistant_message));
 
-  AppRuntime::PostWorkerNormal([state, tool_calls]() {
+  PostTurnTask(state, [state, tool_calls]() {
     if (state->cancelled) {
       AgentSession::FinishTurn(state);
       return;
@@ -733,7 +738,7 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
         continue;
       }
 
-      auto result = state->tools.Execute(call.name, call.arguments);
+      auto result = state->tools.Execute(call.name, call.arguments, &state->cancelled);
       AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
       state->turn_trace.tools_executed.push_back(call.name);
 
@@ -1081,6 +1086,7 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
 
   TurnExecutionOptions options;
   options.permissions = state->tool_permissions;
+  options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -1375,7 +1381,7 @@ LocalPlanContext AgentSession::BuildLocalPlanContext(const std::shared_ptr<Impl>
   }
   if (tool == "set_language") {
     // The shipped locales, as the settings tool lists them (no I/O).
-    if (auto listed = state->tools.Execute("list_locales", Object{})) {
+    if (auto listed = state->tools.Execute("list_locales", Object{}, &state->cancelled)) {
       if (const auto doc = TryParseObject(*listed)) {
         if (const Array* locales = doc->getArray("locales")) {
           for (const Value& entry : locales->elements) {
@@ -2007,7 +2013,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     return;
   }
   if (!state->cancelled) {
-    StartTurn(state);
+    PostTurnTask(state, [state] { StartTurn(state); }); // a turn does not hold the app's worker
   } else {
     // A Cancel raced configure; do not leave busy stuck from Submit, and tell the UI the turn is over (it shows
     // "thinking" in that thread until it hears so).
@@ -2108,7 +2114,7 @@ SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, cons
   impl_->assist_mode = AtAiMode::Local;
   impl_->pending_direct_action = std::make_pair(tool, std::move(args));
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2152,7 +2158,7 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
     }
   }
 
-  AppRuntime::PostWorkerNormal(
+  PostTurnTask(impl_,
       [impl = impl_, approval_id, decision, decision_label]() {
         ResumeToolPermissionOnWorker(impl, approval_id, decision, decision_label);
       });
@@ -2222,6 +2228,18 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
   RefreshCompactionService(impl_);
 }
 
+void AgentSession::PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task) {
+  if (!state->shared->own_threads) {
+    AppRuntime::PostWorkerNormal(std::move(task));
+    return;
+  }
+  if (const std::shared_ptr<AiTurnPool> pool = state->shared->turn_pool.lock()) {
+    pool->Post(std::move(task));
+    return;
+  }
+  state->Log().info << "AI turn step dropped: the sessions are gone";
+}
+
 void AgentSession::BeginStreamTurn() {
   std::lock_guard lock(impl_->stream_cancel_mutex);
   impl_->stream_cancel = std::make_shared<std::atomic<bool>>(false);
@@ -2246,7 +2264,7 @@ SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<s
   impl_->turn_mode = AgentTurnMode::Conversation;
   impl_->pending_thread_id.clear();
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2275,7 +2293,7 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
@@ -2307,7 +2325,7 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
   impl_->assist_mode = mode;
 
-  AppRuntime::PostWorkerNormal([impl = impl_]() {
+  PostTurnTask(impl_, [impl = impl_]() {
     if (!StartNowOrWhenConfigured(impl)) {
       return;
     }

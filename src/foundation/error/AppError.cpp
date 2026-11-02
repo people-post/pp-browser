@@ -69,6 +69,7 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
     case Err::Auth::Expired:
       return Localized("errors.auth.register_or_rotate");
     case Err::Auth::RateLimited:
+    case Err::Auth::ServerBusy:
       return Localized("errors.auth.busy");
     case Err::Auth::Generic:
     default:

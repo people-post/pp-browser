@@ -80,7 +80,7 @@ Roe<void> MessageRouter::RouteSharedAi(const std::string& thread_id, const std::
   if (!agent_.submit_scoped_assist) {
     return Error("Agent not bound");
   }
-  if (AgentBusy()) {
+  if (AgentBusy(thread_id)) {
     return Error(kAgentBusyError); // before the "@ai++" question goes to the peer
   }
 
@@ -147,7 +147,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     if (!agent_.submit_local_action) {
       return Error("Agent not bound");
     }
-    if (AgentBusy()) {
+    if (AgentBusy(thread_id)) {
       return Error(kAgentBusyError);
     }
     agent_.submit_local_action(thread_id, text, *user_payload, HandlesAtAi((*thread)->kind));
@@ -163,7 +163,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   const AtAiParseResult at_ai = ParseAtAiPrefix(text);
   // A group used to send "@ai++ …" as plain text while the chat already showed "thinking" (B111).
   if (HandlesAtAi((*thread)->kind) && at_ai.is_ai_invoke) {
-    if (AgentBusy()) {
+    if (AgentBusy(thread_id)) {
       return Error(kAgentBusyError); // nothing sent, no confirm asked: the UI queues it
     }
     if (at_ai.mode == AtAiMode::SharedReply || at_ai.mode == AtAiMode::SharedFull) {
@@ -219,7 +219,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   if (!agent_.submit_to_thread) {
     return Error("Agent not bound");
   }
-  if (AgentBusy()) {
+  if (AgentBusy(thread_id)) {
     return Error(kAgentBusyError);
   }
   agent_.submit_to_thread(thread_id, TextForAgent((*thread)->kind, text), std::move(user_payload));

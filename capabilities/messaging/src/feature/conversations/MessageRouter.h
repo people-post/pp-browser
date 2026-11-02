@@ -67,7 +67,7 @@ public:
   void SetSharedAiConfirmedPort(SharedAiConsent::StoredPort port);
 
 private:
-  bool AgentBusy() const { return agent_.is_busy && agent_.is_busy(); }
+  bool AgentBusy(const std::string& thread_id) const { return agent_.is_busy && agent_.is_busy(thread_id); }
   Roe<void> RouteSharedAi(const std::string& thread_id, const std::string& prompt, AtAiMode mode);
   bool NeedsSharedAiConfirm(const std::string& thread_id) const;
 

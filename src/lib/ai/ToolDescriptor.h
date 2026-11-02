@@ -16,6 +16,16 @@ struct ToolMeta {
   std::string domain;   // e.g. "people", "knowledge", "feeds", "identity"
   std::string risk;     // "read" | "write" | "destructive"
   bool mutating = false;
+  /**
+   * The tool reads or changes the app's own state (chats, contacts, settings): ToolRegistry runs such tools one at
+   * a time across every AI session (DEV/PLAN-ai-concurrent-turns.md 2b). Network-only tools leave it false.
+   */
+  bool app_state = false;
+  /**
+   * The tool touches state that lives on the UI thread (the chat screen, the SessionStore): ToolRegistry runs it
+   * there while the turn waits. Only for quick tools; implies app_state.
+   */
+  bool ui_thread = false;
 };
 
 struct ToolDescriptor {

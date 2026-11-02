@@ -1,40 +1,42 @@
 #pragma once
 
+#include "feature/ai/AgentSessions.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <set>
 #include <string>
 
 namespace pbr {
 
 /**
- * The AI runs one thread turn at a time (AgentSessions, kMaxConcurrentTurns). "Busy" belongs to the thread the turn
- * runs in: only that thread shows "thinking" and the stop key; other threads keep sending (B112,
- * DEV/PLAN-ai-per-thread-busy.md).
+ * The threads whose AI turn runs now: AgentSessions answers up to its cap (kMaxConcurrentTurns; a guest 1) at once.
+ * Only those threads show "thinking" and the stop key (B112). Whether another AI send may start is the sessions'
+ * answer (can_start), never counted here (DEV/PLAN-ai-concurrent-turns.md).
  */
 struct AgentBusyState {
-  bool busy = false;
-  std::string thread_id; // empty while busy: the turn's thread is unknown, treat every thread as busy
+  std::set<std::string> threads;
 
-  bool BusyIn(const std::string& thread) const { return busy && (thread_id.empty() || thread_id == thread); }
-  bool BusyElsewhere(const std::string& thread) const { return busy && !thread_id.empty() && thread_id != thread; }
+  bool Any() const { return !threads.empty(); }
+  bool BusyIn(const std::string& thread) const { return threads.count(thread) > 0; }
 };
 
 enum class SendDecision {
-  Send,        // goes out now
-  Queue,       // an AI send while another thread's turn runs: kept and sent when the AI is free
-  BlockedHere, // an AI send in the thread whose turn is running (the composer shows the stop key)
+  Send,          // goes out now
+  Queue,         // an AI send while as many chats as allowed are answered: kept and sent when one ends
+  BlockedHere,   // an AI send in a thread whose turn is running (the composer shows the stop key)
   AlreadyQueued, // this thread already has a queued AI send: the text stays in the composer
 };
 
 /**
  * `is_ai_send` comes from MessageRouter::ExpectsAgentWork (AI thread, "@ai…", agent payloads); a message that
- * does not use the AI always goes out, also in the thread whose turn is running.
+ * does not use the AI always goes out, also in a thread whose turn is running. `can_start` is the sessions' answer
+ * for the target thread; `busy_here`: the screen still shows a turn there (its end not heard yet).
  */
-inline SendDecision DecideSend(const bool is_ai_send, const AgentBusyState& busy, const std::string& target_thread,
+inline SendDecision DecideSend(const bool is_ai_send, const TurnStart can_start, const bool busy_here,
                                const bool target_has_queued) {
   if (!is_ai_send) {
     return SendDecision::Send;
@@ -42,13 +44,10 @@ inline SendDecision DecideSend(const bool is_ai_send, const AgentBusyState& busy
   if (target_has_queued) {
     return SendDecision::AlreadyQueued;
   }
-  if (!busy.busy) {
-    return SendDecision::Send;
+  if (busy_here || can_start == TurnStart::BusyHere) {
+    return SendDecision::BlockedHere;
   }
-  if (busy.thread_id.empty()) {
-    return SendDecision::Queue; // unknown thread: never drop, queue
-  }
-  return busy.thread_id == target_thread ? SendDecision::BlockedHere : SendDecision::Queue;
+  return can_start == TurnStart::Full ? SendDecision::Queue : SendDecision::Send;
 }
 
 enum class EscapeAction {
@@ -79,7 +78,7 @@ inline EscapeAction DecideEscape(const int64_t now_ms, const std::optional<int64
 
 /** What happened when a queued send was handed over. */
 enum class QueuedSendOutcome {
-  Started,    // a turn began: wait for it to end before the next one
+  Started,    // a turn began: go on with the next one while the sessions can start it
   NotStarted, // nothing to run (thread gone, route failed, not an AI send): go on with the next one
   Busy,       // the AI turned busy first: put it back at the head and wait
 };

@@ -49,6 +49,8 @@ struct AgentUiPorts {
       submit_image_to_thread;
   /** May a turn start in `thread_id` now (empty: the Home composer)? */
   std::function<TurnStart(const std::string& thread_id)> can_start;
+  /** The most thread turns at once now (3 registered, 1 guest): what the queued note says. */
+  std::function<size_t()> max_thread_turns;
   /** Stops the turn of `thread_id` only (empty: the Home composer's). */
   std::function<void(const std::string& thread_id)> cancel;
   /** Stops every turn (the app pauses or quits). */

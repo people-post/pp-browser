@@ -2096,7 +2096,8 @@ bool ChatController::ComposerSendAllowed(const std::string& text) {
   }
   const std::string thread_id = ActiveThreadId();
   const bool is_ai_send = !agent_.UseLlm() || facade_->ExpectsAgentWork(thread_id, text, std::nullopt);
-  switch (DecideSend(is_ai_send, agent_.Busy(), thread_id, agent_.HasQueued(thread_id))) {
+  switch (DecideSend(is_ai_send, agent_.CanStart(thread_id), agent_.Busy().BusyIn(thread_id),
+                     agent_.HasQueued(thread_id))) {
   case SendDecision::BlockedHere:
     log().info << "Send kept in the composer: a reply is still loading in this thread";
     return false;
@@ -2513,9 +2514,10 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     expect_agent_work = true;
   }
 
-  // One turn at a time: an AI send for another thread waits in the queue; a plain message always goes (B112).
+  // As many turns as the sessions allow: past that an AI send waits in the queue; a plain message always goes (B112).
   const std::string target_thread = ActiveThreadId();
-  switch (DecideSend(expect_agent_work, agent_.Busy(), target_thread, agent_.HasQueued(target_thread))) {
+  switch (DecideSend(expect_agent_work, agent_.CanStart(target_thread), agent_.Busy().BusyIn(target_thread),
+                     agent_.HasQueued(target_thread))) {
   case SendDecision::Send:
     break;
   case SendDecision::BlockedHere:
@@ -2581,7 +2583,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
           RestoreDraftIfEmpty(target_thread, trimmed);
           return;
         }
-        if (agent_.Busy().busy) { // the AI started another thread's turn while the dialog was open
+        if (agent_.CanStart(target_thread) != TurnStart::Yes) { // the AI filled up while the dialog was open
           QueueAgentSend(target_thread, trimmed, std::nullopt, false, /*already_confirmed=*/true);
           return;
         }
