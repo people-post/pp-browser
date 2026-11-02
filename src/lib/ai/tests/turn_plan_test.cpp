@@ -80,6 +80,36 @@ TEST(TurnPlanTest, PeopleSearchShowsSelectableResultsEvenWhenPlannerOmitsListMod
   }
 }
 
+TEST(TurnPlanTest, GeneralContactsOnlyPlanWithoutModeIsStillAList) {
+  auto doc = pbr::TryParseObject(R"({"response_goal":"general","tools":[{"name":"list_contacts","arguments":{}}]})");
+  ASSERT_TRUE(doc.has_value());
+  auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
+  ASSERT_TRUE(plan);
+  EXPECT_FALSE(plan->render_mode_explicit);
+  auto validated = pbr::ValidateTurnPlan(*plan, {"list_contacts"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::PeopleList);
+}
+
+TEST(TurnPlanTest, GeneralContactsOnlyPlanWithExplicitBlocksStaysBlocks) {
+  auto doc = pbr::TryParseObject(R"({"response_goal":"general","render_mode":"blocks",
+                                      "user_request":"How many contacts do I have?",
+                                      "tools":[{"name":"list_contacts","arguments":{}}]})");
+  ASSERT_TRUE(doc.has_value());
+  auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
+  ASSERT_TRUE(plan);
+  EXPECT_TRUE(plan->render_mode_explicit);
+  auto validated = pbr::ValidateTurnPlan(*plan, {"list_contacts"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::Blocks);
+  EXPECT_EQ(validated->response_goal, pbr::ResponseGoal::General);
+
+  plan->response_goal = pbr::ResponseGoal::PeopleDiscovery;
+  validated = pbr::ValidateTurnPlan(*plan, {"list_contacts"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::PeopleList);
+}
+
 TEST(TurnPlanTest, MixedDomainRequestsKeepTheirReplyMode) {
   pbr::TurnPlan plan;
   plan.tools = {{.name = "search_people"}, {.name = "web_search"}};

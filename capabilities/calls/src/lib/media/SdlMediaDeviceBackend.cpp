@@ -219,6 +219,8 @@ public:
     return SDL_GetCameraPermissionState(camera_) < 0 ? "Camera permission denied" : std::string();
   }
 
+  bool PermissionPending() const override { return SDL_GetCameraPermissionState(camera_) == 0; }
+
   bool SetZoom(float factor) override {
     const auto props = SDL_GetCameraProperties(camera_);
     if (!SDL_GetBooleanProperty(props, "SDL.camera.coremedia.zoom_supported", false)) {

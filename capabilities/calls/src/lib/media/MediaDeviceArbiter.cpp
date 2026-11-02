@@ -319,6 +319,11 @@ std::string CameraDeviceLease::CaptureError() const {
   return state_->endpoint ? state_->endpoint->CaptureError() : "camera unavailable";
 }
 
+bool CameraDeviceLease::PermissionPending() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint && state_->endpoint->PermissionPending();
+}
+
 std::optional<VideoFrameRgba> CameraDeviceLease::NextFrame() {
   std::lock_guard lock(state_->io_mu);
   return state_->endpoint ? state_->endpoint->NextFrame() : std::nullopt;

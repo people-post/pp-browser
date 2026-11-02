@@ -98,6 +98,8 @@ public:
   virtual CameraGeometry Geometry() const = 0;
   /** Empty while healthy or permission is pending; otherwise a user-visible capture failure. */
   virtual std::string CaptureError() const { return {}; }
+  /** True while the OS camera-permission dialog is unanswered; frames legitimately do not arrive. */
+  virtual bool PermissionPending() const { return false; }
   /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
   virtual bool SetZoom(float factor) { (void)factor; return false; }
   virtual CameraZoomState ZoomState() const { return {}; }
@@ -207,6 +209,7 @@ public:
   const std::string& Holder() const;
   CameraGeometry Geometry() const;
   std::string CaptureError() const;
+  bool PermissionPending() const;
   bool SetZoom(float factor);
   CameraZoomState ZoomState() const;
   std::optional<VideoFrameRgba> NextFrame();

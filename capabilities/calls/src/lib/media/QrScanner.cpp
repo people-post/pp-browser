@@ -14,15 +14,30 @@
 
 namespace pbr {
 namespace {
+// Reference implementation: RotateRgba90Cw (VideoYuv.cpp); keep the two in sync.
+// One pass and one allocation for any multiple of 90 degrees clockwise (was one full-frame copy per turn).
 VideoFrameRgba Upright(VideoFrameRgba frame, int rotation) {
-  for (int i = 0; i < ((rotation % 360 + 360) % 360) / 90; ++i) {
-    VideoFrameRgba rotated;
-    if (!RotateRgba90Cw(frame, rotated)) {
-      return {};
-    }
-    frame = std::move(rotated);
+  const int turns = ((rotation % 360 + 360) % 360) / 90;
+  if (turns == 0) { return frame; }
+  if (frame.width <= 0 || frame.height <= 0 ||
+      frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
+    return {};
   }
-  return frame;
+  VideoFrameRgba out;
+  out.width = turns == 2 ? frame.width : frame.height;
+  out.height = turns == 2 ? frame.height : frame.width;
+  out.rgba.resize(static_cast<size_t>(out.width) * static_cast<size_t>(out.height) * 4);
+  const size_t in_w = static_cast<size_t>(frame.width);
+  for (int y = 0; y < out.height; ++y) {
+    for (int x = 0; x < out.width; ++x) {
+      // Source pixel of the clockwise rotation: 90 -> (y, H-1-x), 180 -> (W-1-x, H-1-y), 270 -> (W-1-y, x).
+      const size_t sx = turns == 1 ? y : turns == 2 ? frame.width - 1 - x : frame.width - 1 - y;
+      const size_t sy = turns == 1 ? frame.height - 1 - x : turns == 2 ? frame.height - 1 - y : x;
+      std::copy_n(frame.rgba.data() + (sy * in_w + sx) * 4, 4,
+                  out.rgba.data() + (static_cast<size_t>(y) * out.width + x) * 4);
+    }
+  }
+  return out;
 }
 
 using ScanClock = std::chrono::steady_clock;
@@ -61,14 +76,22 @@ public:
   // against the settled state would compound a second zoom on top of the first (Windows CI).
   QrScanner::Update Process(VideoFrameRgba frame, ScanClock::time_point now,
                             const CameraZoomState& zoom_state) {
-    frame = Upright(std::move(frame), rotation_);
-    width = frame.width;
-    height = frame.height;
+    const bool swap = ((rotation_ % 360 + 360) % 360) / 90 % 2 == 1;
+    width = swap ? frame.height : frame.width;
+    height = swap ? frame.width : frame.height;
     if (width < 2 || height < 2) { return {}; }
     decode_ms = 0;
     detected = false;
+    if (now < next_decode_) {
+      // Most frames only feed the preview: shrink to the preview size first, then rotate the small copy.
+      auto preview = Upright(ScanPreview(std::move(frame), software_zoom_), rotation_);
+      if (preview.width < 2 || preview.height < 2) { return {}; }
+      return {std::move(preview), std::nullopt, {}};
+    }
+    frame = Upright(std::move(frame), rotation_);
+    if (frame.width < 2 || frame.height < 2) { return {}; }
     std::optional<std::string> text;
-    if (now >= next_decode_) {
+    {
       const auto started = ScanClock::now();
       auto result = software_zoom_ > 1.f ? InspectQr(ScanPreview(frame, software_zoom_, 1280)) : InspectQr(frame);
       decode_ms = ElapsedMs(started);
@@ -171,8 +194,10 @@ struct ScanCaptureStats {
 } // namespace
 
 struct QrScanner::State {
-  explicit State(MediaDeviceArbiter& arbiter) : devices(arbiter) {}
+  State(MediaDeviceArbiter& arbiter, std::chrono::milliseconds timeout)
+      : devices(arbiter), no_frame_timeout(timeout) {}
   MediaDeviceArbiter& devices;
+  const std::chrono::milliseconds no_frame_timeout;
   std::mutex mutex;
   std::condition_variable cv;
   std::thread worker;
@@ -223,6 +248,8 @@ struct QrScanner::State {
     auto last_frame = std::chrono::steady_clock::now();
     ScanFrameProcessor processor(*lease, rotate);
     ScanCaptureStats stats;
+    // Wake on the frame cadence, not every few ms: each wake costs three locked camera calls.
+    const auto frame_period = std::chrono::milliseconds(request.format.fps > 0 ? 1000 / request.format.fps : 16);
     while (Current(epoch)) {
       const auto capture_started = std::chrono::steady_clock::now();
       if (auto error = lease->CaptureError(); !error.empty()) {
@@ -232,8 +259,11 @@ struct QrScanner::State {
       const auto zoom_state = processor.DecodeDue(capture_started) ? lease->ZoomState() : CameraZoomState{};
       auto frame = lease->NextFrame();
       stats.Poll(capture_started);
+      auto idle_wait = frame_period / 2;
       if (frame) {
         last_frame = capture_started;
+        // Capped: a jittery camera must not make the next poll land just before its frame and then sleep half a period.
+        idle_wait = std::min(frame_period, std::chrono::milliseconds(16));
         auto next = processor.Process(std::move(*frame), last_frame, zoom_state);
         stats.Frame(last_frame, processor);
         const bool complete = next.text.has_value();
@@ -241,12 +271,19 @@ struct QrScanner::State {
         if (complete) {
           return;
         }
-      } else if (std::chrono::steady_clock::now() - last_frame > std::chrono::seconds(15)) {
+      } else if (lease->PermissionPending()) {
+        // The OS permission dialog is up: frames cannot arrive yet, so the no-frame clock only
+        // starts once the user has answered.
+        last_frame = std::chrono::steady_clock::now();
+      } else if (std::chrono::steady_clock::now() - last_frame > no_frame_timeout) {
         Publish(epoch, Update{{}, {}, "Camera produced no frames; check camera permission and availability"}, true);
         return;
       }
       std::unique_lock lock(mutex);
-      cv.wait_for(lock, std::chrono::milliseconds(5), [&] {
+      // After a frame the next one is a full period away (less the time spent on this one).
+      const auto spent = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - capture_started);
+      cv.wait_for(lock, std::max(std::chrono::milliseconds(1), idle_wait - spent), [&] {
         return closing || !scanning || generation != epoch;
       });
     }
@@ -267,7 +304,8 @@ struct QrScanner::State {
   }
 };
 
-QrScanner::QrScanner(MediaDeviceArbiter& devices) : state_(std::make_unique<State>(devices)) {
+QrScanner::QrScanner(MediaDeviceArbiter& devices, std::chrono::milliseconds no_frame_timeout)
+    : state_(std::make_unique<State>(devices, no_frame_timeout)) {
   state_->worker = std::thread([this] { state_->Run(); });
 }
 QrScanner::~QrScanner() { Shutdown(); }

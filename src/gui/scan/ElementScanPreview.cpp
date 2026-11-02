@@ -11,9 +11,12 @@
 
 namespace pbr {
 namespace {
-ui::Mesh ViewfinderMesh(ui::Vector2f box) {
+float ViewfinderSide(ui::Vector2f box) { return std::min(box.x, box.y) * .68f; }
+
+// Dimming around the finder and its four corner marks: they depend on the box size only.
+ui::Mesh ViewfinderFrameMesh(ui::Vector2f box) {
   ui::Mesh mesh;
-  const float side = std::min(box.x, box.y) * .68f;
+  const float side = ViewfinderSide(box);
   const ui::Vector2f corner((box.x - side) * .5f, (box.y - side) * .5f);
   const ui::ColourbPremultiplied shade(0, 0, 0, 140);
   const ui::ColourbPremultiplied white(255, 255, 255, 255);
@@ -31,11 +34,19 @@ ui::Mesh ViewfinderMesh(ui::Vector2f box) {
       quad({at.x, corner.y + y * (side - 18.f)}, {3.f, 18.f}, white);
     }
   }
+  return mesh;
+}
+
+// The one moving part: the scan line.
+ui::Mesh ScanLineMesh(ui::Vector2f box) {
+  ui::Mesh mesh;
+  const float side = ViewfinderSide(box);
+  const ui::Vector2f corner((box.x - side) * .5f, (box.y - side) * .5f);
   const double seconds = std::chrono::duration<double>(
       std::chrono::steady_clock::now().time_since_epoch()).count();
   const float phase = static_cast<float>(std::abs(std::fmod(seconds, 2.4) / 1.2 - 1.0));
-  quad({corner.x + 6.f, corner.y + 6.f + (side - 14.f) * phase},
-       {side - 12.f, 2.f}, ui::ColourbPremultiplied(74, 108, 247, 255));
+  ui::MeshUtilities::GenerateQuad(mesh, {corner.x + 6.f, corner.y + 6.f + (side - 14.f) * phase},
+                                  {side - 12.f, 2.f}, ui::ColourbPremultiplied(74, 108, 247, 255));
   return mesh;
 }
 } // namespace
@@ -75,8 +86,29 @@ void ElementScanPreview::OnRender() {
   ui::MeshUtilities::GenerateQuad(mesh, inset, size, ui::ColourbPremultiplied(255, 255, 255, 255));
   geometry_ = manager->MakeGeometry(std::move(mesh));
   geometry_.Render(GetAbsoluteOffset(ui::BoxArea::Content), texture_);
-  viewfinder_ = manager->MakeGeometry(ViewfinderMesh(box));
-  viewfinder_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
+  if (manager != frame_manager_ || box != frame_box_) {
+    frame_manager_ = manager;
+    frame_box_ = box;
+    frame_ = manager->MakeGeometry(ViewfinderFrameMesh(box));
+  }
+  frame_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
+  scan_line_ = manager->MakeGeometry(ScanLineMesh(box));
+  scan_line_.Render(GetAbsoluteOffset(ui::BoxArea::Content));
+}
+
+// Pixel sizes derive from the dp ratio, so the cached finder geometry is stale after it changes.
+void ElementScanPreview::OnDpRatioChange() {
+  ui::Element::OnDpRatioChange();
+  frame_manager_ = nullptr;
+}
+
+// Drop the GPU resources before the render manager can go away, rather than at member destruction.
+void ElementScanPreview::Release() {
+  frame_.Release();
+  scan_line_.Release();
+  geometry_.Release();
+  frame_manager_ = nullptr;
+  ui::Element::Release();
 }
 
 void RegisterScanPreviewElement() {

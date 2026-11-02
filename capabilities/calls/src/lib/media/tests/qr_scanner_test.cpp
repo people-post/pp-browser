@@ -39,6 +39,9 @@ struct FakeState {
   CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
+  int rotate_cw = 0;  // geometry the fake camera reports
+  bool pre_rotated = false;  // frames arrive rotated so that rotate_cw makes them upright
+  std::atomic<bool> permission_pending{false};
   bool zoom_required = false;
   float blank_until_zoom = 0.f;  // frames show nothing at all below this magnification
   int candidate_offset_x = 0;
@@ -51,10 +54,21 @@ struct FakeState {
 };
 class FakeCamera final : public ICameraEndpoint {
 public:
-  FakeCamera(FakeState& state, const char* text) : state_(state), frame_(QrFrame(text)) {}
+  FakeCamera(FakeState& state, const char* text) : state_(state), frame_(QrFrame(text)) {
+    for (int i = 0; state.pre_rotated && i < (360 - state.rotate_cw) / 90 % 4; ++i) {
+      VideoFrameRgba turned;
+      RotateRgba90Cw(frame_, turned);
+      frame_ = std::move(turned);
+    }
+  }
   ~FakeCamera() override { ++state_.closes; }
-  CameraGeometry Geometry() const override { return {}; }
+  CameraGeometry Geometry() const override {
+    CameraGeometry geometry;
+    geometry.rotate_cw = state_.rotate_cw;
+    return geometry;
+  }
   std::string CaptureError() const override { return state_.error; }
+  bool PermissionPending() const override { return state_.permission_pending; }
   std::optional<VideoFrameRgba> NextFrame() override {
     if (state_.blank_until_zoom > 0.f && state_.zoom < state_.blank_until_zoom) {
       VideoFrameRgba blank;
@@ -208,6 +222,50 @@ TEST(QrScannerTest, MissingFramesBecomeVisibleErrorAndReleaseCamera) {
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(18)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
+}
+TEST(QrScannerTest, PermissionPromptDoesNotCountTowardsNoFrameTimeout) {
+  FakeState state;
+  state.no_frames = true;
+  state.permission_pending = true;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices, std::chrono::milliseconds(200));
+  scanner.Start();
+  ASSERT_TRUE(WaitFor([&] { return state.opens == 1; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  EXPECT_TRUE(scanner.Poll().error.empty());
+  state.permission_pending = false;  // user granted, still no frames: the clock starts now
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(10)));
+  EXPECT_NE(result.error.find("no frames"), std::string::npos);
+}
+TEST(QrScannerTest, QuarterTurnGeometryDecodesAndKeepsPreviewOrientation) {
+  for (const int rotate : {90, 180, 270}) {
+    FakeState state;
+    state.rotate_cw = rotate;
+    state.pre_rotated = true;
+    MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+    QrScanner scanner(devices);
+    scanner.Start();
+    QrScanner::Update result;
+    ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return result.text.has_value(); })) << rotate;
+    EXPECT_EQ(result.text, "old payload") << rotate;
+  }
+  FakeState blank;
+  blank.rotate_cw = 90;
+  blank.blank_until_zoom = 99.f;  // 640x480 white frames
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(blank));
+  QrScanner scanner(devices);
+  scanner.Start();
+  int previews = 0;
+  ASSERT_TRUE(WaitFor([&] {
+    auto update = scanner.Poll();
+    if (update.preview) {
+      EXPECT_EQ(update.preview->width, 480);  // the decoded and the cheap preview path agree
+      EXPECT_EQ(update.preview->height, 640);
+      ++previews;
+    }
+    return previews >= 8;
+  }));
 }
 TEST(QrScannerTest, StopDiscardsAlreadyCompletedUnconsumedPayload) {
   FakeState state;

@@ -18,6 +18,8 @@ public:
 
 protected:
   void OnRender() override;
+  void OnDpRatioChange() override;
+  void Release() override;
 
 private:
   int width_ = 0;
@@ -25,7 +27,10 @@ private:
   std::vector<uint8_t> pending_;
   ui::CallbackTexture texture_;
   ui::Geometry geometry_;
-  ui::Geometry viewfinder_;
+  ui::Geometry frame_;      // dimming + corner marks, rebuilt only when the box or render manager changes
+  ui::Geometry scan_line_;  // rebuilt every frame
+  ui::Vector2f frame_box_{0, 0};
+  ui::RenderManager* frame_manager_ = nullptr;
 };
 
 void RegisterScanPreviewElement();
