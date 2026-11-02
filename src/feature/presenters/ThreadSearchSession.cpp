@@ -38,6 +38,16 @@ bool ThreadSearchSession::IndexReady(const uint64_t generation, std::vector<Thre
   return true;
 }
 
+bool ThreadSearchSession::IndexFailed(const uint64_t generation, const int64_t now_ms) {
+  if (!view_.open || generation != generation_) {
+    return false;
+  }
+  building_ = false;
+  last_built_ms_ = now_ms; // the next try keeps the same spacing as a rebuild
+  view_.indexing = false;
+  return true;
+}
+
 void ThreadSearchSession::SetQuery(std::string query) {
   if (!view_.open || query == view_.query) {
     return;

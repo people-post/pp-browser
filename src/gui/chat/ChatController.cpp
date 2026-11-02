@@ -1796,8 +1796,13 @@ void ChatController::SyncDisplayFromThread() {
       const std::string tail =
           chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
       bool changed = tail != prev_tail_id || chat_.messages.size() != prev_count;
-      if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1); newest && !newest->empty()) {
-        changed = changed || newest->back().id != search_thread_tail_;
+      if (changed) {
+        if (!scroller_.LoadedMaxDisplayOrder()) {
+          search_thread_tail_ = tail; // the rows shown end at the chat's end
+        }
+      } else if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1); newest && !newest->empty()) {
+        // The rows shown did not change; they may be older history: has the chat's end moved?
+        changed = newest->back().id != search_thread_tail_;
         search_thread_tail_ = newest->back().id;
       }
       if (changed) {
@@ -2200,8 +2205,11 @@ void ChatController::DeleteMessageForMe(const std::string& message_id) {
     ShowToast(AppError::Display(deleted.error()));
     return;
   }
-  SyncDisplayFromThread();
-  OnSearchMessagesChanged();
+  if (search_.DropHit(message_id)) {
+    (void)search_.TakeJump(); // the count follows at once; the view stays where the user is
+    ApplySearchView();
+  }
+  SyncDisplayFromThread(); // the rows lost one: the index is rebuilt (throttled)
   DirtyChatTurns();
   NotifySurfaceChanged();
 }
@@ -3582,24 +3590,29 @@ void ChatController::StartSearchIndex(const uint64_t generation) {
     const auto started = std::chrono::steady_clock::now();
     std::vector<ThreadSearchEntry> index;
     size_t rows = 0;
-    bool read = false;
+    std::optional<std::string> failure;
     if (auto messages = facade->GetMessages(thread_id)) {
-      read = true;
       rows = messages->size();
       index = BuildSearchIndex(*messages);
+    } else {
+      failure = messages.error().message;
     }
     const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-    AppRuntime::PostUI([this, generation, index = std::move(index), rows, ms, read]() mutable {
-      if (read) {
-        log().info << "chat search index rows=" << rows << " ms=" << ms;
+    AppRuntime::PostUI([this, generation, index = std::move(index), rows, ms, failure]() mutable {
+      if (failure) {
+        // A failed read is not an empty chat: the index it would have replaced stays.
+        log().warning << "chat search index failed err=" << *failure;
+        if (search_.IndexFailed(generation, SteadyNowMs())) {
+          ApplySearchView();
+        }
       } else {
-        log().warning << "chat search index: the chat could not be read";
-      }
-      // A late result (closed, or another chat since) is dropped here, before anything keeps it.
-      if (search_.IndexReady(generation, std::move(index), SteadyNowMs())) {
-        ApplySearchView();
-        JumpToSearchHit();
+        log().info << "chat search index rows=" << rows << " ms=" << ms;
+        // A late result (closed, or another chat since) is dropped here, before anything keeps it.
+        if (search_.IndexReady(generation, std::move(index), SteadyNowMs())) {
+          ApplySearchView();
+          JumpToSearchHit();
+        }
       }
       if (const std::optional<uint64_t> next = search_.Tick(SteadyNowMs())) {
         StartSearchIndex(*next);

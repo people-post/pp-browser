@@ -224,3 +224,35 @@ TEST(ThreadSearchSessionTest, DropHitCountsDownAndKeepsTheCursorInRange) {
   EXPECT_FALSE(session.view().can_older);
   EXPECT_FALSE(session.view().can_newer);
 }
+
+TEST(ThreadSearchSessionTest, AFailedRebuildKeepsTheIndexAndHits) {
+  ThreadSearchSession session = OpenWith(FiveTeas());
+  session.Older(); // on t4
+  (void)session.TakeJump();
+  const std::optional<uint64_t> rebuild = session.MessagesChanged(5000);
+  ASSERT_TRUE(rebuild.has_value());
+  EXPECT_TRUE(session.IndexFailed(*rebuild, 5100));
+  EXPECT_FALSE(session.view().indexing);
+  EXPECT_TRUE(session.HasIndex());
+  EXPECT_EQ(session.view().hit_count, 5U);
+  EXPECT_EQ(session.CurrentMessageId(), "t4");
+  EXPECT_FALSE(session.TakeJump().has_value());
+  // Another change may rebuild again, spaced like any rebuild.
+  EXPECT_FALSE(session.MessagesChanged(6000).has_value());
+  EXPECT_TRUE(session.Tick(7100).has_value());
+}
+
+TEST(ThreadSearchSessionTest, AFailedFirstIndexEndsSearchingAndALateFailureIsIgnored) {
+  ThreadSearchSession session;
+  const uint64_t generation = session.Open();
+  EXPECT_TRUE(session.IndexFailed(generation, 100));
+  EXPECT_FALSE(session.view().indexing);
+  EXPECT_TRUE(session.view().open);
+  EXPECT_FALSE(session.HasIndex());
+  session.Close();
+  EXPECT_FALSE(session.IndexFailed(generation, 200));
+  const uint64_t again = session.Open();
+  EXPECT_FALSE(session.IndexFailed(generation, 300)); // the old generation
+  EXPECT_TRUE(session.view().indexing);
+  EXPECT_TRUE(session.IndexFailed(again, 300));
+}

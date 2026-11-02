@@ -43,6 +43,11 @@ public:
    * The hits are found again; the cursor stays on the same message when it is still a hit.
    */
   bool IndexReady(uint64_t generation, std::vector<ThreadSearchEntry> index, int64_t now_ms);
+  /**
+   * The build for `generation` could not read the chat: "Searching…" ends, the index and hits it would have
+   * replaced stay. False when it is for another generation or the search is closed.
+   */
+  bool IndexFailed(uint64_t generation, int64_t now_ms);
   /** The query changed: hits found again, cursor on the newest. */
   void SetQuery(std::string query);
   /** One hit older (up) / newer (down); stops at the ends. */
