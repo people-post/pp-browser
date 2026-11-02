@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/content/CasStore.h"
 #include "lib/content/CasTypes.h"
 
 #include "common/Error.h"
@@ -60,13 +61,11 @@ inline std::optional<CasLibraryFilter> CasLibraryFilterFromString(const std::str
 }
 
 /** Build library rows from object_index (no DEK required). */
-Roe<std::vector<CasLibraryRow>> ListCasLibrary(const std::string& profile_dir, CasLibraryFilter filter);
+Roe<std::vector<CasLibraryRow>> ListCasLibrary(const CasStore& content, CasLibraryFilter filter);
 
 /** Share publicly… / Unpublish… helpers used by Me → Storage. */
-Roe<ByteVector> ShareCasPublicly(const std::string& profile_dir, const std::string& profile_id,
-                                 const ByteVector& dek, const ByteVector& private_content_id);
-Roe<void> UnpublishCasPublic(const std::string& profile_dir, const std::string& profile_id,
-                             const ByteVector& public_content_id);
+Roe<ByteVector> ShareCasPublicly(CasStore& content, const ByteVector& dek, const ByteVector& private_content_id);
+Roe<void> UnpublishCasPublic(CasStore& content, const ByteVector& public_content_id);
 
 /** Link/tip share (U9): `pp-cas:v1:<64-hex>` or raw 64-hex content id. */
 inline constexpr const char* kCasPublicTipPrefix = "pp-cas:v1:";
@@ -74,12 +73,10 @@ std::string FormatCasPublicTip(const std::string& content_id_hex);
 Roe<ByteVector> ParseCasPublicTip(std::string_view tip);
 
 /** Serve gate (P4): pinned public only — never private, never Cache. */
-Roe<ByteVector> LoadPinnedPublicCasBytes(const std::string& profile_dir, const std::string& profile_id,
-                                       const ByteVector& content_id);
+Roe<ByteVector> LoadPinnedPublicCasBytes(const CasStore& content, const ByteVector& content_id);
 
 /** Peer-fetched public object → public Cache (C013). */
-Roe<void> CacheFetchedPublicCas(const std::string& profile_dir, const std::string& profile_id,
-                              const ByteVector& content_id, const ByteVector& bytes,
-                              std::string_view mime = {}, std::string_view filename = {});
+Roe<void> CacheFetchedPublicCas(CasStore& content, const ByteVector& content_id, const ByteVector& bytes,
+                                std::string_view mime = {}, std::string_view filename = {});
 
 } // namespace pbr

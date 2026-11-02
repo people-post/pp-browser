@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/posts/PostEntry.h"
-#include "lib/posts/PostStore.h"
+#include "lib/posts/IPostStore.h"
 
 #include "common/Error.h"
 
@@ -20,7 +20,7 @@ namespace pbr {
 class PostAuthor {
 public:
   /** `device`: this device's PeerId. `random_lane`: fills a new lane id (tests pass a fixed one). */
-  PostAuthor(PostStore& store, std::string account_id, std::string device, PostSigner signer,
+  PostAuthor(IPostStore& store, std::string account_id, std::string device, PostSigner signer,
              std::function<PostLane()> random_lane = {});
 
   /** A new entry of `kind` with `body` (checked against the protocol limits), at `now_ms` or later. */
@@ -31,7 +31,7 @@ public:
 private:
   Roe<OwnPostLane> CurrentLane();
 
-  PostStore& store_;
+  IPostStore& store_;
   std::string account_id_;
   std::string device_;
   PostSigner signer_;

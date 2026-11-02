@@ -630,6 +630,10 @@ void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   transports_.SetProfileDataDir(profile_data_dir_);
 }
 
+void MeshDeliveryOrchestrator::SetContent(std::shared_ptr<CasStore> content) {
+  transports_.SetContent(std::move(content));
+}
+
 void MeshDeliveryOrchestrator::SetControlLaneSeen(IControlLaneSeenStore* seen) {
   control_lane_seen_ = seen;
   if (receive_pipeline_) {

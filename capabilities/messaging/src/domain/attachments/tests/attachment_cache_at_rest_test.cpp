@@ -1,3 +1,4 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -24,9 +25,11 @@ protected:
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
     profile_dir_ = dir_.string();
+    content_ = MakeInMemoryIndexedCasStore(profile_dir_, profile_id_);
   }
 
   void TearDown() override {
+    content_.reset();
     SetAttachmentPlatform({});
     AttachmentPlaintextMemoryCache::Instance().Clear();
     std::filesystem::remove_all(dir_);
@@ -39,6 +42,7 @@ protected:
   const std::string thread_id_ = "thread-a";
   const std::string profile_id_ = "profile-a";
   const ByteVector plain_{'h', 'e', 'l', 'l', 'o', '-', 'b', 'l', 'o', 'b'};
+  std::shared_ptr<CasStore> content_;
 };
 
 // That a view is marked as downloaded: AttachmentPlatformTest (lib/messaging, through the platform hook); that
@@ -49,7 +53,7 @@ TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x42);
 
-  auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "text/plain", plain_, "note.txt", dek);
+  auto saved = SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek);
   ASSERT_TRUE(saved) << saved.error().message;
 
   std::ifstream in(*saved, std::ios::binary);
@@ -62,9 +66,9 @@ TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
   const std::string generic = std::filesystem::path(*saved).generic_string();
   EXPECT_NE(generic.find("/cas/private/blocks/"), std::string::npos);
   EXPECT_EQ(generic.find("/blobs/"), std::string::npos);
-  EXPECT_TRUE(AttachmentBlobExists(profile_dir_, *hash));
+  EXPECT_TRUE(AttachmentBlobExists(*content_, *hash));
 
-  auto loaded = LoadAttachmentPlaintext(profile_dir_, profile_id_, *hash, dek);
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, dek);
   ASSERT_TRUE(loaded) << loaded.error().message;
   EXPECT_EQ(*loaded, plain_);
 }
@@ -75,11 +79,11 @@ TEST_F(AttachmentCacheAtRestTest, WrongDekFailsDecrypt) {
   const auto dek = MakeDek(0x11);
   const auto wrong = MakeDek(0x22);
 
-  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "text/plain", plain_, "note.txt", dek));
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek));
 
   // RAM cache is DEK-session scoped (wiped on ClearDek); drop it so this checks CAS decrypt.
   AttachmentPlaintextMemoryCache::Instance().Clear();
-  auto loaded = LoadAttachmentPlaintext(profile_dir_, profile_id_, *hash, wrong);
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, wrong);
   EXPECT_FALSE(static_cast<bool>(loaded));
 }
 
@@ -88,10 +92,10 @@ TEST_F(AttachmentCacheAtRestTest, EnsureAttachmentViewPathMaterializesBlobsView)
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x33);
 
-  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "text/plain", plain_, "note.txt", dek));
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek));
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt").empty());
 
-  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id_, *hash, "text/plain", "note.txt", dek);
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "text/plain", "note.txt", dek);
   ASSERT_TRUE(view) << view.error().message;
   EXPECT_NE(view->find("blobs_view"), std::string::npos);
   ASSERT_TRUE(std::filesystem::exists(*view));
@@ -117,20 +121,20 @@ TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnVie
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x55);
 
-  auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "text/plain", plain_, "note.txt", dek);
+  auto saved = SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek);
   ASSERT_TRUE(saved) << saved.error().message;
   EXPECT_GE(AttachmentPlaintextMemoryCache::Instance().EntryCountForTest(), 1u);
 
-  auto loaded = LoadAttachmentPlaintext(profile_dir_, profile_id_, *hash, dek);
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, dek);
   ASSERT_TRUE(loaded) << loaded.error().message;
   EXPECT_EQ(*loaded, plain_);
 
   std::error_code ec;
   std::filesystem::remove(*saved, ec);
   ASSERT_FALSE(ec) << ec.message();
-  EXPECT_FALSE(AttachmentBlobExists(profile_dir_, *hash));
+  EXPECT_FALSE(AttachmentBlobExists(*content_, *hash));
 
-  auto from_ram = LoadAttachmentPlaintext(profile_dir_, profile_id_, *hash, dek);
+  auto from_ram = LoadAttachmentPlaintext(*content_, *hash, dek);
   ASSERT_TRUE(from_ram) << from_ram.error().message;
   EXPECT_EQ(*from_ram, plain_);
 
@@ -138,7 +142,7 @@ TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnVie
   EXPECT_EQ(AttachmentPlaintextMemoryCache::Instance().EntryCountForTest(), 0u);
 
   auto after_wipe =
-      LoadAttachmentPlaintext(profile_dir_, profile_id_, *hash, dek);
+      LoadAttachmentPlaintext(*content_, *hash, dek);
   EXPECT_FALSE(static_cast<bool>(after_wipe));
 }
 
@@ -157,13 +161,13 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x66);
 
-  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "video/mp4", big, "clip.mp4", dek));
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "video/mp4", big, "clip.mp4", dek));
 
   // The platform's stand-in poster (the app installs it); the video itself is never decoded here.
   SetAttachmentPlatform({.soft_poster_jpeg = [](int) -> Roe<std::vector<uint8_t>> {
     return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
   }});
-  auto poster = EnsureAttachmentPosterFromContent(profile_dir_, profile_id_, thread_id_, *hash, "video/mp4", "clip.mp4",
+  auto poster = EnsureAttachmentPosterFromContent(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4",
                                                   dek, big.size(), kLimit);
   ASSERT_TRUE(poster) << poster.error().message;
   EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
@@ -246,8 +250,8 @@ TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
 
   // Plain text bytes saved under a video/mp4 mime: the sender lied to reach the
   // no-confirm-on-open path for images/videos.
-  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "video/mp4", plain_, "clip.mp4", dek));
-  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "video/mp4", plain_, "clip.mp4", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
   ASSERT_TRUE(view) << view.error().message;
 
   EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
@@ -262,8 +266,8 @@ TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeRejectsMzPolyglot) {
   const auto dek = MakeDek(0x88);
 
   ASSERT_TRUE(
-      SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "video/mp4", polyglot, "clip.mp4", dek));
-  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
+      SaveAttachmentPlaintext(*content_, *hash, "video/mp4", polyglot, "clip.mp4", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
   ASSERT_TRUE(view) << view.error().message;
 
   EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
@@ -275,8 +279,8 @@ TEST_F(AttachmentCacheAtRestTest, SafeToAutoOpenRequiresWhitelistedExtensionAndC
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x99);
 
-  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, profile_id_, *hash, "image/png", png, "photo.png", dek));
-  auto view = EnsureAttachmentView(profile_dir_, profile_id_, thread_id_, *hash, "image/png", "photo.png", dek);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", png, "photo.png", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "image/png", "photo.png", dek);
   ASSERT_TRUE(view) << view.error().message;
 
   // Extension, mime and content all agree: safe.

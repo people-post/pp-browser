@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/people/PeerCardStore.h"
+#include "lib/people/PeerCards.h"
 #include "lib/people/PeerKemKeyStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 
@@ -24,7 +24,7 @@ namespace pbr {
  */
 class AccountKeyResolver : public Module {
 public:
-  AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys, PeerCardStore& cards,
+  AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys, PeerCards& cards,
                      mesh::IDirectoryClient& directory);
 
   /** Fills the key stores from every kept card (at unlock). */
@@ -32,7 +32,7 @@ public:
   /** What is kept for `account_id` (no lookup). */
   Roe<std::optional<PeerCardRecord>> Kept(const std::string& account_id) { return cards_.Get(account_id); }
   /**
-   * The issue time an account card of `account_id` must reach (PeerCardStore::Floor; 0 when none). Unreadable:
+   * The issue time an account card of `account_id` must reach (PeerCards::Floor; 0 when none). Unreadable:
    * none does (a failed read must not let an older card in).
    */
   int64_t CardFloor(const std::string& account_id) {
@@ -91,7 +91,7 @@ private:
 
   PeerSigningKeyStore& signing_keys_;
   PeerKemKeyStore& kem_keys_;
-  PeerCardStore& cards_;
+  PeerCards& cards_;
   mesh::IDirectoryClient& directory_;
   SigningView signing_{*this};
   KeptSigningView kept_signing_{*this};

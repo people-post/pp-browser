@@ -143,6 +143,8 @@ public:
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
+  /** The profile's content store, for the blob transport (PeerTransports::SetContent). */
+  void SetContent(std::shared_ptr<CasStore> content);
   /** The control lane's applied ids (the hub's store; null: none kept, every copy applies). */
   void SetControlLaneSeen(IControlLaneSeenStore* seen);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);

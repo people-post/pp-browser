@@ -13,8 +13,6 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-struct sqlite3;
-
 namespace pbr {
 
 /** What this device knows about an account from the cards it has checked (docs/contracts/ACCOUNT_CARD.md). */
@@ -59,13 +57,38 @@ struct PeerCardFloor {
 /** What a message carries for a kept account: its newest account card, else its key card. */
 Object CarriedCardJson(const PeerCardRecord& record);
 
+/** A kept record as stored (its JSON form); `PeerCardRecordFromJson` reads it back. */
+Object PeerCardRecordToJson(const PeerCardRecord& record);
+Roe<PeerCardRecord> PeerCardRecordFromJson(const Object& json);
+
 /**
- * Persisted cards, one row per account in profile.db (`peer_cards`; public material, plaintext like
- * contacts.json). Every card is checked before it is kept. Thread-safe.
+ * Where a device keeps peers' cards (CR024): one record per account, and the floors restored from the account
+ * locker. The rows only — what a card may change is PeerCards'. The app's storage keeps them (`peer_cards`; public
+ * material, plaintext like contacts.json); tests use an in-memory one.
  */
-class PeerCardStore : public Module {
+class IPeerCardStore {
 public:
-  explicit PeerCardStore(std::string profile_db_path);
+  virtual ~IPeerCardStore() = default;
+
+  virtual Roe<std::optional<PeerCardRecord>> Get(const std::string& account_id) const = 0;
+  virtual Roe<std::vector<PeerCardRecord>> List() const = 0;
+  virtual Roe<void> Put(const PeerCardRecord& record) = 0;
+  /** An account's floor (0 when none). */
+  virtual Roe<int64_t> Floor(const std::string& account_id) const = 0;
+  /** Raises each floor to at least its issue time (a lower one changes nothing). */
+  virtual Roe<void> RaiseFloors(const std::vector<PeerCardFloor>& floors) = 0;
+  virtual Roe<std::vector<PeerCardFloor>> Floors() const = 0;
+};
+
+/**
+ * Peers' cards as this device knows them (docs/contracts/ACCOUNT_CARD.md): every card is checked before it is kept,
+ * the newest account card is the account's word, and one older than a restored floor is refused. Thread-safe: a
+ * card's read-then-write is whole.
+ */
+class PeerCards : public Module {
+public:
+  /** `store` keeps the rows (and must outlive this). */
+  explicit PeerCards(IPeerCardStore& store);
 
   Roe<PeerCardRecord> AddKeyCard(const KeyCard& card, const std::string& source);
   Roe<PeerCardRecord> AddAccountCard(const AccountCard& card, int64_t now_ms, const std::string& source);
@@ -81,18 +104,12 @@ public:
   Roe<int64_t> Floor(const std::string& account_id) const;
   /** Per account, the newest issue time known — a kept account card's, or a floor's — for the account locker. */
   Roe<std::vector<PeerCardFloor>> NewestKnown() const;
-  /** Called (outside the store's lock) when an account's newest card got newer: the account locker keeps its floor. */
+  /** Called (outside the lock) when an account's newest card got newer: the account locker keeps its floor. */
   void SetOnNewerCard(std::function<void()> callback);
 
 private:
-  Roe<sqlite3*> OpenDb() const;
-  Roe<std::optional<PeerCardRecord>> GetLocked(sqlite3* db, const std::string& account_id) const;
-  Roe<void> PutLocked(sqlite3* db, const PeerCardRecord& record) const;
-  Roe<int64_t> FloorLocked(sqlite3* db, const std::string& account_id) const;
-
-  std::string profile_db_path_;
+  IPeerCardStore& store_;
   mutable std::mutex mutex_;
-  mutable bool schema_ready_ = false;
   std::function<void()> on_newer_card_;
 };
 

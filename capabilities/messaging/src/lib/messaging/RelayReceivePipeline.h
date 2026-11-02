@@ -164,7 +164,7 @@ public:
     on_sender_card_version_ = std::move(callback);
   }
   /**
-   * The issue time a carried card of an account must reach to speak for it (PeerCardStore::Floor): a restored
+   * The issue time a carried card of an account must reach to speak for it (PeerCards::Floor): a restored
    * device keeps no cards, only how new the ones it had were. None: 0.
    */
   void SetAccountCardFloor(std::function<int64_t(const std::string& account_id)> floor) {

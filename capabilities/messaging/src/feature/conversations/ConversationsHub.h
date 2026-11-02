@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/content/CasStore.h"
 #include "lib/delivery/HttpRelayClient.h"
 #include "common/Secret.h"
 
@@ -84,7 +85,7 @@ class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
-class PeerCardStore;
+class PeerCards;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -228,6 +229,8 @@ public:
   /** The group rosters (from stores open to hub teardown; null outside that). */
   IGroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
   std::string ProfileDbPath() const { return profile_db_path_; }
+  /** The profile's content store (private and public objects; Me → Storage), from Initialize to teardown. */
+  std::shared_ptr<CasStore> Content() const { return content_; }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
   /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
@@ -409,6 +412,9 @@ public:
   void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
   /** Where the profile's stores come from (CR024): the app's storage, or a test's in-memory ones. */
   void SetStorage(OpenProfileStores open) { open_stores_ = std::move(open); }
+  /** Opens the content index the profile's content store is built on (the app's storage, or a test's). */
+  using OpenContentIndex = std::function<std::unique_ptr<IObjectIndex>(const std::string& profile_data_dir)>;
+  void SetContentStorage(OpenContentIndex open) { open_content_index_ = std::move(open); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -528,6 +534,7 @@ private:
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
   /** Opens the profile's stores (the app's storage); set before Initialize. */
   OpenProfileStores open_stores_;
+  OpenContentIndex open_content_index_;
   std::unique_ptr<IThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
@@ -549,7 +556,10 @@ private:
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   /** Account cards this device has checked and kept (profile.db). */
-  std::unique_ptr<PeerCardStore> peer_cards_;
+  std::unique_ptr<IPeerCardStore> peer_card_rows_;
+  std::unique_ptr<PeerCards> peer_cards_;
+  /** The profile's content store, lent to attachments and the blob transport (they may outlive a teardown). */
+  std::shared_ptr<CasStore> content_;
   /** Peers' signing and KEM keys: kept cards, else the directory when one is configured. */
   std::unique_ptr<AccountKeyResolver> account_keys_;
   Roe<void> KeepLinkedAccountCard(const std::string& card_json);

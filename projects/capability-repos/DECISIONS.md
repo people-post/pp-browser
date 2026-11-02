@@ -443,7 +443,7 @@ Namespaces and an `include/` split wait for an actual repo split (CR022).
 ## CR024 — Capabilities own ideas; the app owns the database
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); stages 1–3 done; stage 4 (people, social) next
+**Status:** accepted (Hongwei, 2026-11-02); done (stages 1–4) — the rule is in [SRC_LAYOUT § Capability folders](../../docs/architecture/SRC_LAYOUT.md#capability-folders)
 
 **Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
 `chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without
@@ -476,5 +476,12 @@ an include. Each capability also carried at-rest encryption (the profile DEK) in
 3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
    move to storage (calls drops its at-rest crypto includes).
 4. People and social: `PeerCardStore`, `PostStore` and `ObjectIndex` the same way.
+
+**Notes (stage 4, content):** `CasStore` was opened by path wherever it was used (about ten places, each reopening
+the index). It is now one per profile, built by the hub on an `IObjectIndex` from the app
+(`ConversationsHub::SetContentStorage`, not `ProfileStores`: messaging's lib stays off content, C012) and lent as a
+`shared_ptr` to the attachment workflow, the blob transport and Me → Storage. The blocks and their encryption stay
+content's: they are the format, not a database. The blob port lost `SetProfileId`; the transport now gets the store
+from `PeerTransports`, which keeps it across a re-attach (the id was lost on one before).
 
 **Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).

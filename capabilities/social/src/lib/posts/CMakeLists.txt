@@ -5,12 +5,17 @@ pp_browser_add_lib_library(pp_lib_posts
     PostAuthor.cpp
     PostBodies.cpp
     PostEntry.cpp
-    PostStore.cpp
+    IPostStore.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
-    sodium
-    SQLite::SQLite3)
+    sodium)
 
 if(PP_BROWSER_BUILD_TESTS)
+  # Posts in memory: test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_posts_testing
+    SOURCES
+      testing/InMemoryPostStore.cpp
+    PUBLIC_LIBS
+      pp_lib_posts)
   add_subdirectory(tests)
 endif()

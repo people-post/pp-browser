@@ -652,13 +652,22 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.delete_relay_blob = [&facade](const std::string& blob_id) { return facade.DeleteRelayBlobById(blob_id); };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
-  settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
-    if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
-    }
-    return ListCasLibraryForSettings(secrets_->ProfileDataDir(), std::move(filter));
+  // Me → Storage works on the hub's content store: open from messaging's Initialize to its teardown.
+  const auto content_store = [this]() -> std::shared_ptr<CasStore> {
+    return messaging_ != nullptr ? messaging_->Content() : nullptr;
   };
-  settings_commands.share_cas_publicly = [this](const std::string& private_content_id_hex) -> Roe<void> {
+  settings_commands.list_cas_library = [content_store](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
+    }
+    return ListCasLibraryForSettings(*content, std::move(filter));
+  };
+  settings_commands.share_cas_publicly = [this, content_store](const std::string& private_content_id_hex) -> Roe<void> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
+    }
     if (!secrets_ || !secrets_->IsUnlocked()) {
       return Error("Unlock your profile to share publicly");
     }
@@ -670,14 +679,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!dek) {
       return dek.error();
     }
-    return ShareCasPubliclyForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek,
-                                       private_content_id_hex);
+    return ShareCasPubliclyForSettings(*content, *dek, private_content_id_hex);
   };
-  settings_commands.unpublish_cas = [this](const std::string& public_content_id_hex) -> Roe<void> {
-    if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
+  settings_commands.unpublish_cas = [content_store](const std::string& public_content_id_hex) -> Roe<void> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
     }
-    return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
+    return UnpublishCasForSettings(*content, public_content_id_hex);
   };
 
   settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_relay_user_id,
@@ -701,7 +710,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       return;
     }
     // The fetch rides the mesh (never parks UI); its answer comes back to UI.
-    FetchCasPublicTipForSettingsAsync(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob,
                                       local->relay_user_id, tip, peer_relay_user_id,
                                       [on_done = std::move(on_done)](Roe<void> fetched) {
                                         AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });

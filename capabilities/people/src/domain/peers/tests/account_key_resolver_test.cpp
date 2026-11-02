@@ -1,3 +1,4 @@
+#include "lib/people/testing/InMemoryPeerCards.h"
 #include "domain/peers/AccountKeyResolver.h"
 
 #include "common/directory/DirectoryJson.h"
@@ -61,7 +62,7 @@ protected:
            ("pp_account_keys_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
-    cards_ = std::make_unique<PeerCardStore>((dir_ / "profile.db").string());
+    cards_ = std::make_unique<InMemoryPeerCards>();
     resolver_ = std::make_unique<AccountKeyResolver>(signing_, kem_, *cards_, directory_);
   }
   void TearDown() override {
@@ -76,7 +77,7 @@ protected:
   std::filesystem::path dir_;
   PeerSigningKeyStore signing_;
   PeerKemKeyStore kem_;
-  std::unique_ptr<PeerCardStore> cards_;
+  std::unique_ptr<InMemoryPeerCards> cards_;
   OneEntryDirectory directory_;
   std::unique_ptr<AccountKeyResolver> resolver_;
 };
