@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
@@ -620,9 +621,14 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("llm", llm);
   object.set("search", SearchConfigToObject(config.search));
   object.set("context", ContextBudgetToObject(config.context));
-  object.set("relay", ServiceEndpointToObject(config.relay));
-  object.set("directory", DirectoryConfigToObject(config.directory));
-  object.set("registration", ServiceEndpointToObject(config.registration));
+  Object backend;
+  backend.set("env", config.backend.env);
+  object.set("backend", backend);
+  const bool saved = config.backend.has_saved_urls;
+  object.set("relay", ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay));
+  object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
+  object.set("registration",
+             ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
   if (!config.data_dir.empty()) {
@@ -680,6 +686,11 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (auto data_dir = object.getString("data_dir")) {
     config.data_dir = *data_dir;
+  }
+  if (const Object* backend = object.getObject("backend")) {
+    if (auto env = backend->getString("env")) {
+      config.backend.env = BackendEnvName(ParseBackendEnv(*env));
+    }
   }
   if (const Object* relay = object.getObject("relay")) {
     ServiceEndpointFromObject(*relay, config.relay);

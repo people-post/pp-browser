@@ -109,3 +109,16 @@ TEST_F(ProductMeshTest, OneMeshAtATimeAndAStopFreesItForTheNext) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+
+// The last-good directory nodes of one backend must never seed another's: the file lives in the profile.
+TEST(ProductMeshPathTest, DirectoryNodesFileIsPerProfile) {
+  const std::filesystem::path a = MeshDirectoryNodesPath("data/profiles/prod");
+  const std::filesystem::path b = MeshDirectoryNodesPath("data/profiles/qa");
+  EXPECT_EQ(a.filename(), "mesh_directory_nodes.json");
+  EXPECT_EQ(a.parent_path(), std::filesystem::path("data/profiles/prod"));
+  EXPECT_NE(a, b);
+}
+
+} // namespace pbr

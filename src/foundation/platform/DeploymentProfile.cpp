@@ -1,14 +1,24 @@
 #include "foundation/platform/DeploymentProfile.h"
 
 #include <cstdlib>
+#include <optional>
 
-#ifndef PP_BROWSER_DEFAULT_ORIGIN
-#define PP_BROWSER_DEFAULT_ORIGIN ""
+#ifndef PP_API_URL_PROD
+#define PP_API_URL_PROD ""
 #endif
 
 namespace pbr {
 
+#ifndef PP_API_URL_QA
+#define PP_API_URL_QA ""
+#endif
+
 namespace {
+
+std::optional<BackendEnv>& Latched() {
+  static std::optional<BackendEnv> latched;
+  return latched;
+}
 
 std::string Derive(const char* path) {
   const std::string origin = BriefOrigin();
@@ -18,13 +28,68 @@ std::string Derive(const char* path) {
 } // namespace
 
 const char* CompiledDefaultOrigin() {
-  return PP_BROWSER_DEFAULT_ORIGIN;
+  return PP_API_URL_PROD;
+}
+
+const char* CompiledQaOrigin() {
+  return PP_API_URL_QA;
+}
+
+BackendEnv ParseBackendEnv(const std::string_view name) {
+  if (name == "qa") {
+    return BackendEnv::Qa;
+  }
+  if (name == "custom") {
+    return BackendEnv::Custom;
+  }
+  return BackendEnv::Prod;
+}
+
+const char* BackendEnvName(const BackendEnv env) {
+  switch (env) {
+  case BackendEnv::Qa:
+    return "qa";
+  case BackendEnv::Custom:
+    return "custom";
+  case BackendEnv::Prod:
+    break;
+  }
+  return "prod";
+}
+
+BackendEnv ActiveBackend() {
+  return Latched().value_or(BackendEnv::Prod);
+}
+
+void LatchActiveBackend(BackendEnv requested) {
+  if (Latched()) {
+    return;
+  }
+  if (requested == BackendEnv::Qa && !QaBackendAvailable()) {
+    requested = BackendEnv::Prod;
+  }
+  Latched() = requested;
+}
+
+bool ActiveBackendLatched() {
+  return Latched().has_value();
+}
+
+void ResetActiveBackendForTest() {
+  Latched().reset();
+}
+
+bool OriginEnvOverrideActive() {
+  const char* env = std::getenv("PP_BROWSER_ORIGIN");
+  return env != nullptr && *env != '\0';
 }
 
 std::string BriefOrigin() {
   std::string origin;
   if (const char* env = std::getenv("PP_BROWSER_ORIGIN"); env && *env) {
     origin = env;
+  } else if (ActiveBackend() == BackendEnv::Qa) {
+    origin = CompiledQaOrigin();
   } else {
     origin = CompiledDefaultOrigin();
   }

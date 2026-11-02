@@ -4,6 +4,7 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/data/ProfileManifest.h"
@@ -49,6 +50,10 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   if (auto ensured = registry->EnsureActiveProfile(); !ensured) {
     return ensured.error();
+  }
+
+  if (auto selected = registry->SelectProfileForBackend(BackendProfileKey(*config)); !selected) {
+    return selected.error();
   }
 
   const std::string profile_data_dir = registry->ActiveProfileDataDir();

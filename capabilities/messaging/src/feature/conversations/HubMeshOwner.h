@@ -88,11 +88,11 @@ public:
   virtual void StopLanDiscovery() = 0;
 
   /**
-   * Keeps the directory's mesh nodes fresh and on disk (in `app_data_dir`): the mesh's directory twin first,
+   * Keeps the directory's mesh nodes fresh and on disk (in the profile's data dir: one backend's nodes are never another's): the mesh's directory twin first,
    * then `directory`. `on_updated` runs on a worker after a refresh lands. Once per profile; `directory` must
    * outlive StopDirectoryCache.
    */
-  virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& app_data_dir,
+  virtual void StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
                                    std::function<void()> on_updated) = 0;
   /** Whether the directory cache runs. */
   virtual bool HasDirectoryCache() const = 0;

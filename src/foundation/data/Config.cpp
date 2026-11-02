@@ -22,19 +22,31 @@ namespace pbr {
 
 namespace {
 
-// PP_BROWSER_ORIGIN overrides the backend URLs saved in the config file; a custom LLM endpoint is left alone.
-void ApplyOriginEnvOverride(AppConfig& config) {
-  const char* env = std::getenv("PP_BROWSER_ORIGIN");
-  if (env == nullptr || *env == '\0') {
-    return;
-  }
+// Prod / qa (and PP_BROWSER_ORIGIN) replace the saved backend URLs with ones derived from the origin;
+// the saved values are kept so a save does not overwrite the custom URLs. A custom LLM endpoint is left alone.
+void ApplyBackendOverride(AppConfig& config) {
+  config.backend.saved_relay = config.relay;
+  config.backend.saved_directory = config.directory;
+  config.backend.saved_registration = config.registration;
+  config.backend.has_saved_urls = true;
   if (config.llm.preset.empty() || config.llm.preset == "brief") {
     config.llm.base_url = BriefLlmBaseUrl();
   }
   config.promoted_mcp.url = BriefMcpUrl();
   config.relay.base_url = BriefRelayBaseUrl();
   config.directory.base_url = BriefRelayBaseUrl();
+  config.directory.providers.clear();
   config.registration.base_url = BriefRelayBaseUrl();
+}
+
+// A file written before `backend.env` existed whose saved URLs differ from the defaults was pointing at its own backend.
+bool HasLegacyCustomUrls(const AppConfig& config, const AppConfig& defaults) {
+  const auto differs = [](const std::string& saved, const std::string& fallback) {
+    return !saved.empty() && saved != fallback;
+  };
+  return differs(config.relay.base_url, defaults.relay.base_url) ||
+         differs(config.directory.base_url, defaults.directory.base_url) ||
+         differs(config.registration.base_url, defaults.registration.base_url);
 }
 
 } // namespace
@@ -132,7 +144,16 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(), *root);
-  ApplyOriginEnvOverride(config);
+  if (root->getObject("backend") == nullptr && HasLegacyCustomUrls(config, DefaultAppConfig())) {
+    config.backend.env = BackendEnvName(BackendEnv::Custom);
+  }
+  if (ParseBackendEnv(config.backend.env) == BackendEnv::Qa && !QaBackendAvailable()) {
+    config.backend.env = BackendEnvName(BackendEnv::Prod);
+  }
+  LatchActiveBackend(ParseBackendEnv(config.backend.env));
+  if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
+    ApplyBackendOverride(config);
+  }
   const AppConfig defaults = DefaultAppConfig();
   if (config.relay.base_url.empty()) {
     config.relay.base_url = defaults.relay.base_url;

@@ -52,7 +52,8 @@ Environment:
   PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
   PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
-  PP_BROWSER_DEFAULT_ORIGIN   Default backend origin compiled into the app (empty = none)
+  PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
+  PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -130,8 +131,11 @@ common_cmake_args() {
   if [[ -n "${PP_BROWSER_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_VERSION="${PP_BROWSER_VERSION}")
   fi
-  if [[ -n "${PP_BROWSER_DEFAULT_ORIGIN:-}" ]]; then
-    args+=(-DPP_BROWSER_DEFAULT_ORIGIN="${PP_BROWSER_DEFAULT_ORIGIN}")
+  if [[ -n "${PP_API_URL_PROD:-}" ]]; then
+    args+=(-DPP_API_URL_PROD="${PP_API_URL_PROD}")
+  fi
+  if [[ -n "${PP_API_URL_QA:-}" ]]; then
+    args+=(-DPP_API_URL_QA="${PP_API_URL_QA}")
   fi
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION}")

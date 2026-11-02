@@ -65,3 +65,47 @@ TEST(DeploymentProfileTest, NoOriginYieldsEmptyUrls) {
   EXPECT_TRUE(pbr::BriefMcpUrl().empty());
   EXPECT_TRUE(pbr::DiagnosticsUploadUrl().empty());
 }
+
+TEST(DeploymentProfileTest, BackendEnvNamesRoundTripAndUnknownIsProd) {
+  for (const auto env : {pbr::BackendEnv::Prod, pbr::BackendEnv::Qa, pbr::BackendEnv::Custom}) {
+    EXPECT_EQ(pbr::ParseBackendEnv(pbr::BackendEnvName(env)), env);
+  }
+  EXPECT_EQ(pbr::ParseBackendEnv(""), pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ParseBackendEnv("staging"), pbr::BackendEnv::Prod);
+}
+
+TEST(DeploymentProfileTest, ActiveBackendLatchesOnFirstCall) {
+  pbr::ResetActiveBackendForTest();
+  EXPECT_FALSE(pbr::ActiveBackendLatched());
+  pbr::LatchActiveBackend(pbr::BackendEnv::Custom);
+  pbr::LatchActiveBackend(pbr::BackendEnv::Prod);
+  EXPECT_EQ(pbr::ActiveBackend(), pbr::BackendEnv::Custom);
+  pbr::ResetActiveBackendForTest();
+}
+
+TEST(DeploymentProfileTest, QaFallsBackToProdWithoutCompiledQaOrigin) {
+  pbr::ResetActiveBackendForTest();
+  if (pbr::QaBackendAvailable()) {
+    GTEST_SKIP() << "a compile-time QA origin is configured";
+  }
+  pbr::LatchActiveBackend(pbr::BackendEnv::Qa);
+  EXPECT_EQ(pbr::ActiveBackend(), pbr::BackendEnv::Prod);
+  pbr::ResetActiveBackendForTest();
+}
+
+TEST(DeploymentProfileTest, QaBackendUsesQaOriginAndEnvStillWins) {
+  pbr::ResetActiveBackendForTest();
+  if (!pbr::QaBackendAvailable()) {
+    GTEST_SKIP() << "no compile-time QA origin";
+  }
+  pbr::LatchActiveBackend(pbr::BackendEnv::Qa);
+  {
+    ScopedOrigin origin(nullptr);
+    EXPECT_EQ(pbr::BriefOrigin(), std::string(pbr::CompiledQaOrigin()));
+  }
+  {
+    ScopedOrigin origin("https://backend.example.test");
+    EXPECT_EQ(pbr::BriefOrigin(), "https://backend.example.test");
+  }
+  pbr::ResetActiveBackendForTest();
+}

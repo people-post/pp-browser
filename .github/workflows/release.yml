@@ -83,7 +83,8 @@ jobs:
       - name: Configure
         shell: bash
         env:
-          PP_DEFAULT_ORIGIN: ${{ secrets.PP_DEFAULT_ORIGIN }}
+          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
@@ -92,7 +93,8 @@ jobs:
             -DPP_BROWSER_VERSION="${PP_PROJECT_VERSION}" \
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
-            -DPP_BROWSER_DEFAULT_ORIGIN="${PP_DEFAULT_ORIGIN}"
+            -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
+            -DPP_API_URL_QA="${PP_API_URL_QA}"
 
       - name: Build
         run: cmake --build build --config Release -j 4
@@ -247,7 +249,8 @@ jobs:
       - name: Configure
         shell: bash
         env:
-          PP_DEFAULT_ORIGIN: ${{ secrets.PP_DEFAULT_ORIGIN }}
+          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
         run: |
           cmake -B build -S . \
             -G Ninja \
@@ -257,7 +260,8 @@ jobs:
             -DPP_BROWSER_VERSION="${PP_PROJECT_VERSION}" \
             -DPP_BROWSER_RELEASE_VERSION="${PP_RELEASE_VERSION}" \
             -DPP_BROWSER_PACKAGED_BUILD=ON \
-            -DPP_BROWSER_DEFAULT_ORIGIN="${PP_DEFAULT_ORIGIN}"
+            -DPP_API_URL_PROD="${PP_API_URL_PROD}" \
+            -DPP_API_URL_QA="${PP_API_URL_QA}"
 
       - name: Build
         run: cmake --build build --config Release -j 4
@@ -402,7 +406,8 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.0.13004108
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-          PP_BROWSER_DEFAULT_ORIGIN: ${{ secrets.PP_DEFAULT_ORIGIN }}
+          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
         run: ./scripts/platform/android_build.sh apk-release
 
       - name: Disk usage (post-build)
