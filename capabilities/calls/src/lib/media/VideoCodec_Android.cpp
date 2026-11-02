@@ -41,9 +41,10 @@ constexpr int kMaxDrainedOutputs = 32;
 constexpr int kLowLatencyApiLevel = 30;
 /** At most one "input buffer unavailable" warning this often. */
 constexpr int64_t kInputDropWarnEveryMs = 2000;
-/** A Decode slower than this is logged (it runs under the media lock), at most kMaxSlowDecodeWarns per decoder. */
+/** A Decode slower than this (codec configure not counted) is logged — it runs under the media lock. */
 constexpr int64_t kSlowDecodeMs = 50;
-constexpr int kMaxSlowDecodeWarns = 10;
+/** Per decoder (one per remote stream per call): slow-decode, stall and input-drop warnings each. */
+constexpr int kMaxDecoderWarns = 10;
 constexpr int kColorFormatYv12 = 19;       // COLOR_FormatYUV420Planar
 constexpr int kColorFormatNv12 = 21;       // COLOR_FormatYUV420SemiPlanar
 
@@ -484,6 +485,13 @@ private:
   bool first_output_logged_ = false;
   int dec_stride_ = 0;
   int slow_decode_warns_ = 0;
+  int stall_warns_ = 0;
+  int input_drop_warns_ = 0;
+  /** Time spent creating / configuring the codec in the current Decode (not a slow decode). */
+  int64_t configure_ms_in_decode_ = 0;
+  /** The last configure: how long it took and whether the decoder took low-latency. */
+  int64_t configure_ms_ = 0;
+  bool low_latency_ = false;
 };
 
 Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
@@ -716,6 +724,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
     AMediaFormat* format = make_format(attempts[i].with_color, attempts[i].low_latency);
     configured = AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) == AMEDIA_OK;
     AMediaFormat_delete(format);
+    low_latency_ = configured && attempts[i].low_latency;
     if (!configured && attempts[i].low_latency) {
       DecoderLog().warning << "decoder rejected low-latency; configuring without it";
     }
@@ -740,15 +749,18 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
 
 Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
   const int64_t started_ms = SteadyMs();
+  configure_ms_in_decode_ = 0;
   auto result = DecodeAccessUnit(annex_b, size);
   const int64_t now = SteadyMs();
   if (!result) {
     // The engine asks for a keyframe on every decode error: frames until it lands are not counted.
     stall_.NoteKeyframeRequested(now);
   }
-  if (now - started_ms > kSlowDecodeMs && slow_decode_warns_ < kMaxSlowDecodeWarns) {
+  // Configure time is logged with the first frame (configure_ms), not as a slow decode.
+  const int64_t decode_ms = now - started_ms - configure_ms_in_decode_;
+  if (decode_ms > kSlowDecodeMs && slow_decode_warns_ < kMaxDecoderWarns) {
     ++slow_decode_warns_;
-    DecoderLog().warning << "slow decode ms=" << (now - started_ms) << " size=" << size
+    DecoderLog().warning << "slow decode ms=" << decode_ms << " size=" << size
                          << " result=" << (!result ? "error" : (result->has_value() ? "frame" : "none"));
   }
   return result;
@@ -811,11 +823,14 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
       AMediaCodec_delete(decoder_);
       decoder_ = nullptr;
     }
-    if (auto cfg = EnsureDecoderConfigured(cached_sps_.data(), cached_sps_.size(), cached_pps_.data(),
-                                            cached_pps_.size());
-        !cfg) {
+    const int64_t configure_from = SteadyMs();
+    auto cfg = EnsureDecoderConfigured(cached_sps_.data(), cached_sps_.size(), cached_pps_.data(),
+                                       cached_pps_.size());
+    configure_ms_in_decode_ = SteadyMs() - configure_from;
+    if (!cfg) {
       return cfg.error();
     }
+    configure_ms_ = configure_ms_in_decode_;
   }
   if (!decoder_) {
     return Error("H264 decoder waiting for SPS/PPS");
@@ -828,6 +843,11 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
       // A frame was lost (or the codec rebuilt): frames that reference it would smear. Drop it.
       if (input_starved_frames_ > 0 && ++input_starved_frames_ >= kInputStarvedStallFrames) {
         input_starved_frames_ = 0;
+        if (stall_warns_ < kMaxDecoderWarns) {
+          ++stall_warns_;
+          DecoderLog().warning << "decoder stalled: no input buffer for " << kInputStarvedStallFrames
+                               << " frames drops=" << input_drops_;
+        }
         return Error(std::string(kDecoderStalledError));
       }
       if (idr_wait_.AskAgain(SteadyMs())) {
@@ -854,10 +874,16 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     if (++input_starved_frames_ >= kInputStarvedStallFrames) {
       // Input has not flowed for many frames: report a stall so the engine's rebuild budget applies.
       input_starved_frames_ = 0;
+      if (stall_warns_ < kMaxDecoderWarns) {
+        ++stall_warns_;
+        DecoderLog().warning << "decoder stalled: no input buffer for " << kInputStarvedStallFrames
+                             << " frames drops=" << input_drops_;
+      }
       return Error(std::string(kDecoderStalledError));
     }
     const int64_t now = SteadyMs();
-    if (now - last_input_drop_warn_ms_ >= kInputDropWarnEveryMs) {
+    if (now - last_input_drop_warn_ms_ >= kInputDropWarnEveryMs && input_drop_warns_ < kMaxDecoderWarns) {
+      ++input_drop_warns_;
       last_input_drop_warn_ms_ = now;
       DecoderLog().warning << "decoder input buffer unavailable: frame dropped, dropping until the next IDR"
                            << " drops=" << input_drops_;
@@ -887,8 +913,11 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     // Nothing ready yet: a decoder filling its pipeline is not an error — unless it stays silent.
     const int64_t now = SteadyMs();
     if (stall_.Stalled(now)) {
-      DecoderLog().warning << "decoder stalled: queued=" << stall_.FramesSinceOutput()
-                           << " since_output_ms=" << stall_.MsSinceOutput(now);
+      if (stall_warns_ < kMaxDecoderWarns) {
+        ++stall_warns_;
+        DecoderLog().warning << "decoder stalled: queued=" << stall_.FramesSinceOutput()
+                             << " since_output_ms=" << stall_.MsSinceOutput(now);
+      }
       stall_.NoteStallReported(now);
       return Error(std::string(kDecoderStalledError));
     }
@@ -904,8 +933,9 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     DecoderLog().info << "first decoded frame codec=" << CodecName(decoder_)
                       << " queued_to_first=" << queued_since_configure_
                       << " ms_since_configure=" << (SteadyMs() - configured_at_ms_)
-                      << " color_format=" << dec_color_format_ << " stride=" << dec_stride_ << " size="
-                      << frame->width << "x" << frame->height;
+                      << " configure_ms=" << configure_ms_ << " low_latency=" << (low_latency_ ? 1 : 0)
+                      << " input_drops=" << input_drops_ << " color_format=" << dec_color_format_
+                      << " stride=" << dec_stride_ << " size=" << frame->width << "x" << frame->height;
   }
   return std::optional<VideoFrameRgba>(std::move(*frame));
 }
