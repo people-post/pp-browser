@@ -35,7 +35,6 @@ void ApplyBackendOverride(AppConfig& config) {
   config.promoted_mcp.url = BriefMcpUrl();
   config.relay.base_url = BriefRelayBaseUrl();
   config.directory.base_url = BriefRelayBaseUrl();
-  config.directory.providers.clear();
   config.registration.base_url = BriefRelayBaseUrl();
 }
 
