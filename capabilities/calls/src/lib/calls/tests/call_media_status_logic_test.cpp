@@ -24,14 +24,16 @@ TEST(CallMediaStatusLogicTest, PlannerProgressMapsToStatus) {
       << "DirectConnected moves the call to DirectLive, with its phase";
 }
 
-// A SoftMigrate arms only from a 1:1 or undecided Status — never over a hop already in progress.
+// A SoftMigrate arms only from a 1:1 or undecided Status — never over a hop already in progress. A 1:1
+// that is reconnecting is still a 1:1: a third join takes it to the hop (lab group_call_three).
 TEST(CallMediaStatusLogicTest, SoftMigrateArmsFromDirectStatusesOnly) {
-  for (const auto status : {CallMediaStatus::None, CallMediaStatus::Deciding, CallMediaStatus::DirectConnecting,
-                            CallMediaStatus::DirectLive, CallMediaStatus::DegradedTxOnly}) {
+  for (const auto status :
+       {CallMediaStatus::None, CallMediaStatus::Deciding, CallMediaStatus::DirectConnecting,
+        CallMediaStatus::DirectLive, CallMediaStatus::DegradedTxOnly, CallMediaStatus::Reconnecting}) {
     EXPECT_TRUE(SoftMigrateMayArm(status)) << static_cast<int>(status);
   }
   for (const auto status : {CallMediaStatus::HopWaiting, CallMediaStatus::HopAttaching, CallMediaStatus::HopLive,
-                            CallMediaStatus::Migrating, CallMediaStatus::Failed, CallMediaStatus::Reconnecting}) {
+                            CallMediaStatus::Migrating, CallMediaStatus::Failed}) {
     EXPECT_FALSE(SoftMigrateMayArm(status)) << static_cast<int>(status);
   }
 }

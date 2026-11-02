@@ -1017,7 +1017,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return fail("candidate link not connected");
     }
     if (link->Mux() == bundle->active.mux) {
-      return fail("already on that link");
+      if (done) {
+        pending_user_cbs.push_back([done = std::move(done)]() {
+          done(Error(static_cast<int32_t>(CallMediaErr::AlreadyOnLink), "call-media migrate: already on that link"));
+        });
+      }
+      return;
     }
     if (standby_only && bundle->standby) {
       return fail("the call already has a standby");

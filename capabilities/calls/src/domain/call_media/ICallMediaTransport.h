@@ -38,6 +38,8 @@ enum class CallMediaErr : int32_t {
   StreamClosed,
   Aborted,
   Generic,
+  /** A migrate to the link the call's stream already rides: nothing to move (the path is there). */
+  AlreadyOnLink,
 };
 using CallMediaFailure = CodedFailure<CallMediaErr>;
 using CallMediaRoe = CodedRoe<void, CallMediaErr>;

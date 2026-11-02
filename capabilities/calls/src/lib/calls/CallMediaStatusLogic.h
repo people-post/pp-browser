@@ -53,11 +53,15 @@ inline std::optional<CallMediaStatus> MediaStatusForDirectProgress(const CallDir
   return std::nullopt;
 }
 
-/** A SoftMigrate to the group path may arm from a 1:1 (or not yet decided) Status only. */
+/**
+ * A SoftMigrate to the group path may arm from a 1:1 (or not yet decided) Status only — a 1:1 that is
+ * reconnecting included: a third join must still take the call to the hop (lab group_call_three: it was
+ * refused, and the joiner ejected, while the 1:1 reconnected).
+ */
 inline bool SoftMigrateMayArm(const CallMediaStatus status) {
   return status == CallMediaStatus::DirectLive || status == CallMediaStatus::DirectConnecting ||
-         status == CallMediaStatus::DegradedTxOnly || status == CallMediaStatus::Deciding ||
-         status == CallMediaStatus::None;
+         status == CallMediaStatus::DegradedTxOnly || status == CallMediaStatus::Reconnecting ||
+         status == CallMediaStatus::Deciding || status == CallMediaStatus::None;
 }
 
 /**

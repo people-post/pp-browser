@@ -269,6 +269,10 @@ public:
   CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
   void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
     ++migrate_calls;
+    if (already_on_link) {
+      done(Error(static_cast<int32_t>(CallMediaErr::AlreadyOnLink), "call-media migrate: already on that link"));
+      return;
+    }
     if (!migrate_ok || (fail_first_n_migrates > 0 && fail_first_n_migrates-- > 0)) {
       done(Error("call-media migrate: peer refused (busy)"));
       return;
@@ -281,6 +285,8 @@ public:
   }
   CallMediaLinkKind StandbyLinkKind() const override { return standby_kind.load(); }
   void SetAutoMigrateToDirect(bool allow) override { auto_migrate_to_direct = allow; }
+  /** The migrate finds the call already on the target link. */
+  bool already_on_link = false;
   std::atomic<bool> auto_migrate_to_direct{true};
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
     ++add_standby_calls;
@@ -1142,6 +1148,45 @@ TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
   EXPECT_EQ(host_->live.Phase(), CallPhase::InCall);
   EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
   EXPECT_TRUE(media_->IsActive());
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
+}
+
+// k4: the peer is reached again on the very link the call's stream rides (the lost path was another
+// one, e.g. a dual-dial duplicate): the migrate has nothing to move. The call is connected — not left
+// Reconnecting, which refused a group call's hop (lab group_call_three).
+TEST_F(CallMediaBridgeAnswererStartTest, AReconnectOntoTheLinkTheCallRidesIsConnected) {
+  const std::string call_id = "call:reconnect-same-link";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReconnectSameLink";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  bridge_->SetReanchorRetryMsForTest(20);
+  Placed(call_id);
+  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(host_->live.Status(), CallMediaStatus::DirectLive);
+
+  transport_->already_on_link = true;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  bool saw_reconnecting = false;
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    saw_reconnecting |= host_->live.Status() == CallMediaStatus::Reconnecting;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  for (int i = 0; i < 20; ++i) { // past a retry, were there one
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_TRUE(saw_reconnecting);
+  EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected, not left Reconnecting";
+  EXPECT_EQ(transport_->migrate_calls.load(), 1) << "no retry loop on a link the call already rides";
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

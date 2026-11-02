@@ -780,6 +780,13 @@ void CallMediaBridge::Reanchor(const std::string& call_id) {
                             if (!(reanchor_armed_ && call_id == call_id_)) {
                               return;
                             }
+                            if (!moved && moved.error().code == static_cast<int32_t>(CallMediaErr::AlreadyOnLink)) {
+                              // The stream already rides the link the peer was reached on: the reconnect
+                              // is done (a lab group call stayed Reconnecting on it and refused its hop).
+                              log().info << "reconnect: the call is on the reached link call_id=" << call_id;
+                              Apply(CallDirectPlannerEvent::PathMigrated, call_id);
+                              return;
+                            }
                             if (!moved) {
                               log().info << "reconnect: migrate failed (" << moved.error().message << ")";
                               retry();
