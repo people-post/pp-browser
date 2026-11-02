@@ -10,6 +10,7 @@
 #include <string>
 
 #if !defined(_WIN32)
+#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
 #endif
@@ -78,6 +79,44 @@ TEST(CrashDump, NativeBacktraceListsFrames) {
   // macOS / glibc print raw addresses only.
   EXPECT_NE(body.find("\n0x"), std::string::npos) << body;
 #endif
+
+  std::error_code ec;
+  std::filesystem::remove_all(dir, ec);
+}
+#endif
+
+#if !defined(_WIN32)
+namespace {
+
+/** Stands in for the system's crash handler (Android debuggerd): proves the signal reached it. */
+constexpr int kPreviousHandlerExit = 42;
+void PreviousAbortHandler(int) {
+  ::_exit(kPreviousHandlerExit);
+}
+
+} // namespace
+
+// B126: an abort (fdsan, std::abort) writes the full dump — backtrace included — and is then handed
+// to whoever handled SIGABRT before us, so the system's tombstone / crash report is not swallowed.
+TEST(CrashDump, AbortWritesBacktraceThenHandsTheSignalBack) {
+  const std::string dir = TempDir();
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  EXPECT_EXIT(
+      {
+        ::signal(SIGABRT, PreviousAbortHandler);
+        pbr::CrashBreadcrumbs::Append("[W] Test: before-abort");
+        pbr::CrashDump::Install(dir);
+        std::abort();
+      },
+      ::testing::ExitedWithCode(kPreviousHandlerExit), "");
+
+  const std::string body = pbr::CrashDump::ReadPending(dir);
+  EXPECT_NE(body.find("reason=signal 6"), std::string::npos) << body;
+  const std::size_t tag = body.find("backtrace_frames=");
+  ASSERT_NE(tag, std::string::npos) << body;
+  EXPECT_GE(std::atoi(body.c_str() + tag + std::string("backtrace_frames=").size()), 3) << body;
+  EXPECT_NE(body.find("--- breadcrumbs ---"), std::string::npos) << body;
+  EXPECT_NE(body.find("before-abort"), std::string::npos) << body;
 
   std::error_code ec;
   std::filesystem::remove_all(dir, ec);
