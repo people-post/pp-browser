@@ -100,7 +100,9 @@ void PushDeviceCoordinator::OnBackendSwitchPending(ConversationsHub& hub, const 
       if (!unbound) {
         PushLog().warning << "Push unbind on the old backend failed: " << AppError::Log(unbound.error());
       }
-      hub.PushGate().OnUnbound(static_cast<bool>(unbound));
+      if (hub.PushGate().OnUnbound(static_cast<bool>(unbound))) {
+        (void)Register(hub);
+      }
     });
     break;
   case PushBindingGate::Action::Rebind:

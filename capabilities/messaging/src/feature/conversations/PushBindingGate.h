@@ -29,8 +29,18 @@ public:
     return was_unbound ? Action::Rebind : Action::None;
   }
 
-  /** Outcome of an Unbind; a failed one is retried by the next pending switch save. */
-  void OnUnbound(const bool ok) { unbound_ = ok; }
+  /**
+   * Outcome of an Unbind; a failed one is retried by the next pending switch save.
+   * Returns true when the switch was undone while the Unbind ran, so the caller must register again.
+   */
+  bool OnUnbound(const bool ok) {
+    unbound_ = ok;
+    if (ok && !suspended_) {
+      unbound_ = false;
+      return true;
+    }
+    return false;
+  }
 
 private:
   std::atomic<bool> suspended_{false};

@@ -45,6 +45,20 @@ TEST(PushBindingGateTest, SwitchBackAfterFailedUnbindOnlyResumes) {
   EXPECT_FALSE(gate.Suspended());
 }
 
+TEST(PushBindingGateTest, SwitchBackDuringUnbindRebindsWhenItFinishes) {
+  PushBindingGate gate;
+  ASSERT_EQ(gate.OnSwitchPending(true), Action::Unbind);
+  EXPECT_EQ(gate.OnSwitchPending(false), Action::None);
+  EXPECT_TRUE(gate.OnUnbound(true));
+  EXPECT_EQ(gate.OnSwitchPending(true), Action::Unbind);
+}
+
+TEST(PushBindingGateTest, UnbindFinishingWhileSwitchedAwayNeedsNoRebind) {
+  PushBindingGate gate;
+  ASSERT_EQ(gate.OnSwitchPending(true), Action::Unbind);
+  EXPECT_FALSE(gate.OnUnbound(true));
+}
+
 TEST(PushBindingGateTest, NoPendingSwitchChangesNothing) {
   PushBindingGate gate;
   EXPECT_EQ(gate.OnSwitchPending(false), Action::None);
