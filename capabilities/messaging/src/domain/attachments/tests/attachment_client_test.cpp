@@ -47,19 +47,6 @@ public:
   }
 };
 
-/** MockBlobClient that remembers which tier the server put the last upload in. */
-class TierRecordingBlob : public MockBlobClient {
-public:
-  Roe<BlobPresignResult> Presign(const std::string& relay_user_id, const std::string& content_type,
-                                 const uint64_t byte_length, const BlobPurpose purpose) override {
-    auto result = MockBlobClient::Presign(relay_user_id, content_type, byte_length, purpose);
-    if (result) {
-      last_tier = result->tier;
-    }
-    return result;
-  }
-  BlobTier last_tier = BlobTier::Small;
-};
 
 class AttachmentClientTest : public ::testing::Test {
 protected:
@@ -127,14 +114,14 @@ protected:
   Thread direct_;
   Thread group_;
   FakePeerClient peer_;
-  TierRecordingBlob blob_;
+  MockBlobClient blob_;
 };
 
 TEST_F(AttachmentClientTest, SmallFileToAReachableContactGoesDirectAndNotToTheServer) {
   auto fields = Upload(1000, Options(direct_));
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 1);
-  EXPECT_EQ(blob_.PresignCallCount(), 0u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
   EXPECT_TRUE(fields->url.empty()) << "a direct push leaves no server copy";
   EXPECT_EQ(fields->mime, "application/pdf");
 }
@@ -144,9 +131,9 @@ TEST_F(AttachmentClientTest, DirectFailureFallsBackToTheServer) {
   auto fields = Upload(1000, Options(direct_));
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 1) << "direct was tried first";
-  EXPECT_EQ(blob_.PresignCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 1u);
   ASSERT_EQ(blob_.UploadedBodies().size(), 1u);
-  EXPECT_EQ(blob_.RetainedBlobIds().size(), 1u);
+  EXPECT_EQ(blob_.CompletedFileIds().size(), 1u);
   EXPECT_FALSE(fields->url.empty());
 }
 
@@ -155,7 +142,7 @@ TEST_F(AttachmentClientTest, UnreachableContactGoesStraightToTheServer) {
   auto fields = Upload(1000, Options(direct_));
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 0);
-  EXPECT_EQ(blob_.PresignCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 1u);
   EXPECT_FALSE(fields->url.empty());
 }
 
@@ -163,18 +150,19 @@ TEST_F(AttachmentClientTest, GroupAttachmentsAreServerOnly) {
   auto fields = Upload(1000, Options(group_));
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 0) << "no peer push in a group, even with a reachable member";
-  EXPECT_EQ(blob_.PresignCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 1u);
   EXPECT_FALSE(fields->url.empty());
 }
 
-TEST_F(AttachmentClientTest, AboveTheDirectLimitSkipsDirectAndGetsTheLargeTier) {
+TEST_F(AttachmentClientTest, AboveTheDirectLimitSkipsDirectAndGoesToTheServer) {
   auto options = Options(direct_);
   options.max_plaintext_bytes = 20ULL * 1000ULL * 1000ULL; // a raised limit, as step 2 will ship
   auto fields = Upload(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1, options);
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 0) << "bigger than kMaxDirectAttachmentBytes never tries the 15 s direct path";
-  EXPECT_EQ(blob_.PresignCallCount(), 1u);
-  EXPECT_EQ(blob_.last_tier, BlobTier::Large);
+  ASSERT_EQ(blob_.FileStartCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartByteLengths().front(), kMaxDirectAttachmentBytes + 1 + kAttachmentCipherOverheadBytes)
+      << "the relay reserves the ciphertext length";
   EXPECT_FALSE(fields->url.empty());
 }
 
@@ -184,7 +172,7 @@ TEST_F(AttachmentClientTest, ExactlyTheDirectLimitStillGoesDirect) {
   auto fields = Upload(static_cast<size_t>(kMaxDirectAttachmentBytes), options);
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 1);
-  EXPECT_EQ(blob_.PresignCallCount(), 0u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
 }
 
 TEST_F(AttachmentClientTest, OverTheCallersLimitFailsBeforeAnyNetwork) {
@@ -193,12 +181,13 @@ TEST_F(AttachmentClientTest, OverTheCallersLimitFailsBeforeAnyNetwork) {
   auto fields = Upload(1000, options);
   EXPECT_FALSE(fields);
   EXPECT_EQ(peer_.push_calls, 0);
-  EXPECT_EQ(blob_.PresignCallCount(), 0u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
 }
 
 TEST_F(AttachmentClientTest, ServerErrorsKeepTheirTypeToTheCaller) {
   peer_.reachable = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429: Small file quota exceeded"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::QuotaExceeded,
+                                         "HTTP 429 QUOTA_FILE_BYTES: File storage quota exceeded byte_length=1016"));
   auto fields = Upload(1000, Options(direct_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::QuotaExceeded));
@@ -206,16 +195,16 @@ TEST_F(AttachmentClientTest, ServerErrorsKeepTheirTypeToTheCaller) {
 
 TEST_F(AttachmentClientTest, NotConfiguredServerAfterAFailedDirectPushSaysBoth) {
   peer_.reachable = false; // no live direct link: the push fails before it is sent
-  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
   auto fields = Upload(1000, Options(direct_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
-  EXPECT_EQ(blob_.PresignCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartCallCount(), 1u);
 }
 
 TEST_F(AttachmentClientTest, NotConfiguredServerAfterARefusedDirectPushSaysBoth) {
   peer_.push_ok = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
   auto fields = Upload(1000, Options(direct_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(peer_.push_calls, 1);
@@ -223,7 +212,7 @@ TEST_F(AttachmentClientTest, NotConfiguredServerAfterARefusedDirectPushSaysBoth)
 }
 
 TEST_F(AttachmentClientTest, NotConfiguredServerInAGroupKeepsTheServerOnlyMessage) {
-  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
   auto fields = Upload(1000, Options(group_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(peer_.push_calls, 0);
@@ -232,7 +221,7 @@ TEST_F(AttachmentClientTest, NotConfiguredServerInAGroupKeepsTheServerOnlyMessag
 
 TEST_F(AttachmentClientTest, OtherServerErrorsAfterAFailedDirectPushKeepTheirType) {
   peer_.push_ok = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
   auto fields = Upload(1000, Options(direct_));
   ASSERT_FALSE(fields);
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::Unavailable));
@@ -289,7 +278,7 @@ TEST_F(StagedUploadTest, TheServerUploadStreamsTheStagedFileAndReportsProgress) 
 
 TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBytesWithTheSameKey) {
   peer_.reachable = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
   auto failed = UploadStaged(5000, Staged(direct_));
   ASSERT_FALSE(failed);
   ASSERT_FALSE(staged_.id.empty());
@@ -300,7 +289,7 @@ TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBy
   ASSERT_TRUE(sealed);
   EXPECT_FALSE(sealed->delivered);
 
-  blob_.ClearPresignError();
+  blob_.ClearFileStartError();
   Roe<ChatAttachmentFields> resumed = Error("not called");
   ResumeChatAttachmentAsync(blob_, *identity_, *sealed, Staged(direct_),
                             [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
@@ -313,7 +302,7 @@ TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBy
 
 TEST_F(StagedUploadTest, NotConfiguredServerAfterAFailedDirectPushSaysBothAndAGroupDoesNot) {
   peer_.reachable = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::UploadNotConfigured, "HTTP 503: Blob upload is not configured"));
   auto direct = UploadStaged(5000, Staged(direct_));
   ASSERT_FALSE(direct);
   EXPECT_EQ(direct.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfiguredNoDirect));
@@ -328,13 +317,13 @@ TEST_F(StagedUploadTest, ADeliveredRecordResumesWithoutAnyNetwork) {
   ASSERT_TRUE(fields);
   auto record = store_->Load(staged_.id, TestDek());
   ASSERT_TRUE(record);
-  const auto presigns = blob_.PresignCallCount();
+  const auto starts = blob_.FileStartCallCount();
   Roe<ChatAttachmentFields> again = Error("not called");
   ResumeChatAttachmentAsync(blob_, *identity_, *record, Staged(direct_),
                             [&](Roe<ChatAttachmentFields> value) { again = std::move(value); });
   ASSERT_TRUE(again);
   EXPECT_EQ(again->url, fields->url);
-  EXPECT_EQ(blob_.PresignCallCount(), presigns);
+  EXPECT_EQ(blob_.FileStartCallCount(), starts);
 }
 
 TEST_F(StagedUploadTest, ADirectPushIsRecordedAsDeliveredWithNoUrl) {
@@ -353,13 +342,14 @@ TEST_F(StagedUploadTest, ALargeStagedFileSkipsTheDirectPathAndIsNeverHeldInMemor
   auto fields = UploadStaged(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1, options);
   ASSERT_TRUE(fields) << fields.error().message;
   EXPECT_EQ(peer_.push_calls, 0);
-  EXPECT_EQ(blob_.last_tier, BlobTier::Large);
   EXPECT_EQ(staged_.cipher_bytes, kMaxDirectAttachmentBytes + 1 + kAttachmentCipherOverheadBytes);
+  ASSERT_EQ(blob_.FileStartCallCount(), 1u);
+  EXPECT_EQ(blob_.FileStartByteLengths().front(), staged_.cipher_bytes) << "ciphertext length, not the file's";
 }
 
 TEST_F(StagedUploadTest, ResumeWithoutTheCiphertextTellsTheCallerToPickAgain) {
   peer_.reachable = false;
-  blob_.SetPresignError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
   ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
   auto record = store_->Load(staged_.id, TestDek());
   ASSERT_TRUE(record);

@@ -13,6 +13,7 @@ pp_browser_add_domain_library(pp_domain_attachments
     ChatBlobRequest.cpp
     LargeTransferLane.cpp
     OutgoingAttachmentStore.cpp
+    RelayFileUrl.cpp
   PUBLIC_LIBS
     pp_lib_messaging
     pp_lib_people

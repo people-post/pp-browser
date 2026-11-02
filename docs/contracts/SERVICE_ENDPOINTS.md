@@ -90,9 +90,9 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 
 Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
 
-## HTTP relay blobs (icons + chat attachments)
+## HTTP relay blobs (profile photos)
 
-Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://backend.example.test/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). Server never inspects ciphertext for chat files (`application/octet-stream`).
+Base path under the same `{registration.base_url}` / `{relay.base_url}` (e.g. `https://backend.example.test/api/relay/v1`). Client: `HttpBlobClient` / `IBlobClient` ([relay-blob-upload](../../projects/relay-blob-upload/)). **Only profile photos use these routes now** (`purpose=icon`, then `/v1/profile/icon`); chat attachments go through [HTTP relay files](#http-relay-files-chat-attachments) and never call `/v1/blobs/presign`. The `purpose=file` rows below describe what the relay still accepts; the client no longer sends them.
 
 Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlobSignPayload` — domain + u8 version=`1`, then length-prefixed UTF-8 / BE integers matching www `SignatureVerifier`.
 
@@ -135,6 +135,41 @@ Chat attachments are always presigned as `application/octet-stream`, so `Unsuppo
 **Transfer of the ciphertext (client).** The upload `PUT` to the presigned `upload_url` is streamed from a file (`HttpClient::PutFile`, `IBlobClient::PutUploadFile`): no whole-body string, progress reported as bytes go out, no total time limit, but a 15 s connect timeout and a speed floor (under 2 KB/s over 30 s aborts). The download `GET` of the CDN `public_url` goes to a temp file (`HttpClient::GetToFile`) with a hard cap of the declared plaintext size plus the 16-byte AEAD tag: a larger `Content-Length` is refused before any byte is read, a body that grows past the cap is aborted and the temp file deleted, and a non-2xx answer writes nothing. `kMaxHttpClientBodyBytes` (8 MiB) still bounds every buffered request.
 
 Chat attachment **file bytes** prefer peer-direct `/pp/blob/1.0.0` then CDN ([R019](../../projects/relay-blob-upload/DECISIONS.md#r019--peer-first-blob-transfer-cdn-secondary)); the small attachment envelope stays on the normal message path.
+
+## HTTP relay files (chat attachments)
+
+The encrypted-file relay (app-static-api `docs/relay-files.md`, routes `app/src/r_relay.ts`), same base path. Client: `IBlobClient::FileStart` / `FileComplete` / `FileDelete` / `FileList` (`HttpBlobClient`), `UploadRelayFile` / `UploadRelayFileBytes` (`lib/net/BlobClient.h`). The server stores opaque ciphertext in a private bucket.
+
+Signed calls (`POST`, JSON body with `relay_user_id`, `timestamp` (epoch ms), `signature`): sign bytes are `domain 0x00 | u8(1) | fields | i64be timestamp`, strings `u64be(len) | utf8`, integers `u64be` (`RelayBlobSignPayload`; golden vectors from the server's `RelayFiles.test.ts` in `relay_file_sign_payload_test.cpp`).
+
+| HTTP | Domain | Signed fields | Answer |
+|------|--------|---------------|--------|
+| `POST /v1/files/start` (`byte_length`) | `pp-browser:relay-file-start-v1` | `relay_user_id`, `byte_length` (u64) | `{ blob_id, mode, part_bytes, part_count, upload_url?, expires_in, pending_expires_at }` |
+| `PUT {upload_url}` | — | — | the ciphertext, exactly `byte_length` bytes (`Content-Length` is signed into the URL; valid 15 min) |
+| `POST /v1/files/complete` (`blob_id`) | `pp-browser:relay-file-complete-v1` | `relay_user_id`, `blob_id` | `{ blob_id, token, share_path, expires_at }`, **once**: a repeat is 400 `BLOB_NOT_PENDING` |
+| `POST /v1/files/delete` (`blob_id`) | `pp-browser:relay-file-delete-v1` | `relay_user_id`, `blob_id` | `{ success: true }`; frees the quota, the link stops working |
+| `POST /v1/files/list` (`status?` `pending` / `complete`) | `pp-browser:relay-file-list-v1` | `relay_user_id`, `status` (`""` when omitted) | `{ files: [{ blob_id, status, byte_length, created_at, completed_at, expires_at, pending_expires_at, … }], usage: { bytes_used, pending_count, quota_bytes, max_pending } }`, newest first, at most 500, no tokens |
+| `GET /v1/files/<blob_id>/download?t=<token>` | unsigned | — | **302** to a 60-second storage URL (`Cache-Control: no-store`); every failure (unknown, expired, used up, deleted) is the same **404** `{"error":"Not found"}` |
+
+`share_path` is `/api/relay/v1/files/<blob_id>/download?t=<token>`; the message's `url` is the relay origin (the relay base URL without `/api/relay`) plus it. **The token is the download credential**: logs, errors and metrics carry the blob id, status codes and `RelayFileUrl::Redacted` (no query) only, and the redirect target is never logged.
+
+Limits (server, fixed): retention 7 days from `complete` (downloads do not extend it), **10 downloads per file** (each 302 counts, finished or not), 1 GiB per account (pending + complete), 20 pending uploads, pending TTL 48 h, single PUT up to 16 MiB (the client sends at most 4 MB per file, so it only ever gets `mode=single`; `multipart` is an error to the client).
+
+Client flow (`UploadRelayFile`): `start(byte_length = ciphertext length)` → `PUT` (streamed from the staged file, `application/octet-stream`) → `complete` → the link is written to the staged record (`OutgoingAttachmentStore`) → the message goes out. After `start` has answered, **any** failure (the PUT, `complete`, `BLOB_NOT_PENDING`, a `multipart` answer, the record write) deletes that `blob_id` (best effort) and reports the original error; the person resends. A `start` refused with `QUOTA_PENDING_COUNT` deletes this account's pending uploads created more than an hour ago (never newer ones: a PUT started in time may still be running, another device may be uploading, clocks drift) and starts once more. Download (`AttachmentFetch`): the only caller with `follow_redirects` (at most 2 hops, https only, public addresses on every hop, only the final body kept and capped); a download that got any answer from the relay, or whose bytes then could not be stored, is suppressed (`AttachmentSuppressionStore`) so automatic re-queues never GET it again, while a failure before any answer (offline, DNS, connect, TLS, timeout) spent nothing and may retry by itself; the card's Download / Retry asks once more.
+
+Failure codes (`{ error, code }`; `ClassifyBlobFailure` takes the `code` first, the log detail is `HTTP <status> <CODE>: <text>`):
+
+| Code (status) | `Err::Blob` | Client does |
+|---|---|---|
+| `FILE_TOO_LARGE` (400) | `TooLarge` | not retried |
+| `QUOTA_FILE_BYTES` (429) | `QuotaExceeded` (tier `Files`) | `BlobQuotaRecoveryFlow`: `PlanOldestRelayFileDeletion` lists complete files and picks the oldest by `completed_at` until this file fits (the size the refused start asked for, else the 4 MB send cap plus the AEAD tag), deleting each on `files/delete` (`DeleteRelayQuotaItem` routes a plan's ids by its tier; profile-photo plans stay on `/blobs/delete`) (of the newest 500; if all of them would not free enough, "cloud space is full" and nothing is deleted); after the confirm, deletes them and uploads once more; a second full answer is final |
+| `QUOTA_PENDING_COUNT` (429) | `RateLimited` | the stale-pending clean-up above, once |
+| `BLOB_NOT_FOUND` (404); a 404 download | `Expired` | "Attachment expired."; a delete of a copy already gone is fine |
+| `BLOB_NOT_OWNED` (403) | `UploadRejected` | failure line |
+| `UPLOAD_NOT_CONFIGURED` (503) | `UploadNotConfigured` | "server hasn't enabled uploads" (`UploadNotConfiguredNoDirect` after a failed direct push) |
+| `BLOB_NOT_PENDING`, `INVALID_BYTE_LENGTH`, `UPLOAD_INCOMPLETE` (400) | `Generic` | failure line (after start: the blob is deleted) |
+
+"Delete for everyone" succeeds once the retract is sent and the message is deleted here; deleting our server copy by the link's blob id (`DeleteUploadedAttachmentCopy`, `files/delete`) is a separate best-effort step whose failure is logged (WARNING, blob id and the delete's own error); an old CDN link has nothing to delete and is skipped (one INFO line). "Delete for me", clearing history and deleting a thread do not touch the server copy (it expires 7 days after `complete`).
 
 ## HTTP account lockers (multi-device M023)
 

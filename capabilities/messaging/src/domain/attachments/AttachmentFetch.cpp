@@ -6,7 +6,9 @@
 #include "foundation/error/AppError.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "domain/attachments/ChatBlobRequest.h"
+#include "domain/attachments/RelayFileUrl.h"
 #include "lib/net/HttpClient.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 
 #include <algorithm>
@@ -25,6 +27,28 @@ uint64_t ExpectedCiphertextBytes(const ChatAttachmentFields& fields) {
   return fields.byte_length + kAttachmentCipherOverheadBytes;
 }
 
+/**
+ * One line per server download: the blob id, the final status and the redirects followed. Never the link (its
+ * `t=` is the download credential) nor where it redirected (a presigned storage URL).
+ */
+void LogServerFetch(const ChatAttachmentFields& fields, const long status, const long redirects) {
+  const std::string blob_id = RelayFileUrl::BlobIdOf(fields.url);
+  logging::getLogger("AttachmentFetch").info << "attachment fetch blob=" << (blob_id.empty() ? "-" : blob_id)
+                                             << " http=" << status << " redirects=" << redirects;
+}
+
+void LogServerFetchFailed(const ChatAttachmentFields& fields, const Error& why) {
+  const std::string blob_id = RelayFileUrl::BlobIdOf(fields.url);
+  logging::getLogger("AttachmentFetch").info << "attachment fetch blob=" << (blob_id.empty() ? "-" : blob_id)
+                                             << " failed: " << why.message;
+}
+
+/** A non-2xx download answer. The relay gives one 404 for expired, used up and deleted alike. */
+Error ServerFetchStatusError(const long status) {
+  return AppError::Blob(status == 404 ? Err::Blob::Expired : Err::Blob::Generic,
+                        "Attachment download failed with status " + std::to_string(status));
+}
+
 Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentFields& fields,
                                                            const AttachmentFetchContext& context) {
   if (fields.url.empty()) {
@@ -40,14 +64,18 @@ Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentF
     if (cap > kMaxHttpClientBodyBytes) {
       return Error("Attachment download needs a profile directory");
     }
+    // The relay answers 302 to a short-lived storage URL; each hop is held to the same https + public rules.
     const auto response = HttpClient::Get(fields.url, {}, static_cast<size_t>(cap), HttpTimeout{},
-                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test);
+                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test,
+                                          /*follow_redirects=*/true);
     if (!response) {
+      LogServerFetchFailed(fields, response.error());
       return response.error();
     }
     const HttpResponse& http = response.value();
+    LogServerFetch(fields, http.status_code, http.redirect_count);
     if (http.status_code < 200 || http.status_code >= 300) {
-      return Error("Attachment download failed with status " + std::to_string(http.status_code));
+      return ServerFetchStatusError(http.status_code);
     }
     if (http.body.empty()) {
       return Error("Attachment download returned empty body");
@@ -61,13 +89,15 @@ Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentF
   std::filesystem::create_directories(dir, ec);
   const std::string part = (std::filesystem::path(dir) / (AttachmentHashHex(fields.content_hash) + ".part")).string();
   auto downloaded = HttpClient::GetToFile(fields.url, part, cap, context.progress,
-                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test);
+                                          /*restrict_to_public_https=*/!context.allow_local_cdn_for_test, {},
+                                          /*follow_redirects=*/true);
   if (!downloaded) {
+    LogServerFetchFailed(fields, downloaded.error());
     return downloaded.error();
   }
+  LogServerFetch(fields, downloaded->status_code, downloaded->redirect_count);
   if (downloaded->status_code < 200 || downloaded->status_code >= 300) {
-    return AppError::Blob(downloaded->status_code == 404 ? Err::Blob::Expired : Err::Blob::Generic,
-                          "Attachment download failed with status " + std::to_string(downloaded->status_code));
+    return ServerFetchStatusError(downloaded->status_code);
   }
   std::ifstream input(part, std::ios::binary);
   std::vector<uint8_t> bytes(static_cast<size_t>(downloaded->bytes));
@@ -124,6 +154,22 @@ void CleanIncomingCiphertext(const std::string& profile_data_dir) {
   }
   std::error_code ec;
   std::filesystem::remove_all(IncomingCiphertextDir(profile_data_dir), ec);
+}
+
+bool FetchFailureReachedTheServer(const Error& error) {
+  if (AppError::CategoryOf(error) != ErrorCategory::Network) {
+    return true;
+  }
+  switch (static_cast<Err::Network>(error.code)) {
+    case Err::Network::Unreachable:
+    case Err::Network::DnsFailed:
+    case Err::Network::ConnectFailed:
+    case Err::Network::TlsFailed:
+    case Err::Network::Timeout:
+      return false; // HttpClient reports a failure after a followed redirect as HttpError
+    default:
+      return true;
+  }
 }
 
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context) {

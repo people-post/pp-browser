@@ -1519,7 +1519,7 @@ void ChatController::OnRetryAttachmentSend() {
         DirtyChatHeader();
       },
       [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
-      [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
+      [this](const std::string& blob_id, const BlobTier tier) { return facade_->DeleteRelayBlobById(blob_id, tier); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
@@ -1622,7 +1622,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
           },
           [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
-          [this](const std::string& blob_id) { return facade_->DeleteRelayBlobById(blob_id); });
+          [this](const std::string& blob_id, const BlobTier tier) {
+            return facade_->DeleteRelayBlobById(blob_id, tier);
+          });
     });
   });
 }
@@ -2218,9 +2220,8 @@ void ChatController::DeleteMessageForEveryone(const std::string& message_id) {
   presenter_.DeleteForEveryone(message_id, [this](Roe<void> done) {
     if (!done) {
       ShowToast(AppError::Display(done.error()));
-      return;
     }
-    SyncDisplayFromThread();
+    SyncDisplayFromThread(); // also after a failure: whatever did change is shown
     DirtyChatTurns();
     NotifySurfaceChanged();
   });

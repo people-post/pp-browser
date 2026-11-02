@@ -17,10 +17,14 @@ namespace pbr {
 Roe<void> CheckBlobResponse(const HttpResponse& response);
 
 /**
- * The typed error for a failed blob-service answer: status code and the server's `error` text pick the
- * Err::Blob code; the log detail is "HTTP <status>: <text>".
+ * The typed error for a failed blob-service answer. The `/files` relay's `code` decides when there is one; else
+ * the status code and the server's `error` text (the `/blobs` calls carry no code). The log detail is
+ * "HTTP <status>: <text>", or "HTTP <status> <CODE>: <text>" with a code (RelayFileErrorCode reads it back).
  */
-Error ClassifyBlobFailure(int status_code, const std::string& detail);
+Error ClassifyBlobFailure(int status_code, const std::string& detail, const std::string& code = "");
+
+/** The relay origin (`https://host`) the files relay's `share_path` is relative to, from the relay base URL. */
+std::string RelayOriginOf(const std::string& relay_base_url);
 
 class HttpBlobClient : public IBlobClient {
 public:
@@ -40,7 +44,16 @@ public:
   Roe<void> PutUploadFile(const std::string& upload_url, const std::string& content_type, const std::string& path,
                           const std::function<bool(uint64_t done, uint64_t total)>& progress) override;
 
+  Roe<RelayFileStartResult> FileStart(const std::string& relay_user_id, uint64_t byte_length) override;
+  Roe<RelayFileCompleteResult> FileComplete(const std::string& relay_user_id, const std::string& blob_id) override;
+  Roe<void> FileDelete(const std::string& relay_user_id, const std::string& blob_id) override;
+  Roe<RelayFileListResult> FileList(const std::string& relay_user_id, const std::string& status_filter) override;
+
 private:
+  /** POST a signed `/v1/files/<op>` body (relay_user_id, timestamp and signature are added here). */
+  Roe<HttpResponse> PostSignedFiles(const std::string& op, const std::string& relay_user_id, Object body,
+                                    const std::vector<uint8_t>& sign_bytes, int64_t timestamp) const;
+
   Roe<std::string> SignBytes(const std::vector<uint8_t>& sign_bytes) const;
 
   std::string base_url_;
