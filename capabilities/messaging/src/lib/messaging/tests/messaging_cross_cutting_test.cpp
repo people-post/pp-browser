@@ -6,18 +6,16 @@
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/delivery/RelayWirePayload.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/delivery/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
-#include "lib/delivery/SqliteControlLaneSeenStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -46,10 +44,10 @@ class PipelineHarness {
 public:
   explicit   PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
-        store(data_dir.string()),
+        store(),
         local(test::TestAccount::Make()),
-        roster_store(store.ProfileDbPath()),
-        psk_store(store.ProfileDbPath(), "test"),
+        roster_store(store),
+        psk_store(store),
         peer(test::TestAccount::Make()),
         pipeline(
             store,
@@ -252,10 +250,10 @@ public:
   }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
+  InMemoryDeliveryStore store;
   test::TestAccount local;
-  SqliteGroupRosterStore roster_store;
-  SqlitePeerSessionStore psk_store;
+  InMemoryGroupRosterStore roster_store;
+  InMemoryPeerSessions psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
   RelayReceivePipeline pipeline;
@@ -451,7 +449,7 @@ TEST(MessagingCrossCuttingTest, ChatTargetRoutingFindsDirectThread) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_cross_cutting_routing";
   std::filesystem::remove_all(data_dir);
-  SqliteThreadStore store(data_dir.string());
+  InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;
@@ -466,43 +464,6 @@ TEST(MessagingCrossCuttingTest, ChatTargetRoutingFindsDirectThread) {
   ASSERT_TRUE(static_cast<bool>(found));
   ASSERT_TRUE(found->has_value());
   EXPECT_EQ(found->value().id, created->id);
-}
-
-TEST(MessagingCrossCuttingTest, RichPayloadMetadataSurvivesSqliteRestart) {
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_cross_cutting_rich_meta";
-  std::filesystem::remove_all(data_dir);
-
-  Thread thread;
-  thread.id = "thread-rich-meta";
-  thread.kind = ThreadKind::Ai;
-  thread.title = "Rich";
-
-  {
-    SqliteThreadStore store(data_dir.string());
-    ASSERT_TRUE(store.SetDek(TestDek()));
-    ASSERT_TRUE(store.UpsertThread(thread));
-
-    ThreadMessage message;
-    message.id = "annotation-1";
-    message.thread_id = thread.id;
-    message.sender_contact_id = kLocalSelfContactId;
-    message.content_type = ChatContentType::Annotation;
-    message.text = "note";
-    message.target_message_id = "target-1";
-    message.timestamp = 99;
-    ASSERT_TRUE(static_cast<bool>(store.AppendMessage(message)));
-    store.Flush();
-  }
-
-  SqliteThreadStore store(data_dir.string());
-  ASSERT_TRUE(store.SetDek(TestDek()));
-  auto page = store.GetMessagesPage(thread.id, std::nullopt, 10);
-  ASSERT_TRUE(static_cast<bool>(page));
-  ASSERT_EQ(page->size(), 1u);
-  EXPECT_EQ(page->front().content_type, ChatContentType::Annotation);
-  ASSERT_TRUE(page->front().target_message_id.has_value());
-  EXPECT_EQ(*page->front().target_message_id, "target-1");
 }
 
 // System-control families (call control, …): messaging routes a feature's control messages to the
@@ -547,7 +508,7 @@ struct TestFamily {
 /** A pipeline harness with the lane's seen-store wired. */
 struct LaneHarness {
   explicit LaneHarness(const std::string& suffix)
-      : harness(suffix, ThreadChannel::E2ePublic), seen(harness.store.ProfileDbPath()) {
+      : harness(suffix, ThreadChannel::E2ePublic), seen() {
     harness.pipeline.SetSystemControls(&controls);
     harness.pipeline.SetControlLaneSeen(&seen);
   }
@@ -561,7 +522,7 @@ struct LaneHarness {
 
   SystemControlRegistry controls;
   PipelineHarness harness;
-  SqliteControlLaneSeenStore seen;
+  InMemoryControlLaneSeenStore seen;
 };
 
 // --- a group's membership events travel as direct messages, but are not read in that chat ----------------------

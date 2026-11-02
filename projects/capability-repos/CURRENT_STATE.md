@@ -107,10 +107,16 @@
 - **CR024 stage 2a:** messaging's stores are ports (`IGroupRosterStore`, `IThreadLocalPrefsStore`,
   `IThreadMentionsStore`; the SQLite ones `Sqlite*`) with in-memory ones in `lib/messaging/testing`; a contract test
   runs every case on both.
+- **CR024 stage 2b:** `src/lib/storage` (the app) holds the profile database and every SQLite store of delivery and
+  messaging; `ProductStack` hands `OpenSqliteProfileStores` to the hub (`ConversationsHub::SetStorage`, the ports in
+  `lib/messaging/ProfileStores.h`); `chat_targets` is `peer_sessions` (renamed in place on open). Delivery and
+  messaging hold no SQL; their tests run in memory — the in-memory thread store learned what messaging relies on
+  (the catalog row an append moves, the outbox, seq ranges) and "delete for me" became the port's own. The SQLite
+  behaviours (schema, restart, transactions, many connections) are storage's tests.
 
 ## Next
 
-1. CR024 stage 2b: the storage module (`src/lib/storage`) takes the SQLite stores and the profile database.
+1. CR024 stage 3: calls' stores (`CallSessionStore`, `CallMediaKeyStore`) behind ports.
 2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
 3. Contracts repo (CR010) when convenient.
 4. P3's namespaces when a second app needs a capability.

@@ -62,7 +62,7 @@ Profile-scoped layout (see [DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md)). **Leg
   threads/{thread_id}.json
 ```
 
-**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `chat_targets`) + per-thread `thread.db`; no `index.json`.
+**Target (v2a+):** see [chat-storage-and-memory DESIGN.md](../../projects/chat-storage-and-memory/DESIGN.md) — `profile.db` (`threads` + `outbox` + `peer_sessions`) + per-thread `thread.db`; no `index.json`.
 
 Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux) or in-app **Me → Network**:
 

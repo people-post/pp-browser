@@ -1,7 +1,7 @@
 #include "common/chat/MessagingJson.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/delivery/RelayWirePayload.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <filesystem>
@@ -319,7 +319,7 @@ TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_p2p_routing_test";
   std::filesystem::remove_all(data_dir);
-  SqliteThreadStore store(data_dir.string());
+  InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   DirectChatTarget target;

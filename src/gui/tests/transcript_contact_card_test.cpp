@@ -1,5 +1,5 @@
 // A contact card comes from the peer: its avatar_url is never used as a local image path.
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"

@@ -443,7 +443,7 @@ Namespaces and an `include/` split wait for an actual repo split (CR022).
 ## CR024 — Capabilities own ideas; the app owns the database
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); stage 1 and stage 2a done, stage 2b next
+**Status:** accepted (Hongwei, 2026-11-02); stages 1 and 2 done; stage 3 (calls) next
 
 **Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
 `chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without

@@ -1,6 +1,6 @@
 #include "lib/messaging/PeerThreadLogic.h"
 
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/Utilities.h"
@@ -26,7 +26,7 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_peer_thread_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(static_cast<bool>(store_->SetDek(TestDek())));
     ASSERT_TRUE(static_cast<bool>(store_->ListThreads()));
   }
@@ -47,7 +47,7 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
 };
 
 TEST_F(PeerThreadLogicTest, PrefersThePrivateDm) {

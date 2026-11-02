@@ -1,4 +1,4 @@
-#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
+#include "lib/storage/SqliteThreadLocalPrefsStore.h"
 
 #include <sqlite3.h>
 

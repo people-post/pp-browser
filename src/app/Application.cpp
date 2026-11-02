@@ -36,7 +36,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
-#include "lib/messaging/SqliteThreadSchema.h"
+#include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/ProductBranding.h"

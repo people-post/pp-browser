@@ -8,7 +8,7 @@
 #include "lib/messaging/ChatBlobResponder.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ChatPayloadValidator.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerSigningKeyStore.h"
@@ -33,7 +33,7 @@ class ChatBlobResponderHarness {
 public:
   explicit ChatBlobResponderHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_blob_" + suffix + "_" + util::GenerateUuid())),
-        store(data_dir.string()), identity(data_dir.string(), "test"),
+        store(), identity(data_dir.string(), "test"),
         requester((data_dir / "requester").string(), "requester"), keys_resolver(keys) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir / "requester");
@@ -143,7 +143,7 @@ public:
   ChatBlobRequester OnItsLink() { return ChatBlobRequester{requester_peer, &keys_resolver, util::NowUnixMs()}; }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
+  InMemoryDeliveryStore store;
   IdentityStore identity;
   IdentityStore requester;
   PeerSigningKeyStore keys;

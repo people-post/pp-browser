@@ -1,10 +1,15 @@
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 
+#include "lib/messaging/GroupMembershipCodec.h"
+
 #include <algorithm>
 
 namespace pbr {
 
-InMemoryGroupRosterStore::InMemoryGroupRosterStore(InMemoryDeliveryStore& threads) : threads_(threads) {}
+InMemoryGroupRosterStore::InMemoryGroupRosterStore(InMemoryDeliveryStore& threads) : threads_(threads) {
+  // Where groups are kept, group events in a direct chat are not the chat's to show (as the app's storage).
+  threads_.SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread);
+}
 
 void InMemoryGroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
   on_changed_ = std::move(on_changed);

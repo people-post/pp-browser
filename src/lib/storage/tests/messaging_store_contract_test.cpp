@@ -1,9 +1,9 @@
 // Messaging's store ports (CR024): one contract, run against the SQLite stores and the in-memory ones the tests use,
 // so a test passing in memory means what it would mean on the app's storage.
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
-#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
-#include "lib/messaging/SqliteThreadMentionsStore.h"
+#include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteThreadLocalPrefsStore.h"
+#include "lib/storage/SqliteThreadMentionsStore.h"
 #include "lib/messaging/testing/InMemoryMessagingStores.h"
 
 #include "common/Utilities.h"

@@ -1,4 +1,4 @@
-#include "lib/messaging/SqliteThreadMentionsStore.h"
+#include "lib/storage/SqliteThreadMentionsStore.h"
 
 #include <sqlite3.h>
 

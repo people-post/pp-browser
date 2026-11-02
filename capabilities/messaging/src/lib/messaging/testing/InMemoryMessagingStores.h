@@ -26,7 +26,10 @@ namespace pbr {
 
 class InMemoryGroupRosterStore : public IGroupRosterStore {
 public:
-  /** `threads` keeps the groups' send targets (and must outlive this). */
+  /**
+   * `threads` keeps the groups' send targets (and must outlive this); it takes messaging's rule for group events in
+   * a direct chat (they do not move it), as the app's storage does.
+   */
   explicit InMemoryGroupRosterStore(InMemoryDeliveryStore& threads);
 
   void SetOnChanged(std::function<void(const std::string& group_id)> on_changed) override;

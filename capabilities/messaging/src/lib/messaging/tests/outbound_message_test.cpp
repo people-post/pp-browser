@@ -4,12 +4,11 @@
 #include "foundation/error/AppError.h"
 
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
@@ -42,10 +41,10 @@ struct Device {
     root = std::filesystem::temp_directory_path() / ("pp_outbound_" + tag + "_" + util::GenerateUuid());
     std::filesystem::create_directories(root);
     keys = test::TestAccount::Make();
-    store = std::make_unique<SqliteThreadStore>(root.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
     EXPECT_TRUE(store->SetDek(TestDek(seed)) && store->ListThreads());
-    roster = std::make_unique<SqliteGroupRosterStore>(store->ProfileDbPath());
-    psk = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), tag);
+    roster = std::make_unique<InMemoryGroupRosterStore>(*store);
+    psk = std::make_unique<InMemoryPeerSessions>(*store);
     EXPECT_TRUE(psk->SetDek(TestDek(seed)));
     pipeline = std::make_unique<RelayReceivePipeline>(
         *store,
@@ -101,9 +100,9 @@ struct Device {
   test::TestAccount keys;
   /** The peers' cards this device keeps. */
   std::map<std::string, AccountCard> cards;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<SqliteGroupRosterStore> roster;
-  std::unique_ptr<SqlitePeerSessionStore> psk;
+  std::unique_ptr<InMemoryDeliveryStore> store;
+  std::unique_ptr<InMemoryGroupRosterStore> roster;
+  std::unique_ptr<InMemoryPeerSessions> psk;
   std::unique_ptr<RelayReceivePipeline> pipeline;
 };
 

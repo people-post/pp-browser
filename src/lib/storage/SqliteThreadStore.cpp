@@ -1,13 +1,13 @@
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
-#include "lib/messaging/SqliteThreadSchema.h"
+#include "lib/storage/SqliteThreadSchema.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteGroupRosterStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/messaging/SyncStateCodec.h"
@@ -75,6 +75,10 @@ void SqliteThreadStore::ClearDek() {
 
 void SqliteThreadStore::Flush() {
   db_.Flush();
+}
+
+Roe<void> SqliteThreadStore::Open() const {
+  return db_.EnsureInitialized();
 }
 
 std::string SqliteThreadStore::ProfileDbPath() const {
@@ -937,32 +941,6 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetAnnotationsForTarget(const
   return out;
 }
 
-Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
-  auto message = GetMessage(thread_id, message_id);
-  if (!message) {
-    return message.error();
-  }
-  if (!message->has_value()) {
-    return false;
-  }
-  if ((*message)->content_type == ChatContentType::Deleted) {
-    return true;
-  }
-  // Same row, same id / seq / order: only the content goes.
-  ThreadMessage tombstone = **message;
-  tombstone.thread_id = thread_id;
-  tombstone.content_type = ChatContentType::Deleted;
-  tombstone.text.clear();
-  tombstone.payload_json.clear();
-  tombstone.content_rml.reset();
-  tombstone.chat_actions.clear();
-  tombstone.working_set_json.reset();
-  tombstone.ai_image_json.reset();
-  tombstone.ai_invoke_mode.reset();
-  tombstone.target_message_id.reset();
-  return UpdateMessage(tombstone);
-}
-
 Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const std::string& message_id) const {
   auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
@@ -1123,13 +1101,13 @@ Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
   std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, participant_contact_id, "
+      "INSERT INTO peer_sessions (peer_identity_kind, peer_identity_value, channel, participant_contact_id, "
       "local_thread_id, session_epoch, next_outgoing_seq) "
       "VALUES (?, ?, ?, ?, ?, 1, 1) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "participant_contact_id=excluded.participant_contact_id, local_thread_id=excluded.local_thread_id;";
   if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare chat_targets upsert");
+    return Error("Failed to prepare peer_sessions upsert");
   }
   const std::string channel = ThreadChannelToString(target.channel);
   sqlite3_bind_text(stmt, 1, target.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
@@ -1139,7 +1117,7 @@ Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
   sqlite3_bind_text(stmt, 5, local_thread_id.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
-    return Error("Failed to upsert chat_targets");
+    return Error("Failed to upsert peer_sessions");
   }
   sqlite3_finalize(stmt);
   return {};
@@ -1153,7 +1131,7 @@ Roe<void> SqliteThreadStore::ClearChatTargetThreadLink(const std::string& thread
 
 void SqliteThreadStore::ClearChatTargetThreadLinkUnlocked(const std::string& thread_id) const {
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE chat_targets SET local_thread_id = '' WHERE local_thread_id = ?;", -1,
+  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE peer_sessions SET local_thread_id = '' WHERE local_thread_id = ?;", -1,
                          &stmt, nullptr) != SQLITE_OK) {
     return;
   }
@@ -1204,10 +1182,10 @@ Roe<std::optional<Thread>> SqliteThreadStore::FindDirectThread(const DirectChatT
     std::lock_guard lock(db_.profile_mutex());
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
-        "SELECT local_thread_id FROM chat_targets WHERE peer_identity_kind = ? AND peer_identity_value = ? AND "
+        "SELECT local_thread_id FROM peer_sessions WHERE peer_identity_kind = ? AND peer_identity_value = ? AND "
         "channel = ? AND local_thread_id != '' LIMIT 1;";
     if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
-      return Error("Failed to prepare chat_targets lookup");
+      return Error("Failed to prepare peer_sessions lookup");
     }
     const std::string channel = ThreadChannelToString(target.channel);
     sqlite3_bind_text(stmt, 1, target.peer_identity_kind.c_str(), -1, SQLITE_TRANSIENT);
@@ -1385,7 +1363,7 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
   }
   std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT next_outgoing_seq FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT next_outgoing_seq FROM peer_sessions WHERE local_thread_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sender seq lookup");
   }
@@ -1397,7 +1375,7 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
   const uint64_t seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
   sqlite3_finalize(stmt);
 
-  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE chat_targets SET next_outgoing_seq = next_outgoing_seq + 1 WHERE "
+  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE peer_sessions SET next_outgoing_seq = next_outgoing_seq + 1 WHERE "
                                      "local_thread_id = ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sender seq bump");
@@ -1428,7 +1406,7 @@ Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& th
   }
   std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT session_epoch FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT session_epoch FROM peer_sessions WHERE local_thread_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare session epoch lookup");
   }
@@ -1632,9 +1610,9 @@ Roe<void> SqliteThreadStore::AdoptChatTargetEpochUnlocked(const std::string& thr
                                                           const uint32_t new_session_epoch) const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db_.profile_db(),
-                         "UPDATE chat_targets SET session_epoch = ?, next_outgoing_seq = 1 WHERE local_thread_id = ?;",
+                         "UPDATE peer_sessions SET session_epoch = ?, next_outgoing_seq = 1 WHERE local_thread_id = ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error("Failed to prepare chat_targets epoch adopt");
+    return Error("Failed to prepare peer_sessions epoch adopt");
   }
   sqlite3_bind_int(stmt, 1, static_cast<int>(new_session_epoch));
   sqlite3_bind_text(stmt, 2, thread_id.c_str(), -1, SQLITE_TRANSIENT);

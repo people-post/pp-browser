@@ -5,10 +5,9 @@
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/delivery/PskRotateCodec.h"
 #include "common/chat/RelayEnvelope.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/delivery/PublicPskLockCoordinator.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 
@@ -38,8 +37,8 @@ ByteVector TestMasterPsk() {
 
 struct LockFixture {
   std::filesystem::path dir;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<SqlitePeerSessionStore> psk_store;
+  std::unique_ptr<InMemoryDeliveryStore> store;
+  std::unique_ptr<InMemoryPeerSessions> psk_store;
   std::unique_ptr<PublicPskLockCoordinator> lock;
   std::string thread_id;
   PeerSessionKey key;
@@ -47,8 +46,8 @@ struct LockFixture {
   explicit LockFixture(const std::string& suffix)
       : dir(std::filesystem::temp_directory_path() / ("pp_public_lock_" + suffix + "_" + util::GenerateUuid())) {
     std::filesystem::remove_all(dir);
-    store = std::make_unique<SqliteThreadStore>(dir.string());
-    psk_store = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), suffix);
+    store = std::make_unique<InMemoryDeliveryStore>();
+    psk_store = std::make_unique<InMemoryPeerSessions>(*store);
     lock = std::make_unique<PublicPskLockCoordinator>(*store, *psk_store);
     EXPECT_TRUE(static_cast<bool>(psk_store->SetDek(TestDek())));
     DirectChatTarget target;

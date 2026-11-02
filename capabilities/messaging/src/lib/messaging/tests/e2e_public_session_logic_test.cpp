@@ -4,8 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -29,8 +28,8 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_browser_e2e_public_session_logic_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-    psk_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), "test");
+    store_ = std::make_unique<InMemoryDeliveryStore>();
+    psk_ = std::make_unique<InMemoryPeerSessions>(*store_);
     ASSERT_TRUE(static_cast<bool>(store_->SetDek(TestDek())));
     ASSERT_TRUE(static_cast<bool>(psk_->SetDek(TestDek())));
     // Create profile.db (and chat_targets) before PSK OpenDb.
@@ -44,8 +43,8 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<SqlitePeerSessionStore> psk_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
+  std::unique_ptr<InMemoryPeerSessions> psk_;
 };
 
 // M021: a session per device pair, apart from the account's and from the peer's other devices, numbered in
@@ -132,7 +131,7 @@ TEST_F(E2ePublicSessionLogicTest, BothOpeningAtOnceSettleOnTheLowerId) {
   ASSERT_TRUE(alice && bob);
   PeerSessionKey to_bob{"account", "account:bob", CryptoChannel::E2ePublic};
   PeerSessionKey to_alice{"account", "account:alice", CryptoChannel::E2ePublic};
-  SqlitePeerSessionStore bob_psk(store_->ProfileDbPath(), "bob");
+  InMemoryPeerSessions bob_psk(*store_);
   ASSERT_TRUE(bob_psk.SetDek(TestDek()));
 
   auto alice_opened = EnsureE2ePublicMasterPsk(*psk_, to_bob, 1, bob->public_key);

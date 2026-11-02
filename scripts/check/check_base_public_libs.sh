@@ -22,6 +22,7 @@ lib_peers = {
     "pp_lib_pricing",
     "pp_lib_ai",
     "pp_lib_ui",
+    "pp_lib_storage",
 }
 # lib/<a> -> lib/<b> pairs the capability order allows (different capabilities, downward).
 allowed = {

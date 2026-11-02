@@ -7,7 +7,6 @@
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
-#include "lib/delivery/SqliteControlLaneSeenStore.h"
 #include "common/Localized.h"
 
 #include "common/Diag.h"
@@ -36,7 +35,6 @@
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -629,11 +627,14 @@ void MeshDeliveryOrchestrator::SetGroupMembership(GroupMembershipWorkflow* group
 
 void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   profile_data_dir_ = std::move(profile_data_dir);
-  control_lane_seen_ = std::make_unique<SqliteControlLaneSeenStore>(SqliteThreadProfileDbFile(profile_data_dir_));
-  if (receive_pipeline_) {
-    receive_pipeline_->SetControlLaneSeen(control_lane_seen_.get());
-  }
   transports_.SetProfileDataDir(profile_data_dir_);
+}
+
+void MeshDeliveryOrchestrator::SetControlLaneSeen(IControlLaneSeenStore* seen) {
+  control_lane_seen_ = seen;
+  if (receive_pipeline_) {
+    receive_pipeline_->SetControlLaneSeen(control_lane_seen_);
+  }
 }
 
 IChatBlobPeerClient* MeshDeliveryOrchestrator::PeerBlobClient() const {

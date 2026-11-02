@@ -8,13 +8,16 @@
 // with its peer are one row, so they share the session epoch (a session saved first gets its thread later); a
 // direct thread starts at epoch 1 and sender seq 1, a group numbers per group, a device pair's session numbers on
 // its own and restarts at 1 in a new epoch; messages get the next display order and a page is the newest `limit`
-// in ascending order; a thread keeps `listed` once set. What it leaves out: encryption at rest, the outbox
-// (ListPendingOutbox is empty), and context budgets (every message is eligible).
+// in ascending order; an appended message moves its thread (updated_at, preview, listed) and a pending one waits in
+// the outbox until it is delivered. What it leaves out: encryption at rest and context budgets (every message is
+// eligible).
 
 #include "common/thread/IThreadStore.h"
+#include "foundation/crypto/IDekConsumer.h"
 #include "lib/delivery/IControlLaneSeenStore.h"
 #include "lib/delivery/IPeerSessionStore.h"
 
+#include <functional>
 #include <map>
 #include <set>
 #include <mutex>
@@ -26,8 +29,18 @@
 
 namespace pbr {
 
-class InMemoryDeliveryStore : public IThreadStore, public IPeerSessionStore {
+class InMemoryDeliveryStore : public IThreadStore, public IPeerSessionStore, public IDekConsumer {
 public:
+  /**
+   * Which messages do not move a direct thread (its preview, its place, `listed`): messaging's rule — group
+   * membership events (`GroupMembershipCodec::IsHiddenInDirectThread`) — for tests that care. None by default.
+   */
+  void SetHiddenInDirectThread(std::function<bool(const ThreadMessage&)> hidden) { hidden_in_direct_ = std::move(hidden); }
+
+  // IDekConsumer: it takes the profile's data key as the app's stores do, and keeps nothing at rest to use it on.
+  Roe<void> SetDek(ByteVector /*dek*/) override { return {}; }
+  void ClearDek() override {}
+
   // IThreadCatalog
   Roe<std::vector<Thread>> ListThreads() const override;
   Roe<std::optional<Thread>> GetThread(const std::string& thread_id) const override;
@@ -143,7 +156,29 @@ private:
   /** Per thread, ascending display order. */
   std::map<std::string, std::vector<ThreadMessage>> messages_;
   std::map<std::string, ConversationSummary> memory_;
+  /** Pending relay-visible messages, in the order they went in: (message id, thread id). */
+  std::vector<std::pair<std::string, std::string>> outbox_;
+  std::function<bool(const ThreadMessage&)> hidden_in_direct_;
   std::map<std::tuple<std::string, uint32_t, std::string>, PeerSyncState> sync_;
+};
+
+/**
+ * The peer sessions of an InMemoryDeliveryStore, as a store of their own: for code and tests that hold the thread
+ * store and the session store apart (as the app's are), while the rows stay one (as SQLite's are).
+ */
+class InMemoryPeerSessions : public IPeerSessionStore, public IDekConsumer {
+public:
+  explicit InMemoryPeerSessions(InMemoryDeliveryStore& store) : store_(store) {}
+
+  Roe<std::optional<PeerSessionRecord>> Load(const PeerSessionKey& key) const override { return store_.Load(key); }
+  Roe<std::vector<PeerSessionRecord>> List() const override { return store_.List(); }
+  Roe<void> Save(const PeerSessionRecord& record) override { return store_.Save(record); }
+  Roe<uint64_t> AllocateSenderSeq(const PeerSessionKey& key) override { return store_.AllocateSenderSeq(key); }
+  Roe<void> SetDek(ByteVector /*dek*/) override { return {}; }
+  void ClearDek() override {}
+
+private:
+  InMemoryDeliveryStore& store_;
 };
 
 /** IControlLaneSeenStore in memory (no pruning: a test's process is short). */

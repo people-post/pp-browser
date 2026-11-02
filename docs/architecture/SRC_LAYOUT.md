@@ -137,10 +137,11 @@ base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the
 - A capability ships ideas, not a database ([CR024](../../projects/capability-repos/DECISIONS.md#cr024--capabilities-own-ideas-the-app-owns-the-database)):
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest
-  encryption and the SQLite implementations, in one storage module. Still moving there: the SQLite stores in
-  delivery (`SqlitePeerSessionStore`, `SqliteControlLaneSeenStore`), messaging (the thread store and database,
-  `SqliteGroupRosterStore`, `SqliteThreadLocalPrefsStore`, `SqliteThreadMentionsStore`), calls, people and social.
-  An in-memory store and its SQLite one pass the same contract test (`messaging_store_contract_test`).
+  encryption and the SQLite implementations, in one storage module, [`src/lib/storage`](../../src/lib/storage/)
+  (the profile database, the thread store, rosters, prefs, mentions, peer sessions, the control lane's seen ids),
+  handed to the hub by `ProductStack` (`ConversationsHub::SetStorage`, `lib/messaging/ProfileStores.h`). Still
+  moving there: the SQLite stores in calls, people and social. An in-memory store and its SQLite one pass the same
+  contract test (`lib/storage/tests/messaging_store_contract_test`).
 
 ## What `src/common` provides
 

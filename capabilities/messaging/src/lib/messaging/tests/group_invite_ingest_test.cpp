@@ -7,9 +7,9 @@
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/people/PeerSigningKeyStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupInviteGate.h"
@@ -18,7 +18,6 @@
 #include "lib/messaging/tests/TestRosterSigner.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/TranscriptAssembly.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -70,8 +69,8 @@ struct FakeContacts : IContactTrustAccess {
   }
 };
 
-// Temp-dir cleanup (Windows CI): do not call remove_all while SqliteThreadStore /
-// SqliteGroupRosterStore / SqlitePeerSessionStore still hold open DB handles. Member
+// Temp-dir cleanup (Windows CI): do not call remove_all while InMemoryDeliveryStore /
+// InMemoryGroupRosterStore / InMemoryPeerSessions still hold open DB handles. Member
 // destructors close SQLite first; a harness destructor that remove_all's first
 // throws on Windows ("being used by another process") and aborts the test process.
 // Use a unique path and skip destructor cleanup (same as SyncTestHarness).
@@ -80,8 +79,8 @@ struct PartyHarness {
                         const ThreadChannel channel = ThreadChannel::E2e)
       : data_dir(std::filesystem::temp_directory_path() /
                  ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
-        store(data_dir.string()), keys(test::TestAccount::Make()), roster(store.ProfileDbPath()),
-        psk_store(store.ProfileDbPath(), "test"), peer(test::TestAccount::Make()), gate(contacts.Standing(), roster),
+        store(), keys(test::TestAccount::Make()), roster(store),
+        psk_store(store), peer(test::TestAccount::Make()), gate(contacts.Standing(), roster),
         pipeline(store,
                  [this, peer_account](const std::string& account) -> std::optional<AccountCard> {
                    // The peer's device as its kept card lists it (filed under the fixture's readable id).
@@ -177,11 +176,11 @@ struct PartyHarness {
   }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
+  InMemoryDeliveryStore store;
   test::TestAccount keys;
   FakeContacts contacts;
-  SqliteGroupRosterStore roster;
-  SqlitePeerSessionStore psk_store;
+  InMemoryGroupRosterStore roster;
+  InMemoryPeerSessions psk_store;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
   GroupInviteGate gate;
@@ -1022,12 +1021,11 @@ TEST_F(GroupDissolvedIngestTest, ADeletedChatStaysGoneAndTheMarkerSurvivesAResta
   EXPECT_FALSE(late.persisted);
   EXPECT_FALSE(bob_.store.FindGroupThread(kGroup)->has_value());
 
-  // A restart reads it all back from disk.
-  SqliteGroupRosterStore reopened(bob_.store.ProfileDbPath());
-  const auto metadata = reopened.LoadMetadata(kGroup).value();
+  // The roster keeps the ending (that it survives a restart is the app storage's to show).
+  const auto metadata = bob_.roster.LoadMetadata(kGroup).value();
   ASSERT_TRUE(metadata);
   EXPECT_EQ(metadata->sync_state, GroupSyncState::Dissolved);
-  EXPECT_TRUE(reopened.ListMembers(kGroup).value().empty());
+  EXPECT_TRUE(bob_.roster.ListMembers(kGroup).value().empty());
 }
 
 

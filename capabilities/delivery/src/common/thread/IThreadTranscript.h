@@ -76,13 +76,33 @@ public:
   }
   /**
    * "Delete for me": wipe the message's content (text, payload, attachment / image references) and keep an
-   * id-only tombstone (`ChatContentType::Deleted`), so dedupe and history sync still see the id and never
-   * bring the message back. false when the id is unknown. Default: unsupported (test doubles).
+   * id-only tombstone (`ChatContentType::Deleted`) — same row, same id / seq / order — so dedupe and history sync
+   * still see the id and never bring the message back. false when the id is unknown. Built on GetMessage and
+   * UpdateMessage, for every store (CR024).
    */
-  virtual Roe<bool> DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
-    (void)thread_id;
-    (void)message_id;
-    return Error("DeleteMessageContent not supported");
+  Roe<bool> DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+    auto message = GetMessage(thread_id, message_id);
+    if (!message) {
+      return message.error();
+    }
+    if (!message->has_value()) {
+      return false;
+    }
+    if ((*message)->content_type == ChatContentType::Deleted) {
+      return true;
+    }
+    ThreadMessage tombstone = **message;
+    tombstone.thread_id = thread_id;
+    tombstone.content_type = ChatContentType::Deleted;
+    tombstone.text.clear();
+    tombstone.payload_json.clear();
+    tombstone.content_rml.reset();
+    tombstone.chat_actions.clear();
+    tombstone.working_set_json.reset();
+    tombstone.ai_image_json.reset();
+    tombstone.ai_invoke_mode.reset();
+    tombstone.target_message_id.reset();
+    return UpdateMessage(tombstone);
   }
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
   virtual Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) = 0;

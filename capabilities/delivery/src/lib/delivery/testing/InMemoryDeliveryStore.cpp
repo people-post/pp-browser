@@ -106,6 +106,19 @@ Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessageLocked(const ThreadMessag
   auto at = std::upper_bound(rows.begin(), rows.end(), stored.display_order,
                              [](int64_t order, const ThreadMessage& row) { return order < row.display_order; });
   rows.insert(at, stored);
+  // The thread's catalog row, as SQLite's: it moves up, shows this message, and is listed — unless the message is
+  // not one to read in a direct chat.
+  if (auto thread = threads_.find(stored.thread_id); thread != threads_.end()) {
+    const bool hidden = thread->second.kind == ThreadKind::Direct && hidden_in_direct_ && hidden_in_direct_(stored);
+    if (!hidden) {
+      thread->second.updated_at = stored.timestamp;
+      thread->second.preview = stored.text;
+      thread->second.listed = true;
+    }
+  }
+  if (stored.delivery == MessageDelivery::Pending && stored.relay_visible) {
+    outbox_.emplace_back(stored.id, stored.thread_id);
+  }
   return stored;
 }
 
@@ -137,6 +150,7 @@ Roe<bool> InMemoryDeliveryStore::DeleteThread(const std::string& thread_id) {
   std::lock_guard lock(mutex_);
   const bool existed = threads_.erase(thread_id) > 0;
   messages_.erase(thread_id);
+  std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
   memory_.erase(thread_id);
   return existed;
 }
@@ -301,6 +315,9 @@ Roe<bool> InMemoryDeliveryStore::UpdateMessage(const ThreadMessage& message) {
       const int64_t order = row.display_order; // keeps its place in the thread
       row = message;
       row.display_order = order;
+      if (message.delivery != MessageDelivery::Pending) {
+        std::erase_if(outbox_, [&](const auto& entry) { return entry.first == message.id; });
+      }
       return true;
     }
   }
@@ -322,6 +339,7 @@ Roe<bool> InMemoryDeliveryStore::HasMessageId(const std::string& thread_id, cons
 Roe<void> InMemoryDeliveryStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
   std::lock_guard lock(mutex_);
   messages_.erase(thread_id);
+  std::erase_if(outbox_, [&](const auto& entry) { return entry.second == thread_id; });
   if (options.forget_memory) {
     memory_.erase(thread_id);
   }
@@ -399,8 +417,9 @@ Roe<std::vector<ThreadMessage>> InMemoryDeliveryStore::GetMessagesBySeqRange(con
   }
   std::vector<ThreadMessage> out;
   for (const ThreadMessage& message : *messages) {
-    if (!message.sender_seq || message.session_epoch.value_or(1) != query.session_epoch ||
-        message.seq_owner_contact_id.value_or(std::string()) != query.seq_owner_contact_id ||
+    // As SQLite's: the owner's relay-visible rows in that epoch, by the device (none: rows with none).
+    if (!message.relay_visible || !message.sender_seq || message.session_epoch != query.session_epoch ||
+        message.sender_contact_id != query.seq_owner_contact_id ||
         message.sender_device.value_or(std::string()) != query.sender_device) {
       continue;
     }
@@ -470,11 +489,37 @@ Roe<uint32_t> InMemoryDeliveryStore::BumpLocalChatTargetEpoch(const std::string&
 }
 
 Roe<void> InMemoryDeliveryStore::ReconcileOutbox() {
+  std::lock_guard lock(mutex_);
+  // As SQLite's: a row whose message is gone or no longer pending leaves; a pending direct message missing one gets it.
+  std::erase_if(outbox_, [&](const auto& entry) {
+    auto rows = messages_.find(entry.second);
+    if (rows == messages_.end()) {
+      return true;
+    }
+    auto message = std::find_if(rows->second.begin(), rows->second.end(),
+                                [&](const ThreadMessage& row) { return row.id == entry.first; });
+    return message == rows->second.end() || message->delivery != MessageDelivery::Pending;
+  });
+  for (const auto& [thread_id, thread] : threads_) {
+    if (thread.kind != ThreadKind::Direct) {
+      continue;
+    }
+    if (auto rows = messages_.find(thread_id); rows != messages_.end()) {
+      for (const ThreadMessage& message : rows->second) {
+        const bool queued =
+            std::any_of(outbox_.begin(), outbox_.end(), [&](const auto& entry) { return entry.first == message.id; });
+        if (message.delivery == MessageDelivery::Pending && message.relay_visible && !queued) {
+          outbox_.emplace_back(message.id, thread_id);
+        }
+      }
+    }
+  }
   return {};
 }
 
 Roe<std::vector<std::pair<std::string, std::string>>> InMemoryDeliveryStore::ListPendingOutbox() const {
-  return std::vector<std::pair<std::string, std::string>>{};
+  std::lock_guard lock(mutex_);
+  return outbox_;
 }
 
 Roe<std::optional<PeerSessionRecord>> InMemoryDeliveryStore::Load(const PeerSessionKey& key) const {

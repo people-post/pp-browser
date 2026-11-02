@@ -19,6 +19,7 @@ two peers of one capability, or an edge against the order, may not — that cros
 | content | [`capabilities/social/src/lib/content/`](../../capabilities/social/src/lib/content/) (CR022) | `pp_lib_content` |
 | posts | [`capabilities/social/src/lib/posts/`](../../capabilities/social/src/lib/posts/) (CR022) | `pp_lib_posts` |
 | ai | `lib/ai/` | `pp_lib_ai` (+ conversation/mcp sublibs) |
+| storage | `lib/storage/` | `pp_lib_storage` — the app's storage: profile database and SQLite stores behind the capabilities' ports (CR024) |
 
 The mesh is not a peer here: it is [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
 (`#include "mesh/…"`, `pp_mesh`), which `feature/` and `app/` compose. Domain code may embed only its

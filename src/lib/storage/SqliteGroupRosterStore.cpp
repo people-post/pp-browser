@@ -1,4 +1,4 @@
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteGroupRosterStore.h"
 
 #include "lib/messaging/GroupMembershipCodec.h"
 

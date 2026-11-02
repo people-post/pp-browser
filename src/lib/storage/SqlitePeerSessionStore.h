@@ -16,7 +16,7 @@ namespace pbr {
 
 /**
  * PSK persistence on profile.db, PSK columns encrypted with the profile DEK: account-level sessions on
- * `chat_targets` (shared with the thread's numbering), device-pair sessions (M021) on `device_sessions`,
+ * `peer_sessions` (shared with the thread's numbering), device-pair sessions (M021) on `device_sessions`,
  * which hold their own numbering.
  */
 class SqlitePeerSessionStore : public Module, public IPeerSessionStore, public IDekConsumer {

@@ -1,5 +1,5 @@
 // A thread's local title survives a reopen (the store migrates its column).
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

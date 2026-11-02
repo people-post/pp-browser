@@ -26,7 +26,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/ProfileStores.h"
 #include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
@@ -85,7 +85,6 @@ class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
 class PeerCardStore;
-class SqlitePeerSessionStore;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -228,7 +227,7 @@ public:
   SystemControlRegistry& SystemControls() { return system_controls_; }
   /** The group rosters (from stores open to hub teardown; null outside that). */
   IGroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
-  std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
+  std::string ProfileDbPath() const { return profile_db_path_; }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
   /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
@@ -408,6 +407,8 @@ public:
   void SetHost(Host host) { host_ = host; }
   /** The endpoints an empty config entry falls back to (the app's platform defaults); set before Initialize. */
   void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
+  /** Where the profile's stores come from (CR024): the app's storage, or a test's in-memory ones. */
+  void SetStorage(OpenProfileStores open) { open_stores_ = std::move(open); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -525,14 +526,20 @@ private:
   ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
-  std::unique_ptr<SqliteThreadStore> store_;
+  /** Opens the profile's stores (the app's storage); set before Initialize. */
+  OpenProfileStores open_stores_;
+  std::unique_ptr<IThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<InitiationBillingStore> initiation_billing_;
   std::unique_ptr<PaymentPromiseStore> payment_promises_;
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
-  std::unique_ptr<SqlitePeerSessionStore> psk_store_;
+  std::unique_ptr<IPeerSessionStore> psk_store_;
+  std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
+  /** The stores encrypted at rest (the profile's data key goes to them). */
+  std::vector<IDekConsumer*> at_rest_;
+  std::string profile_db_path_;
   std::unique_ptr<IGroupRosterStore> group_roster_;
   std::unique_ptr<IThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */

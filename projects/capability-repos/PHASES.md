@@ -76,7 +76,7 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
       [ ] host contract + README / docs.
 - [ ] Ideas in capabilities, the database in the app (CR024): [x] delivery's ports and in-memory stores,
       [x] messaging's store ports and in-memory stores (contract-tested against SQLite),
-      [ ] `src/lib/storage` with the SQLite stores and the profile database, [ ] calls' stores,
+      [x] `src/lib/storage` with the SQLite stores and the profile database, [ ] calls' stores,
       [ ] people's and social's stores.
 
 ## Contracts repo (any time, CR010)

@@ -1,6 +1,6 @@
 #include "lib/delivery/E2eIngestClassifier.h"
 #include "lib/delivery/E2eIngestClassifier.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 #include "lib/messaging/SyncStateCodec.h"
 
 #include <filesystem>

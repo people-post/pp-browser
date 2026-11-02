@@ -1,8 +1,8 @@
-#include "lib/messaging/SqliteThreadDb.h"
+#include "lib/storage/SqliteThreadDb.h"
 
-#include "lib/messaging/SqliteThreadSchema.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
-#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
+#include "lib/storage/SqliteThreadSchema.h"
+#include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteThreadLocalPrefsStore.h"
 #include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
@@ -163,17 +163,26 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
     return Error("Incompatible profile.db (schema " + std::to_string(user_version) + ", expected " +
                  std::to_string(kSqliteThreadProfileUserVersion) + ") — reset chats in Me → Storage");
   }
+  // CR024: `chat_targets` is `peer_sessions` (a peer session's keys and epoch, and its direct thread's numbering).
+  // An older profile.db renames it here; a new one, or one already renamed, has no `chat_targets` (ignored).
+  if (sqlite3_exec(profile_db_, "ALTER TABLE chat_targets RENAME TO peer_sessions;", nullptr, nullptr, nullptr) ==
+      SQLITE_OK) {
+    (void)sqlite3_exec(profile_db_, "DROP INDEX IF EXISTS idx_chat_targets_local_thread;", nullptr, nullptr, nullptr);
+    (void)sqlite3_exec(profile_db_,
+                       "CREATE UNIQUE INDEX IF NOT EXISTS idx_peer_sessions_local_thread ON peer_sessions(local_thread_id);",
+                       nullptr, nullptr, nullptr);
+  }
   // Additive threads column (an older profile.db lacks it: its threads are all listed).
   (void)sqlite3_exec(profile_db_, "ALTER TABLE threads ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;", nullptr,
                      nullptr, nullptr);
-  // Additive chat_targets columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
+  // Additive peer_sessions columns (an older profile.db lacks them; already there: the ALTER fails, ignored).
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE peer_sessions ADD COLUMN auto_key_session_id TEXT;", nullptr, nullptr,
                      nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_init_pending TEXT;", nullptr, nullptr,
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE peer_sessions ADD COLUMN auto_key_init_pending TEXT;", nullptr, nullptr,
                      nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_peer_heard_ms INTEGER;", nullptr,
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE peer_sessions ADD COLUMN auto_key_peer_heard_ms INTEGER;", nullptr,
                      nullptr, nullptr);
-  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN restart_pending INTEGER NOT NULL DEFAULT 0;",
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE peer_sessions ADD COLUMN restart_pending INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
   SqliteGroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {

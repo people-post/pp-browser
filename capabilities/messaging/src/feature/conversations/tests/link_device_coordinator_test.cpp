@@ -1,10 +1,9 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/DataKeyVault.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/people/IdentityStore.h"
 #include "lib/people/LinkDeviceCoordinator.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "common/Utilities.h"
 
@@ -46,15 +45,15 @@ protected:
 
   std::filesystem::path old_dir_;
   std::filesystem::path new_dir_;
-  std::unique_ptr<SqliteThreadStore> old_threads_;
-  std::unique_ptr<SqlitePeerSessionStore> old_psks_;
+  std::unique_ptr<InMemoryDeliveryStore> old_threads_;
+  std::unique_ptr<InMemoryPeerSessions> old_psks_;
 };
 
 TEST_F(LinkDeviceCoordinatorTest, TheBundleCarriesTheAccountAndItsCardButNoSessions) {
   const ByteVector shared = MakeDek();
-  old_threads_ = std::make_unique<SqliteThreadStore>(old_dir_.string());
+  old_threads_ = std::make_unique<InMemoryDeliveryStore>();
   ASSERT_TRUE(old_threads_->ListThreads());
-  old_psks_ = std::make_unique<SqlitePeerSessionStore>(old_threads_->ProfileDbPath(), "old");
+  old_psks_ = std::make_unique<InMemoryPeerSessions>(*old_threads_);
   ASSERT_TRUE(old_psks_->SetDek(shared));
 
   IdentityStore old_identity(old_dir_.string(), "old");

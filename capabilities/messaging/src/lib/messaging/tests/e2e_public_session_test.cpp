@@ -7,16 +7,14 @@
 #include "common/chat/RelayStreamKey.h"
 #include "common/chat/SystemControl.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
-#include "lib/delivery/SqliteControlLaneSeenStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/delivery/OutboundMessage.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/people/PeerSigningKeyStore.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -77,16 +75,16 @@ struct Side {
     roster.reset();
     store.reset();
     const auto data_dir = root / dir;
-    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
     if (!store->SetDek(TestDek(seed)) || !store->ListThreads()) {
       throw std::runtime_error("store");
     }
-    roster = std::make_unique<SqliteGroupRosterStore>(store->ProfileDbPath());
-    psk = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), tag);
+    roster = std::make_unique<InMemoryGroupRosterStore>(*store);
+    psk = std::make_unique<InMemoryPeerSessions>(*store);
     if (!psk->SetDek(TestDek(seed))) {
       throw std::runtime_error("psk");
     }
-    seen = std::make_unique<SqliteControlLaneSeenStore>(store->ProfileDbPath());
+    seen = std::make_unique<InMemoryControlLaneSeenStore>();
     pipeline = std::make_unique<RelayReceivePipeline>(
         *store,
         [this](const std::string& account_id) -> std::optional<AccountCard> {
@@ -398,10 +396,10 @@ struct Side {
   std::map<std::string, AccountCard> cards;
   std::unordered_map<std::string, std::string> peer_kem;
   SystemControlRegistry controls;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<SqliteGroupRosterStore> roster;
-  std::unique_ptr<SqlitePeerSessionStore> psk;
-  std::unique_ptr<SqliteControlLaneSeenStore> seen;
+  std::unique_ptr<InMemoryDeliveryStore> store;
+  std::unique_ptr<InMemoryGroupRosterStore> roster;
+  std::unique_ptr<InMemoryPeerSessions> psk;
+  std::unique_ptr<InMemoryControlLaneSeenStore> seen;
   std::unique_ptr<RelayReceivePipeline> pipeline;
   int landed = 0;
   std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch

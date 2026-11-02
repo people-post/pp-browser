@@ -143,6 +143,8 @@ public:
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
+  /** The control lane's applied ids (the hub's store; null: none kept, every copy applies). */
+  void SetControlLaneSeen(IControlLaneSeenStore* seen);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /** Where a live message that mentions us is marked (G015); null: not marked. */
   void SetThreadMentions(IThreadMentionsStore* mentions) { mentions_ = mentions; }
@@ -363,7 +365,7 @@ private:
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
-  std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
+  IControlLaneSeenStore* control_lane_seen_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
    *  pipeline their inbound handler feeds, so they go first. */

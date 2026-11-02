@@ -1,7 +1,4 @@
 #include "feature/conversations/ConversationsHub.h"
-#include "lib/messaging/SqliteThreadMentionsStore.h"
-#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
-#include "lib/messaging/SqliteGroupRosterStore.h"
 #include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
@@ -35,7 +32,6 @@
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCardStore.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -881,7 +877,21 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     profile_id_ = "default";
   }
 
-  store_ = std::make_unique<SqliteThreadStore>(data_dir_);
+  if (!open_stores_) {
+    return Error("No storage for the profile's stores");
+  }
+  auto opened_stores = open_stores_(data_dir_, profile_id_);
+  if (!opened_stores) {
+    return opened_stores.error();
+  }
+  store_ = std::move(opened_stores->threads);
+  psk_store_ = std::move(opened_stores->peer_sessions);
+  control_lane_seen_ = std::move(opened_stores->control_lane_seen);
+  group_roster_ = std::move(opened_stores->rosters);
+  thread_prefs_ = std::move(opened_stores->thread_prefs);
+  thread_mentions_ = std::move(opened_stores->thread_mentions);
+  at_rest_ = std::move(opened_stores->at_rest);
+  profile_db_path_ = std::move(opened_stores->profile_db_path);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   // Contacts decide who may learn our address: republish on every change (any thread → UI).
   contacts_->SetOnChanged([this]() {
@@ -909,8 +919,6 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
 
   InstallOrgBackendClients(settings);
 
-  psk_store_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), profile_id_);
-  group_roster_ = std::make_unique<SqliteGroupRosterStore>(store_->ProfileDbPath());
   // The account locker keeps every group (G013): republish it on any roster change.
   group_roster_->SetOnChanged([this](const std::string& group_id) {
     PublishAccountLockerSoon();
@@ -918,8 +926,6 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
       mesh_messaging_->DecideHeldMentions(group_id);  // G015: a check that settled decides its held mentions
     }
   });
-  thread_prefs_ = std::make_unique<SqliteThreadLocalPrefsStore>(store_->ProfileDbPath());
-  thread_mentions_ = std::make_unique<SqliteThreadMentionsStore>(store_->ProfileDbPath());
   for (HubParticipant* participant : Participants()) {
     if (auto opened = participant->OnStoresOpened(*this); !opened) {
       return opened.error();
@@ -987,8 +993,9 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
 
   if (secrets_ != nullptr) {
     secrets_->RegisterDekConsumer(identity_.get());
-    secrets_->RegisterDekConsumer(psk_store_.get());
-    secrets_->RegisterDekConsumer(static_cast<SqliteThreadStore*>(store_.get()));
+    for (IDekConsumer* at_rest : at_rest_) {
+      secrets_->RegisterDekConsumer(at_rest);
+    }
     for (HubParticipant* participant : Participants()) {
       for (IDekConsumer* consumer : participant->DekConsumers()) {
         secrets_->RegisterDekConsumer(consumer);
@@ -996,7 +1003,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
   }
   BindPricingFamilies();
-  peer_cards_ = std::make_unique<PeerCardStore>(store_->ProfileDbPath());
+  peer_cards_ = std::make_unique<PeerCardStore>(profile_db_path_);
   // The account locker keeps how new each account's newest card is (a restored device refuses older ones).
   peer_cards_->SetOnNewerCard([this]() { PublishAccountLockerSoon(); });
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
@@ -1096,6 +1103,7 @@ void ConversationsHub::BuildMessagingObjects() {
     });
   });
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetControlLaneSeen(control_lane_seen_.get());
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), &directory_);
@@ -2973,11 +2981,8 @@ void ConversationsHub::Shutdown() {
     if (identity_) {
       secrets_->UnregisterDekConsumer(identity_.get());
     }
-    if (psk_store_) {
-      secrets_->UnregisterDekConsumer(psk_store_.get());
-    }
-    if (store_) {
-      secrets_->UnregisterDekConsumer(static_cast<SqliteThreadStore*>(store_.get()));
+    for (IDekConsumer* at_rest : at_rest_) {
+      secrets_->UnregisterDekConsumer(at_rest);
     }
     for (HubParticipant* participant : ParticipantsDown()) {
       for (IDekConsumer* consumer : participant->DekConsumers()) {
@@ -3019,6 +3024,7 @@ void ConversationsHub::Shutdown() {
     mesh_owner_->ClearMeshObjects();
   }
   psk_store_.reset();
+  control_lane_seen_.reset();
   inbox_.reset();
   peer_labels_.reset();
   directory_shadows_.reset();
@@ -3038,6 +3044,7 @@ void ConversationsHub::Shutdown() {
   }
   contacts_.reset();
   store_.reset();
+  at_rest_.clear();
   signing_key_store_.Clear();
   kem_key_store_.Clear();
   messaging_ready_ = false;

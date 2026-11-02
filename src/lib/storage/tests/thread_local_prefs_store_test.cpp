@@ -1,7 +1,7 @@
-#include "lib/messaging/SqliteThreadLocalPrefsStore.h"
+#include "lib/storage/SqliteThreadLocalPrefsStore.h"
 
 #include "common/Utilities.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

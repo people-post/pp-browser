@@ -14,7 +14,6 @@ pp_browser_add_lib_library(pp_lib_delivery
     ChatPayloadCodec.cpp
     ChatPayloadValidator.cpp
     ControlLaneEnvelope.cpp
-    SqliteControlLaneSeenStore.cpp
     DeliveryNotice.cpp
     DirectChatTargetFromContact.cpp
     E2eIngestClassifier.cpp
@@ -32,7 +31,6 @@ pp_browser_add_lib_library(pp_lib_delivery
     RelayMessageSignPayload.cpp
     RelayWirePayload.cpp
     IPeerSessionStore.cpp
-    SqlitePeerSessionStore.cpp
     TextSpans.cpp
   PUBLIC_LIBS
     pp_delivery_common
@@ -41,8 +39,7 @@ pp_browser_add_lib_library(pp_lib_delivery
     pp_foundation_error
     pp_foundation_crypto
     pp_foundation_identity
-    sodium
-    SQLite::SQLite3)
+    sodium)
 
 if(PP_BROWSER_BUILD_TESTS)
   # Mock relay and peer-history clients and an in-memory thread store: test binaries only, never linked into the app.

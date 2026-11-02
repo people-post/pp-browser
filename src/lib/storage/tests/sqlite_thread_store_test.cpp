@@ -1,6 +1,6 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/ConversationSummaryCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

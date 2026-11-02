@@ -11,6 +11,8 @@ if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(ai)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
+  # The app's storage: the profile database and the SQLite stores behind the capabilities' ports (CR024).
+  add_subdirectory(storage)
   list(APPEND _pp_lib_peers
     pp_lib_people_cards
     pp_lib_delivery
@@ -26,6 +28,7 @@ if(NOT PP_BROWSER_HEADLESS)
     pp_lib_ai_tools
     pp_lib_media
     pp_lib_ui
+    pp_lib_storage
   )
 endif()
 

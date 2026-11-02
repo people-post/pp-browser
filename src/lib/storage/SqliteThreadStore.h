@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/SqliteThreadDb.h"
+#include "lib/storage/SqliteThreadDb.h"
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
@@ -51,7 +51,6 @@ public:
   Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override;
   Roe<ThreadMessage> UpsertMessage(const ThreadMessage& message) override;
   Roe<bool> UpdateMessage(const ThreadMessage& message) override;
-  Roe<bool> DeleteMessageContent(const std::string& thread_id, const std::string& message_id) override;
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id,
                                                const std::string& message_id) const override;
   Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,
@@ -86,6 +85,8 @@ public:
   void Flush() override;
 
   std::string ProfileDbPath() const;
+  /** Opens profile.db: creates it, or brings an older one to the current schema. */
+  Roe<void> Open() const;
 
 private:
   Roe<ThreadMessage> AppendMessageImpl(const ThreadMessage& message, bool upsert);

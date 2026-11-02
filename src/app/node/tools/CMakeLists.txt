@@ -35,6 +35,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
     pp_foundation_platform_core
     pp_foundation_platform
     pp_foundation_data
+    pp_lib_storage
     pp_domain_call_media
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
@@ -64,6 +65,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
       pp_foundation_platform_core
       pp_foundation_platform
       pp_foundation_data
+      pp_lib_storage
       pp_feature_calls
       pp_feature_broadcast
       pp_feature_conversations

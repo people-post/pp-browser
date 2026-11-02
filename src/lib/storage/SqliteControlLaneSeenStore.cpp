@@ -1,4 +1,4 @@
-#include "lib/delivery/SqliteControlLaneSeenStore.h"
+#include "lib/storage/SqliteControlLaneSeenStore.h"
 
 #include <sqlite3.h>
 

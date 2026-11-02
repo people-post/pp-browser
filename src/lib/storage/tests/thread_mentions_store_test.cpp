@@ -1,9 +1,9 @@
 // The unread-mention marker (group-chat G015): per message, dropped with the message, the opened thread or the
 // deleted one.
-#include "lib/messaging/SqliteThreadMentionsStore.h"
+#include "lib/storage/SqliteThreadMentionsStore.h"
 
 #include "common/Utilities.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>

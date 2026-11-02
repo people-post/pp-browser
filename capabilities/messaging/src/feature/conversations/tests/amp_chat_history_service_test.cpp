@@ -4,8 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
-#include "lib/delivery/SqlitePeerSessionStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "mesh/testing/mesh_test_harness.h"
 #include "lib/people/IdentityStore.h"
 
@@ -38,9 +37,9 @@ public:
       : data_dir(std::filesystem::temp_directory_path() /
                  ("pp_browser_amp_history_" + suffix + "_" + util::GenerateUuid())) {
     std::filesystem::remove_all(data_dir);
-    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
     identity = std::make_unique<IdentityStore>(data_dir.string(), "test");
-    psk_store = std::make_unique<SqlitePeerSessionStore>(store->ProfileDbPath(), "test");
+    psk_store = std::make_unique<InMemoryPeerSessions>(*store);
     if (!identity->SetDek(TestDek()) || !psk_store->SetDek(TestDek()) || !store->SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
     }
@@ -105,9 +104,9 @@ public:
   }
 
   std::filesystem::path data_dir;
-  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<SqlitePeerSessionStore> psk_store;
+  std::unique_ptr<InMemoryPeerSessions> psk_store;
   Thread thread;
 };
 

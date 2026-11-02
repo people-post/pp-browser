@@ -35,7 +35,7 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
-#include "lib/delivery/SqliteControlLaneSeenStore.h"
+#include "lib/delivery/IControlLaneSeenStore.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
