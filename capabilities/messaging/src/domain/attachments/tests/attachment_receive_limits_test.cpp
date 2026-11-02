@@ -1,3 +1,4 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -21,7 +22,7 @@ protected:
     dir_ = std::filesystem::temp_directory_path() / ("pp_receive_limits_" + util::GenerateUuid());
     std::filesystem::create_directories(dir_);
     workflow_.SetProfileDataDir(dir_.string());
-    workflow_.SetProfileId("test");
+    workflow_.SetContent(MakeInMemoryIndexedCasStore(dir_.string(), "test"));
   }
   void TearDown() override {
     std::error_code ec;
@@ -201,7 +202,7 @@ TEST_F(ReceiveLimitsTest, DirectPushesFollowTheSamePaceAndTheDiskCapCountsPendin
 
   AttachmentFetchWorkflow other;
   other.SetProfileDataDir(dir_.string());
-  other.SetProfileId("test");
+  other.SetContent(MakeInMemoryIndexedCasStore(dir_.string(), "test"));
   AttachmentLimits roomy;
   roomy.auto_download_max_count_per_minute = 2;
   other.SetLimits(roomy);

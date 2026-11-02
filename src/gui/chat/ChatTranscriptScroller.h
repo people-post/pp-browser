@@ -37,18 +37,39 @@ public:
                                                                   std::optional<int64_t> oldest_inclusive,
                                                                   std::optional<int64_t> newest_inclusive)>;
   void SetRowBuilder(RowBuilder rows) { rows_ = std::move(rows); }
+  /**
+   * Marks rows after they are built (search inside the chat tints its hits). Runs on every path that fills the
+   * transcript; empty = no marks.
+   */
+  using RowDecorator = std::function<void(std::vector<MessageDisplayRow>&)>;
+  void SetRowDecorator(RowDecorator decorator) { decorator_ = std::move(decorator); }
+  /** The thread's rows in [oldest, newest], built and decorated. */
+  std::vector<MessageDisplayRow> Rows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+                                      std::optional<int64_t> newest_inclusive) const;
+  /** Marks the rows already shown again (search marks taken off, then the decorator), without building them. */
+  void Redecorate();
 
   void Reset();
   void RequestScrollToLatest();
   void ApplyPolicy();
   void OnMessagesScroll();
   void OnJumpToLatest();
+  /** Jumped: scrolling to it. NotFound: the store has no such message (deleted). Unavailable: no chat / store. */
+  enum class JumpResult { Jumped, NotFound, Unavailable };
   /**
    * Show `message_id` of the open chat at the top instead of the latest (opening a chat at its oldest unread
-   * mention, G015): the window is widened back to it when it is older, then it is scrolled into view once laid
-   * out. Call after the open's display sync. False when the message is not in the chat.
+   * mention, G015; a search hit): when it is outside the loaded window (older, or newer than a history window)
+   * the window is drawn again from it, then it is scrolled into view once laid out. Call after the open's
+   * display sync.
    */
-  bool JumpToMessage(const std::string& message_id);
+  JumpResult JumpToMessage(const std::string& message_id);
+  /** Where the window must go for a jump to `order`: unchanged when it is loaded, else drawn from it to the tip. */
+  struct JumpWindow {
+    bool refetch = false;
+    std::optional<int64_t> loaded_min;
+    std::optional<int64_t> loaded_max;
+  };
+  static JumpWindow WindowForJump(int64_t order, std::optional<int64_t> loaded_min, std::optional<int64_t> loaded_max);
   /** SyncLayout remounts DOM — re-arm follow-tail when still pinned. */
   void OnShellRemounted();
 
@@ -121,6 +142,7 @@ private:
   float pending_jump_last_top_ = -1.f;
   ConversationsFacade* facade_ = nullptr;
   RowBuilder rows_;
+  RowDecorator decorator_;
 };
 
 } // namespace pbr

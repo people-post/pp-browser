@@ -1,4 +1,4 @@
-#include "lib/content/ObjectIndex.h"
+#include "lib/storage/SqliteObjectIndex.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/PbrCompat.h"
@@ -33,11 +33,11 @@ int64_t NowMs() {
 
 } // namespace
 
-ObjectIndex::ObjectIndex(std::string profile_dir)
+SqliteObjectIndex::SqliteObjectIndex(std::string profile_dir)
     : profile_dir_(std::move(profile_dir)),
       db_path_((std::filesystem::path(profile_dir_) / "object_index.db").string()) {}
 
-ObjectIndex::~ObjectIndex() {
+SqliteObjectIndex::~SqliteObjectIndex() {
   std::lock_guard lock(mutex_);
   if (db_ != nullptr) {
     sqlite3_close(db_);
@@ -45,7 +45,7 @@ ObjectIndex::~ObjectIndex() {
   }
 }
 
-Roe<void> ObjectIndex::MigrateSchema(sqlite3* db) const {
+Roe<void> SqliteObjectIndex::MigrateSchema(sqlite3* db) const {
   char* err = nullptr;
   if (sqlite3_exec(db, kSchema, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err != nullptr ? err : "CAS object_index schema migrate failed";
@@ -55,7 +55,7 @@ Roe<void> ObjectIndex::MigrateSchema(sqlite3* db) const {
   return {};
 }
 
-Roe<void> ObjectIndex::EnsureOpen() const {
+Roe<void> SqliteObjectIndex::EnsureOpen() const {
   if (db_ != nullptr) {
     return {};
   }
@@ -83,7 +83,7 @@ Roe<void> ObjectIndex::EnsureOpen() const {
   return {};
 }
 
-Roe<void> ObjectIndex::Upsert(const CasObjectMeta& meta) {
+Roe<void> SqliteObjectIndex::Upsert(const CasObjectMeta& meta) {
   if (meta.content_id.size() != kCasContentIdSize) {
     return Error("Invalid CAS content id");
   }
@@ -119,7 +119,7 @@ Roe<void> ObjectIndex::Upsert(const CasObjectMeta& meta) {
   return {};
 }
 
-Roe<std::optional<CasObjectMeta>> ObjectIndex::Lookup(const CasRealm realm, const ByteVector& content_id) const {
+Roe<std::optional<CasObjectMeta>> SqliteObjectIndex::Lookup(const CasRealm realm, const ByteVector& content_id) const {
   if (content_id.size() != kCasContentIdSize) {
     return Error("Invalid CAS content id");
   }
@@ -166,7 +166,7 @@ Roe<std::optional<CasObjectMeta>> ObjectIndex::Lookup(const CasRealm realm, cons
   return std::optional<CasObjectMeta>{std::move(meta)};
 }
 
-Roe<void> ObjectIndex::Remove(const CasRealm realm, const ByteVector& content_id) {
+Roe<void> SqliteObjectIndex::Remove(const CasRealm realm, const ByteVector& content_id) {
   if (content_id.size() != kCasContentIdSize) {
     return Error("Invalid CAS content id");
   }
@@ -190,7 +190,7 @@ Roe<void> ObjectIndex::Remove(const CasRealm realm, const ByteVector& content_id
   return {};
 }
 
-Roe<void> ObjectIndex::SetPinned(const CasRealm realm, const ByteVector& content_id, const bool pinned) {
+Roe<void> SqliteObjectIndex::SetPinned(const CasRealm realm, const ByteVector& content_id, const bool pinned) {
   if (content_id.size() != kCasContentIdSize) {
     return Error("Invalid CAS content id");
   }
@@ -216,7 +216,7 @@ Roe<void> ObjectIndex::SetPinned(const CasRealm realm, const ByteVector& content
 }
 
 
-Roe<std::vector<CasObjectMeta>> ObjectIndex::List(const std::optional<CasRealm> realm,
+Roe<std::vector<CasObjectMeta>> SqliteObjectIndex::List(const std::optional<CasRealm> realm,
                                                   const std::optional<bool> pinned) const {
   std::lock_guard lock(mutex_);
   if (auto opened = EnsureOpen(); !opened) {

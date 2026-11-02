@@ -1,3 +1,4 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 
 #include "lib/messaging/AiImageRef.h"
@@ -35,13 +36,14 @@ public:
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_ai_image_" + util::GenerateUuid())) {
     std::filesystem::create_directories(data_dir);
     workflow.SetProfileDataDir(data_dir.string());
-    workflow.SetProfileId("test");
+    workflow.SetContent(content);
   }
   ~LocalImageHarness() {
     std::error_code ec;
     std::filesystem::remove_all(data_dir, ec);
   }
   std::filesystem::path data_dir;
+  std::shared_ptr<CasStore> content = MakeInMemoryIndexedCasStore(data_dir.string(), "test");
   AttachmentFetchWorkflow workflow;
 };
 
@@ -137,7 +139,7 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAn
         AiImageRef{.content_hash = other->content_hash, .mime = "image/jpeg", .width = 4, .height = 3});
     ASSERT_TRUE(store.AppendMessage(second));
 
-    CasStore cas(h.data_dir.string(), "test");
+    CasStore& cas = *h.content;
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, other->content_hash));
     h.workflow.DeleteMessagesMedia(thread.id, {second}, {});

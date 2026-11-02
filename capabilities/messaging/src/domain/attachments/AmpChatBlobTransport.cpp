@@ -129,8 +129,13 @@ struct AmpChatBlobTransport::Impl {
   IdentityStore& identity;
   IPeerSigningKeyResolver& signing_keys;
   std::string profile_data_dir;
-  std::string profile_id;
   ByteVector dek;
+  mutable std::mutex content_mutex;
+  std::shared_ptr<CasStore> content;
+  std::shared_ptr<CasStore> CopyContent() const {
+    std::lock_guard lock(content_mutex);
+    return content;
+  }
   mutable std::mutex dek_mutex;
   mutable std::mutex gate_mutex;
   ChatBlobPushGate push_gate;
@@ -203,15 +208,16 @@ struct AmpChatBlobTransport::Impl {
                           return;
                         }
                         const ByteVector dek_copy = CopyDek();
+                        const std::shared_ptr<CasStore> cas = CopyContent();
                         ChatBlobContentSource content;
-                        if (!dek_copy.empty() && !profile_id.empty()) {
+                        if (!dek_copy.empty() && cas) {
                           content.private_plaintext = [&](const std::vector<uint8_t>& content_hash) {
-                            return LoadAttachmentPlaintext(profile_data_dir, profile_id, content_hash, dek_copy);
+                            return LoadAttachmentPlaintext(*cas, content_hash, dek_copy);
                           };
                         }
-                        if (!profile_id.empty()) {
+                        if (cas) {
                           content.pinned_public = [&](const ByteVector& content_id) {
-                            return LoadPinnedPublicCasBytes(profile_data_dir, profile_id, content_id);
+                            return LoadPinnedPublicCasBytes(*cas, content_id);
                           };
                         }
                         const ChatBlobRequester requester{remote_peer_id, &signing_keys, util::NowUnixMs()};
@@ -287,8 +293,9 @@ void AmpChatBlobTransport::SetPushGate(std::function<bool(const std::string&, ui
   impl_->push_gate = std::move(gate);
 }
 
-void AmpChatBlobTransport::SetProfileId(std::string profile_id) {
-  impl_->profile_id = std::move(profile_id);
+void AmpChatBlobTransport::SetContent(std::shared_ptr<CasStore> content) {
+  std::lock_guard lock(impl_->content_mutex);
+  impl_->content = std::move(content);
 }
 
 Roe<void> AmpChatBlobTransport::SetDek(ByteVector dek) {

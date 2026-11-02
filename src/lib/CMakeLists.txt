@@ -14,7 +14,6 @@ if(NOT PP_BROWSER_HEADLESS)
   # The app's storage: the profile database and the SQLite stores behind the capabilities' ports (CR024).
   add_subdirectory(storage)
   list(APPEND _pp_lib_peers
-    pp_lib_people_cards
     pp_lib_delivery
     pp_lib_messaging
     pp_lib_calls

@@ -166,6 +166,69 @@ select selectbox option {
   min-width: 0;
 }
 
+/* Search inside the chat: one row in the title row's place — box, count, older / newer, Cancel. On a narrow
+   screen the box gives way first (down to its minimum), then the count is cut with an ellipsis. */
+.chat-search-bar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+}
+
+.chat-search-input {
+  flex: 1 1 0;
+  min-width: 72dp;
+  width: auto;
+  margin-bottom: 0;
+}
+
+.chat-search-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A thin chevron, no background of its own. */
+.chat-search-step {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-search-step:disabled {
+  opacity: 0.35;
+  cursor: auto;
+}
+
+.chat-search-cancel {
+  flex-shrink: 0;
+  padding: 6dp 8dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 14dp;
+  white-space: nowrap;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* A search match in a message (colours in colors-*.rcss); like the mention chip, it stays inline. */
+.search-mark {
+  padding: 0 1dp;
+  border-radius: 3dp;
+}
+
 .chat-header-meta-row {
   display: flex;
   flex-direction: row;

@@ -30,6 +30,13 @@ void PeerTransports::SetProfileDataDir(std::string profile_data_dir) {
   }
 }
 
+void PeerTransports::SetContent(std::shared_ptr<CasStore> content) {
+  content_ = std::move(content);
+  if (blob_) {
+    blob_->SetContent(content_);
+  }
+}
+
 IChatBlobPeerClient* PeerTransports::BlobClient() const {
   return blob_.get();
 }
@@ -63,6 +70,7 @@ bool PeerTransports::Attach(mesh::IChatPeerLinks* links, std::function<void()> i
   if (!profile_data_dir_.empty()) {
     blob->SetProfileDataDir(profile_data_dir_);
   }
+  blob->SetContent(content_);
   blob_ = std::move(blob);
 
   auto history = std::make_unique<AmpChatHistoryTransport>(people, io_pump, store_, identity_, psk_store_,

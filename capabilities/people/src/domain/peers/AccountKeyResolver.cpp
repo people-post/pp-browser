@@ -8,7 +8,7 @@
 namespace pbr {
 
 AccountKeyResolver::AccountKeyResolver(PeerSigningKeyStore& signing_keys, PeerKemKeyStore& kem_keys,
-                                       PeerCardStore& cards, mesh::IDirectoryClient& directory)
+                                       PeerCards& cards, mesh::IDirectoryClient& directory)
     : signing_keys_(signing_keys), kem_keys_(kem_keys), cards_(cards), directory_(directory) {
   redirectLogger("AccountKeyResolver");
 }

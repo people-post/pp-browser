@@ -1,3 +1,4 @@
+#include "lib/people/testing/InMemoryPeerCards.h"
 #include "domain/peers/OwnCards.h"
 
 #include "foundation/crypto/CryptoConstants.h"
@@ -35,7 +36,7 @@ struct Device {
     std::filesystem::create_directories(dir);
     EXPECT_TRUE(identity.SetDek(TestDek()));
     EXPECT_TRUE(identity.LoadOrCreate());
-    cards = std::make_unique<PeerCardStore>((dir / "profile.db").string());
+    cards = std::make_unique<InMemoryPeerCards>();
     keys = std::make_unique<AccountKeyResolver>(signing, kem, *cards, directory);
     own = std::make_unique<OwnCards>(identity, *keys);
   }
@@ -70,7 +71,7 @@ struct Device {
   PeerSigningKeyStore signing;
   PeerKemKeyStore kem;
   NoDirectory directory;
-  std::unique_ptr<PeerCardStore> cards;
+  std::unique_ptr<InMemoryPeerCards> cards;
   std::unique_ptr<AccountKeyResolver> keys;
   std::unique_ptr<OwnCards> own;
 };

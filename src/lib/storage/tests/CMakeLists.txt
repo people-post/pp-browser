@@ -3,4 +3,5 @@
 pp_browser_add_lib_folder_tests(
   pp_lib_storage
   pp_browser_storage_test
-  LINK_LIBS pp_lib_delivery_testing pp_lib_messaging_testing pp_lib_calls_testing)
+  LINK_LIBS pp_lib_delivery_testing pp_lib_messaging_testing pp_lib_calls_testing pp_lib_people_testing pp_lib_posts_testing
+            pp_lib_content_testing)
