@@ -63,6 +63,12 @@ constexpr int64_t kRemoteVideoStallHardMs = 5000;
 /** A getter waiting this long for the media mutex is logged (B125), at most kMaxLockWaitWarns per call. */
 constexpr int64_t kLockWaitWarnMs = 50;
 constexpr int kMaxLockWaitWarns = 10;
+/** A Stop() step (thread join, decoder hand-off, audio teardown) longer than this is a WARN (B128). */
+constexpr int64_t kSlowStopStepMs = 500;
+
+int64_t MsSince(std::chrono::steady_clock::time_point since) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+}
 
 /** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
 logging::Logger& EngineLog() {
@@ -1673,6 +1679,13 @@ void CallMediaEngine::Stop() {
   StateChangedFn state_cb;
   std::shared_ptr<SfuSendFn> abandoned_send;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> doomed_decoders;
+  const auto stop_from = std::chrono::steady_clock::now();
+  std::string stopping_call;
+  // B128: logged before the lock — a decode wedged inside OnSfuPacket would hold it. Idle Stops
+  // (destructor, repeated ends) stay quiet.
+  if (impl_->active.load(std::memory_order_relaxed)) {
+    log().info << "media stop begin";
+  }
   {
     std::lock_guard lock(impl_->mutex);
     if (!impl_->active && !impl_->sfu_mode) {
@@ -1700,34 +1713,55 @@ void CallMediaEngine::Stop() {
     impl_->decoder_resets.clear();
     impl_->video_decode_fail_logs = 0;
     impl_->lock_wait_warns.store(0, std::memory_order_relaxed);
+    stopping_call = impl_->call_id;
+  }
+  // B128: which step of a stop hangs (codec teardown vs. capture / playout / camera joins).
+  auto timed_step = [this](const char* step, const auto& run) {
+    const auto from = std::chrono::steady_clock::now();
+    run();
+    const int64_t ms = MsSince(from);
+    if (ms > kSlowStopStepMs) {
+      log().warning << "media stop slow step=" << step << " ms=" << ms;
+    } else {
+      log().info << "media stop step=" << step << " ms=" << ms;
+    }
+  };
+  {
+    const int64_t lock_ms = MsSince(stop_from);
+    if (lock_ms > kSlowStopStepMs) {
+      log().warning << "media stop slow step=lock ms=" << lock_ms << " call=" << stopping_call;
+    } else {
+      log().info << "media stop step=lock ms=" << lock_ms << " call=" << stopping_call;
+    }
   }
   abandoned_send = nullptr;
   // B128: destroying a hardware decoder (AMediaCodec_stop / delete) can block for good when the
   // vendor codec is wedged, and this is the calls owner thread. A decoder owns only its codec and
   // never touches Impl, so a detached thread may outlive the engine here — the "always join" rule
   // below is about threads that use Impl.
-  if (!doomed_decoders.empty()) {
-    std::thread([decoders = std::move(doomed_decoders)]() mutable { decoders.clear(); }).detach();
-  }
+  timed_step("decoders", [&] {
+    if (!doomed_decoders.empty()) {
+      std::thread([decoders = std::move(doomed_decoders)]() mutable { decoders.clear(); }).detach();
+    }
+  });
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
-  {
-    std::lock_guard drain(impl_->sfu_send_call_mu);
-  }
+  timed_step("drain_send", [&] { std::lock_guard drain(impl_->sfu_send_call_mu); });
   // Always join — never detach. Budgeted detach raced TearDownAudioLocked / ~Impl with
   // capture still inside SDL_OpenAudioDeviceStream (Windows CI headless: segfault after
   // "OpenAudioDevices failed"). Product quit must wait for the worker; SDL open fails fast
   // when no device is present.
-  impl_->JoinCaptureThread();
-  impl_->JoinPlayoutThread();
-  impl_->JoinVideoThread();
-  {
+  timed_step("join_capture", [&] { impl_->JoinCaptureThread(); });
+  timed_step("join_playout", [&] { impl_->JoinPlayoutThread(); });
+  timed_step("join_video", [&] { impl_->JoinVideoThread(); });
+  timed_step("teardown_audio", [&] {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
     impl_->call_id.clear();
     impl_->spec = SessionSpec::Duplex();
     impl_->ApplyStateLocked("closed");
     state_cb = impl_->on_state_changed;
-  }
+  });
+  log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
   if (state_cb) {
     state_cb("closed");
   }
