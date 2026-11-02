@@ -331,7 +331,7 @@ select selectbox option:hover {
 }
 
 .chat-search-step svg {
-  image-color: #1a1a1a;
+  image-color: #6b7280;
 }
 
 /* On the tinted row the text sits on the tint: no bubble of its own. */
