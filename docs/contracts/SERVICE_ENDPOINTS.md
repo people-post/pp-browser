@@ -113,20 +113,22 @@ Auth: separate sign domains (not `relay-api-v1`). Canonical bytes via `RelayBlob
 | `POST /v1/blobs/list` | Inventory + usage (quota UX) |
 | `POST /v1/profile/icon` | Attach hosted blob / external https, or clear |
 
+`public_url` is issued by the relay (a CDN URL) and is the only hosted-icon URL: clients store it as is and never rewrite it. `POST /v1/profile/icon` with a hosted `blob_id` may omit `url`; a `url` that differs from the issued `public_url` is refused with 400 `Hosted blob URL does not match`.
+
 Quotas (server defaults): small ≤ 4 MiB (≤ 100 objects); large ≤ 256 MiB with 2 GiB included; icon ≤ 512 KiB; pending TTL ~48h (and ≤ 20 pending uploads); retained GC ~90d (skip current profile icon). The tier follows `byte_length` (the ciphertext), so a client that stays at 4 MB per file only ever fills the small tier. The large tier has **no overage billing today**: a presign that would pass `large_included_bytes` is refused with **429** `Large file storage quota exceeded` (`usage.overage_bytes` is always 0). A blob is released only by `POST /v1/blobs/delete` (also "delete for everyone" in the client, `DeleteUploadedCopy`) or by the 90-day GC; "delete for me", clearing history and deleting a thread do not touch the server copy.
 
 Failure statuses and the client's typed error (`CheckBlobResponse` → `ClassifyBlobFailure`, `Err::Blob`; the log detail is `HTTP <status>: <error text>`). The server's text, not only the status, picks the code where one status has several causes:
 
 | Status (server `error` text) | Produced by | `Err::Blob` | Client does |
 |---|---|---|---|
-| 503 `Blob upload is not configured` (an older gateway: 400, same text) | every `/v1/blobs/*` route without an upload bucket | `UploadNotConfigured` | failure line "server hasn't enabled uploads" |
+| 503 `Blob upload is not configured` (an older gateway: 400, same text) | every `/v1/blobs/*` route, and `/v1/profile/icon` with a hosted blob, when the relay has no upload bucket (external https icons and clearing are unaffected) | `UploadNotConfigured` | failure line "server hasn't enabled uploads" |
 | 403 `Blob not owned by caller`, `Relay user not registered`, `Relay registration expired`; also a 403 from the storage PUT (expired or mismatched signed URL) | retain / delete, request auth, S3 | `UploadRejected` | failure line, retry later |
-| 404 `Blob not found` | retain / delete (e.g. the pending upload expired) | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
+| 404 `Blob not found` | retain / delete (e.g. the pending upload expired); presign for an unknown relay user | `Expired` | failure line; a CDN 404 on download is not an API answer (typed in the download step) |
 | 400 `File exceeds size limit` (also 413 if a proxy sends it; the relay itself never answers 413) | presign above `largeMaxBytes` | `TooLarge` | not retried |
 | 429 `Small file quota exceeded` / `Large file storage quota exceeded` (these two exact texts only) | presign | `QuotaExceeded` | `BlobQuotaRecoveryFlow`: confirm, delete the oldest non-icon relay blob of the tier named in the 429 text (small / large; the blob id shown in the confirm is the one deleted), upload again; the confirm says people who have not downloaded it yet will not get it |
 | any other 429: `Rate limit exceeded` (120 per user per minute), `Too many pending uploads`, an empty or proxy / WAF body | every blobs route / presign | `RateLimited` | "sending too fast", no delete offered |
 | other 5xx | gateway / relay failure | `Unavailable` | failure line, retry |
-| anything else (400 `Unsupported content type`, 401 signature errors, …) | | `Generic` | failure line |
+| anything else (400 `Unsupported content type`, 400 `Hosted blob URL does not match`, 401 signature errors, …) | | `Generic` | failure line |
 
 Chat attachments are always presigned as `application/octet-stream`, so `Unsupported content type` cannot come from them. Space warnings read `usage` from `POST /v1/blobs/list` after a successful server upload (at most once a day, and after every 429 quota answer): percent of `large_included_bytes` for the large tier, and of the client's `small_max_objects` (default 100) for the small tier, because the list answer carries no small-tier limit (ask the relay to add one). The client tells the person once at 80 % and once at 90 %.
 
