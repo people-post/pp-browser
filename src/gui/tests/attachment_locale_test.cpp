@@ -34,6 +34,8 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attachment.sending_too_fast", {}},
       {"chat.attachment.read_failed", {}},
       {"chat.attachment.image_unprocessable", {}},
+      {"chat.attachment.sending", {}},
+      {"chat.attachment.uploading", {}},
       {"chat.attachment.uploading_percent", {"{{percent}}"}},
       {"chat.attachment.uploading_stay", {"{{percent}}"}},
       {"chat.attachment.downloading_percent", {"{{percent}}"}},

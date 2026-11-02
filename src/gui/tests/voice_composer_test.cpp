@@ -93,7 +93,7 @@ struct Harness {
     ports.thread_id = [this]() { return thread; };
     ports.send = [this](const std::string& tid, const std::string& path) { sent.emplace_back(tid, path); };
     ports.eligible = []() { return true; };
-    ports.dirty = []() {};
+    ports.dirty = [this]() { saw_finishing = saw_finishing || state.voice_finishing; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
     ports.fingers_down = [this]() { return fingers; };
@@ -137,6 +137,8 @@ struct Harness {
   MediaDeviceArbiter arbiter{CreateNullMediaDeviceBackend()};
   std::string thread = "A";
   bool call_live = false;
+  /** voice_finishing was true at some point (it is cleared again by the time a test looks). */
+  bool saw_finishing = false;
   std::vector<uint64_t> fingers;
   bool defer_playback_stop = false;
   std::vector<std::function<void()>> pending_then;
@@ -380,6 +382,89 @@ TEST(VoiceComposer, TheFirstPressOnlyAsksForThePermission) {
   h.mic_request(false);
   ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.said.empty(); }));
   EXPECT_EQ(h.said[0], Tr("chat.voice.permission_denied"));
+}
+
+// "Sending…" bridges the gap between the release and the upload chip: set when the recording is handed to the
+// encoder, cleared on every way the recording ends.
+TEST(VoiceComposer, ReleasingToSendShowsSendingUntilTheFileArrives) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->BeginAt(0, nullptr, false);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_FALSE(h.state.voice_finishing);
+  h.composer->OnSendButton();
+  EXPECT_TRUE(h.state.voice_finishing);
+  EXPECT_FALSE(h.state.voice_recording);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_FALSE(h.state.voice_finishing);
+}
+
+TEST(VoiceComposer, ACancelNeverShowsSending) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->BeginAt(0, nullptr, false);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnCancelButton();
+  EXPECT_FALSE(h.state.voice_finishing);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_FALSE(h.state.voice_finishing);
+  EXPECT_FALSE(h.saw_finishing);
+}
+
+TEST(VoiceComposer, ALostPressNeverShowsSending) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.fingers = {7};
+  h.composer->BeginAt(100, nullptr, /*hold=*/true);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->Lost();
+  EXPECT_FALSE(h.state.voice_finishing);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_FALSE(h.state.voice_finishing);
+  EXPECT_FALSE(h.saw_finishing);
+}
+
+TEST(VoiceComposer, TooShortClearsSendingWithoutSending) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  auto gate = std::make_shared<std::atomic<bool>>(false);
+  auto opens = std::make_shared<std::atomic<int>>(0);
+  h.source = [=]() { return std::make_unique<GatedSource>(gate, opens, /*fail=*/true); };
+  h.composer->BeginAt(0, nullptr, false);
+  ASSERT_TRUE(WaitFor([&] { return opens->load() == 1; }));
+  h.composer->OnSendButton(); // released before the microphone was ready
+  gate->store(true);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.composer->Active(); }));
+  EXPECT_FALSE(h.state.voice_finishing);
+  EXPECT_TRUE(h.sent.empty());
+}
+
+TEST(VoiceComposer, ALateResultOfAnEarlierRecordingDoesNotLeaveSendingOn) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  h.composer->BeginAt(0, nullptr, false);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  h.composer->OnSendButton();
+  ASSERT_TRUE(h.WaitFile()); // its result is queued, not yet seen by the UI
+  h.composer->DiscardAll();  // the vault locks: sending is over
+  EXPECT_FALSE(h.state.voice_finishing);
+  h.composer->BeginAt(0, nullptr, false); // a new recording: the old result is now a stale generation
+  h.ui.RunAll();
+  EXPECT_FALSE(h.state.voice_finishing);
+  EXPECT_TRUE(h.sent.empty());
+}
+
+TEST(VoiceComposer, AtTheLimitTheRecorderEndsItselfAndSendingShows) {
+  SKIP_WITHOUT_VOICE();
+  Harness h(/*max_seconds=*/1);
+  h.source = [opens = h.opens_ptr]() {
+    ++*opens;
+    return std::make_unique<ScriptedSource>(Tone(1000));
+  };
+  h.composer->BeginAt(0, nullptr, /*hold=*/false);
+  ASSERT_TRUE(h.ui.PumpUntil([&] { return !h.sent.empty(); }));
+  EXPECT_TRUE(h.saw_finishing) << "the limit ended it without a release";
+  EXPECT_FALSE(h.state.voice_finishing);
 }
 
 } // namespace

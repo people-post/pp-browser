@@ -410,7 +410,7 @@ TEST(ComposerCaptureSourceTest, StartAttachmentUploadReleasesTheFileOnEveryExit)
   };
   EXPECT_EQ(count("release_pick_(path);"), 3u) << "two early returns and the worker's own release";
   // The early returns release before they return.
-  EXPECT_NE(body.find("chat_.attachment_uploading) {\n    release_pick_(path);\n    return;"), std::string::npos);
+  EXPECT_NE(body.find("chat_.attachment_preparing) {\n    release_pick_(path);\n    return;"), std::string::npos);
   EXPECT_NE(body.find("thread_id.empty()) {\n    release_pick_(path);\n    return;"), std::string::npos);
 }
 
