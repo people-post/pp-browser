@@ -34,8 +34,17 @@ inline constexpr size_t kSoftMaxLiveSessions = 6;
 inline constexpr std::chrono::minutes kSessionIdleTimeout{10};
 /** How long closing the sessions waits for stopped turns to leave their threads. */
 inline constexpr std::chrono::milliseconds kTurnStopBudget{2000};
+/**
+ * Threads for turns: the most thread turns at once (any key), Home's, and two for a turn's next step (a tool
+ * dispatch, a resumed card, a start after configure) and stopped turns still leaving, so none waits for a thread.
+ */
+inline constexpr size_t kTurnPoolThreads = kMaxConcurrentTurns + 1 + 2;
 
-/** The most thread turns at once with this configuration: kMaxConcurrentGuestTurns for a guest key. */
+/**
+ * The most thread turns at once with this configuration: kMaxConcurrentTurns for a registered brief_AI key
+ * (`brf_llm_*`) or another provider's key, kMaxConcurrentGuestTurns for a guest key or none yet (the guest key is
+ * minted after launch).
+ */
 size_t MaxConcurrentTurnsFor(const AppConfig& config);
 
 /** May a turn start in a thread now? */
@@ -122,8 +131,9 @@ public:
   /** Block until no session is configuring (not callable from a worker). */
   void WaitForConfigureIdle();
   /**
-   * Stops every turn and waits up to `budget` until none is still running on the turns' threads (they are not
-   * behind the runtime's teardown gate). Before what the turns use goes away (profile reset); false: still running.
+   * Stops every turn, waits for configures in flight, then up to `budget` until no turn is still running on the
+   * turns' threads (they are not behind the runtime's teardown gate). Before what the turns use goes away (profile
+   * reset); false: still running. UI thread.
    */
   bool StopTurnsAndWait(std::chrono::milliseconds budget);
   /** The thread was cleared or deleted: forget its last brief_AI role, its card and its question asked back. */
@@ -161,8 +171,9 @@ private:
 
   const std::optional<size_t> fixed_max_concurrent_turns_;
   const Clock clock_;
-  /** Its turn_pool: the most thread turns at once plus Home's. */
   std::shared_ptr<AgentSessionShared> shared_ = std::make_shared<AgentSessionShared>();
+  /** Where turns run (kTurnPoolThreads); owned only here, the sessions hold it weakly. */
+  std::shared_ptr<AiTurnPool> turn_pool_;
 
   // What a new session gets.
   std::optional<AppConfig> config_;

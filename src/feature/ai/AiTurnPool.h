@@ -31,6 +31,11 @@ public:
 
   /** Dropped after Shutdown. */
   void Post(std::function<void()> task);
+  size_t Threads() const { return threads_; }
+  /** Tasks posted and not yet finished (queued or running). */
+  size_t Outstanding() const;
+  /** A task posted now would start at once. */
+  bool HasFreeThread() const { return Outstanding() < threads_; }
   /** True once no task is queued or running; false when `budget` ran out first. Never from a pool thread. */
   bool WaitIdle(std::chrono::milliseconds budget);
   /**
@@ -40,13 +45,14 @@ public:
   void Shutdown(std::chrono::milliseconds budget = WorkerPool::kDefaultShutdownJoinBudget);
 
 private:
-  struct Outstanding {
+  struct Counter {
     std::mutex mu;
     std::condition_variable cv;
     size_t count = 0;
   };
 
-  std::shared_ptr<Outstanding> outstanding_ = std::make_shared<Outstanding>();
+  const size_t threads_;
+  std::shared_ptr<Counter> outstanding_ = std::make_shared<Counter>();
   WorkerPool pool_;
 };
 

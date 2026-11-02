@@ -2229,11 +2229,15 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
 }
 
 void AgentSession::PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task) {
-  if (const std::shared_ptr<AiTurnPool>& pool = state->shared->turn_pool) {
+  if (!state->shared->own_threads) {
+    AppRuntime::PostWorkerNormal(std::move(task));
+    return;
+  }
+  if (const std::shared_ptr<AiTurnPool> pool = state->shared->turn_pool.lock()) {
     pool->Post(std::move(task));
     return;
   }
-  AppRuntime::PostWorkerNormal(std::move(task));
+  state->Log().info << "AI turn step dropped: the sessions are gone";
 }
 
 void AgentSession::BeginStreamTurn() {

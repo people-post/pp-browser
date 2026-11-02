@@ -1,6 +1,7 @@
 #include "feature/ai/AgentSessions.h"
 
 #include "feature/ai/AiTurnPool.h"
+#include "foundation/data/LlmPreset.h"
 
 #include "lib/ai/ParkedApproval.h"
 
@@ -12,27 +13,32 @@ namespace pbr {
 
 namespace {
 
-/** Free-tier brief_AI key minted without registration (BriefGuestLlmClient). */
-constexpr const char* kBriefGuestKeyPrefix = "brf_guest_";
+/** A registered user's brief_AI key (BriefGuestLlmClient; a guest's starts brf_guest_). */
+constexpr const char* kBriefRegisteredKeyPrefix = "brf_llm_";
 
 } // namespace
 
 size_t MaxConcurrentTurnsFor(const AppConfig& config) {
-  return config.llm.api_key.Reveal().rfind(kBriefGuestKeyPrefix, 0) == 0 ? kMaxConcurrentGuestTurns
-                                                                          : kMaxConcurrentTurns;
+  const std::string& key = config.llm.api_key.Reveal();
+  if (ResolvePreset(config) == "brief") {
+    return key.rfind(kBriefRegisteredKeyPrefix, 0) == 0 ? kMaxConcurrentTurns : kMaxConcurrentGuestTurns;
+  }
+  return key.empty() ? kMaxConcurrentGuestTurns : kMaxConcurrentTurns;
 }
 
 AgentSessions::AgentSessions(const std::optional<size_t> max_concurrent_turns, Clock clock)
     : fixed_max_concurrent_turns_(max_concurrent_turns), clock_(std::move(clock)) {
   redirectLogger("AgentSessions");
-  shared_->turn_pool = std::make_shared<AiTurnPool>(max_concurrent_turns.value_or(kMaxConcurrentTurns) + 1);
+  turn_pool_ = std::make_shared<AiTurnPool>(kTurnPoolThreads);
+  shared_->own_threads = true;
+  shared_->turn_pool = turn_pool_;
   home_ = MakeSession();
 }
 
 AgentSessions::~AgentSessions() {
   CancelAll();
   // Joined here, on the owner's thread: a turn holding the last reference must never destroy the pool it runs on.
-  shared_->turn_pool->Shutdown(kTurnStopBudget);
+  turn_pool_->Shutdown(kTurnStopBudget);
 }
 
 std::chrono::steady_clock::time_point AgentSessions::Now() const {
@@ -136,7 +142,9 @@ TurnStart AgentSessions::CanStart(const std::string& thread_id) const {
   if (IsBusy(thread_id)) {
     return TurnStart::BusyHere;
   }
-  if (!thread_id.empty() && RunningThreadTurns() >= MaxConcurrentTurns()) {
+  if (!thread_id.empty() && (RunningThreadTurns() >= MaxConcurrentTurns() || !turn_pool_->HasFreeThread())) {
+    // Also when every turn thread is taken (steps of running turns, stopped turns still leaving): a question would
+    // otherwise "think" with nothing running for it.
     return TurnStart::Full;
   }
   return TurnStart::Yes;
@@ -230,7 +238,7 @@ Roe<void> AgentSessions::ResumeToolPermission(const std::string& approval_id, co
     if (!entry.session->HoldsApproval(approval_id)) {
       continue;
     }
-    if (!entry.session->IsBusy() && RunningThreadTurns() >= MaxConcurrentTurns()) {
+    if (!entry.session->IsBusy() && (RunningThreadTurns() >= MaxConcurrentTurns() || !turn_pool_->HasFreeThread())) {
       return Error(ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
     }
     entry.last_active = Now();
@@ -298,7 +306,8 @@ void AgentSessions::WaitForConfigureIdle() {
 
 bool AgentSessions::StopTurnsAndWait(const std::chrono::milliseconds budget) {
   CancelAll();
-  if (shared_->turn_pool->WaitIdle(budget)) {
+  WaitForConfigureIdle(); // a configure may still start a turn it held
+  if (turn_pool_->WaitIdle(budget)) {
     return true;
   }
   log().warning << "an AI turn was still running " << budget.count() << " ms after it was stopped";

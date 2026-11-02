@@ -1,11 +1,18 @@
 #include "feature/ai/AiTurnPool.h"
 
+#include <algorithm>
 #include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-AiTurnPool::AiTurnPool(const size_t threads) : pool_(threads) {}
+AiTurnPool::AiTurnPool(const size_t threads)
+    : threads_(std::clamp(threads, WorkerPool::kMinThreadCount, WorkerPool::kMaxThreadCount)), pool_(threads_) {}
+
+size_t AiTurnPool::Outstanding() const {
+  std::lock_guard lock(outstanding_->mu);
+  return outstanding_->count;
+}
 
 AiTurnPool::~AiTurnPool() {
   Shutdown();
@@ -14,7 +21,7 @@ AiTurnPool::~AiTurnPool() {
 void AiTurnPool::Post(std::function<void()> task) {
   // Counted until the task is destroyed: after it ran, or when a stopped pool drops it.
   struct Token {
-    explicit Token(std::shared_ptr<Outstanding> owner) : outstanding(std::move(owner)) {}
+    explicit Token(std::shared_ptr<Counter> owner) : outstanding(std::move(owner)) {}
     Token(const Token&) = delete;
     Token& operator=(const Token&) = delete;
     ~Token() {
@@ -22,7 +29,7 @@ void AiTurnPool::Post(std::function<void()> task) {
       --outstanding->count;
       outstanding->cv.notify_all();
     }
-    std::shared_ptr<Outstanding> outstanding;
+    std::shared_ptr<Counter> outstanding;
   };
   {
     std::lock_guard lock(outstanding_->mu);

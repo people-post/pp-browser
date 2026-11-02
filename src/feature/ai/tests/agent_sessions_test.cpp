@@ -59,7 +59,7 @@ protected:
    * Sessions with the fake stream and the fake app tools. A question starting with "hold" streams one token and waits
    * for `release_` (or a cancel); any other answers at once. `configure`: configure and wait for it.
    */
-  /** `cap`: a fixed cap; none: the configured key's (MakeConfig's is a registered one: kMaxConcurrentTurns). */
+  /** `cap`: a fixed cap; none: the configured key's (RegisteredConfig: kMaxConcurrentTurns). */
   void Make(const std::optional<size_t> cap = std::nullopt, const bool configure = true) {
     sessions_ = std::make_unique<AgentSessions>(cap, [this] { return now_; });
     sessions_->SetThreadStore(&store_);
@@ -86,10 +86,17 @@ protected:
       return BriefAiOutcome::Done;
     });
     if (configure) {
-      sessions_->Configure(MakeConfig("brief"));
+      sessions_->Configure(RegisteredConfig());
       sessions_->WaitForConfigureIdle();
       ASSERT_TRUE(sessions_->IsConfigured());
     }
+  }
+
+  /** MakeConfig with a registered user's brief_AI key: kMaxConcurrentTurns. */
+  static AppConfig RegisteredConfig() {
+    AppConfig config = MakeConfig("brief");
+    config.llm.api_key = "brf_llm_test";
+    return config;
   }
 
   void RegisterFakes(ToolRegistry& registry) {
@@ -435,7 +442,7 @@ TEST_F(AgentSessionsTest, AForgottenThreadDropsItsCardAndCanClose) {
 TEST_F(AgentSessionsTest, SubmitDuringConfigureWaitsForThatInstance) {
   block_configure_ = true;
   Make(kMaxConcurrentTurns, /*configure=*/false);
-  sessions_->Configure(MakeConfig("brief"));
+  sessions_->Configure(RegisteredConfig());
   EXPECT_EQ(sessions_->SubmitToThread("t1", "question"), SubmitOutcome::Started) << "held by the session, not refused";
   EXPECT_TRUE(sessions_->IsBusy("t1"));
   PumpUntil([&] { return in_configure_.load(); }, "a configure to start");
@@ -460,7 +467,7 @@ TEST_F(AgentSessionsTest, ConfigureReachesEveryLiveInstance) {
   sessions_->WaitForConfigureIdle();
   EXPECT_EQ(configures_.load(), 4) << "each new thread took the spare and a new one was warmed";
 
-  sessions_->Configure(MakeConfig("brief"));
+  sessions_->Configure(RegisteredConfig());
   sessions_->WaitForConfigureIdle();
   EXPECT_EQ(configures_.load(), 8) << "Home, the spare, t1 and t2 again";
 
@@ -500,7 +507,7 @@ TEST_F(AgentSessionsTest, PauseKeepsTheToolHook) {
   sessions_->WaitForConfigureIdle();
   const int before = configures_.load(); // Home, t1 (the first spare), the next spare
   sessions_->CancelAll();
-  sessions_->Configure(MakeConfig("brief"));
+  sessions_->Configure(RegisteredConfig());
   sessions_->WaitForConfigureIdle();
   EXPECT_EQ(configures_.load(), before + 3) << "every session still registers the app's tools after a pause";
 }
@@ -544,7 +551,7 @@ TEST_F(AgentSessionsTest, RebuiltInstanceAnswersTheFirstQuestionLikeTheSecond) {
   Poll();
   ASSERT_FALSE(sessions_->HasSession("t1"));
   block_configure_ = true;
-  sessions_->Configure(MakeConfig("brief")); // the spare reconfigures and is held in it
+  sessions_->Configure(RegisteredConfig()); // the spare reconfigures and is held in it
   EXPECT_EQ(sessions_->SubmitToThread("t1", "three"), SubmitOutcome::Started);
   PumpUntil([&] { return in_configure_.load(); }, "the rebuilt session to configure");
   block_configure_ = false;
@@ -668,6 +675,33 @@ TEST_F(AgentSessionsTest, StopTurnsAndWaitEndsEveryRunningTurn) {
   WaitRequests(2);
   EXPECT_TRUE(sessions_->StopTurnsAndWait(std::chrono::seconds(2)));
   EXPECT_FALSE(sessions_->AnyBusy());
+}
+
+TEST_F(AgentSessionsTest, NoBriefKeyYetAnswersOneChatAtATime) {
+  AppConfig none = MakeConfig("brief");
+  none.llm.api_key.clear(); // the guest key is minted after launch
+  EXPECT_EQ(MaxConcurrentTurnsFor(none), kMaxConcurrentGuestTurns);
+  AppConfig unknown = MakeConfig("brief");
+  unknown.llm.api_key = "something-else";
+  EXPECT_EQ(MaxConcurrentTurnsFor(unknown), kMaxConcurrentGuestTurns);
+  EXPECT_EQ(MaxConcurrentTurnsFor(RegisteredConfig()), kMaxConcurrentTurns);
+  AppConfig other = MakeConfig("ollama");
+  EXPECT_EQ(MaxConcurrentTurnsFor(other), kMaxConcurrentTurns) << "another provider's own key";
+}
+
+TEST_F(AgentSessionsTest, EveryTurnThreadTakenIsFullNotAStuckTurn) {
+  Make(10); // the cap is not what stops it here
+  EXPECT_EQ(sessions_->Submit("hold home"), SubmitOutcome::Started);
+  for (const char* thread : {"t1", "t2", "t3", "t4", "t5"}) {
+    EXPECT_EQ(sessions_->SubmitToThread(thread, "hold"), SubmitOutcome::Started) << thread;
+  }
+  WaitRequests(kTurnPoolThreads);
+  EXPECT_EQ(sessions_->CanStart("t6"), TurnStart::Full) << "no thread left for it";
+  EXPECT_EQ(sessions_->SubmitToThread("t6", "q"), SubmitOutcome::Full);
+  release_ = true;
+  PumpUntil([&] { return !sessions_->AnyBusy(); }, "every turn to end");
+  EXPECT_EQ(sessions_->SubmitToThread("t6", "q"), SubmitOutcome::Started);
+  WaitEnded("t6");
 }
 
 } // namespace

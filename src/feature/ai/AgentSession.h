@@ -98,8 +98,12 @@ enum class SubmitOutcome {
  * lone AgentSession has its own.
  */
 struct AgentSessionShared {
-  /** Where turns run (AgentSessions' own threads); unset (a lone session): the app's worker pool. */
-  std::shared_ptr<AiTurnPool> turn_pool;
+  /**
+   * Where turns run when `own_threads` (AgentSessions' pool, owned there: a turn never keeps it alive, so it is
+   * never destroyed on one of its own threads; gone, a step is dropped). A lone session: the app's worker pool.
+   */
+  bool own_threads = false;
+  std::weak_ptr<AiTurnPool> turn_pool;
   std::mutex event_mutex;
   std::vector<AgentEvent> pending_events;
   std::mutex last_role_mutex;
