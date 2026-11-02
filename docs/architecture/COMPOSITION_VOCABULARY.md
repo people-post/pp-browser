@@ -58,7 +58,7 @@ Ports at those edges are allowed and encouraged. They must:
 | Piece | Lives where |
 |-------|-------------|
 | Port **struct** | Consumer header (the type that `Set*Ports` / stores the ports) |
-| **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallTopologyController::MakeMigrateArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
+| **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallHopPath::MakeMigrateArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
 | Free `Make*` + standalone `*Ports.{h,cpp}` | Avoid — duplicates the consumer contract and invites upward `#include`s |
 
 **Owned child:** a child reports in **its own** vocabulary (its event types, in its header); the owner maps them. The

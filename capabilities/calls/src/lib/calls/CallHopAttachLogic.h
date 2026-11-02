@@ -13,7 +13,7 @@ namespace pbr {
 
 /**
  * Pure hop SoftMigrate / SFU-attach helpers (fan-out shape, attach-wait poll, hop-hint).
- * CallTopologyController / CallHopMigrateWorkflow own IO + posting.
+ * CallHopPath / CallHopMigrateWorkflow own IO + posting.
  */
 
 // --- Fan-out ---

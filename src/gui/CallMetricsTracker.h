@@ -13,7 +13,7 @@ namespace pbr {
 
 // Fixed vocabularies for Pick (constexpr: see ShareableLine::Pick).
 inline constexpr ShareWord kCallRoles[] = {"caller", "callee"};
-/** CallMediaBridge::MediaPathKind. */
+/** CallDirectPath::MediaPathKind. */
 inline constexpr ShareWord kCallPaths[] = {"direct", "punched", "circuit"};
 inline constexpr ShareWord kAudioIo[] = {"vpio", "sdl", "none"};
 
@@ -38,7 +38,7 @@ public:
 
   struct MediaTick {
     bool connected = false;
-    std::string path;  // CallMediaBridge::MediaPathKind: direct / punched / circuit
+    std::string path; // CallDirectPath::MediaPathKind: direct / punched / circuit
     CallPathQuality quality = CallPathQuality::Good;
     MediaEngineHealth health;
   };

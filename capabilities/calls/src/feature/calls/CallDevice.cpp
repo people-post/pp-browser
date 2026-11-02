@@ -103,8 +103,8 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
   BindReachSignalPorts();
 }
 
-CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
-  CallTopologyController::HostPorts ports;
+CallHopPath::HostPorts CallDevice::MakeTopologyHostPorts() {
+  CallHopPath::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalIdentity(); };
   ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -351,7 +351,7 @@ void CallDevice::RestartMedia(const std::string& call_id_arg, const bool resume)
 
 void CallDevice::RunMediaRestart(const std::string& call_id, const bool resume) {
   const char* what = resume ? "PeerReconnected" : "RetryClicked";
-  const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+  const Roe<void> restarted = resume ? ResumeDirectMedia(call_id) : RetryDirectMedia(call_id);
   if (!restarted) {
     log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
     // Back to Failed only while the call is still open and not live again (a duplicate restart
@@ -557,8 +557,8 @@ std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& 
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
-  auto path = std::make_unique<CallMediaBridge>(call_id, AsDirectPathQueries(), sessions_, media_keys_,
-                                                std::move(engine), *direct_deps_.transport, direct_deps_.Reach());
+  auto path = std::make_unique<CallDirectPath>(call_id, AsDirectPathQueries(), sessions_, media_keys_,
+                                               std::move(engine), *direct_deps_.transport, direct_deps_.Reach());
   path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
     return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
   }));
@@ -575,10 +575,9 @@ std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& 
 std::unique_ptr<CallHopDriver> CallDevice::MakeHopPath(const std::string& call_id, const uint64_t serial,
                                                        std::shared_ptr<CallEngine> engine,
                                                        std::shared_ptr<std::atomic<bool>> hop_carries_media) {
-  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, workflow_, contacts_, std::move(engine),
-                                                       hop_service_);
+  auto path = std::make_unique<CallHopPath>(call_id, sessions_, workflow_, contacts_, std::move(engine), hop_service_);
   path->SetCarriesMediaFlag(std::move(hop_carries_media));
-  path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
+  path->SetOutbox(outbox_.For<HopPathEvent>([call_id, serial](HopPathEvent event) {
     return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};
   }));
   path->SetReports(outbox_.For<HopReport>(
@@ -597,9 +596,9 @@ CallMedia::View CallDevice::ActivePathsView() const {
   return call ? call->PathsView() : CallMedia::View{};
 }
 
-CallMediaBridge* CallDevice::DirectPathForTest(const std::string& call_id) {
+CallDirectPath* CallDevice::DirectPathForTest(const std::string& call_id) {
   CallMedia* call = call_media_.Find(call_id);
-  return call ? dynamic_cast<CallMediaBridge*>(call->DirectIfBuilt()) : nullptr;
+  return call ? dynamic_cast<CallDirectPath*>(call->DirectIfBuilt()) : nullptr;
 }
 
 void CallDevice::SetDirectPathFactoryForTest(CallDirectPathFactory make) {
@@ -695,8 +694,8 @@ CallDirectSeatPorts CallDevice::DirectSeatPorts() {
   return ports;
 }
 
-CallTopologySeatPorts CallDevice::MakeTopologySeatPorts() {
-  CallTopologySeatPorts ports;
+CallHopPathSeatPorts CallDevice::MakeTopologySeatPorts() {
+  CallHopPathSeatPorts ports;
   CallMediaSeat* seat = &seat_;
   ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
   ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
@@ -887,19 +886,19 @@ CallRecovery CallDevice::Recovery() const {
   return ActivePathsView().recovery;
 }
 
-bool CallDevice::IsP2pConnectFailed() const {
+bool CallDevice::IsDirectConnectFailed() const {
   return ActivePathsView().direct.connect_failed;
 }
 
-bool CallDevice::P2pConnectMissingMic() const {
+bool CallDevice::DirectConnectMissingMic() const {
   return ActivePathsView().direct.missing_mic;
 }
 
-bool CallDevice::P2pConnectSeedUnreachable() const {
+bool CallDevice::DirectConnectSeedUnreachable() const {
   return ActivePathsView().direct.seed_unreachable;
 }
 
-Roe<void> CallDevice::RetryP2pMedia(const std::string& call_id) {
+Roe<void> CallDevice::RetryDirectMedia(const std::string& call_id) {
   CallMedia* call_media = call_media_.Media(call_id);
   if (call_media && live_calls_.MediaAttempted(call_id)) {
     return call_media->Retry();
@@ -907,7 +906,7 @@ Roe<void> CallDevice::RetryP2pMedia(const std::string& call_id) {
   return Error("Call media retry unavailable");
 }
 
-Roe<void> CallDevice::ResumeP2pMedia(const std::string& call_id) {
+Roe<void> CallDevice::ResumeDirectMedia(const std::string& call_id) {
   CallMedia* call_media = call_media_.Media(call_id);
   return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }

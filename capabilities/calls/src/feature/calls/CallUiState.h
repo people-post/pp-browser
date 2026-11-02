@@ -27,11 +27,11 @@ struct CallUiState {
   std::string last_ring_call_id;
   std::string last_error;
   // Session manager / topology / bridge
-  /** Why the hop path is being recovered (one reason; CallTopologyController::Recovery). */
+  /** Why the hop path is being recovered (one reason; CallHopPath::Recovery). */
   CallRecovery recovery = CallRecovery::None;
-  bool p2p_connect_failed = false;
-  bool p2p_connect_missing_mic = false;
-  bool p2p_connect_seed_unreachable = false;
+  bool direct_connect_failed = false;
+  bool direct_connect_missing_mic = false;
+  bool direct_connect_seed_unreachable = false;
   std::string media_activity;
   /** Pending media error for the GUI to show once (TakeLastMediaError). */
   std::optional<std::string> last_media_error;

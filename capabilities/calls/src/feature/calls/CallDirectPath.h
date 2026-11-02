@@ -11,7 +11,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallDirectPlannerLogic.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
 #include "feature/calls/CallMediaDoorway.h"
 #include "mesh/reach/PeerReachCoordinator.h"
@@ -63,18 +63,18 @@ struct CallDirectSeatPorts {
  * Runs the engine through its call's CallEngine (V057) with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
-class CallMediaBridge : public Module, public CallDirectDriver {
+class CallDirectPath : public Module, public CallDirectDriver {
 public:
   /** The 1:1 path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
-  CallMediaBridge(std::string call_id, CallDirectPathQueries& host, const ICallSessionReader& sessions,
-                  ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine, ICallMediaTransport& direct,
-                  mesh::PeerReachPorts reach);
+  CallDirectPath(std::string call_id, CallDirectPathQueries& host, const ICallSessionReader& sessions,
+                 ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine, ICallMediaTransport& direct,
+                 mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
   /** The call's "the hop carries its media" flag: once set, 1:1 frames are dropped (before any traffic). */
   void SetHopCarriesMediaFlag(std::shared_ptr<const std::atomic<bool>> flag) {
     receive_->hop_carries_media = std::move(flag);
   }
-  ~CallMediaBridge();
+  ~CallDirectPath();
 
   bool IsMeshConnectFailed() const;
   bool MeshConnectMissingMic() const;
@@ -222,8 +222,7 @@ public:
   CallLinkCounters MediaLinkCounters() const;
 
   /** V039 Direct planner Apply — product callbacks on the calls owner. */
-  void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
-             const std::string& peer_identity = {});
+  void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {}, const std::string& peer_identity = {});
   CallDirectPlannerPhase DirectPlannerPhase() const { return direct_planner_phase_; }
 
 private:
@@ -269,8 +268,7 @@ private:
   /** UI: map an accepted inbound bundle's mesh PeerId to the roster identity / mixer stream. */
   void BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id);
   /** Callbacks for one bundle (either direction). fixed_stream 0 = inbound identity binding. */
-  CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream,
-                                               const char* label);
+  CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream, const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
   void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
@@ -283,8 +281,7 @@ private:
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
   void EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer);
-  void SetDirectPlannerPhase(CallDirectPlannerPhase next, CallDirectPlannerEvent ev,
-                             const std::string& call_id);
+  void SetDirectPlannerPhase(CallDirectPlannerPhase next, CallDirectPlannerEvent ev, const std::string& call_id);
   CallDirectPlannerApplyContext BuildDirectPlannerContext(const std::string& call_id, const std::string& peer_identity);
   /** Arm health / TX-only / connect-timeout timer (pm3). */
   void ArmDirectHealthTimer();

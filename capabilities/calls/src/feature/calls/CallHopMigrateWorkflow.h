@@ -16,7 +16,7 @@
 #include "lib/calls/CallMediaSeat.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "common/runtime/OwnerSteps.h"
 
@@ -89,7 +89,7 @@ struct CallHopMigrateSeatPorts {
 /**
  * SoftMigrate + SFU attach / guest reattach (V046/V047).
  * Owns race-state clusters; side effects via Host/MigrateArming/MigrateSeat ports + TopologyOps.
- * No friend access into CallTopologyController; does not include Topology vocabulary.
+ * No friend access into CallHopPath; does not include Topology vocabulary.
  */
 class CallHopMigrateWorkflow : public Module {
 public:
@@ -160,7 +160,7 @@ public:
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };
 
-  /** Topology helpers that remain on CallTopologyController (ranking / fan-out / planner Apply). */
+  /** Topology helpers that remain on CallHopPath (ranking / fan-out / planner Apply). */
   struct TopologyOps {
     std::function<void(CallHopPlannerEvent ev, const std::string& call_id)> apply;
     std::function<void(const std::string& call_id)> sync_sfu_subscriptions;
@@ -199,7 +199,7 @@ public:
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
-  void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps);
+  void SetMediaRelayDeps(const CallHopMediaRelayDeps* deps);
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
   void InstallMediaKey(const std::string& call_id);
@@ -319,7 +319,7 @@ private:
   /** This call's handle on the engine (V057). */
   std::shared_ptr<CallEngine> engine_;
   ICallMediaKeyStore* media_keys_ = nullptr;
-  const CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
+  const CallHopMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
   SharedPorts<CallHopMigrateArmingPorts> arming_;
   SharedPorts<CallHopMigrateSeatPorts> seat_;

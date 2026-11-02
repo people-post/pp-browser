@@ -13,7 +13,7 @@
 #include "common/directory/ILocalAccount.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "lib/calls/CallPathPolicy.h"
-#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallDirectPath.h"
 #include "feature/calls/CallMediaPlane.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "lib/calls/CallPathMobility.h"
@@ -26,7 +26,7 @@
 #include "common/runtime/RuntimeOwnerExecutor.h"
 #include "common/media/MediaSessionsOwner.h"
 #include "feature/calls/SharedPorts.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "common/chat/SystemControl.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshHost.h"
@@ -111,7 +111,7 @@ public:
   /** Phase B (mesh up, mesh media wired by the owner): start Amp call-media transport + bind. */
   void OnMeshServicesStarted();
   /**
-   * Test-only: bind CallMediaBridge without Amp mesh.
+   * Test-only: bind CallDirectPath without Amp mesh.
    * `transport` / `dial` / `circuit_reach` are non-owning; call after BuildSessions.
    */
   void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial);
@@ -183,7 +183,7 @@ public:
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();
-  /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
+  /** True while CallDirectPath Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
   /**
    * Bind the device's call-state hook (chrome refresh, N025 listen). Calls owner only, at the bind

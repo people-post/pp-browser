@@ -135,7 +135,7 @@ struct ProbeAnswered {
 using PlanningEvent = std::variant<planning_event::ProbeAnswered>;
 
 /** The topology controller's own events. */
-namespace topology_event {
+namespace hop_path_event {
 
 /** The media relay client's transport died (from the relay's thread); `watch` names that relay watch. */
 struct RelayTransportLost {
@@ -164,13 +164,13 @@ struct Continue {
   uint64_t id = 0;
 };
 
-} // namespace topology_event
+} // namespace hop_path_event
 
-using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
-                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest,
-                                   topology_event::Continue, HopMigrateEvent>;
+using HopPathEvent = std::variant<hop_path_event::RelayTransportLost, hop_path_event::AttachWaitDeadline,
+                                  hop_path_event::ReannouncePublisher, hop_path_event::RefuseGuest,
+                                  hop_path_event::Continue, HopMigrateEvent>;
 
-/** The 1:1 path's (CallMediaBridge) own events. */
+/** The 1:1 path's (CallDirectPath) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
 /** The device's doorway for inbound call media (V056). */
 namespace doorway_event {
@@ -446,7 +446,7 @@ struct FromDirectPath {
 struct ForHopPath {
   std::string call_id;
   uint64_t serial = 0;
-  TopologyEvent event;
+  HopPathEvent event;
 };
 /** A report of the group path. */
 struct FromHopPath {

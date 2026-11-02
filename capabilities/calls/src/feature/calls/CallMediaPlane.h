@@ -11,8 +11,8 @@
 #include "feature/calls/CallDirectPathDeps.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathQueries.h"
-#include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopPath.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "domain/call_media/CallMediaAmpTransport.h"
 #include "domain/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshHost.h"
@@ -72,7 +72,7 @@ public:
   void BindTestMediaPath(ICallMediaTransport* transport);
   /** What the 1:1 path runs on (transport, dial, reach, seed hooks); not usable without a transport. */
   CallDirectPathDeps DirectPathDeps();
-  CallTopologyController::MediaRelayDeps BuildMediaRelayDeps() const;
+  CallHopPath::MediaRelayDeps BuildMediaRelayDeps() const;
   /** Mesh stop: the transport stops taking and carrying streams (the 1:1 path let go before). */
   void StopTransport();
   void FinishMeshStop();

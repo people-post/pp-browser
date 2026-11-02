@@ -288,9 +288,9 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   }
 
   InCallSignals signals;
-  signals.p2p_connect_failed = backend.IsP2pConnectFailed();
-  signals.p2p_missing_mic = backend.P2pConnectMissingMic();
-  signals.p2p_seed_unreachable = backend.P2pConnectSeedUnreachable();
+  signals.direct_connect_failed = backend.IsDirectConnectFailed();
+  signals.direct_missing_mic = backend.DirectConnectMissingMic();
+  signals.direct_seed_unreachable = backend.DirectConnectSeedUnreachable();
   // The hop path being recovered, also a guest's lost transport between reattach attempts (the
   // Reconnecting line stays up; the seat stays Live by design).
   signals.recovery = backend.Recovery();
@@ -312,8 +312,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
   s.hint = decided.hint;
-  s.hint_missing_mic = signals.p2p_missing_mic;
-  s.hint_seed_unreachable = signals.p2p_seed_unreachable;
+  s.hint_missing_mic = signals.direct_missing_mic;
+  s.hint_seed_unreachable = signals.direct_seed_unreachable;
   if (decided.status == CallScreen::Status::Activity) {
     s.activity = signals.activity;
   }

@@ -72,7 +72,7 @@ void CallHopMigrateWorkflow::SetTopologyOps(TopologyOps ops) {
   ops_ = std::move(ops);
 }
 
-void CallHopMigrateWorkflow::SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) {
+void CallHopMigrateWorkflow::SetMediaRelayDeps(const CallHopMediaRelayDeps* deps) {
   relay_deps_ = deps;
 }
 

@@ -54,8 +54,8 @@ void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport) {
   test_media_transport_ = transport;
 }
 
-CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
-  CallTopologyController::MediaRelayDeps deps;
+CallHopPath::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
+  CallHopPath::MediaRelayDeps deps;
   if (!connectivity_ || !media_relay_) {
     return deps;
   }

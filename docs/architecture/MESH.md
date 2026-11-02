@@ -75,7 +75,7 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 |------|----------|-----|
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
-| Call-media transport | `CallMediaAmpTransport` via `CallStack` | `domain/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
+| Call-media transport | `CallMediaAmpTransport` via `CallStack` | `domain/call_media` (a client of the mesh's io lane and L4 helpers); `CallDirectPath` in `feature/calls` |
 | App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media, account cards: `ProductMeshProtocols`, `common/ProtocolIds.h`) beside the mesh's own |
 | Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 | Media relay | `MeshMediaRelay` (owned by `ProductMesh` with `MeshConnectivity` and the hop policy feed; the hub says where the mesh is in its life — `HubMeshOwner`, CR018) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
@@ -99,7 +99,7 @@ Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–1
 
 `foundation/platform/NetworkMonitor` reports material changes of the device's attachment (online, transport, cost, and a fingerprint of the default-route interfaces and their addresses). Backends: Linux rtnetlink (2 s poll fallback), macOS / iOS `NWPathMonitor`, Windows IP-helper notifications + `GetNetworkConnectivityHint`, Android `registerDefaultNetworkCallback` (`PpNetworkMonitor.java`). The owner of the mesh services starts it — `ConversationsHub` in the app, `ProductStackHarness` in `pp-call-probe` — and fans changes out: the mesh first (`ReactMeshToNetworkChange`, `feature/conversations/MeshNetworkReaction.h`), then the calls with what the mesh made of it (`ReactCallsToNetworkChange`, `feature/calls/LocalNetworkReaction.h`; the hub reaches them through its participants):
 
-| Change | Mesh (`MeshHost::OnLocalNetworkChanged`, `DecideLocalNetworkReaction`) | Calls (`CallMediaBridge::OnLocalNetworkChanged`) |
+| Change | Mesh (`MeshHost::OnLocalNetworkChanged`, `DecideLocalNetworkReaction`) | Calls (`CallDirectPath::OnLocalNetworkChanged`) |
 |--------|---------------------------|------------------|
 | Online on a new attachment, or back online | Amp `NotifyNetworkChanged`: every direct link probed at once (the probe from the new address also moves the peer's path), silent ones dropped after 2 s (`network-changed`), dial backoffs cleared ([KEEPALIVE.md § Network change](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/KEEPALIVE.md)); reachability re-probed 2.5 s later → advertised / punch addresses refreshed | Reconnecting: re-anchor once links settled (2.5 s); Live relayed (offerer): direct-upgrade punches start over |
 | Offline | Nothing — probes into no route would drop every link; they may survive a short outage | Nothing |

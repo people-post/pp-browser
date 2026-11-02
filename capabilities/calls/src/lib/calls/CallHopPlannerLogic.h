@@ -7,7 +7,7 @@
 
 namespace pbr {
 
-/** Hop planner phases (V039) — CallTopologyController owns Apply. */
+/** Hop planner phases (V039) — CallHopPath owns Apply. */
 enum class CallHopPlannerPhase : uint8_t {
   Idle = 0,
   WaitingAttach,

@@ -10,7 +10,7 @@ namespace pbr {
 /**
  * Pure group-path decisions as people join a call: our own accept, a peer's accept of our call,
  * the roster's joined count, an inbound CallSfuAttach and a joiner's hop failure.
- * CallTopologyController gathers the facts (flight, attach wait, seat, store) and runs the outcome.
+ * CallHopPath gathers the facts (flight, attach wait, seat, store) and runs the outcome.
  */
 
 // --- Which call the group path serves ---

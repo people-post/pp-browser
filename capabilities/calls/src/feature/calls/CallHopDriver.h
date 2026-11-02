@@ -16,7 +16,7 @@ namespace pbr {
 
 /**
  * One call's group (hop / media_relay) media path (V056: built for that call by its media session;
- * CallTopologyController implements it). The session asks; the path runs the hop. Calls owner.
+ * CallHopPath implements it). The session asks; the path runs the hop. Calls owner.
  */
 class CallHopDriver {
 public:
@@ -44,7 +44,7 @@ public:
   virtual void RefreshAdaptation(const std::string& call_id, bool camera_user_wants) = 0;
 
   /** One of the path's own events, back on the calls owner. */
-  virtual void Handle(TopologyEvent& event) = 0;
+  virtual void Handle(HopPathEvent& event) = 0;
   /** The call's media key epoch landed (the hop re-keys its streams). */
   virtual void OnMediaKeyInstalled(const std::string& call_id) = 0;
   virtual void OnJoinedCountObserved(const std::string& call_id, size_t n_joined) = 0;

@@ -245,7 +245,7 @@ Each component tree on an owner thread is run by **one runner**, its root — th
 
 **Multi-step flows** (reach → add → retry) are explicit steps: each step is an event carrying its identity (call id + attempt / generation), its handler re-checks that identity first, and the owning component keeps a small state (phase + attempt). A deferred step or a result's continuation waits in the component's `OwnerSteps` under an id; `Continue{id}` (or a result event carrying the id) runs it. No coroutines: between two steps anything else may run on the owner, and a separate handler per step keeps that gap visible (a `co_await` hides it).
 
-**The calls tree:** the stack's inputs from other threads (network / mobility / inbound call control / relay chosen / signaling punch) are events; `CallPathMobility` and `CallMediaSeat` are passive (mobility's re-evaluation is a delayed event); the device's parts (`CallDevice`) report through typed outboxes (`OwnerOutbox`, `SessionEvent` → workflow / topology / hop migrate): its follow-ups, timers and the relay-loss notice are events. Topology, hop migrate and planning cross threads only as events (their attach / migrate chains included). In the 1:1 bridge (`CallMediaBridge`) its timers, the deferred-key poll (a delayed event per round, no worker), its start deferrals and its reach / migrate / bundle results are `DirectPathEvent`s; its entries (`StopMeshMedia`, answerer start, Retry / Resume) are owner-only. Received 1:1 media stays on the transport's I/O like the hop's frames (rule 4): the owner publishes the bound stream into an atomic receive gate, the hop's attached flag is atomic, and an unbound stream asks the owner for a rebind as an event. Its child, the connect sequence (`CallMediaConnectCoordinator`), reports `ConnectEvent`s the same way; an inbound hello travels as an event holding its answer (`CallMediaInboundReply`), NACKed if dropped unanswered, so the transport's handler holds no component pointer. The UI edge (`CallUiBackend`) queues its commands on the stack's loop (`SessionsCommand`), behind the owner's events; `CallPresenter` (the call screen's decisions and buttons) sits above it on the UI thread and posts only to UI (the stack's ring callbacks arrive from other threads). **Tree:** the session manager owns the seat and both media paths (the 1:1 bridge and the group topology), so the synchronous hand-offs between them (stop before start, Direct → Hop) stay parent / child calls.
+**The calls tree:** the stack's inputs from other threads (network / mobility / inbound call control / relay chosen / signaling punch) are events; `CallPathMobility` and `CallMediaSeat` are passive (mobility's re-evaluation is a delayed event); the device's parts (`CallDevice`) report through typed outboxes (`OwnerOutbox`, `SessionEvent` → workflow / topology / hop migrate): its follow-ups, timers and the relay-loss notice are events. Topology, hop migrate and planning cross threads only as events (their attach / migrate chains included). In the 1:1 bridge (`CallDirectPath`) its timers, the deferred-key poll (a delayed event per round, no worker), its start deferrals and its reach / migrate / bundle results are `DirectPathEvent`s; its entries (`StopMeshMedia`, answerer start, Retry / Resume) are owner-only. Received 1:1 media stays on the transport's I/O like the hop's frames (rule 4): the owner publishes the bound stream into an atomic receive gate, the hop's attached flag is atomic, and an unbound stream asks the owner for a rebind as an event. Its child, the connect sequence (`CallMediaConnectCoordinator`), reports `ConnectEvent`s the same way; an inbound hello travels as an event holding its answer (`CallMediaInboundReply`), NACKed if dropped unanswered, so the transport's handler holds no component pointer. The UI edge (`CallUiBackend`) queues its commands on the stack's loop (`SessionsCommand`), behind the owner's events; `CallPresenter` (the call screen's decisions and buttons) sits above it on the UI thread and posts only to UI (the stack's ring callbacks arrive from other threads). **Tree:** the session manager owns the seat and both media paths (the 1:1 bridge and the group topology), so the synchronous hand-offs between them (stop before start, Direct → Hop) stay parent / child calls.
 
 **Broadcast:** `BroadcastHub` runs the viewer and the broadcaster (both passive). Their reach / ticket / admission / attach / announce results and relay-session losses come back as `ViewerEvent` / `BroadcasterEvent`s through their outboxes, carrying the watch / show they belong to (a newer watch or show makes them stale; the attach's I/O-side "still wanted" check reads an atomic copy); re-admission and re-attach back-offs are delayed events. Frames stay on I/O (viewer) and the capture thread (broadcaster).
 
@@ -277,7 +277,7 @@ RequestExit → HideWindow (<100ms close feel)
 
 **Budgets:**
 - Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
-- `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
+- `CallDirectPath::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
 - `CallRingtone::StopAndJoin(≤500ms)`; `MediaEngine::Stop` returns at once (drains an in-flight send only); the engine's destructor waits ≤5s for retired sessions to clean up, then leaves a stuck one to the process exit
 - `MediaDeviceArbiter::ShutdownDefault(≤1s)`: runs queued device closes, then joins the device threads (before `SDL_Quit`)
 - `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
@@ -320,7 +320,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 
 | Owner | Notes |
 |-------|--------|
-| `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
+| `CallStack` / `CallDirectPath` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
 | `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump (the hub asks the mesh's owner, `ProductMesh`, to stop it, then to free it) |
 | `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
@@ -330,9 +330,9 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 
 Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `Error("shutdown in progress")`):
 `CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsurePeerReachable`,
-`CallTopologyController::MaybeSoftMigrateToSfu` (+ Async),
+`CallHopPath::MaybeSoftMigrateToSfu` (+ Async),
 `AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsurePeerReachable`,
-`CallMediaBridge::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
+`CallDirectPath::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
 
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).
 
@@ -352,8 +352,8 @@ Invalidate (bump gen / cancel flag)
 | Path | Contract |
 |------|----------|
 | Product quit / UI | `PrepareForTeardown(0)` = Abort only (no sleep-spin) — [Shutdown order](#shutdown-order-product) |
-| `CallMediaBridge` stop / retry | Calls-owner state. `StopMeshMedia`, Retry and Resume are owner-only (asserted); every stop reaches them through the owner's events. What the bridge still has queued drops with its direct-path generation |
-| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps the send gen and calls `CallMediaConnectCoordinator::Abort()`: cancels watchdog / retry timers and the pending `PeerReachCoordinator` reach (completes inline), **clears** `InFlight`; completes no hook |
+| `CallDirectPath` stop / retry | Calls-owner state. `StopMeshMedia`, Retry and Resume are owner-only (asserted); every stop reaches them through the owner's events. What the bridge still has queued drops with its direct-path generation |
+| `CallDirectPath` Connect | `AbortConnectSequence()` bumps the send gen and calls `CallMediaConnectCoordinator::Abort()`: cancels watchdog / retry timers and the pending `PeerReachCoordinator` reach (completes inline), **clears** `InFlight`; completes no hook |
 | Cross-planner SoftMigrate | Lifecycle `media_cancel_gen`; late Direct/Hop work no-ops — [CALLS.md](CALLS.md) / V037 |
 | Amp circuit / punch | `AbortPending` + Alive checks — [OWNERSHIP.md](OWNERSHIP.md) |
 

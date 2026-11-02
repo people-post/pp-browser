@@ -11,7 +11,7 @@
 namespace pbr {
 
 /**
- * Pure decisions of the 1:1 path (CallMediaBridge): its connect health, a carrier (bundle) that
+ * Pure decisions of the 1:1 path (CallDirectPath): its connect health, a carrier (bundle) that
  * failed, the device's network changing, and when to keep a relayed standby or try for a direct
  * link. The bridge gathers the facts (engine, transport, reach) and runs the outcome.
  */

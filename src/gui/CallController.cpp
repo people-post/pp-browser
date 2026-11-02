@@ -741,7 +741,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
     if (screen.hint == CallScreen::Hint::GroupMedia) {
       in_call.status_hint = ComposeGroupCallStatusHint().c_str();
-    } else if (screen.hint == CallScreen::Hint::P2pConnect) {
+    } else if (screen.hint == CallScreen::Hint::DirectConnect) {
       in_call.status_hint = ComposeP2pStatusHint(screen.hint_missing_mic, screen.hint_seed_unreachable).c_str();
     }
     break;
@@ -1009,7 +1009,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
   // A call that was live and then failed reads "disconnected" (CallScreen decides); the mesh
   // "couldn't connect" copy below is for calls that never connected.
-  const bool mesh_messaging_failed = backend && backend->Available() && backend->IsP2pConnectFailed() &&
+  const bool mesh_messaging_failed = backend && backend->Available() && backend->IsDirectConnectFailed() &&
                                      !backend->IsAwaitingSfuRecovery() && backend->MediaPath() != CallMediaPath::Hop &&
                                      presenter_.Screen().status != CallScreen::Status::Disconnected;
   const bool path_lost =

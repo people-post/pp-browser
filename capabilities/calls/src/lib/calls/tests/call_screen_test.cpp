@@ -21,7 +21,7 @@ TEST(CallScreenTest, NothingStartedYetReadsCalling) {
 TEST(CallScreenTest, LiveMediaIsConnectedWithTheTimerAndNoRetry) {
   InCallSignals s;
   s.media_chrome_live = true;
-  s.p2p_connect_failed = false;
+  s.direct_connect_failed = false;
   const InCallStatus out = Decide(s);
   EXPECT_EQ(out.status, Status::Connected);
   EXPECT_TRUE(out.media_connected);
@@ -31,10 +31,10 @@ TEST(CallScreenTest, LiveMediaIsConnectedWithTheTimerAndNoRetry) {
 
 TEST(CallScreenTest, AFailedMeshPathCouldNotConnectWithItsHintAndRetry) {
   InCallSignals s;
-  s.p2p_connect_failed = true;
+  s.direct_connect_failed = true;
   InCallStatus out = Decide(s);
   EXPECT_EQ(out.status, Status::CouldntConnect);
-  EXPECT_EQ(out.hint, CallScreen::Hint::P2pConnect);
+  EXPECT_EQ(out.hint, CallScreen::Hint::DirectConnect);
   EXPECT_TRUE(out.show_retry);
   EXPECT_FALSE(out.show_invite);
 
@@ -70,7 +70,7 @@ TEST(CallScreenTest, AFailureAfterBeingConnectedReadsDisconnected) {
   s.was_connected = true;
   EXPECT_EQ(Decide(s).status, Status::Disconnected);
   InCallSignals mesh;  // the mesh path reports the failure after the reconnect window: still "disconnected"
-  mesh.p2p_connect_failed = true;
+  mesh.direct_connect_failed = true;
   mesh.was_connected = true;
   const InCallStatus out = Decide(mesh);
   EXPECT_EQ(out.status, Status::Disconnected);
@@ -179,7 +179,7 @@ TEST(CallScreenTest, TheCountGivesWayToWhatTheUserMustRead) {
 
 TEST(CallScreenTest, ACouldntConnectCallThatMigratesAgainReadsConnecting) {
   InCallSignals s;
-  s.p2p_connect_failed = true;
+  s.direct_connect_failed = true;
   s.media_active = true;
   s.group_context = true;
   EXPECT_EQ(Decide(s).status, Status::CouldntConnect);
@@ -211,7 +211,7 @@ TEST(CallScreenTest, ACallThatWasLiveIsNotLostForGoodWhileItsPathMoves) {
        {CallMediaStatus::Migrating, CallMediaStatus::HopAttaching, CallMediaStatus::HopWaiting}) {
     InCallSignals s;
     s.was_connected = true;
-    s.p2p_connect_failed = true;  // latched from the 1:1 path
+    s.direct_connect_failed = true; // latched from the 1:1 path
     s.media_status = moving;      // a third person joined: the call moves onto a hop
     EXPECT_NE(Decide(s).status, Status::Disconnected) << static_cast<int>(moving);
     EXPECT_NE(Decide(s).status, Status::CouldntConnect) << static_cast<int>(moving);

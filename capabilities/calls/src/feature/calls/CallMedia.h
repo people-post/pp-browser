@@ -45,7 +45,7 @@ struct CallMediaResources {
 
 /**
  * One call's media (V056, call level): this call's use of the one media engine and the seat, and
- * the call's paths — it builds and owns its 1:1 path (CallMediaBridge) and its group path (hop
+ * the call's paths — it builds and owns its 1:1 path (CallDirectPath) and its group path (hop
  * topology + migrate), both naming this call. Owned by LiveCallMedia for one admission of the call.
  * The session manager and the device reach a path only through this object; the paths start and stop the engine
  * through it. Direct → Hop is a hand-off: both paths live until the hop is heard. Calls owner only.
@@ -135,7 +135,7 @@ public:
   void StopMedia();
   /** A path's own event: run if `serial` is still that path. */
   void HandleDirectEvent(uint64_t serial, DirectPathEvent& event);
-  void HandleHopEvent(uint64_t serial, TopologyEvent& event);
+  void HandleHopEvent(uint64_t serial, HopPathEvent& event);
   /** A report from 1:1 path `serial` is still this call's current path's. */
   bool IsDirectPath(uint64_t serial) const { return serial != 0 && serial == direct_serial_; }
 

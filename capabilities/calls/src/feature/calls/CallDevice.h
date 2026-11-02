@@ -25,9 +25,9 @@
 #include "common/runtime/OwnerOutbox.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
-#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallDirectPath.h"
 #include "feature/calls/CallDirectPathQueries.h"
-#include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallHopPath.h"
 #include "feature/calls/CallSessionWorkflow.h"
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/SharedPorts.h"
@@ -46,7 +46,7 @@
 
 namespace pbr {
 
-class CallMediaBridge;
+class CallDirectPath;
 
 /**
  * This device's calls, the parts (V056 device level; p2p-av-calls PHASES § cm4): it owns them and wires
@@ -60,7 +60,7 @@ class CallMediaBridge;
 class CallDevice : public Module, private CallDirectPathQueries {
 public:
   using RingChangedFn = std::function<void()>;
-  using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
+  using MediaRelayDeps = CallHopPath::MediaRelayDeps;
 
   CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcript, IContactBook& contacts,
              const ILocalAccount& account, ICallSessionStore& sessions, const CallReads& reads,
@@ -126,7 +126,7 @@ public:
   /** The 1:1 path's arming / progress ports over the calls' media progress. */
   CallDirectArmingPorts DirectArmingPorts();
   /** `call_id`'s 1:1 path if built (tests). */
-  CallMediaBridge* DirectPathForTest(const std::string& call_id);
+  CallDirectPath* DirectPathForTest(const std::string& call_id);
   /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
   void SetDirectPathFactoryForTest(CallDirectPathFactory make);
 
@@ -178,9 +178,9 @@ public:
   bool IsAwaitingSfuRecovery() const;
   /** Why the hop path is being recovered (the screen's status line). */
   CallRecovery Recovery() const;
-  bool IsP2pConnectFailed() const;
-  bool P2pConnectMissingMic() const;
-  bool P2pConnectSeedUnreachable() const;
+  bool IsDirectConnectFailed() const;
+  bool DirectConnectMissingMic() const;
+  bool DirectConnectSeedUnreachable() const;
   bool IsDirectConnectInFlight() const;
   std::optional<std::string> TakeLastMediaError();
   /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
@@ -191,7 +191,7 @@ public:
   void ClearMediaActivity();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
-  /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
+  /** 1:1 reach path from CallDirectPath (direct|punched|circuit); empty if unknown. */
   std::string MediaPathKind() const;
   CallLinkCounters MediaLinkCounters() const;
   bool IsSfuAttached() const;
@@ -204,7 +204,7 @@ private:
   void SetLastMediaError(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
-  CallTopologyController::HostPorts MakeTopologyHostPorts();
+  CallHopPath::HostPorts MakeTopologyHostPorts();
   /** What a call's group path reported (events up): move the call's state, or act for it. */
   void OnHopReport(const HopReport& report);
 
@@ -234,7 +234,7 @@ private:
   CallSessionWorkflow::ReachPorts MakeWorkflowReachPorts();
   void BindReachSignalPorts();
   CallHopArmingPorts MakeHopArmingPorts();
-  CallTopologySeatPorts MakeTopologySeatPorts();
+  CallHopPathSeatPorts MakeTopologySeatPorts();
   CallDirectSeatPorts DirectSeatPorts();
   /** The device-level 1:1 deps (V056): each call's path is built from them. */
   std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial,
@@ -251,9 +251,9 @@ private:
   /** The seat released (or was taken over): stop that call's media. */
   void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
   void RunMediaRestart(const std::string& call_id, bool resume);
-  Roe<void> RetryP2pMedia(const std::string& call_id);
+  Roe<void> RetryDirectMedia(const std::string& call_id);
   /** A failed, open call: the peer's connection reached us — restart media keeping its stream. */
-  Roe<void> ResumeP2pMedia(const std::string& call_id);
+  Roe<void> ResumeDirectMedia(const std::string& call_id);
   void RetryAnswererKick(const std::string& call_id);
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();

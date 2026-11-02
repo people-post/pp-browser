@@ -1,7 +1,7 @@
 #include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 
 #include "domain/call_media/ICallMediaTransport.h"
 #include "lib/calls/CallControlCodec.h"

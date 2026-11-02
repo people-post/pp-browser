@@ -5,7 +5,7 @@
 
 namespace pbr {
 
-/** Direct planner phases (V039) — CallMediaBridge owns Apply. */
+/** Direct planner phases (V039) — CallDirectPath owns Apply. */
 enum class CallDirectPlannerPhase : uint8_t {
   Idle = 0,
   Arming,
@@ -107,7 +107,7 @@ inline const char* CallDirectPlannerEventName(CallDirectPlannerEvent ev) {
 }
 
 /**
- * Pure Direct planner table (V039). Effects stay in CallMediaBridge::Apply.
+ * Pure Direct planner table (V039). Effects stay in CallDirectPath::Apply.
  * Status Direct* is required for Schedule/Key/Connect progress; Stop/Release always allowed.
  */
 inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlannerPhase phase,

@@ -16,7 +16,7 @@ namespace pbr {
  * device goes up as `HopReport` events (V057 2). Topology projects a subset into
  * CallHopMigrateHostPorts for its migrate workflow.
  */
-struct CallTopologyHostPorts {
+struct CallHopPathHostPorts {
   std::function<Roe<std::string>()> local_relay_identity;
   std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail_json,
                           const std::string& display, const std::string& skip_identity)>

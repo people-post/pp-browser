@@ -2,11 +2,11 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
 #include "feature/calls/tests/calls_on_owner.h"
-#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallDirectPath.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
-#include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopPath.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
 #include "lib/media/MediaEngine.h"
@@ -811,7 +811,7 @@ TEST_F(CallSessionInboundComposeTest, AConnectGiveUpFromSomeoneElseIsIgnored) {
                                                   "account:mallory");
   ASSERT_TRUE(msg);
   EXPECT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:mallory"); }));
-  EXPECT_FALSE(device_->IsP2pConnectFailed());
+  EXPECT_FALSE(device_->IsDirectConnectFailed());
 }
 
 // video-voice-choice: callee answers an incoming video invite as voice-only. AcceptInvite must

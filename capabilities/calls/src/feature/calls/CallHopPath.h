@@ -15,9 +15,9 @@
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallHopService.h"
-#include "feature/calls/CallTopologyHostPorts.h"
+#include "feature/calls/CallHopPathHostPorts.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "common/runtime/OwnerSteps.h"
 #include "lib/calls/CallMediaSeat.h"
@@ -61,7 +61,7 @@ struct CallHopArmingPorts {
  * What topology asks of the media seat (V046; hop-migrate gets a subset, CallHopMigrateSeatPorts). Being replaced
  * by the per-call media session (p2p-av-calls V055, PHASES § cm3).
  */
-struct CallTopologySeatPorts {
+struct CallHopPathSeatPorts {
   std::function<bool(const std::string& call_id)> is_bound;
   std::function<std::string()> bound_call_id;
   std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
@@ -87,18 +87,18 @@ struct CallTopologySeatPorts {
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
  * Host/HopArming/Seat ports for Topology-local control paths.
  */
-class CallTopologyController : public Module, public CallHopDriver {
+class CallHopPath : public Module, public CallHopDriver {
 public:
-  using HostPorts = CallTopologyHostPorts;
-  using MediaRelayDeps = CallTopologyMediaRelayDeps;
+  using HostPorts = CallHopPathHostPorts;
+  using MediaRelayDeps = CallHopMediaRelayDeps;
 
   /** The group path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
-  CallTopologyController(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
-                         const IContactBook& contacts, std::shared_ptr<CallEngine> engine, CallHopService& hops);
+  CallHopPath(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
+              const IContactBook& contacts, std::shared_ptr<CallEngine> engine, CallHopService& hops);
   const std::string& CallId() const { return call_id_; }
-  ~CallTopologyController() override;
-  CallTopologyController(const CallTopologyController&) = delete;
-  CallTopologyController& operator=(const CallTopologyController&) = delete;
+  ~CallHopPath() override;
+  CallHopPath(const CallHopPath&) = delete;
+  CallHopPath& operator=(const CallHopPath&) = delete;
 
   void SetHostPorts(HostPorts ports);
   /** The call's "the hop carries its media" flag, written as the hop attaches / detaches (its 1:1 path reads it). */
@@ -118,15 +118,15 @@ public:
     }
   }
   /** V046 exclusive media bind / epoch via ports. */
-  void SetSeatPorts(CallTopologySeatPorts ports);
+  void SetSeatPorts(CallHopPathSeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
   void SetHopArmingPorts(CallHopArmingPorts ports);
   /** Where topology (and hop migrate under it) reports its events (the device binds it). */
-  void SetOutbox(OwnerOutbox<TopologyEvent> outbox);
+  void SetOutbox(OwnerOutbox<HopPathEvent> outbox);
   /** Where the hop path reports to the calls it serves (events up; V055). */
   void SetReports(OwnerOutbox<HopReport> reports);
   /** An event it reported, back from the calls owner's queue. */
-  void Handle(TopologyEvent& event) override;
+  void Handle(HopPathEvent& event) override;
 
   bool IsAwaitingSfuRecovery() const override;
   /** This guest's hop transport was lost and is not back yet (the call screen reads Reconnecting). */
@@ -156,7 +156,6 @@ public:
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
-
   /**
    * After local AcceptInvite: attach via hint, soft-migrate, or clear wait for 1:1.
    * Returns true if an SFU path was scheduled (caller should not start P2P).
@@ -168,8 +167,7 @@ public:
    * After inbound CallAccept raised joined count: soft-migrate or clear SFU wait.
    * Returns true if SFU path was taken (caller should not start P2P offerer).
    */
-  bool OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
-                            const std::string& joiner_identity) override;
+  bool OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined, const std::string& joiner_identity) override;
 
   /**
    * After CallRoster updated local joined count (mid-call invite path): initiator may SoftMigrate.
@@ -209,12 +207,12 @@ private:
   void BindHopMigratePortsAndOps();
   CallHopMigrateHostPorts MakeMigrateHostPorts(const HostPorts& ports) const;
   CallHopMigrateArmingPorts MakeMigrateArmingPorts(const CallHopArmingPorts& ports) const;
-  CallHopMigrateSeatPorts MakeMigrateSeatPorts(const CallTopologySeatPorts& ports) const;
+  CallHopMigrateSeatPorts MakeMigrateSeatPorts(const CallHopPathSeatPorts& ports) const;
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,
                                         const std::string& error);
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);
-  void RefuseGuest(const topology_event::RefuseGuest& refuse_event);
-  void ReannouncePublisher(const topology_event::ReannouncePublisher& again);
+  void RefuseGuest(const hop_path_event::RefuseGuest& refuse_event);
+  void ReannouncePublisher(const hop_path_event::ReannouncePublisher& again);
   /** Run `step` as the next event (owner). */
   void Defer(std::function<void()> step);
   std::vector<std::string> DialableHopPeerIds() const;
@@ -226,8 +224,7 @@ private:
   bool SettleFinishedMigrate(const std::string& call_id);
   /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
   CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
-  bool LanReachabilityConfirmedForCall(const std::string& call_id,
-                                       const std::string& local_identity) const;
+  bool LanReachabilityConfirmedForCall(const std::string& call_id, const std::string& local_identity) const;
   /** Joined remotes of the call (local excluded) — the peers SoftMigrate scope / LAN checks cover. */
   std::vector<std::string> JoinedRemoteIdentities(const std::string& call_id, const std::string& local_identity) const;
   bool IsActiveCallForTopology(const std::string& call_id) const;
@@ -317,7 +314,7 @@ private:
   /** This call's handle on the engine (V057), shared with the migrate workflow. */
   std::shared_ptr<CallEngine> engine_;
   ICallMediaKeyStore* media_keys_ = nullptr;
-  SharedPorts<CallTopologySeatPorts> seat_;
+  SharedPorts<CallHopPathSeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;
   /** The device's hop side (V056): relay client / hop discovery, ranking and V050 planning. */
   CallHopService& hops_;
@@ -328,7 +325,7 @@ private:
   // unwatch or our destruction.
   /** Names the current relay watch: a loss reported by an earlier one is stale. */
   uint64_t relay_watch_ = 0;
-  OwnerOutbox<TopologyEvent> outbox_;
+  OwnerOutbox<HopPathEvent> outbox_;
   OwnerOutbox<HopReport> reports_;
   /** Finish steps waiting for their Continue event. */
   OwnerSteps steps_;

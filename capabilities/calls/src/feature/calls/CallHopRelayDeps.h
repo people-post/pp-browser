@@ -24,9 +24,9 @@ namespace pbr {
 
 /**
  * SoftMigrate / hop pick wiring (mesh clients + hop discovery).
- * Owned by CallTopologyController; CallHopMigrateWorkflow holds a non-owning pointer (V047).
+ * Owned by CallHopPath; CallHopMigrateWorkflow holds a non-owning pointer (V047).
  */
-struct CallTopologyMediaRelayDeps {
+struct CallHopMediaRelayDeps {
   mesh::IMediaRelayClient* relay = nullptr;
   mesh::IDialRegistry* dial = nullptr;
   mesh::ICircuitHopReach* circuit_reach = nullptr;
@@ -73,8 +73,7 @@ struct CallTopologyMediaRelayDeps {
    * V035: joined remotes’ invite/accept listen multiaddrs (identity → MAs).
    * SoftMigrate InferCallHopScope; missing → Wide.
    */
-  std::function<std::unordered_map<std::string, std::vector<std::string>>()>
-      resolve_remote_listen_by_peer;
+  std::function<std::unordered_map<std::string, std::vector<std::string>>()> resolve_remote_listen_by_peer;
   /**
    * V035: true when peer is LAN-confirmed (mDNS / Amp connected on link).
    * PreferLocal for private advertise requires this — same-/24 alone is insufficient.

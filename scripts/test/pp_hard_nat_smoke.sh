@@ -182,7 +182,7 @@ wait_log() {
 # upgrade_choreo <offerer_log> <answerer_log> <marks>
 upgrade_choreo() {
   local off_log="$1" ans_log="$2" marks="$3"
-  wait_log "${off_log}" '\[CallMediaBridge\] direct upgrade miss' 30 || { echo "no-first-miss" >>"${marks}"; return; }
+  wait_log "${off_log}" '\[CallDirectPath\] direct upgrade miss' 30 || { echo "no-first-miss" >>"${marks}"; return; }
   echo "first-miss" >>"${marks}"
   pp_hard_cgnat_block_p2p off
   wait_log "${off_log}" 'call-media path migrated .* path=direct' 45 || { echo "no-upgrade" >>"${marks}"; return; }

@@ -301,7 +301,7 @@ void CallMedia::HandleDirectEvent(const uint64_t serial, DirectPathEvent& event)
   }
 }
 
-void CallMedia::HandleHopEvent(const uint64_t serial, TopologyEvent& event) {
+void CallMedia::HandleHopEvent(const uint64_t serial, HopPathEvent& event) {
   if (hop_ && serial == hop_serial_) {
     hop_->Handle(event);
   }

@@ -4,7 +4,7 @@
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "lib/calls/CallPathPolicy.h"
 #include "feature/calls/CallConnectDiag.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallHopRelayDeps.h"
 
 #include <functional>
 #include <memory>

@@ -88,7 +88,7 @@ struct CallMediaHealthInput {
   /** The call's media was live and is not now (it reconnects or moves path): the call's state, not the engine's. */
   bool reconnecting = false;
   /**
-   * 1:1 reach mode from CallMediaBridge: direct | punched | circuit.
+   * 1:1 reach mode from CallDirectPath: direct | punched | circuit.
    * Used when hop is not attached (1:1 Amp also sets engine.packet_mode for capture).
    */
   std::string reach_path_kind;
