@@ -115,6 +115,23 @@ protected:
                                  --tools_running_;
                                  return std::string("[]");
                                }));
+    ToolMeta on_ui{.provider = "messaging", .domain = "communications", .risk = "read"};
+    on_ui.ui_thread = true;
+    registry.Register(MakeTool(ToolDefinition{"open_conversation", "open_conversation", Object{}}, on_ui,
+                               [this](const Object& args) -> Roe<std::string> {
+                                 const int now_running = ++tools_running_;
+                                 int seen = max_tools_running_.load();
+                                 while (now_running > seen && !max_tools_running_.compare_exchange_weak(seen, now_running)) {
+                                 }
+                                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                                 {
+                                   std::lock_guard lock(mu_);
+                                   tool_calls_.push_back(args.getString("thread_id").value_or(""));
+                                   on_ui_.push_back(AppRuntime::CurrentlyOnUI());
+                                 }
+                                 --tools_running_;
+                                 return std::string(R"({"id":"x","title":"x"})");
+                               }));
     registry.Register(MakeTool(ToolDefinition{"set_notifications", "set_notifications", Object{}},
                                ToolMeta{.provider = "settings", .domain = "settings", .risk = "write", .mutating = true},
                                [this](const Object&) -> Roe<std::string> {
@@ -195,6 +212,12 @@ protected:
     return blocks.substr(begin, blocks.find('"', begin) - begin);
   }
 
+  static Object OpenArgs(const std::string& thread_id) {
+    Object args;
+    args.set("thread_id", thread_id);
+    return args;
+  }
+
   static Object Query(const std::string& query) {
     Object args;
     args.set("query", query);
@@ -214,6 +237,7 @@ protected:
   std::mutex mu_;
   std::vector<BriefAiRequest> requests_;
   std::vector<std::string> tool_calls_;
+  std::vector<bool> on_ui_; // open_conversation: ran on the UI thread
   std::map<std::string, std::string> roles_;
 };
 
@@ -548,6 +572,37 @@ TEST_F(AgentSessionsTest, SecondThreadsLocalActionIsFullAtCapOneThenRunsInOrder)
   EXPECT_EQ(ready[0].thread_id, "ta");
   EXPECT_EQ(ready[1].thread_id, "tb");
   EXPECT_TRUE(Requests().empty()) << "app actions never reach brief_AI";
+}
+
+// Step 2b: app actions of different threads run one at a time, and those that change the screens on the UI thread.
+TEST_F(AgentSessionsTest, TwoThreadsAppActionsRunOneAtATime) {
+  Make(3);
+  EXPECT_EQ(sessions_->SubmitLocalAction("ta", "find a", "search_people", Query("a")), SubmitOutcome::Started);
+  EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Started);
+  WaitEnded("ta");
+  WaitEnded("tb");
+  auto calls = ToolCalls();
+  std::sort(calls.begin(), calls.end());
+  EXPECT_EQ(calls, (std::vector<std::string>{"a", "b"}));
+  EXPECT_EQ(max_tools_running_.load(), 1) << "two turns ran at once, their app actions did not";
+}
+
+TEST_F(AgentSessionsTest, TwoThreadsUiToolsRunInOrderOnTheUiThread) {
+  Make(3);
+  sessions_->SetLocalContactsSource([] {
+    return std::vector<LocalPlanContact>{{.id = "ca", .thread_id = "a", .remark = "A"},
+                                         {.id = "cb", .thread_id = "b", .remark = "B"}};
+  });
+  EXPECT_EQ(sessions_->SubmitLocalAction("ta", "open a", "open_conversation", OpenArgs("a")), SubmitOutcome::Started);
+  EXPECT_EQ(sessions_->SubmitLocalAction("tb", "open b", "open_conversation", OpenArgs("b")), SubmitOutcome::Started);
+  WaitEnded("ta");
+  WaitEnded("tb");
+  auto calls = ToolCalls();
+  std::sort(calls.begin(), calls.end());
+  EXPECT_EQ(calls, (std::vector<std::string>{"a", "b"}));
+  EXPECT_EQ(max_tools_running_.load(), 1);
+  std::lock_guard lock(mu_);
+  EXPECT_EQ(on_ui_, (std::vector<bool>{true, true})) << "the turns' workers handed them to the UI thread";
 }
 
 } // namespace

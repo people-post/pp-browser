@@ -16,6 +16,11 @@ struct ToolMeta {
   std::string domain;   // e.g. "people", "knowledge", "feeds", "identity"
   std::string risk;     // "read" | "write" | "destructive"
   bool mutating = false;
+  /**
+   * The tool changes what the screens show (opens a chat, saves a setting the settings page reads): ToolRegistry
+   * runs it on the UI thread while the turn's worker waits (DEV/PLAN-ai-concurrent-turns.md 2b).
+   */
+  bool ui_thread = false;
 };
 
 struct ToolDescriptor {

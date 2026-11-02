@@ -61,6 +61,12 @@ ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
   return ToolMeta{"messaging", std::move(domain), std::move(risk), mutating};
 }
 
+/** Opening a chat switches the inbox and the chat screen: on the UI thread (ToolMeta::ui_thread). */
+ToolMeta OnUi(ToolMeta meta) {
+  meta.ui_thread = true;
+  return meta;
+}
+
 } // namespace
 
 MessagingToolProvider::MessagingToolProvider(ConversationsFacade& messaging) : messaging_(messaging) {}
@@ -131,7 +137,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     properties.set("thread_id", StringProp());
     tools.push_back(MakeTool(
       ToolDefinition{"open_conversation", "Switch the active inbox thread by thread id.", ObjectSchema(std::move(properties), {"thread_id"})},
-      Meta("communications", "read", false),
+      OnUi(Meta("communications", "read", false)),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string thread_id = arguments.getString("thread_id").value_or("");
            auto thread = messaging.OpenThread(thread_id);
@@ -147,7 +153,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     properties.set("contact_id", StringProp());
     tools.push_back(MakeTool(
       ToolDefinition{"start_conversation", "Open or create a direct conversation with a local contact id.", ObjectSchema(std::move(properties), {"contact_id"})},
-      Meta("communications", "write", true),
+      OnUi(Meta("communications", "write", true)),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string contact_id = arguments.getString("contact_id").value_or("");
            auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);

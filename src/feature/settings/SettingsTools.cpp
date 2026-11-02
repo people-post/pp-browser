@@ -18,7 +18,10 @@ namespace pbr {
 namespace {
 
 ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
-  return ToolMeta{"settings", std::move(domain), std::move(risk), mutating};
+  ToolMeta meta{"settings", std::move(domain), std::move(risk), mutating};
+  // A change goes through the SessionStore the settings page reads and writes on the UI thread: made there too.
+  meta.ui_thread = mutating;
+  return meta;
 }
 
 Object MustSchema(std::string_view schema_json) {
