@@ -85,11 +85,6 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
       workflow_(threads, sessions, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
-  key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) {
-    if (CallMedia* call = call_media_.Find(call_id)) {
-      call->OnMediaKeyInstalled();
-    }
-  });
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
     if (doorway_) {
       doorway_->NotifyKeyAvailable(); // wake inbound hellos waiting for a key
@@ -685,7 +680,7 @@ std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(
 
 std::unique_ptr<CallHopDriver> CallSessionManager::MakeHopPath(const std::string& call_id, const uint64_t serial,
                                                                std::shared_ptr<std::atomic<bool>> hop_carries_media) {
-  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, contacts_, media_, hop_service_);
+  auto path = std::make_unique<CallTopologyController>(call_id, sessions_, workflow_, contacts_, media_, hop_service_);
   path->SetCarriesMediaFlag(std::move(hop_carries_media));
   path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
     return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};
@@ -908,19 +903,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
     return Error("No active call media");
   }
   call_media->SetMuted(muted);
-  auto participant = sessions_.FindParticipant(call_id, *local);
-  if (participant && participant->has_value()) {
-    (*participant)->media.audio_muted = muted;
-    (void)sessions_.UpsertParticipant(**participant);
-  }
-  auto roster = BuildRosterDetail(call_id);
-  if (roster) {
-    auto roster_json = CallControlCodec::EncodeRoster(*roster);
-    if (roster_json) {
-      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
-    }
-  }
-  NotifyRingChanged();
+  (void)workflow_.PublishLocalMedia(call_id, *local, {muted, std::nullopt});
   return {};
 }
 
@@ -943,19 +926,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (auto cam = call_media->SetCamera(enabled, display_rotation_degrees); !cam) {
     return cam.error();
   }
-  auto participant = sessions_.FindParticipant(call_id, *local);
-  if (participant && participant->has_value()) {
-    (*participant)->media.video_enabled = enabled && call_media->CameraOn();
-    (void)sessions_.UpsertParticipant(**participant);
-  }
-  auto roster = BuildRosterDetail(call_id);
-  if (roster) {
-    auto roster_json = CallControlCodec::EncodeRoster(*roster);
-    if (roster_json) {
-      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
-    }
-  }
-  NotifyRingChanged();
+  (void)workflow_.PublishLocalMedia(call_id, *local, {std::nullopt, enabled && call_media->CameraOn()});
   return {};
 }
 
@@ -1390,6 +1361,17 @@ Roe<void> CallSessionManager::HandleInboundLeave(const std::string& detail_json,
   return workflow_.HandleInboundLeave(detail_json, sender_identity, local_identity);
 }
 
+Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_json,
+                                                    const std::string& sender_identity) {
+  auto taken = key_exchange_.HandleInbound(detail_json, sender_identity);
+  if (!taken) {
+    return taken.error();
+  }
+  if (*taken) {
+    workflow_.AdoptMediaEpoch((*taken)->call_id, (*taken)->epoch, (*taken)->key_id);
+  }
+  return {};
+}
 
 Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json) {
   return workflow_.HandleInboundRoster(detail_json);
@@ -1492,7 +1474,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallRoster:
     return HandleInboundRoster(detail_json);
   case CallControlType::CallMediaKey:
-    return key_exchange_.HandleInbound(detail_json, sender_identity);
+    return HandleInboundMediaKey(detail_json, sender_identity);
   case CallControlType::CallSdp:
   case CallControlType::CallIce:
     log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;

@@ -861,6 +861,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
   if (!key) {
     return key.error();
   }
+  AdoptMediaEpoch(call_id, key->epoch, key->key_id);
 
   auto roster = host_.wire.build_roster_detail(call_id);
   if (!roster) {
@@ -949,6 +950,84 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
     host_.wire.notify_ring_changed();
   }
   return {};
+}
+
+void CallSessionWorkflow::AdoptMediaEpoch(const std::string& call_id, const uint32_t epoch, const std::string& key_id) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return;
+  }
+  const auto step = CallMediaKeyExchange::StepFor((*session)->media_epoch, epoch);
+  if (step == CallMediaKeyExchange::EpochStep::Ignore) {
+    return;
+  }
+  if (step == CallMediaKeyExchange::EpochStep::Advance) {
+    (*session)->media_epoch = epoch;
+    (*session)->media_key_id = key_id;
+    (void)sessions_.UpsertSession(**session);
+  }
+  if (CallMedia* call = call_media_.Find(call_id)) {
+    call->OnMediaKeyInstalled();
+  }
+}
+
+Roe<void> CallSessionWorkflow::PublishLocalMedia(const std::string& call_id, const std::string& local_identity,
+                                                 const LocalMedia media) {
+  auto participant = sessions_.FindParticipant(call_id, local_identity);
+  if (participant && participant->has_value()) {
+    if (media.audio_muted) {
+      (*participant)->media.audio_muted = *media.audio_muted;
+    }
+    if (media.video_enabled) {
+      (*participant)->media.video_enabled = *media.video_enabled;
+    }
+    (void)sessions_.UpsertParticipant(**participant);
+  }
+  auto roster = host_.wire.build_roster_detail(call_id);
+  if (!roster) {
+    return roster.error();
+  }
+  auto roster_json = CallControlCodec::EncodeRoster(*roster);
+  if (!roster_json) {
+    return roster_json.error();
+  }
+  (void)host_.wire.fan_out_joined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", local_identity);
+  host_.wire.notify_ring_changed();
+  return {};
+}
+
+void CallSessionWorkflow::NoteCallHop(const std::string& call_id, const std::string& hop_peer_id) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->sfu_hint.value_or("") == hop_peer_id) {
+    return;
+  }
+  if (hop_peer_id.empty()) {
+    (*session)->sfu_hint.reset();
+  } else {
+    (*session)->sfu_hint = hop_peer_id;
+  }
+  (void)sessions_.UpsertSession(**session);
+}
+
+void CallSessionWorkflow::NotePlannedHop(const std::string& call_id, const CallPlannedHop& hop) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return;
+  }
+  (*session)->planned_hop = hop;
+  (void)sessions_.UpsertSession(**session);
+}
+
+void CallSessionWorkflow::NoteParticipantLeft(const std::string& call_id, const std::string& identity) {
+  CallParticipant participant;
+  if (auto found = sessions_.FindParticipant(call_id, identity); found && found->has_value()) {
+    participant = **found;
+  }
+  participant.call_id = call_id;
+  participant.identity = identity;
+  participant.state = CallParticipantState::Left;
+  participant.left_at = util::NowUnixMs();
+  (void)sessions_.UpsertParticipant(participant);
 }
 
 bool CallSessionWorkflow::StillInCall(const std::string& call_id) const {

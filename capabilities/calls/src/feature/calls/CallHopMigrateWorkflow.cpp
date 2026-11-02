@@ -50,8 +50,9 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 
 } // namespace
 
-CallHopMigrateWorkflow::CallHopMigrateWorkflow(std::string call_id, ICallSessionStore& sessions, MediaEngine& media)
-    : call_id_(std::move(call_id)), sessions_(sessions), media_(media) {
+CallHopMigrateWorkflow::CallHopMigrateWorkflow(std::string call_id, const ICallSessionReader& sessions,
+                                               ICallSessionNotes& notes, MediaEngine& media)
+    : call_id_(std::move(call_id)), sessions_(sessions), notes_(notes), media_(media) {
   redirectLogger("CallHopMigrateWorkflow");
 }
 
@@ -315,8 +316,8 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
   flight_.attaching_hop_peer_id.clear();
   if (pick.session) {
     pick.session->sfu_hint.reset();
-    (void)sessions_.UpsertSession(*pick.session);
   }
+  notes_.NoteCallHop(pick.call_id, {});
   return false;
 }
 
@@ -459,8 +460,8 @@ void CallHopMigrateWorkflow::OnPickedHopAttached(const std::shared_ptr<HopPick>&
 void CallHopMigrateWorkflow::RecordPickedHop(HopPick& pick, const std::string& hop_peer_id) {
   if (pick.session) {
     pick.session->sfu_hint = hop_peer_id;
-    (void)sessions_.UpsertSession(*pick.session);
   }
+  notes_.NoteCallHop(pick.call_id, hop_peer_id);
 }
 
 void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
@@ -753,11 +754,8 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   InstallMediaKey(call_id);  // and one that arrived while attaching (the ring holds the epoch it started with)
   // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
   // join request — V053) names the hop the call is on, not only the picker's.
-  if (auto session = sessions_.LoadSession(call_id);
-      session && session->has_value() && !at.attach.hop_peer_id.empty() &&
-      (*session)->sfu_hint.value_or("") != at.attach.hop_peer_id) {
-    (*session)->sfu_hint = at.attach.hop_peer_id;
-    (void)sessions_.UpsertSession(**session);
+  if (!at.attach.hop_peer_id.empty()) {
+    notes_.NoteCallHop(call_id, at.attach.hop_peer_id);
   }
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();

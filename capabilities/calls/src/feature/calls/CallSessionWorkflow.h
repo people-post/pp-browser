@@ -13,6 +13,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "feature/calls/LiveCallMedia.h"
+#include "feature/calls/ICallSessionNotes.h"
 
 #include <functional>
 #include <optional>
@@ -27,10 +28,11 @@ namespace pbr {
 
 /**
  * Durable session / roster / invite-leave workflow (V044).
- * Owns store mutations + CallSessionLogic transitions. Side effects via HostPorts from
+ * The session rows' one writer (V055) + CallSessionLogic transitions: the rest of calls reads the rows,
+ * and a call's group path records its hop through ICallSessionNotes. Side effects via HostPorts from
  * CallSessionManager — not a second chrome SM. Nested clusters speak session needs (V048).
  */
-class CallSessionWorkflow : public Module {
+class CallSessionWorkflow : public Module, public ICallSessionNotes {
 public:
   /** Delivery / roster wire + chrome activity banners. */
   struct WirePorts {
@@ -173,6 +175,22 @@ public:
   /** Every end of a call on this device funnels here; `reason` is what ended it (LiveCall). */
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
+  /**
+   * The call's media key moved (ours rotated, or a peer's taken in): epochs only move forward — a newer
+   * one is recorded on the session — and the call's media installs it (the current one again too).
+   */
+  void AdoptMediaEpoch(const std::string& call_id, uint32_t epoch, const std::string& key_id);
+  /** This device's mic / camera in `call_id` changed: its participant row, then the roster to the others. */
+  struct LocalMedia {
+    std::optional<bool> audio_muted;
+    std::optional<bool> video_enabled;
+  };
+  Roe<void> PublishLocalMedia(const std::string& call_id, const std::string& local_identity, LocalMedia media);
+
+  // ICallSessionNotes (the call's group path)
+  void NoteCallHop(const std::string& call_id, const std::string& hop_peer_id) override;
+  void NotePlannedHop(const std::string& call_id, const CallPlannedHop& hop) override;
+  void NoteParticipantLeft(const std::string& call_id, const std::string& identity) override;
 
   void SweepExpiredInvites();
   void AbandonOrphanedCallsAfterRestart();

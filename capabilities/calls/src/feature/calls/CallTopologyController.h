@@ -5,7 +5,8 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
+#include "feature/calls/ICallSessionNotes.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/people/IContactBook.h"
@@ -91,8 +92,8 @@ public:
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
   /** The group path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
-  CallTopologyController(std::string call_id, ICallSessionStore& sessions, const IContactBook& contacts,
-                         MediaEngine& media, CallHopService& hops);
+  CallTopologyController(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
+                         const IContactBook& contacts, MediaEngine& media, CallHopService& hops);
   const std::string& CallId() const { return call_id_; }
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
@@ -308,7 +309,9 @@ private:
   /** The one call this path serves. */
   const std::string call_id_;
   HostPorts host_;
-  ICallSessionStore& sessions_;
+  const ICallSessionReader& sessions_;
+  /** The call's row changes go to its one writer (the session workflow). */
+  ICallSessionNotes& notes_;
   const IContactBook& contacts_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;

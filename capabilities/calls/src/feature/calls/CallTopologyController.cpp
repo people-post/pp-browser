@@ -36,9 +36,10 @@
 
 namespace pbr {
 
-CallTopologyController::CallTopologyController(std::string call_id, ICallSessionStore& sessions,
-                                               const IContactBook& contacts, MediaEngine& media, CallHopService& hops)
-    : hop_migrate_(call_id, sessions, media),
+CallTopologyController::CallTopologyController(std::string call_id, const ICallSessionReader& sessions,
+                                               ICallSessionNotes& notes, const IContactBook& contacts,
+                                               MediaEngine& media, CallHopService& hops)
+    : hop_migrate_(call_id, sessions, notes, media),
       flight_(hop_migrate_.Flight()),
       attach_wait_(hop_migrate_.AttachWaitState()),
       inbound_gate_(hop_migrate_.InboundGate()),
@@ -47,6 +48,7 @@ CallTopologyController::CallTopologyController(std::string call_id, ICallSession
       sfu_(hop_migrate_.Sfu()),
       call_id_(std::move(call_id)),
       sessions_(sessions),
+      notes_(notes),
       contacts_(contacts),
       media_(media),
       hops_(hops),
@@ -441,12 +443,7 @@ void CallTopologyController::EjectParticipantAfterMigrateFailure(const std::stri
     (void)host_.send_direct(identity, CallControlType::CallLeave, *detail, "Left the call");
   }
 
-  CallParticipant participant;
-  participant.call_id = call_id;
-  participant.identity = identity;
-  participant.state = CallParticipantState::Left;
-  participant.left_at = util::NowUnixMs();
-  (void)sessions_.UpsertParticipant(participant);
+  notes_.NoteParticipantLeft(call_id, identity);
 
   if (detail) {
     auto local = host_.local_relay_identity();
@@ -546,7 +543,10 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id, 
   auto local = host_.local_relay_identity();
   const auto outcome =
       planning_.ResolveAtJoin(call_id, joiner_identity, JoinedRemoteIdentities(call_id, local ? *local : std::string()));
-  if (outcome == CallHopPlanning::JoinOutcome::RefuseJoiner) {
+  if (outcome.adjusted_plan) {
+    notes_.NotePlannedHop(call_id, *outcome.adjusted_plan);
+  }
+  if (outcome.action == CallHopPlanning::JoinOutcome::Action::RefuseJoiner) {
     RefuseGuestNoSharedHop(call_id, joiner_identity);
     return false;
   }
@@ -1256,11 +1256,7 @@ bool CallTopologyController::LeaveHopForOwnerMove(const std::string& call_id, co
   sfu_.SetAttached(false);
   flight_.attached_hop_peer_id.clear();
   flight_.attaching_hop_peer_id.clear();
-  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
-    CallSession moved = **session;
-    moved.sfu_hint.reset();
-    (void)sessions_.UpsertSession(moved);
-  }
+  notes_.NoteCallHop(call_id, {});
   return true;
 }
 

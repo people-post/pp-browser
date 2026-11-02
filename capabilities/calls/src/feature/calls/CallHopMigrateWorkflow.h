@@ -6,7 +6,8 @@
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopPlannerLogic.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
+#include "feature/calls/ICallSessionNotes.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -216,7 +217,8 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(std::string call_id, ICallSessionStore& sessions, MediaEngine& media);
+  CallHopMigrateWorkflow(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
+                         MediaEngine& media);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
@@ -342,7 +344,9 @@ private:
 
   /** The one call this workflow's hop flows serve (its group path's). */
   const std::string call_id_;
-  ICallSessionStore& sessions_;
+  const ICallSessionReader& sessions_;
+  /** The hop the call is on goes to the rows' one writer (the session workflow). */
+  ICallSessionNotes& notes_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   const CallTopologyMediaRelayDeps* relay_deps_ = nullptr;

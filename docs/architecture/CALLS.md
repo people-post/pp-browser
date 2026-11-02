@@ -321,7 +321,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → gui → feature → domain �
 
 | Concern | Layer | Today | Target |
 |---------|-------|-------|--------|
-| Session rows, invites, participants | `lib/calls` | `ICallSessionStore`, `CallTypes`, `CallSessionLogic`; what a call's rows say and a peer's roster applied to them in **`CallSessionQueries`** (`call_queries::*`, `ApplyCallRosterToStore`) | Unchanged |
+| Session rows, invites, participants | `lib/calls` | `ICallSessionStore` (written only by the session workflow) over `ICallSessionReader` (what every other part holds), `CallTypes`, `CallSessionLogic`; what a call's rows say and a peer's roster applied to them in **`CallSessionQueries`** (`call_queries::*`, `ApplyCallRosterToStore`) | Unchanged |
 | Control encode/decode | `lib/calls` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL | `lib/media` | `MediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `lib/calls` | `CallMediaAdaptation`, `CallMediaTopology` (the engine applies `MediaTargets`) | Moved from `lib/media` (CR023 step 2) |
@@ -335,7 +335,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → gui → feature → domain �
 | Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`lib/calls`) | Schedule/Key/Connect/TX-only/Release; health timer |
 | Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`lib/calls`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
 | Media keys wrap/unwrap | `lib/calls` | `ICallMediaKeyStore` | Unchanged |
-| Media keys between peers | `lib/calls` | **`CallMediaKeyExchange`** (owned by `CallSessionManager`, which fills its `Transport` from `CallControlClient`) | Mint (new call / rotation), wrap into the invite, send `CallMediaKey` (accept, resend, rotation), take a peer's wrapped key → "key ready" (V015 answerer start); the workflow decides when |
+| Media keys between peers | `lib/calls` | **`CallMediaKeyExchange`** (owned by `CallSessionManager`, which fills its `Transport` from `CallControlClient`) | Mint (new call / rotation), wrap into the invite, send `CallMediaKey` (accept, resend, rotation), take a peer's wrapped key → "key ready" (V015 answerer start); the workflow decides when and moves the call's row to the epoch (`AdoptMediaEpoch`: forward only, `StepFor`) — the exchange never writes the row |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `lib/media` + `feature/ui` | `CallMediaHealth`, `MediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone, with a **Network** line when the call's link is known — smoothed round trip and Reliable resend % between 2 s samples (`CallLinkHealthBetween`) of the association the call rides: the 1:1 call-media link (`ICallMediaTransport::ActiveLinkCounters`; a relayed call reads the association under its carrier) or, on a hop, the link to the relay (`CallHopHealth::link`). Informative only: media is BestEffort, so these figures do not grade the call; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
 | Blind SFU protocol | pp-cpp-mesh | `MediaRelayServer` | Unchanged |
@@ -513,7 +513,7 @@ ApplyInboundControl(type)                     (CallSessionManager, calls owner)
   CallInvite / Accept / JoinRequest / Decline / Leave / Roster / Ended / SfuAttach* / HopRefuse
                           → CallSessionWorkflow::HandleInbound* (store rows, LiveCalls, then the paths:
                             Topology.OnRemoteAcceptJoined / OnInboundSfuAttach, media stop on end)
-  CallMediaKey            → CallMediaKeyExchange
+  CallMediaKey            → CallMediaKeyExchange (the key taken) → CallSessionWorkflow::AdoptMediaEpoch
   CallCircuitR1 / CapsUpdate / PunchOffer / PunchAnswer → the reach signals
   CallSdp / CallIce / CallSummary → ignored (wire compat; the summary is chat history)
 ```
@@ -587,6 +587,7 @@ events.
 - **Planners** (direct, hop) keep their own phase tables (`Decide*PlannerPhase`) and send events into `LiveCall`; they never set the call's media state beside their own phase.
 - **The seat** (`CallMediaSeat`) is the exclusive lock only: holder, epoch, attach ticket.
 - **The engine** holds no call connection state: whether media flows on the call's path is the path's fact (its stream committed, or the hop attached), reported to `LiveCall`; the screen reads the call (`IMediaView` has no connection state).
+- **The stored rows** (sessions, participants, invites) have one writer, the session workflow; every other part holds `ICallSessionReader`. A call's group path records its hop, the one planning adjustment and an ejected participant through the workflow's `ICallSessionNotes` — each note changes one field of the row as it is then, never a whole row read earlier. The key exchange hands the workflow the epoch it minted or took; the session manager's mic / camera changes go through `PublishLocalMedia`.
 - **The screen** reads one published snapshot (`CallUiState`). `DecideInCallStatus` is pure over it. The presenter keeps only UI latches (ring shown, a click the owner has not taken yet).
 
 A 1:1 stream that ends because the call moves onto a hop not attached yet is `Hop: Waiting` — nothing
@@ -605,7 +606,8 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `capabilities/calls/src/lib/calls/LiveCall.*` | The calls on this device: call state, per-call media progress, the V037 projection (phase / Status / gates) |
 | `capabilities/calls/src/feature/calls/LiveCallMedia.*` | Each live call's `CallMedia` (one per admission), the media resources they drive, stop / stop-except |
 | `capabilities/calls/src/feature/calls/CallSessionManager.h` | `CallDirectMediaPorts` (the stack's direct-path hooks); private `Make*Ports` build the owned parts' ports |
-| `capabilities/calls/src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |
+| `capabilities/calls/src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045), the rows' one writer (V055) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |
+| `capabilities/calls/src/feature/calls/ICallSessionNotes.h` | What a call's group path records on its row (hop, planned hop, an ejected participant), through the workflow |
 | `capabilities/calls/src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
 | `capabilities/calls/src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
 | `capabilities/calls/src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` / `CallDirectSeatPorts` (V048) |
@@ -632,7 +634,7 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `src/gui/CallController.*` | Renders `CallScreen` (ring + in-call UI, ringtone, levels, video, metrics) |
 | `capabilities/media/src/lib/media/MediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `capabilities/calls/src/lib/calls/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
-| `capabilities/calls/src/lib/calls/ICallSessionStore.*` | Sessions, participants, invites (the port; `CallStores` hands both to `CallStack`); SQLite: `src/lib/storage/SqliteCallSessionStore` |
+| `capabilities/calls/src/lib/calls/ICallSessionStore.*`, `ICallSessionReader.h` | Sessions, participants, invites (the port, and its read side; `CallStores` hands both to `CallStack`); SQLite: `src/lib/storage/SqliteCallSessionStore` |
 | `capabilities/calls/src/lib/calls/CallSessionQueries.*` | What a call's rows say (who is in it, who is awaited, sticky initiator, our unanswered call to a peer, a peer still to answer our 1:1); a peer's roster applied (our own row never overridden, no resurrection, no demotion) |
 | `capabilities/calls/src/lib/calls/CallSummaryLogic.*` | The history entry a device writes when a call ends (who reports, answered / outcome, talk time, local only) |
 | `capabilities/calls/src/lib/calls/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick / roster join stamps and co-invitees |

@@ -16,7 +16,7 @@
 namespace pbr {
 
 CallControlClient::CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account,
-                                     ICallSessionStore& sessions, const CallDeliveryPorts& delivery)
+                                     const ICallSessionReader& sessions, const CallDeliveryPorts& delivery)
     : transcript_(transcript), account_(account), sessions_(sessions), delivery_(delivery) {
   redirectLogger("CallControlClient");
 }

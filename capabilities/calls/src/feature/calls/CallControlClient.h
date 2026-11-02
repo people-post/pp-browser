@@ -5,7 +5,7 @@
 #include "common/thread/IThreadTranscript.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallSummaryLogic.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
 #include "common/directory/ILocalAccount.h"
 #include "feature/calls/CallDeliveryPorts.h"
 
@@ -25,7 +25,7 @@ namespace pbr {
  */
 class CallControlClient : public Module {
 public:
-  CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account, ICallSessionStore& sessions,
+  CallControlClient(IThreadTranscript& transcript, const ILocalAccount& account, const ICallSessionReader& sessions,
                     const CallDeliveryPorts& delivery);
 
   Roe<std::string> LocalRelayIdentity() const;
@@ -58,7 +58,7 @@ public:
 private:
   IThreadTranscript& transcript_;
   const ILocalAccount& account_;
-  ICallSessionStore& sessions_;
+  const ICallSessionReader& sessions_;
   const CallDeliveryPorts& delivery_;
   /**
    * AutoKey key_init from ensure_peer_session_key — rides the next SendDirect to that peer (the

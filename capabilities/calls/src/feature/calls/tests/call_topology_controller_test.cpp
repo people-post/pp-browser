@@ -311,6 +311,36 @@ private:
   bool attached_ = false;
 };
 
+/** The rows' writer as the topology sees it (the session workflow in the product): writes the store. */
+class StoreSessionNotes final : public ICallSessionNotes {
+public:
+  explicit StoreSessionNotes(const ICallSessionStore& sessions) : sessions_(sessions) {}
+  void NoteCallHop(const std::string& call_id, const std::string& hop_peer_id) override {
+    auto session = sessions_.LoadSession(call_id);
+    if (session && session->has_value()) {
+      (*session)->sfu_hint = hop_peer_id.empty() ? std::nullopt : std::optional<std::string>(hop_peer_id);
+      (void)sessions_.UpsertSession(**session);
+    }
+  }
+  void NotePlannedHop(const std::string& call_id, const CallPlannedHop& hop) override {
+    auto session = sessions_.LoadSession(call_id);
+    if (session && session->has_value()) {
+      (*session)->planned_hop = hop;
+      (void)sessions_.UpsertSession(**session);
+    }
+  }
+  void NoteParticipantLeft(const std::string& call_id, const std::string& identity) override {
+    CallParticipant row;
+    row.call_id = call_id;
+    row.identity = identity;
+    row.state = CallParticipantState::Left;
+    (void)sessions_.UpsertParticipant(row);
+  }
+
+private:
+  const ICallSessionStore& sessions_;
+};
+
 class CallTopologyControllerTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -320,6 +350,7 @@ protected:
     store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
     sessions_ = std::make_unique<InMemoryCallSessionStore>();
+    notes_ = std::make_unique<StoreSessionNotes>(*sessions_);
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
@@ -356,6 +387,7 @@ protected:
     topo_.reset();
     media_.reset();
     contacts_.reset();
+    notes_.reset();
     sessions_.reset();
     store_.reset();
     std::filesystem::remove_all(data_dir_);
@@ -446,6 +478,7 @@ protected:
   std::filesystem::path data_dir_;
   std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<InMemoryCallSessionStore> sessions_;
+  std::unique_ptr<StoreSessionNotes> notes_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<MediaEngine> media_;
@@ -469,7 +502,7 @@ protected:
 
   /** `call_id`'s group path (V056: one per call), wired as the session manager builds it. */
   std::unique_ptr<CallTopologyController> BuildTopology(const std::string& call_id, OwnerOutbox<TopologyEvent> events) {
-    auto topo = std::make_unique<CallTopologyController>(call_id, *sessions_, *contacts_, *media_, *hops_);
+    auto topo = std::make_unique<CallTopologyController>(call_id, *sessions_, *notes_, *contacts_, *media_, *hops_);
     topo->SetOutbox(std::move(events)); // the fixture plays the session manager
     topo->SetReports(topo_reports_.Get());
     topo->SetMediaKeyStore(keys_.get());

@@ -48,7 +48,7 @@ logging::Logger& DirectReceiveLog() {
 
 } // namespace
 
-CallMediaBridge::CallMediaBridge(std::string call_id, CallMediaHost& host, ICallSessionStore& sessions,
+CallMediaBridge::CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
                                  ICallMediaKeyStore& media_keys, MediaEngine& media, ICallMediaTransport& direct,
                                  mesh::PeerReachPorts reach)
     : call_id_(std::move(call_id)),

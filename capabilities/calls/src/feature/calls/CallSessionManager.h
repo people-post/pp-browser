@@ -362,6 +362,8 @@ private:
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
+  /** A peer's CallMediaKey: its key taken, the workflow moves the call to its epoch. */
+  Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
@@ -378,7 +380,8 @@ private:
   void TellOwnDevicesAnswered(const std::string& call_id, bool accepted);
 
   IContactBook& contacts_;
-  ICallSessionStore& sessions_;
+  /** Read-only here: the workflow writes the rows (V055). */
+  const ICallSessionReader& sessions_;
   ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   MediaEngine& media_;

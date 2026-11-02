@@ -4,7 +4,7 @@
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
 #include "lib/people/IContactBook.h"
 #include "common/runtime/OwnerOutbox.h"
 
@@ -20,7 +20,7 @@ namespace pbr {
  */
 class CallHopService {
 public:
-  CallHopService(ICallSessionStore& sessions, const IContactBook& contacts);
+  CallHopService(const ICallSessionReader& sessions, const IContactBook& contacts);
   CallHopService(const CallHopService&) = delete;
   CallHopService& operator=(const CallHopService&) = delete;
 

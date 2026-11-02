@@ -2,7 +2,7 @@
 
 #include "lib/calls/CallPathPolicy.h"
 #include "lib/media/MediaEngine.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
@@ -65,8 +65,9 @@ struct CallDirectSeatPorts {
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   /** The 1:1 path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
-  CallMediaBridge(std::string call_id, CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                  MediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
+  CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
+                  ICallMediaKeyStore& media_keys, MediaEngine& media, ICallMediaTransport& direct,
+                  mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
   /** The call's "the hop carries its media" flag: once set, 1:1 frames are dropped (before any traffic). */
   void SetHopCarriesMediaFlag(std::shared_ptr<const std::atomic<bool>> flag) {
@@ -340,7 +341,7 @@ private:
   /** The one call this path serves. */
   const std::string call_id_;
   CallMediaHost& host_;
-  ICallSessionStore& sessions_;
+  const ICallSessionReader& sessions_;
   ICallMediaKeyStore& media_keys_;
   MediaEngine& media_;
   ICallMediaTransport& direct_;
