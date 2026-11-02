@@ -41,10 +41,37 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
   return total;
 }
 
+std::atomic<bool> g_first_hop_local_for_test{false};
+
+/**
+ * https only, to public addresses only, no proxy: a proxy from the environment would connect to the proxy's
+ * address, not the target's, so OpenPublicOnlySocket would be checking the wrong host and a proxy could tunnel
+ * to an internal address anyway. Redirects (when followed) get the same checks: the protocol list for them and
+ * the socket check on every connection.
+ */
+void ApplyPublicOnly(CURL* curl, PublicOnlySocketTestExemption& exemption) {
+  const bool first_hop_local = g_first_hop_local_for_test.load();
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, first_hop_local ? "http,https" : "https");
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+  curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
+  if (first_hop_local) {
+    exemption.opens_left = 1;
+    curl_easy_setopt(curl, CURLOPT_OPENSOCKETDATA, &exemption);
+  }
+  curl_easy_setopt(curl, CURLOPT_PROXY, "");
+  curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+}
+
+constexpr long kMaxRedirects = 2;
+
+void ApplyFollowRedirects(CURL* curl) {
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, kMaxRedirects);
+}
+
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
-                          const std::map<std::string, std::string>& headers,
-                          std::optional<size_t> max_response_bytes, HttpTimeout timeout,
-                          bool restrict_to_public_https) {
+                          const std::map<std::string, std::string>& headers, std::optional<size_t> max_response_bytes,
+                          HttpTimeout timeout, bool restrict_to_public_https, bool follow_redirects = false) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
@@ -52,15 +79,12 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
 
   ApplyCurlSslDefaults(curl);
 
+  PublicOnlySocketTestExemption exemption;
   if (restrict_to_public_https) {
-    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-    curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
-    // A proxy from the environment would connect to the proxy's address, not the target's, so
-    // OpenPublicOnlySocket would be checking the wrong host and a proxy could tunnel to an
-    // internal address anyway.
-    curl_easy_setopt(curl, CURLOPT_PROXY, "");
-    curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+    ApplyPublicOnly(curl, exemption);
+  }
+  if (follow_redirects) {
+    ApplyFollowRedirects(curl);
   }
 
   ResponseBuffer response_body{.max_bytes = max_response_bytes};
@@ -90,6 +114,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   const CURLcode code = curl_easy_perform(curl);
   long status_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+  long redirect_count = 0;
+  curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &redirect_count);
 
   if (header_list) {
     curl_slist_free_all(header_list);
@@ -110,7 +136,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
                              std::string("HTTP request failed: ") + curl_easy_strerror(code));
   }
 
-  return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
+  return HttpResponse{
+      .status_code = status_code, .body = std::move(response_body.body), .redirect_count = redirect_count};
 }
 
 std::atomic<long> g_min_bytes_per_s{2048};
@@ -125,14 +152,6 @@ void ApplyStallLimit(CURL* curl) {
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
   curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, g_min_bytes_per_s.load());
   curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, g_speed_window_s.load());
-}
-
-void ApplyPublicOnly(CURL* curl) {
-  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
-  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
-  curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
-  curl_easy_setopt(curl, CURLOPT_PROXY, "");
-  curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
 }
 
 struct ProgressState {
@@ -195,6 +214,10 @@ size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* so
 void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
   g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
   g_speed_window_s.store(window_s > 0 ? window_s : 30);
+}
+
+void HttpClient::SetFirstHopLocalForTest(const bool allow) {
+  g_first_hop_local_for_test.store(allow);
 }
 
 Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
@@ -260,7 +283,8 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
 Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::string& dest_path,
                                             const uint64_t max_bytes, const HttpProgress& progress,
                                             const bool restrict_to_public_https,
-                                            const std::map<std::string, std::string>& headers) {
+                                            const std::map<std::string, std::string>& headers,
+                                            const bool follow_redirects) {
   std::error_code ec;
   std::filesystem::remove(dest_path, ec);
   FileSink sink;
@@ -277,8 +301,12 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
   }
   sink.curl = curl;
   ApplyCurlSslDefaults(curl);
+  PublicOnlySocketTestExemption exemption;
   if (restrict_to_public_https) {
-    ApplyPublicOnly(curl);
+    ApplyPublicOnly(curl, exemption);
+  }
+  if (follow_redirects) {
+    ApplyFollowRedirects(curl);
   }
   ProgressState state{.callback = &progress};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -301,6 +329,8 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
   const CURLcode code = curl_easy_perform(curl);
   long status_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+  long redirect_count = 0;
+  curl_easy_getinfo(curl, CURLINFO_REDIRECT_COUNT, &redirect_count);
   if (header_list) {
     curl_slist_free_all(header_list);
   }
@@ -327,15 +357,15 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
   }
   if (status_code < 200 || status_code >= 300) {
     std::filesystem::remove(dest_path, ec);
-    return HttpFileDownload{.status_code = status_code, .bytes = 0};
+    return HttpFileDownload{.status_code = status_code, .bytes = 0, .redirect_count = redirect_count};
   }
-  return HttpFileDownload{.status_code = status_code, .bytes = sink.written};
+  return HttpFileDownload{.status_code = status_code, .bytes = sink.written, .redirect_count = redirect_count};
 }
 
 Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::string, std::string>& headers,
                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
-                                  bool restrict_to_public_https) {
-  return Perform(url, "GET", {}, headers, max_response_bytes, timeout, restrict_to_public_https);
+                                  bool restrict_to_public_https, const bool follow_redirects) {
+  return Perform(url, "GET", {}, headers, max_response_bytes, timeout, restrict_to_public_https, follow_redirects);
 }
 
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,

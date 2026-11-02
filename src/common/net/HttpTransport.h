@@ -12,6 +12,8 @@ namespace pbr {
 struct HttpResponse {
   long status_code = 0;
   std::string body;
+  /** Redirects followed to reach this answer (only when the caller asked to follow them). */
+  long redirect_count = 0;
 };
 
 /**

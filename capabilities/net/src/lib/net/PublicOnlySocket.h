@@ -12,4 +12,12 @@ namespace pbr {
  */
 curl_socket_t OpenPublicOnlySocket(void* clientp, curlsocktype purpose, struct curl_sockaddr* address);
 
+/**
+ * `clientp` of OpenPublicOnlySocket (CURLOPT_OPENSOCKETDATA), set only under HttpClient::SetFirstHopLocalForTest:
+ * the first `opens_left` connections skip the address check. Null (the app): every connection is checked.
+ */
+struct PublicOnlySocketTestExemption {
+  int opens_left = 0;
+};
+
 } // namespace pbr
