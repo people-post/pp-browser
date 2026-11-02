@@ -5,6 +5,7 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/presenters/ChatPresenter.h"
+#include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
@@ -308,6 +309,26 @@ private:
   void FillSessionListAfterLayout();
   ui::Element* SessionListElement() const;
   void OnJumpToLatest();
+  // Search inside the open chat (DEV/PLAN-chat-search.md). The decisions are ThreadSearchSession's; these bind
+  // them to the screen, build the index on a worker and scroll to the hits.
+  void OnOpenSearch() override;
+  /** The one way the search ends (Cancel, Esc, another chat, background, profile reset): the index is dropped.
+   *  `refocus_composer`: the user closed it, so typing goes on in the composer. */
+  void CloseSearch(bool refocus_composer = false);
+  void OnSearchQueryChanged();
+  /** Enter in the search box: searches what was just typed, else steps to the next older hit. */
+  void OnSearchEnter();
+  void OnSearchOlder();
+  void OnSearchNewer();
+  /** Copies the session's view into the data model and marks the shown rows again (no rows rebuilt). */
+  void ApplySearchView();
+  /** Scrolls to the session's pending jump; a hit whose message is gone is dropped and the next one taken. */
+  void JumpToSearchHit();
+  /** Reads and decrypts the chat on a worker, indexes it there; the UI thread gets the index for `generation`. */
+  void StartSearchIndex(uint64_t generation);
+  /** Messages of the searched chat were added or removed: rebuild the index (at most every 2 s, one at a time). */
+  void OnSearchMessagesChanged();
+  void OnAgentTurnEnded(const std::string& thread_id) override;
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
 
@@ -395,6 +416,16 @@ private:
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
+  ThreadSearchSession search_;            // search inside the open chat; its index lives only while open
+  std::string search_thread_;             // the chat it was opened on
+  std::string search_thread_tail_;        // that chat's newest message id when last checked
+  std::unordered_set<std::string> search_hit_ids_; // the rows whose matching text the decorator marks
+  std::string search_current_id_;
+  std::string search_folded_query_;
+  /** Typing settles for kSearchDebounce before the query is applied. */
+  std::optional<std::chrono::steady_clock::time_point> search_query_due_;
+  enum class SearchFocus { None, Input, Composer };
+  SearchFocus search_focus_ = SearchFocus::None; // moved after the next layout (data-if shows the element first)
   SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown

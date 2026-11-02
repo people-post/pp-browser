@@ -116,6 +116,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.show_forget_memory = false;
   view_.show_sync_with_peer = false;
   view_.show_thread_menu = false;
+  view_.show_search = false;
   view_.show_gap_banner = false;
   view_.show_older_history_hint = false;
   view_.show_compromised_banner = false;
@@ -381,8 +382,10 @@ void ChatThreadChrome::Update() {
       view_.thread_subtitle = roster_label.c_str();
       view_.draft_placeholder = Tr(group_dissolved ? "chat.group.dissolved_composer" : "chat.group.placeholder").c_str();
     }
+    // Search inside the chat: every open chat (direct, group, AI) once messaging is ready.
+    view_.show_search = messaging_ready_;
     view_.show_thread_menu =
-        view_.show_thread_actions || view_.show_forget_memory || view_.show_sync_with_peer;
+        view_.show_thread_actions || view_.show_forget_memory || view_.show_sync_with_peer || view_.show_search;
     UpdatePeerLink();
   } else {
     view_.thread_title = "";
@@ -413,6 +416,7 @@ void ChatThreadChrome::Update() {
     view_.show_forget_memory = false;
     view_.show_sync_with_peer = false;
     view_.show_thread_menu = false;
+    view_.show_search = false;
     view_.show_gap_banner = false;
     view_.show_older_history_hint = false;
     view_.show_compromised_banner = false;

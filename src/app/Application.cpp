@@ -1521,6 +1521,11 @@ bool Application::MountPresenters(ui::Context* context) {
       chat_->ReactWithEmoji(message_id, emoji);
     });
   };
+  emoji_notify.close_if_open = [this]() {
+    if (emoji_picker_->IsOpen()) {
+      emoji_picker_->Close();
+    }
+  };
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
