@@ -261,7 +261,8 @@ struct QrScanner::State {
       auto idle_wait = frame_period / 2;
       if (frame) {
         last_frame = capture_started;
-        idle_wait = frame_period;
+        // Capped: a jittery camera must not make the next poll land just before its frame and then sleep half a period.
+        idle_wait = std::min(frame_period, std::chrono::milliseconds(16));
         auto next = processor.Process(std::move(*frame), last_frame, zoom_state);
         stats.Frame(last_frame, processor);
         const bool complete = next.text.has_value();

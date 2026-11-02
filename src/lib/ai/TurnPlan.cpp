@@ -110,7 +110,7 @@ Roe<TurnPlan> ParseTurnPlanJson(const Object& doc, const TurnPlanSource source) 
   plan.source = source;
   plan.response_goal = ParseResponseGoal(JsonStringOrDefault(doc, "response_goal", "general"));
   plan.render_mode = ParseRenderMode(JsonStringOrDefault(doc, "render_mode", "blocks"));
-  plan.render_mode_explicit = doc.has("render_mode");
+  plan.render_mode_explicit = doc.getString("render_mode").has_value();
   plan.synthesis_hints = JsonStringOrDefault(doc, "synthesis_hints");
   plan.user_request = JsonStringOrDefault(doc, "user_request");
 

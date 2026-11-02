@@ -81,8 +81,8 @@ TEST(TurnPlanTest, PeopleSearchShowsSelectableResultsEvenWhenPlannerOmitsListMod
 }
 
 TEST(TurnPlanTest, GeneralContactsOnlyPlanWithoutModeIsStillAList) {
-  auto doc = pbr::ParseJsonObject(R"({"response_goal":"general","tools":[{"name":"list_contacts","arguments":{}}]})");
-  ASSERT_TRUE(doc);
+  auto doc = pbr::TryParseObject(R"({"response_goal":"general","tools":[{"name":"list_contacts","arguments":{}}]})");
+  ASSERT_TRUE(doc.has_value());
   auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
   ASSERT_TRUE(plan);
   EXPECT_FALSE(plan->render_mode_explicit);
@@ -92,10 +92,10 @@ TEST(TurnPlanTest, GeneralContactsOnlyPlanWithoutModeIsStillAList) {
 }
 
 TEST(TurnPlanTest, GeneralContactsOnlyPlanWithExplicitBlocksStaysBlocks) {
-  auto doc = pbr::ParseJsonObject(R"({"response_goal":"general","render_mode":"blocks",
+  auto doc = pbr::TryParseObject(R"({"response_goal":"general","render_mode":"blocks",
                                       "user_request":"How many contacts do I have?",
                                       "tools":[{"name":"list_contacts","arguments":{}}]})");
-  ASSERT_TRUE(doc);
+  ASSERT_TRUE(doc.has_value());
   auto plan = pbr::ParseTurnPlanJson(*doc, pbr::TurnPlanSource::Planner);
   ASSERT_TRUE(plan);
   EXPECT_TRUE(plan->render_mode_explicit);
