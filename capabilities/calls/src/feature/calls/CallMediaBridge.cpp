@@ -1750,7 +1750,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   reach_kind_ = mesh::PeerLinkKind::Unknown;
   inbound_deferred_peer_id_.clear();
   receive_->remote_stream.store(0, std::memory_order_release);
-  // Do not ClearRemoteAudioTracks here — SoftMigrate+2s would wipe live media_relay tracks
+  // Do not clear the remote audio tracks here — SoftMigrate+2s would wipe live media_relay tracks
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();

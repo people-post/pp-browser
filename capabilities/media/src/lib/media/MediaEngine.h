@@ -109,11 +109,6 @@ public:
   SessionSpec ActiveSpec() const;
   /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
-  /**
-   * Drop remote jitter/PLC tracks without stopping capture. SoftMigrate send-swap clears
-   * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
-   */
-  void ClearRemoteAudioTracks();
   bool IsSfuMode() const;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();
@@ -225,7 +220,6 @@ public:
   void SetConnectionState(const std::string& state);
   std::string ActiveCallId() const;
   std::string ConnectionState() const;
-  int64_t ConnectedAtMs() const;
   /** Wall time when StartSfu succeeded (0 if inactive). */
   int64_t StartedAtMs() const;
   /** False when mic open failed (silence sent); used for permission hints. */
