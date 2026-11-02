@@ -10,9 +10,11 @@
 
 #include <curl/curl.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <optional>
 
@@ -227,12 +229,76 @@ size_t FileWriteCallback(void* contents, size_t size, size_t nmemb, FileSink* si
   return total;
 }
 
+/** A stream, not a FILE*: `seekg` takes a 64-bit `std::streamoff` on every platform (`fseek` takes `long`). */
 struct FileSource {
-  std::FILE* file = nullptr;
+  std::ifstream file;
+  /** Bytes still to send: a range upload stops at its end, not the file's. */
+  uint64_t remaining = 0;
+  /** The file gave fewer bytes than were still to send (cut short or changed under the upload). */
+  bool short_read = false;
 };
 
 size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* source) {
-  return std::fread(buffer, 1, size * nitems, source->file);
+  const uint64_t want = std::min<uint64_t>(static_cast<uint64_t>(size) * nitems, source->remaining);
+  source->file.read(buffer, static_cast<std::streamsize>(want));
+  const auto got = static_cast<size_t>(source->file.gcount());
+  if (got < want) {
+    source->short_read = true;
+    return CURL_READFUNC_ABORT; // a 0 would tell curl the body ended early and send a short body
+  }
+  source->remaining -= got;
+  return got;
+}
+
+/** PUT `source.remaining` bytes from `source.file` (positioned at the start). */
+Roe<HttpResponse> PutFromFile(const std::string& url, FileSource& source,
+                              const std::map<std::string, std::string>& headers, const HttpProgress& progress) {
+  CURL* curl = curl_easy_init();
+  if (!curl) {
+    return AppError::Internal("Failed to init curl");
+  }
+  ApplyCurlSslDefaults(curl);
+
+  ResponseBuffer response_body{.max_bytes = 64 * 1024};
+  ProgressState state{.callback = &progress};
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
+  curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(source.remaining));
+  curl_easy_setopt(curl, CURLOPT_READFUNCTION, FileReadCallback);
+  curl_easy_setopt(curl, CURLOPT_READDATA, &source);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, XferInfo);
+  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &state);
+  ApplyStallLimit(curl);
+  struct curl_slist* header_list = nullptr;
+  for (const auto& [key, value] : headers) {
+    header_list = curl_slist_append(header_list, (key + ": " + value).c_str());
+  }
+  if (header_list) {
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+  }
+
+  const CURLcode code = curl_easy_perform(curl);
+  long status_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+  if (header_list) {
+    curl_slist_free_all(header_list);
+  }
+  curl_easy_cleanup(curl);
+
+  if (source.short_read) {
+    return AppError::Storage(Err::Storage::Failed, "Upload file is shorter than the bytes it was to send");
+  }
+  if (state.aborted) {
+    return AppError::Network(Err::Network::HttpError, "HTTP upload cancelled");
+  }
+  if (code != CURLE_OK) {
+    return AppError::Network(NetworkCodeFromCurl(code),
+                             std::string("HTTP request failed: ") + curl_easy_strerror(code));
+  }
+  return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
 }
 
 } // namespace
@@ -258,56 +324,26 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
   if (size_ec) {
     return AppError::Internal("Upload file is not readable");
   }
-  FileSource source;
-  source.file = std::fopen(path.c_str(), "rb");
+  FileSource source{.file = std::ifstream(path, std::ios::binary), .remaining = static_cast<uint64_t>(file_size)};
   if (!source.file) {
     return AppError::Internal("Upload file is not readable");
   }
-  CURL* curl = curl_easy_init();
-  if (!curl) {
-    std::fclose(source.file);
-    return AppError::Internal("Failed to init curl");
-  }
-  ApplyCurlSslDefaults(curl);
+  return PutFromFile(url, source, headers, progress);
+}
 
-  ResponseBuffer response_body{.max_bytes = 64 * 1024};
-  ProgressState state{.callback = &progress};
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-  curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(file_size));
-  curl_easy_setopt(curl, CURLOPT_READFUNCTION, FileReadCallback);
-  curl_easy_setopt(curl, CURLOPT_READDATA, &source);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
-  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, XferInfo);
-  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &state);
-  ApplyStallLimit(curl);
-  struct curl_slist* header_list = nullptr;
-  for (const auto& [key, value] : headers) {
-    header_list = curl_slist_append(header_list, (key + ": " + value).c_str());
+Roe<HttpResponse> HttpClient::PutFileRange(const std::string& url, const std::string& path, const uint64_t offset,
+                                           const uint64_t length, const std::string& content_type,
+                                           const HttpProgress& progress) {
+  std::error_code size_ec;
+  const auto file_size = std::filesystem::file_size(path, size_ec);
+  if (size_ec || offset > static_cast<uint64_t>(file_size) || length > static_cast<uint64_t>(file_size) - offset) {
+    return AppError::Internal("Upload file does not hold the part");
   }
-  if (header_list) {
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+  FileSource source{.file = std::ifstream(path, std::ios::binary), .remaining = length};
+  if (!source.file || !source.file.seekg(static_cast<std::streamoff>(offset))) {
+    return AppError::Internal("Upload file is not readable");
   }
-
-  const CURLcode code = curl_easy_perform(curl);
-  long status_code = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-  if (header_list) {
-    curl_slist_free_all(header_list);
-  }
-  curl_easy_cleanup(curl);
-  std::fclose(source.file);
-
-  if (state.aborted) {
-    return AppError::Network(Err::Network::HttpError, "HTTP upload cancelled");
-  }
-  if (code != CURLE_OK) {
-    return AppError::Network(NetworkCodeFromCurl(code),
-                             std::string("HTTP request failed: ") + curl_easy_strerror(code));
-  }
-  return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
+  return PutFromFile(url, source, {{"Content-Type", content_type}}, progress);
 }
 
 Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::string& dest_path,

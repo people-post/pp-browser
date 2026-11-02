@@ -29,6 +29,8 @@ public:
                       const std::string& body) override;
 
   Roe<RelayFileStartResult> FileStart(const std::string& relay_user_id, uint64_t byte_length) override;
+  Roe<RelayFilePartResult> FilePart(const std::string& relay_user_id, const std::string& blob_id,
+                                    uint64_t part_number) override;
   Roe<RelayFileCompleteResult> FileComplete(const std::string& relay_user_id, const std::string& blob_id) override;
   Roe<void> FileDelete(const std::string& relay_user_id, const std::string& blob_id) override;
   Roe<RelayFileListResult> FileList(const std::string& relay_user_id, const std::string& status_filter) override;
@@ -46,6 +48,8 @@ public:
     file_start_failures_left_ = count;
   }
   void SetFileStartMode(std::string mode) { file_start_mode_ = std::move(mode); }
+  /** The part size FileStart plans with (multipart when a file is larger). */
+  void SetFilePartBytes(uint64_t part_bytes) { file_part_bytes_ = part_bytes; }
   void SetPutError(Error error) { put_error_ = std::move(error); }
   void ClearPutError() { put_error_ = std::nullopt; }
   void SetFileCompleteError(Error error) { file_complete_error_ = std::move(error); }
@@ -75,6 +79,8 @@ private:
   std::optional<Error> file_start_error_;
   uint32_t file_start_failures_left_ = 0; // 0: file_start_error_ (if any) stays
   std::string file_start_mode_ = "single";
+  uint64_t file_part_bytes_ = 16ull * 1024 * 1024;
+  std::unordered_map<std::string, uint64_t> file_byte_lengths_;
   std::optional<Error> put_error_;
   std::optional<Error> file_complete_error_;
   std::optional<RelayFileListResult> file_list_result_;

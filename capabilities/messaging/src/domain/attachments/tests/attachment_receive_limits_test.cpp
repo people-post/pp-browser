@@ -66,10 +66,11 @@ TEST_F(ReceiveLimitsTest, DeclaredSizeAboveTheReceiveLimitIsTooLargeAndNeverQueu
   EXPECT_EQ(workflow_.StateFor("t1", Hash(1), 5000), AttachmentFetchWorkflow::DownloadState::TooLarge);
 }
 
-TEST_F(ReceiveLimitsTest, ShippingReceiveLimitIsFourMegabytes) {
+TEST_F(ReceiveLimitsTest, ShippingReceiveLimitIsTheDefault) {
   const AttachmentLimits limits = workflow_.Limits();
   EXPECT_EQ(limits.max_receive_bytes, kDefaultAttachmentReceiveMaxBytes);
-  EXPECT_EQ(workflow_.StateFor("t1", Hash(2), 4'000'001), AttachmentFetchWorkflow::DownloadState::TooLarge);
+  EXPECT_EQ(workflow_.StateFor("t1", Hash(2), kDefaultAttachmentReceiveMaxBytes + 1),
+            AttachmentFetchWorkflow::DownloadState::TooLarge);
 }
 
 TEST_F(ReceiveLimitsTest, ASenderOverItsMinuteLimitStaysADownloadRowButAnotherSenderDoesNot) {

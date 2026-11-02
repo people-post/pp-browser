@@ -34,6 +34,8 @@ public:
     /** Path and query, as sent (`/a/b?t=x`). */
     std::string target;
     std::string body;
+    /** The request's Content-Length header (0 when absent). */
+    uint64_t content_length = 0;
   };
   struct Reply {
     int status = 200;
@@ -120,6 +122,7 @@ private:
     request.target = head.substr(method_end + 1, target_end - method_end - 1);
     const std::string length_text = HeaderValue(head, "Content-Length");
     const uint64_t length = length_text.empty() ? 0 : std::stoull(length_text);
+    request.content_length = length;
     if (length > 0 && HeaderValue(head, "Expect") == "100-continue") {
       asio::write(socket, asio::buffer(std::string("HTTP/1.1 100 Continue\r\n\r\n")), ec);
     }
