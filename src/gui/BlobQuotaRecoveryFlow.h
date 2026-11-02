@@ -9,7 +9,9 @@
 #include "lib/messaging/AttachmentCache.h"
 
 #include <functional>
+#include <string>
 #include <utility>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -40,6 +42,11 @@ struct BlobQuotaRecoveryFlow {
 private:
   struct Detail {
     static std::string BuildQuotaConfirmMessage(const BlobQuotaRecoveryPlan& plan);
+    static std::string UsageLine(const BlobQuotaRecoveryPlan& plan);
+    /** The ids the confirmed dialog deletes: one for the /blobs tiers, as many as free enough for Files. */
+    static std::vector<std::string> IdsToDelete(const BlobQuotaRecoveryPlan& plan);
+    static Roe<void> FreeAll(const std::function<Roe<void>(const std::string& blob_id)>& free_slot,
+                             const std::vector<std::string>& blob_ids);
 
     template <typename T>
     static void FinishUpload(std::function<void(Roe<T>)> on_complete, Roe<T> result) {
@@ -61,16 +68,17 @@ private:
 
         UserFeedback::Confirm(
             Tr("blob.quota.title"), BuildQuotaConfirmMessage(*plan),
-            // The blob named in the dialog is the one deleted, not whatever is oldest by then.
+            // The files named in the dialog are the ones deleted, not whatever is oldest by then.
             [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot),
-             blob_id = plan->blob_to_delete.blob_id](const bool confirmed) mutable {
+             blob_ids = IdsToDelete(*plan)](const bool confirmed) mutable {
               if (!confirmed) {
                 FinishUpload(on_complete, Roe<T>{Error(Tr("blob.quota.cancelled"))});
                 return;
               }
               AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                            free_slot = std::move(free_slot), blob_id = std::move(blob_id)]() mutable {
-                auto freed = free_slot(blob_id);
+                                            free_slot = std::move(free_slot),
+                                            blob_ids = std::move(blob_ids)]() mutable {
+                auto freed = FreeAll(free_slot, blob_ids);
                 if (!freed) {
                   FinishUpload(on_complete, Roe<T>{freed.error()});
                   return;
@@ -124,16 +132,17 @@ private:
 
         UserFeedback::Confirm(
             Tr("blob.quota.title"), BuildQuotaConfirmMessage(*plan),
-            // The blob named in the dialog is the one deleted, not whatever is oldest by then.
+            // The files named in the dialog are the ones deleted, not whatever is oldest by then.
             [upload = std::move(upload), on_complete = std::move(on_complete), free_slot = std::move(free_slot),
-             blob_id = plan->blob_to_delete.blob_id](const bool confirmed) mutable {
+             blob_ids = IdsToDelete(*plan)](const bool confirmed) mutable {
               if (!confirmed) {
                 FinishUpload(on_complete, Roe<T>{Error(Tr("blob.quota.cancelled"))});
                 return;
               }
               AppRuntime::PostWorkerNormal([upload = std::move(upload), on_complete = std::move(on_complete),
-                                            free_slot = std::move(free_slot), blob_id = std::move(blob_id)]() mutable {
-                auto freed = free_slot(blob_id);
+                                            free_slot = std::move(free_slot),
+                                            blob_ids = std::move(blob_ids)]() mutable {
+                auto freed = FreeAll(free_slot, blob_ids);
                 if (!freed) {
                   FinishUpload(on_complete, Roe<T>{freed.error()});
                   return;

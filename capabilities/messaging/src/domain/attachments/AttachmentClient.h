@@ -51,7 +51,14 @@ struct ChatAttachmentUploadOptions {
  */
 bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, uint64_t plaintext_bytes);
 
-/** Peer-direct when allowed and reachable (1:1 E2E), else CDN PUT+retain (R015 / R019). */
+/**
+ * Delete our server copy of a sent attachment (`fields.url`, a relay file share link). An empty url (sent
+ * peer-direct) and a copy already gone are fine; a link that is not a relay file link, or a refused delete, is a
+ * CopyNotDeleted error, never a silent success.
+ */
+Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& relay_user_id, const std::string& url);
+
+/** Peer-direct when allowed and reachable (1:1 E2E), else the relay files upload (start, PUT, complete). */
 Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
                                                        const std::string& path,
                                                        const ChatAttachmentUploadOptions& options = {});

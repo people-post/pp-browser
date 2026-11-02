@@ -147,6 +147,8 @@ std::string AppError::CatalogMessage(ErrorCategory category, int32_t code) {
       return Localized("errors.blob.unavailable");
     case Err::Blob::RateLimited:
       return Localized("errors.blob.rate_limited");
+    case Err::Blob::CopyNotDeleted:
+      return Localized("errors.blob.copy_not_deleted");
     case Err::Blob::Generic:
     default:
       return Localized("errors.blob.failed");

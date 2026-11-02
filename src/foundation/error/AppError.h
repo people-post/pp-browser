@@ -86,6 +86,8 @@ enum class Blob : int32_t {
   RateLimited = 8,
   /** UploadNotConfigured after a peer-direct push to a 1:1 contact failed too: nothing could carry the file. */
   UploadNotConfiguredNoDirect = 9,
+  /** Our uploaded copy of an attachment could not be deleted from the server (not a relay file link, or refused). */
+  CopyNotDeleted = 10,
 };
 
 } // namespace Err

@@ -1915,6 +1915,10 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
+  if (BlobQuotaTierOf(quota_error) == BlobTier::Files) {
+    // An attachment found the files relay full: free the oldest sent files until this one fits.
+    return PlanOldestRelayFileDeletion(*blob_, identity->relay_user_id, RelayFileQuotaNeededBytes(quota_error));
+  }
   auto plan = PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_),
                                           BlobQuotaTierOf(quota_error));
   if (plan) {
@@ -1956,36 +1960,27 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   if (auto deleted = Inbox().DeleteMessageForMe(thread_id, message_id); !deleted) {
     return deleted.error();
   }
-  DeleteUploadedCopy(original);
-  return {};
+  // The message is gone either way; a server copy left behind is said, not hidden.
+  return DeleteUploadedCopy(original);
 }
 
-void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
+Roe<void> ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   if (message.content_type != ChatContentType::Attachment || !blob_) {
-    return;
+    return {};
   }
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   if (!fields || fields->url.empty()) {
-    return; // sent peer-direct: nothing on the relay
+    return {}; // sent peer-direct: nothing on the relay
   }
   auto identity = Identity().Get();
   if (!identity || identity->relay_user_id.empty()) {
-    return;
+    return {};
   }
-  // The message carries the public URL only; the relay's list maps it back to the blob id.
-  auto listed = blob_->List(identity->relay_user_id);
-  if (!listed) {
-    log().warning << "uploaded copy not deleted: list failed";
-    return;
+  auto removed = DeleteUploadedAttachmentCopy(*blob_, identity->relay_user_id, fields->url);
+  if (!removed) {
+    log().warning << "uploaded copy not deleted: " << removed.error().message;
   }
-  for (const RelayBlobRecord& record : listed->blobs) {
-    if (record.url == fields->url) {
-      if (auto removed = DeleteRelayBlob(*blob_, identity->relay_user_id, record.blob_id); !removed) {
-        log().warning << "uploaded copy not deleted: " << removed.error().message;
-      }
-      return;
-    }
-  }
+  return removed;
 }
 
 Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id) {
@@ -2005,7 +2000,8 @@ Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id) {
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return pbr::DeleteRelayBlob(*blob_, identity->relay_user_id, blob_id);
+  // The quota dialog's ids are relay files (attachments): BlobQuotaTierOf / PlanOldestRelayFileDeletion.
+  return pbr::DeleteRelayFile(*blob_, identity->relay_user_id, blob_id);
 }
 
 Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {

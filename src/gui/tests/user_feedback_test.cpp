@@ -63,10 +63,11 @@ TEST_F(AppErrorTest, BlobStatusRowsShowPlainText) {
   using namespace pbr;
   const auto show = [](const Err::Blob code) { return AppError::Display(AppError::Blob(code, "detail")); };
   EXPECT_EQ(show(Err::Blob::UploadRejected), "Upload failed — please try again later.");
-  EXPECT_EQ(show(Err::Blob::Expired), "This file has expired.");
+  EXPECT_EQ(show(Err::Blob::Expired), "Attachment expired.");
   EXPECT_EQ(show(Err::Blob::TooLarge), "This file is too large to send.");
   EXPECT_EQ(show(Err::Blob::QuotaExceeded), "Cloud space is full");
   EXPECT_EQ(show(Err::Blob::Unavailable), "Can't send right now — please try again in a moment.");
   EXPECT_EQ(show(Err::Blob::RateLimited), "You're sending too fast — please wait a moment.");
   EXPECT_EQ(show(Err::Blob::Generic), "Upload failed — try again.");
+  EXPECT_EQ(show(Err::Blob::CopyNotDeleted), "Couldn't delete the copy on the server.");
 }

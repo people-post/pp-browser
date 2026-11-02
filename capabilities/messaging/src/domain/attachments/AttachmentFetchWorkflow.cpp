@@ -6,6 +6,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
+#include "foundation/runtime/BackgroundActivity.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
@@ -402,12 +403,16 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
   // A copy of the fields for the call: the callback below moves `job` away, and the arguments of one call are
   // evaluated before it runs (reading job.fields there found them already moved-from: no url, no hash).
   const ChatAttachmentFields fields = job.fields;
+  // Download, decrypt and store, all of it, also if the app goes to the background meanwhile (released with the
+  // last copy of the callbacks below).
+  auto background = std::make_shared<BackgroundActivity>("attachment download");
   FetchAndDecryptAttachmentAsync(
       fields, context,
-      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms,
-       declared_bytes](Roe<std::vector<uint8_t>> plaintext) mutable {
+      [this, key, job = std::move(job), on_done = std::move(on_done), started_ms, declared_bytes,
+       background](Roe<std::vector<uint8_t>> plaintext) mutable {
         auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
-                           plaintext = std::move(plaintext), started_ms, declared_bytes]() mutable {
+                           plaintext = std::move(plaintext), started_ms, declared_bytes,
+                           background = std::move(background)]() mutable {
           // Reported at the end, after the bytes are stored, so the peak covers the whole receive.
           const auto report = [&](const bool ok) {
             EmitAttachmentTransferMetric("receive", declared_bytes, util::NowUnixMs() - started_ms, ok);
@@ -430,6 +435,11 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           }
           if (!plaintext) {
             report(false);
+            // Every server GET spends one of the file's few downloads (expired, used up and deleted all look
+            // the same): no automatic retry asks again; the card's Download button does (RetryDownload).
+            if (suppression_ && !job.fields.url.empty()) {
+              (void)suppression_->Suppress(job.thread_id, job.fields.content_hash);
+            }
             MarkFailed(key);
             if (on_done) {
               on_done();

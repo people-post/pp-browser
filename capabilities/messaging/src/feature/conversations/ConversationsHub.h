@@ -336,8 +336,8 @@ public:
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   AttachmentFetchWorkflow& Attachments();
-  /** Our uploaded relay copy of an attachment message, if any; best effort. */
-  void DeleteUploadedCopy(const ThreadMessage& message);
+  /** Delete our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy). */
+  Roe<void> DeleteUploadedCopy(const ThreadMessage& message);
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
