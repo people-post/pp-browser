@@ -401,8 +401,8 @@ TEST_F(HttpBlobClientFilesTest, RelayCodesMapToTypedErrors) {
   EXPECT_EQ(RelayFileErrorCode(Error("HTTP 429 QUOTA_FILE_BYTESx")), "");
 }
 
-// Multipart (over the relay's part size): a small part size here, the relay's real one is 16 MiB.
-constexpr uint64_t kPart = 64 * 1024;
+// Multipart (over the relay's part size): 1 MiB parts here (the smallest the client follows), the relay's are 16 MiB.
+constexpr uint64_t kPart = 1024 * 1024;
 
 class RelayFileMultipartTest : public HttpBlobClientFilesTest {
 protected:
@@ -483,10 +483,52 @@ TEST_F(RelayFileMultipartTest, OneByteOverThePartSizeIsTwoPartsTheSecondOneByte)
 }
 
 TEST_F(RelayFileMultipartTest, OffsetsFollowTheRelaysPartSizeNotALocalOne) {
-  relay_.part_bytes = 50000; // neither 16 MiB nor this test's usual 64 KiB
-  auto uploaded = UploadParts(2 * 50000 + 7);
+  relay_.part_bytes = 1'100'000; // neither 16 MiB nor this test's usual 1 MiB
+  auto uploaded = UploadParts(2 * 1'100'000 + 7);
   ASSERT_TRUE(uploaded) << uploaded.error().message;
-  ExpectAcceptedParts({50000, 50000, 7});
+  ExpectAcceptedParts({1'100'000, 1'100'000, 7});
+}
+
+TEST_F(RelayFileMultipartTest, APlanOutOfRangeIsRefusedBeforeAnyPartAndTheBlobDeleted) {
+  relay_.part_bytes = 1;
+  auto uploaded = UploadParts(10);
+  ASSERT_FALSE(uploaded);
+  EXPECT_NE(uploaded.error().message.find("relay file plan out of range part_bytes=1 parts=10"), std::string::npos)
+      << uploaded.error().message;
+  EXPECT_TRUE(relay_.Bodies("part").empty());
+  EXPECT_TRUE(relay_.Bodies("complete").empty());
+  EXPECT_EQ(relay_.DeletedIds().size(), 1u);
+}
+
+TEST_F(RelayFileMultipartTest, APlanWithoutAPartSizeIsRefusedAndTheBlobDeleted) {
+  relay_.part_bytes = 0;
+  auto uploaded = UploadParts(10);
+  ASSERT_FALSE(uploaded);
+  EXPECT_EQ(uploaded.error().message, "relay file plan missing part_bytes/part_count");
+  EXPECT_TRUE(relay_.Bodies("part").empty());
+  EXPECT_EQ(relay_.DeletedIds().size(), 1u);
+}
+
+TEST_F(RelayFileMultipartTest, AStagedFileCutShortMidPartFailsWithoutARetry) {
+  const size_t bytes = 2 * kPart + 10;
+  const std::string path = Source(bytes);
+  bool cut = false;
+  auto uploaded = UploadRelayFile(client_, "relay:u1", path, bytes, [&](const uint64_t done, uint64_t) {
+    if (!cut && done > 0) {
+      std::filesystem::resize_file(path, kPart / 2); // the staged file changes under the upload
+      cut = true;
+    }
+    return true;
+  });
+  ASSERT_TRUE(cut);
+  ASSERT_FALSE(uploaded);
+  EXPECT_EQ(AppError::CategoryOf(uploaded.error()), ErrorCategory::Storage) << uploaded.error().message;
+  EXPECT_EQ(PartNumbersAsked(), (std::vector<uint64_t>{1})) << "a broken file is not retried";
+  for (const auto& put : relay_.PartPuts()) {
+    EXPECT_FALSE(put.matches) << "the cut part never reached the storage side whole";
+  }
+  EXPECT_TRUE(relay_.Bodies("complete").empty());
+  EXPECT_EQ(relay_.DeletedIds().size(), 1u);
 }
 
 TEST_F(RelayFileMultipartTest, APartWithNoAnswerIsTriedAgainWithAFreshUrl) {

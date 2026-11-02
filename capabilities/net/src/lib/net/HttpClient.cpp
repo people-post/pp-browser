@@ -234,12 +234,18 @@ struct FileSource {
   std::ifstream file;
   /** Bytes still to send: a range upload stops at its end, not the file's. */
   uint64_t remaining = 0;
+  /** The file gave fewer bytes than were still to send (cut short or changed under the upload). */
+  bool short_read = false;
 };
 
 size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* source) {
   const uint64_t want = std::min<uint64_t>(static_cast<uint64_t>(size) * nitems, source->remaining);
   source->file.read(buffer, static_cast<std::streamsize>(want));
   const auto got = static_cast<size_t>(source->file.gcount());
+  if (got < want) {
+    source->short_read = true;
+    return CURL_READFUNC_ABORT; // a 0 would tell curl the body ended early and send a short body
+  }
   source->remaining -= got;
   return got;
 }
@@ -282,6 +288,9 @@ Roe<HttpResponse> PutFromFile(const std::string& url, FileSource& source,
   }
   curl_easy_cleanup(curl);
 
+  if (source.short_read) {
+    return AppError::Storage(Err::Storage::Failed, "Upload file is shorter than the bytes it was to send");
+  }
   if (state.aborted) {
     return AppError::Network(Err::Network::HttpError, "HTTP upload cancelled");
   }

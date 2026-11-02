@@ -434,6 +434,7 @@ Roe<RelayFileStartResult> HttpBlobClient::FileStart(const std::string& relay_use
   result.blob_id = *root->getString("blob_id");
   result.mode = *root->getString("mode");
   result.upload_url = root->getString("upload_url").value_or("");
+  // Missing or not positive: 0, refused (and the blob deleted) by UploadRelayFile as a plan missing them.
   result.part_bytes = root->getNonNegInt("part_bytes").value_or(0);
   result.part_count = root->getNonNegInt("part_count").value_or(0);
   result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
@@ -458,8 +459,11 @@ Roe<RelayFilePartResult> HttpBlobClient::FilePart(const std::string& relay_user_
   auto root = TryParseObject(response->body);
   const auto upload_url = root ? root->getString("upload_url") : std::nullopt;
   const auto part_bytes = root ? root->getNonNegInt("part_bytes") : std::nullopt;
-  if (!upload_url || upload_url->empty() || !part_bytes || *part_bytes == 0) {
+  if (!upload_url || upload_url->empty()) {
     return Error("Invalid relay file part JSON");
+  }
+  if (!part_bytes || *part_bytes == 0) {
+    return Error("relay file part missing part_bytes");
   }
   RelayFilePartResult result;
   result.upload_url = *upload_url;

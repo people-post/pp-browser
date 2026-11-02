@@ -84,6 +84,10 @@ Error AbandonRelayFile(IBlobClient& blob, const std::string& relay_user_id, cons
 
 /** Tries after the first, for one part (a fresh `/files/part` URL each) and for complete. */
 constexpr int kMultipartRetries = 2;
+/** What a multipart plan from the relay may say before it is followed (16 MiB parts, at most 4 for 50 MB today). */
+constexpr uint64_t kMinPartBytes = 1ULL << 20;
+constexpr uint64_t kMaxPartBytes = 64ULL << 20;
+constexpr uint64_t kMaxPartCount = 64;
 
 /** Worth another try: no answer, a 5xx; for a part's PUT also a 403 (its signed URL expired). */
 bool RetryableRelayFailure(const Error& err, const bool storage_put) {
@@ -107,8 +111,14 @@ Roe<void> PutRelayFileParts(IBlobClient& blob, const std::string& relay_user_id,
                             const std::string& path, const uint64_t cipher_bytes,
                             const std::function<bool(uint64_t, uint64_t)>& progress) {
   const uint64_t part_bytes = started.part_bytes;
-  if (part_bytes == 0 || started.part_count == 0 ||
-      started.part_count != (cipher_bytes + part_bytes - 1) / part_bytes) {
+  if (part_bytes == 0 || started.part_count == 0) {
+    return Error("relay file plan missing part_bytes/part_count");
+  }
+  if (part_bytes < kMinPartBytes || part_bytes > kMaxPartBytes || started.part_count > kMaxPartCount) {
+    return Error("relay file plan out of range part_bytes=" + std::to_string(part_bytes) +
+                 " parts=" + std::to_string(started.part_count));
+  }
+  if (started.part_count != (cipher_bytes + part_bytes - 1) / part_bytes) {
     return Error("Relay file multipart plan does not fit the file");
   }
   uint64_t reported = 0;
@@ -167,6 +177,8 @@ Roe<RelayFileCompleteResult> CompleteRelayFileWithRetry(IBlobClient& blob, const
       return completed;
     }
     const std::string code = RelayFileErrorCode(completed.error());
+    // BLOB_NOT_PENDING is not retried: an earlier complete went through and its one-time token was lost, so the
+    // blob is deleted and the person uploads again.
     if (attempt >= kMultipartRetries ||
         !(code == "UPLOAD_INCOMPLETE" || RetryableRelayFailure(completed.error(), false))) {
       return completed;
