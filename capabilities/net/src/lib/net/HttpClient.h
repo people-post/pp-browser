@@ -40,6 +40,11 @@ public:
    */
   static void SetFirstHopLocalForTest(bool allow);
   /**
+   * Tests only: a followed redirect may go to plain http (a loopback test server) when the request is not
+   * `restrict_to_public_https`. Off by default and in the app: redirects go to https only.
+   */
+  static void SetPlainHttpRedirectsForTest(bool allow);
+  /**
    * PUT the file's bytes read straight from disk (never the whole file in memory). No total time limit, only a
    * speed floor (under 2 KB/s for 30 s running fails; see SetStreamingStallLimitForTest), so a large upload on a slow link can finish. The response body
    * is read up to a small cap. `progress` is called as bytes go out.
@@ -66,8 +71,9 @@ public:
    * and rejects any resolved address that is not a public-routable host (loopback/private/
    * link-local/CGNAT/multicast), checked after DNS resolution to also cover DNS rebinding.
    *
-   * `follow_redirects` (off by default: a 3xx is returned as the answer): follow up to 2 redirects. Every hop is
-   * held to the same rules (https + public addresses when restricted) and the size cap counts the final body.
+   * `follow_redirects` (off by default: a 3xx is returned as the answer): follow up to 2 redirects, to https only.
+   * Every hop is held to the same rules (public addresses when restricted), only the final answer's body is kept
+   * and the size cap counts it. A failure after a redirect was followed is a Network HttpError (an answer came).
    * The redirect target is never logged or put in an error (a presigned URL is a credential).
    */
   static Roe<HttpResponse> Get(const std::string& url, const std::map<std::string, std::string>& headers = {},

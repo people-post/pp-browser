@@ -3,6 +3,7 @@
 #include "lib/net/BlobClient.h"
 #include "common/Error.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -46,6 +47,16 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const 
 
 /** `/files/delete` of one id (an attachment's relay copy). */
 Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id);
+
+/**
+ * Delete one id of a recovery plan on the endpoint its tier lives on: Files → `/files/delete`, Small / Large (the
+ * `/blobs` tiers of profile photos) → `/blobs/delete`.
+ */
+Roe<void> DeleteRelayQuotaItem(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id,
+                               BlobTier tier);
+
+/** What a confirmed recovery calls for each id of the plan, with the plan's tier. */
+using BlobQuotaFreeSlot = std::function<Roe<void>(const std::string& blob_id, BlobTier tier)>;
 
 /**
  * Pure net helper — callers resolve relay_user_id (no IdentityStore). The oldest retained blob that frees the

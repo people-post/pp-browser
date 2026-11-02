@@ -166,6 +166,12 @@ Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& relay_user_id, c
   return blob.FileDelete(*uid, blob_id);
 }
 
+Roe<void> DeleteRelayQuotaItem(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id,
+                               const BlobTier tier) {
+  return tier == BlobTier::Files ? DeleteRelayFile(blob, relay_user_id, blob_id)
+                                 : DeleteRelayBlob(blob, relay_user_id, blob_id);
+}
+
 Roe<void> DeleteRelayBlob(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id) {
   if (blob_id.empty()) {
     return Error("blob_id is required");

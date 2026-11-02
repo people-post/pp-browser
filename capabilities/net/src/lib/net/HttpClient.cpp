@@ -24,6 +24,9 @@ struct ResponseBuffer {
   std::string body;
   std::optional<size_t> max_bytes;
   bool limit_exceeded = false;
+  CURL* curl = nullptr;
+  /** Redirects followed when `body` started: a body from before a redirect is not the answer. */
+  long body_redirects = 0;
 };
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* out) {
@@ -32,6 +35,14 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
     return 0;
   }
   const size_t total = size * nmemb;
+  if (out->curl != nullptr) {
+    long redirects = 0;
+    curl_easy_getinfo(out->curl, CURLINFO_REDIRECT_COUNT, &redirects);
+    if (redirects != out->body_redirects) {
+      out->body.clear(); // a new response after a followed redirect: only its body is kept
+      out->body_redirects = redirects;
+    }
+  }
   if (out->max_bytes &&
       (total > *out->max_bytes || out->body.size() > *out->max_bytes - total)) {
     out->limit_exceeded = true;
@@ -42,6 +53,7 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
 }
 
 std::atomic<bool> g_first_hop_local_for_test{false};
+std::atomic<bool> g_plain_http_redirects_for_test{false};
 
 /**
  * https only, to public addresses only, no proxy: a proxy from the environment would connect to the proxy's
@@ -64,9 +76,24 @@ void ApplyPublicOnly(CURL* curl, PublicOnlySocketTestExemption& exemption) {
 
 constexpr long kMaxRedirects = 2;
 
-void ApplyFollowRedirects(CURL* curl) {
+/** At most two hops, and only to https (whatever `restrict_to_public_https` says; a test may allow http). */
+void ApplyFollowRedirects(CURL* curl, const bool restrict_to_public_https) {
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
   curl_easy_setopt(curl, CURLOPT_MAXREDIRS, kMaxRedirects);
+  const bool plain_http = g_plain_http_redirects_for_test.load() && !restrict_to_public_https;
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, plain_http ? "http,https" : "https");
+}
+
+/**
+ * A transfer that failed after a redirect was followed: the first server answered (with a followed redirect, the
+ * relay spent a download on it), so this is not a "could not reach" failure whatever curl says about the next hop.
+ */
+Error TransferFailure(const CURLcode code, const long redirect_count) {
+  if (redirect_count > 0) {
+    return AppError::Network(Err::Network::HttpError,
+                             std::string("HTTP request failed after a redirect: ") + curl_easy_strerror(code));
+  }
+  return AppError::Network(NetworkCodeFromCurl(code), std::string("HTTP request failed: ") + curl_easy_strerror(code));
 }
 
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
@@ -84,10 +111,10 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
     ApplyPublicOnly(curl, exemption);
   }
   if (follow_redirects) {
-    ApplyFollowRedirects(curl);
+    ApplyFollowRedirects(curl, restrict_to_public_https);
   }
 
-  ResponseBuffer response_body{.max_bytes = max_response_bytes};
+  ResponseBuffer response_body{.max_bytes = max_response_bytes, .curl = curl};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
@@ -132,8 +159,7 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   }
 
   if (code != CURLE_OK) {
-    return AppError::Network(NetworkCodeFromCurl(code),
-                             std::string("HTTP request failed: ") + curl_easy_strerror(code));
+    return TransferFailure(code, redirect_count);
   }
 
   return HttpResponse{
@@ -214,6 +240,10 @@ size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* so
 void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
   g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
   g_speed_window_s.store(window_s > 0 ? window_s : 30);
+}
+
+void HttpClient::SetPlainHttpRedirectsForTest(const bool allow) {
+  g_plain_http_redirects_for_test.store(allow);
 }
 
 void HttpClient::SetFirstHopLocalForTest(const bool allow) {
@@ -306,12 +336,15 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
     ApplyPublicOnly(curl, exemption);
   }
   if (follow_redirects) {
-    ApplyFollowRedirects(curl);
+    ApplyFollowRedirects(curl, restrict_to_public_https);
   }
   ProgressState state{.callback = &progress};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  // A server that announces more than the cap is refused before a byte is read.
-  curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(max_bytes));
+  // A server that announces more than the cap is refused before a byte is read. Not when following redirects:
+  // curl would hold a redirect's own announced length against it too; the sink's cap still stops an overrun.
+  if (!follow_redirects) {
+    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(max_bytes));
+  }
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, FileWriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
   curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
@@ -352,8 +385,7 @@ Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::s
     return fail(AppError::Storage(Err::Storage::Failed, "Download file could not be written"));
   }
   if (code != CURLE_OK) {
-    return fail(AppError::Network(NetworkCodeFromCurl(code),
-                                  std::string("HTTP request failed: ") + curl_easy_strerror(code)));
+    return fail(TransferFailure(code, redirect_count));
   }
   if (status_code < 200 || status_code >= 300) {
     std::filesystem::remove(dest_path, ec);

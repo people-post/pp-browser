@@ -1,4 +1,5 @@
 #include "common/tests/ScriptedHttpServer.h"
+#include "foundation/error/AppError.h"
 #include "lib/net/HttpClient.h"
 
 #include <gtest/gtest.h>
@@ -23,6 +24,7 @@ protected:
   }
   void TearDown() override {
     HttpClient::SetFirstHopLocalForTest(false);
+    HttpClient::SetPlainHttpRedirectsForTest(false);
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }
@@ -71,6 +73,7 @@ TEST_F(HttpClientRedirectTest, OffByDefaultA302IsTheAnswer) {
 }
 
 TEST_F(HttpClientRedirectTest, FollowedA302FetchesTheSecondAddress) {
+  HttpClient::SetPlainHttpRedirectsForTest(true); // the loopback server is plain http
   Script(Url("/b"));
   auto got = HttpClient::Get(Url("/a"), {}, kMaxHttpClientBodyBytes, HttpTimeout{}, false,
                              /*follow_redirects=*/true);
@@ -88,6 +91,7 @@ TEST_F(HttpClientRedirectTest, FollowedA302FetchesTheSecondAddress) {
 }
 
 TEST_F(HttpClientRedirectTest, TwoHopsAreFollowedAThirdFails) {
+  HttpClient::SetPlainHttpRedirectsForTest(true);
   server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
     const auto hop = [&](const std::string& next) {
       return ScriptedHttpServer::Reply{.status = 302, .headers = {{"Location", Url(next)}}, .body = ""};
@@ -114,6 +118,7 @@ TEST_F(HttpClientRedirectTest, TwoHopsAreFollowedAThirdFails) {
 }
 
 TEST_F(HttpClientRedirectTest, TheSizeCapHoldsOnTheRedirectedBody) {
+  HttpClient::SetPlainHttpRedirectsForTest(true);
   Script(Url("/big"));
   auto got = HttpClient::Get(Url("/a"), {}, size_t{1024}, HttpTimeout{}, false, true);
   ASSERT_FALSE(got);
@@ -122,6 +127,33 @@ TEST_F(HttpClientRedirectTest, TheSizeCapHoldsOnTheRedirectedBody) {
   auto file = HttpClient::GetToFile(Url("/a"), Dest(), 1024, {}, false, {}, true);
   ASSERT_FALSE(file);
   EXPECT_FALSE(std::filesystem::exists(Dest())) << "an overrun after a redirect leaves nothing";
+}
+
+// The answer is the final response's body only: a redirect's own body never reaches the buffer (or the cap).
+TEST_F(HttpClientRedirectTest, ARedirectsBodyIsNotPartOfTheAnswer) {
+  HttpClient::SetPlainHttpRedirectsForTest(true);
+  server_.SetHandler([this](const ScriptedHttpServer::Request& request) {
+    if (request.target == "/a") {
+      return ScriptedHttpServer::Reply{
+          .status = 302, .headers = {{"Location", Url("/b")}}, .body = std::string(2048, 'r')};
+    }
+    return ScriptedHttpServer::Reply{.status = 200, .headers = {}, .body = "payload"};
+  });
+  auto got = HttpClient::Get(Url("/a"), {}, size_t{100}, HttpTimeout{}, false, true);
+  ASSERT_TRUE(got) << got.error().message;
+  EXPECT_EQ(got->body, "payload");
+  auto file = HttpClient::GetToFile(Url("/a"), Dest(), 100, {}, false, {}, true);
+  ASSERT_TRUE(file) << file.error().message;
+  EXPECT_EQ(file->bytes, 7u);
+}
+
+// Following is https-only by itself, restricted or not: no test switch, no plain-http hop.
+TEST_F(HttpClientRedirectTest, AnUnrestrictedFollowStillRefusesAPlainHttpHop) {
+  Script(Url("/b"));
+  auto got = HttpClient::Get(Url("/a"), {}, kMaxHttpClientBodyBytes, HttpTimeout{}, false, true);
+  ASSERT_FALSE(got);
+  EXPECT_EQ(RequestsFor("/b"), 0);
+  EXPECT_EQ(got.error().code, static_cast<int32_t>(Err::Network::HttpError)) << "an answer came: not a reach failure";
 }
 
 // Restricted fetches (a peer-sent URL): only the first hop is let through to the loopback test server; the

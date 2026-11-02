@@ -143,8 +143,8 @@ std::string RelayFileErrorCode(const Error& err);
  * files/start → PUT the staged ciphertext (`cipher_bytes` long: the size the relay reserves and signs into the
  * PUT) → files/complete. Single PUT only (a `multipart` answer is an error). Once start has answered, any later
  * failure deletes that blob id (best effort) and returns the original error, so no pending upload is left on the
- * account. A start refused for too many pending uploads first deletes this account's pending uploads older than
- * the PUT URL's 15 minutes (never newer ones: another device may be uploading) and starts once more.
+ * account. A start refused for too many pending uploads first deletes this account's pending uploads started over
+ * an hour ago (never newer ones: another device may still be uploading) and starts once more.
  */
 Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& path,
                                      uint64_t cipher_bytes,

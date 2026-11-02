@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -119,6 +121,17 @@ private:
   int started_ = 0;
 };
 
+/** The relay's `toISOString()` form of now minus `minutes`. */
+std::string IsoMinutesAgo(const int minutes) {
+  const time_t at = static_cast<time_t>(util::NowUnixMs() / 1000) - static_cast<time_t>(minutes) * 60;
+  std::tm tm{};
+  EXPECT_TRUE(civil_time::UtcTime(at, &tm));
+  char text[32];
+  std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02d.000Z", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                tm.tm_hour, tm.tm_min, tm.tm_sec);
+  return text;
+}
+
 Reply RelayError(const int status, const std::string& code, const std::string& text) {
   return Reply{.status = status, .headers = {}, .body = R"({"error":")" + text + R"(","code":")" + code + R"("})"};
 }
@@ -226,14 +239,17 @@ TEST_F(HttpBlobClientFilesTest, TooManyPendingDeletesOnlyStalePendingAndStartsOn
   relay_.list_body = R"({"files":[
       {"blob_id":"old-1","status":"pending","byte_length":10,"created_at":"2020-01-01T00:00:00.000Z"},
       {"blob_id":"new-1","status":"pending","byte_length":10,"created_at":"2999-01-01T00:00:00.000Z"},
-      {"blob_id":"old-2","status":"pending","byte_length":10,"created_at":"2021-06-01T12:00:00.000Z"}],
+      {"blob_id":"half-hour","status":"pending","byte_length":10,"created_at":")" +
+                     IsoMinutesAgo(30) + R"("},
+      {"blob_id":"old-2","status":"pending","byte_length":10,"created_at":")" +
+                     IsoMinutesAgo(70) + R"("}],
     "usage":{"bytes_used":30,"pending_count":20,"quota_bytes":1073741824,"max_pending":20}})";
   auto uploaded = Upload(100);
   ASSERT_TRUE(uploaded) << uploaded.error().message;
   ASSERT_EQ(relay_.Bodies("list").size(), 1u);
   EXPECT_EQ(relay_.Bodies("list")[0].getString("status").value_or(""), "pending");
   EXPECT_EQ(relay_.DeletedIds(), (std::vector<std::string>{"old-1", "old-2"}))
-      << "an upload started in the last 15 minutes may be another device's, still going";
+      << "an upload started in the last hour may be another device's, still going (a late PUT, a skewed clock)";
   EXPECT_EQ(relay_.Bodies("start").size(), 2u);
 }
 
@@ -294,6 +310,10 @@ TEST_F(HttpBlobClientFilesTest, RelayCodesMapToTypedErrors) {
   EXPECT_EQ(RelayFileErrorCode(ClassifyBlobFailure(400, "Blob is not pending", "BLOB_NOT_PENDING")),
             "BLOB_NOT_PENDING");
   EXPECT_EQ(RelayFileErrorCode(ClassifyBlobFailure(429, "Rate limit exceeded")), "");
+  // FileStart notes the size it asked for after the code.
+  EXPECT_EQ(RelayFileErrorCode(Error("HTTP 429 QUOTA_FILE_BYTES byte_length=123")), "QUOTA_FILE_BYTES");
+  EXPECT_EQ(RelayFileErrorCode(Error("HTTP 429 QUOTA_FILE_BYTES")), "QUOTA_FILE_BYTES");
+  EXPECT_EQ(RelayFileErrorCode(Error("HTTP 429 QUOTA_FILE_BYTESx")), "");
 }
 
 TEST(HttpBlobClientOriginTest, TheShareLinkOriginIsTheRelayBaseWithoutItsPath) {

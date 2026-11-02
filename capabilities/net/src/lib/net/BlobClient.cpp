@@ -18,8 +18,11 @@ logging::Logger& RelayFilesLog() {
   return logger;
 }
 
-/** A single PUT URL lives 15 minutes; a pending upload older than that can no longer be in flight. */
-constexpr int64_t kStalePendingMs = 15LL * 60LL * 1000LL;
+/**
+ * A single PUT URL lives 15 minutes, but a PUT started in time may still be running and device clocks drift
+ * (±5 min): only a pending upload started over an hour ago is surely abandoned.
+ */
+constexpr int64_t kStalePendingMs = 60LL * 60LL * 1000LL;
 
 /** The relay's ISO-8601 form (`Date.toISOString()`), so the two compare as strings. */
 std::string IsoUtcMs(const int64_t unix_ms) {
@@ -128,7 +131,8 @@ std::string RelayFileErrorCode(const Error& err) {
   while (at < text.size() && (std::isupper(static_cast<unsigned char>(text[at])) || text[at] == '_')) {
     ++at;
   }
-  if (at - begin < 3 || (at < text.size() && text[at] != ':')) {
+  // Followed by the end, ':' (the server text) or ' ' (a note such as FileStart's " byte_length=N").
+  if (at - begin < 3 || (at < text.size() && text[at] != ':' && text[at] != ' ')) {
     return {};
   }
   return text.substr(begin, at - begin);

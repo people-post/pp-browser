@@ -42,7 +42,9 @@ public:
   };
   using Handler = std::function<Reply(const Request&)>;
 
-  ScriptedHttpServer() : acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::address_v4::loopback(), 0)) {
+  /** `port` 0: any free port; else that one (a test that brings a server "back" where none answered). */
+  explicit ScriptedHttpServer(const unsigned short port = 0)
+      : acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::address_v4::loopback(), port)) {
     port_ = acceptor_.local_endpoint().port();
     thread_ = std::thread([this] { Serve(); });
   }
