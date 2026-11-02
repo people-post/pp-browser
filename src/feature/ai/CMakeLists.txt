@@ -1,6 +1,7 @@
 pp_browser_add_feature_library(pp_feature_ai
   SOURCES
     AgentSession.cpp
+    AgentSessions.cpp
     AgentUiPorts.cpp
     TurnExecutor.cpp
   PUBLIC_LIBS

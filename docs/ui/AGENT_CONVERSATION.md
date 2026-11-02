@@ -34,6 +34,17 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 - **`SlidingWindowContextPolicy`** — v1 policy: recent turn pairs + char/token budgets
 - **`TurnCoordinator`** — `BeginTurn` / `CompleteTurn` orchestration
 
+## Sessions: one per conversation
+
+[`AgentSessions`](../../src/feature/ai/AgentSessions.h) (held by `Application`) owns the turns. The Home composer has one fixed `AgentSession` (Conversation mode, no thread); every thread (AI thread, or a person chat for `@ai`) gets its own `AgentSession` the first time it asks, so a thread's permission card, a question the app asked back and its events stay with it. One spare session is kept configured, so a thread's first question does not wait for a whole configure (MCP start included); a new thread takes it and the next spare starts configuring. Settings (configuration, tool hook, permissions, thread store) reach every live session and every later one; the events of all sessions come out of one queue, each carrying its thread, and the brief_AI role that answered a chat last is kept across sessions.
+
+- **Cap.** At most `kMaxConcurrentTurns` thread turns run at once (1 for now: one turn at a time, the chat screen queues the rest). The Home composer's turn does not count, nor does a Home permission card; resuming a thread's card counts from the tap.
+- **`SubmitOutcome`.** `Submit*` answer `Started` (it runs, or starts once that session has configured), `Full` (the cap is reached: nothing was taken, the UI queues it), `BusyHere` (this thread's turn runs) or `Ignored` (empty text, a button tool outside the whitelist). `CanStart(thread)` asks the same without submitting. A question is never dropped silently.
+- **Closing.** A thread's session closes after 10 minutes with nothing open (no turn, no configure, no card waiting, no unexpired question asked back); the next question rebuilds it. Above 6 live sessions (Home and the spare included) the least recently used idle one closes at once; if none can, one more opens anyway.
+- **Stop.** The stop key stops the open thread's turn only; pausing or quitting the app stops all.
+
+App-action tools run on the turn's worker thread (not the UI thread); with a cap above 1, two threads' tools could run at the same time, which has to be settled before the cap is raised.
+
 ## Turn flow
 
 1. User sends → transcript append (conversation or thread store)

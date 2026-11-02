@@ -5,7 +5,7 @@
 
 namespace pbr {
 
-AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
+AgentUiPorts MakeAgentUiPorts(AgentSessions& agent) {
   AgentUiPorts ports;
   ports.snapshot = [&agent]() {
     AgentView view;
@@ -31,29 +31,32 @@ AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
   };
   ports.set_thread_store = [&agent](IThreadStore* store) { agent.SetThreadStore(store); };
   ports.submit = [&agent](const std::string& text, std::optional<std::string> user_payload) {
-    agent.Submit(text, std::move(user_payload));
+    return agent.Submit(text, std::move(user_payload));
   };
   ports.submit_image_to_thread = [&agent](const std::string& thread_id, const std::string& text, AgentImageTurn image) {
-    agent.SubmitToThread(thread_id, text, std::nullopt, std::move(image));
+    return agent.SubmitToThread(thread_id, text, std::nullopt, std::move(image));
   };
-  ports.cancel = [&agent]() { agent.Cancel(); };
+  ports.can_start = [&agent](const std::string& thread_id) { return agent.CanStart(thread_id); };
+  ports.cancel = [&agent](const std::string& thread_id) { agent.Cancel(thread_id); };
+  ports.cancel_all = [&agent]() { agent.CancelAll(); };
   ports.forget_thread = [&agent](const std::string& thread_id) { agent.ForgetThread(thread_id); };
-  ports.is_busy = [&agent]() { return agent.IsBusy(); };
+  ports.is_busy = [&agent](const std::string& thread_id) { return agent.IsBusy(thread_id); };
+  ports.any_busy = [&agent]() { return agent.AnyBusy(); };
   ports.poll_events = [&agent](std::vector<AgentEvent>& out) { agent.PollEvents(out); };
   ports.wait_for_configure_idle = [&agent]() { agent.WaitForConfigureIdle(); };
-  ports.has_conversation_entries = [&agent]() { return !agent.conversation().Entries().empty(); };
+  ports.has_conversation_entries = [&agent]() { return !agent.Home().conversation().Entries().empty(); };
   ports.last_conversation_entry_id = [&agent]() -> std::optional<std::string> {
-    const auto& entries = agent.conversation().Entries();
+    const auto& entries = agent.Home().conversation().Entries();
     if (entries.empty()) {
       return std::nullopt;
     }
     return entries.back().id;
   };
   ports.complete_assistant_message = [&agent](const std::string& entry_id, const std::string& message) {
-    (void)agent.CompleteAssistantMessage(entry_id, message);
+    (void)agent.Home().CompleteAssistantMessage(entry_id, message);
   };
   ports.set_assistant_display_plain = [&agent](const std::string& entry_id, const std::string& message) {
-    (void)agent.SetAssistantDisplay(entry_id, message, {});
+    (void)agent.Home().SetAssistantDisplay(entry_id, message, {});
   };
   return ports;
 }

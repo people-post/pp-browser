@@ -2,6 +2,7 @@
 
 #include "foundation/data/Config.h"
 #include "feature/ai/AgentSession.h"
+#include "feature/ai/AgentSessions.h"
 
 #include <functional>
 #include <optional>
@@ -28,7 +29,7 @@ struct AgentView {
 
 /**
  * Agent read snapshot + imperative ops for ChatController.
- * Application fills from AgentSession. Clear via BindAgentPorts({}).
+ * Application fills from AgentSessions. Clear via BindAgentPorts({}).
  */
 struct AgentUiPorts {
   std::function<AgentView()> snapshot;
@@ -41,14 +42,26 @@ struct AgentUiPorts {
                           const std::string& decision_label)>
       resume_tool_permission;
   std::function<void(IThreadStore* store)> set_thread_store;
-  std::function<void(const std::string& text, std::optional<std::string> user_payload)> submit;
+  /** The Home composer's question (no thread); never Full. */
+  std::function<SubmitOutcome(const std::string& text, std::optional<std::string> user_payload)> submit;
   /** One question with one prepared image to an AI thread (brief preset only). */
-  std::function<void(const std::string& thread_id, const std::string& text, AgentImageTurn image)> submit_image_to_thread;
-  std::function<void()> cancel;
+  std::function<SubmitOutcome(const std::string& thread_id, const std::string& text, AgentImageTurn image)>
+      submit_image_to_thread;
+  /** May a turn start in `thread_id` now (empty: the Home composer)? */
+  std::function<TurnStart(const std::string& thread_id)> can_start;
+  /** Stops the turn of `thread_id` only (empty: the Home composer's). */
+  std::function<void(const std::string& thread_id)> cancel;
+  /** Stops every turn (the app pauses or quits). */
+  std::function<void()> cancel_all;
   /** A thread was cleared or closed: the session forgets which brief_AI role answered it last. */
   std::function<void(const std::string& thread_id)> forget_thread;
-  /** A turn is running in the session (any thread). The UI uses it to recover a "busy" it never heard end (B112). */
-  std::function<bool()> is_busy;
+  /**
+   * A turn runs in `thread_id` (empty: the Home composer). The UI uses it to recover a "busy" it never heard end
+   * (B112).
+   */
+  std::function<bool(const std::string& thread_id)> is_busy;
+  /** A turn runs anywhere. */
+  std::function<bool()> any_busy;
   std::function<void(std::vector<AgentEvent>& out)> poll_events;
   std::function<void()> wait_for_configure_idle;
   std::function<bool()> has_conversation_entries;
@@ -57,6 +70,6 @@ struct AgentUiPorts {
   std::function<void(const std::string& entry_id, const std::string& message)> set_assistant_display_plain;
 };
 
-AgentUiPorts MakeAgentUiPorts(AgentSession& agent);
+AgentUiPorts MakeAgentUiPorts(AgentSessions& agent);
 
 } // namespace pbr

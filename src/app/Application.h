@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/ai/AgentSession.h"
+#include "feature/ai/AgentSessions.h"
 #include "app/ChatShellBridge.h"
 #include "app/ContactsShellBridge.h"
 #include "app/PeoplePickerShellBridge.h"
@@ -126,7 +126,7 @@ private:
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::unique_ptr<OnboardingController> onboarding_;
-  std::optional<AgentSession> agent_session_;
+  std::optional<AgentSessions> agent_sessions_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };
 
