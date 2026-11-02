@@ -41,7 +41,13 @@ Prefer **“higher observes lower”** (progress callbacks, native phase) over *
 
 ## Ports
 
-Ports are allowed and encouraged. They must:
+**Owners and owned parts** ([V055](../../projects/p2p-av-calls/DECISIONS.md#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device)):
+an owner calls what it owns directly and may hold it; an owned part reports to its owner as **events on the owner's
+queue** (`OwnerOutbox` and the event variants), not through a port bag that calls back into the owner. Each fact has
+one writer; others read it or send that writer events. Ports are for a capability's edges (the app, the capabilities
+below, mesh) and for siblings that do not own each other.
+
+Ports at those edges are allowed and encouraged. They must:
 
 1. Be installed by the composition root (or an owning façade the root already owns).
 2. Name **capabilities the consumer needs**, not the sibling’s type name as the API (`allows_ops`, `cancel_gen`, `on_progress` — not `set_call_media_status(CallMediaStatus)`).
@@ -55,9 +61,10 @@ Ports are allowed and encouraged. They must:
 | **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallTopologyController::MakeMigrateArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
 | Free `Make*` + standalone `*Ports.{h,cpp}` | Avoid — duplicates the consumer contract and invites upward `#include`s |
 
-**Owned child:** a child product under a façade defines **its own** port structs in its vocabulary. The owning façade projects parent/sibling ports into the child’s ports (Topology → Workflow migrate arming/seat/host; CSM → SessionWorkflow clustered HostPorts). The child must not `#include` the owner’s header for port types.
-
-Large HostPorts façades may nest **consumer-named clusters** (e.g. SessionWorkflow `wire` / `duplex` / `hop` / `chrome` / `reach`) so the grab-bag stays readable without re-exporting sibling type names.
+**Owned child:** a child reports in **its own** vocabulary (its event types, in its header); the owner maps them. The
+child must not `#include` the owner's header. Older calls code still projects port bags into owned children
+(Topology → hop-migrate arming / seat / host; CSM → SessionWorkflow `wire` / `duplex` / `hop` / `reach`); those move to
+events as the call-model phases land (p2p-av-calls PHASES § cm) — do not add new ones.
 
 Unit / compose tests act as mini-composers: define local helpers in the test TU (or empty ports), not shared free `Make*` in the feature library.
 
@@ -77,6 +84,7 @@ Unit / compose tests act as mini-composers: define local helpers in the test TU 
 - [ ] Do ports use the lower peer’s vocabulary (needs / events) or the higher peer’s enums?
 - [ ] Is mapping to chrome / product Status done only at the composition root?
 - [ ] Are there dual writers of the same progress story (native phase **and** higher Status)?
+- [ ] Does an owned part call back into its owner through a port, instead of reporting an event?
 
 ## Stop short of
 

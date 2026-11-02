@@ -42,13 +42,13 @@
 namespace pbr {
 
 /**
- * Call media / session / lifecycle stack (Wave 3 / V040).
+ * The calls capability assembled (Wave 3 / V040): the owner thread and its event loop, the call stores, the media
+ * engine, the session manager (which owns the live calls, the seat and both media paths) and `CallMediaPlane`
+ * (the call_media transport) over the hub's borrowed `MeshConnectivity` / `MeshMediaRelay` (L015). The app's
+ * `CallsParticipant` owns it and maps the hub's lifecycle onto it; CallStackDeps brings the mesh / config glue.
+ * It publishes the calls' UI snapshot (`UiState`).
  *
- * Phase assembler: profile stores, CSM, Lifecycle, MediaSeat, and `CallMediaPlane`
- * (call_media transport) over the hub's borrowed `MeshConnectivity` / `MeshMediaRelay` (L015). Hub owns `unique_ptr<CallStack>`, forwards
- * `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue through CallStackDeps.
- *
- * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
+ * CallUiBackend binds a CallStack& directly (not the hub) for call APIs.
  */
 struct CallStackDeps {
   IThreadStore* store = nullptr;
@@ -76,7 +76,6 @@ struct CallStackDeps {
   /** Hub-owned mesh glue the call stack cannot own. */
   std::function<void(const std::string& identity)> prefetch_peer_reachability;
   std::function<void()> sync_mobile_ephemeral_listen;
-  std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
   /** A call's peer named its device: ask that device for the account's card (AccountCardService). */
   std::function<void(const std::string& account, const std::string& peer_id)> note_peer_device;
 
@@ -175,9 +174,9 @@ public:
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
   /**
-   * Bind the call-state port sets (CSM state-change hook, bridge arming / seat). Calls owner only, at
-   * the bind points (BuildSessions / BindMediaProducts) — never per ring change: the targets call
-   * these ports on the owner, so re-binding elsewhere would swap a std::function while it runs (B49).
+   * Bind the session manager's call-state hook (chrome refresh, N025 listen). Calls owner only, at the bind
+   * points (BuildSessions / BindMediaProducts) — never per ring change: the hook runs on the owner, so
+   * re-binding elsewhere would swap a std::function while it runs (B49).
    */
   void BindCallState();
   /** Test-only: times BindCallState bound the port sets. */

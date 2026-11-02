@@ -142,7 +142,6 @@ public:
     ports.set_media_activity = [this](std::string message) { media_activity = std::move(message); };
     ports.clear_media_activity = [this]() { media_activity.clear(); };
     ports.note_media_attempted = [this](const std::string& call_id) { media_attempted.push_back(call_id); };
-    ports.clear_media_peer_identity = []() {};
     ports.request_inbox_sync = [this]() { ++inbox_sync_requests; };
     return ports;
   }

@@ -10,10 +10,8 @@
 #include "lib/calls/CallMediaAdaptation.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopAttachLogic.h"
-#include "lib/pricing/InitiationPricing.h"
 #include "common/Localized.h"
 #include "lib/people/ContactTypes.h"
-#include "lib/people/MeshHopPolicy.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
@@ -176,7 +174,6 @@ CallHopMigrateHostPorts CallTopologyController::MakeMigrateHostPorts(const HostP
   out.clear_media_activity = ports.clear_media_activity;
   out.note_media_attempted = ports.note_media_attempted;
   out.call_media = ports.call_media;
-  out.clear_media_peer_identity = ports.clear_media_peer_identity;
   out.request_inbox_sync = ports.request_inbox_sync;
   return out;
 }
@@ -208,7 +205,7 @@ bool CallTopologyController::IsSfuAttached() const {
 }
 
 bool CallTopologyController::IsOnSfuForCall(const std::string& call_id) const {
-  return sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+  return hop_migrate_.IsLiveOnHopFor(call_id);
 }
 
 bool CallTopologyController::IsSoftMigrateInFlight() const {
@@ -501,7 +498,20 @@ CallHopHealth CallTopologyController::HopHealth() const {
 }
 
 bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
-  return gen == 0 || gen == flight_.migrate_generation.load(std::memory_order_acquire);
+  return hop_migrate_.IsMigrateGenerationCurrent(gen);
+}
+
+bool CallTopologyController::SettleFinishedMigrate(const std::string& call_id) {
+  ReleaseMigrateFlight();
+  if (!(sfu_.attached && media_.IsSfuMode())) {
+    return false;
+  }
+  ClearSfuAttachWait();
+  SyncSfuSubscriptions(call_id);
+  inbound_gate_.pending_attach.reset();
+  inbound_gate_.pending_call_id.clear();
+  host_.NotifyRingChanged();
+  return true;
 }
 
 std::vector<std::string> CallTopologyController::JoinedRemoteIdentities(const std::string& call_id,
@@ -955,13 +965,7 @@ void CallTopologyController::FinishJoinSoftMigrate(const std::string& call_id, u
   if (!IsMigrateGenerationCurrent(gen)) {
     return;
   }
-  ReleaseMigrateFlight();
-  if (sfu_.attached && media_.IsSfuMode()) {
-    ClearSfuAttachWait();
-    SyncSfuSubscriptions(call_id);
-    inbound_gate_.pending_attach.reset();
-    inbound_gate_.pending_call_id.clear();
-    host_.NotifyRingChanged();
+  if (SettleFinishedMigrate(call_id)) {
     return;
   }
   if (!mig) {
@@ -1087,13 +1091,7 @@ void CallTopologyController::FinishRemoteAcceptMigrate(const std::string& call_i
   if (!IsMigrateGenerationCurrent(gen)) {
     return;
   }
-  ReleaseMigrateFlight();
-  if (sfu_.attached && media_.IsSfuMode()) {
-    ClearSfuAttachWait();
-    SyncSfuSubscriptions(call_id);
-    inbound_gate_.pending_attach.reset();
-    inbound_gate_.pending_call_id.clear();
-    host_.NotifyRingChanged();
+  if (SettleFinishedMigrate(call_id)) {
     return;
   }
   if (!mig) {
@@ -1187,13 +1185,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
       if (!IsMigrateGenerationCurrent(gen)) {
         return;
       }
-      ReleaseMigrateFlight();
-      if (sfu_.attached && media_.IsSfuMode()) {
-        ClearSfuAttachWait();
-        SyncSfuSubscriptions(call_id);
-        inbound_gate_.pending_attach.reset();
-        inbound_gate_.pending_call_id.clear();
-        host_.NotifyRingChanged();
+      if (SettleFinishedMigrate(call_id)) {
         return;
       }
       if (!mig) {

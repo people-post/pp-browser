@@ -12,7 +12,6 @@
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "common/runtime/OwnerOutbox.h"
-#include "common/runtime/OwnerSteps.h"
 #include "feature/calls/LiveCallMedia.h"
 
 #include <functional>
@@ -148,8 +147,8 @@ public:
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(WorkflowEvent& event);
   /**
-   * Drop the follow-ups still to come (CSM teardown): accepts waiting on their circuit park, and
-   * roster fan-outs already reported — they must not run against a store / delivery being torn down.
+   * Drop the follow-ups still to come (CSM teardown): roster fan-outs already reported — they must not
+   * run against a store / delivery being torn down.
    */
   void DropFollowUps();
 
@@ -165,11 +164,10 @@ public:
   /** V053: the group call this device may join from `thread_id` (a group's thread), if any. */
   std::optional<CallSession> JoinableCallInThread(const std::string& thread_id) const;
   /**
-   * Accept a pending invite: checks → circuit park (async) → CallAccept + Joined + media arm.
-   * `on_done` runs once, on the calls owner (inline when there is no park port).
+   * Accept a pending invite: checks → CallAccept + Joined + media arm. The circuit park is asked for,
+   * not waited on. A failed accept leaves the call ringing.
    */
-  void AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
-                         std::function<void(Roe<void>)> on_done);
+  Roe<void> AcceptInvite(const std::string& call_id, InitiationChargeDecision charge_decision);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
@@ -266,8 +264,9 @@ private:
   /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);
-  Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
-                                    bool voice_only_accept, const std::string& local_identity);
+  /** The accept once the call is marked Accepting: the invite, the charge, the row, CallAccept, media. */
+  Roe<void> CommitAccept(const std::string& call_id, InitiationChargeDecision charge_decision, bool voice_only_accept,
+                         const std::string& local_identity);
   // --- StartCall steps ---
   /** Invitees given, no ring pending, a direct / group thread, payable: the origin thread. */
   Roe<Thread> CheckCanStartCall(const std::string& origin_thread_id, const std::vector<std::string>& invitee_identities,
@@ -328,7 +327,7 @@ private:
   /** Send the key, note the hop report, pick the path (1:1 schedules the offerer's start); roster after. */
   void StartMediaAfterRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                                    const std::string& local_identity, bool implicit);
-  // --- ContinueAcceptAfterPark steps ---
+  // --- CommitAccept steps ---
   /** The pending invite this device may accept (not expired, not a legacy broadcast row). */
   Roe<PendingCallInvite> LoadAcceptableInvite(const std::string& call_id, const std::string& local_identity);
   /** The stored session, or one built from the invite. */
@@ -359,8 +358,6 @@ private:
   LiveCallMedia& call_media_;
   HostPorts host_;
   OwnerOutbox<WorkflowEvent> outbox_;
-  /** Accepts waiting on their circuit park. */
-  OwnerSteps steps_;
   /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
   uint64_t followup_epoch_ = 0;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;

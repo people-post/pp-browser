@@ -106,11 +106,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         messaging->SyncInboxFromWake(force);
       }
     };
-    deps.delivery.register_peer_direct_endpoint = [&hub](const std::string& identity, const std::string& multiaddr) {
-      if (auto* messaging = hub.MeshMessagingOrNull()) {
-        messaging->RegisterPeerDirectEndpoint(identity, multiaddr);
-      }
-    };
     deps.delivery.ensure_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<EnsuredE2ePublicSessionKey> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
@@ -132,7 +127,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.list_directory_nodes = reach.list_directory_nodes;
   deps.list_dht_nodes = reach.list_dht_nodes;
   deps.seed_dial_ok = reach.seed_dial_ok;
-  deps.note_lan_mdns_peer_id = reach.note_lan_peer_id;
   deps.note_peer_device = [&hub](const std::string& account, const std::string& peer_id) {
     if (auto* messaging = hub.MeshMessagingOrNull()) {
       messaging->AccountCards().NoteDevice(account, peer_id);
@@ -210,7 +204,7 @@ void CallsParticipant::OnPolicyPrefs(const HubPolicyPrefs& prefs) {
 }
 
 void CallsParticipant::OnTeardownStarting() {
-  stack_.RunOnOwner([](CallSessionManager& calls) { calls.ClearMediaCallbacks(); });
+  stack_.RunOnOwner([](CallSessionManager& calls) { calls.DropFollowUps(); });
 }
 
 void CallsParticipant::OnMessagingDropped() {

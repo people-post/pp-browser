@@ -64,7 +64,6 @@ Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSess
                                     const std::optional<std::string>& envelope_key_init_b64,
                                     int64_t envelope_timestamp_ms);
 
-/** Derive the pairwise session key used for CallMediaKey wrap (channel e2e_public). */
 /**
  * The pair moved from `old_epoch` to `new_epoch` because this device lost its numbering (D014, #378): the
  * session is retired at `old_epoch` (late messages still read), none is current — the next send opens one

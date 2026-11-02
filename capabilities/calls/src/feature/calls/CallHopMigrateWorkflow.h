@@ -53,7 +53,6 @@ struct CallHopMigrateHostPorts {
   std::function<void(const std::string& call_id)> note_media_attempted;
   /** The call's media coordinator: the hop path starts / stops the engine through it. */
   std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
-  std::function<void()> clear_media_peer_identity;
   std::function<void()> request_inbox_sync;
 
   bool IsBound() const { return static_cast<bool>(local_relay_identity); }
@@ -66,11 +65,6 @@ struct CallHopMigrateHostPorts {
   void NotifyRingChanged() const {
     if (notify_ring_changed) {
       notify_ring_changed();
-    }
-  }
-  void ClearMediaPeerIdentity() const {
-    if (clear_media_peer_identity) {
-      clear_media_peer_identity();
     }
   }
   void RequestInboxSync() const {
@@ -250,15 +244,19 @@ public:
   void OnGuestSfuTransportLost();
   /** The device's network came back or moved: a guest whose hop transport was lost tries again. */
   void OnLocalNetworkMoved();
-  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
-                                      std::function<void(Roe<void>)> on_done);
-
   static constexpr int kMaxGuestSfuReattachAttempts = 3;
   /** Past the quick attempts a guest keeps trying at this pace while the call is on the hop: a phone
    *  out of coverage comes back without its network moving. */
   static constexpr std::chrono::milliseconds kGuestSfuSlowRetry{3000};
 
+  /** `gen` is 0 or the current migrate generation (a result for a newer migrate is dropped). */
+  bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  /** The engine runs `call_id` on the hop (attached, SFU mode). */
+  bool IsLiveOnHopFor(const std::string& call_id) const;
+
 private:
+  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                      std::function<void(Roe<void>)> on_done);
   struct HopPick;
   struct HopAttach;
 
@@ -271,9 +269,6 @@ private:
   /** The live attach's key ring (calls owner), so a rotation reaches its frames. */
   std::shared_ptr<class SfuKeyRing> live_keys_;
   std::string live_keys_call_id_;
-
-  bool IsMigrateGenerationCurrent(uint64_t gen) const;
-  bool IsLiveOnHopFor(const std::string& call_id) const;
 
   // SoftMigrate steps (MaybeSoftMigrateToSfuAsync → gate → control thread → pick hops in order).
   /** False when the arming state settles the request here (`on_done` already called). */

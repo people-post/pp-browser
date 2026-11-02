@@ -58,8 +58,8 @@ struct CallHopArmingPorts {
 };
 
 /**
- * MediaSeat façade for Topology (V046) — fuller than CSM CallMediaSeatPorts /
- * Workflow CallHopMigrateSeatPorts. Topology must not hold CallMediaSeat*.
+ * What topology asks of the media seat (V046; hop-migrate gets a subset, CallHopMigrateSeatPorts). Being replaced
+ * by the per-call media session (p2p-av-calls V055, PHASES § cm3).
  */
 struct CallTopologySeatPorts {
   std::function<bool(const std::string& call_id)> is_bound;
@@ -83,8 +83,8 @@ struct CallTopologySeatPorts {
 
 /**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025) — V036 Phase 3 **Hop path** plugin
- * under CallMediaSeat. Pure who-picks / wait / fan-out live in base SoftMigrateLogic /
- * CallHopAttachLogic; this adapter owns IO + AppRuntime posting.
+ * under CallMediaSeat. Pure who-picks / wait / fan-out live in lib/calls SoftMigrateLogic /
+ * CallHopAttachLogic; this adapter runs them on the calls owner.
  * Attach StartSfu requires a seat token when the seat is wired.
  *
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
@@ -214,6 +214,11 @@ private:
   void Defer(std::function<void()> step);
   std::vector<std::string> DialableHopPeerIds() const;
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  /**
+   * A migrate finished with its generation current: release the flight. True when the call is on the hop now (the
+   * attach wait, subscriptions and the deferred attach settled, the ring refreshed) — nothing more to do.
+   */
+  bool SettleFinishedMigrate(const std::string& call_id);
   /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
   CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
   bool LanReachabilityConfirmedForCall(const std::string& call_id,
@@ -242,7 +247,7 @@ private:
   void AnnounceLocalPublisher(const std::string& call_id, const CallSfuAttachDetail& hop_attach);
   /**
    * Guest media-relay duplex died mid-call — re-AcceptAndAttach without restarting capture.
-   * UI-thread entry; work runs on a worker.
+   * Calls owner (the relay-loss observer emits an event).
    */
   void OnGuestSfuTransportLost();
   /** Bump the migrate generation and own the flight for `call_id`; returns the new generation. */

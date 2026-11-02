@@ -287,10 +287,6 @@ bool CallMediaBridge::DirectMediaReady() const {
   return direct_.Phase() == CallMediaSessionPhase::MediaReady;
 }
 
-bool CallMediaBridge::HasActiveDirectStream() const {
-  return direct_.IsActive();
-}
-
 void CallMediaBridge::SetDirectArmingPorts(CallDirectArmingPorts ports) {
   arming_ = std::move(ports);
 }
@@ -1090,10 +1086,6 @@ void CallMediaBridge::RestartAfterEscalate(const std::string& call_id, const std
   }
 }
 
-bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/) const {
-  return reach_.Available();
-}
-
 void CallMediaBridge::AbortConnectSequence() {
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   connect_.Abort();
@@ -1490,7 +1482,7 @@ void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::str
     log().info << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
     return;
   }
-  log().info << "StartMediaAsOfferer UI enter call_id=" << call_id << " peer=" << peer_identity;
+  log().info << "StartMediaAsOfferer call_id=" << call_id << " peer=" << peer_identity;
   SetDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::ScheduleOfferer,
                         call_id);
   if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
@@ -1507,7 +1499,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
 }
 
 void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::string& peer_identity) {
-  log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id << " peer=" << peer_identity;
+  log().info << "ScheduleStartMediaAsAnswerer call_id=" << call_id << " peer=" << peer_identity;
   // Re-arm Direct before Apply so product AllowsDirectPath for Schedule.
   if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
     log().info << "ScheduleStartMediaAsAnswerer request_direct_arming call_id=" << call_id
@@ -1649,10 +1641,6 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Bridge state, the connect sequence and MediaEngine::Stop (SDL capture — CALLS.md) are
   // calls-owner only; every stop reaches here through the owner's events.
   PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
-  StopMeshMediaOnUi(call_id);
-}
-
-void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   receive_->remote_stream.store(0, std::memory_order_release);  // the next call binds its own
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
   reach_.AbortCircuitAttempts();

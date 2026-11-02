@@ -219,8 +219,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     out.session_key = shared_session_key_;
     return out;
   };
-  deps.delivery.register_peer_direct_endpoint = [this](const std::string& identity,
-                                                      const std::string& multiaddr) {
+  // Reach registers a peer's dialable listen address on the harness's Amp links.
+  auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (!host_ || !host_->Amp()) {
       return;
     }
@@ -255,7 +255,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   reach.list_directory_nodes = deps.list_directory_nodes;
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
-  reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  reach.register_direct_endpoint = register_direct_endpoint;
   mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
   hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();

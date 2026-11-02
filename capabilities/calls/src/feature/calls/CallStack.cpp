@@ -1,9 +1,7 @@
 #include "feature/calls/CallStack.h"
 #include "lib/calls/CallControlFamily.h"
 
-
 #include "common/MeshConfig.h"
-#include "mesh/host/MeshPorts.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/people/ContactsStore.h"
@@ -12,7 +10,6 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
 #include "mesh/reachability/Reachability.h"
-#include "mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -735,7 +732,7 @@ void CallStack::ResetSessionsOnOwner() {
 void CallStack::Shutdown() {
   executor_.RunAndWait([this]() {
     if (call_sessions_) {
-      call_sessions_->ClearMediaCallbacks();
+      call_sessions_->DropFollowUps();
       call_sessions_->SetOnCallStateChanged({});
     }
     chrome_self_.Invalidate();  // no chrome refresh after shutdown

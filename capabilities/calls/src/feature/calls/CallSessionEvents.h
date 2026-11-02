@@ -49,15 +49,9 @@ struct RosterAfterRemoteAccept {
   uint64_t epoch = 0;
 };
 
-/** A waiting step's result arrived (the accept's circuit park). */
-struct Continue {
-  OwnerStepReady step;
-};
-
 } // namespace workflow_event
 
-using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept,
-                                   workflow_event::Continue>;
+using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
 
 /** The hop-migrate workflow's own events (V050 group hop flows). */
 namespace hop_migrate_event {

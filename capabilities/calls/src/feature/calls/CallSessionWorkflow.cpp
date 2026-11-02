@@ -29,7 +29,6 @@ CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, ICallSessionStore&
 CallSessionWorkflow::~CallSessionWorkflow() = default;
 
 void CallSessionWorkflow::DropFollowUps() {
-  steps_.DropAll();
   ++followup_epoch_;
 }
 
@@ -440,8 +439,7 @@ void CallSessionWorkflow::SetPendingAcceptVoiceOnly(const bool voice_only) {
   pending_accept_voice_only_ = voice_only;
 }
 
-void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
-                                            std::function<void(Roe<void>)> on_done) {
+Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id, InitiationChargeDecision charge_decision) {
   if (pending_accept_charge_set_) {
     charge_decision = pending_accept_charge_;
     pending_accept_charge_set_ = false;
@@ -454,23 +452,14 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
-    on_done(local.error());
-    return;
+    return local.error();
   }
   SweepExpiredInvites();
   if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << cleared.error().message;
-    on_done(cleared.error());
-    return;
+    return cleared.error();
   }
   live_calls_.MarkAccepting(call_id);
-  // An accept that does not go through leaves the call ringing (lifecycle AcceptFailed → Ringing).
-  on_done = [this, call_id, on_done = std::move(on_done)](Roe<void> accepted) {
-    if (!accepted) {
-      live_calls_.MarkAcceptFailed(call_id);
-    }
-    on_done(std::move(accepted));
-  };
   // Park on the seeds so the caller's circuit can reach us — but CallAccept does not wait for it.
   // It used to (≤ 12 s): a seed silently gone held every answer for the whole park. The caller only
   // tries a circuit after our accept reaches it, and its StartBridge waits at the relay for us to
@@ -481,13 +470,15 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
                                                       << " ready=" << (ready ? 1 : 0);
     });
   }
-  on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
+  Roe<void> accepted = CommitAccept(call_id, charge_decision, voice_only_accept, *local);
+  if (!accepted) {
+    live_calls_.MarkAcceptFailed(call_id); // an accept that does not go through leaves the call ringing
+  }
+  return accepted;
 }
 
-Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,
-                                                      InitiationChargeDecision charge_decision,
-                                                      bool voice_only_accept,
-                                                      const std::string& local_identity) {
+Roe<void> CallSessionWorkflow::CommitAccept(const std::string& call_id, InitiationChargeDecision charge_decision,
+                                            bool voice_only_accept, const std::string& local_identity) {
   // LeaveCallIfActiveExcept only sees Joined sessions; an Ended prior call can leave the engine
   // running. Stop it before this call's media — never the call we are accepting.
   call_media_.StopMediaExcept(call_id);
@@ -775,8 +766,6 @@ void CallSessionWorkflow::Handle(WorkflowEvent& event) {
           if (e.epoch == followup_epoch_) {
             SendRosterAfterRemoteAccept(e);
           }
-        } else if constexpr (std::is_same_v<E, workflow_event::Continue>) {
-          steps_.Run(e.step.id, e.step.value.get());
         } else {
           static_assert(!sizeof(E), "handle every WorkflowEvent");
         }

@@ -54,10 +54,6 @@ void CallsLoop::Enqueue(CallStackEvent event) {
   tasks_.Post([this, event = std::make_shared<CallStackEvent>(std::move(event))]() { Handle(*event); });
 }
 
-void CallsLoop::EnqueueFront(CallStackEvent event) {
-  tasks_.PostFront([this, event = std::make_shared<CallStackEvent>(std::move(event))]() { Handle(*event); });
-}
-
 OwnerExecutor::TimerId CallsLoop::After(const std::chrono::milliseconds delay, CallStackEvent event) {
   return tasks_.After(delay, [this, event = std::make_shared<CallStackEvent>(std::move(event))]() { Handle(*event); });
 }

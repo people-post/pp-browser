@@ -187,30 +187,6 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
   EXPECT_EQ(ExcludeSelfHop({self_hop, other}, "").size(), 2u);
 }
 
-TEST(MeshHopPolicyTest, PreferInCallMediaHopsPutsCallMemberFirst) {
-  mesh::MeshHopCandidate linux_out;
-  linux_out.peer_id = "12D3KooWLinux";
-  linux_out.multiaddr = "/ip4/1.1.1.1/tcp/1/p2p/12D3KooWLinux";
-  linux_out.affinity = mesh::MeshHopAffinity::Contact;
-
-  mesh::MeshHopCandidate windows_in;
-  windows_in.peer_id = "12D3KooWWin";
-  windows_in.multiaddr = "/ip4/2.2.2.2/tcp/1/p2p/12D3KooWWin";
-  windows_in.affinity = mesh::MeshHopAffinity::Contact;
-
-  mesh::MeshHopCandidate seed;
-  seed.peer_id = "12D3KooWSeed";
-  seed.multiaddr = "/ip4/3.3.3.3/tcp/1/p2p/12D3KooWSeed";
-  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
-
-  // Seed-first ranking (prefer contacts off), then boost in-call Windows ahead.
-  auto ranked = PreferInCallMediaHops({seed, linux_out, windows_in}, {"12D3KooWWin"});
-  ASSERT_EQ(ranked.size(), 3u);
-  EXPECT_EQ(ranked[0].peer_id, "12D3KooWWin");
-  EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
-  EXPECT_EQ(ranked[2].peer_id, "12D3KooWLinux");
-}
-
 TEST(MeshHopPolicyTest, DirectoryHopPrefersGlobalIpv6Multiaddr) {
   mesh::MeshDirectoryNode node;
   node.peer_id = "12D3KooWDir";

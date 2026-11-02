@@ -47,8 +47,8 @@ namespace pbr {
 class CallMediaBridge;
 
 /**
- * Direct media façade for CallSessionManager (V042).
- * CSM must not hold CallMediaBridge* — ops copy these functions.
+ * What the session manager asks of the 1:1 path (CallMediaBridge, owned here): its media path, connect health,
+ * the calls it attempted. Bound when the path is attached, cleared when it is dropped.
  */
 struct CallDirectMediaPorts {
   std::function<std::string()> media_path_kind;
@@ -67,21 +67,11 @@ struct CallDirectMediaPorts {
 };
 
 /**
- * MediaSeat façade for CallSessionManager (V043).
- * CSM must not hold CallMediaSeat* — ops copy these functions.
- */
-struct CallMediaSeatPorts {
-  std::function<void(const std::string& call_id)> release;
-
-  bool IsBound() const { return static_cast<bool>(release); }
-};
-
-/**
- * Call session lifecycle façade (a2 / V014 / a4) — V036 Phase 3 **signaling** owner.
- * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
- * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
- * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
- * Path façades take Ops only — no standing CallMediaBridge* / CallMediaSeat* (V048).
+ * The calls on this device (a2 / V014 / a4): intents from the UI (`Apply`), inbound call control, and the parts
+ * that run them, which it owns — the durable session workflow, the live calls, the seat, the 1:1 path
+ * (CallMediaBridge) and the group path (CallTopologyController). Media starts and stops through each call's
+ * media coordinator (LiveCallMedia), not the engine. Being thinned to an intent / inbound router
+ * (p2p-av-calls V055, PHASES § cm4).
  */
 class CallSessionManager : public Module, private CallMediaHost {
 public:
@@ -158,10 +148,6 @@ public:
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
   CallDirectArmingPorts DirectArmingPorts();
-  /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
-  /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
-  /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
-  /** The seat the calls' media coordinators take (null: none bound — mesh stopped / harness). */
   /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
   const CallMediaSeat& Seat() const { return seat_; }
   CallMediaSeat& SeatForTest() { return seat_; }
@@ -188,8 +174,6 @@ public:
     direct_driver_ = direct;
     call_media_.BindDirectDriver(direct);
   }
-  /** A call's media coordinator (LiveCallMedia); null for a call not admitted here. Calls owner. */
-  CallMediaCoordinator* CallMedia(const std::string& call_id) { return call_media_.Media(call_id); }
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store);
   InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
@@ -205,16 +189,16 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
 
-  /** Accept (async: waits for the circuit park without blocking); `on_done` on the calls owner. */
-  void AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
+  /** Accept a pending invite (the workflow's; own devices hear it was answered here). */
+  Roe<void> AcceptInvite(const std::string& call_id,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   // --- What the user does, and what the device shows (V037) ------------------------------------
   /**
-   * A UI click or a media event for `call_id` (empty: the ring for Accept / Decline, else the active
-   * call). Clicks run their session op; media events move the call's media progress. What the
-   * device shows is projected from the calls (LiveCalls::Phase / Status). Calls owner.
+   * A UI event for `call_id` (empty: the ring for Accept / Decline, else the active call): a click runs
+   * its session op. What the device shows is projected from the calls (LiveCalls::Phase / Status).
+   * Calls owner.
    */
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   /** Where this subtree reports its events (the stack binds it at build). */
@@ -233,6 +217,8 @@ public:
   const LiveCalls& Live() const { return live_calls_; }
   /** Harnesses that seed store rows directly admit the call the way the workflow would. */
   LiveCalls& LiveCallsForTest() { return live_calls_; }
+  /** What the direct path reports when the peer's connection for a failed call reaches us. */
+  void PeerReconnectedForTest(const std::string& call_id) { RestartMedia(call_id, true); }
   /** Detach SFU + stop capture. Calls owner only — call before LeaveCall worker / app quit. */
   void StopCallMedia(const std::string& call_id);
 
@@ -283,7 +269,6 @@ public:
   std::string PeekMediaActivity() const;
   void ClearMediaActivity();
 
-  Roe<std::optional<CallSession>> SessionForCall(const std::string& call_id) const;
   void SweepExpiredInvites();
   void AbandonOrphanedCallsAfterRestart();
   bool MediaAttemptedThisProcess(const std::string& call_id) const;
@@ -306,28 +291,26 @@ public:
   /** Ask publisher for an IDR (empty identity = local encoder). */
   Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
 
-  void ClearMediaCallbacks();
+  /** Hub teardown: drop queued follow-ups (a roster fan-out) before the store and delivery go. */
+  void DropFollowUps();
 
 private:
-  // Topology HostPorts helpers (V046 — not CallTopologyHost overrides)
+  // Effects the owned parts ask for (topology / workflow host ports, CallMediaHost): one body each
   /** The control's call (its detail's call_id) has `sender_identity` as initiator or current participant. */
   bool SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const;
   /** V053: the call was offered to the sender (a group call): it may ask to join, or say it ended. */
   bool SenderMayJoin(const std::string& detail_json, const std::string& sender_identity) const;
-  Roe<std::string> TopologyLocalIdentity() const;
+  Roe<std::string> LocalIdentity() const;
   Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
                                    const std::string& detail_json, const std::string& display,
                                    const std::string& skip_identity);
-  Roe<void> TopologySendDirect(const std::string& peer_identity, CallControlType type,
-                               const std::string& detail_json, const std::string& display);
-  void TopologyNotifyRingChanged();
-  void TopologySetLastMediaError(std::string message);
-  void TopologySetMediaActivity(std::string message);
-  void TopologyClearMediaActivity();
+  Roe<void> SendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
+                       const std::string& display);
+  void SetLastMediaError(std::string message);
+  void SetMediaActivity(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
-  void TopologyClearMediaPeerIdentity();
-  void TopologyRequestInboxSync();
+  void RequestInboxSync();
   void BindTopologyHostPorts();
 
   // CallMediaHost
@@ -435,7 +418,6 @@ private:
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;
-  SharedPorts<CallMediaSeatPorts> media_seat_ports_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

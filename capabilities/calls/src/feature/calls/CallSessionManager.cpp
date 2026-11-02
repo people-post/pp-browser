@@ -10,11 +10,9 @@
 #include "lib/calls/CallMediaAdaptation.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
-#include "lib/delivery/PairwiseFanoutLogic.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/people/ContactIdentity.h"
-#include "lib/people/ContactJson.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "common/runtime/AppRuntime.h"
@@ -106,7 +104,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
 
 void CallSessionManager::BindTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
-  ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
+  ports.local_relay_identity = [this]() { return LocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
   ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
@@ -114,16 +112,13 @@ void CallSessionManager::BindTopologyHostPorts() {
     return TopologyFanOutToJoined(call_id, type, detail, display, skip);
   };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
-                             const std::string& display) {
-    return TopologySendDirect(peer, type, detail, display);
-  };
-  ports.notify_ring_changed = [this]() { TopologyNotifyRingChanged(); };
-  ports.set_last_media_error = [this](std::string message) { TopologySetLastMediaError(std::move(message)); };
-  ports.set_media_activity = [this](std::string message) { TopologySetMediaActivity(std::move(message)); };
-  ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+                             const std::string& display) { return SendDirect(peer, type, detail, display); };
+  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
+  ports.set_last_media_error = [this](std::string message) { SetLastMediaError(std::move(message)); };
+  ports.set_media_activity = [this](std::string message) { SetMediaActivity(std::move(message)); };
+  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
   ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
-  ports.clear_media_peer_identity = [this]() { TopologyClearMediaPeerIdentity(); };
-  ports.request_inbox_sync = [this]() { TopologyRequestInboxSync(); };
+  ports.request_inbox_sync = [this]() { RequestInboxSync(); };
   topology_.SetHostPorts(std::move(ports));
 }
 
@@ -176,7 +171,7 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
-  ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
   ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
   ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
@@ -342,24 +337,6 @@ void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& c
   case CallLifecycleEvent::RetryClicked:
     RestartMedia(call_id, false);
     return;
-  case CallLifecycleEvent::PeerReconnected:
-    RestartMedia(call_id, true);
-    return;
-  case CallLifecycleEvent::OutboundStarted:
-    live_calls_.NoteOutboundStarted(call_id);
-    return;
-  case CallLifecycleEvent::MediaDeferred:
-    live_calls_.NoteMediaDeferred(call_id);
-    return;
-  case CallLifecycleEvent::MediaKeyReady:
-    live_calls_.NoteMediaKeyReady(call_id);
-    return;
-  case CallLifecycleEvent::DirectConnected:
-    live_calls_.NoteMediaConnected(call_id);
-    return;
-  case CallLifecycleEvent::ConnectFailedEvt:
-    live_calls_.NoteMediaFailed(call_id);
-    return;
   case CallLifecycleEvent::InviteSeen:
   case CallLifecycleEvent::InviteCleared:
     // The ring is the LiveCall's: nothing to change, only to show.
@@ -393,8 +370,8 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
   }
   // The ring holds the app's work running in the background (AppLifecycle::SetCallInProgress), so the
   // relay-fallback sends of the accept run there too. The workflow marks the call Accepting.
-  log().info << "AcceptInvite queued call_id=" << call_id;
-  AcceptInviteAsync(call_id, [this, call_id](Roe<void> accepted) { OnAcceptResult(call_id, accepted); });
+  log().info << "AcceptClicked call_id=" << call_id;
+  OnAcceptResult(call_id, AcceptInvite(call_id));
 }
 
 void CallSessionManager::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
@@ -587,9 +564,6 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
 
 void CallSessionManager::BindSeat() {
   call_media_.BindMediaResources(&media_, &seat_);
-  CallMediaSeatPorts release;
-  release.release = [this](const std::string& call_id) { seat_.Release(call_id); };
-  media_seat_ports_.Set(std::move(release));
   topology_.SetSeatPorts(MakeTopologySeatPorts());
   seat_.SetTeardownHooks([this](const std::string& call_id) { topology_.OnMediaStopped(call_id); },
                          [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
@@ -1076,25 +1050,19 @@ void CallSessionManager::SetPendingAcceptVoiceOnly(const bool voice_only) {
   workflow_.SetPendingAcceptVoiceOnly(voice_only);
 }
 
-
-void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
-                                           InitiationChargeDecision charge_decision) {
-  workflow_.AcceptInviteAsync(call_id, charge_decision,
-                              [this, call_id, on_done = std::move(on_done)](Roe<void> accepted) {
-                                if (accepted) {
-                                  TellOwnDevicesAnswered(call_id, true);
-                                }
-                                if (on_done) {
-                                  on_done(std::move(accepted));
-                                }
-                              });
+Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id, const InitiationChargeDecision charge_decision) {
+  Roe<void> accepted = workflow_.AcceptInvite(call_id, charge_decision);
+  if (accepted) {
+    TellOwnDevicesAnswered(call_id, true);
+  }
+  return accepted;
 }
 
 void CallSessionManager::TellOwnDevicesAnswered(const std::string& call_id, const bool accepted) {
   if (!delivery_.notify_own_devices) {
     return;
   }
-  auto local = TopologyLocalIdentity();
+  auto local = LocalIdentity();
   auto detail = CallControlCodec::EncodeAnsweredElsewhere(call_id, accepted);
   if (!local || !detail) {
     return;
@@ -1276,10 +1244,6 @@ Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
   return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
 
-Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
-  return sessions_.LoadSession(call_id);
-}
-
 void CallSessionManager::SweepExpiredInvites() {
   workflow_.SweepExpiredInvites();
 }
@@ -1295,8 +1259,8 @@ bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) c
   return direct_media->media_attempted && direct_media->media_attempted(call_id);
 }
 
-void CallSessionManager::ClearMediaCallbacks() {
-  // Drop accepts waiting on their park before CallStack drains / resets CSM (PR #216 follow-up).
+void CallSessionManager::DropFollowUps() {
+  // Hub teardown, before the store and delivery go: queued follow-ups (a roster fan-out) must not run (PR #216).
   workflow_.DropFollowUps();
 }
 
@@ -1518,7 +1482,7 @@ bool CallSessionManager::SenderIsInCall(const std::string& detail_json, const st
   return call_id && call_queries::SenderIsInCall(sessions_, *call_id, sender_identity);
 }
 
-Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
+Roe<std::string> CallSessionManager::LocalIdentity() const {
   return control_.LocalRelayIdentity();
 }
 
@@ -1533,25 +1497,17 @@ Roe<void> CallSessionManager::TopologyFanOutToJoined(const std::string& call_id,
   return control_.FanOutToJoined(call_id, type, detail_json, display, skip_identity);
 }
 
-Roe<void> CallSessionManager::TopologySendDirect(const std::string& peer_identity, CallControlType type,
-                                                 const std::string& detail_json, const std::string& display) {
+Roe<void> CallSessionManager::SendDirect(const std::string& peer_identity, CallControlType type,
+                                         const std::string& detail_json, const std::string& display) {
   return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
-void CallSessionManager::TopologyNotifyRingChanged() {
-  NotifyRingChanged();
-}
-
-void CallSessionManager::TopologySetLastMediaError(std::string message) {
+void CallSessionManager::SetLastMediaError(std::string message) {
   last_media_error_ = std::move(message);
 }
 
-void CallSessionManager::TopologySetMediaActivity(std::string message) {
+void CallSessionManager::SetMediaActivity(std::string message) {
   media_activity_ = std::move(message);
-}
-
-void CallSessionManager::TopologyClearMediaActivity() {
-  media_activity_.clear();
 }
 
 std::string CallSessionManager::PeekMediaActivity() const {
@@ -1569,22 +1525,19 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   }
 }
 
-void CallSessionManager::TopologyClearMediaPeerIdentity() {
-}
-
-void CallSessionManager::TopologyRequestInboxSync() {
+void CallSessionManager::RequestInboxSync() {
   if (delivery_.sync_inbox_from_wake) {
     delivery_.sync_inbox_from_wake(true);
   }
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
-  return control_.LocalRelayIdentity();
+  return LocalIdentity();
 }
 
 Roe<void> CallSessionManager::P2pSendDirect(const std::string& peer_identity, CallControlType type,
                                             const std::string& detail_json, const std::string& display) {
-  return control_.SendDirect(peer_identity, type, detail_json, display);
+  return SendDirect(peer_identity, type, detail_json, display);
 }
 
 void CallSessionManager::P2pNotifyRingChanged() {
@@ -1592,7 +1545,7 @@ void CallSessionManager::P2pNotifyRingChanged() {
 }
 
 void CallSessionManager::P2pSetLastMediaError(std::string message) {
-  last_media_error_ = std::move(message);
+  SetLastMediaError(std::move(message));
 }
 
 Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const std::string& call_id) const {
@@ -1646,9 +1599,7 @@ void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const s
 }
 
 void CallSessionManager::P2pRequestInboxSync() {
-  if (delivery_.sync_inbox_from_wake) {
-    delivery_.sync_inbox_from_wake(true);
-  }
+  RequestInboxSync();
 }
 
 } // namespace pbr

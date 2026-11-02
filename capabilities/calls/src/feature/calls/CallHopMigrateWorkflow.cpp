@@ -12,7 +12,6 @@
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
-#include "lib/people/MeshHopPolicy.h"
 #include "common/Localized.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/media/MediaSessionsOwner.h"
@@ -959,7 +958,6 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   ops_.note_remote_publisher_from_attach(at.attach);
   ops_.sync_sfu_subscriptions(call_id);
   ops_.announce_local_publisher(call_id, at.attach);
-  host_.ClearMediaPeerIdentity();
   ops_.clear_sfu_attach_wait();
   ops_.refresh_adaptation(call_id);
   // V036 Phase 2: NoteLive before ReleaseDirect so chrome Connected is not ReleaseDirect alone.

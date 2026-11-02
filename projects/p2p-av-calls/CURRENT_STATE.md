@@ -113,6 +113,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
+0. **Call model (V055)** — [PHASES § cm](PHASES.md#cm--call-model-v055): cm0 hygiene (done) → **cm1 narrow interfaces (next)** → cm2 one owner per fact → cm3 per-call media session → cm4 thin session manager → cm5 call concepts out of the layers below.
 1. Keep **pm** / **rd** / **cs** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
 2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
@@ -125,13 +126,12 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../capabilities/calls/src/lib/calls/CallMediaPlannerSelectLogic.h) |
-| Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
-| Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
+| Invent N025 listen from `TopPendingInvite` on tick | `CallStack::WantEphemeralListen` (a call is shown) only |
+| Duplicate listen desire elsewhere | The stack's desire only; it syncs the hub's N025 execution |
 | Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
 | Cache CSM/stores/seat/lifecycle on the plane (`LiveRefs`) | Stack `BindMediaProducts` + deps callbacks only; plane `BindBridge` takes args per call |
-| Hold `CallSessionManager*` on CallLifecycle | **V041** — `CallLifecycleSignalingPorts` from Stack |
-| Hold `CallMediaBridge*` on CallSessionManager | **V042** — `CallDirectMediaPorts` from Stack |
-| Hold `CallLifecycle*` / `CallMediaSeat*` on CSM | **V043** — Lifecycle/Seat ports + `WireTopology*` for child only |
+| Add a port bag through which an owned part calls back into its owner | **V055** — the owner calls what it owns; the part reports events on the owner's queue (V042 / V043's "no pointer" rule is withdrawn for owned children) |
+| Store a call fact (active call, path, failure, recovery) beside its owner | **V055** — one writer per fact (`LiveCall`; the rows: the session workflow); others read or send events |
 | Split one class across `.cpp` files for size | Helpers in same TU or a new type — [AGENTS.md](../../AGENTS.md#conventions); inbound arms merged into `CallSessionManager.cpp` |
 | Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` mesh-only; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |

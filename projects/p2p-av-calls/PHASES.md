@@ -284,6 +284,19 @@ One rule set for 3+ invitees — [V050](DECISIONS.md#v050--group-call-topology-1
 **Non-goals:** re-evaluating on leave; multi-SFU; paid-hop ownership handover (pricing P004).  
 **Exit:** gt1–gt5 gtests green; B-HARD-GROUP-CALL-NAT green.
 
+## cm — Call model (V055)
+
+One owner per fact, calls down / events up, one media call per device —
+[V055](DECISIONS.md#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device).
+One PR per phase; compose tests + call lab scenarios each time.
+
+- [x] cm0 — Hygiene: dead code and ports, stale comments and docs, unused includes, copied helpers. Done: dead ports (`clear_media_peer_identity`, `CallMediaSeatPorts`, `register_peer_direct_endpoint`, `note_lan_mdns_peer_id`) and unused API (`CallMedia`, `SessionForCall`, bridge `ShouldUseMeshForPeer` / `HasActiveDirectStream`, loop `EnqueueFront` / `DropPending`, people's `PreferInCallMediaHops`) gone; `CallLifecycleEvent` is the UI's events only (the paths report media progress to `LiveCalls`); the accept is a plain call (`AcceptInvite`: the park is asked for, not waited on — the workflow's step store is gone); CSM's host effects one body each; topology's three migrate settles one `SettleFinishedMigrate`; CALLS.md file map / inbound flow / lifecycle drift fixed
+- [ ] cm1 — Narrow interfaces from below: role interfaces for contacts / identity / transcript / billing; delivery's session-key API instead of calls' copy; pricing's constants; a read-only media view for the app
+- [ ] cm2 — One owner per fact: path, failure and recovery in `LiveCall`; the seat a lock only; typed path / connection enums (CURRENT_STATE § Call state consolidation, "Next")
+- [ ] cm3 — Per-call media session with direct / hop strategies; events up; only the session touches the engine
+- [ ] cm4 — Thin session manager: composition in `CallStack`, one writer of the rows, `CallUiBackend` reads only snapshots
+- [ ] cm5 — Call concepts out of the layers below (base lifecycle / push / frame pacing names, media's audio session and engine API, people's media hop ranking, delivery's lane envelope)
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

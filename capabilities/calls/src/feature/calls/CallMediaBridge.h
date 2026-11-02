@@ -90,9 +90,6 @@ public:
   void ClearMeshConnectFailed();
   void PollMeshConnectHealth();
 
-  /** True when mesh call-media path is available (direct or circuit-brokered). */
-  bool ShouldUseMeshForPeer(const std::string& peer_identity) const;
-
   Roe<void> RetryMeshMedia(const std::string& call_id) override;
   /**
    * The call failed but is still open, and the peer's connection for it is up (its Retry): restart
@@ -105,8 +102,6 @@ public:
    */
   void ArmPlannerForRestart(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
-  Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
-  Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   void ScheduleStartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   void ScheduleStartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
 
@@ -179,9 +174,8 @@ public:
 
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
-   * CallSessionManager Leave/Accept must use seat.Release, not this.
-   * Any thread: off the calls owner the whole stop is posted to the front of its queue and
-   * skipped if a newer media session (StartSfu) started in the meantime.
+   * CallSessionManager Leave/Accept must use seat.Release, not this. Calls owner (every stop reaches here
+   * through the owner's events).
    */
   void StopMeshMedia(const std::string& call_id) override;
   /**
@@ -229,8 +223,6 @@ public:
   std::string MediaPathKind() const;
   /** The active 1:1 call-media link's figures (unavailable when no direct call is bound). */
   CallLinkCounters MediaLinkCounters() const;
-  /** True when 1:1 call-media stream is up (not merely MediaEngine StartSfu). */
-  bool HasActiveDirectStream() const;
 
   /** V039 Direct planner Apply — product callbacks on the calls owner. */
   void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
@@ -255,7 +247,8 @@ private:
   Roe<void> StartDirectEngine(const std::string& call_id);
   void StartDirectConnect(const std::string& call_id, const std::string& peer_identity, bool offerer,
                           uint32_t media_epoch, const ByteVector& media_key);
-  void StopMeshMediaOnUi(const std::string& call_id);
+  Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
+  Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
   /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
   mesh::PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
   /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
