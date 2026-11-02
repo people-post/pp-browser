@@ -125,7 +125,12 @@ public:
     call_.jb_target_max_ms = std::max(call_.jb_target_max_ms, h.jitter_target_ms);
     call_.jb_target_sum_ms += h.jitter_target_ms;
     ++call_.jb_samples;
-    call_.last = h;
+    // A sample from a stopped engine (reconnect, teardown) is all zeros: keep the last running one.
+    if (h.engine_running) {
+      call_.last = h;
+      call_.have_running_sample = true;
+    }
+    call_.last_sample_stopped = !h.engine_running;
     return out;
   }
 
@@ -192,7 +197,10 @@ private:
     int64_t stall_max_ms = 0;
     bool have_base = false;
     CallMediaEngineHealth base;
+    /** The last sample taken while the engine ran (the summary's audio fields). */
     CallMediaEngineHealth last;
+    bool have_running_sample = false;
+    bool last_sample_stopped = false;
     DeviceVitals vitals_start;
     int thermal_max = -1;
     int thermal_last = -1;
@@ -304,6 +312,9 @@ private:
         .Add("no_audio_s", static_cast<double>(call_.no_audio_ms) / 1000.0)
         .Add("ui_stalls", call_.stalls)
         .Add("ui_stall_max_ms", call_.stall_max_ms);
+    if (call_.have_running_sample && call_.last_sample_stopped) {
+      line.Add("ended_with_engine_stopped", 1);
+    }
     if (call_.vitals_start.cpu_s >= 0 && vitals.cpu_s >= 0) {
       // Whole process, from ring / dial to the end — the call's power-use proxy.
       line.Add("cpu_s", vitals.cpu_s - call_.vitals_start.cpu_s);
