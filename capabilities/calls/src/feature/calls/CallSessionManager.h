@@ -6,6 +6,7 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "feature/calls/CallReads.h"
+#include "feature/calls/CallMeshGlue.h"
 #include "lib/pricing/PricingTypes.h"
 #include "lib/pricing/IInitiationBillingBook.h"
 #include "common/thread/IThreadCatalog.h"
@@ -66,55 +67,16 @@ public:
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
   void SetOnRingChangedMesh(RingChangedFn callback);
-  using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
-  void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
-  /**
-   * A call learned that `account` speaks from device `peer_id` (its signed invite / accept named it): the
-   * account's card, asked of that device, confirms it (any thread).
-   */
-  void SetOnPeerDevice(std::function<void(const std::string& account, const std::string& peer_id)> callback) {
-    on_peer_device_ = std::move(callback);
-  }
-  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshConnectivity. */
-  using EnsureCircuitReadyFn = std::function<void()>;
-  void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
-  /** AcceptInvite may await circuit-ready before CallAccept. */
-  /** Async circuit park for the Accept gate; the composition posts `done` onto the calls owner. */
-  using ParkCircuitFn = std::function<void(int timeout_ms, std::function<void(bool ready)> done)>;
-  void SetParkCircuit(ParkCircuitFn park);
-  /** The mesh's reach signals (H011 R1, H012 punch, K005 caps) carried to the active call's peer. */
-  CallReachSignals& ReachSignals() { return reach_signals_; }
-  /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
-  using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
-  void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
-  /**
-   * projects/privacy T1: call signalling carries our listen addresses, and we answer a signalling
-   * punch, only for peers this gate allows. Null = everyone. Not owned.
-   */
-  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
   /** projects/privacy T3: who may call us; an invite from outside is dropped silently. Owner thread. */
   void SetInboundCallAudience(mesh::InboundAudience audience) { inbound_call_audience_ = audience; }
   /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
   bool AllowsInboundCall(const std::string& caller) const;
-  /** Local capability ads for invite/accept (V030). */
-  using LocalPeerCapsFn = std::function<CallPeerCaps()>;
-  void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
-  /** The remote's caps for a call — from invite / accept, then `call_caps_update` (K005). */
-  using CallPeerCapsSink = std::function<void(const std::string& call_id, const CallPeerCaps& caps)>;
-  void SetCallPeerCapsSink(CallPeerCapsSink sink);
-  /** H013: the relays this node is parked on now (a callee advertises them in its CallAccept). */
-  using ParkedRelaysProvider = std::function<std::vector<std::string>()>;
-  void SetParkedRelaysProvider(ParkedRelaysProvider provider);
-  /** H013: the relays the call's answerer said it is parked on (its CallAccept). */
-  using CallPeerParkedRelaysSink = std::function<void(const std::string& call_id, const std::vector<std::string>& relays)>;
-  void SetCallPeerParkedRelaysSink(CallPeerParkedRelaysSink sink);
-  /** Local mesh PeerId (base58) for invite/accept — PeerId→relay without contacts. */
-  using LocalMeshPeerIdFn = std::function<std::string()>;
-  void SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback);
-  /** Register peer listen multiaddrs from invite/accept into the dial registry. */
-  using RegisterPeerListenMultiaddrsFn =
-      std::function<void(const std::string& identity, const std::vector<std::string>& multiaddrs)>;
-  void SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback);
+  /** The mesh's reach signals (H011 R1, H012 punch, K005 caps) carried to the active call's peer. */
+  CallReachSignals& ReachSignals() { return reach_signals_; }
+  /** What calls asks of this node's mesh and tells it (the stack's, once at build). Owner thread. */
+  void SetMeshGlue(CallMeshGlue glue) { mesh_ = std::move(glue); }
+  /** The glue, for a harness that adjusts one of it after the build. */
+  CallMeshGlue& MeshGlue() { return mesh_; }
   /** Cache media_relay ads from invite/accept caps (keyed by mesh PeerId). */
   void NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay);
   /**
@@ -390,23 +352,12 @@ private:
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
-  PrefetchPeerReachFn prefetch_reach_;
-  EnsureCircuitReadyFn ensure_circuit_ready_;
-  ParkCircuitFn park_circuit_;
-  LocalListenMultiaddrsFn local_listen_multiaddrs_;
-  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
   mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
-  LocalPeerCapsFn local_peer_caps_;
-  CallPeerCapsSink call_peer_caps_sink_;
-  ParkedRelaysProvider parked_relays_;
-  CallPeerParkedRelaysSink call_peer_parked_relays_sink_;
-  LocalMeshPeerIdFn local_mesh_peer_id_;
-  RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
+  CallMeshGlue mesh_;
   /** PeerId → advertised media_relay (V030). Unknown = fail closed. */
   mesh::PeerMediaRelayCaps media_relay_caps_;
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
-  std::function<void(const std::string& account, const std::string& peer_id)> on_peer_device_;
   std::optional<std::string> last_media_error_;
   // --- UI intents (V037) ---
   std::string last_error_;

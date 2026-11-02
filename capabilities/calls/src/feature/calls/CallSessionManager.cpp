@@ -30,7 +30,7 @@ namespace pbr {
 
 namespace {
 
-void PrefetchReachForIdentity(const CallSessionManager::PrefetchPeerReachFn& fn, const std::string& identity) {
+void PrefetchReachForIdentity(const std::function<void(const std::string&)>& fn, const std::string& identity) {
   if (!identity.empty() && fn) {
     fn(identity);
   }
@@ -232,8 +232,8 @@ CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
 CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
   CallSessionWorkflow::ReachPorts ports;
   ports.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
-    if (register_peer_listen_multiaddrs_) {
-      register_peer_listen_multiaddrs_(identity, mas);
+    if (mesh_.register_peer_listen_multiaddrs) {
+      mesh_.register_peer_listen_multiaddrs(identity, mas);
     }
   };
   ports.note_caps_for_identity = [this](const std::string& identity, const CallPeerCaps& caps,
@@ -241,29 +241,29 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
     NoteCapsForIdentity(*this, contacts_, identity, caps, listen);
   };
   ports.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
-    if (call_peer_caps_sink_) {
-      call_peer_caps_sink_(call_id, caps);
+    if (mesh_.on_peer_caps) {
+      mesh_.on_peer_caps(call_id, caps);
     }
   };
   ports.parked_relays = [this]() -> std::vector<std::string> {
-    return parked_relays_ ? parked_relays_() : std::vector<std::string>{};
+    return mesh_.parked_relays ? mesh_.parked_relays() : std::vector<std::string>{};
   };
   ports.note_call_peer_parked_relays = [this](const std::string& call_id, const std::vector<std::string>& relays) {
-    if (call_peer_parked_relays_sink_) {
-      call_peer_parked_relays_sink_(call_id, relays);
+    if (mesh_.on_peer_parked_relays) {
+      mesh_.on_peer_parked_relays(call_id, relays);
     }
   };
   ports.prefetch_reach = [this](const std::string& identity) {
-    PrefetchReachForIdentity(prefetch_reach_, identity);
+    PrefetchReachForIdentity(mesh_.prefetch_peer_reach, identity);
   };
   ports.ensure_circuit_ready = [this]() {
-    if (ensure_circuit_ready_) {
-      ensure_circuit_ready_();
+    if (mesh_.ensure_circuit_ready) {
+      mesh_.ensure_circuit_ready();
     }
   };
   ports.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
-    if (park_circuit_) {
-      park_circuit_(timeout_ms, std::move(done));
+    if (mesh_.park_circuit) {
+      mesh_.park_circuit(timeout_ms, std::move(done));
     } else {
       done(false);
     }
@@ -272,14 +272,16 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
     NoteMeshPeerIdForRelay(relay, peer_id);
   };
   ports.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
-    return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
+    return mesh_.local_listen_multiaddrs ? mesh_.local_listen_multiaddrs() : std::vector<std::string>{};
   };
-  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
+  ports.may_learn_our_address = [this](const std::string& peer) {
+    return AllowsDirect(mesh_.address_disclosure, peer);
+  };
   ports.local_peer_caps = [this]() -> CallPeerCaps {
-    return local_peer_caps_ ? local_peer_caps_() : CallPeerCaps{};
+    return mesh_.local_peer_caps ? mesh_.local_peer_caps() : CallPeerCaps{};
   };
   ports.local_mesh_peer_id = [this]() -> std::string {
-    return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{};
+    return mesh_.local_mesh_peer_id ? mesh_.local_mesh_peer_id() : std::string{};
   };
   return ports;
 }
@@ -305,21 +307,23 @@ void CallSessionManager::BindReachSignalPorts() {
     return local ? *local : std::string{};
   };
   ports.local_caps = [this]() -> std::optional<CallPeerCaps> {
-    return local_peer_caps_ ? std::optional<CallPeerCaps>{local_peer_caps_()} : std::nullopt;
+    return mesh_.local_peer_caps ? std::optional<CallPeerCaps>{mesh_.local_peer_caps()} : std::nullopt;
   };
   ports.local_listen_addrs = [this]() {
-    return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
+    return mesh_.local_listen_multiaddrs ? mesh_.local_listen_multiaddrs() : std::vector<std::string>{};
   };
-  ports.local_peer_id = [this]() { return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{}; };
-  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
+  ports.local_peer_id = [this]() { return mesh_.local_mesh_peer_id ? mesh_.local_mesh_peer_id() : std::string{}; };
+  ports.may_learn_our_address = [this](const std::string& peer) {
+    return AllowsDirect(mesh_.address_disclosure, peer);
+  };
   ports.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
-    if (register_peer_listen_multiaddrs_) {
-      register_peer_listen_multiaddrs_(key, addrs);
+    if (mesh_.register_peer_listen_multiaddrs) {
+      mesh_.register_peer_listen_multiaddrs(key, addrs);
     }
   };
   ports.on_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
-    if (call_peer_caps_sink_) {
-      call_peer_caps_sink_(call_id, caps);
+    if (mesh_.on_peer_caps) {
+      mesh_.on_peer_caps(call_id, caps);
     }
   };
   reach_signals_.SetCallPorts(std::move(ports));
@@ -972,40 +976,6 @@ void CallSessionManager::SetOnRingChangedMesh(RingChangedFn callback) {
   on_ring_changed_mesh_ = std::move(callback);
 }
 
-void CallSessionManager::SetPrefetchPeerReachability(PrefetchPeerReachFn callback) {
-  prefetch_reach_ = std::move(callback);
-}
-
-void CallSessionManager::SetEnsureCircuitReady(EnsureCircuitReadyFn callback) {
-  ensure_circuit_ready_ = std::move(callback);
-}
-
-void CallSessionManager::SetParkCircuit(ParkCircuitFn park) {
-  park_circuit_ = std::move(park);
-}
-
-void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
-  local_listen_multiaddrs_ = std::move(callback);
-}
-
-void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
-  local_peer_caps_ = std::move(callback);
-}
-
-void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
-void CallSessionManager::SetParkedRelaysProvider(ParkedRelaysProvider provider) { parked_relays_ = std::move(provider); }
-void CallSessionManager::SetCallPeerParkedRelaysSink(CallPeerParkedRelaysSink sink) {
-  call_peer_parked_relays_sink_ = std::move(sink);
-}
-
-void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
-  local_mesh_peer_id_ = std::move(callback);
-}
-
-void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMultiaddrsFn callback) {
-  register_peer_listen_multiaddrs_ = std::move(callback);
-}
-
 void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay) {
   // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
   if (media_relay_caps_.Note(peer_id, media_relay)) {
@@ -1018,8 +988,8 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
 }
 
 void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id) {
-  if (on_peer_device_ && relay_identity.rfind("account:", 0) == 0) {
-    on_peer_device_(relay_identity, peer_id);
+  if (mesh_.note_peer_device && relay_identity.rfind("account:", 0) == 0) {
+    mesh_.note_peer_device(relay_identity, peer_id);
   }
   if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
@@ -1339,7 +1309,7 @@ bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
     return false;
   case mesh::InboundAudience::ContactsOnly:
     // No gate wired (tests, tools): nothing to judge by — let it ring.
-    return !address_disclosure_ || address_disclosure_->Snapshot()->contacts.contains(caller);
+    return !mesh_.address_disclosure || mesh_.address_disclosure->Snapshot()->contacts.contains(caller);
   }
   return true;
 }

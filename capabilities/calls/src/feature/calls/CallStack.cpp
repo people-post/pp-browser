@@ -390,7 +390,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   // No manager tracks the calls left open in the store (a previous run, or one reset since).
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
-  BindSessionProviders();
+  call_sessions_->SetMeshGlue(MakeMeshGlue());
+  call_sessions_->SetInboundCallAudience(
+      inbound_call_audience_.load(std::memory_order_relaxed)); // a rebuilt CSM keeps the choice
   BindSessionMeshReach();
   BindCallState();
   RebindMeshMedia();
@@ -428,38 +430,52 @@ void CallStack::BindCallControlInbound() {
 }
 
 /** What the sessions read about this node: listen addrs, mesh PeerId, caps; and where peers' addrs go. */
-void CallStack::BindSessionProviders() {
-  call_sessions_->SetOnPeerDevice(deps_.note_peer_device);
-  call_sessions_->SetPrefetchPeerReachability([prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
+CallMeshGlue CallStack::MakeMeshGlue() {
+  CallMeshGlue glue;
+  glue.note_peer_device = deps_.note_peer_device;
+  glue.prefetch_peer_reach = [prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
     // Warm only (async association / DHT lookup) — on the hub's thread, which owns what it reads.
     // Captures the hub's port, not this stack: a teardown may race the post.
     if (prefetch) {
       AppRuntime::PostUI([prefetch, identity]() { prefetch(identity); });
     }
-  });
-  call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
-  call_sessions_->SetAddressDisclosure(deps_.address_disclosure);
-  call_sessions_->SetInboundCallAudience(inbound_call_audience_.load(std::memory_order_relaxed));  // a rebuilt CSM keeps the choice
+  };
+  glue.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
+  glue.address_disclosure = deps_.address_disclosure;
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
-  call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });
-  call_sessions_->SetCallPeerCapsSink([this](const std::string& call_id, const CallPeerCaps& caps) {
+  glue.local_mesh_peer_id = [this]() -> std::string { return LocalMeshView()->local_peer_id; };
+  glue.on_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
     if (mobility_.NoteRemote(call_id, caps.mobility)) {
       NotifyPathPolicyChangedOnOwner(call_id);
     }
-  });
-  call_sessions_->SetLocalPeerCapsProvider([this]() { return LocalPeerCaps(); });
+  };
+  glue.local_peer_caps = [this]() { return LocalPeerCaps(); };
   // H013: what our CallAccept advertises (the published view, never the MeshHost) and what the
   // answerer's advertised (kept for the call our reach is for: one 1:1 call reaches at a time).
-  call_sessions_->SetParkedRelaysProvider([this]() { return LocalMeshView()->parked_relays; });
-  call_sessions_->SetCallPeerParkedRelaysSink(
-      [this](const std::string& call_id, const std::vector<std::string>& relays) {
-        peer_parked_ = PeerParkedRelays{call_id, relays};
-      });
-  call_sessions_->SetRegisterPeerListenMultiaddrs(
-      [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
-        RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
-      });
+  glue.parked_relays = [this]() { return LocalMeshView()->parked_relays; };
+  glue.on_peer_parked_relays = [this](const std::string& call_id, const std::vector<std::string>& relays) {
+    peer_parked_ = PeerParkedRelays{call_id, relays};
+  };
+  glue.register_peer_listen_multiaddrs = [this](const std::string& identity,
+                                                const std::vector<std::string>& multiaddrs) {
+    RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
+  };
+  // Connectivity: park on org hops so this peer is ServeDial-reachable.
+  glue.ensure_circuit_ready = [this]() {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
+      shared->Rendezvous().ReserveOnBootstrapSeeds();
+    }
+  };
+  // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
+  glue.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
+      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
+    } else {
+      done(false);
+    }
+  };
+  return glue;
 }
 
 /** This node's caps for invite / accept / caps update (V030, k6). */
@@ -478,20 +494,6 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
 
 /** Connectivity for the sessions: circuit readiness / park, and the reach signals' mesh side. */
 void CallStack::BindSessionMeshReach() {
-  // Connectivity: park on org hops so this peer is ServeDial-reachable.
-  call_sessions_->SetEnsureCircuitReady([this]() {
-    if (mesh::MeshConnectivity* shared = connectivity()) {
-      shared->Rendezvous().ReserveOnBootstrapSeeds();
-    }
-  });
-  // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
-  call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
-    if (mesh::MeshConnectivity* shared = connectivity()) {
-      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
-    } else {
-      done(false);
-    }
-  });
   CallReachSignals::MeshPorts reach;
   reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
     if (mesh::MeshConnectivity* shared = connectivity()) {

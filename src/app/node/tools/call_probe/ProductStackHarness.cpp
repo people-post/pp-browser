@@ -268,8 +268,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
   // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
   stack_->RunOnOwner([this](CallSessionManager& calls) {
-    calls.SetRegisterPeerListenMultiaddrs(
-        [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
+    calls.MeshGlue().register_peer_listen_multiaddrs =
+        ([this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
           std::vector<std::string> dialable;
           dialable.reserve(multiaddrs.size());
           for (const std::string& ma : multiaddrs) {

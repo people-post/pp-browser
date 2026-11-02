@@ -209,7 +209,8 @@ private:
   void BuildSessionsOnOwner(const CallStackDeps& deps);
   void BindSessionOutbox();
   void BindCallControlInbound();
-  void BindSessionProviders();
+  /** What the sessions ask of this node's mesh and tell it (built once per session manager). */
+  CallMeshGlue MakeMeshGlue();
   CallPeerCaps LocalPeerCaps() const;
   void BindSessionMeshReach();
   void OnMeshServicesStartedOnOwner();

@@ -500,7 +500,7 @@ TEST_F(CallSessionInboundComposeTest, AcceptClickedDedupesWhileInFlight) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   int parks = 0;
-  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
+  csm_->MeshGlue().park_circuit = ([&](int /*timeout_ms*/, std::function<void(bool)> /*done*/) { ++parks; });
 
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, {}); });  // the ring's call
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
@@ -540,7 +540,8 @@ TEST_F(CallSessionInboundComposeTest, AcceptParksWithoutWaitingForThePark) {
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
 
   std::function<void(bool)> park_done;
-  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
+  csm_->MeshGlue().park_circuit =
+      ([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
   const Roe<void> accepted = OnCallsOwner([&] { return csm_->AcceptInvite(call_id); });
   AppRuntime::RunAllOwnerTasks();
   ASSERT_TRUE(park_done) << "accept asked for the circuit park";
@@ -746,7 +747,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
 TEST_F(CallSessionInboundComposeTest, AcceptAdvertisesTheRelaysWeAreParkedOn) {
   const std::string call_id = "call:advertise-parked";
   OnCallsOwner([&] {
-    csm_->SetParkedRelaysProvider([]() { return std::vector<std::string>{"QmRelayA", "QmRelayB"}; });
+    csm_->MeshGlue().parked_relays = ([]() { return std::vector<std::string>{"QmRelayA", "QmRelayB"}; });
     return Roe<void>{};
   });
   auto msg = MakeInviteMessage(call_id);
@@ -770,7 +771,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRela
   std::string noted_call;
   std::vector<std::string> noted_relays;
   OnCallsOwner([&] {
-    csm_->SetCallPeerParkedRelaysSink([&](const std::string& cid, const std::vector<std::string>& relays) {
+    csm_->MeshGlue().on_peer_parked_relays = ([&](const std::string& cid, const std::vector<std::string>& relays) {
       noted_call = cid;
       noted_relays = relays;
     });
