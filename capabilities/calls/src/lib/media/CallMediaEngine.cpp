@@ -60,6 +60,9 @@ constexpr int kVideoFps = 20;
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
+/** The UI thread waiting this long for the media mutex is logged (B125), at most kMaxUiLockWaitWarns per call. */
+constexpr int64_t kUiLockWaitWarnMs = 50;
+constexpr int kMaxUiLockWaitWarns = 10;
 
 /** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
 logging::Logger& EngineLog() {
@@ -186,6 +189,8 @@ struct CallMediaEngine::Impl {
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   int video_decode_fail_logs = 0;
+  /** UI-thread waits for `mutex` over kUiLockWaitWarnMs logged this call (B125: is decode holding it?). */
+  std::atomic<int> ui_lock_wait_warns{0};
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
    * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
@@ -290,6 +295,17 @@ struct CallMediaEngine::Impl {
     local_video_frame.height = copy.height;
     local_video_frame.rgba = std::move(copy.rgba);
     local_video_frame.seq = ++local_video_seq;
+  }
+
+  /** Call with `mutex` just taken by a UI-thread getter, `since` = before it asked for the lock. */
+  void NoteUiLockWait(const char* getter, std::chrono::steady_clock::time_point since) {
+    const int64_t waited_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+    if (waited_ms <= kUiLockWaitWarnMs || ui_lock_wait_warns.fetch_add(1) >= kMaxUiLockWaitWarns) {
+      return;
+    }
+    EngineLog().warning << "waited for media lock getter=" << getter << " waited_ms=" << waited_ms
+                        << " call=" << call_id;
   }
 
   void NoteVideoRefreshNeeded(uint32_t stream_id) {
@@ -802,7 +818,7 @@ struct CallMediaEngine::Impl {
       return;
     }
     if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
-      SDL_Log("CallMediaEngine: audio_io=sdl reason=vpio disabled for call (capture starved)");
+      EngineLog().info << "audio_io=sdl reason=vpio disabled for call (capture starved)";
       return;
     }
     AudioLeaseRequest request;
@@ -811,10 +827,10 @@ struct CallMediaEngine::Impl {
     request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
     auto pair = DeviceArbiter().AcquireVoiceDuplex(request);
     if (!pair) {
-      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", pair.error().message.c_str());
+      EngineLog().info << "audio_io=sdl reason=" << pair.error().message;
       return;
     }
-    SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+    EngineLog().info << "audio_io=vpio (voice processing: echo cancellation on)";
     mic = std::move(pair->mic);
     speaker = std::move(pair->speaker);
   }
@@ -1539,7 +1555,9 @@ void CallMediaEngine::ClearRemoteAudioTracks() {
 }
 
 bool CallMediaEngine::IsSfuMode() const {
+  const auto wait_from = std::chrono::steady_clock::now();
   std::lock_guard lock(impl_->mutex);
+  impl_->NoteUiLockWait("IsSfuMode", wait_from);
   return impl_->sfu_mode;
 }
 
@@ -1587,7 +1605,9 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
+    const auto wait_from = std::chrono::steady_clock::now();
     std::lock_guard lock(impl_->mutex);
+    impl_->NoteUiLockWait("HealthSnapshot", wait_from);
     AudioDeviceLease* speaker = impl_->speaker_lease.get();
     const bool voice = speaker && speaker->IsVoiceDuplex();
     const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
@@ -1647,6 +1667,7 @@ void CallMediaEngine::Stop() {
     impl_->remote_decoders.clear();
     impl_->decoder_resets.clear();
     impl_->video_decode_fail_logs = 0;
+    impl_->ui_lock_wait_warns.store(0, std::memory_order_relaxed);
   }
   abandoned_send = nullptr;
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
@@ -1908,7 +1929,9 @@ std::string CallMediaEngine::ActiveCallId() const {
 }
 
 std::string CallMediaEngine::ConnectionState() const {
+  const auto wait_from = std::chrono::steady_clock::now();
   std::lock_guard lock(impl_->mutex);
+  impl_->NoteUiLockWait("ConnectionState", wait_from);
   return impl_->connection_state;
 }
 
@@ -1921,7 +1944,9 @@ int64_t CallMediaEngine::StartedAtMs() const {
 }
 
 bool CallMediaEngine::HasLocalCapture() const {
+  const auto wait_from = std::chrono::steady_clock::now();
   std::lock_guard lock(impl_->mutex);
+  impl_->NoteUiLockWait("HasLocalCapture", wait_from);
   return impl_->capture_available;
 }
 

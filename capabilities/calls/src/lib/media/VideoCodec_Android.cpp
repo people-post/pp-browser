@@ -7,6 +7,7 @@
 #if defined(__ANDROID__)
 
 #include <android/api-level.h>
+#include <dlfcn.h>
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
 
@@ -35,6 +36,9 @@ constexpr int kMaxDrainedOutputs = 32;
 constexpr int kLowLatencyApiLevel = 30;
 /** At most one "input buffer unavailable" warning this often. */
 constexpr int64_t kInputDropWarnEveryMs = 2000;
+/** A Decode slower than this is logged (it runs under the media lock), at most kMaxSlowDecodeWarns per decoder. */
+constexpr int64_t kSlowDecodeMs = 50;
+constexpr int kMaxSlowDecodeWarns = 10;
 constexpr int kColorFormatYv12 = 19;       // COLOR_FormatYUV420Planar
 constexpr int kColorFormatNv12 = 21;       // COLOR_FormatYUV420SemiPlanar
 
@@ -55,6 +59,26 @@ int64_t SteadyMs() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
              std::chrono::steady_clock::now().time_since_epoch())
       .count();
+}
+
+/**
+ * The codec component's name (e.g. c2.qti.avc.decoder). AMediaCodec_getName is API 28 and this
+ * builds for API 24, so it is looked up at run time; "unknown" before 28.
+ */
+std::string CodecName(AMediaCodec* codec) {
+  using GetNameFn = media_status_t (*)(AMediaCodec*, char**);
+  using ReleaseNameFn = void (*)(AMediaCodec*, char*);
+  static void* const lib = dlopen("libmediandk.so", RTLD_NOW);
+  static const auto get_name = lib ? reinterpret_cast<GetNameFn>(dlsym(lib, "AMediaCodec_getName")) : nullptr;
+  static const auto release_name =
+      lib ? reinterpret_cast<ReleaseNameFn>(dlsym(lib, "AMediaCodec_releaseName")) : nullptr;
+  char* name = nullptr;
+  if (!get_name || !release_name || get_name(codec, &name) != AMEDIA_OK || !name) {
+    return "unknown";
+  }
+  std::string out(name);
+  release_name(codec, name);
+  return out;
 }
 
 struct AnnexBNal {
@@ -447,6 +471,12 @@ private:
   DecodeStallPolicy stall_;
   int input_drops_ = 0;
   int64_t last_input_drop_warn_ms_ = 0;
+  /** Diagnostics (B125): the first output of each configured codec, slow decodes. */
+  int64_t configured_at_ms_ = 0;
+  int queued_since_configure_ = 0;
+  bool first_output_logged_ = false;
+  int dec_stride_ = 0;
+  int slow_decode_warns_ = 0;
 };
 
 Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
@@ -692,14 +722,24 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   dec_frame_index_ = 0;
   dec_color_format_ = kColorFormatNv12;
   stall_.Restart(SteadyMs());
+  configured_at_ms_ = SteadyMs();
+  queued_since_configure_ = 0;
+  first_output_logged_ = false;
   return {};
 }
 
 Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
+  const int64_t started_ms = SteadyMs();
   auto result = DecodeAccessUnit(annex_b, size);
+  const int64_t now = SteadyMs();
   if (!result) {
     // The engine asks for a keyframe on every decode error: frames until it lands are not counted.
-    stall_.NoteKeyframeRequested(SteadyMs());
+    stall_.NoteKeyframeRequested(now);
+  }
+  if (now - started_ms > kSlowDecodeMs && slow_decode_warns_ < kMaxSlowDecodeWarns) {
+    ++slow_decode_warns_;
+    DecoderLog().warning << "slow decode ms=" << (now - started_ms) << " size=" << size
+                         << " result=" << (!result ? "error" : (result->has_value() ? "frame" : "none"));
   }
   return result;
 }
@@ -815,11 +855,15 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     return Error("decoder queueInputBuffer failed");
   }
   stall_.NoteFrameQueued(SteadyMs());
+  ++queued_since_configure_;
 
   DrainOutputs();
   if (held_output_index_ < 0) {
     // Nothing ready yet: a decoder filling its pipeline is not an error — unless it stays silent.
-    if (stall_.Stalled(SteadyMs())) {
+    const int64_t now = SteadyMs();
+    if (stall_.Stalled(now)) {
+      DecoderLog().warning << "decoder stalled: queued=" << stall_.FramesSinceOutput()
+                           << " since_output_ms=" << stall_.MsSinceOutput(now);
       return Error(std::string(kDecoderStalledError));
     }
     return std::optional<VideoFrameRgba>();
@@ -828,6 +872,14 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
   auto frame = ConvertHeldOutput();
   if (!frame) {
     return frame.error();
+  }
+  if (!first_output_logged_) {
+    first_output_logged_ = true;
+    DecoderLog().info << "first decoded frame codec=" << CodecName(decoder_)
+                      << " queued_to_first=" << queued_since_configure_
+                      << " ms_since_configure=" << (SteadyMs() - configured_at_ms_)
+                      << " color_format=" << dec_color_format_ << " stride=" << dec_stride_ << " size="
+                      << frame->width << "x" << frame->height;
   }
   return std::optional<VideoFrameRgba>(std::move(*frame));
 }
@@ -894,6 +946,7 @@ Roe<VideoFrameRgba> AndroidVideoCodec::ConvertHeldOutput() {
   if (slice_height < height) {
     slice_height = height;
   }
+  dec_stride_ = stride;
 
   VideoFrameRgba result;
   size_t out_size = 0;
