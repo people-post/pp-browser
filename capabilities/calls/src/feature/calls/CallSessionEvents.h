@@ -151,7 +151,7 @@ struct Continue {
 
 using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
                                    topology_event::ReannouncePublisher, topology_event::RefuseGuest,
-                                   topology_event::Continue, HopMigrateEvent, PlanningEvent>;
+                                   topology_event::Continue, HopMigrateEvent>;
 
 /** The 1:1 path's (CallMediaBridge) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
@@ -365,6 +365,10 @@ struct FromDirectPath {
 struct FromHopPath {
   HopReport report;
 };
+/** An event of the device's hop service (planning's probe answers). */
+struct ForHopService {
+  PlanningEvent event;
+};
 /** An event of the inbound doorway `generation` (one built since drops it). */
 struct ForDoorway {
   uint64_t generation = 0;
@@ -375,6 +379,6 @@ struct ForDoorway {
 
 using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
                                   TopologyEvent, session_event::ForDirectPath, session_event::FromDirectPath,
-                                  session_event::FromHopPath, session_event::ForDoorway>;
+                                  session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
 
 } // namespace pbr

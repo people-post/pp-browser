@@ -37,7 +37,7 @@
 namespace pbr {
 
 CallTopologyController::CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts,
-                                               MediaEngine& media)
+                                               MediaEngine& media, CallHopService& hops)
     : hop_migrate_(sessions, media),
       flight_(hop_migrate_.Flight()),
       attach_wait_(hop_migrate_.AttachWaitState()),
@@ -48,11 +48,11 @@ CallTopologyController::CallTopologyController(ICallSessionStore& sessions, cons
       sessions_(sessions),
       contacts_(contacts),
       media_(media),
-      ranking_(contacts),
-      planning_(sessions, ranking_) {
+      hops_(hops),
+      relay_deps_(hops.RelayDeps()),
+      ranking_(hops.Ranking()),
+      planning_(hops.Planning()) {
   redirectLogger("CallTopologyController");
-  ranking_.SetMediaRelayDeps(&relay_deps_);
-  planning_.SetMediaRelayDeps(&relay_deps_);
   BindHopMigratePortsAndOps();
 }
 
@@ -104,15 +104,18 @@ void CallTopologyController::SetHostPorts(HostPorts ports) {
 
 CallTopologyController::~CallTopologyController() {
   // No RemoveClientTransportLostObserver here: the relay may already be gone (CallStack::Shutdown
-  // clears the media plane first; mesh stop unwatches through SetMediaRelayDeps({})). Invalidating
-  // drops notices still queued for us.
+  // clears the media plane first; mesh stop unwatches through UnwatchRelay before the deps change).
+  // Invalidating drops notices still queued for us.
 }
 
-void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
-  UnwatchRelayLoss();
-  relay_deps_ = std::move(deps);
+void CallTopologyController::OnRelayDepsChanged() {
+  UnwatchRelayLoss(); // no-op after UnwatchRelay (the deps' owner unwatches before it swaps them)
   hop_migrate_.SetMediaRelayDeps(&relay_deps_);
   WatchRelayLoss();
+}
+
+void CallTopologyController::UnwatchRelay() {
+  UnwatchRelayLoss();
 }
 
 void CallTopologyController::WatchRelayLoss() {
@@ -1543,7 +1546,6 @@ void CallTopologyController::SetOutbox(OwnerOutbox<TopologyEvent> outbox) {
   }
   hop_migrate_.SetOutbox(
       outbox_.For<HopMigrateEvent>([](HopMigrateEvent event) { return TopologyEvent{std::move(event)}; }));
-  planning_.SetOutbox(outbox_.For<PlanningEvent>([](PlanningEvent event) { return TopologyEvent{std::move(event)}; }));
 }
 
 void CallTopologyController::Handle(TopologyEvent& event) {
@@ -1567,8 +1569,6 @@ void CallTopologyController::Handle(TopologyEvent& event) {
           steps_.Run(e.id);
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
           hop_migrate_.Handle(e);
-        } else if constexpr (std::is_same_v<E, PlanningEvent>) {
-          planning_.Handle(e);
         } else {
           static_assert(!sizeof(E), "handle every TopologyEvent");
         }

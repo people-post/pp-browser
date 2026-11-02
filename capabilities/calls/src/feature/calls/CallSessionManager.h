@@ -384,6 +384,8 @@ private:
   /** Before topology_ / live_calls_: both hold it (ports / media resources). */
   CallMediaSeat seat_;
   uint64_t doorway_generation_ = 0;
+  /** The device's hop side (V056): relay deps, hop ranking and planning; the hop path reads it. */
+  CallHopService hop_service_;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;

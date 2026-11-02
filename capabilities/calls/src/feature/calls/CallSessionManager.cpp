@@ -72,7 +72,8 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
       media_keys_(media_keys),
       delivery_(std::move(delivery)),
       media_(media),
-      topology_(sessions, contacts, media),
+      hop_service_(sessions, contacts),
+      topology_(sessions, contacts, media, hop_service_),
       control_(transcript, account, sessions, delivery_),
       key_exchange_(
           sessions, media_keys,
@@ -190,15 +191,15 @@ CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
     topology_.OnJoinedCountObserved(call_id, n);
   };
   ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
-    return topology_.HopPlanning().Plan(invitees, local);
+    return hop_service_.Planning().Plan(invitees, local);
   };
-  ports.probe_invite_hops = [this](const std::string& call_id) { topology_.HopPlanning().ProbeInvite(call_id); };
+  ports.probe_invite_hops = [this](const std::string& call_id) { hop_service_.Planning().ProbeInvite(call_id); };
   ports.hop_report_for_accept = [this](const std::string& call_id) {
-    return topology_.HopPlanning().ReportForAccept(call_id);
+    return hop_service_.Planning().ReportForAccept(call_id);
   };
   ports.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
-                                            const CallHopReport& report) {
-    topology_.HopPlanning().NoteAcceptReport(call_id, identity, report);
+                                        const CallHopReport& report) {
+    hop_service_.Planning().NoteAcceptReport(call_id, identity, report);
   };
   ports.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
   ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
@@ -212,9 +213,7 @@ CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
   ports.is_on_sfu_for_call = [this](const std::string& call_id) {
     return topology_.IsOnSfuForCall(call_id);
   };
-  ports.has_media_relay_hop_candidates = [this]() {
-    return topology_.HopRanking().HasCandidates();
-  };
+  ports.has_media_relay_hop_candidates = [this]() { return hop_service_.Ranking().HasCandidates(); };
   return ports;
 }
 
@@ -493,6 +492,8 @@ void CallSessionManager::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
   topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
+  hop_service_.SetOutbox(outbox_.For<PlanningEvent>(
+      [](PlanningEvent event) { return SessionEvent{session_event::ForHopService{std::move(event)}}; }));
   topology_.SetReports(outbox_.For<HopReport>(
       [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
 }
@@ -517,6 +518,8 @@ void CallSessionManager::Handle(SessionEvent& event) {
           if (DirectPathFor(e.call_id, e.serial)) {
             OnDirectReport(e.report);
           }
+        } else if constexpr (std::is_same_v<E, session_event::ForHopService>) {
+          hop_service_.Handle(e.event);
         } else if constexpr (std::is_same_v<E, session_event::ForDoorway>) {
           if (doorway_ && e.generation == doorway_generation_) {
             doorway_->Handle(e.event);
@@ -574,7 +577,9 @@ void CallSessionManager::SetInitiationBillingStore(IInitiationBillingBook* store
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
-  topology_.SetMediaRelayDeps(std::move(deps));
+  topology_.UnwatchRelay(); // the old relay is still alive here
+  hop_service_.SetMediaRelayDeps(std::move(deps));
+  topology_.OnRelayDepsChanged();
 }
 
 // Port setters swap a snapshot; the workflow / topology host ports (bound once in the ctor) read the

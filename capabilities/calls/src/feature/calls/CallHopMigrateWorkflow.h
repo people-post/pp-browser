@@ -215,7 +215,7 @@ public:
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
-  void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
+  void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps);
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
   void InstallMediaKey(const std::string& call_id);
@@ -330,7 +330,7 @@ private:
   ICallSessionStore& sessions_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
-  CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
+  const CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
   SharedPorts<CallHopMigrateArmingPorts> arming_;
   SharedPorts<CallHopMigrateSeatPorts> seat_;

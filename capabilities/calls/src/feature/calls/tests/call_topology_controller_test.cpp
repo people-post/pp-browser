@@ -329,7 +329,8 @@ protected:
     host_->call_media.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
-    topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
+    hops_ = std::make_unique<CallHopService>(*sessions_, *contacts_);
+    topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_, *hops_);
     topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
     topo_->SetReports(topo_reports_.Get());
     topo_->SetMediaKeyStore(keys_.get());
@@ -341,7 +342,7 @@ protected:
     deps.bootstrap_peers = {
         "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
     deps.prefer_contacts = false;
-    topo_->SetMediaRelayDeps(std::move(deps));
+    SetRelayDeps(std::move(deps));
     dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
   }
 
@@ -455,7 +456,16 @@ protected:
   std::unique_ptr<FakeTopologyHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
+  /** The device's hop side the topology reads (outlives it). */
+  std::unique_ptr<CallHopService> hops_;
   std::unique_ptr<CallTopologyController> topo_;
+
+  /** As the session manager installs relay deps: unwatch (old relay alive), swap, watch again. */
+  void SetRelayDeps(CallTopologyController::MediaRelayDeps deps) {
+    topo_->UnwatchRelay();
+    hops_->SetMediaRelayDeps(std::move(deps));
+    topo_->OnRelayDepsChanged();
+  }
   CallsLoopbackOutbox<TopologyEvent> topo_events_{[this](TopologyEvent& event) {
     if (topo_) {
       topo_->Handle(event);
@@ -625,7 +635,7 @@ TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
   deps.local_advertise_multiaddrs = {
       "/ip4/10.0.0.1/tcp/18517/p2p/" + relay_->local_peer_id};
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok) << ok.error().message;
@@ -655,7 +665,7 @@ TEST_F(CallTopologyControllerTest, EphemeralStartedDoesNotPreferLocalWithoutFlag
   deps.bootstrap_peers = {
       "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.9/tcp/1/p2p/" + relay_->local_peer_id};
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
@@ -675,7 +685,7 @@ TEST_F(CallTopologyControllerTest, AttachSelfHopUsesLocalPublisher) {
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = true;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   relay_->started = true;
 
   CallSfuAttachDetail attach;
@@ -715,7 +725,7 @@ TEST_F(CallTopologyControllerTest, HopHintPreferLocalFallsBackToSharedPublicHop)
   deps.bootstrap_peers = {"/ip4/1.2.3.4/tcp/443/p2p/" + seed};
   // Link scope so first hop is PreferLocal; guest then hints public seed.
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
@@ -760,7 +770,7 @@ TEST_F(CallTopologyControllerTest, HopHintRefusesWhenGuestPrefsMissOwnerDialable
   deps.bootstrap_peers = {
       "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
   ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
@@ -803,7 +813,7 @@ TEST_F(CallTopologyControllerTest, ANodeThatIsNotTheOwnerWaitsForTheOwnersAttach
   deps.prefer_local_as_hop = true;
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/18517/p2p/" + relay_->local_peer_id};
   WireLinkScopeRemotes(deps, "account:A", {"account:B", "account:A", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_TRUE(ok) << ok.error().message;
@@ -829,7 +839,7 @@ TEST_F(CallTopologyControllerTest, TheOwnerPicksWhenADurableRelayIsListed) {
   deps.list_media_relay_peers = []() {
     return std::vector<std::string>{"12D3KooWDurableNode"};
   };
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
@@ -850,7 +860,7 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickKeepsPreferLocalWhenPreferSe
   deps.prefer_local_as_hop = true;
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/18517/p2p/" + relay_->local_peer_id};
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   const int detaches = relay_->detach_calls;
@@ -880,7 +890,7 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickLeavesPreferLocalForSharedPu
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/18517/p2p/" + relay_->local_peer_id};
   deps.bootstrap_peers = {"/ip4/1.2.3.4/tcp/443/p2p/" + seed};
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
@@ -922,7 +932,7 @@ TEST_F(CallTopologyControllerTest, WideScopePicksOrgSeedNotPreferLocal) {
   (*remotes)["account:B"] = {"/ip4/54.9.9.9/tcp/443/p2p/b"};
   (*remotes)["account:C"] = {"/ip4/44.1.1.1/tcp/443/p2p/c"};
   deps.resolve_remote_listen_by_peer = [remotes]() { return *remotes; };
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
@@ -951,7 +961,7 @@ TEST_F(CallTopologyControllerTest, WideMissingRemotesPicksSeed) {
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/18517/p2p/" + relay_->local_peer_id};
   deps.bootstrap_peers = {"/ip4/1.2.3.4/tcp/443/p2p/" + seed};
   // No resolve_remote_listen → joined remotes get empty MAs → Wide.
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
@@ -979,7 +989,7 @@ TEST_F(CallTopologyControllerTest, LinkWithoutLanConfirmedPicksSeed) {
   (*remotes)["account:C"] = {"/ip4/192.168.1.30/tcp/1/p2p/c"};
   deps.resolve_remote_listen_by_peer = [remotes]() { return *remotes; };
   // No peer_lan_confirmed → PreferLocal denied.
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
@@ -1007,7 +1017,7 @@ TEST_F(CallTopologyControllerTest, StaleInboundSfuAttachIgnoredWhenNotActiveCall
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.20/tcp/1/p2p/guest"};
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = stale;
@@ -1075,7 +1085,7 @@ TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {
   (*remotes)["account:B"] = {"/ip4/54.9.9.9/tcp/443/p2p/b"};
   (*remotes)["account:C"] = {"/ip4/44.1.1.1/tcp/443/p2p/c"};
   deps.resolve_remote_listen_by_peer = [remotes]() { return *remotes; };
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
   ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
@@ -1105,7 +1115,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachSkipsPrivateHopOffLan) {
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.local_listen_multiaddr = "/ip4/10.0.0.20/udp/4001/adp/1.0.0/p2p/12D3KooWGuest";
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1256,7 +1266,7 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = true;
   deps.local_advertise_multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id};
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail self;
   self.call_id = call_id;
@@ -1302,7 +1312,7 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
   ASSERT_EQ(relay_->session_end_observers.size(), 1u) << "SetMediaRelayDeps must watch relay session ends";
 
   CallSfuAttachDetail attach;
@@ -1356,7 +1366,7 @@ protected:
     deps.relay = relay_.get();
     deps.dial = dial_.get();
     deps.prefer_local_as_hop = false;
-    topo_->SetMediaRelayDeps(std::move(deps));
+    SetRelayDeps(std::move(deps));
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = kHop;
@@ -1421,7 +1431,7 @@ TEST_F(CallTopologyControllerTest, GuestKeepsReattachingPastQuickAttempts) {
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1482,7 +1492,7 @@ TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1511,13 +1521,13 @@ TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
 
   CallTopologyController::MediaRelayDeps deps;
   deps.relay = relay_.get();
-  topo_->SetMediaRelayDeps(deps);
-  topo_->SetMediaRelayDeps(deps);
+  SetRelayDeps(deps);
+  SetRelayDeps(deps);
   EXPECT_EQ(relay_->session_end_observers.size(), 1u) << "re-set must not stack observers";
-  topo_->SetMediaRelayDeps({});
+  SetRelayDeps({});
   EXPECT_TRUE(relay_->session_end_observers.empty());
 
-  topo_->SetMediaRelayDeps(deps);
+  SetRelayDeps(deps);
   ASSERT_EQ(relay_->session_end_observers.size(), 1u);
   topo_->SetHopArmingPorts({});
   topo_.reset();
@@ -1549,7 +1559,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1613,7 +1623,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   deps.relay = relay_.get();
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
-  topo_->SetMediaRelayDeps(std::move(deps));
+  SetRelayDeps(std::move(deps));
 
   CallSfuAttachDetail old_attach;
   old_attach.call_id = old_id;

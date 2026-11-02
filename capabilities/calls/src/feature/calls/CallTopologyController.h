@@ -12,8 +12,7 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallHopDriver.h"
-#include "feature/calls/CallHopPlanning.h"
-#include "feature/calls/CallHopRanking.h"
+#include "feature/calls/CallHopService.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -91,14 +90,17 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts, MediaEngine& media);
+  CallTopologyController(ICallSessionStore& sessions, const IContactBook& contacts, MediaEngine& media,
+                         CallHopService& hops);
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
   CallTopologyController& operator=(const CallTopologyController&) = delete;
 
   void SetHostPorts(HostPorts ports);
-  /** Swapping deps moves the relay session-end observer to the new relay (empty = unwatch). */
-  void SetMediaRelayDeps(MediaRelayDeps deps);
+  /** The device's relay deps are about to change: stop watching the relay client (it is still alive). */
+  void UnwatchRelay();
+  /** The device's relay deps changed (mesh start / stop): watch the relay client again. */
+  void OnRelayDepsChanged();
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
@@ -127,11 +129,6 @@ public:
   /** Why the hop path is being recovered, for the screen (one reason; path decisions use the above). */
   CallRecovery Recovery() const;
   bool IsSfuAttachWaitActive() const;
-
-  /** The media hops this device could use, ranked (shared with SoftMigrate). */
-  const CallHopRanking& HopRanking() const { return ranking_; }
-  /** V050 group hop planning (plan at StartCall, probe while ringing, reports, join resolution). */
-  CallHopPlanning& HopPlanning() { return planning_; }
 
   void BeginSfuAttachWait(const std::string& call_id) override;
   void ClearSfuAttachWait();
@@ -304,10 +301,11 @@ private:
   ICallMediaKeyStore* media_keys_ = nullptr;
   SharedPorts<CallTopologySeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;
-  MediaRelayDeps relay_deps_;
-  /** Read relay_deps_ (non-owning): the hop ranking and V050 planning. */
-  CallHopRanking ranking_;
-  CallHopPlanning planning_;
+  /** The device's hop side (V056): relay client / hop discovery, ranking and V050 planning. */
+  CallHopService& hops_;
+  const MediaRelayDeps& relay_deps_;
+  CallHopRanking& ranking_;
+  CallHopPlanning& planning_;
   // Relay session-end observer on relay_deps_.relay; the token drops notices queued before an
   // unwatch or our destruction.
   /** Names the current relay watch: a loss reported by an earlier one is stale. */
