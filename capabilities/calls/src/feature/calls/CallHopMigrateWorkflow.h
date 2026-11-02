@@ -1,12 +1,13 @@
 #pragma once
 
 #include "lib/media/MediaEngine.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 #include "feature/calls/SharedPorts.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopPlannerLogic.h"
-#include "lib/calls/ICallSessionStore.h"
+#include "lib/calls/ICallSessionReader.h"
+#include "feature/calls/ICallSessionNotes.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -51,9 +52,8 @@ struct CallHopMigrateHostPorts {
   std::function<void(std::string message)> set_media_activity;
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  /** The call's media coordinator: the hop path starts / stops the engine through it. */
-  std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
-  std::function<void()> clear_media_peer_identity;
+  /** The call's `CallMedia`: the hop path starts / stops the engine through it. */
+  std::function<CallMedia*(const std::string& call_id)> call_media;
   std::function<void()> request_inbox_sync;
 
   bool IsBound() const { return static_cast<bool>(local_relay_identity); }
@@ -66,11 +66,6 @@ struct CallHopMigrateHostPorts {
   void NotifyRingChanged() const {
     if (notify_ring_changed) {
       notify_ring_changed();
-    }
-  }
-  void ClearMediaPeerIdentity() const {
-    if (clear_media_peer_identity) {
-      clear_media_peer_identity();
     }
   }
   void RequestInboxSync() const {
@@ -98,7 +93,6 @@ struct CallHopMigrateArmingPorts {
   std::function<bool()> migrate_ops_allowed;
   std::function<bool()> soft_migrate_may_arm;
   std::function<uint64_t()> media_cancel_gen;
-  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<const char*()> arming_debug_name;
 
   bool IsBound() const { return static_cast<bool>(migrate_ops_allowed); }
@@ -118,10 +112,7 @@ struct CallHopMigrateSeatPorts {
   std::function<void(const std::string& call_id, const std::string& hop)> end_attach_if_matching;
   std::function<bool()> has_attach_in_flight;
   std::function<std::string()> attaching_hop;
-  std::function<void(const std::string& call_id)> note_connecting;
   std::function<void(const std::string& call_id)> note_start;
-  std::function<void(CallMediaSeat::PathKind kind)> note_path;
-  std::function<void(const std::string& call_id)> note_live;
 
   bool IsBound() const { return static_cast<bool>(is_bound); }
 };
@@ -137,7 +128,8 @@ public:
   struct SoftMigrateFlight {
     bool in_flight = false;
     uint64_t flight_gen = 0;
-    std::string call_id;
+    /** The flight is this path's call's. */
+    bool for_call = false;
     std::atomic<uint64_t> migrate_generation{0};
     std::string attaching_hop_peer_id;
     std::string attached_hop_peer_id;
@@ -145,7 +137,8 @@ public:
   };
 
   struct AttachWait {
-    std::string call_id;
+    /** This path's call waits for the hop's attach. */
+    bool waiting = false;
     int64_t deadline_ms = 0;
     uint64_t timer_id = 0;
     /** Bumped at each arm: a deadline event for an earlier arm is stale. */
@@ -155,14 +148,17 @@ public:
   /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
   struct InboundAttachGate {
     std::optional<CallSfuAttachDetail> pending_attach;
-    std::string pending_call_id;
-    std::string last_fail_call_id;
+    /** A CallSfuAttach for this path's call is deferred. */
+    bool pending = false;
+    /** This path's call's last attach failed (on last_fail_hop). */
+    bool last_failed = false;
     std::string last_fail_hop;
   };
 
   struct GuestSfuSession {
     std::optional<CallSfuAttachDetail> active_attach;
-    std::string active_call_id;
+    /** This path's call is a guest on the hop. */
+    bool active = false;
     int reattach_attempts = 0;
     bool reattach_in_flight = false;
     /** A steady-pace retry is scheduled (the quick attempts are spent). */
@@ -183,6 +179,14 @@ public:
   struct SfuSurface {
     /** Owner writes; the 1:1 receive path reads it on transport I/O (the hop carries the call). */
     std::atomic<bool> attached{false};
+    /** The call's "the hop carries its media" flag (its 1:1 path reads it on I/O); null: none. */
+    std::shared_ptr<std::atomic<bool>> carries_media;
+    void SetAttached(const bool on) {
+      attached = on;
+      if (carries_media) {
+        carries_media->store(on, std::memory_order_release);
+      }
+    }
     int64_t last_quote_a_up_bps = 0;
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };
@@ -213,17 +217,20 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(ICallSessionStore& sessions, MediaEngine& media);
+  CallHopMigrateWorkflow(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
+                         MediaEngine& media);
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
   void SetOutbox(OwnerOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
+  /** Where the hop path reports to the calls it serves (its topology passes its own). */
+  void SetReports(OwnerOutbox<HopReport> reports) { reports_ = std::move(reports); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(HopMigrateEvent& event);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
-  void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
+  void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps);
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The call moved to a new media epoch (V003): the live hop attach seals with its key from now. */
   void InstallMediaKey(const std::string& call_id);
@@ -250,15 +257,19 @@ public:
   void OnGuestSfuTransportLost();
   /** The device's network came back or moved: a guest whose hop transport was lost tries again. */
   void OnLocalNetworkMoved();
-  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
-                                      std::function<void(Roe<void>)> on_done);
-
   static constexpr int kMaxGuestSfuReattachAttempts = 3;
   /** Past the quick attempts a guest keeps trying at this pace while the call is on the hop: a phone
    *  out of coverage comes back without its network moving. */
   static constexpr std::chrono::milliseconds kGuestSfuSlowRetry{3000};
 
+  /** `gen` is 0 or the current migrate generation (a result for a newer migrate is dropped). */
+  bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  /** The engine runs `call_id` on the hop (attached, SFU mode). */
+  bool IsLiveOnHopFor(const std::string& call_id) const;
+
 private:
+  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                      std::function<void(Roe<void>)> on_done);
   struct HopPick;
   struct HopAttach;
 
@@ -271,9 +282,6 @@ private:
   /** The live attach's key ring (calls owner), so a rotation reaches its frames. */
   std::shared_ptr<class SfuKeyRing> live_keys_;
   std::string live_keys_call_id_;
-
-  bool IsMigrateGenerationCurrent(uint64_t gen) const;
-  bool IsLiveOnHopFor(const std::string& call_id) const;
 
   // SoftMigrate steps (MaybeSoftMigrateToSfuAsync → gate → control thread → pick hops in order).
   /** False when the arming state settles the request here (`on_done` already called). */
@@ -304,14 +312,14 @@ private:
   std::function<void(mesh::MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
   void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
   void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
-  /** Calls owner: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
+  /** Calls owner: commit an attached hop (StartDuplex, state, chrome) unless the call moved on. */
   Roe<void> CompleteHopAttach(const HopAttach& at, int64_t a_up_bps);
   void ApplyQuoteAdaptation(int64_t a_up_bps);
   Roe<void> CheckHopAttachStillWanted(const HopAttach& at);
   bool OwnsHopAttachFlight(const HopAttach& at) const;
   /** Detach the relay session and report the attach as aborted. */
   Roe<void> AbortHopAttach();
-  MediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
+  MediaEngine::PacketSendFn MakeHopSendFn(const HopAttach& at);
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
@@ -334,10 +342,14 @@ private:
   mesh::MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
   static std::function<Roe<void>(const mesh::MediaRelayQuote&)> RelayQuotePricingGate();
 
-  ICallSessionStore& sessions_;
+  /** The one call this workflow's hop flows serve (its group path's). */
+  const std::string call_id_;
+  const ICallSessionReader& sessions_;
+  /** The hop the call is on goes to the rows' one writer (the session workflow). */
+  ICallSessionNotes& notes_;
   MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
-  CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
+  const CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
   SharedPorts<CallHopMigrateArmingPorts> arming_;
   SharedPorts<CallHopMigrateSeatPorts> seat_;
@@ -350,6 +362,7 @@ private:
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
   OwnerOutbox<HopMigrateEvent> outbox_;
+  OwnerOutbox<HopReport> reports_;
   /** Steps waiting for their Continue event (deferred steps, a picked hop's reach answer). */
   OwnerSteps steps_;
   /** Relay attaches waiting for the relay's answer. */

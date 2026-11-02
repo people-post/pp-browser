@@ -50,16 +50,16 @@ protected:
   void SetUp() override { engine_.SetSkipDeviceOpenForTest(true); }
   void TearDown() override { engine_.Stop(); }
 
-  MediaEngine::SfuSendFn CountingSend() {
-    return [this](const MediaEngine::SfuPacket&) { sent_.fetch_add(1); };
+  MediaEngine::PacketSendFn CountingSend() {
+    return [this](const MediaEngine::MediaPacket&) { sent_.fetch_add(1); };
   }
   void Deliver(uint32_t stream_id, uint32_t seq) {
-    MediaEngine::SfuPacket pkt;
+    MediaEngine::MediaPacket pkt;
     pkt.stream_id = stream_id;
     pkt.channel_id = mesh::kMediaChannelAudio;
     pkt.seq = seq;
     pkt.payload = frame_;
-    engine_.OnSfuPacket(pkt);
+    engine_.OnInboundPacket(pkt);
   }
 
   MediaEngine engine_;
@@ -111,9 +111,9 @@ TEST_F(MediaSessionSpecTest, CaptureOnlySendsAndIgnoresInbound) {
   EXPECT_EQ(engine_.HealthSnapshot().stream_count, 0u) << "no playback half, no RX tracks";
 }
 
-// Calls: StartSfu is exactly duplex.
-TEST_F(MediaSessionSpecTest, StartSfuIsDuplex) {
-  ASSERT_TRUE(engine_.StartSfu("call:1", CountingSend()));
+// Calls: StartDuplex is exactly duplex.
+TEST_F(MediaSessionSpecTest, StartDuplexIsDuplex) {
+  ASSERT_TRUE(engine_.StartDuplex("call:1", CountingSend()));
   EXPECT_EQ(engine_.ActiveSpec(), Spec::Duplex());
   EXPECT_TRUE(WaitFor([this] { return sent_.load() >= 3; }, std::chrono::seconds(2)));
   Deliver(7, 1);
@@ -124,7 +124,7 @@ TEST_F(MediaSessionSpecTest, StartSfuIsDuplex) {
 // (TX-only escalation) counts frames, not audio level, so it never mistakes a muted user for a
 // broken path.
 TEST_F(MediaSessionSpecTest, MutedCallStillSendsFrames) {
-  ASSERT_TRUE(engine_.StartSfu("call:muted", CountingSend()));
+  ASSERT_TRUE(engine_.StartDuplex("call:muted", CountingSend()));
   engine_.SetMuted(true);
   const int before = sent_.load();
   EXPECT_TRUE(WaitFor([&] { return sent_.load() >= before + 3; }, std::chrono::seconds(2)));
@@ -175,19 +175,19 @@ private:
 TEST_F(MediaSessionSpecTest, EachCallDecodesPeerVideoWithAFreshDecoder) {
   auto configured = std::make_shared<std::atomic<int>>(0);
   engine_.SetVideoCodecFactoryForTest([configured] { return std::make_unique<CountingDecoder>(configured); });
-  MediaEngine::SfuPacket video;
+  MediaEngine::MediaPacket video;
   video.stream_id = 7;
   video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
 
-  ASSERT_TRUE(engine_.StartSfu("call:1", CountingSend()));
-  engine_.OnSfuPacket(video);
-  engine_.OnSfuPacket(video);
+  ASSERT_TRUE(engine_.StartDuplex("call:1", CountingSend()));
+  engine_.OnInboundPacket(video);
+  engine_.OnInboundPacket(video);
   EXPECT_EQ(configured->load(), 1) << "one decoder per peer stream within a call";
   engine_.Stop();
 
-  ASSERT_TRUE(engine_.StartSfu("call:2", CountingSend()));
-  engine_.OnSfuPacket(video);
+  ASSERT_TRUE(engine_.StartDuplex("call:2", CountingSend()));
+  engine_.OnInboundPacket(video);
   EXPECT_EQ(configured->load(), 2) << "the next call must not reuse the last call's decoder";
 }
 
@@ -214,14 +214,14 @@ public:
 // B58: the UI trusts arriving frames over a peer's roster "camera off"; frames stop → not live.
 TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
   engine_.SetVideoCodecFactoryForTest([] { return std::make_unique<FrameDecoder>(); });
-  ASSERT_TRUE(engine_.StartSfu("call:live", CountingSend()));
+  ASSERT_TRUE(engine_.StartDuplex("call:live", CountingSend()));
   EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "no frame yet";
 
-  MediaEngine::SfuPacket video;
+  MediaEngine::MediaPacket video;
   video.stream_id = 7;
   video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
-  engine_.OnSfuPacket(video);
+  engine_.OnInboundPacket(video);
   EXPECT_TRUE(engine_.IsRemoteVideoLive(500));
 
   std::this_thread::sleep_for(std::chrono::milliseconds(60));
@@ -273,15 +273,15 @@ class RemoteVideoDecodeTest : public MediaSessionSpecTest {
 protected:
   void StartWith(std::shared_ptr<DecodeScript> script) {
     engine_.SetVideoCodecFactoryForTest([script] { return std::make_unique<ScriptedDecoder>(script); });
-    ASSERT_TRUE(engine_.StartSfu("call:decode", CountingSend()));
+    ASSERT_TRUE(engine_.StartDuplex("call:decode", CountingSend()));
   }
   void DeliverVideo(int count) {
-    MediaEngine::SfuPacket video;
+    MediaEngine::MediaPacket video;
     video.stream_id = 7;
     video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
     video.payload = {0, 0, 0, 1, 0x41, 0x9a};
     for (int i = 0; i < count; ++i) {
-      engine_.OnSfuPacket(video);
+      engine_.OnInboundPacket(video);
     }
   }
   bool KeyframeRequestedFor(uint32_t stream_id) {
@@ -363,12 +363,12 @@ private:
 TEST_F(MediaSessionSpecTest, StopDoesNotWaitForADecoderTeardown) {
   auto gate = std::make_shared<WedgedDecoder::Gate>();
   engine_.SetVideoCodecFactoryForTest([gate] { return std::make_unique<WedgedDecoder>(gate); });
-  ASSERT_TRUE(engine_.StartSfu("call:wedged", CountingSend()));
-  MediaEngine::SfuPacket video;
+  ASSERT_TRUE(engine_.StartDuplex("call:wedged", CountingSend()));
+  MediaEngine::MediaPacket video;
   video.stream_id = 7;
   video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
-  engine_.OnSfuPacket(video);
+  engine_.OnInboundPacket(video);
 
   const auto started = std::chrono::steady_clock::now();
   engine_.Stop();

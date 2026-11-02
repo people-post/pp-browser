@@ -30,8 +30,6 @@ struct CallScreen {
     Disconnected,
     /** The call stack's own words (`activity`), e.g. a path switch in progress. */
     Activity,
-    /** The media engine's connection state as it reads (`raw_state`). */
-    Raw,
     /** A group call everyone else left: this device waits for them until `alone_until_ms` (V053). */
     WaitingForOthers,
   };
@@ -81,7 +79,6 @@ struct CallScreen {
   int64_t alone_until_ms = 0;
   Status status = Status::Calling;
   std::string activity;
-  std::string raw_state;
   /** The call timer (Connected / Reconnecting); 0: none. */
   int64_t connected_at_ms = 0;
   Hint hint = Hint::None;
@@ -163,13 +160,12 @@ struct InCallSignals {
   bool p2p_seed_unreachable = false;
   /** Why the hop path is being recovered (None: it is not). */
   CallRecovery recovery = CallRecovery::None;
-  bool sfu_mode = false;
+  /** The call is on the group (hop) path — the call's path, not the engine's packet mode (1:1 uses it too). */
+  bool on_hop = false;
   bool group_context = false;
   bool media_chrome_live = false;
   CallMediaStatus media_status = CallMediaStatus::None;
   bool media_active = false;
-  /** The engine's connection state ("new", "connecting", "connected", "disconnected", …). */
-  std::string connection_state;
   /** The call stack's activity line (empty: none). */
   std::string activity;
   /** Media was live at some point in this call (a later failure is "disconnected", not "couldn't connect"). */

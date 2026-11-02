@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/directory/IAccountSigningAccess.h"
+#include "common/directory/ILocalAccount.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "foundation/crypto/CryptoTypes.h"
@@ -15,7 +16,7 @@
 
 namespace pbr {
 
-class IdentityStore : public Module, public IDekConsumer, public IAccountSigningAccess {
+class IdentityStore : public Module, public IDekConsumer, public IAccountSigningAccess, public ILocalAccount {
 public:
   /** Current identity plaintext JSON schema inside identity.enc. Unversioned / v1–v2 Ed25519 device keys fail closed (PQ hard cut). */
   static constexpr int kSchemaVersion = 3;
@@ -60,6 +61,7 @@ public:
   /** This device's own ML-KEM-768 secret (M021): opens the sessions peers start with this device. */
   Roe<ByteVector> GetDeviceKemPrivateKey() const;
   Roe<std::string> GetAccountId() const override;
+  Roe<int64_t> InitiationFloor() const override;
   void Flush();
 
 private:

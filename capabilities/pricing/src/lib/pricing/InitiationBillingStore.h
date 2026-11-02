@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/pricing/IInitiationBillingBook.h"
 #include "lib/pricing/PricingTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -11,39 +12,29 @@
 
 namespace pbr {
 
-struct InitiationPeerBilling {
-  InitiationBillingState state = InitiationBillingState::Closed;
-  /** Last known peer floor (directory); 0 if unknown/missing. */
-  int64_t floor_minor = 0;
-  /** Outstanding or last offer from local initiator. */
-  int64_t offer_minor = 0;
-  /** Currency id (stub pp_credit). */
-  std::string currency = kPricingCurrencyId;
-};
-
 /**
  * Per-peer initiation billing state (P001).
  * Persists under profile `initiation_billing.json`. Keyed by peer identity string
  * (relay:… or peer id as used elsewhere).
  */
-class InitiationBillingStore : public Module {
+class InitiationBillingStore : public Module, public IInitiationBillingBook {
 public:
   explicit InitiationBillingStore(std::string data_dir);
 
   Roe<void> Load();
   Roe<void> Save() const;
 
-  InitiationPeerBilling Get(const std::string& peer_identity) const;
+  InitiationPeerBilling Get(const std::string& peer_identity) const override;
   Roe<void> Set(const std::string& peer_identity, InitiationPeerBilling row);
 
   /** Directory / lookup refresh — does not open the relationship. */
   Roe<void> SetFloor(const std::string& peer_identity, int64_t floor_minor);
 
-  Roe<void> MarkOffered(const std::string& peer_identity, int64_t offer_minor, int64_t floor_minor);
-  Roe<void> MarkOpen(const std::string& peer_identity);
+  Roe<void> MarkOffered(const std::string& peer_identity, int64_t offer_minor, int64_t floor_minor) override;
+  Roe<void> MarkOpen(const std::string& peer_identity) override;
   Roe<void> MarkClosed(const std::string& peer_identity);
 
-  bool IsOpen(const std::string& peer_identity) const;
+  bool IsOpen(const std::string& peer_identity) const override;
 
 private:
   std::string Path() const;

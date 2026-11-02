@@ -71,7 +71,7 @@ struct CameraRequestFormat {
   /** Display rotation read on the requester's UI thread (`CameraDisplayRotationDegrees`). */
   int display_rotation_deg = 0;
   int fps = 20;
-  /** Optional capture size; zero keeps the call-oriented platform default. */
+  /** Optional capture size; zero keeps the VoIP-oriented platform default. */
   int capture_width = 0;
   int capture_height = 0;
   /** Calls prefer front cameras; QR scanning prefers rear cameras. */

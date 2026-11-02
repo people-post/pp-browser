@@ -35,7 +35,7 @@ public:
 
   /**
    * Send `control` to `peer_identity`. `key_init_b64`: a session init the caller holds (its media-key
-   * wrap opened the session) rides the first send. `urgent`: wake the peer as for an incoming call.
+   * wrap opened the session) rides the first send. `urgent`: wake the peer at once, the platform's most urgent push (an incoming call's).
    */
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control,
                  const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);

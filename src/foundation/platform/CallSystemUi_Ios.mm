@@ -146,7 +146,7 @@ public:
       pending_ = [uuid retain];
       ArmPendingTimer(kPendingRingNs);
     }
-    BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+    BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
 
   // --- CXProviderDelegate ----------------------------------------------------------------------

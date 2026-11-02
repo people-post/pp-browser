@@ -5,7 +5,7 @@ namespace pbr {
 /** Gates for CallSessionManager::KickAnswererDirectMediaIfArmed (V037 / product glue). */
 struct CallAnswererKickDecisionInput {
   bool allows_direct_path = false;
-  /** Engine already StartSfu'd for this call — do not Stop/restart (tx may still be 0 for ~1s). */
+  /** Engine already StartDuplex'd for this call — do not Stop/restart (tx may still be 0 for ~1s). */
   bool media_already_active_same_call = false;
   bool peer_nonempty = false;
 };

@@ -52,14 +52,6 @@ std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& pee
 
 } // namespace
 
-std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops) {
-  std::stable_partition(hops.begin(), hops.end(), [](const mesh::MeshHopCandidate& hop) {
-    return hop.affinity == mesh::MeshHopAffinity::OrgSeed || hop.affinity == mesh::MeshHopAffinity::DirectoryNode ||
-           hop.affinity == mesh::MeshHopAffinity::DhtDiscovered;
-  });
-  return hops;
-}
-
 mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
   mesh::RelayScopeMask mask = 0;
@@ -357,27 +349,6 @@ std::vector<mesh::MeshHopCandidate> ExcludePeerIds(std::vector<mesh::MeshHopCand
     out.push_back(std::move(c));
   }
   return out;
-}
-
-std::vector<mesh::MeshHopCandidate> PreferInCallMediaHops(
-    std::vector<mesh::MeshHopCandidate> ranked, const std::unordered_set<std::string>& in_call_peer_ids) {
-  if (in_call_peer_ids.empty() || ranked.empty()) {
-    return ranked;
-  }
-  std::vector<mesh::MeshHopCandidate> in_call;
-  std::vector<mesh::MeshHopCandidate> rest;
-  in_call.reserve(ranked.size());
-  rest.reserve(ranked.size());
-  for (mesh::MeshHopCandidate& c : ranked) {
-    if (!c.multiaddr.empty() && in_call_peer_ids.count(c.peer_id) > 0) {
-      in_call.push_back(std::move(c));
-    } else {
-      rest.push_back(std::move(c));
-    }
-  }
-  in_call.insert(in_call.end(), std::make_move_iterator(rest.begin()),
-                 std::make_move_iterator(rest.end()));
-  return in_call;
 }
 
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {

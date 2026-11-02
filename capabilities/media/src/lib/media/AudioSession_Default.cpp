@@ -1,9 +1,9 @@
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 
 namespace pbr {
-namespace CallAudioSession {
+namespace AudioSession {
 
-void ActivateForVoipCall() {}
+void ActivateForVoip() {}
 void Deactivate() {}
 
 void CancelPendingDeactivate() {}
@@ -45,5 +45,5 @@ int CaptureReopenSettleDelayMs() {
 void ApplyCaptureAudioHints() {}
 void ClearCaptureAudioHints() {}
 
-} // namespace CallAudioSession
+} // namespace AudioSession
 } // namespace pbr

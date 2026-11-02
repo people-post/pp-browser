@@ -85,11 +85,11 @@ struct CallMediaHealthInput {
   CallHopHealth hop;
   /** Wall clock for age checks. */
   int64_t now_ms = 0;
-  /** True while lifecycle/media is in an explicit reconnect / connect-pending state. */
+  /** The call's media was live and is not now (it reconnects or moves path): the call's state, not the engine's. */
   bool reconnecting = false;
   /**
    * 1:1 reach mode from CallMediaBridge: direct | punched | circuit.
-   * Used when hop is not attached (1:1 Amp also sets engine.sfu_mode for capture).
+   * Used when hop is not attached (1:1 Amp also sets engine.packet_mode for capture).
    */
   std::string reach_path_kind;
   /** The call's link, sampled by the caller (rates need two samples). */

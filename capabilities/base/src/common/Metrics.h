@@ -29,7 +29,4 @@ public:
   explicit MetricsLine(ShareWord event) : ShareableLine(MetricsLog(), event) {}
 };
 
-/** The call id as metrics name it: its first 8 hex, without the "call:" prefix. */
-inline std::string MetricsCallId(std::string_view call_id) { return ShortCallId(call_id); }
-
 } // namespace pbr

@@ -10,15 +10,21 @@
 
 namespace pbr {
 
-Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store,
-                                                      const PeerSessionKey& target_key,
-                                                      const uint32_t session_epoch,
-                                                      const ByteVector& peer_kem_public) {
-  if (target_key.channel != CryptoChannel::E2ePublic) {
-    return Error("EnsureE2ePublicMasterPsk requires e2e_public");
-  }
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                       const uint32_t session_epoch,
+                                                       const ByteVector& peer_kem_public) {
   if (peer_kem_public.empty()) {
     return Error("Peer KEM public key required");
+  }
+  return EnsureE2ePublicMasterPsk(psk_store, target_key, session_epoch,
+                                  [&peer_kem_public]() -> Roe<ByteVector> { return peer_kem_public; });
+}
+
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
+                                                       const uint32_t session_epoch,
+                                                       const std::function<Roe<ByteVector>()>& peer_kem_public) {
+  if (target_key.channel != CryptoChannel::E2ePublic) {
+    return Error("EnsureE2ePublicMasterPsk requires e2e_public");
   }
 
   auto loaded = psk_store.Load(target_key);
@@ -43,7 +49,14 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_st
     return out;
   }
 
-  auto established = AutoKeyEstablishment::EncapsulateForRecipient(peer_kem_public);
+  auto peer_public = peer_kem_public();
+  if (!peer_public) {
+    return peer_public.error();
+  }
+  if (peer_public->empty()) {
+    return Error("Peer KEM public key required");
+  }
+  auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
   if (!established) {
     return established.error();
   }

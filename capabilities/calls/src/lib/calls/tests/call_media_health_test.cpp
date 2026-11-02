@@ -9,7 +9,6 @@ CallMediaHealthInput BaseHealthyInput(int64_t now_ms = 10'000) {
   CallMediaHealthInput in;
   in.now_ms = now_ms;
   in.engine.active = true;
-  in.engine.connected = true;
   in.engine.rx_audio_frames = 100;
   in.engine.tx_audio_frames = 100;
   in.engine.last_rx_audio_ms = now_ms - 100;
@@ -115,8 +114,8 @@ TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
 
 TEST(CallMediaHealthTest, PathKindMediaRelayWhenHopAttached) {
   auto in = BaseHealthyInput();
-  in.engine.sfu_mode = true;
-  // 1:1 Amp sets sfu_mode without hop attach — must not force media_relay.
+  in.engine.packet_mode = true;
+  // 1:1 Amp sets packet_mode without hop attach — must not force media_relay.
   EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "direct");
   in.hop.attached = true;
   const auto v = EvaluateCallMediaHealth(in);
@@ -126,7 +125,7 @@ TEST(CallMediaHealthTest, PathKindMediaRelayWhenHopAttached) {
 
 TEST(CallMediaHealthTest, PathKindHonorsReachModes) {
   auto in = BaseHealthyInput();
-  in.engine.sfu_mode = true; // 1:1 capture mode — reach label still wins
+  in.engine.packet_mode = true; // 1:1 capture mode — reach label still wins
   in.reach_path_kind = "circuit";
   EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "circuit");
   in.reach_path_kind = "punched";
@@ -237,7 +236,6 @@ TEST(CallMediaHealthTest, LinkHealthResendRateIsCappedAtEveryPacket) {
 TEST(CallMediaHealthTest, LinkHealthInformsButDoesNotGrade) {
   CallMediaHealthInput in;
   in.engine.active = true;
-  in.engine.connected = true;
   in.now_ms = 10000;
   in.engine.last_rx_audio_ms = 9900;
   in.engine.last_tx_audio_ms = 9900;

@@ -5,6 +5,7 @@
 #include "common/media/MediaSessionsOwner.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/CallMediaDoorway.h"
 #include "feature/calls/tests/calls_on_owner.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
@@ -59,18 +60,10 @@ ByteVector TestMediaKey() {
   return key;
 }
 
-/** The 1:1 arming / progress ports as CallSessionManager::DirectArmingPorts binds them. */
+/** The 1:1 arming ports as CallSessionManager::DirectArmingPorts binds them. */
 CallDirectArmingPorts TestDirectArmingPorts(LiveCalls* live) {
   CallDirectArmingPorts ports;
   ports.direct_ops_allowed = [live]() { return live->AllowsDirectPath(); };
-  ports.request_direct_arming = [live](const std::string& call_id) { live->RequestDirectArming(call_id); };
-  ports.report_progress = [live](CallDirectPlannerPhase phase, const std::string& call_id) {
-    live->ReportDirectProgress(call_id, phase);
-  };
-  ports.on_connected = [live](const std::string& call_id) { live->NoteMediaConnected(call_id); };
-  ports.on_connect_failed = [live](const std::string& call_id) { live->NoteMediaFailed(call_id); };
-  ports.on_media_deferred = [live](const std::string& call_id) { live->NoteMediaDeferred(call_id); };
-  ports.on_media_key_ready = [live](const std::string& call_id) { live->NoteMediaKeyReady(call_id); };
   ports.arming_debug_name = [live]() { return CallMediaStatusName(live->Status()); };
   return ports;
 }
@@ -80,7 +73,7 @@ public:
   Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
   /** Harness: every call the bridge drives is live here (the harness seeds store rows only). */
-  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override {
+  CallMedia* P2pCallMedia(const std::string& call_id) override {
     if (!live.Find(call_id)) {
       live.AdmitPlaced(call_id, {"account:peer"});
     }
@@ -397,11 +390,24 @@ protected:
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();
     transport_ = std::make_unique<FakeCallMediaTransport>();
-    bridge_ = std::make_unique<CallMediaBridge>(
-        *host_, *sessions_, *keys_, *media_, *transport_,
-        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
-    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
-    bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
+    // The device's doorway hands inbound hellos to the path, as CallSessionManager wires it.
+    doorway_ = std::make_unique<CallMediaDoorway>(*transport_);
+    doorway_->SetOutbox(doorway_events_.Get());
+    CallMediaInboundPorts inbound;
+    inbound.session_open = [this](const std::string& call_id) {
+      auto session = sessions_->LoadSession(call_id);
+      return session && session->has_value() && (*session)->state != CallSessionState::Ended;
+    };
+    inbound.load_key = [this](const std::string& call_id, uint32_t epoch) -> std::optional<ByteVector> {
+      if (auto key = keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
+        return **key;
+      }
+      return std::nullopt;
+    };
+    inbound.on_accepted = [this](const CallMediaInboundHello& hello) {
+      return bridge_ ? bridge_->AcceptInbound(hello) : CallMediaDirectCallbacks{};
+    };
+    doorway_->SetPorts(std::move(inbound));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
@@ -410,6 +416,9 @@ protected:
     if (bridge_) {
       OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
     }
+    if (doorway_) {
+      OnCallsOwner([&] { doorway_->Shutdown(); });
+    }
     // Join the worker pool before destroying objects a still-running task may touch
     // (see call_session_inbound_compose_test.cpp TearDown).
     AppRuntime::Shutdown();
@@ -417,6 +426,7 @@ protected:
     if (media_) {
       media_->Stop();
     }
+    doorway_.reset();
     bridge_.reset();
     transport_.reset();
     circuit_.reset();
@@ -450,7 +460,21 @@ protected:
     host_->live.NoteOutboundStarted(call_id);
   }
 
+  /** The call's 1:1 path (V056: one per call), as its `CallMedia` builds it; the fixture plays the owner. */
+  void BuildBridge(const std::string& call_id) {
+    bridge_ = std::make_unique<CallMediaBridge>(
+        call_id, *host_, *sessions_, *keys_, *media_, *transport_,
+        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
+    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
+    bridge_->SetOutbox(bridge_events_.Get());
+    bridge_->SetReports(bridge_reports_.Get());
+  }
+
+  /** Seeds the stored call and builds its 1:1 path (each test drives one call). */
   void SeedActiveCall(const std::string& call_id) {
+    if (!bridge_) {
+      BuildBridge(call_id);
+    }
     CallSession session;
     session.call_id = call_id;
     session.origin_thread_id = "thread:1";
@@ -484,15 +508,50 @@ protected:
   std::unique_ptr<FakeCircuitHopReach> circuit_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<CallMediaBridge> bridge_;
+  std::unique_ptr<CallMediaDoorway> doorway_;
+  CallsLoopbackOutbox<DoorwayEvent> doorway_events_{[this](DoorwayEvent& event) {
+    if (doorway_) {
+      doorway_->Handle(event);
+    }
+  }};
   CallsLoopbackOutbox<DirectPathEvent> bridge_events_{[this](DirectPathEvent& event) {
     if (bridge_) {
       bridge_->Handle(event);
     }
   }};
+  /** The path's reports, taken as CallSessionManager::OnDirectReport takes them. */
+  CallsLoopbackOutbox<DirectReport> bridge_reports_{[this](DirectReport& report) {
+    LiveCalls& live = host_->live;
+    std::visit(
+        [&](const auto& r) {
+          using R = std::decay_t<decltype(r)>;
+          if constexpr (std::is_same_v<R, direct_report::Progress>) {
+            live.ReportDirectProgress(r.call_id, r.phase);
+          } else if constexpr (std::is_same_v<R, direct_report::Connected>) {
+            live.NoteMediaConnected(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::HandedToHop>) {
+            live.NoteDirectHandedToHop(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
+            live.NoteMediaFailed(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaAttempted>) {
+            live.NoteMediaAttempted(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
+            live.NoteMediaDeferred(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
+            live.NoteMediaKeyReady(r.call_id);
+            if (bridge_ && !r.peer_identity.empty()) {
+              live.RequestDirectArming(r.call_id);
+              bridge_->ScheduleStartMediaAsAnswerer(r.call_id, r.peer_identity);
+            }
+          }
+        },
+        report);
+  }};
 };
 
 // Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.
 TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
+  BuildBridge("call:path-kind");
   transport_->active = true;
   transport_->link_kind = CallMediaLinkKind::Relayed;
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
@@ -569,12 +628,11 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
 
 // k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
 TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
+  const std::string call_id = "call:answerer-renew";
+  SeedActiveCall(call_id);
   std::atomic<int> reserves{0};
   bridge_->SetSeedReserve([&] { reserves.fetch_add(1); });
   bridge_->SetReserveRenewIntervalMsForTest(30);
-
-  const std::string call_id = "call:answerer-renew";
-  SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
@@ -606,7 +664,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStops
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
-  // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartSfu when key present.
+  // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartDuplex when key present.
   const std::string call_id = "call:answerer-key";
   SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -618,9 +676,9 @@ TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
 }
 
@@ -634,7 +692,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
   // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
@@ -685,7 +743,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) 
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  // InCall + HopLive: ScheduleStart must not re-arm Direct or StartSfu.
+  // InCall + HopLive: ScheduleStart must not re-arm Direct or StartDuplex.
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::HopLive);
 }
@@ -702,9 +760,9 @@ TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   // Offerer Connect waits inbound grace before ConnectAsync — do not assert dial yet.
 }
 
@@ -725,7 +783,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DeferredKeyThenOnMediaKeyReadyActivates
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
 }
 
@@ -745,7 +803,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
 
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
 }
 
 // Dogfood 2026-09-24: the answerer's only link to the caller was the relay carrier; the reach
@@ -814,7 +872,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
-  // Dogfood: Connect give-up must stop StartSfu capture (no zombie TX) and Direct→Idle.
+  // Dogfood: Connect give-up must stop StartDuplex capture (no zombie TX) and Direct→Idle.
   const std::string call_id = "call:circuit-miss-stop";
   SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
@@ -1362,7 +1420,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed)
   EXPECT_GE(circuit_->call_media_ensure_calls, 1)
       << "second attempt must redial via Ensure, not short-circuit on the stale link";
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
@@ -1399,7 +1457,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
   EXPECT_EQ(transport_->connect_async_calls, 2)
       << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
   EXPECT_TRUE(media_->IsActive());
-  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_EQ(media_->ActiveSessionId(), call_id);
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 

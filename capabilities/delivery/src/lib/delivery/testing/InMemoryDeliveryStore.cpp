@@ -306,6 +306,18 @@ Roe<ThreadMessage> InMemoryDeliveryStore::AppendMessage(const ThreadMessage& mes
 
 Roe<bool> InMemoryDeliveryStore::UpdateMessage(const ThreadMessage& message) {
   std::lock_guard lock(mutex_);
+  return UpdateMessageLocked(message);
+}
+
+Roe<ThreadMessage> InMemoryDeliveryStore::UpsertMessage(const ThreadMessage& message) {
+  std::lock_guard lock(mutex_);
+  if (UpdateMessageLocked(message)) {
+    return message;
+  }
+  return AppendMessageLocked(message);
+}
+
+bool InMemoryDeliveryStore::UpdateMessageLocked(const ThreadMessage& message) {
   auto rows = messages_.find(message.thread_id);
   if (rows == messages_.end()) {
     return false;

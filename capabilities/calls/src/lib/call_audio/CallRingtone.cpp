@@ -1,5 +1,5 @@
 #include "lib/call_audio/CallRingtone.h"
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #include "lib/call_audio/Ringback.h"
 
 #include <SDL3/SDL.h>
@@ -296,9 +296,9 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
   request.holder = tone_ == Tone::OutgoingRingback ? "ringback" : "ringtone";
   request.format = AudioDeviceFormat{wav_freq_, wav_channels_};
   request.still_wanted = [stop]() { return !stop->load(); };
-  // The speaker opens before (ringback) or without (ringtone) ActivateForVoipCall: keep a previous
+  // The speaker opens before (ringback) or without (ringtone) ActivateForVoip: keep a previous
   // call's delayed Deactivate retry from stopping this tone's I/O.
-  CallAudioSession::CancelPendingDeactivate();
+  AudioSession::CancelPendingDeactivate();
   auto lease = devices_.AcquireAudio(request);
   if (!lease || !(*lease)->HasDevice()) {
     SDL_Log("CallRingtone: no speaker: %s", lease ? (*lease)->OpenError().c_str() : lease.error().message.c_str());
@@ -321,8 +321,8 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
     if (!stop->load()) {
       // After the open: SDL rewrites the AVAudioSession when it opens a device (routes phones
       // to the earpiece).
-      CallAudioSession::BeginToneHold();
-      CallAudioSession::ActivateForVoipCall();
+      AudioSession::BeginToneHold();
+      AudioSession::ActivateForVoip();
       activated = true;
     }
   }
@@ -341,10 +341,10 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
   lease->reset();
   if (activated) {
     if (release_on_stop && release_on_stop->load(std::memory_order_relaxed)) {
-      CallAudioSession::Deactivate();
+      AudioSession::Deactivate();
     }
     // Released, or handed to call media: either way a call may activate its own session now.
-    CallAudioSession::EndToneHold();
+    AudioSession::EndToneHold();
   }
   // No playing_ write here: the loop only exits once `stop` is set, and RequestStop already
   // cleared playing_ at that moment (rule 5).

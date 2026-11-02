@@ -31,7 +31,7 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   out.engine = in.engine;
   out.hop = in.hop;
   out.link = in.link;
-  // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.sfu_mode for capture.
+  // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.packet_mode for capture.
   if (in.hop.attached) {
     out.path_kind = "media_relay";
   } else if (!in.reach_path_kind.empty()) {
@@ -57,14 +57,14 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   const bool tx_alive =
       !tx_expected || (in.engine.tx_audio_frames > 0 && tx_age < 1500);
 
-  if (in.reconnecting || (!in.engine.connected && in.engine.active)) {
+  if (in.reconnecting) {
     out.quality = CallPathQuality::Reconnecting;
     out.quality_bars = 1;
-  } else if (in.engine.active && in.engine.connected && !rx_alive && tx_alive) {
+  } else if (in.engine.active && !rx_alive && tx_alive) {
     out.quality = CallPathQuality::NoAudio;
     out.asymmetry = CallAudioAsymmetry::SendingOnly;
     out.quality_bars = 0;
-  } else if (in.engine.active && in.engine.connected && rx_alive && !tx_alive && tx_expected) {
+  } else if (in.engine.active && rx_alive && !tx_alive && tx_expected) {
     out.quality = CallPathQuality::Poor;
     out.asymmetry = CallAudioAsymmetry::ReceivingOnly;
     out.quality_bars = 1;
@@ -137,7 +137,7 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
           ? (now_ms - v.engine.last_rx_audio_ms)
           : -1;
   std::ostringstream out;
-  out << (v.path_kind.empty() ? (v.engine.sfu_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
+  out << (v.path_kind.empty() ? (v.engine.packet_mode ? "SFU" : "P2P") : v.path_kind) << " · ";
   out << (v.engine.opus_target_bps / 1000) << "k · p";
   const double p = std::max(v.engine.path_pressure, v.hop.path_pressure);
   {

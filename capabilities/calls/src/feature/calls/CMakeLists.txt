@@ -5,17 +5,21 @@ pp_browser_add_feature_library(pp_feature_calls
     CallConnectDiag.cpp
     CallMediaBridge.cpp
     CallMediaConnectCoordinator.cpp
+    CallMediaDoorway.cpp
+    CallHopService.cpp
     CallMediaPlane.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
+    CallDevice.cpp
     CallSessionManager.cpp
+    CallReads.cpp
     CallStack.cpp
     LocalNetworkReaction.cpp
     CallsLoop.cpp
     CallTopologyController.cpp
     CallUiBackend.cpp
     LiveCallMedia.cpp
-    CallMediaCoordinator.cpp
+    CallMedia.cpp
     CallControlClient.cpp
     CallInitiationBilling.cpp
     CallReachSignals.cpp

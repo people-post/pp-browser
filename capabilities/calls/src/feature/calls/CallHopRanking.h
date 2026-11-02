@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallHopPlan.h"
-#include "lib/people/ContactsStore.h"
+#include "lib/people/IContactBook.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
@@ -20,7 +20,7 @@ namespace pbr {
  */
 class CallHopRanking {
 public:
-  explicit CallHopRanking(ContactsStore& contacts) : contacts_(contacts) {}
+  explicit CallHopRanking(const IContactBook& contacts) : contacts_(contacts) {}
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
 
@@ -44,7 +44,7 @@ public:
 private:
   void FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, bool published_ma_is_dialable) const;
 
-  ContactsStore& contacts_;
+  const IContactBook& contacts_;
   const CallTopologyMediaRelayDeps* deps_ = nullptr;
 };
 

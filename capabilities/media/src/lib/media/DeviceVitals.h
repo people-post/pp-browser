@@ -4,7 +4,7 @@
 
 namespace pbr {
 
-/** Device load for operational metrics (Metrics.h): what a call costs the device. -1 = unknown. */
+/** Device load for operational metrics (Metrics.h): what a live session costs the device. -1 = unknown. */
 struct DeviceVitals {
   /** CPU time this process has used so far (user + system), seconds — the power-use proxy. */
   double cpu_s = -1.0;

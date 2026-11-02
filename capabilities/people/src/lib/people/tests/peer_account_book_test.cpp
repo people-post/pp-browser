@@ -1,4 +1,5 @@
 #include "lib/people/PeerAccountBook.h"
+#include "lib/people/ContactsStore.h"
 
 #include "lib/people/MeshHopPolicy.h"
 

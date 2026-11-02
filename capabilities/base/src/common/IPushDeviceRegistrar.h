@@ -21,12 +21,12 @@ public:
   virtual std::string PlatformName() const = 0;
   virtual std::string DeviceId() const = 0;
   /**
-   * A second token for calls only — PushKit (VoIP) on a CallKit iPhone build (P013), registered as
-   * `kCallPushPlatform` with device id DeviceId() + `kCallPushDeviceSuffix`. Empty: none.
+   * A second token for VoIP pushes (calls) — PushKit on a CallKit iPhone build (P013), registered as
+   * `kVoipPushPlatform` with device id DeviceId() + `kVoipPushDeviceSuffix`. Empty: none.
    */
-  virtual std::string CallPushToken() { return {}; }
-  static constexpr const char* kCallPushPlatform = "ios_voip";
-  static constexpr const char* kCallPushDeviceSuffix = ".voip";
+  virtual std::string VoipPushToken() { return {}; }
+  static constexpr const char* kVoipPushPlatform = "ios_voip";
+  static constexpr const char* kVoipPushDeviceSuffix = ".voip";
 
   static IPushDeviceRegistrar& Instance();
   static void SetInstance(IPushDeviceRegistrar* registrar);

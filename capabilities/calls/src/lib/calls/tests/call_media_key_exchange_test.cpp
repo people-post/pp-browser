@@ -45,7 +45,6 @@ protected:
       return session_key_;
     };
     exchange_ = std::make_unique<CallMediaKeyExchange>(*sessions_, *keys_, std::move(transport));
-    exchange_->SetOnEpochInstalled([this](const std::string&) { ++installed_; });
   }
 
   void TearDown() override {
@@ -69,8 +68,6 @@ protected:
     return CallControlCodec::EncodeMediaKey(detail).value();
   }
 
-  uint32_t SessionEpoch() { return sessions_->LoadSession(kCall).value()->media_epoch; }
-
   static constexpr const char* kCall = "call:rotate";
   std::filesystem::path dir_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
@@ -78,31 +75,38 @@ protected:
   std::unique_ptr<CallMediaKeyExchange> exchange_;
   ByteVector session_key_ = Bytes(0x10);
   bool peer_session_ready_ = false;
-  int installed_ = 0;
 };
 
-// #381: a rotation's key that cannot be opened yet leaves the call on the epoch it has a key for; the
-// coordinator's resend then moves it and installs the key. A resend of the current epoch installs again.
+// #381: a rotation's key that cannot be opened yet is not taken (the call stays on the epoch it has a key
+// for); the coordinator's resend is taken, and its key stored. Moving the call is the workflow's (the rows'
+// one writer): the exchange only says which key it took.
 TEST_F(CallMediaKeyExchangeTest, AKeyThatFailedToOpenIsTakenFromItsResend) {
   const std::string epoch2 = MediaKeyDetail(2);
-  ASSERT_TRUE(exchange_->HandleInbound(epoch2, "account:coordinator"));
-  EXPECT_EQ(SessionEpoch(), 1u) << "no key for epoch 2: the session stays where its key is";
-  EXPECT_EQ(installed_, 0);
+  auto first = exchange_->HandleInbound(epoch2, "account:coordinator");
+  ASSERT_TRUE(first);
+  EXPECT_FALSE(*first) << "no key for epoch 2 yet: nothing taken";
+  EXPECT_FALSE(keys_->LoadEpochKey(kCall, 2).value());
 
   peer_session_ready_ = true;
-  ASSERT_TRUE(exchange_->HandleInbound(epoch2, "account:coordinator"));
-  EXPECT_EQ(SessionEpoch(), 2u);
-  EXPECT_EQ(installed_, 1);
-  auto current = exchange_->Current(kCall);
-  ASSERT_TRUE(current);
-  EXPECT_EQ(current->epoch, 2u);
-  EXPECT_EQ(current->key, Bytes(0x42));
+  auto resend = exchange_->HandleInbound(epoch2, "account:coordinator");
+  ASSERT_TRUE(resend);
+  ASSERT_TRUE(*resend);
+  EXPECT_EQ((*resend)->call_id, kCall);
+  EXPECT_EQ((*resend)->epoch, 2u);
+  EXPECT_EQ((*resend)->key_id, "mk:2");
+  auto stored = keys_->LoadEpochKey(kCall, 2);
+  ASSERT_TRUE(stored && *stored);
+  EXPECT_EQ(**stored, Bytes(0x42));
+  EXPECT_EQ(sessions_->LoadSession(kCall).value()->media_epoch, 1u) << "the exchange never writes the row";
+}
 
-  ASSERT_TRUE(exchange_->HandleInbound(epoch2, "account:coordinator"));
-  EXPECT_EQ(installed_, 2) << "the current epoch's key again installs again (idempotent)";
-  ASSERT_TRUE(exchange_->HandleInbound(MediaKeyDetail(1), "account:coordinator"));
-  EXPECT_EQ(SessionEpoch(), 2u) << "an older epoch never moves the call back";
-  EXPECT_EQ(installed_, 2);
+// Epochs only move forward: a newer key moves the call, the current one again installs again (a member
+// that missed the rotation catches up), an older one is not the key now.
+TEST_F(CallMediaKeyExchangeTest, EpochsOnlyMoveForward) {
+  using Step = CallMediaKeyExchange::EpochStep;
+  EXPECT_EQ(CallMediaKeyExchange::StepFor(1, 2), Step::Advance);
+  EXPECT_EQ(CallMediaKeyExchange::StepFor(2, 2), Step::Reinstall);
+  EXPECT_EQ(CallMediaKeyExchange::StepFor(2, 1), Step::Ignore);
 }
 
 } // namespace

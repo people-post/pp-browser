@@ -78,7 +78,7 @@ TEST(MediaEngineStopTest, SlowTeardownHoldsNeitherStopNorGetters) {
   engine.SetVideoCodecFactoryForTest(
       [&codecs_made]() -> std::unique_ptr<IVideoCodec> { return std::make_unique<SlowTeardownCodec>(codecs_made); });
 
-  auto started = engine.StartSfu("slow-teardown-call", [](const MediaEngine::SfuPacket&) {});
+  auto started = engine.StartDuplex("slow-teardown-call", [](const MediaEngine::MediaPacket&) {});
   ASSERT_TRUE(started) << (started ? "" : started.error().message);
   auto camera = engine.SetCameraEnabled(true, 0);
   ASSERT_TRUE(camera) << (camera ? "" : camera.error().message);
@@ -95,7 +95,7 @@ TEST(MediaEngineStopTest, SlowTeardownHoldsNeitherStopNorGetters) {
   int polls = 0;
   do {
     const auto from = std::chrono::steady_clock::now();
-    (void)engine.ConnectionState();
+    (void)engine.ActiveSessionId(); // a getter that takes the session lock
     const auto ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count();
     worst_ms = std::max<int64_t>(worst_ms, ms);

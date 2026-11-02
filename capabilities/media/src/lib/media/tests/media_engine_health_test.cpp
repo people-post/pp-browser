@@ -13,7 +13,7 @@ TEST(MediaEngineHealthTest, SkipDeviceOpenReportsNoAudioIo) {
   MediaEngine engine;
   engine.SetSkipDeviceOpenForTest(true);
 
-  auto started = engine.StartSfu("skip-device-open-test-call", [](const MediaEngine::SfuPacket&) {});
+  auto started = engine.StartDuplex("skip-device-open-test-call", [](const MediaEngine::MediaPacket&) {});
   ASSERT_TRUE(started) << (started ? "" : started.error().message);
 
   const auto health = engine.HealthSnapshot();

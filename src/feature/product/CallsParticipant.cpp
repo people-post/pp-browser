@@ -19,10 +19,11 @@ namespace {
 CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   CallStackDeps deps;
   deps.address_disclosure = &hub.AddressDisclosure();
-  deps.store = &hub.Store();
+  deps.threads = &hub.Store();
+  deps.transcript = &hub.Store();
   deps.contacts = &hub.Contacts();
-  deps.identity = &hub.Identity();
-  deps.psk = hub.PeerSessions();
+  deps.account = &hub.Identity();
+  deps.initiation_billing = hub.InitiationBilling();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
                                         const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
@@ -106,11 +107,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         messaging->SyncInboxFromWake(force);
       }
     };
-    deps.delivery.register_peer_direct_endpoint = [&hub](const std::string& identity, const std::string& multiaddr) {
-      if (auto* messaging = hub.MeshMessagingOrNull()) {
-        messaging->RegisterPeerDirectEndpoint(identity, multiaddr);
-      }
-    };
     deps.delivery.ensure_peer_session_key = [&hub](const std::string& peer_identity) -> Roe<EnsuredE2ePublicSessionKey> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
@@ -132,7 +128,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.list_directory_nodes = reach.list_directory_nodes;
   deps.list_dht_nodes = reach.list_dht_nodes;
   deps.seed_dial_ok = reach.seed_dial_ok;
-  deps.note_lan_mdns_peer_id = reach.note_lan_peer_id;
   deps.note_peer_device = [&hub](const std::string& account, const std::string& peer_id) {
     if (auto* messaging = hub.MeshMessagingOrNull()) {
       messaging->AccountCards().NoteDevice(account, peer_id);
@@ -148,7 +143,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
 } // namespace
 
 bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return false;
   }
@@ -157,30 +152,30 @@ bool CallsParticipant::ThreadInActiveCall(const Thread& thread) {
     return false;
   }
   std::vector<CallParticipant> joined;
-  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
+  if (auto parts = calls->JoinedParticipants((*active)->call_id); parts) {
     joined = std::move(*parts);
   }
   return ThreadMatchesActiveCall(thread, **active, joined);
 }
 
 bool CallsParticipant::AnyCallLive() {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return false;
   }
   if (auto active = calls->ActiveLocalCall(); active && *active) {
     return true;
   }
-  const auto invite = calls->PeekTopPendingInvite(); // read only: no ring is started or cleared by asking
+  const auto invite = calls->TopPendingInvite(); // read only: no ring is started or cleared by asking
   return invite && *invite;
 }
 
 Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std::string& call_id) {
-  auto* calls = stack_.Calls();
+  const CallReads* calls = stack_.Reads();
   if (!calls) {
     return Error("calls unavailable");
   }
-  if (auto participants = calls->ListJoinedParticipants(call_id)) {
+  if (auto participants = calls->JoinedParticipants(call_id)) {
     return *participants;
   }
   return Error("call participants unavailable");
@@ -200,9 +195,6 @@ std::vector<IDekConsumer*> CallsParticipant::DekConsumers() {
 
 void CallsParticipant::OnMessagingBuilt(ConversationsHub& hub) {
   stack_.BuildSessions(MakeCallStackDeps(hub, mesh_));
-  stack_.RunOnOwner([billing = hub.InitiationBilling()](CallSessionManager& calls) {
-    calls.SetInitiationBillingStore(billing);
-  });
 }
 
 void CallsParticipant::OnPolicyPrefs(const HubPolicyPrefs& prefs) {
@@ -210,7 +202,7 @@ void CallsParticipant::OnPolicyPrefs(const HubPolicyPrefs& prefs) {
 }
 
 void CallsParticipant::OnTeardownStarting() {
-  stack_.RunOnOwner([](CallSessionManager& calls) { calls.ClearMediaCallbacks(); });
+  stack_.RunOnOwner([](CallDevice& calls) { calls.DropFollowUps(); });
 }
 
 void CallsParticipant::OnMessagingDropped() {

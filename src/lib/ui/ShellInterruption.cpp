@@ -10,7 +10,7 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
     return InterruptionKind::CallRing;
   }
   if (state.call_in_progress.active) {
-    return InterruptionKind::CallInProgress;
+    return InterruptionKind::LiveSessionOn;
   }
   if (state.dialog.active) {
     return InterruptionKind::Dialog;
@@ -43,7 +43,7 @@ CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellStat
   case InterruptionKind::Dialog:
   case InterruptionKind::OverlayLayer:
     return CompactChromeFrostSurface::None;
-  case InterruptionKind::CallInProgress:
+  case InterruptionKind::LiveSessionOn:
     // Compact call bar sits above chrome without a full-screen frost.
     return CompactChromeFrostSurface::None;
   case InterruptionKind::Transient:
@@ -68,7 +68,7 @@ bool ShellInterruption::DismissTop(ShellState& state) {
   case InterruptionKind::CallRing:
     // Decline is explicit; Escape does not silently dismiss a ring.
     return false;
-  case InterruptionKind::CallInProgress:
+  case InterruptionKind::LiveSessionOn:
     return false;
   case InterruptionKind::Dialog:
     state.dialog = {};

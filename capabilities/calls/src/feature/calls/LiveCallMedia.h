@@ -1,9 +1,10 @@
 #pragma once
 
 #include "lib/calls/LiveCall.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -11,29 +12,40 @@
 namespace pbr {
 
 /**
- * Each live call's media: its coordinator over the one engine, the seat and the path drivers. A
- * coordinator belongs to one admission of a call (LiveCall::Instance): a re-admitted id gets a fresh
- * one, and one whose call LiveCalls no longer keeps is dropped. Calls owner only.
+ * Each live call's media (CallMedia: its use of the one engine and the seat, and its paths). A
+ * call's media belongs to one admission of the call (LiveCall::Instance): a re-admitted id gets a
+ * fresh one, and one whose call LiveCalls no longer keeps is dropped. Calls owner only.
  */
 class LiveCallMedia {
 public:
   explicit LiveCallMedia(const LiveCalls& live) : live_(live) {}
 
-  /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
+  /** The one media engine and the media seat every call's media drives (seat may be null). */
   void BindMediaResources(MediaEngine* engine, CallMediaSeat* seat);
-  /** The 1:1 path the coordinators drive (null: none wired). */
-  void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
-  /** The group path the coordinators drive (null: harness). */
-  void BindHopDriver(CallHopDriver* hop) { resources_.hop = hop; }
+  /** How a call's 1:1 path is built (empty: none wired — no new paths; built ones stay until dropped). */
+  void BindDirectPathFactory(CallDirectPathFactory make) { resources_.make_direct = std::move(make); }
+  /** Drop every built 1:1 path (the transport they ride goes). */
+  void DropDirectPaths();
+  /** Each call's built 1:1 path. */
+  void ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn);
+  /** How a call's group path is built (empty: none — harness). */
+  void BindHopPathFactory(CallHopPathFactory make) { resources_.make_hop = std::move(make); }
+  /** Each call's built group path. */
+  void ForEachHopPath(const std::function<void(CallHopDriver&)>& fn);
 
   /**
-   * The call's media coordinator, created on first use. Null for a call this device never admitted
+   * The call's `CallMedia`, created on first use. Null for a call this device never admitted
    * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
    */
-  CallMediaCoordinator* Media(const std::string& call_id);
+  CallMedia* Media(const std::string& call_id);
+  /** The call's media if it exists (never creates it). */
+  CallMedia* Find(const std::string& call_id);
+  /** Same, for readers (no sweep). */
+  const CallMedia* Peek(const std::string& call_id) const;
   /**
    * Stop `call_id`'s media (empty: whatever holds the seat). The seat's release tears the paths
-   * down; with no seat, each driver stops its part. Also for calls not admitted here (leftovers).
+   * down; with no seat, the hop and the call's 1:1 path stop their parts (the engine for a call
+   * with neither). Also for calls not admitted here (leftovers).
    */
   void StopMedia(const std::string& call_id);
   /**
@@ -49,14 +61,14 @@ public:
 private:
   struct Entry {
     uint64_t instance = 0;
-    std::unique_ptr<CallMediaCoordinator> coordinator;
+    std::unique_ptr<CallMedia> media;
   };
 
-  /** Drop coordinators whose call LiveCalls no longer keeps. */
+  /** Drop the media of calls LiveCalls no longer keeps. */
   void Sweep();
 
   const LiveCalls& live_;
-  /** Outlives every coordinator (they hold a reference). */
+  /** Outlives every call's media (they hold a reference). */
   CallMediaResources resources_;
   std::map<std::string, Entry> media_;
 };

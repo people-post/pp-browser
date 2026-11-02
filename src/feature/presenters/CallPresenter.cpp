@@ -2,9 +2,9 @@
 
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/media/CallAudioSession.h"
+#include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
-#include "lib/media/MediaEngine.h"
+#include "lib/media/IMediaView.h"
 #include "feature/calls/CallUiBackend.h"
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
@@ -184,8 +184,8 @@ void CallPresenter::Refresh() {
     next.ring_video = top.video_allowed;
     next.answered_video = auto_camera_pending_ && auto_camera_call_id_ == top.call_id;
     // The Connecting bar has the speaker button too: the choice may be made before media opens.
-    next.show_speaker = CallAudioSession::SupportsSpeakerToggle();
-    next.speaker_on = CallAudioSession::IsSpeakerphoneOn();
+    next.show_speaker = AudioSession::SupportsSpeakerToggle();
+    next.speaker_on = AudioSession::IsSpeakerphoneOn();
   } else if (surface.kind == SurfaceKind::Ringing) {
     const PendingCallInvite& top = *surface.invite;
     ringing_call_id_ = top.call_id;
@@ -248,9 +248,9 @@ void CallPresenter::Refresh() {
     Notify(notice);
   }
   WatchForNoMedia(*backend, next, now);
-  if (next.kind == CallScreen::Kind::None && !surface.active && CallAudioSession::IsSpeakerphoneOn()) {
-    // No call left: the speaker choice was that call's (CallAudioSession keeps it across a media rebuild).
-    CallAudioSession::SetSpeakerphoneOn(false);
+  if (next.kind == CallScreen::Kind::None && !surface.active && AudioSession::IsSpeakerphoneOn()) {
+    // No call left: the speaker choice was that call's (AudioSession keeps it across a media rebuild).
+    AudioSession::SetSpeakerphoneOn(false);
   }
   screen_ = std::move(next);
   Changed();
@@ -263,8 +263,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.call_id = call_id;
   s.video = video;
   s.muted = backend.Media().IsMuted();
-  s.show_speaker = CallAudioSession::SupportsSpeakerToggle();
-  s.speaker_on = CallAudioSession::IsSpeakerphoneOn();
+  s.show_speaker = AudioSession::SupportsSpeakerToggle();
+  s.speaker_on = AudioSession::IsSpeakerphoneOn();
   std::string local_identity;
   if (ports_.local_relay_identity) {
     local_identity = ports_.local_relay_identity().value_or(std::string{});
@@ -294,13 +294,11 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   // The hop path being recovered, also a guest's lost transport between reattach attempts (the
   // Reconnecting line stays up; the seat stays Live by design).
   signals.recovery = backend.Recovery();
-  signals.sfu_mode = backend.Media().IsSfuMode();
-  signals.group_context =
-      group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.sfu_mode;
+  signals.on_hop = backend.MediaPath() == CallMediaPath::Hop;
+  signals.group_context = group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.on_hop;
   signals.media_chrome_live = backend.MediaChromeLive();
   signals.media_status = backend.MediaStatus();
   signals.media_active = backend.Media().IsActive();
-  signals.connection_state = backend.Media().ConnectionState();
   signals.activity = backend.PeekMediaActivity();
   const int64_t live_since_ms = backend.LiveSinceMs(call_id);
   signals.was_connected = live_since_ms > 0;
@@ -318,8 +316,6 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.hint_seed_unreachable = signals.p2p_seed_unreachable;
   if (decided.status == CallScreen::Status::Activity) {
     s.activity = signals.activity;
-  } else if (decided.status == CallScreen::Status::Raw) {
-    s.raw_state = signals.connection_state;
   }
   if (const int64_t alone_until = backend.AloneUntilMs(); s.group && alone_until > 0) {
     // V053: everyone else left; the line counts down to this device leaving by itself.
@@ -764,16 +760,16 @@ void CallPresenter::FlipCamera() {
 void CallPresenter::ToggleSpeaker() {
   // Any time a call is on screen — ringing out, connecting, in the call — not only once media runs: the
   // session routes it now if call audio is up (ringback or media), else when media takes the session.
-  if (!CallAudioSession::SupportsSpeakerToggle() || screen_.kind == CallScreen::Kind::None) {
+  if (!AudioSession::SupportsSpeakerToggle() || screen_.kind == CallScreen::Kind::None) {
     return;
   }
   BindToMessaging();
   auto* backend = Backend();
-  const bool before = CallAudioSession::IsSpeakerphoneOn();
-  CallAudioSession::SetSpeakerphoneOn(!before);
+  const bool before = AudioSession::IsSpeakerphoneOn();
+  AudioSession::SetSpeakerphoneOn(!before);
   // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen; no media, no devices.
-  const bool reopen = CallAudioSession::SpeakerToggleNeedsDeviceReopen() && backend && backend->Available() &&
-                      backend->Media().IsActive();
+  const bool reopen =
+      AudioSession::SpeakerToggleNeedsDeviceReopen() && backend && backend->Available() && backend->Media().IsActive();
   if (reopen) {
     backend->Media().RequestAudioDeviceReopen();
   }

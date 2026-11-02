@@ -18,6 +18,8 @@ struct CallUiState {
   // Lifecycle
   CallPhase phase = CallPhase::Idle;
   CallMediaStatus media_status = CallMediaStatus::None;
+  /** Which path carries the shown call (the call's one value). */
+  CallMediaPath media_path = CallMediaPath::Undecided;
   std::string active_call_id;
   /** When the shown call's media first went live (0: never) — the call timer, "was connected". */
   int64_t live_since_ms = 0;

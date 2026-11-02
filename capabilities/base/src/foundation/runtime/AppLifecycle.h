@@ -50,14 +50,14 @@ public:
   static ListenerId AddStayConnectedListener(std::function<void(bool)> listener);
 
   /**
-   * A call rings or is on (any phase but Idle). In the background the app's work keeps running
-   * meanwhile, so the call goes on: a hang-up, a network move, a ring answered from the phone's own
-   * call screen. When it ends there, the work runs kCallEndGraceMs more (the leave goes out), then
-   * pauses again (push only, P010). Any thread.
+   * A live session is on (a call ringing or in progress). In the background the app's work keeps
+   * running meanwhile, so the session goes on: a hang-up, a network move, a ring answered from the
+   * phone's own call screen. When it ends there, the work runs kLiveSessionEndGraceMs more (its last
+   * signaling goes out), then pauses again (push only, P010). Any thread.
    */
-  static void SetCallInProgress(bool on);
-  static bool CallInProgress();
-  static constexpr std::chrono::milliseconds kCallEndGraceMs{5000};
+  static void SetLiveSessionOn(bool on);
+  static bool LiveSessionOn();
+  static constexpr std::chrono::milliseconds kLiveSessionEndGraceMs{5000};
 
   /**
    * A push woke the app: in the background its work runs for `window` (a newer wake extends it),

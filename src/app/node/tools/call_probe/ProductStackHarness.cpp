@@ -201,10 +201,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   PublishAddressDisclosure();
   CallStackDeps deps;
   deps.address_disclosure = &address_disclosure_;
-  deps.store = store_.get();
+  deps.threads = store_.get();
+  deps.transcript = store_.get();
   deps.contacts = contacts_.get();
-  deps.identity = identity_.get();
-  deps.psk = psk_.get();
+  deps.account = identity_.get();
   // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
   deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
   deps.mesh = [this]() -> mesh::MeshHost* { return host_.get(); };
@@ -219,8 +219,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     out.session_key = shared_session_key_;
     return out;
   };
-  deps.delivery.register_peer_direct_endpoint = [this](const std::string& identity,
-                                                      const std::string& multiaddr) {
+  // Reach registers a peer's dialable listen address on the harness's Amp links.
+  auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (!host_ || !host_->Amp()) {
       return;
     }
@@ -250,12 +250,12 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;
-  reach.contacts = deps.contacts;
+  reach.contacts = contacts_.get();
   reach.mesh_config = deps.mesh_config;
   reach.list_directory_nodes = deps.list_directory_nodes;
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
-  reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  reach.register_direct_endpoint = register_direct_endpoint;
   mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
   hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
@@ -267,9 +267,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   }
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
   // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
-  stack_->RunOnOwner([this](CallSessionManager& calls) {
-    calls.SetRegisterPeerListenMultiaddrs(
-        [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
+  stack_->RunOnOwner([this](CallDevice& calls) {
+    calls.MeshGlue().register_peer_listen_multiaddrs =
+        ([this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
           std::vector<std::string> dialable;
           dialable.reserve(multiaddrs.size());
           for (const std::string& ma : multiaddrs) {
@@ -426,9 +426,7 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
     hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
   LearnAccountPeerId(account_id, peer_id);
   // Dual-SNAT: do not RegisterEndpoint private advertise MAs — that poisons dial book and
@@ -558,9 +556,7 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
   }
   account_to_peer_id_[account_id] = peer_id;
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
 }
 
@@ -940,7 +936,7 @@ std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
   std::cout << "ok  product-stack AcceptClicked call_id=" << call_id << "\n";
-  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartSfu first, inbound
+  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartDuplex first, inbound
   // hello lands on a pending bundle (offerer=0) and the PeerLink is torn down (HL004 race).
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   return call_id;

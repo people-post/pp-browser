@@ -51,10 +51,10 @@ Roe<void> PushDeviceCoordinator::Register(ConversationsHub& hub) {
   }
   auto registered = client->RegisterDevice(reg);
   // A CallKit iPhone's calls come by VoIP push, to their own token (P013).
-  if (const std::string call_token = IPushDeviceRegistrar::Instance().CallPushToken(); !call_token.empty()) {
+  if (const std::string call_token = IPushDeviceRegistrar::Instance().VoipPushToken(); !call_token.empty()) {
     PushDeviceRegistration call_reg = reg;
-    call_reg.platform = IPushDeviceRegistrar::kCallPushPlatform;
-    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kCallPushDeviceSuffix;
+    call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
+    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
     call_reg.push_token = call_token;
     if (auto call_registered = client->RegisterDevice(call_reg); !call_registered && registered) {
       return call_registered;
@@ -80,10 +80,10 @@ Roe<void> PushDeviceCoordinator::Unregister(ConversationsHub& hub) {
     return {};
   }
   auto unregistered = client->UnregisterDevice(reg);
-  if (const std::string call_token = IPushDeviceRegistrar::Instance().CallPushToken(); !call_token.empty()) {
+  if (const std::string call_token = IPushDeviceRegistrar::Instance().VoipPushToken(); !call_token.empty()) {
     PushDeviceRegistration call_reg = reg;
-    call_reg.platform = IPushDeviceRegistrar::kCallPushPlatform;
-    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kCallPushDeviceSuffix;
+    call_reg.platform = IPushDeviceRegistrar::kVoipPushPlatform;
+    call_reg.device_id = reg.device_id + IPushDeviceRegistrar::kVoipPushDeviceSuffix;
     call_reg.push_token = call_token;
     if (auto call_unregistered = client->UnregisterDevice(call_reg); !call_unregistered && unregistered) {
       return call_unregistered;

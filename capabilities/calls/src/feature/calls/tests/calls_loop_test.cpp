@@ -65,10 +65,8 @@ TEST(CallsLoopTest, EventsRunInOrderAndNeverReenter) {
   self = &loop;
   loop.Enqueue(calls_event::RelayChosen{"12D3r1"});
   loop.Enqueue(calls_event::MobilityOverrideChanged{});
-  loop.EnqueueFront(calls_event::MobilityWake{});
   executor.Drain();
-  EXPECT_EQ(handled, (std::vector<std::string>{"MobilityWake", "RelayChosen", "MobilityOverrideChanged",
-                                               "ObservedAddressChanged"}));
+  EXPECT_EQ(handled, (std::vector<std::string>{"RelayChosen", "MobilityOverrideChanged", "ObservedAddressChanged"}));
 }
 
 TEST(CallsLoopTest, DelayedEventsCancelAndDropWithTheLoop) {

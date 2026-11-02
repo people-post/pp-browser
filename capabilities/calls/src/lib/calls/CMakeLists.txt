@@ -33,6 +33,7 @@ pp_browser_add_lib_library(pp_lib_calls
     pp_calls_common
     pp_media_common
     pp_delivery_common
+    pp_lib_pricing
     pp_foundation_error
     pp_foundation_crypto
     sodium)

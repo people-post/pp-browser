@@ -187,30 +187,6 @@ TEST(MeshHopPolicyTest, ExcludeSelfHopDropsLocalPeerId) {
   EXPECT_EQ(ExcludeSelfHop({self_hop, other}, "").size(), 2u);
 }
 
-TEST(MeshHopPolicyTest, PreferInCallMediaHopsPutsCallMemberFirst) {
-  mesh::MeshHopCandidate linux_out;
-  linux_out.peer_id = "12D3KooWLinux";
-  linux_out.multiaddr = "/ip4/1.1.1.1/tcp/1/p2p/12D3KooWLinux";
-  linux_out.affinity = mesh::MeshHopAffinity::Contact;
-
-  mesh::MeshHopCandidate windows_in;
-  windows_in.peer_id = "12D3KooWWin";
-  windows_in.multiaddr = "/ip4/2.2.2.2/tcp/1/p2p/12D3KooWWin";
-  windows_in.affinity = mesh::MeshHopAffinity::Contact;
-
-  mesh::MeshHopCandidate seed;
-  seed.peer_id = "12D3KooWSeed";
-  seed.multiaddr = "/ip4/3.3.3.3/tcp/1/p2p/12D3KooWSeed";
-  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
-
-  // Seed-first ranking (prefer contacts off), then boost in-call Windows ahead.
-  auto ranked = PreferInCallMediaHops({seed, linux_out, windows_in}, {"12D3KooWWin"});
-  ASSERT_EQ(ranked.size(), 3u);
-  EXPECT_EQ(ranked[0].peer_id, "12D3KooWWin");
-  EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
-  EXPECT_EQ(ranked[2].peer_id, "12D3KooWLinux");
-}
-
 TEST(MeshHopPolicyTest, DirectoryHopPrefersGlobalIpv6Multiaddr) {
   mesh::MeshDirectoryNode node;
   node.peer_id = "12D3KooWDir";
@@ -327,25 +303,6 @@ TEST(MeshHopPolicyTest, OnlyCircuitRelaysAreRendezvousCandidates) {
   }
   EXPECT_EQ(ids, (std::vector<std::string>{"12D3KooWFriendNode", "12D3KooWRelay", seed}))
       << "a contact that relays keeps its place first";
-}
-
-// #385: a group call's SFU hop is a durable relay when one is usable; a contact's node is the fallback.
-TEST(MeshHopPolicyTest, DurableRelaysComeBeforeContactsNodes) {
-  auto hop = [](const std::string& id, mesh::MeshHopAffinity affinity) {
-    mesh::MeshHopCandidate c;
-    c.peer_id = id;
-    c.affinity = affinity;
-    return c;
-  };
-  const auto ranked = DurableRelaysFirst({hop("friend-lan", mesh::MeshHopAffinity::Contact),
-                                          hop("dir", mesh::MeshHopAffinity::DirectoryNode),
-                                          hop("friend", mesh::MeshHopAffinity::Contact),
-                                          hop("seed", mesh::MeshHopAffinity::OrgSeed)});
-  std::vector<std::string> ids;
-  for (const auto& c : ranked) {
-    ids.push_back(c.peer_id);
-  }
-  EXPECT_EQ(ids, (std::vector<std::string>{"dir", "seed", "friend-lan", "friend"})) << "each part keeps its order";
 }
 
 } // namespace

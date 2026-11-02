@@ -3,8 +3,8 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "lib/calls/CallTypes.h"
-#include "lib/pricing/InitiationBillingStore.h"
-#include "lib/people/IdentityStore.h"
+#include "lib/pricing/IInitiationBillingBook.h"
+#include "common/directory/ILocalAccount.h"
 #include "lib/pricing/PricingTypes.h"
 
 #include <cstdint>
@@ -22,10 +22,9 @@ namespace pbr {
  */
 class CallInitiationBilling : public Module {
 public:
-  explicit CallInitiationBilling(IdentityStore& identity);
+  explicit CallInitiationBilling(const ILocalAccount& account);
 
-  void SetStore(InitiationBillingStore* store) { store_ = store; }
-  InitiationBillingStore* Store() const { return store_; }
+  void SetStore(IInitiationBillingBook* store) { store_ = store; }
 
   /** Placing a call to `invitees`: refused when an offer is due and it cannot be paid. */
   Roe<void> CheckCanPlace(const std::vector<std::string>& invitees, const std::string& local_identity) const;
@@ -47,8 +46,8 @@ public:
   bool TakeInboundOffer(const std::string& sender_identity, const CallInviteDetail& invite);
 
 private:
-  IdentityStore& identity_;
-  InitiationBillingStore* store_ = nullptr;
+  const ILocalAccount& account_;
+  IInitiationBillingBook* store_ = nullptr;
 };
 
 } // namespace pbr

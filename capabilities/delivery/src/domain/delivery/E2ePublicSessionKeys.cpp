@@ -23,11 +23,9 @@ Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::Resolve(const std::stri
     return record.error();
   }
   session.epoch = record->has_value() && (*record)->session_epoch > 0 ? (*record)->session_epoch : 1;
-  auto peer_public = PeerKemPublicKey(session.target_key);
-  if (!peer_public) {
-    return peer_public.error();
-  }
-  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, session.target_key, session.epoch, *peer_public);
+  // The peer's KEM key (maybe a directory lookup) only when the session has to be opened.
+  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, session.target_key, session.epoch,
+                                          [this, &session]() { return PeerKemPublicKey(session.target_key); });
   if (!ensured) {
     return ensured.error();
   }

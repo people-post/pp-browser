@@ -31,11 +31,11 @@ namespace pbr {
 
 /**
  * Call media plane under CallStack (V040): the call_media Amp transport, the 1:1 path's deps (the
- * session manager owns the path itself) and the topology's relay deps. The neutral mesh media objects (media_relay client, dial registry,
+ * device builds each call's path) and the topology's relay deps. The neutral mesh media objects (media_relay client, dial registry,
  * circuit reach, rendezvous parking) are borrowed from the product hub's `MeshConnectivity` and
  * `MeshMediaRelay` (L015).
  *
- * Does **not** hold standing pointers to CallStack siblings (CSM / stores); the stack fills deps
+ * Does **not** hold standing pointers to CallStack siblings (device / stores); the stack fills deps
  * callbacks.
  */
 struct CallMediaPlaneDeps {
@@ -46,7 +46,7 @@ struct CallMediaPlaneDeps {
   std::function<bool()> seed_dial_ok;
   /** Stack computes advertise set (role + ephemeral desire + MeshHost). */
   std::function<std::vector<std::string>()> local_listen_multiaddrs;
-  /** SoftMigrate relay-cap queries — filled from CallSessionManager by CallStack. */
+  /** SoftMigrate relay-cap queries — filled from CallDevice by CallStack. */
   std::function<bool(const std::string& peer_id)> peer_has_media_relay;
   std::function<std::vector<std::string>()> list_media_relay_peers;
   /** Dial-book account: ↔ PeerId learning — any thread (the stack enqueues it for the calls owner). */

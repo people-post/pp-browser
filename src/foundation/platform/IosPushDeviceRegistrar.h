@@ -11,7 +11,7 @@ public:
   Roe<std::string> GetPushToken() override;
   std::string PlatformName() const override { return "ios"; }
   std::string DeviceId() const override;
-  std::string CallPushToken() override;
+  std::string VoipPushToken() override;
 
   void SetCachedToken(std::string token);
 };

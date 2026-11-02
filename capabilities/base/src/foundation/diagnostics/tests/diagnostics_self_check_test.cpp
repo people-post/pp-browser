@@ -18,7 +18,7 @@ TEST(DiagnosticsSelfCheckTest, ShareableLinesPassIt) {
   const std::string line = pbr::DiagLine("relay.http_failed")
                                .Ref("peer", "peer:" + kPeer)
                                .Ref("account", "account:" + kAccount)
-                               .Call("call", "call:0123456789abcdef0123456789abcdef")
+                               .RandomId("call", "call:0123456789abcdef0123456789abcdef")
                                .Fail("error", pbr::Error::Make(4, 2, "x"))
                                .Add("ms", 1234)
                                .str();

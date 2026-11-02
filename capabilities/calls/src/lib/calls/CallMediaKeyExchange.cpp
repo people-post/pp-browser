@@ -7,7 +7,7 @@
 
 namespace pbr {
 
-CallMediaKeyExchange::CallMediaKeyExchange(ICallSessionStore& sessions, ICallMediaKeyStore& keys,
+CallMediaKeyExchange::CallMediaKeyExchange(const ICallSessionReader& sessions, ICallMediaKeyStore& keys,
                                            Transport transport)
     : sessions_(sessions), keys_(keys), transport_(std::move(transport)) {
   redirectLogger("CallMediaKeyExchange");
@@ -30,19 +30,14 @@ Roe<CallMediaKeyExchange::EpochKey> CallMediaKeyExchange::Rotate(const std::stri
   if (!session || !session->has_value()) {
     return Error("Call session not found");
   }
-  auto minted = Mint(call_id, (*session)->media_epoch + 1);
-  if (!minted) {
-    return minted.error();
+  return Mint(call_id, (*session)->media_epoch + 1);
+}
+
+CallMediaKeyExchange::EpochStep CallMediaKeyExchange::StepFor(const uint32_t current_epoch, const uint32_t key_epoch) {
+  if (key_epoch > current_epoch) {
+    return EpochStep::Advance;
   }
-  (*session)->media_epoch = minted->epoch;
-  (*session)->media_key_id = minted->key_id;
-  if (auto saved = sessions_.UpsertSession(**session); !saved) {
-    return saved.error();
-  }
-  if (on_epoch_installed_) {
-    on_epoch_installed_(call_id);
-  }
-  return minted;
+  return key_epoch == current_epoch ? EpochStep::Reinstall : EpochStep::Ignore;
 }
 
 Roe<CallMediaKeyExchange::EpochKey> CallMediaKeyExchange::Current(const std::string& call_id) const {
@@ -126,7 +121,8 @@ bool CallMediaKeyExchange::TakeWrapped(const std::string& call_id, const uint32_
   return true;
 }
 
-Roe<void> CallMediaKeyExchange::HandleInbound(const std::string& detail_json, const std::string& sender_identity) {
+Roe<std::optional<CallMediaKeyExchange::TakenKey>> CallMediaKeyExchange::HandleInbound(
+    const std::string& detail_json, const std::string& sender_identity) {
   auto key = CallControlCodec::DecodeMediaKey(detail_json);
   if (!key) {
     return key.error();
@@ -137,25 +133,9 @@ Roe<void> CallMediaKeyExchange::HandleInbound(const std::string& detail_json, co
   // left a call whose key failed to open on an epoch with no key, which a resend could not repair (#381).
   if (!TakeWrapped(key->call_id, key->media_epoch, key->media_key_id, key->wrapped_key_b64, sender_identity,
                    "CallMediaKey")) {
-    return {};
+    return std::optional<TakenKey>{};
   }
-  auto session = sessions_.LoadSession(key->call_id);
-  if (!session || !session->has_value()) {
-    return {};
-  }
-  // Epochs only move forward: a late or replayed CallMediaKey for an older epoch is not the key now.
-  const bool newer = key->media_epoch > (*session)->media_epoch;
-  if (newer) {
-    (*session)->media_epoch = key->media_epoch;
-    (*session)->media_key_id = key->media_key_id;
-    (void)sessions_.UpsertSession(**session);
-  }
-  // The current epoch's key again (a resend) installs too: installing is idempotent, and it is how a
-  // member that missed the rotation catches up.
-  if ((newer || key->media_epoch == (*session)->media_epoch) && on_epoch_installed_) {
-    on_epoch_installed_(key->call_id);
-  }
-  return {};
+  return std::optional<TakenKey>{TakenKey{key->call_id, key->media_epoch, key->media_key_id}};
 }
 
 } // namespace pbr
