@@ -19,12 +19,6 @@ AgentUiPorts MakeAgentUiPorts(AgentSessions& agent) {
   ports.set_tool_registration_hook = [&agent](ToolRegistrationHook hook) {
     agent.SetToolRegistrationHook(std::move(hook));
   };
-  ports.set_tool_permissions = [&agent](const ToolPermissionsPrefs& permissions) {
-    agent.SetToolPermissions(permissions);
-  };
-  ports.set_tool_permissions_saver = [&agent](ToolPermissionsSaveFn saver) {
-    agent.SetToolPermissionsSaver(std::move(saver));
-  };
   ports.resume_tool_permission = [&agent](const std::string& approval_id, const std::string& decision,
                                           const std::string& decision_label) {
     return agent.ResumeToolPermission(approval_id, decision, decision_label);

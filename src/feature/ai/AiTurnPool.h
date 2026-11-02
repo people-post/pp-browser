@@ -31,7 +31,6 @@ public:
 
   /** Dropped after Shutdown. */
   void Post(std::function<void()> task);
-  size_t Threads() const { return threads_; }
   /** Tasks posted and not yet finished (queued or running). */
   size_t Outstanding() const;
   /** A task posted now would start at once. */
