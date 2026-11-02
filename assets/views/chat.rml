@@ -13,11 +13,11 @@
       <span class="chat-search-count muted" data-if="search_count_label != ''">{{search_count_label}}</span>
       <button class="chat-search-step" type="button" data-event-click="search_older()"
               data-attrif-disabled="!search_can_older">
-        <svg src="../icons/chevron-up.svg" width="16" height="16" crop-to-content="true"></svg>
+        <svg src="../icons/chevron-up.svg" width="11" height="11" crop-to-content="true"></svg>
       </button>
       <button class="chat-search-step" type="button" data-event-click="search_newer()"
               data-attrif-disabled="!search_can_newer">
-        <svg src="../icons/chevron-down.svg" width="16" height="16" crop-to-content="true"></svg>
+        <svg src="../icons/chevron-down.svg" width="11" height="11" crop-to-content="true"></svg>
       </button>
       <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
     </div>
