@@ -7,7 +7,7 @@
 //     PP_E2E_BLOB_URL=http://127.0.0.1:8767 PP_E2E_DIR=<dir> PP_E2E_PHASE=$p PP_E2E_MB=100 pp_browser_domain_attachments_test --gtest_filter='LargeAttachmentE2e*'
 //   done
 //
-// The limits are passed in by the test (the shipping default is still 4 MB); the CDN is plain http on loopback,
+// The limits are passed in by the test (the shipping default is 50 MB); the CDN is plain http on loopback,
 // which only the test-only flag allows. It uses the real HttpBlobClient, OutgoingAttachmentStore, streamed
 // upload / capped file download and the private CAS, i.e. the same calls the app's send / receive / open make.
 #include "lib/content/testing/InMemoryObjectIndex.h"
@@ -99,7 +99,7 @@ TEST(LargeAttachmentE2e, SendReceiveOpenAgainstTheFakeBlobServer) {
     in.close();
     std::cout << "E2E after-read peak_rss_mb=" << PeakResidentBytes() / 1'000'000 << std::endl;
     ChatAttachmentUploadOptions options;
-    options.max_plaintext_bytes = size + 1;  // the test passes the limit; the shipping default stays 4 MB
+    options.max_plaintext_bytes = size + 1; // the test passes the limit; the shipping default is 50 MB
     options.thread = Thread{.id = "g1", .kind = ThreadKind::Group, .channel = ThreadChannel::E2e};
     options.thread_id = "g1";
     options.outgoing = &store;

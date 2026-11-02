@@ -4,12 +4,15 @@
 // of an earlier run (a crash, a kill) are cleared when the first pick of this run starts.
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/NativeFileDialogIosShared.h"
+#include "common/Logger.h"
+#include "common/PbrCompat.h"
 
 #import <PhotosUI/PhotosUI.h>
 #import <UIKit/UIKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include <SDL3/SDL.h>
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <string>
@@ -20,6 +23,7 @@
 @interface PPPickDelegate : NSObject <PHPickerViewControllerDelegate, UIDocumentPickerDelegate> {
 @public
   pbr::NativeFileDialogCallback callback;
+  std::function<void(const std::string& name)> preparing; // a video was chosen and is being copied (may be empty)
 }
 @end
 
@@ -116,6 +120,7 @@ std::string ConvertHeicToJpeg(const std::string& path) {
 void Finish(PPPickDelegate* delegate, std::vector<std::string> paths) {
   pbr::NativeFileDialogCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
+  delegate->preparing = nullptr;
   if (ActivePicker() == delegate) {
     SetActivePicker(nil);
     [delegate release];
@@ -153,17 +158,23 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
   // Ask for the JPEG / PNG the "compatible" mode offers: SDL_image cannot decode the HEIC originals here
   // (2026-10-20 device: photos failed as "not an image"). Any image only as a last resort.
   NSString* type = UTTypeImage.identifier;
-  if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+  NSString* name = provider.suggestedName;
+  const bool is_video = [provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier];
+  if (is_video) {
     type = UTTypeMovie.identifier; // a video from the library picker: its file as it is (.mov, HEVC)
+    if (preparing) {
+      // The copy below can take a while: the caller says "Sending…" (with the name) meanwhile.
+      preparing(name != nil ? std::string(name.UTF8String) : std::string());
+    }
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypeJPEG.identifier]) {
     type = UTTypeJPEG.identifier;
   } else if ([provider hasItemConformingToTypeIdentifier:UTTypePNG.identifier]) {
     type = UTTypePNG.identifier;
   }
-  NSString* name = provider.suggestedName;
+  const auto started = std::chrono::steady_clock::now();
   [self retain]; // until the file has been copied
   [provider loadFileRepresentationForTypeIdentifier:type
-                                  completionHandler:^(NSURL* url, NSError* /*error*/) {
+                                  completionHandler:^(NSURL* url, NSError* error) {
                                     // `url` is removed when this handler returns: copy it now.
                                     std::vector<std::string> paths;
                                     if (url != nil) {
@@ -172,6 +183,24 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
                                         copied = ConvertHeicToJpeg(copied);
                                         paths.push_back(std::move(copied));
                                       }
+                                    }
+                                    const long ms =
+                                        static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                              std::chrono::steady_clock::now() - started)
+                                                              .count());
+                                    if (paths.empty()) {
+                                      // An empty answer ends the caller's "Sending…" state.
+                                      pbr::logging::getLogger("photo-picker").warning
+                                          << "photo picker delivery failed kind=" << (is_video ? "video" : "image")
+                                          << " ms=" << ms << " error="
+                                          << (error != nil ? error.localizedDescription.UTF8String : "none");
+                                    } else {
+                                      NSNumber* size = [[[NSFileManager defaultManager]
+                                          attributesOfItemAtPath:[NSString stringWithUTF8String:paths.front().c_str()]
+                                                           error:nil] objectForKey:NSFileSize];
+                                      pbr::logging::getLogger("photo-picker").info
+                                          << "photo picker delivered kind=" << (is_video ? "video" : "image")
+                                          << " bytes=" << size.unsignedLongLongValue << " ms=" << ms;
                                     }
                                     dispatch_async(dispatch_get_main_queue(), ^{
                                       Finish(self, paths);
@@ -256,7 +285,8 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   }
 }
 
-void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback callback,
+                                std::function<void(const std::string& name)> on_preparing) {
   if (!callback) {
     return;
   }
@@ -267,6 +297,7 @@ void ShowOpenPhotoLibraryDialog(SDL_Window* window, NativeFileDialogCallback cal
       return;
     }
     PHPickerConfiguration* config = [[[PHPickerConfiguration alloc] init] autorelease];
+    delegate->preparing = std::move(on_preparing);
     config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[ [PHPickerFilter imagesFilter],
                                                                     [PHPickerFilter videosFilter] ]];
     config.selectionLimit = 1;

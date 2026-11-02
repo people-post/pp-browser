@@ -746,6 +746,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  settings_commands.set_backend_switch_pending = [&facade](const bool pending) {
+    facade.SetBackendSwitchPending(pending);
+  };
   settings_commands.reset_chat_data = [this]() { return ResetChatData(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);

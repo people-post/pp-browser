@@ -11,14 +11,13 @@ namespace pbr {
 /** One user-facing megabyte: decimal, the same unit the on-screen limits are written in. */
 inline constexpr uint64_t kAttachmentMegabyte = 1000ULL * 1000ULL;
 
-/** The size the larger tiers are planned for (video, files, audio, original pictures, receiving). */
-inline constexpr uint64_t kLargeAttachmentMaxBytes = 100ULL * kAttachmentMegabyte;
 /**
- * What ships today. Streaming upload / download (step 2) is not in yet, so send and receive stay at the
- * small size; step 2 only changes these two to `kLargeAttachmentMaxBytes`.
+ * The one size limit today for video, files, audio, original pictures and receiving (over 16 MiB of ciphertext
+ * goes to the relay in parts). Later it is raised by account level: only the source of `AttachmentLimits` changes.
  */
-inline constexpr uint64_t kDefaultAttachmentSendMaxBytes = 4ULL * kAttachmentMegabyte;
-inline constexpr uint64_t kDefaultAttachmentReceiveMaxBytes = 4ULL * kAttachmentMegabyte;
+inline constexpr uint64_t kLargeAttachmentMaxBytes = 50ULL * kAttachmentMegabyte;
+inline constexpr uint64_t kDefaultAttachmentSendMaxBytes = kLargeAttachmentMaxBytes;
+inline constexpr uint64_t kDefaultAttachmentReceiveMaxBytes = kLargeAttachmentMaxBytes;
 
 /**
  * Every number that limits what a person may send, receive or keep, behind one value so a later tier
@@ -38,10 +37,10 @@ struct AttachmentLimits {
   int voice_max_seconds = 120;
   /**
    * The longest clip the system camera is asked to record (iOS `videoMaximumDuration`, Android
-   * `EXTRA_DURATION_LIMIT`). Set from device measurements (worst-case bit rate of an iPhone 11 / vivo S15e,
-   * 70% of `max_video_bytes`), so it moves together with `max_video_bytes` when the 100 MB limit is switched on.
+   * `EXTRA_DURATION_LIMIT`). Follows the 50 MB `max_video_bytes`: medium-quality capture is about 0.5 MB/s, so a
+   * minute stays well under it (a clip over the limit is still refused by `VideoWithinLimit`).
    */
-  int video_max_seconds = 12;
+  int video_max_seconds = 60;
   /** A send of at least this many bytes tells the person to stay in the app until it is done. */
   uint64_t stay_hint_bytes = 10ULL * kAttachmentMegabyte;
   /** Server space warnings, in percent of the space in use. */

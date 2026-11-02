@@ -981,7 +981,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (directory_.Configured() && mesh_owner_) {
     // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
     // the hub's work is ours — hop to UI.
-    mesh_owner_->StartDirectoryCache(directory_, config_.app_data_dir, [this]() {
+    mesh_owner_->StartDirectoryCache(directory_, data_dir_, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;
@@ -2365,7 +2365,8 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
         (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *job->plaintext, attachment_dek,
                                       max_receive_bytes);
       } else if (!job->record_id.empty()) {
-        // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key.
+        // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key. The
+        // ciphertext is moved into Decrypt, which frees it before returning: only the plaintext is held for the copy.
         if (auto cipher = job->store->ReadCipher(job->record_id)) {
           if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce,
                                                             std::move(*cipher), fields->content_hash)) {

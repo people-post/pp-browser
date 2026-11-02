@@ -251,7 +251,11 @@ void ProductMesh::AdvertiseOnLan(const std::string& peer_id, const int amp_udp_p
   lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
 }
 
-void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& app_data_dir,
+std::string MeshDirectoryNodesPath(const std::string& profile_data_dir) {
+  return (std::filesystem::path(profile_data_dir) / "mesh_directory_nodes.json").string();
+}
+
+void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
                                       std::function<void()> on_updated) {
   StopDirectoryCache();
   mesh::IDirectoryClient* client = &directory;
@@ -264,7 +268,7 @@ void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const s
     }
     return mesh::MeshDirectoryNodesFromNameRecords(*records);
   }, AppRuntimeMeshExecutors().blocking);
-  directory_cache_->SetPersistPath((std::filesystem::path(app_data_dir) / "mesh_directory_nodes.json").string());
+  directory_cache_->SetPersistPath(MeshDirectoryNodesPath(profile_data_dir));
   directory_cache_->LoadPersisted();
   // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
   directory_cache_->SetAsyncFetcher([this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {

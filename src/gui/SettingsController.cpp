@@ -2,9 +2,11 @@
 #include "gui/SettingsController.h"
 
 #include "lib/ui/DataEvent.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/data/LlmPreset.h"
 #include "common/SchemaVersion.h"
 #include "foundation/data/SessionStore.h"
@@ -92,6 +94,10 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
   default:
     return Tr("settings.network.reachability.summary_unknown");
   }
+}
+
+std::string BackendDisplayLabel(const std::string& env) {
+  return Tr("settings.network.backend." + std::string(BackendEnvName(ParseBackendEnv(env))));
 }
 
 std::string DirectConnectionsDisplayLabel(const std::string& audience) {
@@ -240,6 +246,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.dht_enabled = bindings_.dht_enabled.c_str();
   ui_state_.show_dht_toggle = bindings_.show_dht_toggle;
   ui_state_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing.c_str();
+  ui_state_.backend_env = bindings_.backend_env.c_str();
   ui_state_.direct_connections = bindings_.direct_connections.c_str();
   ui_state_.trusted_relays_only = bindings_.trusted_relays_only.c_str();
   ui_state_.reachable_without_relay = bindings_.reachable_without_relay.c_str();
@@ -326,6 +333,10 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.dht_enabled = ui_state_.dht_enabled.c_str();
   bindings_.show_dht_toggle = ui_state_.show_dht_toggle;
   bindings_.prefer_contacts_for_routing = ui_state_.prefer_contacts_for_routing.c_str();
+  bindings_.backend_env = ui_state_.backend_env.c_str();
+  bindings_.backend_label = BackendDisplayLabel(ui_state_.backend_env).c_str();
+  bindings_.backend_restart_pending = ui_state_.backend_restart_pending;
+  bindings_.backend_is_custom = ui_state_.backend_env == "custom";
   bindings_.direct_connections = ui_state_.direct_connections.c_str();
   bindings_.trusted_relays_only = ui_state_.trusted_relays_only.c_str();
   bindings_.reachable_without_relay = ui_state_.reachable_without_relay.c_str();
@@ -513,6 +524,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("dht_enabled", &controller.bindings_.dht_enabled);
     ctor.Bind("show_dht_toggle", &controller.bindings_.show_dht_toggle);
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
+    ctor.Bind("backend_label", &controller.bindings_.backend_label);
+    ctor.Bind("backend_restart_pending", &controller.bindings_.backend_restart_pending);
+    ctor.Bind("backend_is_custom", &controller.bindings_.backend_is_custom);
     ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("trusted_relays_only", &controller.bindings_.trusted_relays_only);
     ctor.Bind("reachable_without_relay", &controller.bindings_.reachable_without_relay);
@@ -587,6 +601,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
     ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
     ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
     ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
     ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
@@ -657,6 +672,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "dht_enabled");
   host.Dirty("settings", "show_dht_toggle");
   host.Dirty("settings", "prefer_contacts_for_routing");
+  host.Dirty("settings", "backend_label");
+  host.Dirty("settings", "backend_restart_pending");
+  host.Dirty("settings", "backend_is_custom");
   host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "trusted_relays_only");
   host.Dirty("settings", "reachable_without_relay");
@@ -1018,6 +1036,10 @@ bool SettingsController::FlushSection(const std::string& section_id, bool show_t
   dirty_sections_.erase(section_id);
   if (dirty_sections_.empty()) {
     debounce_deadline_ms_ = 0;
+  }
+  if (section_id == "network" && commands_.set_backend_switch_pending) {
+    const BootstrapResult& saved = Store().Snapshot();
+    commands_.set_backend_switch_pending(SavedBackendKey(saved.config) != saved.backend_key);
   }
 
   status_ = "";
@@ -1385,6 +1407,36 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   }
   PullBindingsToUiState();
   MarkSectionDirty("appearance");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::OnChooseBackend(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+  const std::string current = bindings_.backend_env.c_str();
+  std::vector<ContextMenuAction> actions;
+  for (const char* id : {"prod", "qa", "custom"}) {
+    if (std::string_view(id) == "qa" && !ui_state_.backend_qa_available) {
+      continue;
+    }
+    actions.push_back({.id = id,
+                       .label = BackendDisplayLabel(id),
+                       .enabled = {},
+                       .run = [this, env = std::string(id)]() { ApplyBackendChoice(env); },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == id});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyBackendChoice(const std::string& env) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  ui_state_.backend_env = env;
+  PushUiStateToBindings();
+  MarkSectionDirty("network");
   FlushPending();
   DirtyAll();
 }

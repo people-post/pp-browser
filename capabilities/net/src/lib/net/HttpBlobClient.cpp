@@ -434,11 +434,47 @@ Roe<RelayFileStartResult> HttpBlobClient::FileStart(const std::string& relay_use
   result.blob_id = *root->getString("blob_id");
   result.mode = *root->getString("mode");
   result.upload_url = root->getString("upload_url").value_or("");
+  // Missing or not positive: 0, refused (and the blob deleted) by UploadRelayFile as a plan missing them.
+  result.part_bytes = root->getNonNegInt("part_bytes").value_or(0);
+  result.part_count = root->getNonNegInt("part_count").value_or(0);
   result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
   result.pending_expires_at = root->getString("pending_expires_at").value_or("");
   if (result.blob_id.empty()) {
     return Error("Invalid relay file start JSON");
   }
+  return result;
+}
+
+Roe<RelayFilePartResult> HttpBlobClient::FilePart(const std::string& relay_user_id, const std::string& blob_id,
+                                                  const uint64_t part_number) {
+  const int64_t timestamp = util::NowUnixMs();
+  Object body;
+  body.set("blob_id", blob_id);
+  body.setJsonUInt("part_number", part_number);
+  auto response = PostSignedFiles("part", relay_user_id, std::move(body),
+                                  BuildFilePartSignBytes(relay_user_id, blob_id, part_number, timestamp), timestamp);
+  if (!response) {
+    return response.error();
+  }
+  auto root = TryParseObject(response->body);
+  // Plain assignments rather than `root ? … : std::nullopt`: GCC 13 reports the optional as maybe-uninitialized
+  // through the conditional (-Werror=maybe-uninitialized).
+  std::optional<std::string> upload_url;
+  std::optional<uint64_t> part_bytes;
+  if (root) {
+    upload_url = root->getString("upload_url");
+    part_bytes = root->getNonNegInt("part_bytes");
+  }
+  if (!upload_url.has_value() || upload_url->empty()) {
+    return Error("Invalid relay file part JSON");
+  }
+  if (!part_bytes.has_value() || part_bytes.value() == 0) {
+    return Error("relay file part missing part_bytes");
+  }
+  RelayFilePartResult result;
+  result.upload_url = upload_url.value();
+  result.part_bytes = part_bytes.value();
+  result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
   return result;
 }
 
@@ -522,6 +558,19 @@ Roe<void> HttpBlobClient::PutUploadFile(const std::string& upload_url, const std
     return response.error();
   }
   return CheckPutStatus(response.value().status_code);
+}
+
+Roe<void> HttpBlobClient::PutUploadFileRange(const std::string& upload_url, const std::string& content_type,
+                                             const std::string& path, const uint64_t offset, const uint64_t length,
+                                             const std::function<bool(uint64_t, uint64_t)>& progress) {
+  if (upload_url.empty()) {
+    return Error("upload_url is required");
+  }
+  const auto response = HttpClient::PutFileRange(upload_url, path, offset, length, content_type, progress);
+  if (!response) {
+    return response.error();
+  }
+  return CheckPutStatus(static_cast<int>(response.value().status_code));
 }
 
 Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::string& content_type,

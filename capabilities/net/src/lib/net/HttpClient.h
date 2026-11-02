@@ -53,6 +53,15 @@ public:
                                    const std::map<std::string, std::string>& headers = {},
                                    const HttpProgress& progress = {});
   /**
+   * PUT `length` bytes of the file starting at `offset` (one part of a multipart upload), read from disk as they
+   * go out, with `Content-Type: content_type` and no Content-Range. Speed floor, response cap and `progress`
+   * (counting within the range) as for PutFile. The file must hold the whole range. The answer's status is
+   * returned as for PutFile; the caller turns a non-2xx into an error.
+   */
+  static Roe<HttpResponse> PutFileRange(const std::string& url, const std::string& path, uint64_t offset,
+                                        uint64_t length, const std::string& content_type,
+                                        const HttpProgress& progress = {});
+  /**
    * GET into `dest_path`, written as it arrives. Hard cap: if more than `max_bytes` arrive the transfer is aborted
    * and the file removed, whatever the server said it would send. A non-2xx answer writes nothing (the file is
    * removed) and returns the status. Any failure leaves no file behind. Stall limit as for PutFile.
