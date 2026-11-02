@@ -457,17 +457,23 @@ Roe<RelayFilePartResult> HttpBlobClient::FilePart(const std::string& relay_user_
     return response.error();
   }
   auto root = TryParseObject(response->body);
-  const auto upload_url = root ? root->getString("upload_url") : std::nullopt;
-  const auto part_bytes = root ? root->getNonNegInt("part_bytes") : std::nullopt;
-  if (!upload_url || upload_url->empty()) {
+  // Plain assignments rather than `root ? … : std::nullopt`: GCC 13 reports the optional as maybe-uninitialized
+  // through the conditional (-Werror=maybe-uninitialized).
+  std::optional<std::string> upload_url;
+  std::optional<uint64_t> part_bytes;
+  if (root) {
+    upload_url = root->getString("upload_url");
+    part_bytes = root->getNonNegInt("part_bytes");
+  }
+  if (!upload_url.has_value() || upload_url->empty()) {
     return Error("Invalid relay file part JSON");
   }
-  if (!part_bytes || *part_bytes == 0) {
+  if (!part_bytes.has_value() || part_bytes.value() == 0) {
     return Error("relay file part missing part_bytes");
   }
   RelayFilePartResult result;
-  result.upload_url = *upload_url;
-  result.part_bytes = *part_bytes;
+  result.upload_url = upload_url.value();
+  result.part_bytes = part_bytes.value();
   result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
   return result;
 }
