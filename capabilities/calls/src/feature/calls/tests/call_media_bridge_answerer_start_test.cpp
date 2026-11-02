@@ -68,12 +68,12 @@ CallDirectArmingPorts TestDirectArmingPorts(LiveCalls* live) {
   return ports;
 }
 
-class FakeMediaHost final : public CallMediaHost {
+/** The device as the 1:1 path sees it: its queries, and what it was told (the fixture applies the reports). */
+class FakeMediaHost final : public CallDirectPathQueries {
 public:
-  Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
-  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
+  const LiveCall* LiveCallOf(const std::string& call_id) const override { return live.Find(call_id); }
   /** Harness: every call the bridge drives is live here (the harness seeds store rows only). */
-  CallMedia* P2pCallMedia(const std::string& call_id) override {
+  CallMedia* CallMediaOf(const std::string& call_id) override {
     if (!live.Find(call_id)) {
       live.AdmitPlaced(call_id, {"account:peer"});
     }
@@ -81,13 +81,7 @@ public:
   }
   LiveCalls live;
   LiveCallMedia call_media{live};
-  Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
-                          const std::string& /*detail*/, const std::string& /*display*/) override {
-    return {};
-  }
-  void P2pNotifyRingChanged() override { ++ring_notifies; }
-  void P2pSetLastMediaError(std::string message) override { last_error = std::move(message); }
-  Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& /*call_id*/) const override {
+  Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& /*call_id*/) const override {
     return std::optional<std::string>("account:peer");
   }
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& /*call_id*/,
@@ -100,10 +94,6 @@ public:
     }
     return std::optional<std::string>{};
   }
-  void P2pResendMediaKey(const std::string& /*call_id*/, const std::string& /*peer*/) override {
-    ++media_key_resends;
-  }
-  void P2pRequestInboxSync() override { ++inbox_syncs; }
 
   std::unordered_map<std::string, std::string> account_to_peer;
   int ring_notifies = 0;
@@ -537,6 +527,14 @@ protected:
             live.NoteMediaAttempted(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
             live.NoteMediaDeferred(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::Changed>) {
+            ++host_->ring_notifies;
+          } else if constexpr (std::is_same_v<R, direct_report::MediaError>) {
+            host_->last_error = r.message;
+          } else if constexpr (std::is_same_v<R, direct_report::MediaKeyResendWanted>) {
+            ++host_->media_key_resends;
+          } else if constexpr (std::is_same_v<R, direct_report::InboxSyncWanted>) {
+            ++host_->inbox_syncs;
           } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
             live.NoteMediaKeyReady(r.call_id);
             if (bridge_ && !r.peer_identity.empty()) {

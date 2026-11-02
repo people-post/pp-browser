@@ -48,7 +48,7 @@ logging::Logger& DirectReceiveLog() {
 
 } // namespace
 
-CallMediaBridge::CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
+CallMediaBridge::CallMediaBridge(std::string call_id, CallDirectPathQueries& host, const ICallSessionReader& sessions,
                                  ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine,
                                  ICallMediaTransport& direct, mesh::PeerReachPorts reach)
     : call_id_(std::move(call_id)),
@@ -97,7 +97,7 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
       identity_known = true;
     } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0) {
       // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
-      if (auto sole = host_.P2pPeerIdentityForCall(call_id);
+      if (auto sole = host_.PeerIdentityForCall(call_id);
           sole && sole->has_value() && sole->value() == media_peer_identity_) {
         identity = media_peer_identity_;
       }
@@ -115,7 +115,7 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
     // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag) — from a
     // PeerId we know is theirs. Anyone holding the call id can dial; their relay Accept still decides.
     if (identity_known) {
-      host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
+      reports_.Emit(direct_report::InboundHello{call_id, identity, inbound_peer_id});
     } else {
       log().info << "Inbound call-media hello from an unmapped PeerId " << inbound_peer_id
                  << " is not taken as an accept call_id=" << call_id;
@@ -139,9 +139,9 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   cbs.on_connected = [outbox = outbox_, call_id, label]() {
     outbox.Emit(direct_event::BundleConnected{call_id, label});
   };
-  cbs.on_media = [gate = receive_, engine = engine_, &host = host_, outbox = outbox_, call_id, fixed_stream](
+  cbs.on_media = [gate = receive_, engine = engine_, outbox = outbox_, call_id, fixed_stream](
                      uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
-    ReceiveDirectMedia(*gate, *engine, host, outbox, call_id, fixed_stream, channel, seq, mark, payload);
+    ReceiveDirectMedia(*gate, *engine, outbox, call_id, fixed_stream, channel, seq, mark, payload);
   };
   cbs.on_failed = [outbox = outbox_, call_id](const CallMediaFailure& failure) {
     outbox.Emit(direct_event::BundleFailed{call_id, failure.message, failure.GetCode()});
@@ -174,7 +174,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     direct_.Detach();
     ClearMeshConnectFailed();
     reports_.Emit(direct_report::Connected{call_id});
-    host_.P2pNotifyRingChanged();
+    reports_.Emit(direct_report::Changed{call_id_});
     return;
   case BundleFailureAction::AwaitHop:
     log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id << " reason=" << reason;
@@ -183,10 +183,10 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
     }
     direct_.Detach();
     ClearMeshConnectFailed();
-    host_.P2pRequestInboxSync();
+    reports_.Emit(direct_report::InboxSyncWanted{call_id_});
     // Nothing is live until the hop attaches: the call waits for it (not "connected").
     reports_.Emit(direct_report::HandedToHop{call_id});
-    host_.P2pNotifyRingChanged();
+    reports_.Emit(direct_report::Changed{call_id_});
     return;
   case BundleFailureAction::Fail:
     break;
@@ -356,7 +356,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
       std::string peer = peer_identity.empty() ? media_peer_identity_ : peer_identity;
       const std::string cid = call_id.empty() ? call_id_ : call_id;
       if (peer.empty() && !cid.empty()) {
-        if (auto resolved = host_.P2pPeerIdentityForCall(cid); resolved && resolved->has_value()) {
+        if (auto resolved = host_.PeerIdentityForCall(cid); resolved && resolved->has_value()) {
           peer = **resolved;
         }
       }
@@ -388,7 +388,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   case CallDirectPlannerEvent::PathLost:
     if (out.decision == CallDirectPlannerDecision::Transition) {
       reports_.Emit(direct_report::Progress{call_id, CallDirectPlannerPhase::Reconnecting});
-      host_.P2pNotifyRingChanged();
+      reports_.Emit(direct_report::Changed{call_id_});
       // The offerer reaches the peer again and moves the call onto that link; the answerer's
       // transport accepts the migrate (invite / accept is the agreement, as for the first connect).
       if (session_offerer_) {
@@ -831,10 +831,10 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   ApplyPathPolicyToTransport(call_id);
   ArmDirectUpgrade(call_id);
   ArmRelayStandby(call_id);
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
 }
 
-void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const CallMediaHost& host,
+void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine,
                                          const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                          const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
                                          const uint8_t mark, const std::vector<uint8_t>& payload) {
@@ -959,7 +959,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   std::string peer = media_peer_identity_;
   const std::string& call_id = call_id_;
   if (peer.empty() && !call_id.empty()) {
-    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+    if (auto resolved = host_.PeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
     }
   }
@@ -1092,7 +1092,7 @@ void CallMediaBridge::FailUnlessDirectRecovered(const std::string& call_id, cons
 void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std::string& err,
                                            const bool stop_media) {
   if (!err.empty()) {
-    host_.P2pSetLastMediaError(err);
+    reports_.Emit(direct_report::MediaError{call_id_, err});
   }
   // H013: the caller tells the answerer it stopped (read before StopMeshMedia clears the session).
   const bool tell_peer =
@@ -1123,7 +1123,7 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (seed_unreachable) {
     seed_park_state_->unreachable.store(true, std::memory_order_release);
   }
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
 }
 
 void CallMediaBridge::OnPeerGaveUpReaching(const std::string& call_id) {
@@ -1200,7 +1200,7 @@ CallMediaConnectHooks CallMediaBridge::MakeConnectHooks(const std::string& call_
         (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0)
             ? media_peer_identity_
             : params.peer_key;
-    host_.P2pResendMediaKey(params.call_id, key_peer);
+    reports_.Emit(direct_report::MediaKeyResendWanted{params.call_id, key_peer});
   };
   hooks.on_link_ready = [this](const mesh::PeerLinkKind kind) { reach_kind_ = kind; };
   hooks.on_finished = [this, call_id](CallMediaRoe result) {
@@ -1271,7 +1271,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   }
   StartDirectConnect(call_id, peer_identity, offerer, media_epoch, *key);
   mesh_connect_missing_mic_ = false;
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
   return {};
 }
 
@@ -1333,7 +1333,7 @@ void CallMediaBridge::ParkOnBootstrapSeed() {
 
 Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
-  CallMedia* call_media = host_.P2pCallMedia(call_id);
+  CallMedia* call_media = host_.CallMediaOf(call_id);
   if (!call_media) {
     return Error("no live call for media " + call_id);
   }
@@ -1354,7 +1354,7 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   // A started engine is a fresh attempt: a failure surfaced before it no longer stands. Connected
   // waits for the direct stream (CommitDirectConnected).
   ClearMeshConnectFailed();
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
   return {};
 }
 
@@ -1506,7 +1506,7 @@ void CallMediaBridge::DeferAnswererUntilMediaKey(const std::string& call_id, con
     outbox_.Emit(direct_event::KeyPollDue{call_id, wait, 0});
     return;
   }
-  host_.P2pRequestInboxSync();
+  reports_.Emit(direct_report::InboxSyncWanted{call_id_});
   (void)outbox_.After(kMediaKeyPollRound, direct_event::KeyPollDue{call_id, wait, 0});
 }
 
@@ -1522,7 +1522,7 @@ void CallMediaBridge::OnKeyPollDue(const direct_event::KeyPollDue& due) {
     return;
   }
   if (due.round + 1 < media_key_inbox_poll_rounds_) {
-    host_.P2pRequestInboxSync();
+    reports_.Emit(direct_report::InboxSyncWanted{call_id_});
     (void)outbox_.After(kMediaKeyPollRound, direct_event::KeyPollDue{due.call_id, due.wait, due.round + 1});
     return;
   }
@@ -1539,10 +1539,10 @@ void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
   pending_answerer_peer_.clear();
   log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id << " — ConnectFailed";
   mesh_connect_failed_ = true;
-  host_.P2pSetLastMediaError(Localized("call.error.media_key_timeout"));
+  reports_.Emit(direct_report::MediaError{call_id_, Localized("call.error.media_key_timeout")});
   Apply(CallDirectPlannerEvent::KeyTimeout, call_id);
   reports_.Emit(direct_report::ConnectFailed{call_id});
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
 }
 
 void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
@@ -1563,7 +1563,7 @@ void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
     return;
   }
   if (peer.empty()) {
-    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+    if (auto resolved = host_.PeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
     }
   }
@@ -1624,7 +1624,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
 
 CallMedia* CallMediaBridge::CallMediaFor(const std::string& call_id) {
   // Quietly null for a call not admitted here (a leftover engine id): nothing to ask about it.
-  return !call_id.empty() && host_.P2pLiveCall(call_id) ? host_.P2pCallMedia(call_id) : nullptr;
+  return !call_id.empty() && host_.LiveCallOf(call_id) ? host_.CallMediaOf(call_id) : nullptr;
 }
 
 bool CallMediaBridge::MediaConnected(const std::string& call_id) {
@@ -1684,7 +1684,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   if (engine_->Runs()) {
     reports_.Emit(direct_report::Connected{call_id_});
   }
-  host_.P2pNotifyRingChanged();
+  reports_.Emit(direct_report::Changed{call_id_});
 }
 
 void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
@@ -1780,7 +1780,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     }
   }
   if (peer.empty()) {
-    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+    if (auto resolved = host_.PeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
     }
   }
@@ -1835,7 +1835,7 @@ Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id
 }
 
 std::optional<CallMediaBridge::CallPeerRole> CallMediaBridge::PeerRoleFromLiveCall(const std::string& call_id) const {
-  const LiveCall* call = host_.P2pLiveCall(call_id);
+  const LiveCall* call = host_.LiveCallOf(call_id);
   if (!call || !call->IsOpen()) {
     return std::nullopt;
   }

@@ -26,7 +26,7 @@
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectPathQueries.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
 #include "feature/calls/LiveCallMedia.h"
@@ -57,7 +57,7 @@ class CallMediaBridge;
  * intents and inbound call control go through CallSessionManager, which uses these parts. Owned by
  * CallStack; calls owner only.
  */
-class CallDevice : public Module, private CallMediaHost {
+class CallDevice : public Module, private CallDirectPathQueries {
 public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
@@ -107,8 +107,8 @@ public:
   void SetInitiationBillingStore(IInitiationBillingBook* store);
   /** Hub teardown: drop queued follow-ups (a roster fan-out) before the store and delivery go. */
   void DropFollowUps();
-  /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
-  CallMediaHost& AsMediaHost() { return *this; }
+  /** Expose the private CallDirectPathQueries base for the 1:1 path's construction (MSVC-safe). */
+  CallDirectPathQueries& AsDirectPathQueries() { return *this; }
 
   // --- The 1:1 path's device-level deps --------------------------------------------------------
   /**
@@ -207,22 +207,16 @@ private:
   /** The group path's host ports, bound to its call (`path_call_id`). */
   CallTopologyController::HostPorts MakeTopologyHostPorts(const std::string& path_call_id);
 
-  // CallMediaHost
-  Roe<std::string> P2pLocalIdentity() const override;
-  Roe<void> P2pSendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
-                          const std::string& display) override;
-  void P2pNotifyRingChanged() override;
-  void P2pSetLastMediaError(std::string message) override;
-  Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  // CallDirectPathQueries (the 1:1 path's questions)
+  const LiveCall* LiveCallOf(const std::string& call_id) const override { return live_calls_.Find(call_id); }
+  CallMedia* CallMediaOf(const std::string& call_id) override { return call_media_.Media(call_id); }
+  Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const override;
   Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                              const std::string& peer_id) const override;
-  void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
-  void P2pRequestInboxSync() override;
-  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
-  CallMedia* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
-  void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
-                           const std::string& peer_id) override;
+  // What the 1:1 path reported (DirectReport)
+  void ResendMediaKey(const std::string& call_id, const std::string& peer_identity);
+  void ApplyInboundHello(const std::string& call_id, const std::string& identity, const std::string& peer_id);
 
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);

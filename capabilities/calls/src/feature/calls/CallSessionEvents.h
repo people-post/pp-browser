@@ -334,12 +334,42 @@ struct MediaKeyReady {
   std::string peer_identity;
 };
 
+/** What the device shows about the call may have changed (the ring / call chrome refreshes). */
+struct Changed {
+  std::string call_id;
+};
+/** A media error for the screen to show once. */
+struct MediaError {
+  std::string call_id;
+  std::string message;
+};
+/** The offerer's connect retries: send the call's current media key to `peer_identity` again. */
+struct MediaKeyResendWanted {
+  std::string call_id;
+  std::string peer_identity;
+};
+/** The answerer waits for the key: fetch the relay inbox now. */
+struct InboxSyncWanted {
+  std::string call_id;
+};
+/**
+ * An inbound hello from `identity` (account) / `peer_id` (mesh) was accepted: B30, it may stand in for
+ * a CallAccept the relay has not delivered yet.
+ */
+struct InboundHello {
+  std::string call_id;
+  std::string identity;
+  std::string peer_id;
+};
+
 } // namespace direct_report
 
 using DirectReport =
     std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
                  direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
-                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady>;
+                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady,
+                 direct_report::Changed, direct_report::MediaError, direct_report::MediaKeyResendWanted,
+                 direct_report::InboxSyncWanted, direct_report::InboundHello>;
 
 /** What the group (hop) path reports to the calls it serves: its planner moved. */
 struct HopReport {

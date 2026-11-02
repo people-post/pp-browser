@@ -5,7 +5,7 @@
 #include "lib/calls/ICallSessionReader.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallEngine.h"
-#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectPathQueries.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "lib/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -66,7 +66,7 @@ struct CallDirectSeatPorts {
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   /** The 1:1 path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
-  CallMediaBridge(std::string call_id, CallMediaHost& host, const ICallSessionReader& sessions,
+  CallMediaBridge(std::string call_id, CallDirectPathQueries& host, const ICallSessionReader& sessions,
                   ICallMediaKeyStore& media_keys, std::shared_ptr<CallEngine> engine, ICallMediaTransport& direct,
                   mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
@@ -275,10 +275,9 @@ private:
   void OnBundleFailed(const std::string& call_id, const std::string& reason, CallMediaErr code);
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
-  static void ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const CallMediaHost& host,
-                                 const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
-                                 uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
-                                 const std::vector<uint8_t>& payload);
+  static void ReceiveDirectMedia(ReceiveGate& gate, CallEngine& engine, const OwnerOutbox<DirectPathEvent>& outbox,
+                                 const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
+                                 uint8_t mark, const std::vector<uint8_t>& payload);
   void RebindInboundStream(const std::string& call_id);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
@@ -341,7 +340,8 @@ private:
 
   /** The one call this path serves. */
   const std::string call_id_;
-  CallMediaHost& host_;
+  /** What the path asks the device (queries only; what it tells goes up as DirectReport, V057 2). */
+  CallDirectPathQueries& host_;
   const ICallSessionReader& sessions_;
   ICallMediaKeyStore& media_keys_;
   /** This call's handle on the engine (V057): whether it runs this call, and the data plane. */

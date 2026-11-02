@@ -301,7 +301,7 @@ void CallDevice::BindReachSignalPorts() {
     return **peer;
   };
   ports.local_identity = [this]() -> std::string {
-    auto local = P2pLocalIdentity();
+    auto local = LocalIdentity();
     return local ? *local : std::string{};
   };
   ports.local_caps = [this]() -> std::optional<CallPeerCaps> {
@@ -462,6 +462,16 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
           live_calls_.NoteMediaDeferred(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
           OnAnswererKeyReady(r.call_id, r.peer_identity);
+        } else if constexpr (std::is_same_v<R, direct_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, direct_report::MediaError>) {
+          SetLastMediaError(r.message);
+        } else if constexpr (std::is_same_v<R, direct_report::MediaKeyResendWanted>) {
+          ResendMediaKey(r.call_id, r.peer_identity);
+        } else if constexpr (std::is_same_v<R, direct_report::InboxSyncWanted>) {
+          RequestInboxSync();
+        } else if constexpr (std::is_same_v<R, direct_report::InboundHello>) {
+          ApplyInboundHello(r.call_id, r.identity, r.peer_id);
         } else {
           static_assert(!sizeof(R), "take every DirectReport");
         }
@@ -562,8 +572,8 @@ std::unique_ptr<CallDirectDriver> CallDevice::MakeDirectPath(const std::string& 
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
-  auto path = std::make_unique<CallMediaBridge>(call_id, AsMediaHost(), sessions_, media_keys_, std::move(engine),
-                                                *direct_deps_.transport, direct_deps_.Reach());
+  auto path = std::make_unique<CallMediaBridge>(call_id, AsDirectPathQueries(), sessions_, media_keys_,
+                                                std::move(engine), *direct_deps_.transport, direct_deps_.Reach());
   path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
     return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
   }));
@@ -979,24 +989,7 @@ void CallDevice::RequestInboxSync() {
   }
 }
 
-Roe<std::string> CallDevice::P2pLocalIdentity() const {
-  return LocalIdentity();
-}
-
-Roe<void> CallDevice::P2pSendDirect(const std::string& peer_identity, CallControlType type,
-                                    const std::string& detail_json, const std::string& display) {
-  return SendDirect(peer_identity, type, detail_json, display);
-}
-
-void CallDevice::P2pNotifyRingChanged() {
-  NotifyRingChanged();
-}
-
-void CallDevice::P2pSetLastMediaError(std::string message) {
-  SetLastMediaError(std::move(message));
-}
-
-Roe<std::optional<std::string>> CallDevice::P2pPeerIdentityForCall(const std::string& call_id) const {
+Roe<std::optional<std::string>> CallDevice::PeerIdentityForCall(const std::string& call_id) const {
   return reads_.PeerIdentityForCall(call_id);
 }
 
@@ -1020,7 +1013,7 @@ Roe<std::optional<std::string>> CallDevice::RelayIdentityForMeshPeerId(const std
   return peer_accounts_.AccountForPeerId(peer_id, participants);
 }
 
-void CallDevice::P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
+void CallDevice::ResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
   if (call_id.empty() || peer_identity.empty()) {
     return;
   }
@@ -1031,8 +1024,8 @@ void CallDevice::P2pResendMediaKey(const std::string& call_id, const std::string
   (void)key_exchange_.SendCurrent(call_id, peer_identity);
 }
 
-void CallDevice::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
-                                     const std::string& peer_id) {
+void CallDevice::ApplyInboundHello(const std::string& call_id, const std::string& identity,
+                                   const std::string& peer_id) {
   auto local = control_.LocalRelayIdentity();
   if (!local) {
     return;
@@ -1040,10 +1033,6 @@ void CallDevice::P2pNoteInboundHello(const std::string& call_id, const std::stri
   if (auto applied = workflow_.ApplyImplicitAccept(call_id, identity, peer_id, *local); !applied) {
     log().warning << "implicit accept failed call_id=" << call_id << " err=" << applied.error().message;
   }
-}
-
-void CallDevice::P2pRequestInboxSync() {
-  RequestInboxSync();
 }
 
 } // namespace pbr

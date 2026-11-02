@@ -10,7 +10,7 @@
 #include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "lib/calls/CallMediaSeat.h"
-#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectPathQueries.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/call_media/CallMediaAmpTransport.h"
