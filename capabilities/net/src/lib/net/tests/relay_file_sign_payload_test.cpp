@@ -18,6 +18,13 @@ TEST(RelayFileSignPayloadTest, StartMatchesTheServersGoldenVector) {
             "656e3100000000001000000000019a396c7300");
 }
 
+TEST(RelayFileSignPayloadTest, PartMatchesTheServersGoldenVector) {
+  EXPECT_EQ(BytesToHex(BuildFilePartSignBytes(kUser, kBlob, 3, kTimestamp)),
+            "70702d62726f777365723a72656c61792d66696c652d706172742d76310001000000000000000d72656c61793a676f6c6465"
+            "6e31000000000000002431313131313131312d323232322d333333332d343434342d35353535353535353535353500000000"
+            "000000030000019a396c7300");
+}
+
 TEST(RelayFileSignPayloadTest, CompleteMatchesTheServersGoldenVector) {
   EXPECT_EQ(BytesToHex(BuildFileCompleteSignBytes(kUser, kBlob, kTimestamp)),
             "70702d62726f777365723a72656c61792d66696c652d636f6d706c6574652d76310001000000000000000d72656c61793a67"

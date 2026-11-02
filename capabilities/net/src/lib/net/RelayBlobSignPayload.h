@@ -26,6 +26,10 @@ std::vector<uint8_t> BuildProfileIconSignBytes(const std::string& relay_user_id,
 // app-static-api docs/relay-files.md.
 std::vector<uint8_t> BuildFileStartSignBytes(const std::string& relay_user_id, uint64_t byte_length, int64_t timestamp);
 
+/** One multipart part's PUT URL (`/files/part`); `part_number` counts from 1. */
+std::vector<uint8_t> BuildFilePartSignBytes(const std::string& relay_user_id, const std::string& blob_id,
+                                            uint64_t part_number, int64_t timestamp);
+
 std::vector<uint8_t> BuildFileCompleteSignBytes(const std::string& relay_user_id, const std::string& blob_id,
                                                 int64_t timestamp);
 

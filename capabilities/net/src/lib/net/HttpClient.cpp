@@ -10,6 +10,7 @@
 
 #include <curl/curl.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
@@ -229,40 +230,20 @@ size_t FileWriteCallback(void* contents, size_t size, size_t nmemb, FileSink* si
 
 struct FileSource {
   std::FILE* file = nullptr;
+  /** Bytes still to send: a range upload stops at its end, not the file's. */
+  uint64_t remaining = 0;
 };
 
 size_t FileReadCallback(char* buffer, size_t size, size_t nitems, FileSource* source) {
-  return std::fread(buffer, 1, size * nitems, source->file);
+  const uint64_t want = std::min<uint64_t>(static_cast<uint64_t>(size) * nitems, source->remaining);
+  const size_t got = std::fread(buffer, 1, static_cast<size_t>(want), source->file);
+  source->remaining -= got;
+  return got;
 }
 
-} // namespace
-
-void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
-  g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
-  g_speed_window_s.store(window_s > 0 ? window_s : 30);
-}
-
-void HttpClient::SetPlainHttpRedirectsForTest(const bool allow) {
-  g_plain_http_redirects_for_test.store(allow);
-}
-
-void HttpClient::SetFirstHopLocalForTest(const bool allow) {
-  g_first_hop_local_for_test.store(allow);
-}
-
-Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
-                                      const std::map<std::string, std::string>& headers,
-                                      const HttpProgress& progress) {
-  std::error_code size_ec;
-  const auto file_size = std::filesystem::file_size(path, size_ec);
-  if (size_ec) {
-    return AppError::Internal("Upload file is not readable");
-  }
-  FileSource source;
-  source.file = std::fopen(path.c_str(), "rb");
-  if (!source.file) {
-    return AppError::Internal("Upload file is not readable");
-  }
+/** PUT `source.remaining` bytes from `source.file` (positioned at the start); closes the file. */
+Roe<HttpResponse> PutFromFile(const std::string& url, FileSource source,
+                              const std::map<std::string, std::string>& headers, const HttpProgress& progress) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     std::fclose(source.file);
@@ -274,7 +255,7 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
   ProgressState state{.callback = &progress};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
-  curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(file_size));
+  curl_easy_setopt(curl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(source.remaining));
   curl_easy_setopt(curl, CURLOPT_READFUNCTION, FileReadCallback);
   curl_easy_setopt(curl, CURLOPT_READDATA, &source);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
@@ -308,6 +289,56 @@ Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string&
                              std::string("HTTP request failed: ") + curl_easy_strerror(code));
   }
   return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
+}
+
+} // namespace
+
+void HttpClient::SetStreamingStallLimitForTest(const long min_bytes_per_s, const long window_s) {
+  g_min_bytes_per_s.store(min_bytes_per_s > 0 ? min_bytes_per_s : 2048);
+  g_speed_window_s.store(window_s > 0 ? window_s : 30);
+}
+
+void HttpClient::SetPlainHttpRedirectsForTest(const bool allow) {
+  g_plain_http_redirects_for_test.store(allow);
+}
+
+void HttpClient::SetFirstHopLocalForTest(const bool allow) {
+  g_first_hop_local_for_test.store(allow);
+}
+
+Roe<HttpResponse> HttpClient::PutFile(const std::string& url, const std::string& path,
+                                      const std::map<std::string, std::string>& headers,
+                                      const HttpProgress& progress) {
+  std::error_code size_ec;
+  const auto file_size = std::filesystem::file_size(path, size_ec);
+  if (size_ec) {
+    return AppError::Internal("Upload file is not readable");
+  }
+  FileSource source{.file = std::fopen(path.c_str(), "rb"), .remaining = static_cast<uint64_t>(file_size)};
+  if (!source.file) {
+    return AppError::Internal("Upload file is not readable");
+  }
+  return PutFromFile(url, source, headers, progress);
+}
+
+Roe<HttpResponse> HttpClient::PutFileRange(const std::string& url, const std::string& path, const uint64_t offset,
+                                           const uint64_t length, const std::string& content_type,
+                                           const HttpProgress& progress) {
+  std::error_code size_ec;
+  const auto file_size = std::filesystem::file_size(path, size_ec);
+  if (size_ec || offset > static_cast<uint64_t>(file_size) || length > static_cast<uint64_t>(file_size) - offset) {
+    return AppError::Internal("Upload file does not hold the part");
+  }
+  FileSource source{.file = std::fopen(path.c_str(), "rb"), .remaining = length};
+  if (!source.file) {
+    return AppError::Internal("Upload file is not readable");
+  }
+  if (offset > static_cast<uint64_t>(std::numeric_limits<long>::max()) ||
+      std::fseek(source.file, static_cast<long>(offset), SEEK_SET) != 0) {
+    std::fclose(source.file);
+    return AppError::Internal("Upload file is not readable");
+  }
+  return PutFromFile(url, source, {{"Content-Type", content_type}}, progress);
 }
 
 Roe<HttpFileDownload> HttpClient::GetToFile(const std::string& url, const std::string& dest_path,

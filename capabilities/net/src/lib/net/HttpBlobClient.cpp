@@ -434,11 +434,37 @@ Roe<RelayFileStartResult> HttpBlobClient::FileStart(const std::string& relay_use
   result.blob_id = *root->getString("blob_id");
   result.mode = *root->getString("mode");
   result.upload_url = root->getString("upload_url").value_or("");
+  result.part_bytes = root->getNonNegInt("part_bytes").value_or(0);
+  result.part_count = root->getNonNegInt("part_count").value_or(0);
   result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
   result.pending_expires_at = root->getString("pending_expires_at").value_or("");
   if (result.blob_id.empty()) {
     return Error("Invalid relay file start JSON");
   }
+  return result;
+}
+
+Roe<RelayFilePartResult> HttpBlobClient::FilePart(const std::string& relay_user_id, const std::string& blob_id,
+                                                  const uint64_t part_number) {
+  const int64_t timestamp = util::NowUnixMs();
+  Object body;
+  body.set("blob_id", blob_id);
+  body.setJsonUInt("part_number", part_number);
+  auto response = PostSignedFiles("part", relay_user_id, std::move(body),
+                                  BuildFilePartSignBytes(relay_user_id, blob_id, part_number, timestamp), timestamp);
+  if (!response) {
+    return response.error();
+  }
+  auto root = TryParseObject(response->body);
+  const auto upload_url = root ? root->getString("upload_url") : std::nullopt;
+  const auto part_bytes = root ? root->getNonNegInt("part_bytes") : std::nullopt;
+  if (!upload_url || upload_url->empty() || !part_bytes || *part_bytes == 0) {
+    return Error("Invalid relay file part JSON");
+  }
+  RelayFilePartResult result;
+  result.upload_url = *upload_url;
+  result.part_bytes = *part_bytes;
+  result.expires_in = static_cast<int64_t>(root->getNonNegInt("expires_in").value_or(0));
   return result;
 }
 
@@ -522,6 +548,19 @@ Roe<void> HttpBlobClient::PutUploadFile(const std::string& upload_url, const std
     return response.error();
   }
   return CheckPutStatus(response.value().status_code);
+}
+
+Roe<void> HttpBlobClient::PutUploadFileRange(const std::string& upload_url, const std::string& content_type,
+                                             const std::string& path, const uint64_t offset, const uint64_t length,
+                                             const std::function<bool(uint64_t, uint64_t)>& progress) {
+  if (upload_url.empty()) {
+    return Error("upload_url is required");
+  }
+  const auto response = HttpClient::PutFileRange(upload_url, path, offset, length, content_type, progress);
+  if (!response) {
+    return response.error();
+  }
+  return CheckPutStatus(static_cast<int>(response.value().status_code));
 }
 
 Roe<void> HttpBlobClient::PutUpload(const std::string& upload_url, const std::string& content_type,
