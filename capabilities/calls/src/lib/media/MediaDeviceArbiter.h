@@ -155,6 +155,23 @@ struct MediaDeviceSharePolicy {
   bool Exclusive(MediaDeviceKind kind) const;
 };
 
+/**
+ * How long a device operation may take before its device family counts as stuck (media-client-layers
+ * L016). Opens are generous (an OS permission prompt can hold one); closes should be quick.
+ */
+struct MediaDeviceBudgets {
+  std::chrono::milliseconds open_audio{20000};
+  std::chrono::milliseconds open_camera{10000};
+  std::chrono::milliseconds close{3000};
+};
+
+/** One device kind as the arbiter sees it, for logs, diagnostics and chrome. */
+struct MediaDeviceHealth {
+  std::vector<std::string> holders;
+  /** What its device thread is stuck on ("close camera for call:a for 4100ms"); empty when responsive. */
+  std::string stuck;
+};
+
 class MediaDeviceArbiter;
 
 /**
@@ -181,8 +198,9 @@ public:
   void Clear();
 
   /**
-   * Close, settle, reopen on the device thread; blocks the caller until done. Never call on the UI
-   * thread. The lease is kept when the reopen finds no device (HasDevice() false). A voice-duplex
+   * Close, settle, reopen on the device thread; blocks the caller until done, or until the close and
+   * open budgets run out (then "not responding"; the reopen finishes on its own). Never call on the
+   * UI thread. The lease is kept when the reopen finds no device (HasDevice() false). A voice-duplex
    * half refuses (its unit serves both halves): release the pair and acquire it again.
    */
   Roe<void> Reopen();
@@ -237,16 +255,24 @@ struct AudioLeaseRequest {
 };
 
 /**
- * Owns OS audio devices for every media pipeline in the process (media-client-layers L010/L011):
- * one device thread performs every open / close / reopen, so an open never races another holder's
- * close (the ringtone ↔ call-media Samsung hang), and exclusive kinds are refused with the holder's
- * name instead of silently doubled.
+ * Owns the OS media devices of every pipeline in the process (media-client-layers L010/L011/L016):
+ * calls, the ringtone, voice messages, the QR scanner, broadcast. Each device family has one device
+ * thread — audio (mic + speaker) and camera — that performs every open / close / reopen of it, so an
+ * open never races another holder's close (the ringtone ↔ call-media Samsung hang), and exclusive
+ * kinds are refused with the holder's name instead of silently doubled.
+ *
+ * Nothing waits on a device past its budget (`MediaDeviceBudgets`): an acquire whose open runs out
+ * is refused "not responding" (a late open is closed again), and while an operation on a family runs
+ * past its budget the family is stuck — acquires are refused at once instead of queueing behind it.
+ * It recovers by itself when that operation returns; a holder that still wants the device asks again
+ * when `CanAcquire` says yes.
  *
  * Injectable: pipelines take a `MediaDeviceArbiter&`; `Default()` is the process instance (SDL).
  */
 class MediaDeviceArbiter {
 public:
-  explicit MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy = {});
+  explicit MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy = {},
+                              MediaDeviceBudgets budgets = {});
   ~MediaDeviceArbiter();
   MediaDeviceArbiter(const MediaDeviceArbiter&) = delete;
   MediaDeviceArbiter& operator=(const MediaDeviceArbiter&) = delete;
@@ -257,8 +283,9 @@ public:
   static bool ShutdownDefault(std::chrono::milliseconds budget);
 
   /**
-   * Blocking: waits for the device thread to open the endpoint. Never call on the UI thread (OS mic
-   * permission can block for seconds). Refused only by policy ("mic held by <holder>").
+   * Blocking: waits for the device thread to open the endpoint, at most the open budget. Never call
+   * on the UI thread (OS mic permission can block for seconds). Refused by policy ("mic held by
+   * <holder>") or when the audio devices are not responding; granted without a device otherwise.
    */
   Roe<std::unique_ptr<AudioDeviceLease>> AcquireAudio(const AudioLeaseRequest& request);
 
@@ -277,9 +304,12 @@ public:
 
   /** Current holders of `kind` (empty when free). */
   std::vector<std::string> Holders(MediaDeviceKind kind) const;
+  /** An acquire of `kind` would not be refused now: responsive, and free when exclusive. */
+  bool CanAcquire(MediaDeviceKind kind) const;
+  MediaDeviceHealth Health(MediaDeviceKind kind) const;
 
   /**
-   * Run queued closes (released leases) and stop the device thread; wait at most `budget`.
+   * Run queued closes (released leases) and stop the device threads; wait at most `budget`.
    * Call before SDL_Quit. Leases acquired afterwards open and close inline on the caller.
    * Returns false when the budget ran out (the thread is detached with a loud log).
    */

@@ -117,11 +117,29 @@ private:
   std::chrono::steady_clock::time_point last_read_{};
 };
 
+/** Holds a device operation until released (bounded, so a failing test cannot hang the run). */
+struct HoldGate {
+  std::atomic<bool> armed{false};
+  std::atomic<bool> entered{false};
+  std::atomic<bool> release{false};
+  void Pass() {
+    if (!armed.load()) {
+      return;
+    }
+    entered.store(true);
+    for (int i = 0; i < 2000 && !release.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  }
+};
+
 /** 64×36 RGBA frames, one per 30 ms. */
 class FakeCamera final : public ICameraEndpoint {
 public:
-  FakeCamera(DeviceLog& log, bool front_facing) : log_(log), front_facing_(front_facing) {}
+  FakeCamera(DeviceLog& log, bool front_facing, HoldGate& close_gate)
+      : log_(log), front_facing_(front_facing), close_gate_(close_gate) {}
   ~FakeCamera() override {
+    close_gate_.Pass();
     log_.Enter("close camera");
     log_.Leave();
   }
@@ -142,6 +160,7 @@ public:
 private:
   DeviceLog& log_;
   bool front_facing_ = false;
+  HoldGate& close_gate_;
   std::chrono::steady_clock::time_point last_{};
 };
 
@@ -158,8 +177,10 @@ public:
       *error = "No camera: none attached";
       return nullptr;
     }
-    return std::make_unique<FakeCamera>(log_, format.prefer_front_facing);
+    return std::make_unique<FakeCamera>(log_, format.prefer_front_facing, camera_close_gate);
   }
+  /** Armed: closing a camera hangs until released (a wedged OS camera close). */
+  HoldGate camera_close_gate;
   std::atomic<bool> camera_present{true};
   std::atomic<std::chrono::milliseconds> camera_open_delay{std::chrono::milliseconds(0)};
   std::atomic<int> last_display_rotation{-1};
@@ -419,6 +440,87 @@ TEST_F(MediaDeviceArbiterTest, VoiceDuplexIsRefusedWhileTheMicIsHeld) {
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty()) << "no speaker hold left behind";
 }
 
+// --- budgets: a stuck device family is refused at once and recovers by itself (L016) ------------
+
+class StuckDeviceTest : public ::testing::Test {
+protected:
+  StuckDeviceTest() {
+    auto backend = std::make_unique<FakeBackend>(log_);
+    backend_ = backend.get();
+    MediaDeviceBudgets budgets;
+    budgets.open_audio = std::chrono::milliseconds(300);
+    budgets.open_camera = std::chrono::milliseconds(300);
+    budgets.close = std::chrono::milliseconds(150);
+    arbiter_ = std::make_unique<MediaDeviceArbiter>(std::move(backend), MediaDeviceSharePolicy{}, budgets);
+  }
+  ~StuckDeviceTest() override {
+    backend_->camera_close_gate.release.store(true);
+    arbiter_.reset();
+  }
+  static bool WaitUntil(const std::function<bool()>& done) {
+    for (int i = 0; i < 400 && !done(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return done();
+  }
+  /** A camera released while its close hangs: the camera family is stuck past the close budget. */
+  void WedgeCameraClose() {
+    backend_->camera_close_gate.armed.store(true);
+    auto camera = arbiter_->AcquireCamera(CameraLeaseRequest{"call:a", {}});
+    ASSERT_TRUE(camera) << camera.error().message;
+    camera->reset();
+    ASSERT_TRUE(WaitUntil([&] { return backend_->camera_close_gate.entered.load(); }));
+    ASSERT_TRUE(WaitUntil([&] { return !arbiter_->Health(MediaDeviceKind::Camera).stuck.empty(); }));
+  }
+
+  DeviceLog log_;
+  FakeBackend* backend_ = nullptr;
+  std::unique_ptr<MediaDeviceArbiter> arbiter_;
+};
+
+TEST_F(StuckDeviceTest, AStuckCameraCloseIsRefusedAtOnceAndNamed) {
+  WedgeCameraClose();
+  EXPECT_FALSE(arbiter_->CanAcquire(MediaDeviceKind::Camera));
+  const auto from = std::chrono::steady_clock::now();
+  auto refused = arbiter_->AcquireCamera(CameraLeaseRequest{"qr-scanner", {}});
+  EXPECT_LT(std::chrono::steady_clock::now() - from, std::chrono::milliseconds(100)) << "refused at once";
+  ASSERT_FALSE(refused);
+  EXPECT_NE(refused.error().message.find("camera not responding (close camera for call:a"), std::string::npos)
+      << refused.error().message;
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty()) << "a refusal holds nothing";
+}
+
+TEST_F(StuckDeviceTest, AStuckCameraNeverHoldsTheAudioDevices) {
+  WedgeCameraClose();
+  EXPECT_TRUE(arbiter_->CanAcquire(MediaDeviceKind::Mic));
+  auto mic = arbiter_->AcquireAudio(Request(MediaDeviceKind::Mic, "call:b"));
+  ASSERT_TRUE(mic) << mic.error().message;
+  EXPECT_TRUE((*mic)->HasDevice());
+}
+
+TEST_F(StuckDeviceTest, TheCameraComesBackWhenTheStuckCloseReturns) {
+  WedgeCameraClose();
+  backend_->camera_close_gate.armed.store(false);
+  backend_->camera_close_gate.release.store(true);
+  ASSERT_TRUE(WaitUntil([&] { return arbiter_->CanAcquire(MediaDeviceKind::Camera); }));
+  EXPECT_TRUE(arbiter_->Health(MediaDeviceKind::Camera).stuck.empty());
+  auto camera = arbiter_->AcquireCamera(CameraLeaseRequest{"call:b", {}});
+  ASSERT_TRUE(camera) << camera.error().message;
+}
+
+TEST_F(StuckDeviceTest, AnOpenPastItsBudgetIsRefusedAndTheLateDeviceCloses) {
+  backend_->camera_open_delay = std::chrono::milliseconds(600);
+  const auto from = std::chrono::steady_clock::now();
+  auto late = arbiter_->AcquireCamera(CameraLeaseRequest{"call:a", {}});
+  EXPECT_LT(std::chrono::steady_clock::now() - from, std::chrono::milliseconds(550)) << "gave up at the budget";
+  ASSERT_FALSE(late);
+  EXPECT_NE(late.error().message.find("camera not responding"), std::string::npos) << late.error().message;
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+  backend_->camera_open_delay = std::chrono::milliseconds(0);
+  ASSERT_TRUE(arbiter_->Shutdown(std::chrono::seconds(2)));
+  EXPECT_EQ(log_.Events(), (std::vector<std::string>{"open camera", "close camera"})) << "opened late, closed at once";
+}
+
 // --- engine takes the leases its session spec asks for -----------------------------------------
 
 class EngineDeviceLeaseTest : public MediaDeviceArbiterTest {
@@ -462,6 +564,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic).front(), "call:1");
   EXPECT_TRUE(WaitUntil([&] { return engine.HasLocalCapture(); }));
   engine.Stop();
+  ASSERT_TRUE(engine.WaitForRetiredSessions(std::chrono::seconds(2))) << "the stopped session let its devices go";
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
 }
@@ -480,6 +583,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexCallUsesTheVoiceProcessingUnit) {
   EXPECT_EQ(std::count(events.begin(), events.end(), "open duplex"), 1);
   EXPECT_EQ(std::count(events.begin(), events.end(), "open mic"), 0);
   engine.Stop();
+  ASSERT_TRUE(engine.WaitForRetiredSessions(std::chrono::seconds(2)));
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
 }
 
@@ -504,6 +608,7 @@ TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
   EXPECT_EQ(opens(), 2);
   EXPECT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "vpio"; }));
   engine.Stop();
+  ASSERT_TRUE(engine.WaitForRetiredSessions(std::chrono::seconds(2)));
   Settle();
   const auto events = log_.Events();
   EXPECT_EQ(std::count(events.begin(), events.end(), "close duplex"), 2);
@@ -800,9 +905,11 @@ struct EngineLogCapture : logging::Handler {
   std::vector<std::string> lines;
 };
 
-// B128: a Stop that cannot join the video thread says where that thread is stuck, and still waits
-// for it (the thread uses the engine) — it returns once the stuck step does.
-TEST_F(EngineDeviceLeaseTest, StopStuckJoiningTheVideoThreadLogsItsStage) {
+// #452 / L016: a camera step that hangs (B128) never holds the caller of Stop — the calls owner, which
+// must go on with the next invite. Stop returns at once; the stopped session cleans up on its own
+// thread, says where its video thread is stuck, and lets the mic go first, so the next call starts
+// with a mic while the old camera is still stuck.
+TEST_F(EngineDeviceLeaseTest, StopNeverWaitsOnAStuckCameraAndTheNextCallGetsTheMic) {
   auto capture = std::make_shared<EngineLogCapture>();
   logging::getLogger("CallMediaEngine").addHandler(capture);
   auto gate = std::make_shared<HangingEncoder::Gate>();
@@ -812,22 +919,69 @@ TEST_F(EngineDeviceLeaseTest, StopStuckJoiningTheVideoThreadLogsItsStage) {
   ASSERT_TRUE(engine->SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return gate->entered.load(); })) << "the video thread reached the encoder";
 
-  std::atomic<bool> stopped{false};
-  std::thread stopper([&] {
-    engine->Stop();
-    stopped.store(true);
-  });
+  const auto stop_from = std::chrono::steady_clock::now();
+  engine->Stop();
+  EXPECT_LT(std::chrono::steady_clock::now() - stop_from, std::chrono::milliseconds(200)) << "Stop waited";
+  EXPECT_FALSE(engine->IsActive());
+
   bool warned = false;
   for (int i = 0; i < 700 && !warned; ++i) {  // ~3.5 s
     warned = capture->Has("media stop join_video slow stage=configure_encoder");
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_TRUE(warned);
-  EXPECT_FALSE(stopped.load()) << "Stop keeps waiting for the thread";
+  EXPECT_FALSE(engine->WaitForRetiredSessions(std::chrono::milliseconds(0))) << "still stuck";
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty()) << "the stuck session let the mic go";
+
+  ASSERT_TRUE(engine->StartSfu("call:next", NoopSend()));
+  EXPECT_TRUE(WaitUntil([&] { return engine->HasLocalCapture(); })) << "the next call has a mic";
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic), std::vector<std::string>{"call:next"});
 
   gate->release.store(true);
-  EXPECT_TRUE(WaitUntil([&] { return stopped.load(); })) << "Stop returns once the step does";
-  stopper.join();
+  engine->Stop();
+  EXPECT_TRUE(engine->WaitForRetiredSessions(std::chrono::seconds(3))) << "both sessions finish once the step does";
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+}
+
+// L016: a camera busy with someone else (here the stuck session of the call before) is not a failure:
+// the camera stays wanted, the person is told once, and video comes on by itself when it is free.
+TEST_F(EngineDeviceLeaseTest, ABusyCameraComesOnByItselfWhenItIsFree) {
+  auto scanner = arbiter_->AcquireCamera(CameraLeaseRequest{"qr-scanner", {}});
+  ASSERT_TRUE(scanner) << scanner.error().message;
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return engine.CameraWaitingForDevice(); }));
+  EXPECT_TRUE(engine.IsCameraEnabled()) << "still wanted";
+  const auto failure = engine.TakeCameraFailure();
+  ASSERT_TRUE(failure);
+  EXPECT_NE(failure->find("busy"), std::string::npos) << *failure;
+  scanner->reset();
+  EXPECT_TRUE(
+      WaitUntil([&] { return arbiter_->Holders(MediaDeviceKind::Camera) == std::vector<std::string>{"call:1"}; }));
+  CallMediaEngine::VideoTileFrame preview;
+  EXPECT_TRUE(WaitUntil([&] { return engine.CopyLocalVideoFrame(preview); })) << "frames flow";
+  EXPECT_FALSE(engine.CameraWaitingForDevice());
+  EXPECT_FALSE(engine.TakeCameraFailure()) << "told once";
+  engine.Stop();
+}
+
+// Turning the camera off while it waits for the device withdraws the wish: it does not come on later.
+TEST_F(EngineDeviceLeaseTest, TurningAWaitingCameraOffWithdrawsIt) {
+  auto scanner = arbiter_->AcquireCamera(CameraLeaseRequest{"qr-scanner", {}});
+  ASSERT_TRUE(scanner);
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return engine.CameraWaitingForDevice(); }));
+  ASSERT_TRUE(engine.SetCameraEnabled(false));
+  scanner->reset();
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  EXPECT_FALSE(engine.IsCameraEnabled());
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+  engine.Stop();
 }
 
 } // namespace

@@ -69,9 +69,9 @@ bool WaitFor(const std::function<bool()>& done, std::chrono::milliseconds budget
   return done();
 }
 
-// B125: Stop() tore the codec down while holding the engine mutex, so a UI getter polled during the
-// ~1 s teardown on phones waited for all of it. The teardown now runs after the lock is released.
-TEST(CallMediaEngineStopTest, SlowTeardownDoesNotBlockGetters) {
+// B125 / L016: a hardware codec's slow teardown (~1 s on phones) never holds the caller of Stop or a
+// getter: Stop returns at once, and the stopped session tears its codec down on its own thread.
+TEST(CallMediaEngineStopTest, SlowTeardownHoldsNeitherStopNorGetters) {
   std::atomic<int> codecs_made{0};
   MediaDeviceArbiter devices(std::make_unique<StubBackend>());
   CallMediaEngine engine(devices);
@@ -84,15 +84,16 @@ TEST(CallMediaEngineStopTest, SlowTeardownDoesNotBlockGetters) {
   ASSERT_TRUE(camera) << (camera ? "" : camera.error().message);
   ASSERT_TRUE(WaitFor([&] { return codecs_made.load() >= 1; })) << "the camera never opened the codec";
 
-  std::atomic<bool> stop_done{false};
-  std::thread stopper([&] {
-    engine.Stop();
-    stop_done = true;
-  });
+  const auto stop_from = std::chrono::steady_clock::now();
+  engine.Stop();
+  const auto stop_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - stop_from).count();
+  // Relative bound (CI jitter): a Stop that waited for the teardown would take ~kSlowStep.
+  EXPECT_LT(stop_ms, std::chrono::duration_cast<std::chrono::milliseconds>(kSlowStep).count() / 3);
 
   int64_t worst_ms = 0;
   int polls = 0;
-  while (!stop_done.load()) {
+  while (!engine.WaitForRetiredSessions(0ms)) {
     const auto from = std::chrono::steady_clock::now();
     (void)engine.ConnectionState();
     const auto ms =
@@ -101,10 +102,7 @@ TEST(CallMediaEngineStopTest, SlowTeardownDoesNotBlockGetters) {
     ++polls;
     std::this_thread::sleep_for(2ms);
   }
-  stopper.join();
-
-  EXPECT_GT(polls, 10);
-  // Relative bound (CI jitter): a getter that waited for the teardown would take ~kSlowStep.
+  EXPECT_GT(polls, 10) << "the teardown ran after Stop returned";
   EXPECT_LT(worst_ms, std::chrono::duration_cast<std::chrono::milliseconds>(kSlowStep).count() / 3)
       << "ConnectionState waited for the codec teardown";
 }

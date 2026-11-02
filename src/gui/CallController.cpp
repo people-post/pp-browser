@@ -902,10 +902,12 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   if (auto failure = media.TakeCameraFailure()) {
-    // Camera opens asynchronously (media device thread): report the miss and withdraw the video
-    // flag the roster already advertised.
+    // Camera opens asynchronously (media device thread): report the miss. A camera that only waits
+    // for the device (busy, or not responding yet) stays on and comes on by itself (L016); any
+    // other miss withdraws the video flag the roster already advertised.
     UserFeedback::Fail(*failure);
-    if (auto* failed_backend = Backend(); failed_backend && failed_backend->Available()) {
+    if (auto* failed_backend = Backend();
+        !media.CameraWaitingForDevice() && failed_backend && failed_backend->Available()) {
       failed_backend->SetLocalVideoEnabled(false);
     }
   }

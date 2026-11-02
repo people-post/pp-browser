@@ -8,6 +8,7 @@
 #include "common/Module.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,6 +23,11 @@ namespace pbr {
 /**
  * 1:1 call media via libp2p/SFU packet transport + Opus + SDL (+ platform HW H264, V014/V017/V019).
  * Always encodes Opus + H264; mute/camera are content-only.
+ *
+ * Each Start makes a new media session; Stop (or a Start for another session) retires the running
+ * one, which then joins its threads and releases its devices on a thread of its own (media-client-
+ * layers L016). So no caller — the calls owner above all — ever waits on a device or a hardware
+ * codec here, and a stuck one holds only the session that used it.
  */
 class CallMediaEngine : public Module {
 public:
@@ -97,7 +103,13 @@ public:
    */
   void ClearRemoteAudioTracks();
   bool IsSfuMode() const;
+  /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();
+  /**
+   * Wait until every retired session has finished cleaning up, at most `budget`. For tests and an
+   * orderly quit; false when one is still running (stuck on a device).
+   */
+  bool WaitForRetiredSessions(std::chrono::milliseconds budget);
 
   void SetMuted(bool muted);
   bool IsMuted() const;
@@ -149,7 +161,13 @@ public:
   Roe<void> FlipCamera();
   /** Facing of the camera the engine last opened (false before any open). */
   bool CameraFrontFacing() const;
+  /** The camera is wanted: on, opening, or waiting for the device (CameraWaitingForDevice). */
   bool IsCameraEnabled() const;
+  /**
+   * The camera was asked for but is held by someone else or not responding: it opens by itself when
+   * the device is free again (L016). TakeCameraFailure reported it once.
+   */
+  bool CameraWaitingForDevice() const;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
   std::optional<std::string> TakeCameraFailure();
   /**
@@ -214,7 +232,24 @@ public:
 
 private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  struct Shared;
+  struct Retirements;
+  /** How long the destructor lets retired sessions finish before leaving them to the process exit. */
+  static constexpr std::chrono::milliseconds kRetiredWaitOnDestroy{5000};
+
+  std::shared_ptr<Impl> Session() const;
+  /** A fresh idle session becomes current; returns the one it replaced. */
+  std::shared_ptr<Impl> ReplaceSession();
+  /** Retire `session` and clean it up on its own thread; false when it had nothing running. */
+  bool Retire(std::shared_ptr<Impl> session);
+  /** Replace an idle session so it takes settings changed before Start. */
+  void RefreshIdleSession();
+  void SwapSend(Impl& impl, std::shared_ptr<SfuSendFn> abandoned_send);
+
+  std::shared_ptr<Shared> shared_;
+  std::shared_ptr<Retirements> retirements_;
+  mutable std::mutex session_mu_;
+  std::shared_ptr<Impl> impl_;
 };
 
 } // namespace pbr

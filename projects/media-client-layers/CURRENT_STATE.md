@@ -1,12 +1,13 @@
 # Media client layers — current state
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-11-02
 **Branch:** `refactor/peer-reach-coordinator` (stacked — [L007](DECISIONS.md#l007--stack-on-the-l0-branch))
 
 ## Landed
 
 | Phase | State |
 |-------|-------|
+| L016 — hardware never blocks control | Done (2026-11-02, #452): `CallMediaEngine` makes a session per Start and retires it on its own cleanup thread (audio released before the video join); `MediaDeviceArbiter` lanes per family (audio, camera) with budgets, a stuck state and automatic recovery; camera / mic / scanner wait for a busy device; `EndCallLocal` saves `Ended` before stopping media ([L016](DECISIONS.md#l016--no-control-thread-waits-on-hardware-per-session-media-a-background-cleanup-devices-with-budgets)) |
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `lib/mesh` | Done: `lib/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 | l2 — relay attach | Done: `lib/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
