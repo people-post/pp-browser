@@ -30,7 +30,7 @@ std::string IsoUtcMs(const int64_t unix_ms) {
   if (unix_ms < 0 || !civil_time::UtcTime(static_cast<time_t>(unix_ms / 1000), &tm)) {
     return {};
   }
-  char text[32];
+  char text[64]; // wide enough for GCC's worst-case %d analysis (-Wformat-truncation)
   std::snprintf(text, sizeof(text), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                 tm.tm_hour, tm.tm_min, tm.tm_sec, static_cast<int>(unix_ms % 1000));
   return text;
