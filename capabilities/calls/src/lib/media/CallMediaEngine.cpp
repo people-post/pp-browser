@@ -1586,6 +1586,9 @@ void CallMediaEngine::NoteOutboundDrop() {
 CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   CallMediaEngineHealth h;
   h.active = impl_->active.load(std::memory_order_relaxed);
+  // Started and not stopped — also while running without an audio device (RX muted, device still
+  // opening); a stopped engine's counters are not the call's.
+  h.engine_running = h.active;
   h.connected = impl_->connected.load(std::memory_order_relaxed);
   h.muted = impl_->muted.load(std::memory_order_relaxed);
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
@@ -1612,8 +1615,6 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
     const bool voice = speaker && speaker->IsVoiceDuplex();
     const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
     h.audio_io = voice ? "vpio" : (any_device ? "sdl" : "none");
-    // No audio device held: the engine is stopped (or never got one), its counters are not the call's.
-    h.engine_running = voice || any_device;
     h.io_underruns = impl_->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
