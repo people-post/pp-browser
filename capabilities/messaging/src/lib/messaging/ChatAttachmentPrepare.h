@@ -23,7 +23,4 @@ Roe<PreparedChatAttachment> PrepareChatAttachmentFromBytes(const std::vector<uin
                                                            const std::string& filename, const std::string& mime,
                                                            uint64_t max_bytes);
 
-/** Read a file (at most `max_bytes`) and encrypt it. */
-Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path, uint64_t max_bytes);
-
 } // namespace pbr

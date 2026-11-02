@@ -1714,11 +1714,6 @@ void ChatController::ShowAttachChoice(std::function<void()> photo, std::function
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
 }
 
-namespace {
-
-
-} // namespace
-
 
 std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
                                                                 std::optional<int64_t> oldest_inclusive,

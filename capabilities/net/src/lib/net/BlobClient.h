@@ -180,12 +180,6 @@ Roe<RelayFileUpload> UploadRelayFile(IBlobClient& blob, const std::string& relay
 /** The same for ciphertext held in memory (single PUT only: a `multipart` answer is an error). */
 Roe<RelayFileUpload> UploadRelayFileBytes(IBlobClient& blob, const std::string& relay_user_id, const std::string& body);
 
-/** presign → PUT (from a file, with progress) → retain. */
-Roe<BlobPresignResult> UploadRelayBlobFile(IBlobClient& blob, const std::string& relay_user_id,
-                                           const std::string& content_type, BlobPurpose purpose,
-                                           const std::string& path, uint64_t byte_length,
-                                           const std::function<bool(uint64_t done, uint64_t total)>& progress);
-
 /** presign → PUT → retain; returns public URL metadata. */
 Roe<BlobPresignResult> UploadRelayBlobBytes(IBlobClient& blob, const std::string& relay_user_id,
                                             const std::string& content_type, BlobPurpose purpose,

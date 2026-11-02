@@ -147,7 +147,6 @@ struct PendingGroupInvite {
 std::string GenerateGroupId();
 std::string MemberRoleToString(MemberRole role);
 MemberRole MemberRoleFromString(const std::string& value);
-std::string GroupInvitePolicyToString(GroupInvitePolicy policy);
 GroupInvitePolicy GroupInvitePolicyFromString(const std::string& value);
 std::string GroupMembershipControlTypeToWire(GroupMembershipControlType type);
 std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(const std::string& value);

@@ -73,9 +73,7 @@ public:
   /** SyncLayout remounts DOM — re-arm follow-tail when still pinned. */
   void OnShellRemounted();
 
-  bool IsPinnedToBottom() const { return pinned_to_bottom_; }
   const std::optional<int64_t>& LoadedMinDisplayOrder() const { return loaded_min_display_order_; }
-  std::optional<int64_t>& LoadedMinDisplayOrder() { return loaded_min_display_order_; }
   const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }
 
   /**

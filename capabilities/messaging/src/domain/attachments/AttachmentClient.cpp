@@ -12,13 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
-#include <filesystem>
-#include <fstream>
-#include <future>
-#include <iterator>
 #include <memory>
-#include <thread>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -34,14 +28,6 @@ Roe<std::string> RequireRegisteredRelayUserId(IdentityStore& identity) {
     return Error("Register on the network before sending attachments");
   }
   return loaded->relay_user_id;
-}
-
-std::string FilenameFromPath(const std::string& path) {
-  const std::filesystem::path file_path(path);
-  if (file_path.has_filename()) {
-    return file_path.filename().string();
-  }
-  return "attachment";
 }
 
 void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& identity,
@@ -308,53 +294,6 @@ void ResumeChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
   DeliverStaged(blob, identity, record, nullptr, std::move(options), finish);
-}
-
-void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
-                                       ChatAttachmentUploadOptions options,
-                                       std::function<void(Roe<ChatAttachmentFields>)> on_done) {
-  std::error_code ec;
-  const auto size = std::filesystem::file_size(path, ec);
-  if (!ec && size > options.max_plaintext_bytes) {
-    if (on_done) {
-      on_done(Error("Attachment is over the size limit")); // before the file is read
-    }
-    return;
-  }
-  std::ifstream input(path, std::ios::binary);
-  if (!input) {
-    if (on_done) {
-      on_done(Error("Could not read attachment file"));
-    }
-    return;
-  }
-  const std::vector<uint8_t> plaintext((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-  UploadChatAttachmentAsync(blob, identity, plaintext, FilenameFromPath(path), std::string(), std::move(options),
-                            std::move(on_done));
-}
-
-Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
-                                                       const std::string& path,
-                                                       const ChatAttachmentUploadOptions& options) {
-  auto result_promise = std::make_shared<std::promise<Roe<ChatAttachmentFields>>>();
-  auto result_future = result_promise->get_future();
-  UploadChatAttachmentFromFileAsync(blob, identity, path, options,
-                                    [result_promise](Roe<ChatAttachmentFields> value) {
-                                      try {
-                                        result_promise->set_value(std::move(value));
-                                      } catch (const std::future_error&) {
-                                      }
-                                    });
-  constexpr auto kWait = std::chrono::milliseconds(60000);
-  const auto deadline = std::chrono::steady_clock::now() + kWait;
-  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
-         std::chrono::steady_clock::now() < deadline) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return Error("Attachment upload timed out");
-  }
-  return result_future.get();
 }
 
 } // namespace pbr

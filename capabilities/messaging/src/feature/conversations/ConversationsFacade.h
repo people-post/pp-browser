@@ -305,9 +305,6 @@ public:
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
-  Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
-  void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
-                                   std::function<void(Roe<ThreadMessage>)> on_done);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

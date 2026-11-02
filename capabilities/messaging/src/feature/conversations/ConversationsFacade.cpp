@@ -856,15 +856,6 @@ void ConversationsFacade::RequestAttachmentDownload(const std::string& thread_id
   hub_.RequestAttachmentDownload(thread_id, message_id);
 }
 
-Roe<ThreadMessage> ConversationsFacade::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
-  return hub_.SendAttachmentFromPath(thread_id, path);
-}
-
-void ConversationsFacade::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
-                                                      std::function<void(Roe<ThreadMessage>)> on_done) {
-  hub_.SendAttachmentFromPathAsync(thread_id, path, std::move(on_done));
-}
-
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                                               std::function<void(Roe<ThreadMessage>)> on_done,
                                               std::function<bool(uint64_t done, uint64_t total)> progress) {
