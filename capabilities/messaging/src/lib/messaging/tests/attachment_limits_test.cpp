@@ -7,9 +7,9 @@
 namespace pbr {
 namespace {
 
-TEST(AttachmentLimitsTest, VideoSecondsDefaultToTwelveAndVideoWithinLimitIsInclusive) {
+TEST(AttachmentLimitsTest, VideoSecondsDefaultToSixtyAndVideoWithinLimitIsInclusive) {
   AttachmentLimits limits = DefaultAttachmentLimits();
-  EXPECT_EQ(limits.video_max_seconds, 12);
+  EXPECT_EQ(limits.video_max_seconds, 60);
   EXPECT_TRUE(VideoWithinLimit(0, limits));
   EXPECT_TRUE(VideoWithinLimit(limits.max_video_bytes, limits));
   EXPECT_FALSE(VideoWithinLimit(limits.max_video_bytes + 1, limits));

@@ -37,10 +37,10 @@ struct AttachmentLimits {
   int voice_max_seconds = 120;
   /**
    * The longest clip the system camera is asked to record (iOS `videoMaximumDuration`, Android
-   * `EXTRA_DURATION_LIMIT`). Set from device measurements (worst-case bit rate of an iPhone 11 / vivo S15e,
-   * 70% of the then 4 MB `max_video_bytes`); not raised with the 50 MB limit (recording length is its own decision).
+   * `EXTRA_DURATION_LIMIT`). Follows the 50 MB `max_video_bytes`: medium-quality capture is about 0.5 MB/s, so a
+   * minute stays well under it (a clip over the limit is still refused by `VideoWithinLimit`).
    */
-  int video_max_seconds = 12;
+  int video_max_seconds = 60;
   /** A send of at least this many bytes tells the person to stay in the app until it is done. */
   uint64_t stay_hint_bytes = 10ULL * kAttachmentMegabyte;
   /** Server space warnings, in percent of the space in use. */
