@@ -25,7 +25,7 @@ void ApplySpeakerphoneLocked(bool on) {
   if (cls == nullptr) {
     return;
   }
-  jmethodID mid = env->GetMethodID(cls, "setCallSpeakerphoneOn", "(Z)V");
+  jmethodID mid = env->GetMethodID(cls, "setVoipSpeakerphoneOn", "(Z)V");
   if (mid == nullptr) {
     env->ExceptionClear();
     env->DeleteLocalRef(cls);
@@ -72,7 +72,7 @@ bool QueryHasEarpieceRoute() {
   if (cls == nullptr) {
     return true;
   }
-  jmethodID mid = env->GetMethodID(cls, "hasCallEarpieceRoute", "()Z");
+  jmethodID mid = env->GetMethodID(cls, "hasEarpieceRoute", "()Z");
   if (mid == nullptr) {
     env->ExceptionClear();
     env->DeleteLocalRef(cls);

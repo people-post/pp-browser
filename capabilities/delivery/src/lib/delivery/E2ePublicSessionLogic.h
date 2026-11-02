@@ -32,7 +32,7 @@ struct AutoKeyRead {
   bool via_key_init = false;
 };
 
-/** Session key for CallMediaKey wrap, plus optional first-send AutoKey `key_init`. */
+/** The session key a feature wraps its own keys under (a call's media key), plus optional first-send AutoKey `key_init`. */
 struct EnsuredE2ePublicSessionKey {
   ByteVector session_key;
   std::optional<std::string> first_message_key_init_b64;

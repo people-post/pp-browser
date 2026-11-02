@@ -281,15 +281,15 @@ struct MediaEngine::Impl {
   bool packet_mode = false;
   std::atomic<bool>& skip_device_open_for_test;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
-  std::shared_ptr<PacketSendFn> sfu_send;
+  std::shared_ptr<PacketSendFn> packet_send;
   /**
-   * Held around (*sfu_send)(...) in capture/video threads. StartDuplex takes this after swapping the
+   * Held around (*packet_send)(...) in capture/video threads. StartDuplex takes this after swapping the
    * callback so SoftMigrate ReleaseDirectTransport cannot Detach while an old send is mid-write
    * (Linux: malloc unaligned tcache / Aborted right after 2nd join).
    */
-  std::mutex sfu_send_call_mu;
-  std::atomic<uint32_t> sfu_audio_seq{0};
-  std::atomic<uint32_t> sfu_video_seq{0};
+  std::mutex packet_send_call_mu;
+  std::atomic<uint32_t> tx_audio_seq{0};
+  std::atomic<uint32_t> tx_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
@@ -358,8 +358,8 @@ struct MediaEngine::Impl {
   std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
   bool audio_track_cap_logged = false;
   /** First OnInboundPacket log per stream; cleared on SoftMigrate send-swap / StartDuplex. */
-  std::mutex sfu_rx_log_mu;
-  std::unordered_set<uint32_t> sfu_rx_logged_streams;
+  std::mutex rx_log_mu;
+  std::unordered_set<uint32_t> rx_logged_streams;
 
   /** Local encoder: created, configured, fed and bitrate-adjusted by the video thread only
    *  (reset by TearDown after that thread joined). */
@@ -605,7 +605,7 @@ struct MediaEngine::Impl {
   }
 
   void TearDownAudioLocked(const bool release_session = true) {
-    // Caller must not hold mutex across JoinCaptureThread — capture may call sfu_send /
+    // Caller must not hold mutex across JoinCaptureThread — capture may call packet_send /
     // OnInboundPacket which need the same mutex (deadlock + SDL double-free on quit).
     ReleaseAudioLocked();
     if (video_codec) {
@@ -1110,8 +1110,8 @@ struct MediaEngine::Impl {
     vpio_disabled_for_session.store(false, std::memory_order_relaxed);
     capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
-      // Device open (and OS mic prompts) stay on this worker so CallAccept /
-      // AcceptInvite can finish signaling without freezing UI or libp2p.
+      // Device open (and OS mic prompts) stay on this worker so the session's user (a call's accept)
+      // can finish its signaling without freezing UI or the mesh.
       capture_stage.Set(MediaThreadStage::OpenDevices);
       if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
         SDL_Log("MediaEngine: audio devices: %s", audio.error().message.c_str());
@@ -1193,9 +1193,9 @@ struct MediaEngine::Impl {
           std::lock_guard lock(mutex);
           capturing = spec.capture;
           enc = encoder;
-          can_send = capturing && packet_mode && static_cast<bool>(sfu_send) && enc;
+          can_send = capturing && packet_mode && static_cast<bool>(packet_send) && enc;
           if (can_send) {
-            send_fn = sfu_send;
+            send_fn = packet_send;
           }
         }
         if (!capturing) {
@@ -1315,11 +1315,11 @@ struct MediaEngine::Impl {
         if (send_fn) {
           MediaPacket pkt;
           pkt.channel_id = mesh::kMediaChannelAudio;
-          pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
+          pkt.seq = tx_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
             capture_stage.Set(MediaThreadStage::Send);
-            std::lock_guard send_lock(sfu_send_call_mu);
+            std::lock_guard send_lock(packet_send_call_mu);
             if (!retired.load(std::memory_order_acquire)) { // a retired session never sends (Retire drains)
               (*send_fn)(pkt);
               tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1475,8 +1475,8 @@ struct MediaEngine::Impl {
     {
       video_stage.Set(MediaThreadStage::LockMedia);
       std::lock_guard lock(mutex);
-      if (packet_mode && sfu_send) {
-        send_fn = sfu_send;
+      if (packet_mode && packet_send) {
+        send_fn = packet_send;
       }
     }
     if (!send_fn) {
@@ -1484,12 +1484,12 @@ struct MediaEngine::Impl {
     }
     MediaPacket pkt;
     pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
-    pkt.seq = sfu_video_seq.fetch_add(1) + 1;
+    pkt.seq = tx_video_seq.fetch_add(1) + 1;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
     try {
       video_stage.Set(MediaThreadStage::Send);
-      std::lock_guard send_lock(sfu_send_call_mu);
+      std::lock_guard send_lock(packet_send_call_mu);
       if (!retired.load(std::memory_order_acquire)) { // a retired session never sends (Retire drains)
         (*send_fn)(pkt);
         tx_video_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1809,8 +1809,8 @@ struct MediaEngine::Impl {
     RequestCameraOffLocked();
     connected_at_ms.store(0, std::memory_order_relaxed);
     started_at_ms.store(0, std::memory_order_relaxed);
-    retired_send = std::move(sfu_send);
-    sfu_send = nullptr;
+    retired_send = std::move(packet_send);
+    packet_send = nullptr;
     packet_mode = false;
     capture_running = false;
     playout_running = false;
@@ -1826,7 +1826,7 @@ struct MediaEngine::Impl {
    */
   void DrainSend() {
     std::shared_ptr<PacketSendFn> abandoned;
-    std::lock_guard drain(sfu_send_call_mu);
+    std::lock_guard drain(packet_send_call_mu);
     std::lock_guard lock(mutex);
     abandoned = std::move(retired_send);
   }
@@ -2007,8 +2007,8 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
     std::lock_guard lock(current->mutex);
     if (current->active && current->session_id == session_id && current->packet_mode && current->spec == spec) {
       // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
-      abandoned_send = std::move(current->sfu_send);
-      current->sfu_send = std::move(next_send);
+      abandoned_send = std::move(current->packet_send);
+      current->packet_send = std::move(next_send);
       send_swap = true;
     }
   }
@@ -2028,7 +2028,7 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
     }
     impl->packet_mode = true;
     impl->spec = spec;
-    impl->sfu_send = spec.capture ? std::move(next_send) : nullptr;
+    impl->packet_send = spec.capture ? std::move(next_send) : nullptr;
     impl->session_id = session_id;
     impl->active = true;
     impl->connected_at_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
@@ -2046,7 +2046,7 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_s
   // Drain any capture/video thread still inside the old send before the caller Detach's that
   // stream — otherwise SoftMigrate races into heap corruption.
   {
-    std::lock_guard drain(impl.sfu_send_call_mu);
+    std::lock_guard drain(impl.packet_send_call_mu);
     abandoned_send = nullptr;
   }
   // 1:1 libp2p also uses StartDuplex with stream_id=0 packets. SoftMigrate to media_relay must
@@ -2056,8 +2056,8 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_s
     std::lock_guard lock(impl.mutex);
     impl.audio_tracks.erase(0);
     {
-      std::lock_guard lg(impl.sfu_rx_log_mu);
-      impl.sfu_rx_logged_streams.erase(0);
+      std::lock_guard lg(impl.rx_log_mu);
+      impl.rx_logged_streams.erase(0);
     }
   }
   // Android speaker / communication-mode route changes around SoftMigrate can leave the open
@@ -2087,8 +2087,8 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
     // Cleared on SoftMigrate StartDuplex send-swap so post-migrate RX is visible again.
     bool log_this = false;
     {
-      std::lock_guard lg(impl->sfu_rx_log_mu);
-      log_this = impl->sfu_rx_logged_streams.insert(packet.stream_id).second;
+      std::lock_guard lg(impl->rx_log_mu);
+      log_this = impl->rx_logged_streams.insert(packet.stream_id).second;
     }
     if (log_this) {
       log().info << "OnInboundPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id

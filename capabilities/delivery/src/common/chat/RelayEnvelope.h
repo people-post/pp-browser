@@ -103,7 +103,7 @@ struct RelayEnvelope {
   std::optional<int64_t> relay_server_time_ms;
   /**
    * P012 — a hint to the relay, not part of the envelope (neither its wire form nor its
-   * signature): wake the recipient as for an incoming call (a call invite).
+   * signature): wake the recipient at once, the platform's most urgent push (an incoming call's).
    */
   bool relay_wake_urgent = false;
 };
@@ -172,7 +172,7 @@ struct RelayWireSendRecord {
   std::string blob_b64;
   int64_t timestamp = 0;
   std::string signature;
-  /** P012 — wake the recipient as for an incoming call (unsigned hint; older relays ignore it). */
+  /** P012 — wake the recipient at once, the most urgent push (unsigned hint; older relays ignore it). */
   bool urgent = false;
 };
 

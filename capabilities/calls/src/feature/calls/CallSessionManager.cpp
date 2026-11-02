@@ -89,7 +89,7 @@ void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
     device_.NotifyCallStateChanged();
     return;
   }
-  // The ring holds the app's work running in the background (AppLifecycle::SetCallInProgress), so the
+  // The ring holds the app's work running in the background (AppLifecycle::SetLiveSessionOn), so the
   // relay-fallback sends of the accept run there too. The workflow marks the call Accepting.
   log().info << "AcceptClicked call_id=" << call_id;
   OnAcceptResult(call_id, AcceptInvite(call_id));

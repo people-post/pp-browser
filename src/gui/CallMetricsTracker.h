@@ -142,8 +142,7 @@ public:
     }
     ++call_.stalls;
     call_.stall_max_ms = std::max(call_.stall_max_ms, latency_ms);
-    out.push_back(
-        MetricsLine("ui.stall").Call("call", call_.id).Add("stuck_ms", latency_ms));
+    out.push_back(MetricsLine("ui.stall").RandomId("call", call_.id).Add("stuck_ms", latency_ms));
     return out;
   }
 
@@ -230,7 +229,7 @@ private:
       return;
     }
     out.push_back(MetricsLine("device.thermal")
-                      .Call("call", call_.id)
+                      .RandomId("call", call_.id)
                       .Add("state", ThermalStateName(vitals.thermal))
                       .Add("from", ThermalStateName(call_.thermal_last)));
     call_.thermal_last = vitals.thermal;
@@ -239,7 +238,10 @@ private:
 
   ShareableLine SetupLine(const ShareWord result, int64_t now_ms) const {
     MetricsLine line("call.setup");
-    line.Call("call", call_.id).Pick("role", call_.role, kCallRoles).Add("video", call_.video).Add("result", result);
+    line.RandomId("call", call_.id)
+        .Pick("role", call_.role, kCallRoles)
+        .Add("video", call_.video)
+        .Add("result", result);
     if (call_.ring_ms && call_.accept_ms) {
       line.Add("answer_ms", call_.accept_ms - call_.ring_ms);
     }
@@ -282,7 +284,7 @@ private:
     auto pct = [&](int64_t ms) { return quality_total > 0 ? static_cast<int64_t>(ms * 100 / quality_total) : 0; };
     const double secs = static_cast<double>(duration_ms) / 1000.0;
     MetricsLine line("call.summary");
-    line.Call("call", call_.id)
+    line.RandomId("call", call_.id)
         .Pick("role", call_.role, kCallRoles)
         .Add("video", call_.video)
         .Add("duration_s", secs)
@@ -299,8 +301,8 @@ private:
         .Add("fec", Delta(l.fec_frames, b.fec_frames))
         .Add("jb_target_avg_ms", call_.jb_samples ? call_.jb_target_sum_ms / call_.jb_samples : int64_t{0})
         .Add("jb_target_max_ms", call_.jb_target_max_ms)
-        .Add("jb_drops", Delta(l.jitter_silence_drops + l.jitter_speech_drops,
-                               b.jitter_silence_drops + b.jitter_speech_drops))
+        .Add("jb_drops",
+             Delta(l.jitter_silence_drops + l.jitter_speech_drops, b.jitter_silence_drops + b.jitter_speech_drops))
         .Add("rx_fps", static_cast<double>(Delta(l.rx_video_frames, b.rx_video_frames)) / secs)
         .Add("tx_fps", static_cast<double>(Delta(l.tx_video_frames, b.tx_video_frames)) / secs)
         .Add("q_excellent_pct", pct(call_.quality_ms[0]))

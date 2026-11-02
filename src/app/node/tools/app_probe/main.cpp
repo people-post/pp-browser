@@ -898,8 +898,8 @@ public:
         Emit(out);
       }
     } else if (cmd == "push_wake") {
-      // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
-      BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      // A call push arrived (PushWakeJni: FCM → RequestUrgentWakeSync).
+      BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
       Emit(Reply(id, true));
     } else if (cmd == "warm_seeds") {
       if (!Hub().IsMeshReady()) {
@@ -1385,10 +1385,10 @@ int main(int argc, char** argv) {
     pbr::Emit(out);
   }
   // Frames as the app runs them (Application's loop, BrowserHost's power save): at once when UI
-  // work is posted, else after kCallChromeFrameIntervalSec while a ring / call panel shows, or
+  // work is posted, else after kLiveChromeFrameIntervalSec while a ring / call panel shows, or
   // kIdleFrameMaxWaitSec when idle. Each frame runs the UI tasks, then ticks (CallController::Tick).
   while (!probe->QuitRequested() && !stdin_closed) {
-    const double wait_sec = probe->CallShown() ? pbr::kCallChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
+    const double wait_sec = probe->CallShown() ? pbr::kLiveChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(wait_sec * 1000.0));
     while (!pbr::AppRuntime::HasPendingUITasks() && std::chrono::steady_clock::now() < deadline &&

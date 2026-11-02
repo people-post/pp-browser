@@ -699,7 +699,7 @@ void CallStack::SetOnChromeRefresh(std::function<void()> fn) {
 void CallStack::OnCallStateChangedOnOwner() {
   const bool want = call_sessions_ && call_device_->Live().Phase() != CallPhase::Idle;
   // A call keeps the app working in the background (its signaling goes on).
-  AppLifecycle::SetCallInProgress(want);
+  AppLifecycle::SetLiveSessionOn(want);
   if (want != want_ephemeral_listen_) {
     want_ephemeral_listen_ = want;
     log().info << "WantEphemeralListen=" << (want ? 1 : 0)

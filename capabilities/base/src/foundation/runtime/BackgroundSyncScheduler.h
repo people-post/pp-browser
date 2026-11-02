@@ -9,7 +9,7 @@
 
 namespace pbr {
 
-/** The relay poll's pace in the foreground (and during a call). */
+/** The relay poll's pace in the foreground (and during a live session, e.g. a call). */
 inline constexpr uint64_t kForegroundRelayPollIntervalMs = 2000;
 /**
  * In the background a phone is reached by push only (power): its work is paused (AppLifecycle) and
@@ -40,10 +40,10 @@ public:
    * app's work resumes for kBackgroundWakeWindowMs, then pauses again (push only, for power).
    */
   void RequestWakeSync();
-  /** Opaque call_wake (V006) — same sync path; ConsumeCallWake() is true once after. */
-  void RequestCallWakeSync();
-  /** True if the most recent forced wake was call_wake; clears the flag. */
-  bool ConsumeCallWake();
+  /** An urgent wake (a call's push, V006) — same sync path; ConsumeUrgentWake() is true once after. */
+  void RequestUrgentWakeSync();
+  /** True if the most recent forced wake was urgent; clears the flag. */
+  bool ConsumeUrgentWake();
 
 private:
   BackgroundSyncScheduler();
@@ -55,7 +55,7 @@ private:
   SyncFn handler_;
   uint64_t relay_poll_timer_id_ = 0;
   uint64_t last_poll_ms_ = 0;
-  bool pending_call_wake_ = false;
+  bool pending_urgent_wake_ = false;
 };
 
 } // namespace pbr

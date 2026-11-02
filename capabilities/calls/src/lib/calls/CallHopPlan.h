@@ -12,6 +12,13 @@
 
 namespace pbr {
 
+/**
+ * A group call's hop: durable relays (org seeds, directory and DHT nodes) before contacts' nodes, each
+ * part in its order (#385). A hop's upload grows with the square of the members, which a home node runs
+ * out of first; a contact's node stays a fallback.
+ */
+std::vector<mesh::MeshHopCandidate> DurableRelaysFirst(std::vector<mesh::MeshHopCandidate> hops);
+
 /** Inferred SoftMigrate hop band from listen multiaddrs (V035 / N023). */
 enum class CallHopScope {
   Link = 0,

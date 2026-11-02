@@ -10,11 +10,11 @@
 namespace pbr {
 
 /**
- * Shared N× pairwise DM fan-out (calls SoftMigrate/roster + group membership); the targets are the caller's.
+ * Shared N× pairwise DM fan-out (a call's roster / hop notices, group membership); the targets are the caller's.
  * Pure iteration policy — callers own send/crypto/IO.
  */
 enum class PairwiseFanoutMode {
-  /** One peer failure does not block the rest (CallSfuAttach / roster). */
+  /** One peer failure does not block the rest (e.g. a call's hop notice). */
   BestEffort = 0,
   /** Stop on first send failure (group membership events). */
   FailFast = 1,

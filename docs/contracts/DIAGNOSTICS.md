@@ -28,7 +28,7 @@ Every line in those files is a `ShareableLine`: `event=<name> k=v k=v…`. Its b
 | A number, bool, duration | `Add(key, n)` | `n`, `1`/`0`, whole ms |
 | A runtime string from a fixed list | `Pick(key, value, kWords)` with `constexpr ShareWord kWords[] = {"a", "b"}` (a braced list at the call is refused: MSVC cannot build it, C7595) | the listed word, `other`, or `-` when empty |
 | An id (account, device, peer, relay user, thread) | `Ref(key, id)` | 8 hex of a keyed hash; the key is random per process and kept in memory only, so refs join lines of one run and nothing else |
-| A random call id | `Call(key, call_id)` | its first 8 hex (both sides log the same, to join them) |
+| A random id (a call's) | `RandomId(key, id)` | its first 8 hex (every device that has it logs the same, to join them) |
 | An error | `Fail(key, error)` | `category.code` — never the message |
 
 There is no method that takes free text, so a name, a message, a search query, a path or an error message cannot be written into these files: the code does not compile. Event names and keys are literals too. Streaming into the channel loggers directly (`DiagLog().info << …`, `getLogger("Diag")`) is refused by `scripts/check/check_shareable_channels.sh` in CI.

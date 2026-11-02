@@ -620,7 +620,7 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
   case InterruptionKind::CallRing:
-  case InterruptionKind::CallInProgress:
+  case InterruptionKind::LiveSessionOn:
   case InterruptionKind::None:
     return DismissTarget::None;
   }
@@ -1943,7 +1943,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
   if (state_.call_ring.active || state_.call_in_progress.active) {
-    delay_sec = std::min(delay_sec, kCallChromeFrameIntervalSec);
+    delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
   }
 
   if (std::isfinite(delay_sec)) {
