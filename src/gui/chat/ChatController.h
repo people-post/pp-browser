@@ -9,6 +9,8 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "foundation/runtime/BackgroundActivity.h"
+#include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
 #include "gui/chat/VoiceComposer.h"
@@ -201,6 +203,14 @@ private:
   /** After a picture is picked: "Send" (shrunk), "Send original", Cancel. */
   void ShowPictureSendChoice(std::string path);
   void ToggleVoiceMode();
+  /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
+  void BeginAttachmentPreparing(const std::string& name);
+  /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
+  void EndAttachmentPreparing();
+  /** Mirror preparing_ into the chat fields (the one place chat_.attachment_preparing is written). */
+  void SyncAttachmentPreparing();
+  /** chat_.attachment_here: an attachment is in flight (or failed) in the chat that is open now. */
+  void RefreshAttachmentHere();
   /**
    * `voice_file`: the file is a voice recording of ours, to `voice_thread_id` (not whatever chat is open when it
    * is done). It is deleted once the send succeeded or is staged for a retry; otherwise it is kept and the chip
@@ -267,11 +277,16 @@ private:
   /** Where the attach menu ends: just above the attach button (B90), refreshed on each tap. */
   /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
   std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
+  AttachmentPreparing preparing_;
+  /** Held while the system copies a picked / captured video, so the copy gets background time on iOS. */
+  std::unique_ptr<BackgroundActivity> preparing_activity_;
   int attach_menu_x_ = 12;
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
   std::string pending_chip_thread_;
+  /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
+  std::string attachment_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
                          const std::string& entry_id) override;

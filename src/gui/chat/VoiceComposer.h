@@ -105,6 +105,7 @@ public:
   void ProcessEvent(ui::Event& event) override;
 
 private:
+  friend struct VoiceComposerTestAccess; // tests inject a late progress tick
   void StartRecording();
   void LaunchRecorder(int generation, const VoiceRecorderConfig& config);
   void Apply(VoiceGesture::Action action);
@@ -113,6 +114,8 @@ private:
   void EndWithoutRecorder();
   void CancelRecorder();
   void ShowRecording(bool on);
+  /** The recording was handed over (or ran out) and its file is not ready yet: "Sending…". */
+  void ShowFinishing(bool on);
   void SetHint();
   void AttachDocument(ui::ElementDocument* doc);
   void DetachDocument();
