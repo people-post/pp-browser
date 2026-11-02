@@ -19,6 +19,33 @@ void LiveCallMedia::BindMediaResources(MediaEngine* engine, CallMediaSeat* seat)
   resources_.seat = seat;
 }
 
+CallMediaCoordinator* LiveCallMedia::Find(const std::string& call_id) {
+  Sweep();
+  auto it = media_.find(call_id);
+  return it == media_.end() ? nullptr : it->second.coordinator.get();
+}
+
+const CallMediaCoordinator* LiveCallMedia::Peek(const std::string& call_id) const {
+  auto it = media_.find(call_id);
+  return it == media_.end() ? nullptr : it->second.coordinator.get();
+}
+
+void LiveCallMedia::DropDirectPaths() {
+  for (auto& [id, entry] : media_) {
+    if (entry.coordinator) {
+      entry.coordinator->DropDirect();
+    }
+  }
+}
+
+void LiveCallMedia::ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn) {
+  for (auto& [id, entry] : media_) {
+    if (CallDirectDriver* direct = entry.coordinator ? entry.coordinator->DirectIfBuilt() : nullptr) {
+      fn(*direct);
+    }
+  }
+}
+
 CallMediaCoordinator* LiveCallMedia::Media(const std::string& call_id) {
   Sweep();
   const LiveCall* call = live_.Find(call_id);
@@ -42,8 +69,11 @@ void LiveCallMedia::StopMedia(const std::string& call_id) {
   if (resources_.hop) {
     resources_.hop->OnMediaStopped(call_id);
   }
-  if (resources_.direct) {
-    resources_.direct->StopMeshMedia(call_id);
+  CallMediaCoordinator* call = Find(call_id);
+  if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
+    direct->StopMeshMedia(call_id);
+  } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsSfuMode())) {
+    resources_.engine->Stop();
   }
 }
 

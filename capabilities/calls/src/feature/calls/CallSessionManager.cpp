@@ -91,9 +91,9 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
     if (doorway_) {
       doorway_->NotifyKeyAvailable(); // wake inbound hellos waiting for a key
     }
-    const auto direct_media = direct_media_.Get();
-    if (direct_media->on_media_key_ready) {
-      direct_media->on_media_key_ready(call_id);
+    CallMediaCoordinator* call = call_media_.Find(call_id);
+    if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
+      direct->OnMediaKeyReady(call_id);
     }
   });
   BindSeat();
@@ -510,11 +510,11 @@ void CallSessionManager::Handle(SessionEvent& event) {
         } else if constexpr (std::is_same_v<E, TopologyEvent>) {
           topology_.Handle(e);
         } else if constexpr (std::is_same_v<E, session_event::ForDirectPath>) {
-          if (direct_path_ && e.generation == direct_path_generation_) {
-            direct_path_->Handle(e.event);
+          if (CallDirectDriver* path = DirectPathFor(e.call_id, e.serial)) {
+            path->Handle(e.event);
           }
         } else if constexpr (std::is_same_v<E, session_event::FromDirectPath>) {
-          if (e.generation == direct_path_generation_) {
+          if (DirectPathFor(e.call_id, e.serial)) {
             OnDirectReport(e.report);
           }
         } else if constexpr (std::is_same_v<E, session_event::ForDoorway>) {
@@ -579,9 +579,6 @@ void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
 
 // Port setters swap a snapshot; the workflow / topology host ports (bound once in the ctor) read the
 // current snapshot per call — never rebuilt under a running caller (thread-ownership t2a).
-void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
-  direct_media_.Set(std::move(ports));
-}
 
 CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
   CallHopArmingPorts ports;
@@ -615,8 +612,9 @@ void CallSessionManager::StopMediaForSeat(const std::string& call_id, const uint
                << " seat_epoch=" << seat_.Epoch();
     return;
   }
-  if (direct_driver_) {
-    direct_driver_->StopMeshMedia(call_id);
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
+    direct->StopMeshMedia(call_id);
     return;
   }
   if (media_.IsActive() || media_.IsSfuMode()) {
@@ -629,51 +627,72 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     DropDirectPath();
     return;
   }
-  if (!direct_path_ || direct_transport_ != deps.transport) {
-    DropDirectPath();
-    direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
-                                                     deps.Reach());
-    direct_transport_ = deps.transport;
-    const uint64_t generation = ++direct_path_generation_;
-    direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
-      return SessionEvent{session_event::ForDirectPath{generation, std::move(event)}};
-    }));
-    direct_path_->SetReports(outbox_.For<DirectReport>([generation](DirectReport report) {
-      return SessionEvent{session_event::FromDirectPath{generation, std::move(report)}};
-    }));
+  if (direct_deps_.transport != deps.transport) {
+    DropDirectPath(); // the paths and the doorway rode the old transport
     BuildDoorway(*deps.transport);
-    log().info << "1:1 path built";
   } else {
-    direct_path_->SetReachDeps(deps.Reach());
+    call_media_.ForEachDirectPath([&deps](CallDirectDriver& path) { path.AttachReach(deps); });
   }
-  CallMediaBridge& path = *direct_path_;
-  path.SetConnectDiagProbe(std::move(deps.diag_env));
-  path.SetSeedWarm(std::move(deps.seed_warm));
-  path.SetSeedReserve(std::move(deps.seed_reserve));
-  path.SetSeedParkAwait(std::move(deps.seed_park_await));
-  path.SetPathPolicyProvider(std::move(deps.path_policy));
-  path.SetAdvertisedRelaysProvider(std::move(deps.advertised_relays));
-  path.SetDirectArmingPorts(DirectArmingPorts());
-  path.SetSeatPorts(DirectSeatPorts());
-  SetDirectMediaPorts(MakeDirectMediaPorts());
-  SetDirectDriver(&path);
+  direct_deps_ = std::move(deps);
+  call_media_.BindDirectPathFactory(
+      [this](const std::string& call_id, const uint64_t serial) { return MakeDirectPath(call_id, serial); });
+}
+
+std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(const std::string& call_id,
+                                                                     const uint64_t serial) {
+  if (!direct_deps_.IsUsable()) {
+    return nullptr;
+  }
+  auto path = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *direct_deps_.transport,
+                                                direct_deps_.Reach());
+  path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
+    return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
+  }));
+  path->SetReports(outbox_.For<DirectReport>([call_id, serial](DirectReport report) {
+    return SessionEvent{session_event::FromDirectPath{call_id, serial, std::move(report)}};
+  }));
+  path->AttachReach(direct_deps_);
+  path->SetDirectArmingPorts(DirectArmingPorts());
+  path->SetSeatPorts(DirectSeatPorts());
+  return path;
+}
+
+CallDirectDriver* CallSessionManager::DirectPathFor(const std::string& call_id, const uint64_t serial) {
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  return call && call->DirectSerial() == serial ? call->DirectIfBuilt() : nullptr;
+}
+
+CallDirectPathStatus CallSessionManager::ActiveDirectStatus() const {
+  const LiveCall* active = live_calls_.Active();
+  const CallMediaCoordinator* call = active ? call_media_.Peek(active->Id()) : nullptr;
+  const CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr;
+  return direct ? direct->Status() : CallDirectPathStatus{};
+}
+
+CallMediaBridge* CallSessionManager::DirectPathForTest(const std::string& call_id) {
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  return call ? dynamic_cast<CallMediaBridge*>(call->DirectIfBuilt()) : nullptr;
+}
+
+void CallSessionManager::SetDirectPathFactoryForTest(CallDirectPathFactory make) {
+  call_media_.DropDirectPaths();
+  if (make) {
+    call_media_.BindDirectPathFactory(std::move(make));
+  } else if (direct_deps_.IsUsable()) {
+    call_media_.BindDirectPathFactory(
+        [this](const std::string& call_id, const uint64_t serial) { return MakeDirectPath(call_id, serial); });
+  } else {
+    call_media_.BindDirectPathFactory({});
+  }
 }
 
 void CallSessionManager::DetachDirectPathReach() {
-  if (direct_path_) {
-    direct_path_->SetReachDeps({});
-    direct_path_->SetConnectDiagProbe({});  // it reads the dial registry the reach just let go
-  }
+  call_media_.ForEachDirectPath([](CallDirectDriver& path) { path.DetachReach(); });
 }
 
 void CallSessionManager::PrepareDirectPathForStop(const int wait_ms) {
-  SetDirectMediaPorts({});
-  SetDirectDriver(nullptr);
-  if (direct_path_) {
-    direct_path_->SetDirectArmingPorts({});
-    direct_path_->SetSeatPorts({});
-    direct_path_->PrepareForTeardown(wait_ms);
-  }
+  call_media_.BindDirectPathFactory({}); // no new path while the mesh stops
+  call_media_.ForEachDirectPath([wait_ms](CallDirectDriver& path) { path.PrepareForTeardown(wait_ms); });
   if (doorway_) {
     doorway_->Shutdown(); // waiting hellos released, the handler dropped: late streams reach nothing
   }
@@ -703,54 +722,39 @@ CallMediaInboundPorts CallSessionManager::MakeDoorwayPorts() {
   // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
   ports.request_key = [this](const std::string& /*call_id*/) { RequestInboxSync(); };
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
-    return direct_path_ ? direct_path_->AcceptInbound(hello) : CallMediaDirectCallbacks{};
+    // The call's own 1:1 path takes it (built now when the call has none yet).
+    CallMediaCoordinator* call = call_media_.Media(hello.call_id);
+    CallDirectDriver* direct = call ? call->Direct() : nullptr;
+    return direct ? direct->AcceptInbound(hello) : CallMediaDirectCallbacks{};
   };
   return ports;
 }
 
 void CallSessionManager::DropDirectPath() {
-  SetDirectMediaPorts({});
-  SetDirectDriver(nullptr);
+  call_media_.BindDirectPathFactory({});
   doorway_.reset();
-  direct_path_.reset();
-  direct_transport_ = nullptr;
+  call_media_.DropDirectPaths();
+  direct_deps_ = {};
 }
 
 void CallSessionManager::OnLocalNetworkMoved() {
-  if (direct_path_) {
-    direct_path_->OnLocalNetworkChanged();
+  const LiveCall* active = live_calls_.Active();
+  CallMediaCoordinator* call = active ? call_media_.Find(active->Id()) : nullptr;
+  if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
+    direct->OnLocalNetworkChanged();
   }
   topology_.OnLocalNetworkMoved();
 }
 
 void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
-  if (direct_path_) {
-    direct_path_->OnPathPolicyChanged(call_id);
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
+    direct->OnPathPolicyChanged(call_id);
   }
 }
 
 bool CallSessionManager::IsDirectConnectInFlight() const {
-  return direct_path_ && direct_path_->IsConnectWorkerInflight();
-}
-
-CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
-  CallDirectMediaPorts ports;
-  CallMediaBridge* bridge = direct_path_.get();
-  if (!bridge) {
-    return ports;
-  }
-  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
-  ports.media_link_counters = [bridge]() { return bridge->MediaLinkCounters(); };
-  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id, const std::string& relay_identity) {
-    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
-  };
-  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
-  ports.connect_missing_mic = [bridge]() { return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic(); };
-  ports.connect_seed_unreachable = [bridge]() {
-    return bridge->IsMeshConnectFailed() && bridge->MeshConnectSeedUnreachable();
-  };
-  ports.on_media_key_ready = [bridge](const std::string& call_id) { bridge->OnMediaKeyReady(call_id); };
-  return ports;
+  return ActiveDirectStatus().connect_inflight;
 }
 
 CallDirectSeatPorts CallSessionManager::DirectSeatPorts() {
@@ -847,16 +851,11 @@ CallHopHealth CallSessionManager::HopHealth() const {
 }
 
 CallLinkCounters CallSessionManager::MediaLinkCounters() const {
-  const auto direct_media = direct_media_.Get();
-  return direct_media->media_link_counters ? direct_media->media_link_counters() : CallLinkCounters{};
+  return ActiveDirectStatus().link;
 }
 
 std::string CallSessionManager::MediaPathKind() const {
-  const auto direct_media = direct_media_.Get();
-  if (!direct_media->media_path_kind) {
-    return {};
-  }
-  return direct_media->media_path_kind();
+  return ActiveDirectStatus().media_path_kind;
 }
 
 bool CallSessionManager::IsSfuAttached() const {
@@ -1024,10 +1023,7 @@ void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identit
   if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
   }
-  const auto direct_media = direct_media_.Get();
-  if (direct_media->note_peer_id_relay_mapping) {
-    direct_media->note_peer_id_relay_mapping(peer_id, relay_identity);
-  }
+  call_media_.ForEachDirectPath([&](CallDirectDriver& path) { path.NotePeerIdRelayMapping(peer_id, relay_identity); });
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
@@ -1274,18 +1270,15 @@ CallRecovery CallSessionManager::Recovery() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
-  const auto direct_media = direct_media_.Get();
-  return direct_media->is_connect_failed && direct_media->is_connect_failed();
+  return ActiveDirectStatus().connect_failed;
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
-  const auto direct_media = direct_media_.Get();
-  return direct_media->connect_missing_mic && direct_media->connect_missing_mic();
+  return ActiveDirectStatus().missing_mic;
 }
 
 bool CallSessionManager::P2pConnectSeedUnreachable() const {
-  const auto direct_media = direct_media_.Get();
-  return direct_media->connect_seed_unreachable && direct_media->connect_seed_unreachable();
+  return ActiveDirectStatus().seed_unreachable;
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
@@ -1524,12 +1517,14 @@ Roe<void> CallSessionManager::HandleInboundConnectGiveUp(const std::string& deta
   }
   const LiveCall* call = live_calls_.Find(detail->call_id);
   const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
-  if (!peer || *peer != sender_identity || !direct_path_) {
+  CallMediaCoordinator* call_media = call_media_.Find(detail->call_id);
+  CallDirectDriver* direct = call_media ? call_media->DirectIfBuilt() : nullptr;
+  if (!peer || *peer != sender_identity || !direct) {
     log().info << "CallConnectGiveUp ignored call_id=" << detail->call_id << " from=" << sender_identity;
     return {};
   }
   log().info << "CallConnectGiveUp inbound call_id=" << detail->call_id << " from=" << sender_identity;
-  direct_path_->OnPeerGaveUpReaching(detail->call_id);
+  direct->OnPeerGaveUpReaching(detail->call_id);
   return {};
 }
 

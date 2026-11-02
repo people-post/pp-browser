@@ -1686,7 +1686,36 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
              << " peer_id=" << peer_id << " account=" << relay_identity;
 }
 
+void CallMediaBridge::DetachReach() {
+  SetReachDeps({});
+  SetConnectDiagProbe({}); // it reads the dial registry the reach just let go
+}
+
+void CallMediaBridge::AttachReach(const CallDirectPathDeps& deps) {
+  SetReachDeps(deps.Reach());
+  SetConnectDiagProbe(deps.diag_env);
+  SetSeedWarm(deps.seed_warm);
+  SetSeedReserve(deps.seed_reserve);
+  SetSeedParkAwait(deps.seed_park_await);
+  SetPathPolicyProvider(deps.path_policy);
+  SetAdvertisedRelaysProvider(deps.advertised_relays);
+}
+
+CallDirectPathStatus CallMediaBridge::Status() const {
+  CallDirectPathStatus out;
+  out.media_path_kind = MediaPathKind();
+  out.link = MediaLinkCounters();
+  out.connect_failed = IsMeshConnectFailed();
+  out.missing_mic = out.connect_failed && MeshConnectMissingMic();
+  out.seed_unreachable = out.connect_failed && MeshConnectSeedUnreachable();
+  out.connect_inflight = IsConnectWorkerInflight();
+  return out;
+}
+
 void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
+  // Its owner is stopping: no more arming / seat asks back into it.
+  arming_ = {};
+  seat_ = {};
   receive_->remote_stream.store(0, std::memory_order_release);
   stopping_.store(true, std::memory_order_release);
   reach_.AbortCircuitAttempts();

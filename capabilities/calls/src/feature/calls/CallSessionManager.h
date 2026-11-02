@@ -47,23 +47,6 @@ namespace pbr {
 class CallMediaBridge;
 
 /**
- * What the session manager asks of the 1:1 path (CallMediaBridge, owned here): its media path, connect health,
- * the calls it attempted. Bound when the path is attached, cleared when it is dropped.
- */
-struct CallDirectMediaPorts {
-  std::function<std::string()> media_path_kind;
-  std::function<CallLinkCounters()> media_link_counters;
-  std::function<void(const std::string& peer_id, const std::string& relay_identity)>
-      note_peer_id_relay_mapping;
-  std::function<bool()> is_connect_failed;
-  std::function<bool()> connect_missing_mic;
-  std::function<bool()> connect_seed_unreachable;
-  std::function<void(const std::string& call_id)> on_media_key_ready;
-
-  bool IsBound() const { return static_cast<bool>(media_path_kind); }
-};
-
-/**
  * The calls on this device (a2 / V014 / a4): intents from the UI (`Apply`), inbound call control, and the parts
  * that run them, which it owns — the durable session workflow, the live calls, the seat, the 1:1 path
  * (CallMediaBridge) and the group path (CallTopologyController). Media starts and stops through each call's
@@ -142,7 +125,6 @@ public:
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
-  void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
   CallDirectArmingPorts DirectArmingPorts();
   /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
@@ -165,12 +147,11 @@ public:
   /** k6: a call's path policy may have changed. */
   void OnPathPolicyChanged(const std::string& call_id);
   bool IsDirectConnectInFlight() const;
-  CallMediaBridge* DirectPathForTest() { return direct_path_.get(); }
+  /** `call_id`'s 1:1 path if built (tests). */
+  CallMediaBridge* DirectPathForTest(const std::string& call_id);
+  /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
+  void SetDirectPathFactoryForTest(CallDirectPathFactory make);
   /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
-  void SetDirectDriver(CallDirectDriver* direct) {
-    direct_driver_ = direct;
-    call_media_.BindDirectDriver(direct);
-  }
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(IInitiationBillingBook* store);
   /** Offer amount stored for inviter when inbound invite carried pricing. */
@@ -348,7 +329,12 @@ private:
   CallHopArmingPorts MakeHopArmingPorts();
   CallTopologySeatPorts MakeTopologySeatPorts();
   CallDirectSeatPorts DirectSeatPorts();
-  CallDirectMediaPorts MakeDirectMediaPorts();
+  /** The device-level 1:1 deps (V056): each call's path is built from them. */
+  std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial);
+  /** `call_id`'s built 1:1 path, when it is path `serial` (a newer one, or none, drops the event). */
+  CallDirectDriver* DirectPathFor(const std::string& call_id, uint64_t serial);
+  /** The active call's 1:1 path status (empty when it has none). */
+  CallDirectPathStatus ActiveDirectStatus() const;
   void BindSeat();
   /** The seat released (or was taken over): stop that call's media. */
   void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
@@ -397,11 +383,6 @@ private:
   MediaEngine& media_;
   /** Before topology_ / live_calls_: both hold it (ports / media resources). */
   CallMediaSeat seat_;
-  CallDirectDriver* direct_driver_ = nullptr;
-  /** The 1:1 path's transport as attached (a new one rebuilds the path). */
-  ICallMediaTransport* direct_transport_ = nullptr;
-  /** Names the current 1:1 path: its events carry it (one built since drops the old ones). */
-  uint64_t direct_path_generation_ = 0;
   uint64_t doorway_generation_ = 0;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
@@ -418,7 +399,6 @@ private:
   CallReachSignals reach_signals_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
-  SharedPorts<CallDirectMediaPorts> direct_media_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
@@ -445,8 +425,8 @@ private:
   OwnerOutbox<SessionEvent> outbox_;
   /** The device's doorway for inbound call media, on the 1:1 path's transport (V056). */
   std::unique_ptr<CallMediaDoorway> doorway_;
-  /** The 1:1 path: last, so it goes first (it calls into the seat, LiveCalls and this manager). */
-  std::unique_ptr<CallMediaBridge> direct_path_;
+  /** What each call's 1:1 path is built from (device level, V056); empty: none attached. */
+  CallDirectPathDeps direct_deps_;
   std::string media_activity_;
 };
 

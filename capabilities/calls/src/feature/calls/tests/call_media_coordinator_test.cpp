@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/tests/call_direct_driver_fake.h"
 
 #include <gtest/gtest.h>
 
@@ -13,13 +14,13 @@ protected:
     engine_.SetSkipDeviceOpenForTest(true);
     with_seat_.engine = &engine_;
     with_seat_.seat = &seat_;
-    with_seat_.direct = &direct_;
+    with_seat_.make_direct = test::ForwardTo(direct_);
     with_seat_.hop = &hop_;
     no_seat_.engine = &engine_;
   }
   void TearDown() override { engine_.Stop(); }
 
-  struct RecordingDirectDriver final : CallDirectDriver {
+  struct RecordingDirectDriver final : test::NullDirectDriver {
     std::vector<std::string> started;
     std::vector<CallMediaSeat::Token> released;
     void ScheduleDirectStart(const std::string& call_id, const std::string&, bool) override {
@@ -27,9 +28,6 @@ protected:
     }
     void ReleaseDirectTransport(const CallMediaSeat::Token& token) override { released.push_back(token); }
     void ReleaseDirectTransport() override { released.push_back({}); }
-    void StopMeshMedia(const std::string&) override {}
-    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
-    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   };
 
   /** The group path: takes a call once `group_from` are joined; answers the hop questions. */
@@ -105,6 +103,7 @@ TEST_F(CallMediaCoordinatorTest, BeginDirectTakesTheSeatThenStartsTheDriver) {
 // the seat's token — only while this call holds the seat.
 TEST_F(CallMediaCoordinatorTest, ReleaseDirectOnlyWhileTheCallHoldsTheSeat) {
   CallMediaCoordinator call("call:1", with_seat_);
+  ASSERT_NE(call.Direct(), nullptr); // the call ran 1:1 first
   call.HoldSeatForHop();
   call.ReleaseDirect();
   ASSERT_EQ(direct_.released.size(), 1u);

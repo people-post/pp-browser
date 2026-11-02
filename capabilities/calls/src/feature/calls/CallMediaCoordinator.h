@@ -8,18 +8,27 @@
 
 #include "common/Error.h"
 
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 
 namespace pbr {
 
-/** What every call's coordinator drives: the one engine, the seat and the 1:1 driver (bindable). */
+/** Builds one call's 1:1 path (V056); `serial` names that path in its events. */
+using CallDirectPathFactory =
+    std::function<std::unique_ptr<CallDirectDriver>(const std::string& call_id, uint64_t serial)>;
+
+/** What every call's coordinator drives: the one engine, the seat, and how its paths are made. */
 struct CallMediaResources {
   MediaEngine* engine = nullptr;
   /** Null: no seat bound (mesh stopped / harness). */
   CallMediaSeat* seat = nullptr;
-  /** Null: no 1:1 path (mesh media not wired). */
-  CallDirectDriver* direct = nullptr;
+  /** Empty: no 1:1 path (mesh media not wired). */
+  CallDirectPathFactory make_direct;
+  /** Names each 1:1 path built (shared by the coordinators). */
+  uint64_t next_direct_serial = 0;
   /** Null: no group path (harness). */
   CallHopDriver* hop = nullptr;
 };
@@ -37,7 +46,10 @@ struct CallMediaResources {
 class CallMediaCoordinator {
 public:
   /** `resources` outlives the coordinator (LiveCallMedia owns both); its engine must be set. */
-  CallMediaCoordinator(std::string call_id, const CallMediaResources& resources);
+  CallMediaCoordinator(std::string call_id, CallMediaResources& resources);
+  ~CallMediaCoordinator();
+  CallMediaCoordinator(const CallMediaCoordinator&) = delete;
+  CallMediaCoordinator& operator=(const CallMediaCoordinator&) = delete;
 
   const std::string& CallId() const { return call_id_; }
 
@@ -72,6 +84,17 @@ public:
   /** A peer accepted our call: as above. A call already on `current` Hop stays there. */
   CallMediaPath DecideOnRemoteAccept(size_t n_joined, const std::string& joiner_identity, CallMediaPath current);
 
+  // --- The call's 1:1 path (V056: built for this call, lives with it) --------------------------------
+
+  /** The call's 1:1 path, built on first use; null when none can be made (not wired). */
+  CallDirectDriver* Direct();
+  /** The path if built (never builds one). */
+  CallDirectDriver* DirectIfBuilt() const { return direct_.get(); }
+  /** The built path's serial (0: none) — its events carry it; a path built since drops the old ones. */
+  uint64_t DirectSerial() const { return direct_serial_; }
+  /** Drop the built path (the mesh's transport goes; a later use builds a new one). */
+  void DropDirect();
+
   // --- What the 1:1 path needs to know about the group path ----------------------------------------
 
   /** Media runs on a hop now. */
@@ -99,7 +122,9 @@ private:
   MediaEngine& Engine() const { return *resources_.engine; }
 
   std::string call_id_;
-  const CallMediaResources& resources_;
+  CallMediaResources& resources_;
+  std::unique_ptr<CallDirectDriver> direct_;
+  uint64_t direct_serial_ = 0;
 };
 
 } // namespace pbr

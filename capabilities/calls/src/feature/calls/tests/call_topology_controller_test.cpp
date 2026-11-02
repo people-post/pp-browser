@@ -30,6 +30,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include "feature/calls/tests/call_direct_driver_fake.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -79,18 +80,14 @@ public:
   LiveCalls live;
   LiveCallMedia call_media{live};
   /** The 1:1 path the calls' coordinators release when the hop takes over. */
-  struct CountingDirectDriver final : CallDirectDriver {
+  struct CountingDirectDriver final : test::NullDirectDriver {
     int* releases = nullptr;
-    void ScheduleDirectStart(const std::string&, const std::string&, bool) override {}
     void ReleaseDirectTransport(const CallMediaSeat::Token&) override { ++*releases; }
     void ReleaseDirectTransport() override { ++*releases; }
-    void StopMeshMedia(const std::string&) override {}
-    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
-    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   } direct;
   FakeTopologyHost() {
     direct.releases = &direct_media_releases;
-    call_media.BindDirectDriver(&direct);
+    call_media.BindDirectPathFactory(test::ForwardTo(direct));
   }
 
   CallTopologyController::HostPorts MakeHostPorts() {
@@ -99,7 +96,11 @@ public:
       if (!live.Find(call_id)) {
         live.AdmitPlaced(call_id, {});
       }
-      return call_media.Media(call_id);
+      CallMediaCoordinator* media = call_media.Media(call_id);
+      if (media) {
+        (void)media->Direct(); // the harness's calls ran 1:1 first: the hop may release that path
+      }
+      return media;
     };
     ports.local_relay_identity = [this]() -> Roe<std::string> {
       if (local_identity.empty()) {

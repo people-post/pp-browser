@@ -91,9 +91,9 @@ public:
   void ScheduleStartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
 
   /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
-  void OnMediaKeyReady(const std::string& call_id);
+  void OnMediaKeyReady(const std::string& call_id) override;
   /** The doorway accepted an inbound bundle for `hello.call_id`: bind its peer, return its callbacks (calls owner). */
-  CallMediaDirectCallbacks AcceptInbound(const CallMediaInboundHello& hello);
+  CallMediaDirectCallbacks AcceptInbound(const CallMediaInboundHello& hello) override;
 
   /**
    * Test seam: answerer deferred-key inbox poll rounds (production default 90 ≈ 90s).
@@ -117,7 +117,7 @@ public:
    * dead ones within ~2 s — so once that settles a reconnecting call re-anchors at once, and a
    * relayed call starts its direct-upgrade punches over (the new network may be punchable).
    */
-  void OnLocalNetworkChanged();
+  void OnLocalNetworkChanged() override;
   /**
    * k6: the call's pair path policy (both mobility classes). Unset → the default policy
    * (Stationary pair: punch, upgrade, relay standby).
@@ -131,15 +131,15 @@ public:
    * H013: the caller of `call_id` stopped trying to reach us. An answerer still waiting for its circuit
    * stops too (ConnectFailed, as at its own limit); anything else ignores it.
    */
-  void OnPeerGaveUpReaching(const std::string& call_id);
+  void OnPeerGaveUpReaching(const std::string& call_id) override;
   /** Where the path reports its events (its parent binds it); its timers are delayed events. */
   void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
   /** Where this path reports to the calls it serves (events up; V055). */
   void SetReports(OwnerOutbox<DirectReport> reports) { reports_ = std::move(reports); }
   /** An event it reported, back from the calls owner's queue. */
-  void Handle(DirectPathEvent& event);
+  void Handle(DirectPathEvent& event) override;
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
-  void OnPathPolicyChanged(const std::string& call_id);
+  void OnPathPolicyChanged(const std::string& call_id) override;
   /** Wait after a network change before re-anchoring (production 2.5 s). */
   void SetNetworkSettleMsForTest(int delay_ms) { network_settle_ms_ = delay_ms; }
   /** Every relay-standby attempt after this delay (0 = production 5 s / 20 s / 60 s). */
@@ -171,7 +171,7 @@ public:
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.
    */
-  void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
+  void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity) override;
 
   /**
    * Abort in-flight Connect (`AbortConnectSequence` + connect Shutdown + Detach); late Connect
@@ -179,7 +179,10 @@ public:
    * The abort is synchronous; `timeout_ms` is accepted for existing callers and unused.
    * See THREADING.md Cancel / Abort contract (arm ⇒ complete on cancel).
    */
-  void PrepareForTeardown(int timeout_ms = 0);
+  void PrepareForTeardown(int timeout_ms = 0) override;
+  void DetachReach() override;
+  void AttachReach(const CallDirectPathDeps& deps) override;
+  CallDirectPathStatus Status() const override;
 
   /** True while an async Connect sequence is in flight (shutdown measurement). */
   bool IsConnectWorkerInflight() const { return connect_.InFlight(); }

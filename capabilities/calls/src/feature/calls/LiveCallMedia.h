@@ -4,6 +4,7 @@
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -21,8 +22,12 @@ public:
 
   /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
   void BindMediaResources(MediaEngine* engine, CallMediaSeat* seat);
-  /** The 1:1 path the coordinators drive (null: none wired). */
-  void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
+  /** How a call's 1:1 path is built (empty: none wired — no new paths; built ones stay until dropped). */
+  void BindDirectPathFactory(CallDirectPathFactory make) { resources_.make_direct = std::move(make); }
+  /** Drop every built 1:1 path (the transport they ride goes). */
+  void DropDirectPaths();
+  /** Each call's built 1:1 path. */
+  void ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn);
   /** The group path the coordinators drive (null: harness). */
   void BindHopDriver(CallHopDriver* hop) { resources_.hop = hop; }
 
@@ -31,9 +36,14 @@ public:
    * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
    */
   CallMediaCoordinator* Media(const std::string& call_id);
+  /** The call's coordinator if one exists (never creates it). */
+  CallMediaCoordinator* Find(const std::string& call_id);
+  /** Same, for readers (no sweep). */
+  const CallMediaCoordinator* Peek(const std::string& call_id) const;
   /**
    * Stop `call_id`'s media (empty: whatever holds the seat). The seat's release tears the paths
-   * down; with no seat, each driver stops its part. Also for calls not admitted here (leftovers).
+   * down; with no seat, the hop and the call's 1:1 path stop their parts (the engine for a call
+   * with neither). Also for calls not admitted here (leftovers).
    */
   void StopMedia(const std::string& call_id);
   /**

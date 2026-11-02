@@ -35,6 +35,7 @@
 #include <optional>
 #include "feature/calls/tests/call_media_inbound_fake.h"
 #include "feature/calls/tests/seeded_session_key.h"
+#include "feature/calls/tests/call_direct_driver_fake.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -262,7 +263,6 @@ protected:
     direct.dial = dial_.get();
     direct.lane = AppRuntime::MakeLaneForTesting();  // stands in for the mesh's io lane
     csm_->AttachDirectPath(std::move(direct));
-    bridge_ = csm_->DirectPathForTest();
 
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
@@ -285,7 +285,6 @@ protected:
     // heap-use-after-free in the thread store's UpsertThread from FanOutToJoinedAndRinging
     // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
     AppRuntime::Shutdown();
-    bridge_ = nullptr;
     csm_.reset();
     transport_.reset();
     dial_.reset();
@@ -407,7 +406,6 @@ protected:
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   /** The manager's 1:1 path (owned by csm_). */
-  CallMediaBridge* bridge_ = nullptr;
   std::unique_ptr<CallSessionManager> csm_;
   CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
     if (csm_) {
@@ -698,16 +696,11 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   bool scheduled_offerer = false;
   int schedule_calls = 0;
   // The call's coordinator starts the 1:1 path through the direct driver: spy on that.
-  struct SpyDriver final : CallDirectDriver {
+  struct SpyDriver final : test::NullDirectDriver {
     std::function<void(const std::string&, const std::string&, bool)> on_start;
     void ScheduleDirectStart(const std::string& cid, const std::string& peer, bool offerer) override {
       on_start(cid, peer, offerer);
     }
-    void ReleaseDirectTransport(const CallMediaSeat::Token&) override {}
-    void ReleaseDirectTransport() override {}
-    void StopMeshMedia(const std::string&) override {}
-    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
-    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   } spy;
   spy.on_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
     ++schedule_calls;
@@ -715,7 +708,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
     scheduled_peer = peer;
     scheduled_offerer = offerer;
   };
-  csm_->SetDirectDriver(&spy);
+  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
 
   OnCallsOwner([&] { csm_->LiveCallsForTest().NoteOutboundStarted(call_id); });
   csm_->LiveCallsForTest().SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
@@ -736,7 +729,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   EXPECT_EQ(scheduled_call, call_id);
   EXPECT_EQ(scheduled_peer, "account:peer");
   EXPECT_TRUE(scheduled_offerer);
-  csm_->SetDirectDriver(bridge_);
+  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());
@@ -769,15 +762,8 @@ TEST_F(CallSessionInboundComposeTest, AcceptAdvertisesTheRelaysWeAreParkedOn) {
 TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRelays) {
   const std::string call_id = "call:peer-parked";
   SeedOffererRingingCall(call_id);
-  struct SpyDriver final : CallDirectDriver {
-    void ScheduleDirectStart(const std::string&, const std::string&, bool) override {}
-    void ReleaseDirectTransport(const CallMediaSeat::Token&) override {}
-    void ReleaseDirectTransport() override {}
-    void StopMeshMedia(const std::string&) override {}
-    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
-    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
-  } spy;
-  csm_->SetDirectDriver(&spy);
+  test::NullDirectDriver spy;
+  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest(test::ForwardTo(spy)); });
   std::string noted_call;
   std::vector<std::string> noted_relays;
   OnCallsOwner([&] {
@@ -798,7 +784,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptReportsTheAnswerersParkedRela
                                                   "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
-  csm_->SetDirectDriver(bridge_);
+  OnCallsOwner([&] { csm_->SetDirectPathFactoryForTest({}); }); // the paths forwarding to the spy go
   EXPECT_EQ(noted_call, call_id);
   EXPECT_EQ(noted_relays, (std::vector<std::string>{"QmRelayC", "QmRelayD"}));
 }
@@ -1620,31 +1606,6 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
     auto session = sessions_->LoadSession(call_id);
     return session && session->has_value() && (*session)->state == CallSessionState::Ended;
   });
-}
-
-// thread-ownership t2a: mesh start / stop swap the session manager's ports while other threads use
-// them. Each use takes one snapshot, so a check and the call it guards never straddle a swap — the
-// old rebind-in-place could call an empty port (bad_function_call) or destroy a running one (TSan).
-TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
-  CallDirectMediaPorts ports;
-  ports.media_path_kind = []() { return std::string("direct"); };
-  ports.is_connect_failed = []() { return false; };
-  ports.connect_missing_mic = []() { return false; };
-  std::atomic<bool> stop{false};
-  std::thread swapper([&]() {
-    for (int i = 0; !stop.load(); ++i) {
-      csm_->SetDirectMediaPorts(i % 2 == 0 ? ports : CallDirectMediaPorts{});
-    }
-  });
-  for (int i = 0; i < 20000; ++i) {
-    const std::string kind = csm_->MediaPathKind();
-    EXPECT_TRUE(kind.empty() || kind == "direct");
-    (void)csm_->IsP2pConnectFailed();
-    (void)csm_->P2pConnectMissingMic();
-  }
-  stop.store(true);
-  swapper.join();
-  csm_->SetDirectMediaPorts({});
 }
 
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {

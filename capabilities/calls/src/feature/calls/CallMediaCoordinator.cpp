@@ -27,8 +27,26 @@ const char* PathName(const CallMediaPath path) {
 
 } // namespace
 
-CallMediaCoordinator::CallMediaCoordinator(std::string call_id, const CallMediaResources& resources)
+CallMediaCoordinator::CallMediaCoordinator(std::string call_id, CallMediaResources& resources)
     : call_id_(std::move(call_id)), resources_(resources) {}
+
+CallMediaCoordinator::~CallMediaCoordinator() = default;
+
+CallDirectDriver* CallMediaCoordinator::Direct() {
+  if (!direct_ && resources_.make_direct) {
+    direct_serial_ = ++resources_.next_direct_serial;
+    direct_ = resources_.make_direct(call_id_, direct_serial_);
+    if (direct_) {
+      CallMediaCoordinatorLog().info << "1:1 path built call_id=" << call_id_ << " serial=" << direct_serial_;
+    }
+  }
+  return direct_.get();
+}
+
+void CallMediaCoordinator::DropDirect() {
+  direct_.reset();
+  direct_serial_ = 0;
+}
 
 Roe<void> CallMediaCoordinator::StartEngine(const CallMediaPath path, MediaEngine::SfuSendFn send) {
   CallMediaSeat* const seat = resources_.seat;
@@ -61,7 +79,8 @@ void CallMediaCoordinator::StopEngine(const char* why) {
 }
 
 Roe<void> CallMediaCoordinator::BeginDirect(const std::string& peer_identity, const bool offerer) {
-  if (!resources_.direct) {
+  CallDirectDriver* direct = Direct();
+  if (!direct) {
     return Error("direct media path unavailable");
   }
   if (resources_.seat) {
@@ -69,7 +88,7 @@ Roe<void> CallMediaCoordinator::BeginDirect(const std::string& peer_identity, co
   }
   CallMediaCoordinatorLog().info << "begin direct call_id=" << call_id_
                                  << " role=" << (offerer ? "offerer" : "answerer");
-  resources_.direct->ScheduleDirectStart(call_id_, peer_identity, offerer);
+  direct->ScheduleDirectStart(call_id_, peer_identity, offerer);
   return {};
 }
 
@@ -80,12 +99,13 @@ void CallMediaCoordinator::HoldSeatForHop() {
 }
 
 void CallMediaCoordinator::ReleaseDirect() {
-  if (!resources_.direct) {
+  CallDirectDriver* direct = DirectIfBuilt();
+  if (!direct) {
     return;
   }
   CallMediaSeat* const seat = resources_.seat;
   if (!seat) {
-    resources_.direct->ReleaseDirectTransport();
+    direct->ReleaseDirectTransport();
     return;
   }
   const CallMediaSeat::Token token = seat->CurrentToken();
@@ -93,7 +113,7 @@ void CallMediaCoordinator::ReleaseDirect() {
   if (token.call_id != call_id_ || !seat->AllowsPathOp(token)) {
     return;
   }
-  resources_.direct->ReleaseDirectTransport(token);
+  direct->ReleaseDirectTransport(token);
 }
 
 CallMediaPath CallMediaCoordinator::DecideOnLocalAccept(const size_t n_joined,
@@ -160,12 +180,13 @@ void CallMediaCoordinator::RequestKeyframe() {
 }
 
 Roe<void> CallMediaCoordinator::Retry() {
-  return resources_.direct ? resources_.direct->RetryMeshMedia(call_id_) : Roe<void>(Error("direct media path unavailable"));
+  CallDirectDriver* direct = DirectIfBuilt();
+  return direct ? direct->RetryMeshMedia(call_id_) : Roe<void>(Error("direct media path unavailable"));
 }
 
 Roe<void> CallMediaCoordinator::ResumeFromInbound() {
-  return resources_.direct ? resources_.direct->ResumeMeshMediaFromInbound(call_id_)
-                           : Roe<void>(Error("direct media path unavailable"));
+  CallDirectDriver* direct = DirectIfBuilt();
+  return direct ? direct->ResumeMeshMediaFromInbound(call_id_) : Roe<void>(Error("direct media path unavailable"));
 }
 
 } // namespace pbr

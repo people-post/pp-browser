@@ -349,14 +349,16 @@ struct HopReport {
 
 namespace session_event {
 
-/** An event of the 1:1 path; `generation` names that path (one built since drops it). */
+/** An event of `call_id`'s 1:1 path `serial` (a path built since, or the call gone, drops it). */
 struct ForDirectPath {
-  uint64_t generation = 0;
+  std::string call_id;
+  uint64_t serial = 0;
   DirectPathEvent event;
 };
-/** A report of the 1:1 path `generation` (one built since drops it). */
+/** A report of `call_id`'s 1:1 path `serial` (dropped as above). */
 struct FromDirectPath {
-  uint64_t generation = 0;
+  std::string call_id;
+  uint64_t serial = 0;
   DirectReport report;
 };
 /** A report of the group path. */
