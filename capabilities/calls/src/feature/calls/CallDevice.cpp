@@ -103,7 +103,7 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
   BindReachSignalPorts();
 }
 
-CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
+CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts(const std::string& path_call_id) {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
@@ -116,8 +116,11 @@ CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
                              const std::string& display) { return SendDirect(peer, type, detail, display); };
   ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
   ports.set_last_media_error = [this](std::string message) { SetLastMediaError(std::move(message)); };
-  ports.set_media_activity = [this](std::string message) { SetMediaActivity(std::move(message)); };
-  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
+  // The activity line is the path's call's (V057 3).
+  ports.set_media_activity = [this, path_call_id](std::string message) {
+    live_calls_.NoteActivity(path_call_id, std::move(message));
+  };
+  ports.clear_media_activity = [this, path_call_id]() { live_calls_.NoteActivity(path_call_id, {}); };
   ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
   ports.request_inbox_sync = [this]() { RequestInboxSync(); };
   return ports;
@@ -169,7 +172,6 @@ CallSessionWorkflow::WirePorts CallDevice::MakeWorkflowWirePorts() {
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.group_members = delivery_.group_members;
-  ports.clear_media_activity = [this]() { ClearMediaActivity(); };
   ports.set_last_error = [this](std::string message) { last_error_ = std::move(message); };
   ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
@@ -587,7 +589,7 @@ std::unique_ptr<CallHopDriver> CallDevice::MakeHopPath(const std::string& call_i
   path->SetReports(outbox_.For<HopReport>(
       [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
   path->SetMediaKeyStore(&media_keys_);
-  path->SetHostPorts(MakeTopologyHostPorts());
+  path->SetHostPorts(MakeTopologyHostPorts(call_id));
   path->SetHopArmingPorts(MakeHopArmingPorts());
   path->SetSeatPorts(MakeTopologySeatPorts());
   path->OnRelayDepsChanged(); // watch the relay client the device has now
@@ -961,16 +963,10 @@ void CallDevice::SetLastMediaError(std::string message) {
   last_media_error_ = std::move(message);
 }
 
-void CallDevice::SetMediaActivity(std::string message) {
-  media_activity_ = std::move(message);
-}
-
-std::string CallDevice::PeekMediaActivity() const {
-  return media_activity_;
-}
-
 void CallDevice::ClearMediaActivity() {
-  media_activity_.clear();
+  if (const LiveCall* shown = live_calls_.Shown()) {
+    live_calls_.NoteActivity(shown->Id(), {});
+  }
 }
 
 void CallDevice::TopologyNoteMediaAttempted(const std::string& call_id) {

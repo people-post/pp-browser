@@ -220,6 +220,7 @@ void CallStack::PublishUiState() {
       state.active_call_id = shown->Id();
       state.live_since_ms = shown->MediaProgress().live_since_ms;
       state.alone_until_ms = call_device_->AloneUntilMs(shown->Id());
+      state.media_activity = shown->Activity();
     }
     state.accepting_call_id = call_device_->AcceptingCallId();
     if (const LiveCall* ring = live.TheRing()) {
@@ -234,7 +235,6 @@ void CallStack::PublishUiState() {
     state.p2p_connect_failed = call_device_->IsP2pConnectFailed();
     state.p2p_connect_missing_mic = call_device_->P2pConnectMissingMic();
     state.p2p_connect_seed_unreachable = call_device_->P2pConnectSeedUnreachable();
-    state.media_activity = call_device_->PeekMediaActivity();
     state.last_media_error = call_device_->PeekLastMediaError();
     state.hop_health = call_device_->HopHealth();
     state.media_path_kind = call_device_->MediaPathKind();

@@ -647,9 +647,7 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
     }
     live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "ScheduleStartDirect");
     // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
-    if (host_.wire.clear_media_activity) {
-      host_.wire.clear_media_activity();
-    }
+    live_calls_.NoteActivity(call_id, {});
     // Remember peer for the answerer kick — PeerIdentityForCall can lag roster.
     pending_answerer_kick_call_id_ = call_id;
     pending_answerer_kick_peer_ = inviter;

@@ -1371,7 +1371,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Decision:**
 1. **One engine handle per call.** `CallMedia` owns a `CallEngine` for its call and lends it to its paths: whether the engine runs this call and on which path (set by `CallMedia::StartEngine`, cleared on stop), and the data plane (inbound packets, drops, pressure, targets, health). Paths never read the engine's session id and never start or stop it; another call's leftover media is the device's to stop (the seat, `LiveCallMedia`).
 2. **Parts report events.** Host and port callbacks that tell the owner something become events on the owner's queue (V055 2); what remains are queries and the capability edges.
-3. **Per-call screen facts on `LiveCall`:** the activity line, the media error and the failed accept; the UI snapshot is a projection of the calls.
+3. **Per-call screen facts on `LiveCall`:** the activity line ("Switching media path…"), which the snapshot reads from the shown call. The two error values (`last_error`: a failed accept, "That call has ended"; the media error) are not call facts but one-shot notices the screen shows once — they outlive the call they came from — and stay the device's.
 4. **Inbound call control is a table in the router:** each control type → who may send it → its handler (the workflow or the call's media). The sender gates are the edge's, the durable steps the workflow's.
 5. **Names say what they are:** `CallDirectPath` / `CallHopPath`; no `P2p` prefixes.
 6. **The group path's hop state has one owner** (the migrate side); topology asks it.

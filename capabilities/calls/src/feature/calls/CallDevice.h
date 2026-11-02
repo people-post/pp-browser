@@ -187,8 +187,7 @@ public:
   std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
   /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
   void ClearLastMediaErrorIf(const std::string& seen);
-  /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
-  std::string PeekMediaActivity() const;
+  /** The shown call's media activity line is dismissed (it lives on the call, V057 3). */
   void ClearMediaActivity();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
@@ -203,10 +202,10 @@ private:
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                                    const std::string& display, const std::string& skip_identity);
   void SetLastMediaError(std::string message);
-  void SetMediaActivity(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
-  CallTopologyController::HostPorts MakeTopologyHostPorts();
+  /** The group path's host ports, bound to its call (`path_call_id`). */
+  CallTopologyController::HostPorts MakeTopologyHostPorts(const std::string& path_call_id);
 
   // CallMediaHost
   Roe<std::string> P2pLocalIdentity() const override;
@@ -309,7 +308,6 @@ private:
   std::unique_ptr<CallMediaDoorway> doorway_;
   /** What each call's 1:1 path is built from (device level, V056); empty: none attached. */
   CallDirectPathDeps direct_deps_;
-  std::string media_activity_;
 };
 
 } // namespace pbr

@@ -311,7 +311,7 @@ One PR per phase; compose tests + call lab scenarios each time.
 [V057](DECISIONS.md#v057--the-calls-media-is-the-paths-only-way-to-the-engine-parts-report-events).
 
 - [x] cn1 — `CallEngine`: the paths ask their call's engine handle (runs this call / on which path, the data plane); no session-id reads, no starts / stops from a path. Done: about 87 engine uses in the 1:1 path, the topology and the migrate workflow became the handle's `Runs` / `RunsOn` / `RunsAnother` and its data plane; a path stops only its own call's engine, through its `CallMedia`; the dead `media_active_mesh_for_call` (a 1:1 still connecting) is real now (`RunsOn(Direct)`)
-- [ ] cn2 — Per-call screen facts on `LiveCall` (activity line, media error, failed accept)
+- [x] cn2 — Per-call screen facts on `LiveCall`. Done: the activity line is `LiveCall::Activity` (the group path's host ports are bound to its call, the workflow clears it on the call, the snapshot reads the shown call's); the error values turned out to be one-shot notices that outlive their call ("That call has ended") and stay the device's (V057 3 amended)
 - [ ] cn3 — Parts report events: `CallMediaHost` and the port bags shrink to queries and the capability edges
 - [ ] cn4 — Inbound call control as a table in the router (type → sender gate → handler)
 - [ ] cn5 — Names: `CallDirectPath` / `CallHopPath`; no `P2p` prefixes

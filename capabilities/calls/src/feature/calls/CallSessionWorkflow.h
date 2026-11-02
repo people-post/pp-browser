@@ -65,7 +65,6 @@ public:
     /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
     std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
     std::function<void()> sync_inbox_from_wake;
-    std::function<void()> clear_media_activity;
     /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
     std::function<void(std::string message)> set_last_error;
 
