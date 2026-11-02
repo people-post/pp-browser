@@ -235,6 +235,15 @@ struct QrScanner::State {
       return;
     }
     auto acquired = devices.AcquireCamera(request);
+    // Busy (a call still letting it go) or not responding yet: wait for it while the scan is wanted
+    // (L016), as long as a silent camera may take.
+    const auto give_up = ScanClock::now() + no_frame_timeout;
+    while (!acquired && Current(epoch) && ScanClock::now() < give_up && !devices.CanAcquire(MediaDeviceKind::Camera)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      if (devices.CanAcquire(MediaDeviceKind::Camera)) {
+        acquired = devices.AcquireCamera(request);
+      }
+    }
     if (!acquired) {
       Publish(epoch, Update{{}, {}, acquired.error().message}, true);
       return;

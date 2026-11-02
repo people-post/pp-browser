@@ -300,7 +300,8 @@ public:
   /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   /** Delete the relay blob the person confirmed (by id). */
-  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
+  /** One id of a confirmed quota recovery, on its tier's endpoint (DeleteRelayQuotaItem). */
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id, BlobTier tier);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
@@ -339,7 +340,7 @@ public:
   /** Called (on the UI thread) with the level reached (80 / 90) when the server space is filling up. */
   void SetOnBlobSpaceWarning(std::function<void(int percent)> callback);
   AttachmentFetchWorkflow& Attachments();
-  /** Our uploaded relay copy of an attachment message, if any; best effort. */
+  /** Our uploaded relay copy of an attachment message, if any (DeleteUploadedAttachmentCopy); a failure is logged. */
   void DeleteUploadedCopy(const ThreadMessage& message);
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);

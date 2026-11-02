@@ -4,6 +4,7 @@ pp_browser_add_lib_library(pp_lib_media
     CallMediaEngine.cpp
     CallRingtone.cpp
     DecodeStallPolicy.h
+    GuardedVideoCodec.cpp
     MediaDeviceArbiter.cpp
     NoiseSuppressor.cpp
     OggOpus.cpp

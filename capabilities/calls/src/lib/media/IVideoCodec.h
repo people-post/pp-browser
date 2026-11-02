@@ -70,6 +70,12 @@ public:
 
   virtual void ResetEncoder() = 0;
   virtual void ResetDecoder() = 0;
+
+  /**
+   * A call into the hardware ran past its budget (GuardedVideoCodec): every later call fails at once.
+   * The holder drops this codec (it is destroyed when the stuck call returns) and makes a new one.
+   */
+  virtual bool NotResponding() const { return false; }
 };
 
 /** Decode result of a backend that turns every access unit into one frame (or an error). */

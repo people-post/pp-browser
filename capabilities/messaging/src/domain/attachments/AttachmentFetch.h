@@ -34,6 +34,13 @@ std::string IncomingCiphertextDir(const std::string& profile_data_dir);
 /** Remove leftovers of interrupted downloads (run at start). */
 void CleanIncomingCiphertext(const std::string& profile_data_dir);
 
+/**
+ * Whether a failed fetch got as far as an answer from the server (any HTTP status, a followed redirect, or bytes
+ * that then failed a check): false only for failures before any answer — offline, no DNS, no connection, a TLS
+ * failure or a timeout waiting for the first answer. Only an answer spends one of a relay file's downloads.
+ */
+bool FetchFailureReachedTheServer(const Error& error);
+
 /** True when CDN URL, pending ciphertext, or peer fetch path may apply. */
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context);
 

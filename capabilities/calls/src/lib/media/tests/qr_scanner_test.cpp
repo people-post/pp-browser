@@ -284,7 +284,8 @@ TEST(QrScannerTest, ReportsCameraAlreadyHeldWithoutOpeningAnother) {
   MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
   auto held = devices.AcquireCamera({"call", {}});
   ASSERT_TRUE(held);
-  QrScanner scanner(devices);
+  // A held camera is waited for (L016) as long as a silent camera may take; then it is an error.
+  QrScanner scanner(devices, std::chrono::milliseconds(300));
   scanner.Start();
   QrScanner::Update result;
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
@@ -371,6 +372,24 @@ TEST(QrScannerTest, CameraWithoutNativeZoomUsesBoundedSoftwarePreview) {
   EXPECT_FALSE(result.text);
   scanner.Stop();
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
+}
+// L016: a camera a call is still letting go is waited for, not reported: the scan opens it when free.
+TEST(QrScannerTest, WaitsForACameraACallIsLettingGo) {
+  FakeState state;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  auto held = devices.AcquireCamera({"call", {}});
+  ASSERT_TRUE(held);
+  QrScanner scanner(devices);
+  scanner.Start();
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  EXPECT_TRUE(scanner.Poll().error.empty()) << "waiting, not failed";
+  held->reset();
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return result.text.has_value() || !result.error.empty();
+  }));
+  EXPECT_TRUE(result.text.has_value()) << result.error;
 }
 } // namespace
 } // namespace pbr

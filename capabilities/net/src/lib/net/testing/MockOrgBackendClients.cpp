@@ -71,8 +71,65 @@ Roe<void> MockBlobClient::SetProfileIcon(const std::string& /*relay_user_id*/, c
 
 Roe<void> MockBlobClient::PutUpload(const std::string& /*upload_url*/, const std::string& /*content_type*/,
                                     const std::string& body) {
+  if (put_error_) {
+    return *put_error_;
+  }
   uploaded_bodies_.push_back(body);
   return Roe<void>{};
+}
+
+Roe<RelayFileStartResult> MockBlobClient::FileStart(const std::string& /*relay_user_id*/, const uint64_t byte_length) {
+  file_start_byte_lengths_.push_back(byte_length);
+  if (file_start_error_) {
+    Error error = *file_start_error_;
+    if (file_start_failures_left_ > 0 && --file_start_failures_left_ == 0) {
+      file_start_error_ = std::nullopt;
+    }
+    return error;
+  }
+  RelayFileStartResult result;
+  result.blob_id = "00000000-0000-4000-8000-" + std::string(12 - std::to_string(next_file_id_).size(), '0') +
+                   std::to_string(next_file_id_);
+  ++next_file_id_;
+  result.mode = file_start_mode_;
+  result.upload_url = "https://mock.example/put/" + result.blob_id + "?X-Amz-Signature=mock";
+  result.expires_in = 900;
+  result.pending_expires_at = "2099-01-01T00:00:00.000Z";
+  return result;
+}
+
+Roe<RelayFileCompleteResult> MockBlobClient::FileComplete(const std::string& /*relay_user_id*/,
+                                                          const std::string& blob_id) {
+  if (on_file_complete_) {
+    on_file_complete_(blob_id);
+  }
+  if (file_complete_error_) {
+    return *file_complete_error_;
+  }
+  completed_file_ids_.push_back(blob_id);
+  RelayFileCompleteResult result;
+  result.blob_id = blob_id;
+  // A token of the relay's shape (base64url, 43 chars): what the redaction tests must never see in a log.
+  result.share_path =
+      "/api/relay/v1/files/" + blob_id + "/download?t=Mock_Token-0123456789abcdefghijklmnopqrstuvwxyzAB";
+  result.share_url = "https://mock.example" + result.share_path;
+  result.expires_at = "2099-01-08T00:00:00.000Z";
+  return result;
+}
+
+Roe<void> MockBlobClient::FileDelete(const std::string& /*relay_user_id*/, const std::string& blob_id) {
+  deleted_file_ids_.push_back(blob_id);
+  return Roe<void>{};
+}
+
+Roe<RelayFileListResult> MockBlobClient::FileList(const std::string& /*relay_user_id*/,
+                                                  const std::string& status_filter) {
+  file_list_filters_.push_back(status_filter);
+  RelayFileListResult result = file_list_result_.value_or(RelayFileListResult{});
+  if (!status_filter.empty()) {
+    std::erase_if(result.files, [&](const RelayFileRecord& file) { return file.status != status_filter; });
+  }
+  return result;
 }
 
 Roe<std::vector<mesh::DirectoryHit>> MockDirectoryClient::SearchPeople(const std::string& query) {
