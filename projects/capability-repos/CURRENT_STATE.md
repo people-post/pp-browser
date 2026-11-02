@@ -122,10 +122,14 @@
   over an `IPeerCardStore` port, from `ProfileStores`; `PostStore` is social's `IPostStore` (`AddEntry` on the port).
   Their SQLite ones are storage's, in-memory ones in each capability's `testing/`, contract tests on both. People and
   posts hold no SQL; `pp_lib_people_cards` is gone (the cards are plain people code, headless too).
+- **CR024 stage 4, content (CR024 done):** `ObjectIndex` is content's `IObjectIndex` port; `SqliteObjectIndex` is
+  storage's (`object_index.db`, unchanged), `InMemoryObjectIndex` in `lib/content/testing`, a contract test on both.
+  `CasStore` is one per profile, built by the hub on the index the app opens (`SetContentStorage`) and shared with
+  the attachment workflow, the blob transport and Me → Storage; content's functions take it instead of a path. No
+  capability holds SQL now.
 
 ## Next
 
-1. CR024 stage 4, content: `ObjectIndex` (inside `CasStore`, which several places open by path).
-2. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
-3. Contracts repo (CR010) when convenient.
-4. P3's namespaces when a second app needs a capability.
+1. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
+2. Contracts repo (CR010) when convenient.
+3. P3's namespaces when a second app needs a capability.

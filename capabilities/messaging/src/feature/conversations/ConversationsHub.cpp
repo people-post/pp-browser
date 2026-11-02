@@ -877,7 +877,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     profile_id_ = "default";
   }
 
-  if (!open_stores_) {
+  if (!open_stores_ || !open_content_index_) {
     return Error("No storage for the profile's stores");
   }
   auto opened_stores = open_stores_(data_dir_, profile_id_);
@@ -891,6 +891,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   thread_prefs_ = std::move(opened_stores->thread_prefs);
   thread_mentions_ = std::move(opened_stores->thread_mentions);
   peer_card_rows_ = std::move(opened_stores->peer_cards);
+  content_ = std::make_shared<CasStore>(data_dir_, profile_id_, open_content_index_(data_dir_));
   at_rest_ = std::move(opened_stores->at_rest);
   profile_db_path_ = std::move(opened_stores->profile_db_path);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
@@ -1104,6 +1105,7 @@ void ConversationsHub::BuildMessagingObjects() {
     });
   });
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetContent(content_);
   mesh_messaging_->SetControlLaneSeen(control_lane_seen_.get());
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
@@ -2361,17 +2363,18 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
   const ByteVector attachment_dek = Attachments().CopyDek();
   const uint64_t max_receive_bytes = CurrentAttachmentLimits().max_receive_bytes;
 
+  const std::shared_ptr<CasStore> content = content_;
   const auto keep_sent_copy = [&](const ThreadMessage& sent) {
-    if (!attachment_dek.empty() && !profile_id_.empty()) {
+    if (!attachment_dek.empty() && content) {
       if (job->plaintext) {
-        (void)CopyAttachmentPlaintext(data_dir_, profile_id_, job->thread_id, *fields, *job->plaintext, attachment_dek,
+        (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *job->plaintext, attachment_dek,
                                       max_receive_bytes);
       } else if (!job->record_id.empty()) {
         // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key.
         if (auto cipher = job->store->ReadCipher(job->record_id)) {
           if (auto plain = AttachmentContentCipher::Decrypt(fields->content_key, fields->blob_nonce,
                                                             std::move(*cipher), fields->content_hash)) {
-            (void)CopyAttachmentPlaintext(data_dir_, profile_id_, job->thread_id, *fields, *plain, attachment_dek,
+            (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *plain, attachment_dek,
                                           max_receive_bytes);
           }
         }
@@ -2402,7 +2405,7 @@ AttachmentFetchWorkflow& ConversationsHub::Attachments() {
   if (!attachment_downloads_) {
     attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
     attachment_downloads_->SetProfileDataDir(data_dir_);
-    attachment_downloads_->SetProfileId(profile_id_);
+    attachment_downloads_->SetContent(content_);
     attachment_downloads_->SetLimits(CurrentAttachmentLimits());
   }
   return *attachment_downloads_;
@@ -2418,7 +2421,7 @@ void ConversationsHub::WireAttachmentDownloads() {
     attachment_downloads_ = std::make_unique<AttachmentFetchWorkflow>();
   }
   attachment_downloads_->SetProfileDataDir(data_dir_);
-  attachment_downloads_->SetProfileId(profile_id_);
+  attachment_downloads_->SetContent(content_);
   attachment_downloads_->SetLimits(CurrentAttachmentLimits());
   attachment_downloads_->SetTransferLane(&transfer_lane_);
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
@@ -2437,7 +2440,6 @@ void ConversationsHub::WireAttachmentDownloads() {
   if (mesh_messaging_) {
     mesh_messaging_->SetAttachmentDownloads(attachment_downloads_.get());
     if (auto* peer_blob = mesh_messaging_->PeerBlobService()) {
-      peer_blob->SetProfileId(profile_id_);
       // The receiver's own pace and disk limits apply to what a contact pushes straight to this device too.
       peer_blob->SetPushGate([workflow = attachment_downloads_.get()](const std::string& sender, const uint64_t bytes) {
         return workflow->TryAcceptDirectPush(sender, bytes);
@@ -3018,6 +3020,10 @@ void ConversationsHub::Shutdown() {
   account_keys_.reset();
   peer_cards_.reset();
   peer_card_rows_.reset();
+  if (attachment_downloads_) {
+    attachment_downloads_->SetContent(nullptr); // a worker still running keeps its own reference
+  }
+  content_.reset();
   // Participants free the rest (media engine, key and session stores) after DEK unregister above.
   for (HubParticipant* participant : ParticipantsDown()) {
     participant->OnShutdown();

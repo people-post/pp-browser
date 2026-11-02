@@ -6,6 +6,7 @@ target_link_libraries(pp_browser_domain_attachments_test PRIVATE
   pp_domain_attachments
   pp_lib_net_testing
   pp_lib_messaging_testing
+  pp_lib_content_testing
   Asio::asio
   GTest::gtest
   GTest::gtest_main)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "domain/attachments/AmpChatBlobTransport.h"
+#include "lib/content/CasStore.h"
 #include "lib/delivery/RelayClients.h"
 #include "domain/delivery/AmpAccountCardTransport.h"
 #include "common/Module.h"
@@ -56,6 +58,8 @@ public:
     devices_of_ = std::move(devices_of);
   }
   void SetProfileDataDir(std::string profile_data_dir);
+  /** What the blob transport serves from (kept across a re-Attach). */
+  void SetContent(std::shared_ptr<CasStore> content);
 
   /** Build the transports on `links` (idempotent while attached to the same links). False: no links. */
   bool Attach(mesh::IChatPeerLinks* links, std::function<void()> io_pump = {}, WorkerPost worker_post = {},
@@ -91,11 +95,12 @@ private:
   std::function<std::vector<std::string>(const std::string&)> devices_of_;
   std::unique_ptr<AmpAccountCardTransport> account_card_;
   std::string profile_data_dir_;
+  std::shared_ptr<CasStore> content_;
   mesh::IChatPeerLinks* links_ = nullptr;
   /** `links_` limited to the audience, for the people-facing transports (outlives them). */
   std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
   std::unique_ptr<IChatHistoryPeerClient> history_;
-  std::unique_ptr<IChatBlobPeerService> blob_;
+  std::unique_ptr<AmpChatBlobTransport> blob_;
   std::unique_ptr<IDirectMessageClient> direct_chat_;
 };
 

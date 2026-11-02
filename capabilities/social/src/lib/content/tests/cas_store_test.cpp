@@ -1,5 +1,6 @@
 #include "lib/content/CasStore.h"
 #include "lib/content/CasLibrary.h"
+#include "lib/content/testing/InMemoryObjectIndex.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -21,7 +22,7 @@ protected:
             std::to_string(reinterpret_cast<uintptr_t>(this)));
     std::filesystem::remove_all(dir_);
     std::filesystem::create_directories(dir_);
-    store_ = std::make_unique<CasStore>(dir_.string(), "profile-a");
+    store_ = std::make_unique<CasStore>(dir_.string(), "profile-a", std::make_unique<InMemoryObjectIndex>());
   }
 
   void TearDown() override {
@@ -200,22 +201,22 @@ TEST_F(CasStoreTest, PublicTipRoundTripAndPinnedProvideGate) {
   ASSERT_TRUE(parsed_raw);
   EXPECT_EQ(*parsed_raw, *hash);
 
-  auto served = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *hash);
+  auto served = LoadPinnedPublicCasBytes(*store_, *hash);
   ASSERT_TRUE(served) << served.error().message;
   EXPECT_EQ(*served, plain_);
 
   ASSERT_TRUE(store_->Unpublish(*hash));
-  auto refused = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *hash);
+  auto refused = LoadPinnedPublicCasBytes(*store_, *hash);
   EXPECT_FALSE(static_cast<bool>(refused));
 
   const ByteVector other{'c', 'a', 'c', 'h', 'e'};
   auto other_hash = AttachmentContentHash(other);
   ASSERT_TRUE(other_hash);
-  ASSERT_TRUE(CacheFetchedPublicCas(dir_.string(), "profile-a", *other_hash, other, "text/plain", "cached.txt"));
+  ASSERT_TRUE(CacheFetchedPublicCas(*store_, *other_hash, other, "text/plain", "cached.txt"));
   auto cached = store_->Index().Lookup(CasRealm::Public, *other_hash);
   ASSERT_TRUE(cached && cached->has_value());
   EXPECT_FALSE((*cached)->pinned);
-  auto cache_refuse = LoadPinnedPublicCasBytes(dir_.string(), "profile-a", *other_hash);
+  auto cache_refuse = LoadPinnedPublicCasBytes(*store_, *other_hash);
   EXPECT_FALSE(static_cast<bool>(cache_refuse));
 }
 

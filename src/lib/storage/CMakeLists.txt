@@ -8,6 +8,7 @@ pp_browser_add_lib_library(pp_lib_storage
     SqliteCallSessionStore.cpp
     SqliteControlLaneSeenStore.cpp
     SqliteGroupRosterStore.cpp
+    SqliteObjectIndex.cpp
     SqlitePeerCardStore.cpp
     SqlitePeerSessionStore.cpp
     SqlitePostStore.cpp
@@ -20,6 +21,7 @@ pp_browser_add_lib_library(pp_lib_storage
     pp_lib_messaging
     pp_lib_calls
     pp_lib_posts
+    pp_lib_content
     pp_lib_delivery
     pp_foundation_crypto
     pp_foundation_error

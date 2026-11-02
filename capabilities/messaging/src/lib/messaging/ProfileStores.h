@@ -34,7 +34,7 @@ struct ProfileStores {
   std::unique_ptr<IPeerCardStore> peer_cards;
   /** The stores above that are encrypted at rest: the hub hands them the profile's data key. */
   std::vector<IDekConsumer*> at_rest;
-  /** The profile database, for what still opens it by path (CR024: content's index). */
+  /** The profile database, for the calls stack's stores (`OpenSqliteCallStores`). */
   std::string profile_db_path;
 };
 

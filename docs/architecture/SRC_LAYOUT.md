@@ -138,10 +138,11 @@ base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the
   its records, its logic, the ports that keep them, and in-memory stores for tests (delivery's
   `lib/delivery/testing/InMemoryDeliveryStore`). The app owns the database file, every schema and migration, at-rest
   encryption and the SQLite implementations, in one storage module, [`src/lib/storage`](../../src/lib/storage/)
-  (the profile database, the thread store, rosters, prefs, mentions, peer sessions, the control lane's seen ids),
-  handed to the hub by `ProductStack` (`ConversationsHub::SetStorage`, `lib/messaging/ProfileStores.h`), and the call
-  stores to `CallStack` by `CallsParticipant` (`lib/calls/CallStores.h`); people's cards and social's posts too.
-  Still moving there: content's object index (`ObjectIndex`). An in-memory store and its SQLite one pass the same contract test
+  (the profile database, the thread store, rosters, prefs, mentions, peer sessions, the control lane's seen ids,
+  people's cards, social's posts), handed to the hub by `ProductStack` (`ConversationsHub::SetStorage`,
+  `lib/messaging/ProfileStores.h`); content's index (`SetContentStorage`; the hub builds the profile's one
+  `CasStore` on it and lends it out); and the call stores to `CallStack` by `CallsParticipant`
+  (`lib/calls/CallStores.h`). An in-memory store and its SQLite one pass the same contract test
   (`lib/storage/tests/*_contract_test`).
 
 ## What `src/common` provides
@@ -199,7 +200,7 @@ crypto
 | `lib/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `lib/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
 | `lib/posts/` | Public posts ([social-posts](../../projects/social-posts/DESIGN.md)): entries and head statements (`PostEntry`: canonical bytes, hash, sign / verify, chain, fork), kind bodies and protocol limits (`PostBodies`, `PostTypes`), the post store's port (`IPostStore`: entries with forks and stubs, heads, the device's own lane; SQLite in `lib/storage`), the device's writer (`PostAuthor`). Keys come from callers; no lib peers |
-| `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`domain/attachments/AttachmentContent`, `ChatBlobContentSource`) |
+| `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore` over the `IObjectIndex` port, `CasTypes`; the SQLite index is `lib/storage`'s), the library (`CasLibrary`), private content by hash (`PrivateContent`); its functions take the profile's `CasStore`, which the conversations hub owns. Messaging's lib never includes it: features wire attachments to it (`domain/attachments/AttachmentContent`, `ChatBlobContentSource`) |
 | `lib/net/` | HTTP client and the Brief backend's own clients: registration, directory, blobs, the locker, push devices, client compat; the relay API's signed header (`RelayApiSignPayload`). No messaging types: the relay's message client is delivery's |
 | `lib/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `lib/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
