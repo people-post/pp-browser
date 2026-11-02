@@ -23,10 +23,12 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <gtest/gtest.h>
 #include <memory>
+#include <thread>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -69,6 +71,15 @@ struct Side {
 
   /** (Re)open the profile's message and session stores: a reinstall starts from an empty one. */
   void OpenProfile(const std::string& dir) {
+    if (store) {
+      // A reinstall or a chat reset comes later than anything sent before it — on a device, seconds
+      // later. In memory the whole test runs within one millisecond, and a peer reads an opener
+      // signed in the same millisecond as the last message it heard as late (a replay, #463).
+      const int64_t reopened_ms = util::NowUnixMs();
+      while (util::NowUnixMs() <= reopened_ms) {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+      }
+    }
     pipeline.reset();
     seen.reset();
     psk.reset();
