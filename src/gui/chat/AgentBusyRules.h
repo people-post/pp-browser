@@ -11,8 +11,9 @@
 namespace pbr {
 
 /**
- * The AI runs one turn at a time (one AgentSession). "Busy" belongs to the thread the turn runs in: only that
- * thread shows "thinking" and the stop key; other threads keep sending (B112, DEV/PLAN-ai-per-thread-busy.md).
+ * The AI runs one thread turn at a time (AgentSessions, kMaxConcurrentTurns). "Busy" belongs to the thread the turn
+ * runs in: only that thread shows "thinking" and the stop key; other threads keep sending (B112,
+ * DEV/PLAN-ai-per-thread-busy.md).
  */
 struct AgentBusyState {
   bool busy = false;

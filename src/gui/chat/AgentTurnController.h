@@ -140,6 +140,11 @@ public:
                             const std::vector<BriefAiSource>& sources = {});
   /** The stop key / a double Escape: stops the turn only if it runs in the open thread. */
   void OnStopTurn();
+  /**
+   * The Home composer's question (no messaging router): busy in `thread_id` once the session took it; if it did
+   * not (its turn still runs), the text goes back to that composer.
+   */
+  void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
 
   // --- one turn at a time, "busy" per thread, a queue for the others (B112) -----------------------
   const AgentBusyState& Busy() const { return busy_; }
@@ -155,7 +160,7 @@ public:
   void DrainQueue();
   size_t QueuedCount() const { return queue_.Size(); }
 
-  /** Stop a turn in flight (pause, a new chat). */
+  /** Stop every turn in flight (the app pauses). */
   void Cancel();
   /**
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its

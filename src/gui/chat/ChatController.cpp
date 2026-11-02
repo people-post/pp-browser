@@ -2622,10 +2622,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   log().info << "Submitting message to agent session";
-  if (agent_.Ports().submit) {
-    agent_.Ports().submit(trimmed, std::move(user_payload));
-    agent_.MarkAgentBusy(target_thread);
-  }
+  agent_.SubmitHomeQuestion(target_thread, trimmed, std::move(user_payload));
 }
 
 void ChatController::QueueAgentSend(const std::string& thread_id, const std::string& text,
@@ -3385,8 +3382,8 @@ void ChatController::Shutdown() {
   }
   if (agent_.AgentReady()) {
     StartupPhase phase("Shutdown::AgentSession");
-    if (agent_.Ports().cancel) {
-      agent_.Ports().cancel();
+    if (agent_.Ports().cancel_all) {
+      agent_.Ports().cancel_all();
     }
     // ConfigureOnIO may still be running (and used to touch ConversationsHub via the
     // tool hook). Wait before Application tears the hub down.

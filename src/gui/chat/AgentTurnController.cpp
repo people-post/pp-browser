@@ -176,7 +176,14 @@ void AgentTurnController::RecoverMissedTurnEnd() {
   // Every session path that ends a turn should say so (LoadingChanged false); if one ever does not, the open thread
   // would show "thinking" forever and every other AI send would queue for nothing. A safety net, logged.
   constexpr auto kBusyRecoveryDelay = std::chrono::seconds(2);
-  if (!busy_.busy || !use_llm_ || !agent_ports_.is_busy || agent_ports_.is_busy()) {
+  const auto session_busy = [this] {
+    // Unknown thread: any running turn may be the one the UI waits for.
+    if (busy_.thread_id.empty()) {
+      return !agent_ports_.any_busy || agent_ports_.any_busy();
+    }
+    return !agent_ports_.is_busy || agent_ports_.is_busy(busy_.thread_id);
+  };
+  if (!busy_.busy || !use_llm_ || session_busy()) {
     busy_without_session_since_.reset();
     return;
   }
@@ -195,8 +202,8 @@ void AgentTurnController::RecoverMissedTurnEnd() {
 }
 
 void AgentTurnController::Cancel() {
-  if (AgentReady() && agent_ports_.cancel) {
-    agent_ports_.cancel();
+  if (AgentReady() && agent_ports_.cancel_all) {
+    agent_ports_.cancel_all();
   }
 }
 
@@ -495,10 +502,16 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
         return;
       }
       log().info << "Submitting an image question to the agent session";
-      agent_ports_.submit_image_to_thread(thread_id, question,
-                                          AgentImageTurn{.image = std::move(image.image),
-                                                         .message_id = message_id,
-                                                         .ai_image_json = std::move(ai_image_json)});
+      const SubmitOutcome outcome =
+          agent_ports_.submit_image_to_thread(thread_id, question,
+                                              AgentImageTurn{.image = std::move(image.image),
+                                                             .message_id = message_id,
+                                                             .ai_image_json = std::move(ai_image_json)});
+      if (outcome != SubmitOutcome::Started) {
+        // Another turn took the slot while the image was stored (not expected with the UI's own busy state).
+        log().warning << "Image question not started (outcome " << static_cast<int>(outcome) << ")";
+        UserFeedback::Fail(Tr("chat.ai_queue.image_busy"));
+      }
     });
   });
   return true;
@@ -600,8 +613,21 @@ void AgentTurnController::OnStopTurn() {
     return;
   }
   if (AgentReady() && agent_ports_.cancel) {
-    agent_ports_.cancel();
+    agent_ports_.cancel(busy_.thread_id);
   }
+}
+
+void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const std::string& text,
+                                             std::optional<std::string> payload) {
+  if (!agent_ports_.submit) {
+    return;
+  }
+  if (agent_ports_.submit(text, std::move(payload)) != SubmitOutcome::Started) {
+    log().info << "Home question not started: a turn still runs there; the text goes back to the composer";
+    host_.PutBackDraft(thread_id, text);
+    return;
+  }
+  MarkAgentBusy(thread_id);
 }
 
 void AgentTurnController::MarkAgentBusy(const std::string& thread_id) {
@@ -663,6 +689,11 @@ void AgentTurnController::DrainQueue() {
   while (!busy_.busy) {
     std::optional<QueuedAgentSend> item = queue_.PopFront();
     if (!item) {
+      break;
+    }
+    if (agent_ports_.can_start && agent_ports_.can_start(item->thread_id) != TurnStart::Yes) {
+      log().info << "Queued AI send kept: the assistant cannot start it yet";
+      queue_.PushFront(std::move(*item));
       break;
     }
     const QueuedSendOutcome outcome = host_.RunQueuedAgentSend(*item);

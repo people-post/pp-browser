@@ -1352,28 +1352,35 @@ void Application::WireAgentAndConfig() {
   ConversationsHub& messaging = Conversations();
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
-  agent_session_.emplace();
-  chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  agent_sessions_.emplace();
+  chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
   if (messaging_facade_) {
-    AgentInboundPorts inbound;
-    inbound.submit_scoped_assist = [this](const std::string& thread_id, const std::string& prompt,
-                                          std::optional<std::string> user_payload, AtAiMode mode) {
-      if (agent_session_) {
-        agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
+    // MessageRouter checks is_busy before it routes, so these start; anything else would be a send that slipped past.
+    const auto log_not_started = [this](const SubmitOutcome outcome) {
+      if (outcome != SubmitOutcome::Started) {
+        log().warning << "AI question from the router not started (outcome " << static_cast<int>(outcome) << ")";
       }
     };
-    inbound.is_busy = [this]() { return agent_session_ && agent_session_->IsBusy(); };
-    inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
-                                      std::optional<std::string> user_payload) {
-      if (agent_session_) {
-        agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
+    AgentInboundPorts inbound;
+    inbound.submit_scoped_assist = [this, log_not_started](const std::string& thread_id, const std::string& prompt,
+                                          std::optional<std::string> user_payload, AtAiMode mode) {
+      if (agent_sessions_) {
+        log_not_started(agent_sessions_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode));
+      }
+    };
+    // Asked before anything is stored or sent. With kMaxConcurrentTurns = 1 "full" also covers the target thread.
+    inbound.is_busy = [this]() { return agent_sessions_ && agent_sessions_->ThreadTurnsFull(); };
+    inbound.submit_to_thread = [this, log_not_started](const std::string& thread_id, const std::string& user_text,
+                                                       std::optional<std::string> user_payload) {
+      if (agent_sessions_) {
+        log_not_started(agent_sessions_->SubmitToThread(thread_id, user_text, std::move(user_payload)));
       }
     };
     // Buttons of the on-device app-action flow ({"type":"local_action",...}) run in the session, no model.
-    inbound.submit_local_action = [this](const std::string& thread_id, const std::string& text,
-                                         const std::string& payload, const bool in_peer_chat) {
+    inbound.submit_local_action = [this, log_not_started](const std::string& thread_id, const std::string& text,
+                                                          const std::string& payload, const bool in_peer_chat) {
       const auto doc = TryParseObject(payload);
-      if (!agent_session_ || !doc) {
+      if (!agent_sessions_ || !doc) {
         return;
       }
       Object args;
@@ -1382,17 +1389,17 @@ void Application::WireAgentAndConfig() {
           args.set(key, value);
         }
       }
-      agent_session_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""), std::move(args),
-                                        in_peer_chat);
+      log_not_started(agent_sessions_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""),
+                                                       std::move(args), in_peer_chat));
     };
     inbound.is_app_action_request = [this](const std::string& text) {
-      return agent_session_ && agent_session_->IsAppActionRequest(text);
+      return agent_sessions_ && agent_sessions_->IsAppActionRequest(text);
     };
     messaging_facade_->BindAgentInbound(std::move(inbound));
 
     // The planner matches names against the user's remark and the other side's nickname, on the device only.
     // Called on a worker (like the messaging tools): the contacts store and the thread store lock themselves.
-    agent_session_->SetLocalContactsSource([this]() {
+    agent_sessions_->SetLocalContactsSource([this]() {
       std::vector<LocalPlanContact> out;
       if (!messaging_facade_) {
         return out;
@@ -1421,17 +1428,17 @@ void Application::WireAgentAndConfig() {
       return out;
     });
   }
-  if (agent_session_) {
-    agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
-    agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+  if (agent_sessions_) {
+    agent_sessions_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
+    agent_sessions_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
       ProfilePreferences prefs = store_.Snapshot().profile_prefs;
       prefs.tool_permissions = permissions;
       prefs.schema_version = ProfilePreferences::kSchemaVersion;
       return store_.SaveProfilePrefs(prefs);
     });
     store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
-      if (agent_session_) {
-        agent_session_->SetToolPermissions(prefs.tool_permissions);
+      if (agent_sessions_) {
+        agent_sessions_->SetToolPermissions(prefs.tool_permissions);
       }
     });
   }
@@ -1611,7 +1618,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
     }
-    agent_session_.reset();
+    agent_sessions_.reset();
     ui::RemoveContext("main");
     ui::Shutdown();
     Backend::Shutdown();
@@ -2078,7 +2085,7 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::ChatController");
       chat_->Shutdown();
     }
-    agent_session_.reset();
+    agent_sessions_.reset();
 
     // Join ringtone before AbortCallMedia / SDL_Quit — accept-dialog quit left the playback
     // worker holding the device (async Stop is Accept-safe and does not join).

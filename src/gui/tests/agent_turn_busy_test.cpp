@@ -102,7 +102,10 @@ protected:
   void BindSession() {
     AgentUiPorts ports;
     ports.has_session = [] { return true; };
-    ports.cancel = [this] { ++cancel_calls_; };
+    ports.cancel = [this](const std::string& thread_id) {
+      ++cancel_calls_;
+      cancelled_thread_ = thread_id;
+    };
     controller_.BindPorts(std::move(ports));
   }
 
@@ -117,6 +120,7 @@ protected:
   ShellFeedbackPorts feedback_;
   AgentTurnController controller_{host_, chat_, chat_links_, widgets_, working_set_, feedback_};
   int cancel_calls_ = 0;
+  std::string cancelled_thread_;
 };
 
 // --- what the open thread shows ----------------------------------------------------------------
@@ -250,6 +254,47 @@ TEST_F(AgentTurnBusyTest, ARefusedSendGoesBackToTheHeadInOrder) {
   EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B", "C"}));
 }
 
+TEST_F(AgentTurnBusyTest, ASendTheSessionCannotStartStaysAtTheHead) {
+  // The sessions answer Full while another thread's turn runs that the UI has not heard of: nothing is handed over
+  // and nothing is lost; that turn's end drains it.
+  TurnStart answer = TurnStart::Full;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.can_start = [&answer](const std::string&) { return answer; };
+  controller_.BindPorts(std::move(ports));
+  controller_.MarkAgentBusy("A");
+  controller_.QueueSend(Queued("B"));
+  controller_.QueueSend(Queued("C"));
+
+  controller_.HandleAgentEvent(Loading(false, "A"));
+  EXPECT_TRUE(host_.handed_over.empty());
+  EXPECT_EQ(controller_.QueuedCount(), 2u);
+
+  answer = TurnStart::Yes;
+  host_.outcomes = {QueuedSendOutcome::Started};
+  controller_.HandleAgentEvent(Loading(false, "X"));
+  EXPECT_EQ(Threads(host_.handed_over), (std::vector<std::string>{"B"}));
+}
+
+TEST_F(AgentTurnBusyTest, AHomeQuestionTheSessionDidNotTakeGoesBackToTheComposer) {
+  SubmitOutcome answer = SubmitOutcome::BusyHere;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit = [&answer](const std::string&, std::optional<std::string>) { return answer; };
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+
+  controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
+  EXPECT_FALSE(controller_.Busy().busy);
+  ASSERT_EQ(host_.put_back.size(), 1u);
+  EXPECT_EQ(host_.put_back.front(), (std::pair<std::string, std::string>{"A", "hello"}));
+
+  answer = SubmitOutcome::Started;
+  controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
+  EXPECT_TRUE(controller_.Busy().BusyIn("A"));
+  EXPECT_EQ(host_.put_back.size(), 1u);
+}
+
 TEST_F(AgentTurnBusyTest, TwoIdleEventsInARowHandOverOnlyOnce) {
   controller_.MarkAgentBusy("A");
   controller_.QueueSend(Queued("B"));
@@ -366,6 +411,7 @@ TEST_F(AgentTurnBusyTest, StopReachesTheSessionOnlyFromTheThreadWhoseTurnRuns) {
   Open("A");
   controller_.OnStopTurn();
   EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "A") << "only that thread's turn is stopped";
 }
 
 TEST_F(AgentTurnBusyTest, StopWithNothingRunningDoesNothing) {
