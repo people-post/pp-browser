@@ -21,7 +21,7 @@ TEST(PublicOnlySocketTest, PublicHostsStayAllowedAndPrivateOrTestRangesStayRefus
   EXPECT_FALSE(PublicOnlySocketAllowsIPv4(Ip(127, 0, 0, 1)));
   EXPECT_FALSE(PublicOnlySocketAllowsIPv4(Ip(192, 168, 0, 105)));
   EXPECT_FALSE(PublicOnlySocketAllowsIPv4(Ip(198, 51, 100, 1))); // TEST-NET-2, right next to the fake-ip range
-  EXPECT_FALSE(PublicOnlySocketAllowsIPv4(Ip(198, 20, 0, 1)));   // just past the /15
+  EXPECT_TRUE(PublicOnlySocketAllowsIPv4(Ip(198, 20, 0, 1)));    // just past the /15: ordinary public space
 }
 
 } // namespace
