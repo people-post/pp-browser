@@ -25,6 +25,8 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include "feature/calls/tests/calls_on_owner.h"
+
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
@@ -1183,17 +1185,19 @@ TEST_F(CallHopPathTest, InboundSfuAttachDeferredWhileSoftMigrateInFlight) {
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B"; // non-initiator → WaitForAttach
 
-  ASSERT_TRUE(topo_->OnRemoteAcceptJoined(call_id, 3, "account:C"));
-  EXPECT_TRUE(topo_->IsSoftMigrateInFlight());
-
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
   attach.hop_peer_id = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
   attach.hop_multiaddr = "/ip4/1.2.3.4/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
   dial_->endpoints[attach.hop_peer_id] = attach.hop_multiaddr;
 
-  ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
-  EXPECT_EQ(relay_->attach_calls, 0) << "must defer while SoftMigrate in flight";
+  // One owner step, as the stack runs them: the attach arrives while the migrate it started is in flight.
+  OnCallsOwner([&] {
+    ASSERT_TRUE(topo_->OnRemoteAcceptJoined(call_id, 3, "account:C"));
+    EXPECT_TRUE(topo_->IsSoftMigrateInFlight());
+    ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
+    EXPECT_EQ(relay_->attach_calls, 0) << "must defer while SoftMigrate in flight";
+  });
   EXPECT_EQ(relay_->detach_calls, 0);
 
   AppRuntime::ResumeWorkers();
@@ -1492,14 +1496,14 @@ TEST_F(CallHopPathTest, GuestKeepsReattachingPastQuickAttempts) {
   relay_->attach_ok = false;
   relay_->Detach();
   relay_->FireSessionEnd();
-  const int quick = CallHopMigrateWorkflow::kMaxGuestSfuReattachAttempts;
+  const int quick = CallHopPath::kMaxGuestSfuReattachAttempts;
   ASSERT_TRUE(run_until([&] { return relay_->attach_calls >= attaches_after_first + quick; }, std::chrono::seconds(5)))
       << "the quick attempts";
 
   // Coverage is back on the same network: no move, the guest must still get back on the hop.
   relay_->attach_ok = true;
-  EXPECT_TRUE(run_until([&] { return relay_->IsAttached(); },
-                        CallHopMigrateWorkflow::kGuestSfuSlowRetry + std::chrono::seconds(4)))
+  EXPECT_TRUE(
+      run_until([&] { return relay_->IsAttached(); }, CallHopPath::kGuestSfuSlowRetry + std::chrono::seconds(4)))
       << "a guest whose quick attempts are spent must keep trying while the call is on the hop";
   EXPECT_GT(relay_->attach_calls, attaches_after_first + quick);
   EXPECT_TRUE(topo_->IsSfuAttached());

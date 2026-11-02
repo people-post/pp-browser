@@ -13,8 +13,7 @@ namespace pbr {
 
 /**
  * What a call's group path asks the device and the control lane it sends on (V046); what it tells the
- * device goes up as `HopReport` events (V057 2). Topology projects a subset into
- * CallHopMigrateHostPorts for its migrate workflow.
+ * device goes up as `HopReport` events (V057 2).
  */
 struct CallHopPathHostPorts {
   std::function<Roe<std::string>()> local_relay_identity;

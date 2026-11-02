@@ -72,7 +72,7 @@ struct InboxSyncFromWake {};
 using WorkflowReport =
     std::variant<workflow_report::Changed, workflow_report::Notice, workflow_report::InboxSyncFromWake>;
 
-/** The hop-migrate workflow's own events (V050 group hop flows). */
+/** The group path's move-to-hop / attach flows' events (V050 group hop flows). */
 namespace hop_migrate_event {
 
 /** 2 s after a picked hop's fan-out: send it once more if the call is still on that hop. */

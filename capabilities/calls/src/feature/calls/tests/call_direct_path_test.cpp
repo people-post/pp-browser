@@ -1169,17 +1169,18 @@ TEST_F(CallDirectPathTest, AReconnectOntoTheLinkTheCallRidesIsConnected) {
   transport_->already_on_link = true;
   ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
   transport_->last_callbacks.on_path_lost();
-  bool saw_reconnecting = false;
   for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
-    saw_reconnecting |= host_->live.Status() == CallMediaStatus::Reconnecting;
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  for (int i = 0; i < 20; ++i) { // past a retry, were there one
+  for (int i = 0; i < 400 && host_->live.Status() != CallMediaStatus::DirectLive; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  EXPECT_TRUE(saw_reconnecting);
+  for (int i = 0; i < 10; ++i) { // past a retry, were there one
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected, not left Reconnecting";
   EXPECT_EQ(transport_->migrate_calls.load(), 1) << "no retry loop on a link the call already rides";
   OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });

@@ -33,19 +33,17 @@
 #include <unordered_set>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
+#include "feature/calls/SfuKeyRing.h"
+#include "lib/calls/CallMediaSeat.h"
+#include "lib/pricing/InitiationPricing.h"
+#include "lib/calls/SoftMigrateLogic.h"
+#include <functional>
 
 namespace pbr {
 
 CallHopPath::CallHopPath(std::string call_id, const ICallSessionReader& sessions, ICallSessionNotes& notes,
                          const IContactBook& contacts, std::shared_ptr<CallEngine> engine, CallHopService& hops)
-    : hop_migrate_(call_id, sessions, notes, engine),
-      flight_(hop_migrate_.Flight()),
-      attach_wait_(hop_migrate_.AttachWaitState()),
-      inbound_gate_(hop_migrate_.InboundGate()),
-      guest_(hop_migrate_.Guest()),
-      publishers_(hop_migrate_.Publishers()),
-      sfu_(hop_migrate_.Sfu()),
-      call_id_(std::move(call_id)),
+    : call_id_(std::move(call_id)),
       sessions_(sessions),
       notes_(notes),
       contacts_(contacts),
@@ -55,45 +53,9 @@ CallHopPath::CallHopPath(std::string call_id, const ICallSessionReader& sessions
       ranking_(hops.Ranking()),
       planning_(hops.Planning()) {
   redirectLogger("CallHopPath");
-  BindHopMigratePortsAndOps();
-}
-
-void CallHopPath::BindHopMigratePortsAndOps() {
-  hop_migrate_.SetMediaRelayDeps(&relay_deps_);
-  CallHopMigrateWorkflow::TopologyOps ops;
-  ops.apply = [this](CallHopPlannerEvent ev, const std::string& call_id) { Apply(ev, call_id); };
-  ops.sync_sfu_subscriptions = [this](const std::string& call_id) { SyncSfuSubscriptions(call_id); };
-  ops.refresh_adaptation = [this](const std::string& call_id) { RefreshAdaptation(call_id); };
-  ops.ranked_media_hop_candidates = [this]() { return ranking_.Ranked(); };
-  ops.resolve_hop_multiaddr = [this](const std::string& hop_peer_id) { return ranking_.HopMultiaddr(hop_peer_id); };
-  ops.resolve_local_advertise_ma = [this](const std::string& local_peer_id) {
-    return ranking_.LocalAdvertiseMa(local_peer_id);
-  };
-  ops.infer_scope_for_call = [this](const std::string& call_id, const std::string& local_identity) {
-    return InferScopeForCall(call_id, local_identity);
-  };
-  ops.lan_reachability_confirmed_for_call = [this](const std::string& call_id, const std::string& local_identity) {
-    return LanReachabilityConfirmedForCall(call_id, local_identity);
-  };
-  ops.fan_out_sfu_attach_for_hop = [this](const std::string& call_id, const std::string& hop_peer_id,
-                                          const std::string& local_identity) {
-    FanOutSfuAttachForHop(call_id, hop_peer_id, local_identity);
-  };
-  ops.publisher_stream_id_for_local = [this]() { return PublisherStreamIdForLocal(); };
-  ops.note_remote_publisher_from_attach = [this](const CallSfuAttachDetail& attach) {
-    NoteRemotePublisherFromAttach(attach);
-  };
-  ops.announce_local_publisher = [this](const std::string& call_id, const CallSfuAttachDetail& hop_attach) {
-    AnnounceLocalPublisher(call_id, hop_attach);
-  };
-  ops.is_active_call_for_topology = [this](const std::string& call_id) { return IsActiveCallForTopology(call_id); };
-  ops.begin_sfu_attach_wait = [this](const std::string& call_id) { BeginSfuAttachWait(call_id); };
-  ops.clear_sfu_attach_wait = [this]() { ClearSfuAttachWait(); };
-  hop_migrate_.SetTopologyOps(std::move(ops));
 }
 
 void CallHopPath::SetHostPorts(HostPorts ports) {
-  hop_migrate_.SetHostPorts(MakeMigrateHostPorts(ports));
   host_ = std::move(ports);
 }
 
@@ -105,7 +67,6 @@ CallHopPath::~CallHopPath() {
 
 void CallHopPath::OnRelayDepsChanged() {
   UnwatchRelayLoss(); // no-op after UnwatchRelay (the deps' owner unwatches before it swaps them)
-  hop_migrate_.SetMediaRelayDeps(&relay_deps_);
   WatchRelayLoss();
 }
 
@@ -139,47 +100,14 @@ void CallHopPath::UnwatchRelayLoss() {
 
 void CallHopPath::SetMediaKeyStore(ICallMediaKeyStore* keys) {
   media_keys_ = keys;
-  hop_migrate_.SetMediaKeyStore(keys);
 }
 
 void CallHopPath::SetSeatPorts(CallHopPathSeatPorts ports) {
-  hop_migrate_.SetSeatPorts(MakeMigrateSeatPorts(ports));
   seat_.Set(std::move(ports));
 }
 
 void CallHopPath::SetHopArmingPorts(CallHopArmingPorts ports) {
-  hop_migrate_.SetArmingPorts(MakeMigrateArmingPorts(ports));
   arming_.Set(std::move(ports));
-}
-
-CallHopMigrateArmingPorts CallHopPath::MakeMigrateArmingPorts(const CallHopArmingPorts& ports) const {
-  CallHopMigrateArmingPorts out;
-  out.migrate_ops_allowed = ports.hop_ops_allowed;
-  out.soft_migrate_may_arm = ports.soft_migrate_may_arm;
-  out.media_cancel_gen = ports.media_cancel_gen;
-  out.arming_debug_name = ports.arming_debug_name;
-  return out;
-}
-
-CallHopMigrateHostPorts CallHopPath::MakeMigrateHostPorts(const HostPorts& ports) const {
-  CallHopMigrateHostPorts out;
-  out.local_relay_identity = ports.local_relay_identity;
-  out.fan_out_joined = ports.fan_out_joined;
-  out.call_media = ports.call_media;
-  return out;
-}
-
-CallHopMigrateSeatPorts CallHopPath::MakeMigrateSeatPorts(const CallHopPathSeatPorts& ports) const {
-  CallHopMigrateSeatPorts out;
-  out.is_bound = ports.is_bound;
-  out.acquire = ports.acquire;
-  out.allows_path_op = ports.allows_path_op;
-  out.begin_attach = ports.begin_attach;
-  out.end_attach_if_matching = ports.end_attach_if_matching;
-  out.has_attach_in_flight = ports.has_attach_in_flight;
-  out.attaching_hop = ports.attaching_hop;
-  out.note_start = ports.note_start;
-  return out;
 }
 
 bool CallHopPath::IsAwaitingSfuRecovery() const {
@@ -191,7 +119,7 @@ bool CallHopPath::IsSfuAttached() const {
 }
 
 bool CallHopPath::IsOnSfuForCall(const std::string& call_id) const {
-  return call_id == call_id_ && hop_migrate_.IsLiveOnHopFor(call_id);
+  return call_id == call_id_ && IsLiveOnHopFor(call_id);
 }
 
 bool CallHopPath::IsSoftMigrateInFlight() const {
@@ -291,7 +219,6 @@ void CallHopPath::ReportHopProgress(const CallHopPlannerPhase phase, const std::
 
 void CallHopPath::SetReports(OwnerOutbox<HopReport> reports) {
   reports_ = std::move(reports);
-  hop_migrate_.SetReports(reports_);
 }
 
 void CallHopPath::Apply(CallHopPlannerEvent ev, const std::string& call_id) {
@@ -479,10 +406,6 @@ CallHopHealth CallHopPath::HopHealth() const {
                               .retransmits = relay.retransmits,
                               .srtt_ms = relay.srtt_ms};
   return hop;
-}
-
-bool CallHopPath::IsMigrateGenerationCurrent(uint64_t gen) const {
-  return hop_migrate_.IsMigrateGenerationCurrent(gen);
 }
 
 bool CallHopPath::SettleFinishedMigrate(const std::string& call_id) {
@@ -763,25 +686,6 @@ void CallHopPath::SyncSfuSubscriptions(const std::string& call_id) {
     return;
   }
   log().info << "SyncSfuSubscriptions call_id=" << call_id << " peers=" << subscribed << " announced=" << announced;
-}
-
-void CallHopPath::MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
-                                             const std::string& prefer_hop_peer_id, uint64_t expected_gen,
-                                             std::function<void(Roe<void>)> on_done) {
-  hop_migrate_.MaybeSoftMigrateToSfuAsync(call_id, trigger, prefer_hop_peer_id, expected_gen, std::move(on_done));
-}
-
-void CallHopPath::AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
-                                        std::function<void(Roe<void>)> on_done) {
-  hop_migrate_.AttachLocalToSfuAsync(call_id, attach, std::move(on_done));
-}
-
-void CallHopPath::OnGuestSfuTransportLost() {
-  hop_migrate_.OnGuestSfuTransportLost();
-}
-
-void CallHopPath::OnLocalNetworkMoved() {
-  hop_migrate_.OnLocalNetworkMoved();
 }
 
 uint64_t CallHopPath::ClaimMigrateFlight(const std::string& call_id) {
@@ -1518,8 +1422,7 @@ void CallHopPath::SetOutbox(OwnerOutbox<HopPathEvent> outbox) {
     UnwatchRelayLoss(); // its observer holds the outbox it was given: watch again with this one
     WatchRelayLoss();
   }
-  hop_migrate_.SetOutbox(
-      outbox_.For<HopMigrateEvent>([](HopMigrateEvent event) { return HopPathEvent{std::move(event)}; }));
+  migrate_outbox_ = outbox_.For<HopMigrateEvent>([](HopMigrateEvent event) { return HopPathEvent{std::move(event)}; });
 }
 
 void CallHopPath::Handle(HopPathEvent& event) {
@@ -1542,7 +1445,7 @@ void CallHopPath::Handle(HopPathEvent& event) {
         } else if constexpr (std::is_same_v<E, hop_path_event::Continue>) {
           steps_.Run(e.id);
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
-          hop_migrate_.Handle(e);
+          HandleMigrateEvent(e);
         } else {
           static_assert(!sizeof(E), "handle every HopPathEvent");
         }
@@ -1711,6 +1614,1233 @@ void CallHopPath::OnInboundHopRefuse(const CallHopRefuseDetail& detail) {
   ClearSfuAttachWait();
   reports_.Emit(hop_report::LeaveWanted{detail.call_id});
   reports_.Emit(hop_report::Changed{call_id_});
+}
+
+// --- The move to the hop and the attach (was CallHopMigrateWorkflow, V046/V047; merged by V057 6) ---
+
+namespace {
+
+std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures) {
+  const HopPickFailure failure = ClassifyHopPickFailures(hop_failures);
+  if (failure == HopPickFailure::AllPayment) {
+    return Localized("call.error.payment_unavailable_media");
+  }
+  std::string msg = Localized("call.error.no_media_relay_hop");
+  if (failure != HopPickFailure::AllUndialable) {
+    return msg;
+  }
+  const std::string tip = Localized(kPlatformNetworkHintKey);
+  if (!tip.empty()) {
+    msg += " ";
+    msg += tip;
+  }
+  return msg;
+}
+
+} // namespace
+
+bool CallHopPath::IsMigrateGenerationCurrent(uint64_t gen) const {
+  return gen == 0 || gen == flight_.migrate_generation.load(std::memory_order_acquire);
+}
+
+/** One SoftMigrate hop pick: walked by TryPickHop / AttachPickedHop, each step holding it by shared_ptr. */
+struct CallHopPath::HopPick {
+  std::string call_id;
+  uint64_t expected_gen = 0;
+  std::string local_identity;
+  std::string local_peer_id;
+  std::optional<CallSession> session;
+  std::vector<mesh::MeshHopCandidate> ranked;
+  std::vector<std::string> failures;
+  std::function<void(Roe<void>)> on_done;
+};
+
+bool CallHopPath::IsLiveOnHopFor(const std::string& call_id) const {
+  return sfu_.attached && engine_->Runs();
+}
+
+void CallHopPath::MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
+                                             const std::string& prefer_hop_peer_id, uint64_t expected_gen,
+                                             std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "MaybeSoftMigrateToSfuAsync rejected: shutting down call_id=" << call_id;
+    on_done(Error("shutdown in progress"));
+    return;
+  }
+  if (!PassSoftMigrateArmingGate(call_id, trigger, prefer_hop_peer_id, on_done)) {
+    return;
+  }
+  Defer([this, call_id, trigger, prefer_hop_peer_id, expected_gen, on_done = std::move(on_done)]() mutable {
+    RunSoftMigrate(call_id, trigger, prefer_hop_peer_id, expected_gen, std::move(on_done));
+  });
+}
+
+bool CallHopPath::PassSoftMigrateArmingGate(const std::string& call_id, SoftMigrateTrigger trigger,
+                                            const std::string& prefer_hop_peer_id,
+                                            const std::function<void(Roe<void>)>& on_done) {
+  const auto arming_ports = arming_.Get();
+  // V037/V048: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer).
+  // Relay-cap nudge used expected_gen=0 and promoted 1:1 DirectConnecting → Migrating PreferLocal
+  // while the peer stayed on circuit — dogfood "Connecting group media…" vs Connecting.
+  SoftMigrateArmingInput in;
+  in.arming_bound = arming_ports->IsBound();
+  if (in.arming_bound) {
+    if (auto joined = sessions_.CountJoined(call_id)) {
+      in.n_joined = *joined;
+    }
+    in.trigger = trigger;
+    in.prefer_named = !prefer_hop_peer_id.empty();
+    in.soft_migrate_may_arm = arming_ports->soft_migrate_may_arm && arming_ports->soft_migrate_may_arm();
+    in.migrate_ops_allowed = arming_ports->hop_ops_allowed && arming_ports->hop_ops_allowed();
+  }
+  const char* arming_name =
+      in.arming_bound && arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?";
+  switch (DecideSoftMigrateArming(in)) {
+    case SoftMigrateArming::Proceed:
+      return true;
+    case SoftMigrateArming::ArmAndProceed:
+      Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id); // reports Migrating
+      return true;
+    case SoftMigrateArming::StayDirect:
+      log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
+                 << " n_joined=" << in.n_joined << " arming=" << arming_name
+                 << " trigger=" << static_cast<int>(trigger);
+      on_done(Roe<void>());
+      return false;
+    case SoftMigrateArming::NotArmed:
+      log().info << "MaybeSoftMigrateToSfuAsync skipped (hop not armed) call_id=" << call_id
+                 << " arming=" << arming_name;
+      on_done(Error("hop path not armed"));
+      return false;
+  }
+  return true;
+}
+
+void CallHopPath::RunSoftMigrate(const std::string& call_id, SoftMigrateTrigger trigger,
+                                 const std::string& prefer_hop_peer_id, uint64_t expected_gen,
+                                 std::function<void(Roe<void>)> on_done) {
+  if (!IsMigrateGenerationCurrent(expected_gen)) {
+    log().info << "SoftMigrate skip stale gen want=" << expected_gen
+               << " have=" << flight_.migrate_generation.load(std::memory_order_acquire) << " call_id=" << call_id;
+    on_done(Roe<void>());
+    return;
+  }
+  const bool repick = !prefer_hop_peer_id.empty();
+  if (!repick && IsLiveOnHopFor(call_id)) {
+    SyncSfuSubscriptions(call_id);
+    on_done(Roe<void>());
+    return;
+  }
+  if (!relay_deps_.relay || !relay_deps_.dial) {
+    on_done(Error("media_relay not available"));
+    return;
+  }
+  auto local = host_.local_relay_identity();
+  if (!local) {
+    on_done(local.error());
+    return;
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    on_done(participants.error());
+    return;
+  }
+
+  auto pick = std::make_shared<HopPick>();
+  pick->call_id = call_id;
+  pick->expected_gen = expected_gen;
+  pick->local_identity = *local;
+  pick->on_done = std::move(on_done);
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    pick->session = **session;
+  }
+
+  if (!repick) {
+    const SoftMigrateAction action = DecideFirstSoftMigrate(*pick, trigger, *participants);
+    if (action == SoftMigrateAction::NoOp) {
+      SyncSfuSubscriptions(call_id);
+      pick->on_done(Roe<void>());
+      return;
+    }
+    if (action == SoftMigrateAction::WaitForAttach) {
+      reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.waiting_for_media_path")});
+      // Owner may have already fan-out CallSfuAttach; do not sit behind TailSync-starved polls.
+      reports_.Emit(hop_report::InboxSyncWanted{call_id_});
+      reports_.Emit(hop_report::Changed{call_id_});
+      pick->on_done(Roe<void>());
+      return;
+    }
+  } else if (sfu_.attached && SettleRepickOnCurrentHop(*pick, prefer_hop_peer_id)) {
+    return;
+  }
+
+  pick->ranked = RankHopsForSoftMigrate(*pick, prefer_hop_peer_id);
+  if (pick->ranked.empty()) {
+    pick->on_done(Error(Localized("call.error.no_media_relay_hop")));
+    return;
+  }
+  reports_.Emit(hop_report::Activity{
+      call_id_, repick ? Localized("call.status.switching_media_path") : Localized("call.status.finding_media_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
+  pick->failures.reserve(pick->ranked.size());
+  TryPickHop(std::move(pick), 0);
+}
+
+SoftMigrateAction CallHopPath::DecideFirstSoftMigrate(const HopPick& pick, SoftMigrateTrigger trigger,
+                                                      const std::vector<CallParticipant>& participants) {
+  SoftMigrateDecisionInput decision_in;
+  decision_in.local_identity = pick.local_identity;
+  std::vector<SoftMigrateJoinedPeer> joined_peers;
+  for (const CallParticipant& p : participants) {
+    if (p.state != CallParticipantState::Joined) {
+      continue;
+    }
+    decision_in.joined_identities.push_back(p.identity);
+    SoftMigrateJoinedPeer peer;
+    peer.identity = p.identity;
+    peer.joined_at = p.joined_at;
+    joined_peers.push_back(std::move(peer));
+  }
+  decision_in.initiator_identity = SelectCallInitiator(joined_peers);
+  decision_in.sfu_hint_empty = !pick.session || !pick.session->sfu_hint || pick.session->sfu_hint->empty();
+  decision_in.trigger = trigger;
+  decision_in.already_on_sfu = IsLiveOnHopFor(pick.call_id);
+
+  // The owner picks; everyone else waits for its CallSfuAttach (V050). Who hosts is the owner's ranking
+  // (durable relays first, its own Node on a confirmed LAN) — never a reason for a second picker or for
+  // the owner to wait (#385).
+  const SoftMigrateAction action = DecideSoftMigrate(decision_in);
+  log().info << "SoftMigrate decide action=" << static_cast<int>(action) << " trigger=" << static_cast<int>(trigger)
+             << " joined=" << decision_in.joined_identities.size() << " initiator=" << decision_in.initiator_identity
+             << " local=" << pick.local_identity << " call_id=" << pick.call_id;
+  return action;
+}
+
+bool CallHopPath::SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id) {
+  const std::string& call_id = pick.call_id;
+  RepickOnHopInput in;
+  in.current_hop = !flight_.attached_hop_peer_id.empty()    ? flight_.attached_hop_peer_id
+                   : pick.session && pick.session->sfu_hint ? *pick.session->sfu_hint
+                                                            : std::string();
+  in.prefer_hop = prefer_hop_peer_id;
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    in.local_peer_id = *pid;
+  }
+  in.local_hop_attached = relay_deps_.relay->IsLocalHopAttached();
+  in.prefer_dialable =
+      relay_deps_.dial && !prefer_hop_peer_id.empty() &&
+      (relay_deps_.dial->IsDialable(prefer_hop_peer_id) || !ranking_.HopMultiaddr(prefer_hop_peer_id).empty());
+  const RepickOnHopAction action = DecideRepickOnHop(in);
+  switch (action) {
+    case RepickOnHopAction::StayOnNamedHop:
+    case RepickOnHopAction::KeepCurrentHop:
+      log().info << "SoftMigrate re-pick no-op: "
+                 << (action == RepickOnHopAction::StayOnNamedHop ? "already on prefer" : "keep attached")
+                 << " hop=" << in.current_hop << " call_id=" << call_id;
+      FanOutSfuAttachForHop(call_id, in.current_hop, pick.local_identity);
+      SyncSfuSubscriptions(call_id);
+      if (action == RepickOnHopAction::StayOnNamedHop) {
+        reports_.Emit(hop_report::Activity{call_id_, {}});
+        reports_.Emit(hop_report::Changed{call_id_});
+      }
+      pick.on_done(Roe<void>());
+      return true;
+    case RepickOnHopAction::KeepPreferLocal:
+      log().info << "SoftMigrate re-pick no-op: keep PreferLocal call_id=" << call_id
+                 << " prefer=" << prefer_hop_peer_id;
+      SyncSfuSubscriptions(call_id);
+      pick.on_done(Error("keep_prefer_local"));
+      return true;
+    case RepickOnHopAction::KeepNotDialable:
+      log().warning << "SoftMigrate re-pick aborted: prefer hop not dialable, keep current SFU hop="
+                    << prefer_hop_peer_id;
+      SyncSfuSubscriptions(call_id);
+      pick.on_done(Roe<void>());
+      return true;
+    case RepickOnHopAction::Detach:
+      break;
+  }
+  log().info << "SoftMigrate re-pick detach call_id=" << call_id << " prefer=" << prefer_hop_peer_id
+             << " leaving_prefer_local=" << (in.local_hop_attached ? 1 : 0);
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.switching_media_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
+  relay_deps_.relay->Detach();
+  sfu_.SetAttached(false);
+  flight_.attached_hop_peer_id.clear();
+  flight_.attaching_hop_peer_id.clear();
+  if (pick.session) {
+    pick.session->sfu_hint.reset();
+  }
+  notes_.NoteCallHop(pick.call_id, {});
+  return false;
+}
+
+std::vector<mesh::MeshHopCandidate> CallHopPath::RankHopsForSoftMigrate(HopPick& pick,
+                                                                        const std::string& prefer_hop_peer_id) {
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    pick.local_peer_id = *pid;
+  }
+  const std::string local_ma = ranking_.LocalAdvertiseMa(pick.local_peer_id);
+  const CallHopScope hop_scope = InferScopeForCall(pick.call_id, pick.local_identity);
+  const bool lan_ok = LanReachabilityConfirmedForCall(pick.call_id, pick.local_identity);
+  const bool prefer_local_flag =
+      relay_deps_.prefer_local_as_hop && relay_deps_.relay->IsStarted() && !pick.local_peer_id.empty();
+  if (prefer_local_flag && local_ma.empty()) {
+    log().warning << "PreferLocal skipped: no advertise multiaddr for local hop";
+  }
+  auto ranked =
+      SelectCallMediaHop(ranking_.Ranked(), hop_scope, pick.local_peer_id, prefer_local_flag, local_ma, lan_ok);
+  log().info << "SoftMigrate PickHop scope=" << static_cast<int>(hop_scope) << " lan_ok=" << (lan_ok ? 1 : 0)
+             << " prefer_local=" << (prefer_local_flag ? 1 : 0)
+             << " first=" << (ranked.empty() ? "" : ranked.front().peer_id) << " call_id=" << pick.call_id;
+  if (!prefer_hop_peer_id.empty()) {
+    return PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
+  }
+  if (pick.session && pick.session->planned_hop && !pick.session->planned_hop->peer_id.empty()) {
+    ranked = PlannedHopFirst(std::move(ranked), *pick.session->planned_hop);
+    log().info << "SoftMigrate planned hop first=" << pick.session->planned_hop->peer_id << " call_id=" << pick.call_id;
+  }
+  return ranked;
+}
+
+void CallHopPath::TryPickHop(std::shared_ptr<HopPick> pick, size_t index) {
+  if (!IsMigrateGenerationCurrent(pick->expected_gen)) {
+    log().info << "SoftMigrate abort mid-pick stale gen want=" << pick->expected_gen
+               << " have=" << flight_.migrate_generation.load(std::memory_order_acquire);
+    pick->on_done(Roe<void>());
+    return;
+  }
+  if (index >= pick->ranked.size()) {
+    FailHopPick(*pick);
+    return;
+  }
+  const mesh::MeshHopCandidate& hop = pick->ranked[index];
+  const bool self_hop = !pick->local_peer_id.empty() && hop.peer_id == pick->local_peer_id;
+  // Directory/org seeds publish MAs before Amp address-book learn — register then dial.
+  if (!self_hop && relay_deps_.dial && !hop.multiaddr.empty() && !relay_deps_.dial->IsDialable(hop.peer_id)) {
+    (void)relay_deps_.dial->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+  }
+  if (!self_hop && relay_deps_.circuit_reach && relay_deps_.dial && !relay_deps_.dial->IsDialable(hop.peer_id)) {
+    // Edge: the reach answers on another thread — it only reports; the pick goes on as the next event.
+    const uint64_t id = steps_.Store([this, pick, index]() { AttachPickedHop(pick, index); });
+    relay_deps_.circuit_reach->TryEnsureHopReachableAsync(
+        hop.peer_id,
+        [outbox = migrate_outbox_, id](mesh::CircuitReachRoe) { outbox.Emit(hop_migrate_event::Continue{id}); });
+    return;
+  }
+  AttachPickedHop(std::move(pick), index);
+}
+
+void CallHopPath::FailHopPick(HopPick& pick) {
+  if (pick.failures.empty()) {
+    pick.on_done(Error(Localized("call.error.no_media_relay_hop")));
+    return;
+  }
+  std::string summary = "media_relay SoftMigrate failed (" + std::to_string(pick.failures.size()) + " hops): ";
+  for (size_t i = 0; i < pick.failures.size(); ++i) {
+    if (i > 0) {
+      summary += " | ";
+    }
+    summary += pick.failures[i];
+  }
+  log().warning << summary;
+  pick.on_done(Error(SoftMigrateNoHopMessage(pick.failures)));
+}
+
+void CallHopPath::AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index) {
+  const auto seat_ports = seat_.Get();
+  const mesh::MeshHopCandidate& hop = pick->ranked[index];
+  const bool self_hop = !pick->local_peer_id.empty() && hop.peer_id == pick->local_peer_id;
+  if (!self_hop && (!relay_deps_.dial || !relay_deps_.dial->IsDialable(hop.peer_id))) {
+    const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
+    pick->failures.push_back(detail);
+    log().warning << "SoftMigrate skip: " << detail;
+    TryPickHop(std::move(pick), index + 1);
+    return;
+  }
+  std::string hop_ma = hop.multiaddr;
+  if (hop_ma.empty() && relay_deps_.dial) {
+    if (auto ma = relay_deps_.dial->PreferredMultiaddr(hop.peer_id)) {
+      hop_ma = *ma;
+    }
+  }
+  log().info << "SoftMigrate try hop=" << hop.peer_id << " affinity=" << static_cast<int>(hop.affinity)
+             << " ma=" << (hop_ma.empty() ? "(circuit)" : hop_ma);
+  // Seat BeginAttach runs inside AttachLocalToSfuAsync (single owner). If another hop is
+  // already attaching, skip this candidate so SoftMigrate does not stall on coalesce no-op.
+  if (seat_ports->IsBound() && seat_ports->has_attach_in_flight() && seat_ports->attaching_hop() != hop.peer_id) {
+    log().info << "SoftMigrate defer hop (seat attach in flight) call_id=" << pick->call_id << " hop=" << hop.peer_id
+               << " in_flight=" << seat_ports->attaching_hop();
+    TryPickHop(std::move(pick), index + 1);
+    return;
+  }
+  flight_.attaching_hop_peer_id = hop.peer_id;
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.connecting_media_relay")});
+  reports_.Emit(hop_report::Changed{call_id_});
+  CallSfuAttachDetail attach;
+  attach.call_id = pick->call_id;
+  attach.hop_peer_id = hop.peer_id;
+  attach.hop_multiaddr = hop_ma;
+  attach.publisher_stream_id = PublisherStreamIdForLocal();
+
+  if (self_hop) {
+    RecordPickedHop(*pick, hop.peer_id);
+    FanOutPickedHop(pick->call_id, attach, pick->local_identity);
+  }
+  const std::string call_id = pick->call_id;
+  AttachLocalToSfuAsync(call_id, attach, [this, pick, index, self_hop, attach](Roe<void> attached) {
+    OnPickedHopAttached(pick, index, self_hop, attach, std::move(attached));
+  });
+}
+
+void CallHopPath::OnPickedHopAttached(const std::shared_ptr<HopPick>& pick, size_t index, bool self_hop,
+                                      const CallSfuAttachDetail& attach, Roe<void> attached) {
+  if (!attached) {
+    std::string detail = attached.error().message;
+    if (detail.find(attach.hop_peer_id) == std::string::npos) {
+      detail += " (hop=" + attach.hop_peer_id + ")";
+    }
+    pick->failures.push_back(detail);
+    log().warning << "SoftMigrate hop failed: " << detail;
+    Defer([this, pick, index]() { TryPickHop(pick, index + 1); });
+    return;
+  }
+  RecordPickedHop(*pick, attach.hop_peer_id);
+  if (!self_hop) {
+    FanOutPickedHop(pick->call_id, attach, pick->local_identity);
+  }
+  pick->on_done(Roe<void>());
+}
+
+void CallHopPath::RecordPickedHop(HopPick& pick, const std::string& hop_peer_id) {
+  if (pick.session) {
+    pick.session->sfu_hint = hop_peer_id;
+  }
+  notes_.NoteCallHop(pick.call_id, hop_peer_id);
+}
+
+void CallHopPath::FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                  const std::string& local_identity) {
+  auto encoded = CallControlCodec::EncodeSfuAttach(BuildSfuAttachFanout(attach));
+  if (!encoded) {
+    return;
+  }
+  log().info << "SoftMigrate fan-out CallSfuAttach hop=" << attach.hop_peer_id
+             << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr) << " call_id=" << call_id;
+  (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach", local_identity);
+  migrate_outbox_.After(std::chrono::milliseconds(2000),
+                        hop_migrate_event::RefanOutPickedHop{call_id, *encoded, local_identity, attach.hop_peer_id});
+}
+
+mesh::MediaRelayAttachPorts CallHopPath::RelayAttachPorts() const {
+  return relay_deps_.AttachPorts();
+}
+
+mesh::MediaRelayAttachRequest CallHopPath::MakeRelayAttachRequest(const std::string& call_id,
+                                                                  const CallSfuAttachDetail& attach) const {
+  mesh::MediaRelayAttachRequest request;
+  request.hop_peer_id = attach.hop_peer_id;
+  request.hop_multiaddr = attach.hop_multiaddr;
+  request.session_id = call_id;
+  request.auth = call_id;
+  request.quote.session_id = call_id;
+  auto joined = sessions_.CountJoined(call_id);
+  request.quote.participants = joined ? static_cast<int>(*joined) : 2;
+  const bool video_allowed = [&]() {
+    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+      return (*session)->video_allowed;
+    }
+    return false;
+  }();
+  request.quote.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
+  request.quote.want_down_bps = request.quote.want_up_bps * std::max(1, request.quote.participants - 1);
+  return request;
+}
+
+std::function<Roe<void>(const mesh::MediaRelayQuote&)> CallHopPath::RelayQuotePricingGate() {
+  // Calls only take volunteer / free hops today (pricing project gate).
+  return [](const mesh::MediaRelayQuote& quote) -> Roe<void> {
+    return InitiationPricing::CheckRelayQuotePayable(quote.rate);
+  };
+}
+
+/** One attach of this call to a media_relay hop (remote or our own): what the completion checks against. */
+struct CallHopPath::HopAttach {
+  std::string call_id;
+  CallSfuAttachDetail attach;
+  bool self_hop = false;
+  /** Migrate generation / media cancel generation when the attach began. */
+  uint64_t gen_at_start = 0;
+  uint64_t cancel_gen_at_start = 0;
+  ByteVector media_key;
+  uint32_t media_epoch = 1;
+  /** The attach's keys: the epoch it starts on, then each rotation (V003) — see SfuKeyRing. */
+  std::shared_ptr<SfuKeyRing> keys = std::make_shared<SfuKeyRing>();
+  /** Inbound frames are dropped until the attach is committed. */
+  std::shared_ptr<std::atomic<bool>> frames_ready = std::make_shared<std::atomic<bool>>(false);
+};
+
+// --- attach (start) -------------------------------------------------------------------------------
+
+void CallHopPath::AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                                        std::function<void(Roe<void>)> on_done) {
+  const auto arming_ports = arming_.Get();
+  if (!on_done) {
+    return;
+  }
+  HopAttach at;
+  at.call_id = call_id;
+  at.attach = attach_in;
+  at.gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
+  at.cancel_gen_at_start =
+      arming_ports->IsBound() && arming_ports->media_cancel_gen ? arming_ports->media_cancel_gen() : 0;
+  if (!relay_deps_.relay || !relay_deps_.dial) {
+    on_done(Error("media_relay not available"));
+    return;
+  }
+  if (at.attach.hop_peer_id.empty()) {
+    on_done(Error("missing hop_peer_id"));
+    return;
+  }
+  log().info << "AttachLocalToSfu begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id
+             << " ma=" << (at.attach.hop_multiaddr.empty() ? "(empty)" : at.attach.hop_multiaddr)
+             << " already_sfu=" << (sfu_.attached ? 1 : 0);
+  // Same call already owns SFU duplex — never open a parallel AcceptAndAttach (Detach kills RX).
+  if (IsLiveOnHopFor(call_id)) {
+    log().info << "AttachLocalToSfu no-op already duplex call_id=" << call_id << " hop=" << at.attach.hop_peer_id
+               << " attached_hop=" << flight_.attached_hop_peer_id;
+    NoteRemotePublisherFromAttach(at.attach);
+    SyncSfuSubscriptions(call_id);
+    flight_.attached_hop_peer_id = at.attach.hop_peer_id;
+    reports_.Emit(hop_report::Activity{call_id_, {}});
+    on_done(Roe<void>());
+    return;
+  }
+  if (auto claimed = ClaimHopAttachFlight(call_id, at.attach); !claimed || !*claimed) {
+    on_done(claimed ? Roe<void>() : Roe<void>(claimed.error()));
+    return;
+  }
+  on_done = ReleaseHopAttachFlightOnError(call_id, at.attach.hop_peer_id, std::move(on_done));
+  if (auto keyed = LoadHopMediaKey(at); !keyed) {
+    on_done(keyed.error());
+    return;
+  }
+  if (auto local_pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    at.self_hop = *local_pid == at.attach.hop_peer_id;
+  }
+  if (at.self_hop) {
+    AttachAsLocalHop(std::move(at), std::move(on_done));
+  } else {
+    AttachThroughRelay(std::move(at), std::move(on_done));
+  }
+}
+
+Roe<bool> CallHopPath::ClaimHopAttachFlight(const std::string& call_id, const CallSfuAttachDetail& attach) {
+  const auto seat_ports = seat_.Get();
+  // SoftMigrate sets attaching_hop / seat BeginAttach before calling us — same hop means we
+  // own this attempt. A different in-flight hop must not start a parallel AcceptAndAttach.
+  if (seat_ports->IsBound()) {
+    CallMediaSeat::AttachTicket ticket;
+    switch (seat_ports->begin_attach(call_id, attach.hop_peer_id, &ticket)) {
+      case CallMediaSeat::AttachBeginResult::DeferredOtherHop:
+        log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
+                   << " in_flight_hop=" << seat_ports->attaching_hop() << " requested=" << attach.hop_peer_id;
+        inbound_gate_.pending_attach = attach;
+        inbound_gate_.pending = true;
+        NoteRemotePublisherFromAttach(attach);
+        BeginSfuAttachWait(call_id);
+        return false;
+      case CallMediaSeat::AttachBeginResult::CoalescedSameHop:
+        // SoftMigrate may have set attaching_hop before calling us; only skip when a *foreign*
+        // AcceptAndAttach already owns the hop (attaching set by a prior AttachLocalToSfuAsync).
+        // First claim for this hop always BeginAttach→Started; Coalesced means parallel entry.
+        log().info << "AttachLocalToSfu coalesce (same hop in flight) call_id=" << call_id
+                   << " hop=" << attach.hop_peer_id;
+        flight_.attaching_hop_peer_id = attach.hop_peer_id;
+        NoteRemotePublisherFromAttach(attach);
+        BeginSfuAttachWait(call_id);
+        return false;
+      case CallMediaSeat::AttachBeginResult::Rejected:
+        return Error("attach rejected");
+      default:
+        break;
+    }
+  } else if (!flight_.attaching_hop_peer_id.empty() && flight_.attaching_hop_peer_id != attach.hop_peer_id) {
+    log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
+               << " in_flight_hop=" << flight_.attaching_hop_peer_id << " requested=" << attach.hop_peer_id;
+    NoteRemotePublisherFromAttach(attach);
+    BeginSfuAttachWait(call_id);
+    return false;
+  }
+  flight_.attaching_hop_peer_id = attach.hop_peer_id;
+  return true;
+}
+
+std::function<void(Roe<void>)> CallHopPath::ReleaseHopAttachFlightOnError(const std::string& call_id,
+                                                                          const std::string& hop,
+                                                                          std::function<void(Roe<void>)> on_done) {
+  // Any failure clears the attach flight so SoftMigrate / inbound can retry.
+  return [this, call_id, hop, on_done = std::move(on_done)](Roe<void> r) {
+    const auto seat_ports = seat_.Get();
+    if (!r) {
+      if (flight_.attaching_hop_peer_id == hop) {
+        flight_.attaching_hop_peer_id.clear();
+      }
+      if (seat_ports->IsBound()) {
+        seat_ports->end_attach_if_matching(call_id, hop);
+      }
+    }
+    on_done(std::move(r));
+  };
+}
+
+Roe<void> CallHopPath::LoadHopMediaKey(HopAttach& at) const {
+  if (auto session = sessions_.LoadSession(at.call_id); session && session->has_value()) {
+    at.media_epoch = session->value().media_epoch;
+  }
+  if (!media_keys_) {
+    // Fail closed: no key store means no media key — never a plaintext SFU attach.
+    log().warning << "AttachLocalToSfu without media key store call_id=" << at.call_id;
+    return Error("call media key required for SFU");
+  }
+  if (auto key = media_keys_->LoadEpochKey(at.call_id, at.media_epoch); key && key->has_value()) {
+    at.media_key = **key;
+  }
+  if (at.media_key.empty()) {
+    log().warning << "AttachLocalToSfu missing media key call_id=" << at.call_id << " epoch=" << at.media_epoch;
+    return Error("call media key required for SFU");
+  }
+  at.keys->Install(at.media_epoch, at.media_key, util::NowUnixMs());
+  return {};
+}
+
+void CallHopPath::InstallMediaKey(const std::string& call_id) {
+  if (!live_keys_ || live_keys_call_id_ != call_id || !media_keys_) {
+    return;
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    return;
+  }
+  const uint32_t epoch = (*session)->media_epoch;
+  if (auto key = media_keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
+    live_keys_->Install(epoch, **key, util::NowUnixMs());
+    log().info << "SFU media key now epoch=" << epoch << " call_id=" << call_id;
+  }
+}
+
+std::function<void(mesh::MediaDataFrame)> CallHopPath::MakeHopFrameSink(const HopAttach& at) {
+  return [this, ready = at.frames_ready, call_id = at.call_id, keys = at.keys](mesh::MediaDataFrame frame) {
+    if (!ready->load(std::memory_order_acquire)) {
+      return;
+    }
+    MediaEngine::MediaPacket pkt;
+    pkt.stream_id = frame.stream_id;
+    pkt.channel_id = frame.channel_id;
+    pkt.seq = frame.seq;
+    pkt.mark = frame.mark;
+    const std::vector<SfuKeyRing::Key> open_with = keys->ForOpen(util::NowUnixMs());
+    if (open_with.empty()) {
+      pkt.payload = std::move(frame.payload);
+      (void)engine_->Deliver(pkt);
+      return;
+    }
+    // The newest epoch first; the previous one while the others switch to it.
+    Roe<CallMediaDecodedFrame> plain = Error("no key opened the frame");
+    for (const SfuKeyRing::Key& key : open_with) {
+      plain = DecryptCallMediaSfuFrame(key.key, call_id, key.epoch, frame.stream_id,
+                                       static_cast<uint8_t>(frame.channel_id), frame.payload);
+      if (plain) {
+        break;
+      }
+    }
+    if (!plain) {
+      static std::atomic<int> decrypt_fail_log{0};
+      const int n = decrypt_fail_log.fetch_add(1, std::memory_order_relaxed);
+      if (n < 8 || (n % 100) == 0) {
+        log().warning << "SFU decrypt failed stream=" << frame.stream_id << " ch=" << frame.channel_id
+                      << " bytes=" << frame.payload.size() << " n=" << n << " err=" << plain.error().message
+                      << " call_id=" << call_id;
+      }
+      return;
+    }
+    pkt.payload = std::move(plain->payload);
+    (void)engine_->Deliver(pkt);
+  };
+}
+
+void CallHopPath::AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done) {
+  if (!relay_deps_.prefer_local_as_hop || !relay_deps_.relay->IsStarted()) {
+    log().warning << "AttachLocalToSfu refused local hop (prefer_local=" << (relay_deps_.prefer_local_as_hop ? 1 : 0)
+                  << " started=" << (relay_deps_.relay->IsStarted() ? 1 : 0) << ")";
+    on_done(Error(Localized("call.error.local_media_relay_unavailable")));
+    return;
+  }
+  log().info << "AttachLocalToSfu as local media_relay hop call_id=" << at.call_id;
+  auto attached = relay_deps_.relay->AttachAsLocalHop(at.call_id, MakeHopFrameSink(at));
+  if (!attached || !attached->ok) {
+    on_done(Error(attached ? attached->error : attached.error().message));
+    return;
+  }
+  bool video_allowed = false;
+  if (auto session = sessions_.LoadSession(at.call_id); session && session->has_value()) {
+    video_allowed = (*session)->video_allowed;
+  }
+  on_done(CompleteHopAttach(at, CallMediaAdaptation::QuoteWantUpBps(video_allowed)));
+}
+
+void CallHopPath::AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done) {
+  if (at.attach.hop_multiaddr.empty()) {
+    at.attach.hop_multiaddr = ranking_.HopMultiaddr(at.attach.hop_peer_id);
+  }
+  mesh::MediaRelayAttachHooks hooks;
+  hooks.accept_quote = RelayQuotePricingGate();
+  hooks.on_frame = MakeHopFrameSink(at);
+  const mesh::MediaRelayAttachRequest request = MakeRelayAttachRequest(at.call_id, at.attach);
+  // The commit (StartDuplex, adaptation, seat, planner) is owner state: the relay's answer — success
+  // or failure — comes back as an event, never run on its I/O thread.
+  const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/false);
+  mesh::AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
+}
+
+// --- attach (completion, UI) ----------------------------------------------------------------------
+
+Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) {
+  const std::string& call_id = at.call_id;
+  live_keys_ = at.keys; // a rotation from now on reaches this attach's frames
+  live_keys_call_id_ = call_id;
+  InstallMediaKey(call_id); // and one that arrived while attaching (the ring holds the epoch it started with)
+  // Whoever is on the hop can say so: an invite this device sends (a mid-call add, an answer to a
+  // join request — V053) names the hop the call is on, not only the picker's.
+  if (!at.attach.hop_peer_id.empty()) {
+    notes_.NoteCallHop(call_id, at.attach.hop_peer_id);
+  }
+  ApplyQuoteAdaptation(a_up_bps);
+  publishers_.local_stream_id = PublisherStreamIdForLocal();
+  reports_.Emit(hop_report::MediaAttempted{call_id});
+  if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->HoldSeatForHop();
+  }
+  if (auto wanted = CheckHopAttachStillWanted(at); !wanted) {
+    return wanted;
+  }
+  const bool gen_current = IsMigrateGenerationCurrent(at.gen_at_start);
+  if (!gen_current) {
+    log().info << "AttachLocalToSfu stale migrate gen want=" << at.gen_at_start
+               << " have=" << flight_.migrate_generation.load(std::memory_order_acquire) << " call_id=" << call_id
+               << " sfu=" << (sfu_.attached ? 1 : 0) << " media=" << engine_->RunningSessionForLog();
+  }
+  // Dogfood: parallel CallSfuAttach AcceptAndAttach storms re-enter StartDuplex → send-swap /
+  // Detach clears RX (quality flips, brief audio, reconnecting flash). Once this call already
+  // owns SFU duplex, skip StartDuplex when duplex is live on this hop, or when this worker is stale
+  // (newer SoftMigrate/attach owns the generation). Intentional hop switch (current gen,
+  // different hop) still StartDuplex send-swap so TX follows the new AcceptAndAttach.
+  const bool duplex_live = engine_->Runs();
+  const bool same_hop = !flight_.attached_hop_peer_id.empty() && flight_.attached_hop_peer_id == at.attach.hop_peer_id;
+  if (duplex_live && (same_hop || !gen_current)) {
+    log().info << "AttachLocalToSfu skip StartDuplex (already live) call_id=" << call_id
+               << " hop=" << at.attach.hop_peer_id << " attached_hop=" << flight_.attached_hop_peer_id
+               << " same_hop=" << (same_hop ? 1 : 0) << " gen_current=" << (gen_current ? 1 : 0);
+    // Do not ReleaseDirect / DirectConnected again — duplicate completes flash chrome.
+    MarkHopAttachLive(at, /*fresh_start=*/false);
+    reports_.Emit(hop_report::Activity{call_id_, {}});
+    log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
+    return {};
+  }
+  // Superseded worker: a newer SoftMigrate/attach owns the flight — do not StartDuplex (and do not
+  // Detach; that would kill the newer AcceptAndAttach).
+  if (!gen_current && !flight_.attaching_hop_peer_id.empty() &&
+      flight_.attaching_hop_peer_id != at.attach.hop_peer_id) {
+    log().info << "AttachLocalToSfu skip StartDuplex (superseded hop) call_id=" << call_id
+               << " want_hop=" << at.attach.hop_peer_id << " in_flight=" << flight_.attaching_hop_peer_id;
+    return {};
+  }
+  // Dogfood 1cee3df4: zombie AcceptAndAttach (gen 85→169 across Leave cycles) still StartDuplex'd
+  // onto a fresh 1:1. A stale worker only proceeds while it still owns the flight.
+  if (!gen_current && !duplex_live && !OwnsHopAttachFlight(at)) {
+    log().info << "AttachLocalToSfu abort StartDuplex (stale gen, no flight ownership) call_id=" << call_id
+               << " want=" << at.gen_at_start << " have=" << flight_.migrate_generation.load(std::memory_order_acquire)
+               << " flight_gen=" << flight_.flight_gen << " attaching=" << flight_.attaching_hop_peer_id;
+    return AbortHopAttach();
+  }
+  if (auto started = StartHopMedia(at); !started) {
+    return started;
+  }
+  MarkHopAttachLive(at, /*fresh_start=*/true);
+  ReleaseDirectAfterHopAttach(at);
+  log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
+  return {};
+}
+
+void CallHopPath::ApplyQuoteAdaptation(int64_t a_up_bps) {
+  sfu_.last_quote_a_up_bps = a_up_bps;
+  CallAdaptationInput in;
+  in.per_user_up_bps = a_up_bps;
+  in.camera_user_wants = engine_->IsCameraEnabled();
+  in.path_pressure = engine_->PathPressure();
+  engine_->ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
+}
+
+Roe<void> CallHopPath::AbortHopAttach() {
+  relay_deps_.relay->Detach();
+  return Error("attach aborted");
+}
+
+Roe<void> CallHopPath::CheckHopAttachStillWanted(const HopAttach& at) {
+  const auto seat_ports = seat_.Get();
+  const auto arming_ports = arming_.Get();
+  const std::string& call_id = at.call_id;
+  if (seat_ports->IsBound() && !seat_ports->allows_path_op(seat_ports->acquire(call_id))) {
+    log().info << "AttachLocalToSfu aborted (seat token rejected) call_id=" << call_id;
+    relay_deps_.relay->Detach();
+    return Error("media seat token rejected for hop path");
+  }
+  // V048: hop arming is authority — never StartDuplex when Direct*; cancel gen must still match
+  // Deciding/Leave bumps.
+  if (arming_ports->IsBound() && arming_ports->hop_ops_allowed && !arming_ports->hop_ops_allowed()) {
+    log().info << "AttachLocalToSfu aborted (hop not armed) call_id=" << call_id
+               << " arming=" << (arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?");
+    return AbortHopAttach();
+  }
+  if (arming_ports->IsBound() && arming_ports->media_cancel_gen &&
+      arming_ports->media_cancel_gen() != at.cancel_gen_at_start) {
+    log().info << "AttachLocalToSfu aborted (media_cancel_gen moved) call_id=" << call_id
+               << " want=" << at.cancel_gen_at_start << " have=" << arming_ports->media_cancel_gen();
+    return AbortHopAttach();
+  }
+  // After AcceptAndAttach succeeded, finish StartDuplex whenever this call is still the active
+  // topology call. flight_.migrate_generation stampede (duplicate CallSfuAttach / SoftMigrate) must not
+  // abort duplex — dogfood: caller Connected, guest stuck "looking for another media path".
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "AttachLocalToSfu aborted before StartDuplex (call inactive) call_id=" << call_id
+               << " gen_want=" << at.gen_at_start
+               << " gen_have=" << flight_.migrate_generation.load(std::memory_order_acquire);
+    return AbortHopAttach();
+  }
+  return {};
+}
+
+bool CallHopPath::OwnsHopAttachFlight(const HopAttach& at) const {
+  return flight_.flight_gen == at.gen_at_start ||
+         (!flight_.attaching_hop_peer_id.empty() && flight_.attaching_hop_peer_id == at.attach.hop_peer_id) ||
+         // Stampede may Leave-bump gen while guest WaitForAttach is still armed for this call.
+         (attach_wait_.waiting && at.call_id == call_id_);
+}
+
+MediaEngine::PacketSendFn CallHopPath::MakeHopSendFn(const HopAttach& at) {
+  return [this, pub = publishers_.local_stream_id.load(), call_id = at.call_id,
+          keys = at.keys](const MediaEngine::MediaPacket& pkt) {
+    if (!relay_deps_.relay) {
+      return;
+    }
+    mesh::MediaDataFrame frame;
+    frame.stream_id = pub;
+    frame.channel_id = pkt.channel_id;
+    frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
+    frame.seq = pkt.seq;
+    frame.mark = pkt.mark;
+    const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
+    if (!key.key.empty()) {
+      auto sealed = EncryptCallMediaSfuFrame(key.key, call_id, key.epoch, pub, pkt.seq, pkt.mark,
+                                             static_cast<uint8_t>(pkt.channel_id), pkt.payload);
+      if (!sealed) {
+        engine_->NoteOutboundDrop();
+        return;
+      }
+      frame.payload = std::move(*sealed);
+    } else {
+      frame.payload = pkt.payload;
+    }
+    if (!relay_deps_.relay->SendFrame(frame)) {
+      engine_->NoteOutboundDrop();
+    }
+  };
+}
+
+Roe<void> CallHopPath::StartHopMedia(const HopAttach& at) {
+  const std::string& call_id = at.call_id;
+  if (!at.self_hop) {
+    relay_deps_.relay->StartClientFrameReader();
+    log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
+  }
+  log().info << "AttachLocalToSfu StartDuplex call_id=" << call_id
+             << " pub_stream=" << publishers_.local_stream_id.load();
+  CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
+  if (!call_media) {
+    relay_deps_.relay->Detach();
+    return Error("no live call for media " + call_id);
+  }
+  // Takes the seat's hold for this call, starts (or send-swaps) the engine, marks the seat on Hop.
+  if (auto started = call_media->StartEngine(CallMediaPath::Hop, MakeHopSendFn(at)); !started) {
+    log().info << "AttachLocalToSfu aborted at StartDuplex (" << started.error().message << ") call_id=" << call_id;
+    relay_deps_.relay->Detach();
+    sfu_.SetAttached(false);
+    return started.error();
+  }
+  if (!IsActiveCallForTopology(call_id)) {
+    log().info << "AttachLocalToSfu aborted after StartDuplex (call inactive) call_id=" << call_id
+               << " gen_want=" << at.gen_at_start
+               << " gen_have=" << flight_.migrate_generation.load(std::memory_order_acquire);
+    relay_deps_.relay->Detach();
+    call_media->StopEngine("hop attach aborted: call inactive");
+    sfu_.SetAttached(false);
+    return Error("attach aborted");
+  }
+  return {};
+}
+
+void CallHopPath::MarkHopAttachLive(const HopAttach& at, bool fresh_start) {
+  const auto seat_ports = seat_.Get();
+  const auto arming_ports = arming_.Get();
+  const std::string& call_id = at.call_id;
+  at.frames_ready->store(true, std::memory_order_release);
+  sfu_.SetAttached(true);
+  flight_.attached_hop_peer_id = at.attach.hop_peer_id;
+  flight_.attaching_hop_peer_id.clear();
+  if (!at.self_hop) {
+    guest_.active_attach = at.attach;
+    guest_.active = true;
+    guest_.reattach_attempts = 0;
+  } else if (fresh_start) {
+    guest_.active_attach.reset();
+    guest_.active = false;
+  }
+  NoteRemotePublisherFromAttach(at.attach);
+  SyncSfuSubscriptions(call_id);
+  AnnounceLocalPublisher(call_id, at.attach);
+  ClearSfuAttachWait();
+  RefreshAdaptation(call_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
+  }
+  Apply(CallHopPlannerEvent::AttachSucceeded, call_id); // reports Live
+}
+
+void CallHopPath::ReleaseDirectFor(const std::string& call_id) {
+  // The call runs on the hop now: its coordinator drops the 1:1 transport (seat-checked).
+  if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->ReleaseDirect();
+  }
+}
+
+void CallHopPath::HandleMigrateEvent(HopMigrateEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, hop_migrate_event::RefanOutPickedHop>) {
+          RefanOutPickedHop(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectAfterAttach>) {
+          ReleaseDirectSettled(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::ReleaseDirectWhenHopHeard>) {
+          ReleaseDirectWhenHopHeard(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::GuestReattachRetry>) {
+          OnGuestReattachRetry(e);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::Continue>) {
+          steps_.Run(e.id);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::RelayAttached>) {
+          OnRelayAttached(e);
+        } else {
+          static_assert(!sizeof(E), "handle every HopMigrateEvent");
+        }
+      },
+      event);
+}
+
+uint64_t CallHopPath::StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, const bool guest) {
+  const uint64_t id = ++next_attach_;
+  attaches_.emplace(id, PendingAttach{std::make_shared<HopAttach>(std::move(at)), std::move(on_done), guest});
+  return id;
+}
+
+std::function<void(mesh::MediaRelayRoe<mesh::MediaRelayAttached>)> CallHopPath::RelayAttachReporter(
+    const uint64_t id) const {
+  // Edge: the relay answers on its I/O thread — it only reports.
+  return [outbox = migrate_outbox_, id](mesh::MediaRelayRoe<mesh::MediaRelayAttached> attached) {
+    hop_migrate_event::RelayAttached answer;
+    answer.id = id;
+    answer.ok = static_cast<bool>(attached);
+    if (attached) {
+      answer.a_up_bps = attached->a_up_bps;
+    } else {
+      answer.error = attached.error().message;
+    }
+    outbox.Emit(std::move(answer));
+  };
+}
+
+void CallHopPath::OnRelayAttached(const hop_migrate_event::RelayAttached& answer) {
+  auto it = attaches_.find(answer.id);
+  if (it == attaches_.end()) {
+    return;
+  }
+  PendingAttach pending = std::move(it->second);
+  attaches_.erase(it);
+  if (!answer.ok) {
+    pending.on_done(Error(answer.error));
+    return;
+  }
+  // Calls owner: the commit runs StartDuplex / adaptation and moves seat and planner state (CALLS.md).
+  pending.on_done(pending.guest ? CompleteGuestReattach(*pending.at, answer.a_up_bps)
+                                : CompleteHopAttach(*pending.at, answer.a_up_bps));
+}
+
+void CallHopPath::RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again) {
+  // V050: the group may have moved since (a later joiner's re-pick) — re-announcing this hop would
+  // send everyone back to it.
+  if (!sfu_.attached || !engine_->Runs() || flight_.attached_hop_peer_id != again.hop_peer_id) {
+    return;
+  }
+  log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << again.call_id;
+  (void)host_.fan_out_joined(again.call_id, CallControlType::CallSfuAttach, again.encoded_attach, "Call SFU attach",
+                             again.local_identity);
+}
+
+void CallHopPath::ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release) {
+  if (!sfu_.attached || !engine_->Runs()) {
+    return;
+  }
+  // The guest's hop transport went down since this attach (a reattach is under way, or gave up):
+  // the settle of the attach that was lost must not read the call as connected again. The direct
+  // transport was released when the attach completed; a reattach that succeeds reports Live.
+  if ((guest_.active && release.call_id == call_id_) && (guest_.reattach_in_flight || guest_.reattach_attempts > 0)) {
+    log().info << "ReleaseDirect settle skipped (hop transport lost) call_id=" << release.call_id;
+    return;
+  }
+  if (release.self_hop && IsMigrateGenerationCurrent(release.migrate_generation)) {
+    if (auto local = host_.local_relay_identity()) {
+      if (auto encoded = CallControlCodec::EncodeSfuAttach(release.fanout)) {
+        log().info << "AttachLocalToSfu delayed fan-out CallSfuAttach call_id=" << release.call_id;
+        (void)host_.fan_out_joined(release.call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach",
+                                   *local);
+      }
+    }
+  }
+  reports_.Emit(hop_report::Activity{call_id_, {}});
+}
+
+void CallHopPath::ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait) {
+  const bool still_on_hop = sfu_.attached && engine_->Runs();
+  std::vector<int64_t> heard_ms;
+  if (still_on_hop) {
+    const MediaEngineHealth health = engine_->HealthSnapshot();
+    if (health.packet_mode) {
+      for (const MediaStreamHealth& stream : health.streams) {
+        heard_ms.push_back(stream.last_rx_ms);
+      }
+    }
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ReleaseDirectAfterHopAttachNow(still_on_hop, heard_ms, wait.attached_ms, now_ms, wait.deadline_ms)) {
+    if (migrate_outbox_.After(std::chrono::milliseconds(kKeepDirectRecheckMs), wait) != 0) {
+      return; // looked at again shortly
+    }
+  }
+  log().info << "ReleaseDirect after hop attach call_id=" << wait.call_id
+             << " waited_ms=" << (now_ms - wait.attached_ms) << " heard=" << heard_ms.size();
+  ReleaseDirectFor(wait.call_id);
+}
+
+void CallHopPath::ReleaseDirectAfterHopAttach(const HopAttach& at) {
+  // Clear Connecting immediately, and again after a settle delay. Do not gate on migrate gen —
+  // stampede leaves gen_at_start permanently stale (dogfood UI). #431 (b): the 1:1 leg goes once the
+  // others are heard on the hop (at most kKeepDirectUntilHopHeardMs): until then its live link is how
+  // the peer gets our CallSfuAttach at once, control going direct-first.
+  reports_.Emit(hop_report::Activity{call_id_, {}});
+  const int64_t attached_ms = util::NowUnixMs();
+  ReleaseDirectWhenHopHeard(hop_migrate_event::ReleaseDirectWhenHopHeard{
+      .call_id = at.call_id, .attached_ms = attached_ms, .deadline_ms = attached_ms + kKeepDirectUntilHopHeardMs});
+  hop_migrate_event::ReleaseDirectAfterAttach release{at.call_id, at.gen_at_start, BuildSfuAttachFanout(at.attach),
+                                                      at.self_hop};
+  if (migrate_outbox_.After(std::chrono::milliseconds(3500), release) == 0) {
+    ReleaseDirectSettled(release); // no timer (unbound): settle now
+  }
+}
+
+std::optional<std::string> CallHopPath::GuestReattachCallId() const {
+  if (!sfu_.attached || flight_.in_flight || guest_.reattach_in_flight) {
+    return std::nullopt;
+  }
+  if (!relay_deps_.relay || relay_deps_.relay->IsLocalHopAttached()) {
+    return std::nullopt;
+  }
+  if (!guest_.active_attach || !guest_.active) {
+    return std::nullopt;
+  }
+  if (!guest_.active || !engine_->Runs()) {
+    return std::nullopt;
+  }
+  return guest_.active ? call_id_ : std::string{};
+}
+
+void CallHopPath::OnGuestSfuTransportLost() {
+  const std::optional<std::string> call_id = GuestReattachCallId();
+  if (!call_id) {
+    return;
+  }
+  if (guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts) {
+    ScheduleSlowGuestReattach(*call_id);
+    return;
+  }
+  StartGuestReattachAttempt(*call_id);
+}
+
+void CallHopPath::ScheduleSlowGuestReattach(const std::string& call_id) {
+  if (guest_.slow_retry_pending) {
+    return;
+  }
+  log().warning << "Guest SFU reattach quick attempts spent=" << guest_.reattach_attempts << ", again every "
+                << kGuestSfuSlowRetry.count() << " ms call_id=" << call_id;
+  // Prefer guest-path copy over "no hop available" (reattach lost duplex, hop may still exist).
+  // The call reads Reconnecting (not Connected: nothing flows) while the guest keeps trying at a
+  // steady pace: a phone out of coverage comes back without its network moving, and waiting for
+  // a move (OnLocalNetworkMoved) left it out of the call for good (lab: group_call_on_the_road).
+  reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.hop_unreachable_guest")});
+  guest_.slow_retry_pending =
+      migrate_outbox_.After(kGuestSfuSlowRetry, hop_migrate_event::GuestReattachRetry{.slow = true}) != 0;
+}
+
+void CallHopPath::OnGuestReattachRetry(const hop_migrate_event::GuestReattachRetry& retry) {
+  if (retry.slow) {
+    guest_.slow_retry_pending = false;
+  }
+  // Another attach brought the transport back meanwhile: nothing to retry.
+  if (relay_deps_.relay && relay_deps_.relay->IsAttached()) {
+    return;
+  }
+  if (!retry.slow) {
+    OnGuestSfuTransportLost();
+    return;
+  }
+  if (const std::optional<std::string> call_id = GuestReattachCallId()) {
+    StartGuestReattachAttempt(*call_id);
+  }
+}
+
+void CallHopPath::StartGuestReattachAttempt(const std::string& call_id) {
+  ++guest_.reattach_attempts;
+  guest_.reattach_in_flight = true;
+  const CallSfuAttachDetail attach = *guest_.active_attach;
+  const uint64_t gen = flight_.migrate_generation.load(std::memory_order_acquire);
+  const int attempt = guest_.reattach_attempts;
+  log().warning << "Guest SFU duplex lost — reattach attempt=" << attempt << " hop=" << attach.hop_peer_id
+                << " call_id=" << call_id;
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.reconnecting")});
+  if (attempt == 1) {
+    // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
+    // Recovery() (Reattaching, then HopLost) keeps the Reconnecting line up until a reattach succeeds.
+    reports_.Emit(hop_report::Progress{call_id, CallHopPlannerPhase::Attaching});
+  }
+
+  // The completion runs on the owner (from the attach's event, or a deferred early failure).
+  ReattachGuestSfuTransportAsync(call_id, attach, [this, call_id, gen, attempt](Roe<void> ok) {
+    guest_.reattach_in_flight = false;
+    if (!IsMigrateGenerationCurrent(gen)) {
+      return;
+    }
+    if (ok) {
+      log().info << "Guest SFU reattach ok call_id=" << call_id;
+      guest_.reattach_attempts = 0;
+      reports_.Emit(hop_report::Activity{call_id_, {}});
+      reports_.Emit(hop_report::Progress{call_id, CallHopPlannerPhase::Live});
+      return;
+    }
+    log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message
+                  << " call_id=" << call_id;
+    const int backoff_ms = 400 * std::min(attempt, kMaxGuestSfuReattachAttempts);
+    migrate_outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
+  });
+}
+
+void CallHopPath::OnLocalNetworkMoved() {
+  if (!guest_.active_attach || !guest_.active) {
+    return;
+  }
+  // Attempts spent while the network was down say nothing about the network now: a fresh budget,
+  // and a guest that had given up tries again (a retry still pending picks the budget up).
+  const bool gave_up = guest_.reattach_attempts >= kMaxGuestSfuReattachAttempts && !guest_.reattach_in_flight;
+  guest_.reattach_attempts = 0;
+  if (gave_up) {
+    log().info << "Guest SFU reattach again: the local network moved call_id=" << call_id_;
+    OnGuestSfuTransportLost();
+  }
+}
+
+void CallHopPath::ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                                                 std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  Defer([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
+    StartGuestReattach(call_id, attach_in, std::move(on_done));
+  });
+}
+
+void CallHopPath::StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                                     std::function<void(Roe<void>)> on_done) {
+  HopAttach at;
+  at.call_id = call_id;
+  at.attach = attach_in;
+  at.gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
+  if (!relay_deps_.relay || !relay_deps_.dial) {
+    on_done(Error("media_relay not available"));
+    return;
+  }
+  if (!IsLiveOnHopFor(call_id)) {
+    on_done(Error("sfu not active"));
+    return;
+  }
+  if (at.attach.hop_peer_id.empty()) {
+    on_done(Error("missing hop_peer_id"));
+    return;
+  }
+  if (auto local_pid = relay_deps_.relay->LocalPeerIdBase58(); local_pid && *local_pid == at.attach.hop_peer_id) {
+    on_done(Error("guest reattach is remote-hop only"));
+    return;
+  }
+  if (auto keyed = LoadHopMediaKey(at); !keyed) {
+    on_done(keyed.error());
+    return;
+  }
+  // The engine is already live: frames flow as soon as the relay session is back.
+  at.frames_ready->store(true, std::memory_order_release);
+  live_keys_ = at.keys;
+  live_keys_call_id_ = call_id;
+  InstallMediaKey(call_id); // a rotation that arrived while the transport was down
+  log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
+  if (at.attach.hop_multiaddr.empty()) {
+    at.attach.hop_multiaddr = ranking_.HopMultiaddr(at.attach.hop_peer_id);
+  }
+  mesh::MediaRelayAttachHooks hooks;
+  hooks.accept_quote = RelayQuotePricingGate();
+  hooks.still_wanted = [this, gen = at.gen_at_start]() { return IsMigrateGenerationCurrent(gen); };
+  hooks.on_frame = MakeHopFrameSink(at);
+  const mesh::MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, at.attach);
+  const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/true);
+  mesh::AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
+}
+
+Roe<void> CallHopPath::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  if (!IsMigrateGenerationCurrent(at.gen_at_start)) {
+    relay_deps_.relay->Detach();
+    return Error("reattach aborted");
+  }
+  if (publishers_.local_stream_id == 0) {
+    publishers_.local_stream_id = PublisherStreamIdForLocal();
+  }
+  relay_deps_.relay->StartClientFrameReader();
+  sfu_.last_quote_a_up_bps = a_up_bps;
+  guest_.active_attach = at.attach;
+  guest_.active = true;
+  NoteRemotePublisherFromAttach(at.attach);
+  SyncSfuSubscriptions(at.call_id);
+  AnnounceLocalPublisher(at.call_id, at.attach);
+  RefreshAdaptation(at.call_id);
+  log().info << "ReattachGuestSfuTransport done call_id=" << at.call_id << " hop=" << at.attach.hop_peer_id;
+  return {};
 }
 
 } // namespace pbr

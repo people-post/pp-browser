@@ -1167,7 +1167,7 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 ## V047 — CallHopMigrateWorkflow owns clusters (no friend)
 
 **Date:** 2026-09-17  
-**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Status:** Superseded by [V057](#v057--the-calls-media-is-the-paths-only-way-to-the-engine-parts-report-events) 6 (2026-11-02): the topology and the migrate workflow are one `CallHopPath` again — the split had cut one state in two and joined it through three port structs and a TopologyOps bundle.  
 **Decision:** Finish Topology ↔ SoftMigrate composition independence: **`CallHopMigrateWorkflow` owns** SoftMigrate/attach race clusters and takes **Host / Lifecycle / Seat ports + TopologyOps**. Drop **`friend class CallHopMigrateWorkflow`** and all private `topo_` field poke. Topology remains the Hop planner façade; it holds **references** into Workflow-owned clusters for local control paths and binds Ops/ports at construction / `Set*`.
 
 ### Rules
@@ -1374,7 +1374,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 3. **Per-call screen facts on `LiveCall`:** the activity line ("Switching media path…"), which the snapshot reads from the shown call. The two error values (`last_error`: a failed accept, "That call has ended"; the media error) are not call facts but one-shot notices the screen shows once — they outlive the call they came from — and stay the device's.
 4. **Inbound call control is a table in the router:** each control type → who may send it → its handler (the workflow or the call's media). The sender gates are the edge's, the durable steps the workflow's.
 5. **Names say what they are:** `CallDirectPath` / `CallHopPath`; no `P2p` prefixes.
-6. **The group path's hop state has one owner** (the migrate side); topology asks it.
+6. **The group path is one object** (`CallHopPath`): the planner, the move to the hop, the attach and the guest reattach over one hop state it alone writes. Supersedes V047's split (the topology and the migrate workflow shared that state by reference and joined through three port structs and a TopologyOps bundle). Its hop media data plane — frames, keys, publisher streams, with their own state and threads — may become its own object (PHASES § cn6b).
 
 **Rationale:** The engine handle makes "who carries this call's media" one fact with one writer, which is what the per-call model promised; events finish V055's "calls down, events up"; the rest are the owners V055 named but the code had not reached.
 

@@ -24,7 +24,7 @@ namespace pbr {
 
 /**
  * SoftMigrate / hop pick wiring (mesh clients + hop discovery).
- * Owned by CallHopPath; CallHopMigrateWorkflow holds a non-owning pointer (V047).
+ * The device's (CallHopService); each call's CallHopPath reads it.
  */
 struct CallHopMediaRelayDeps {
   mesh::IMediaRelayClient* relay = nullptr;

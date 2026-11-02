@@ -8,7 +8,6 @@ pp_browser_add_feature_library(pp_feature_calls
     CallMediaDoorway.cpp
     CallHopService.cpp
     CallMediaPlane.cpp
-    CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
     CallDevice.cpp
     CallEngine.cpp
