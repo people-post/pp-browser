@@ -174,3 +174,31 @@ TEST(ConfigMergeTest, NetworkDraftCarriesDirectConnections) {
   state.direct_connections = "strangers";  // not a choice: the saved value stands
   EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pp::mesh::DirectAudience::Contacts);
 }
+
+TEST(ConfigMergeTest, NetworkDraftCarriesBackendChoiceAndKeepsCustomUrlsWhenNotCustom) {
+  pbr::AppConfig base = pbr::Config::DefaultAppConfig();
+  base.relay.base_url = "https://custom.example.test/api/relay";
+  pbr::SettingsUiState state;
+  state.backend_env = "prod";
+  state.relay_base_url = "https://typed.example.test/api/relay";
+  const pbr::AppConfig prod = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(prod.backend.env, "prod");
+  EXPECT_EQ(prod.relay.base_url, "https://custom.example.test/api/relay") << "URL fields belong to custom only";
+
+  state.backend_env = "custom";
+  const pbr::AppConfig custom = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(custom.backend.env, "custom");
+  EXPECT_EQ(custom.relay.base_url, "https://typed.example.test/api/relay");
+}
+
+TEST(ConfigMergeTest, NetworkDraftWritesCustomUrlsToTheSavedCopyWhenAnOriginReplacedThem) {
+  pbr::AppConfig base = pbr::Config::DefaultAppConfig();
+  base.backend.has_saved_urls = true;
+  base.relay.base_url = "https://derived.example.test/api/relay";
+  pbr::SettingsUiState state;
+  state.backend_env = "custom";
+  state.relay_base_url = "https://typed.example.test/api/relay";
+  const pbr::AppConfig out = pbr::ApplyNetworkSettingsDraft(base, state);
+  EXPECT_EQ(out.backend.saved_relay.base_url, "https://typed.example.test/api/relay");
+  EXPECT_EQ(out.relay.base_url, "https://derived.example.test/api/relay");
+}

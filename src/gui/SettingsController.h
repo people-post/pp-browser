@@ -119,6 +119,10 @@ private:
     ui::String dht_enabled = "off";
     bool show_dht_toggle = false;
     ui::String prefer_contacts_for_routing = "on";
+    ui::String backend_env = "prod";
+    ui::String backend_label;
+    bool backend_restart_pending = false;
+    bool backend_is_custom = false;
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";
@@ -256,9 +260,11 @@ private:
   void OnChooseLanguage(ui::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(ui::Event& ev);
+  void OnChooseBackend(ui::Event& ev);
   void OnChooseDirectConnections(ui::Event& ev);
   void OnChooseCallInvitePolicy(ui::Event& ev);
   void ApplyCallInvitePolicyChoice(const std::string& policy);
+  void ApplyBackendChoice(const std::string& env);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);

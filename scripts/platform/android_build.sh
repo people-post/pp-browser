@@ -58,7 +58,8 @@ Commands:
 Optional environment variables:
   PP_BROWSER_VERSION          Numeric version passed to CMake (e.g. 0.1.0)
   PP_BROWSER_RELEASE_VERSION  Full release version (e.g. 0.1.0-rc1)
-  PP_BROWSER_DEFAULT_ORIGIN   Default backend origin compiled into the app (read by Gradle; empty = none)
+  PP_API_URL_PROD             Prod backend origin compiled into the app (read by Gradle; empty = none)
+  PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
 
 Requires:
   ANDROID_SDK_ROOT (or ANDROID_HOME)

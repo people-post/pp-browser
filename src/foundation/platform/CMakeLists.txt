@@ -168,12 +168,18 @@ else()
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 endif()
 
-# Compile-time default backend origin (scheme://host); PP_BROWSER_ORIGIN overrides it at runtime.
-# Empty by default: backend-dependent features stay disabled until an origin is supplied.
-set(PP_BROWSER_DEFAULT_ORIGIN "" CACHE STRING "Default backend origin compiled into the client")
-if(NOT PP_BROWSER_DEFAULT_ORIGIN STREQUAL "")
+# Compile-time backend origins (scheme://host, no path); PP_BROWSER_ORIGIN overrides them at runtime.
+# Empty by default: backend-dependent features stay disabled until a prod origin is supplied;
+# an empty QA origin hides the QA backend option.
+set(PP_API_URL_PROD "" CACHE STRING "Prod backend origin compiled into the client")
+set(PP_API_URL_QA "" CACHE STRING "QA backend origin compiled into the client")
+if(NOT PP_API_URL_PROD STREQUAL "")
   target_compile_definitions(pp_foundation_platform_core PRIVATE
-    PP_BROWSER_DEFAULT_ORIGIN="${PP_BROWSER_DEFAULT_ORIGIN}")
+    PP_API_URL_PROD="${PP_API_URL_PROD}")
+endif()
+if(NOT PP_API_URL_QA STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_API_URL_QA="${PP_API_URL_QA}")
 endif()
 
 if(PP_BROWSER_HEADLESS)

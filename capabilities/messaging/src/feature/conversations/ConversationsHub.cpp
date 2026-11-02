@@ -981,7 +981,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   if (directory_.Configured() && mesh_owner_) {
     // The directory's mesh nodes, kept by the mesh's owner. An update lands where the refresh ran (a worker):
     // the hub's work is ours — hop to UI.
-    mesh_owner_->StartDirectoryCache(directory_, config_.app_data_dir, [this]() {
+    mesh_owner_->StartDirectoryCache(directory_, data_dir_, [this]() {
       AppRuntime::PostUI([this]() {
         if (shutdown_requested_.load(std::memory_order_acquire)) {
           return;

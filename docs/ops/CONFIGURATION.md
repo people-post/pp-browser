@@ -13,7 +13,7 @@ How to resolve, edit, and verify machine/profile settings. Normative disk layout
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-**Backend origin:** set `PP_BROWSER_ORIGIN` at runtime or CMake `-DPP_BROWSER_DEFAULT_ORIGIN=…` at build time (see [BUILD.md](BUILD.md#backend-origin)). With neither, backend URLs are empty and backend-dependent features are disabled.
+**Backend origin:** set `PP_BROWSER_ORIGIN` at runtime, or build with CMake `-DPP_API_URL_PROD=…` (and optionally `-DPP_API_URL_QA=…`) and pick the backend in Me → Network (see [BUILD.md](BUILD.md#backend-origin)). With none of them, backend URLs are empty and backend-dependent features are disabled.
 
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
@@ -141,7 +141,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Profile (Me card) | `identity.enc` (+ `vault.bin`) | profile |
 | Assistant | `config.json` | machine |
 | Integrations | `config.json` | machine |
-| Network | `config.json` | machine |
+| Network | `config.json` (`backend.env`, custom URLs, mesh) | machine |
 | Appearance | `preferences.json` (`appearance`, `language`) | profile |
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
 | Storage | paths + profile size; reset wipes profile dir | — |
@@ -163,6 +163,7 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
     { "id": "my-tooling", "url": "https://example.com/mcp", "enabled": true }
   ],
   "search": { "provider": "duckduckgo" },
+  "backend": { "env": "prod" },
   "relay": { "base_url": "https://backend.example.test/api/relay" },
   "directory": { "base_url": "https://backend.example.test/api/relay" },
   "registration": { "base_url": "https://backend.example.test/api/relay" },
@@ -186,7 +187,8 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 - **`llm`** — default preset is **Brief** (API key issued on Profile registration, stored in `identity.enc`). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/foundation/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
-- **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+- **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
+- **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/1.0.0/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
 
 ### Mesh DHT (n2)
