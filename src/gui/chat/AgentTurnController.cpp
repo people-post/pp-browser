@@ -608,14 +608,15 @@ void AgentTurnController::OnAssistantDelta(const AgentEvent& event) {
   if (!host_.MessagingIsReady()) {
     return;
   }
-  const auto it = streaming_.find(event.thread_id);
+  const std::string thread_id = EventThread(event); // a Home turn streams into the chat it shows in
+  const auto it = streaming_.find(thread_id);
   if (it == streaming_.end() || it->second.row_id != "streaming-" + event.entry_id) {
-    ClearStreamingRow(event.thread_id);
-    StreamingRow& row = streaming_[event.thread_id];
+    ClearStreamingRow(thread_id);
+    StreamingRow& row = streaming_[thread_id];
     row.row_id = "streaming-" + event.entry_id;
-    row.thread_id = event.thread_id;
+    row.thread_id = thread_id;
   }
-  StreamingRow& row = streaming_[event.thread_id];
+  StreamingRow& row = streaming_[thread_id];
   row.text = event.text;
   row.dirty = true;
   FlushStreamingRow();
@@ -1197,14 +1198,21 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
         host_.SyncDisplayFromThread();
         DirtyChatTurns();
       }
-      if (busy_.BusyIn(thread)) {
+      if (!thread.empty() && busy_.BusyIn(thread)) {
         MarkAgentIdle(thread);
       } else {
         log().debug << "Turn-end of a chat not shown as busy (an earlier turn's)";
       }
+      if (event.thread_id.empty()) {
+        home_turn_thread_.reset(); // the Home session's turn is over
+      }
       DrainQueue(); // a turn ended: the next question waiting, if one does
-    } else if (!event.thread_id.empty()) {
-      MarkAgentBusy(event.thread_id);
+    } else {
+      if (event.thread_id.empty() && !home_turn_thread_) {
+        // A Home session turn started elsewhere than the composer (a card, a button): it shows in the open chat.
+        home_turn_thread_ = host_.ActiveThreadId();
+      }
+      MarkAgentBusy(EventThread(event));
       if (host_.MessagingIsReady()) {
         host_.SyncDisplayFromThread();
         DirtyChatTurns();
@@ -1226,7 +1234,7 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     OnAssistantDelta(event);
     break;
   case AgentEventType::AssistantReady:
-    ClearStreamingRow(event.thread_id);
+    ClearStreamingRow(EventThread(event));
     FinishAssistantReply(event.entry_id, event.text, event.from_model,
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
                          event.shared_ai_mode, event.sources);

@@ -31,11 +31,12 @@ public:
   };
   std::vector<Sent> sent;
   SessionStore store;
+  bool messaging_ready = false;
   /** What ChatController does when a queued send starts a turn (marks that chat busy). */
   std::function<void(const std::string& thread_id)> on_started;
 
   ConversationsFacade* Facade() const override { return nullptr; }
-  bool MessagingIsReady() const override { return false; }
+  bool MessagingIsReady() const override { return messaging_ready; }
   bool MessagingInitialized() const override { return false; }
   bool MessagingReady() const override { return false; }
   const std::string& ActiveThreadId() const override { return active_thread; }
@@ -779,6 +780,64 @@ TEST_F(AgentTurnConcurrentTest, StepLabelsStayInTheirOwnChat) {
   EXPECT_STRNE(chat_.status.c_str(), "");
   End("B");
   EXPECT_STREQ(chat_.status.c_str(), "");
+}
+
+// --- the Home session's turn (its events name no thread) -----------------------------------------------
+
+AgentEvent HomeDelta(const std::string& entry_id, const std::string& text) {
+  AgentEvent event;
+  event.type = AgentEventType::AssistantDelta;
+  event.entry_id = entry_id;
+  event.text = text; // thread_id empty: the Home session
+  return event;
+}
+
+TEST_F(AgentTurnBusyTest, AHomeStreamShowsInItsChatAndIsClearedAtItsEnd) {
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.submit = [](const std::string&, std::optional<std::string>) { return SubmitOutcome::Started; };
+  controller_.BindPorts(std::move(ports));
+  host_.messaging_ready = true;
+  Open("A");
+  controller_.SubmitHomeQuestion("A", "hello", std::nullopt);
+
+  controller_.HandleAgentEvent(HomeDelta("e1", "Hel"));
+  ASSERT_FALSE(chat_.messages.empty());
+  EXPECT_STREQ(chat_.messages.back().message_id.c_str(), "streaming-e1") << "the Home answer streams into A";
+  EXPECT_EQ(chat_links_.count("streaming-e1"), 1u);
+
+  controller_.HandleAgentEvent(Loading(false)); // ended without an answer
+  EXPECT_EQ(chat_links_.count("streaming-e1"), 0u) << "nothing of the stream is left behind";
+  EXPECT_FALSE(controller_.Busy().Any());
+}
+
+TEST_F(AgentTurnBusyTest, AHomeTurnStartedElsewhereShowsThinkingAndIsRecovered) {
+  // A Home card resumed (or a Home button) starts a Home turn without SubmitHomeQuestion.
+  bool home_busy = true;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.cancel = [this](const std::string& thread_id) {
+    ++cancel_calls_;
+    cancelled_thread_ = thread_id;
+  };
+  ports.is_busy = [&home_busy](const std::string& thread_id) { return thread_id.empty() && home_busy; };
+  controller_.BindPorts(std::move(ports));
+  controller_.SetUseLlm(true);
+  Open("A");
+
+  controller_.HandleAgentEvent(Loading(true)); // no thread: the Home session
+  EXPECT_TRUE(chat_.loading) << "thinking shows in the open chat";
+  controller_.OnStopTurn();
+  EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "") << "the stop reaches the Home session";
+
+  // Its end is never heard: once the Home session has no turn for 2 s the chat stops "thinking".
+  home_busy = false;
+  controller_.Tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+  controller_.Tick();
+  EXPECT_FALSE(controller_.Busy().Any());
+  EXPECT_FALSE(chat_.loading);
 }
 
 } // namespace
