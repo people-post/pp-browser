@@ -30,6 +30,11 @@ constexpr int64_t kMaxBitrateBps = 4000000;
 constexpr auto kCodecTimeoutUs = 20000LL;
 /** Wait for a decoder input buffer (under the media lock — B125: was 50 ms, plus up to 600 ms for output). */
 constexpr auto kDecodeInputTimeoutUs = 10000LL;
+/** The one retry after draining outputs waits longer (≤ 40 ms in all) before the frame is dropped. */
+constexpr auto kDecodeInputRetryTimeoutUs = 30000LL;
+/** Frames in a row that never reached the decoder (no input buffer, then dropped until an IDR) count
+ *  as a stall: a decoder that takes no input never produces output either. */
+constexpr int kInputStarvedStallFrames = 30;
 /** Output buffers taken per Decode at most (they are released as they come; only the last is shown). */
 constexpr int kMaxDrainedOutputs = 32;
 /** Device API level from which the decoder is asked for low-latency output (MediaFormat "low-latency"). */
@@ -466,8 +471,10 @@ private:
   /** Newest output buffer taken by DrainOutputs and not yet converted (index < 0: none). */
   ssize_t held_output_index_ = -1;
   AMediaCodecBufferInfo held_output_info_{};
-  /** A frame was dropped (no input buffer): later frames are dropped too until an IDR (no smearing). */
-  bool discard_until_idr_ = false;
+  /** A frame was dropped (no input buffer) or the codec rebuilt: frames are dropped until an IDR. */
+  IdrWait idr_wait_;
+  /** Frames not queued since an input buffer was last unavailable (0 = input is flowing). */
+  int input_starved_frames_ = 0;
   DecodeStallPolicy stall_;
   int input_drops_ = 0;
   int64_t last_input_drop_warn_ms_ = 0;
@@ -628,6 +635,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
 
   auto fail_decoder = [this](const char* message) -> Roe<void> {
     if (decoder_) {
+      ReleaseHeldOutput();
       AMediaCodec_stop(decoder_);
       AMediaCodec_delete(decoder_);
       decoder_ = nullptr;
@@ -636,6 +644,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   };
 
   if (decoder_) {
+    ReleaseHeldOutput();
     AMediaCodec_stop(decoder_);
     AMediaCodec_delete(decoder_);
     decoder_ = nullptr;
@@ -697,9 +706,7 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
   bool configured = false;
   for (int i = 0; i < attempt_count && !configured; ++i) {
     if (i > 0) {
-      if (attempts[i - 1].low_latency) {
-        DecoderLog().warning << "decoder rejected low-latency; configuring without it";
-      }
+      ReleaseHeldOutput();
       AMediaCodec_delete(decoder_);
       decoder_ = AMediaCodec_createDecoderByType("video/avc");
       if (!decoder_) {
@@ -709,6 +716,9 @@ Roe<void> AndroidVideoCodec::EnsureDecoderConfigured(const uint8_t* sps, size_t 
     AMediaFormat* format = make_format(attempts[i].with_color, attempts[i].low_latency);
     configured = AMediaCodec_configure(decoder_, format, nullptr, nullptr, 0) == AMEDIA_OK;
     AMediaFormat_delete(format);
+    if (!configured && attempts[i].low_latency) {
+      DecoderLog().warning << "decoder rejected low-latency; configuring without it";
+    }
   }
   if (!configured) {
     return fail_decoder("AMediaCodec_configure decoder failed");
@@ -796,6 +806,7 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     if ((sps_updated || pps_updated) && decoder_) {
       // cached_* already hold the new sets; drop the old codec so Ensure does
       // not treat the update as a no-op via the unchanged check.
+      ReleaseHeldOutput();
       AMediaCodec_stop(decoder_);
       AMediaCodec_delete(decoder_);
       decoder_ = nullptr;
@@ -812,12 +823,20 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
   if (!has_slice || slice_annex_b.empty()) {
     return Error("access unit contained no slice data");
   }
-  if (discard_until_idr_) {
+  if (idr_wait_.Waiting()) {
     if (!has_idr) {
-      // A frame was lost: frames that reference it would smear. The keyframe is already asked for.
+      // A frame was lost (or the codec rebuilt): frames that reference it would smear. Drop it.
+      if (input_starved_frames_ > 0 && ++input_starved_frames_ >= kInputStarvedStallFrames) {
+        input_starved_frames_ = 0;
+        return Error(std::string(kDecoderStalledError));
+      }
+      if (idr_wait_.AskAgain(SteadyMs())) {
+        // The keyframe request or the IDR may have been lost: an error makes the engine ask again.
+        return Error("waiting for keyframe");
+      }
       return std::optional<VideoFrameRgba>();
     }
-    discard_until_idr_ = false;
+    idr_wait_.Stop();
   }
 
   // B125: this runs under the engine's media lock, so never wait long. No input buffer → take the
@@ -826,12 +845,17 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
   ssize_t buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeInputTimeoutUs);
   if (buf_index < 0) {
     DrainOutputs();
-    buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeInputTimeoutUs);
+    buf_index = AMediaCodec_dequeueInputBuffer(decoder_, kDecodeInputRetryTimeoutUs);
   }
   if (buf_index < 0) {
     ReleaseHeldOutput();
-    discard_until_idr_ = true;
+    idr_wait_.Start(SteadyMs());
     ++input_drops_;
+    if (++input_starved_frames_ >= kInputStarvedStallFrames) {
+      // Input has not flowed for many frames: report a stall so the engine's rebuild budget applies.
+      input_starved_frames_ = 0;
+      return Error(std::string(kDecoderStalledError));
+    }
     const int64_t now = SteadyMs();
     if (now - last_input_drop_warn_ms_ >= kInputDropWarnEveryMs) {
       last_input_drop_warn_ms_ = now;
@@ -846,6 +870,7 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     ReleaseHeldOutput();
     return Error("decoder input buffer too small");
   }
+  input_starved_frames_ = 0;
   std::memcpy(buf, slice_annex_b.data(), slice_annex_b.size());
   const int64_t pts_us = dec_frame_index_ * 66666LL; // ~15fps pacing hint
   ++dec_frame_index_;
@@ -864,6 +889,7 @@ Roe<std::optional<VideoFrameRgba>> AndroidVideoCodec::DecodeAccessUnit(const uin
     if (stall_.Stalled(now)) {
       DecoderLog().warning << "decoder stalled: queued=" << stall_.FramesSinceOutput()
                            << " since_output_ms=" << stall_.MsSinceOutput(now);
+      stall_.NoteStallReported(now);
       return Error(std::string(kDecoderStalledError));
     }
     return std::optional<VideoFrameRgba>();
@@ -888,9 +914,13 @@ void AndroidVideoCodec::DrainOutputs() {
   for (int taken = 0; taken < kMaxDrainedOutputs; ++taken) {
     AMediaCodecBufferInfo info{};
     const ssize_t index = AMediaCodec_dequeueOutputBuffer(decoder_, &info, 0);
-    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED || index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
-      // The new format is read when the frame is converted; buffers-changed is not sent on NDK 21+.
+    if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+      // A held buffer has the old layout and the new format is read at conversion: drop it.
+      ReleaseHeldOutput();
       continue;
+    }
+    if (index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) {
+      continue;  // not sent on NDK 21+
     }
     if (index < 0) {
       return;  // TRY_AGAIN_LATER (nothing ready) or an error
@@ -1005,7 +1035,8 @@ void AndroidVideoCodec::ResetDecoder() {
   dec_frame_index_ = 0;
   dec_color_format_ = kColorFormatNv12;
   // The next picture must be an IDR (B125: after a rebuild, or a call's first frames).
-  discard_until_idr_ = true;
+  idr_wait_.Start(SteadyMs());
+  input_starved_frames_ = 0;
   stall_.Restart(SteadyMs());
 }
 

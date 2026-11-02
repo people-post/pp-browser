@@ -34,6 +34,8 @@ public:
     frames_since_output_ = 0;
     last_output_ms_ = now_ms;
   }
+  /** A stall was reported: the next one needs another kStallFrames frames and kStallMs. */
+  void NoteStallReported(int64_t now_ms) { NoteOutput(now_ms); }
   /** A keyframe was asked for (any decode error makes the engine ask). */
   void NoteKeyframeRequested(int64_t now_ms) { keyframe_wait_until_ms_ = now_ms + kKeyframeWaitMs; }
   void NoteFrameQueued(int64_t now_ms) {
@@ -54,6 +56,37 @@ private:
   int frames_since_output_ = 0;
   int64_t last_output_ms_ = 0;
   int64_t keyframe_wait_until_ms_ = 0;
+};
+
+/**
+ * "Drop every frame until the next IDR" after a lost frame or a rebuild (B125). The keyframe request
+ * or the IDR itself can be lost too, so while waiting the decoder asks again every kAskAgainMs
+ * (a decode error makes the engine ask). Pure; times in steady-clock ms.
+ */
+class IdrWait {
+public:
+  static constexpr int64_t kAskAgainMs = 2000;
+
+  /** Start waiting (a keyframe was just asked for, or will be by the caller's error). */
+  void Start(int64_t now_ms) {
+    waiting_ = true;
+    asked_ms_ = now_ms;
+  }
+  /** An IDR arrived. */
+  void Stop() { waiting_ = false; }
+  bool Waiting() const { return waiting_; }
+  /** A frame was dropped while waiting: true when it is time to ask for the keyframe again. */
+  bool AskAgain(int64_t now_ms) {
+    if (!waiting_ || now_ms - asked_ms_ < kAskAgainMs) {
+      return false;
+    }
+    asked_ms_ = now_ms;
+    return true;
+  }
+
+private:
+  bool waiting_ = false;
+  int64_t asked_ms_ = 0;
 };
 
 /**

@@ -73,6 +73,42 @@ TEST(DecodeStallPolicyTest, RestartClearsTheCount) {
   EXPECT_FALSE(p.Stalled(kT0 + 11'000)) << "time alone is not a stall";
 }
 
+// After a stall is reported (and the keyframe wait that follows it) the next one needs another 60
+// frames and 5 s — otherwise the first frame after the wait would trip it and burn the rebuild budget.
+TEST(DecodeStallPolicyTest, StallRightAfterTheKeyframeWaitNeedsSixtyFramesAndFiveSecondsAgain) {
+  Policy p;
+  p.Restart(kT0);
+  QueueFrames(p, 60, 5000);
+  const int64_t stall = kT0 + 5000;
+  ASSERT_TRUE(p.Stalled(stall));
+  p.NoteStallReported(stall);
+  p.NoteKeyframeRequested(stall);
+  const int64_t wait_over = stall + Policy::kKeyframeWaitMs;
+  p.NoteFrameQueued(wait_over);
+  EXPECT_FALSE(p.Stalled(wait_over)) << "one frame after the wait";
+  for (int i = 1; i < 60; ++i) {
+    p.NoteFrameQueued(wait_over + i * 10);
+  }
+  EXPECT_FALSE(p.Stalled(stall + Policy::kStallMs - 1)) << "60 frames, under 5 s since the stall";
+  EXPECT_TRUE(p.Stalled(stall + Policy::kStallMs));
+}
+
+// While dropping until an IDR, the decoder asks for the keyframe again every 2 s (the first request
+// or the IDR may be lost) and not more often; an IDR ends the wait.
+TEST(DecodeStallPolicyTest, IdrWaitAsksAgainEveryTwoSeconds) {
+  IdrWait w;
+  EXPECT_FALSE(w.AskAgain(kT0)) << "not waiting";
+  w.Start(kT0);
+  EXPECT_TRUE(w.Waiting());
+  EXPECT_FALSE(w.AskAgain(kT0 + IdrWait::kAskAgainMs - 1));
+  EXPECT_TRUE(w.AskAgain(kT0 + IdrWait::kAskAgainMs));
+  EXPECT_FALSE(w.AskAgain(kT0 + IdrWait::kAskAgainMs + 500)) << "asked just now";
+  EXPECT_TRUE(w.AskAgain(kT0 + 2 * IdrWait::kAskAgainMs));
+  w.Stop();
+  EXPECT_FALSE(w.Waiting());
+  EXPECT_FALSE(w.AskAgain(kT0 + 10 * IdrWait::kAskAgainMs));
+}
+
 // Two stalls in a row rebuild; at most twice per call, ten seconds apart; a frame breaks the row.
 TEST(DecodeStallPolicyTest, ResetsNeedTwoStallsInARowAtMostTwicePerCallTenSecondsApart) {
   Budget b;
