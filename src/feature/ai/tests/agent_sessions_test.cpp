@@ -309,7 +309,7 @@ TEST_F(AgentSessionsTest, CancelOneThreadLeavesTheOthers) {
   EXPECT_TRUE(sessions_->IsBusy("")) << "the Home turn goes on";
   EXPECT_EQ(Ended(""), 0u);
 
-  sessions_->Cancel();
+  sessions_->Cancel("");
   WaitEnded("");
   EXPECT_FALSE(sessions_->AnyBusy());
   EXPECT_TRUE(OfType(AgentEventType::Error).empty());
@@ -342,6 +342,37 @@ TEST_F(AgentSessionsTest, ParkedApprovalKeepsTheInstanceButFreesTheSlot) {
   EXPECT_EQ(ToolCalls(), std::vector<std::string>{"set_notifications"});
 }
 
+TEST_F(AgentSessionsTest, AResumedCardCountsFromTheTap) {
+  Make();
+  sessions_->SubmitToThread("a", "关掉通知");
+  WaitEnded("a");
+  const std::string approval = ApprovalId(OfType(AgentEventType::AssistantReady).front().text);
+  ASSERT_FALSE(approval.empty());
+  EXPECT_EQ(sessions_->CanStart("b"), TurnStart::Yes) << "a card waiting takes no slot";
+
+  ASSERT_TRUE(sessions_->ResumeToolPermission(approval, "allow_once"));
+  EXPECT_EQ(sessions_->CanStart("b"), TurnStart::Full) << "the resumed turn counts before its worker runs";
+  EXPECT_EQ(sessions_->SubmitToThread("b", "q"), SubmitOutcome::Full);
+  WaitEnded("a", 2);
+  EXPECT_EQ(sessions_->SubmitToThread("b", "q"), SubmitOutcome::Started);
+  WaitEnded("b");
+}
+
+TEST_F(AgentSessionsTest, AForgottenThreadDropsItsCardAndCanClose) {
+  Make();
+  sessions_->SubmitToThread("a", "关掉通知");
+  WaitEnded("a");
+  const std::string approval = ApprovalId(OfType(AgentEventType::AssistantReady).front().text);
+  ASSERT_FALSE(approval.empty());
+
+  sessions_->ForgetThread("a");
+  PumpUntil([&] { return !OfType(AgentEventType::ApprovalClosed).empty(); }, "the card to close");
+  Advance(kSessionIdleTimeout);
+  Poll();
+  EXPECT_FALSE(sessions_->HasSession("a")) << "nothing keeps the session of a cleared thread";
+  EXPECT_FALSE(sessions_->ResumeToolPermission(approval, "allow_once"));
+}
+
 TEST_F(AgentSessionsTest, SubmitDuringConfigureWaitsForThatInstance) {
   block_configure_ = true;
   Make(kMaxConcurrentTurns, /*configure=*/false);
@@ -362,22 +393,57 @@ TEST_F(AgentSessionsTest, SubmitDuringConfigureWaitsForThatInstance) {
 
 TEST_F(AgentSessionsTest, ConfigureReachesEveryLiveInstance) {
   Make(3);
-  EXPECT_EQ(configures_.load(), 1) << "Home";
+  EXPECT_EQ(configures_.load(), 2) << "Home and the spare";
   sessions_->SubmitToThread("t1", "q");
   sessions_->SubmitToThread("t2", "q");
   WaitEnded("t1");
   WaitEnded("t2");
   sessions_->WaitForConfigureIdle();
-  EXPECT_EQ(configures_.load(), 3);
+  EXPECT_EQ(configures_.load(), 4) << "each new thread took the spare and a new one was warmed";
 
   sessions_->Configure(MakeConfig("brief"));
   sessions_->WaitForConfigureIdle();
-  EXPECT_EQ(configures_.load(), 6) << "Home, t1 and t2 again";
+  EXPECT_EQ(configures_.load(), 8) << "Home, the spare, t1 and t2 again";
 
   sessions_->SubmitToThread("t3", "q");
   WaitEnded("t3");
   sessions_->WaitForConfigureIdle();
-  EXPECT_EQ(configures_.load(), 7) << "a later session gets the current configuration";
+  EXPECT_EQ(configures_.load(), 9) << "the next spare gets the current configuration";
+}
+
+TEST_F(AgentSessionsTest, FirstQuestionInAThreadTakesTheWarmSpare) {
+  Make();
+  EXPECT_TRUE(sessions_->HasSpare());
+  EXPECT_EQ(configures_.load(), 2);
+  EXPECT_EQ(sessions_->SubmitToThread("t1", "q"), SubmitOutcome::Started);
+  WaitEnded("t1");
+  sessions_->WaitForConfigureIdle();
+  EXPECT_EQ(configures_.load(), 3) << "t1 was configured before it was asked; only the next spare configured";
+  EXPECT_TRUE(sessions_->HasSpare());
+  EXPECT_EQ(sessions_->LiveSessions(), 3u) << "Home, t1 and one spare, never more";
+}
+
+TEST_F(AgentSessionsTest, IgnoredQuestionsOpenNoSession) {
+  Make();
+  EXPECT_EQ(sessions_->SubmitToThread("t1", ""), SubmitOutcome::Ignored);
+  EXPECT_EQ(sessions_->SubmitScopedAssist("t2", ""), SubmitOutcome::Ignored);
+  EXPECT_EQ(sessions_->SubmitLocalAction("t3", "go", "delete_everything", Object{}), SubmitOutcome::Ignored);
+  EXPECT_FALSE(sessions_->HasSession("t1"));
+  EXPECT_FALSE(sessions_->HasSession("t2"));
+  EXPECT_FALSE(sessions_->HasSession("t3"));
+  EXPECT_FALSE(sessions_->AnyBusy());
+}
+
+TEST_F(AgentSessionsTest, PauseKeepsTheToolHook) {
+  Make();
+  sessions_->SubmitToThread("t1", "q");
+  WaitEnded("t1");
+  sessions_->WaitForConfigureIdle();
+  const int before = configures_.load(); // Home, t1 (the first spare), the next spare
+  sessions_->CancelAll();
+  sessions_->Configure(MakeConfig("brief"));
+  sessions_->WaitForConfigureIdle();
+  EXPECT_EQ(configures_.load(), before + 3) << "every session still registers the app's tools after a pause";
 }
 
 // --- idle sessions -----------------------------------------------------------------------------------
@@ -414,11 +480,12 @@ TEST_F(AgentSessionsTest, RebuiltInstanceAnswersTheFirstQuestionLikeTheSecond) {
   WaitEnded("t1", 2);
   EXPECT_TRUE(sessions_->HasSession("t1"));
 
-  // Closed when idle, then asked while the rebuilt session is still configuring.
+  // Closed when idle, then asked while the session it gets (the spare) is still configuring.
   Advance(kSessionIdleTimeout);
   Poll();
   ASSERT_FALSE(sessions_->HasSession("t1"));
   block_configure_ = true;
+  sessions_->Configure(MakeConfig("brief")); // the spare reconfigures and is held in it
   EXPECT_EQ(sessions_->SubmitToThread("t1", "three"), SubmitOutcome::Started);
   PumpUntil([&] { return in_configure_.load(); }, "the rebuilt session to configure");
   block_configure_ = false;
@@ -436,25 +503,25 @@ TEST_F(AgentSessionsTest, RebuiltInstanceAnswersTheFirstQuestionLikeTheSecond) {
 
 TEST_F(AgentSessionsTest, SoftAliveCapEvictsIdleNotRunning) {
   Make(10);
-  for (const char* thread : {"t1", "t2", "t3", "t4", "t5"}) {
+  for (const char* thread : {"t1", "t2", "t3", "t4"}) {
     sessions_->SubmitToThread(thread, "q");
     WaitEnded(thread);
     Advance(std::chrono::seconds(1));
   }
-  ASSERT_EQ(sessions_->LiveSessions(), kSoftMaxLiveSessions);
+  ASSERT_EQ(sessions_->LiveSessions(), kSoftMaxLiveSessions) << "Home, four threads and the spare";
 
-  sessions_->SubmitToThread("t6", "q");
-  WaitEnded("t6");
+  sessions_->SubmitToThread("t5", "q");
+  WaitEnded("t5");
   EXPECT_FALSE(sessions_->HasSession("t1")) << "the least recently used idle session made room";
   EXPECT_TRUE(sessions_->HasSession("t2"));
   EXPECT_EQ(sessions_->LiveSessions(), kSoftMaxLiveSessions);
 
   // Every session runs a turn: a new thread still gets one.
   EXPECT_EQ(sessions_->Submit("hold"), SubmitOutcome::Started);
-  for (const char* thread : {"t2", "t3", "t4", "t5", "t6"}) {
+  for (const char* thread : {"t2", "t3", "t4", "t5"}) {
     EXPECT_EQ(sessions_->SubmitToThread(thread, "hold"), SubmitOutcome::Started) << thread;
   }
-  EXPECT_EQ(sessions_->SubmitToThread("t7", "hold"), SubmitOutcome::Started);
+  EXPECT_EQ(sessions_->SubmitToThread("t6", "hold"), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->LiveSessions(), kSoftMaxLiveSessions + 1) << "a soft cap: nothing waits for it";
 
   release_ = true;
@@ -466,7 +533,7 @@ TEST_F(AgentSessionsTest, SoftAliveCapEvictsIdleNotRunning) {
 // Step 0: app-action tools run on the turn's worker thread, not on the UI thread, so two threads' actions are kept
 // apart only by the cap. At kMaxConcurrentTurns (1) the second is Full until the first has ended; the UI hands it
 // over then, and the events reach the UI in that order.
-TEST_F(AgentSessionsTest, TwoLocalActionsFromTwoThreadsRunInOrderOnUi) {
+TEST_F(AgentSessionsTest, SecondThreadsLocalActionIsFullAtCapOneThenRunsInOrder) {
   Make();
   EXPECT_EQ(sessions_->SubmitLocalAction("ta", "find a", "search_people", Query("a")), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Full);

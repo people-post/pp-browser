@@ -20,7 +20,10 @@ namespace pbr {
  * which the chat screen's queue expects until it shows several (DEV/PLAN-ai-concurrent-turns.md, steps 3-4).
  */
 inline constexpr size_t kMaxConcurrentTurns = 1;
-/** Live sessions (Home included) above which the least recently used idle one is closed at once. Never refuses. */
+/**
+ * Live sessions (Home and the spare included) above which the least recently used idle one is closed at once.
+ * Never refuses: if none can close, one more is opened.
+ */
 inline constexpr size_t kSoftMaxLiveSessions = 6;
 /** A thread's session that could close (AgentSession::CanClose) is closed after this long without a turn. */
 inline constexpr std::chrono::minutes kSessionIdleTimeout{10};
@@ -34,9 +37,12 @@ enum class TurnStart {
 
 /**
  * The assistant's sessions: one fixed session for the Home composer (Conversation mode, no thread) and one per
- * thread, made when that thread first asks and closed once it has been idle for kSessionIdleTimeout. A thread's
+ * thread, taken when that thread first asks and closed once it has been idle for kSessionIdleTimeout. A thread's
  * turns always run in its own session, so its permission card, a question the app asked back and its events stay
  * with it. How many thread turns run at once is decided here and only here (`Submit*` answer Full).
+ *
+ * One spare session is kept configured and idle, so a thread's first question does not wait for a whole configure
+ * (MCP start included): a new thread takes it and the next spare starts configuring at once.
  *
  * Settings (configuration, tool hook, permissions, thread store, ...) reach every live session and every one made
  * later. The events of all sessions come out of one queue (PollEvents) in the order they were posted; each carries
@@ -79,15 +85,16 @@ public:
   /** An empty `thread_id` runs in the Home session. */
   SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
                                   Object args, bool in_peer_chat = false);
-  /** In the session holding that card; resuming starts a turn there, so it counts like one (TurnBusy when Full). */
+  /**
+   * In the session holding that card; resuming starts a turn there, so a thread's card counts like a turn from the
+   * tap on (TurnBusy when full). A Home card does not count, like any Home turn.
+   */
   Roe<void> ResumeToolPermission(const std::string& approval_id, const std::string& decision,
                                  const std::string& decision_label = {});
   bool IsAppActionRequest(const std::string& text) const;
   /** The events of every session. Also closes sessions idle for kSessionIdleTimeout. Per frame. */
   void PollEvents(std::vector<AgentEvent>& out);
 
-  /** Stops the Home composer's turn. */
-  void Cancel();
   /** Stops the turn of `thread_id` only (empty: the Home composer's). */
   void Cancel(const std::string& thread_id);
   /** Stops every turn (the app pauses or quits). */
@@ -100,7 +107,7 @@ public:
   bool ThreadTurnsFull() const;
   /** Block until no session is configuring (not callable from a worker). */
   void WaitForConfigureIdle();
-  /** The thread was cleared or deleted: forget the brief_AI role that answered it last. */
+  /** The thread was cleared or deleted: forget its last brief_AI role, its card and its question asked back. */
   void ForgetThread(const std::string& thread_id);
 
   /** The Home composer's session; its conversation is the Home transcript. */
@@ -108,8 +115,10 @@ public:
   const AgentSession& Home() const { return *home_; }
   bool IsConfigured() const { return home_->IsConfigured(); }
 
-  /** Sessions alive now, Home included. */
-  size_t LiveSessions() const { return 1 + threads_.size(); }
+  /** Sessions alive now, Home and the spare included. */
+  size_t LiveSessions() const { return 1 + threads_.size() + (spare_ ? 1 : 0); }
+  /** A configured (or configuring) spare waits for the next new thread. */
+  bool HasSpare() const { return spare_ != nullptr; }
   bool HasSession(const std::string& thread_id) const { return threads_.count(thread_id) > 0; }
 
 private:
@@ -121,7 +130,11 @@ private:
   std::chrono::steady_clock::time_point Now() const;
   size_t RunningThreadTurns() const;
   std::unique_ptr<AgentSession> MakeSession();
-  /** The thread's session, made (and configured) if it has none; closes an idle one first if over the soft cap. */
+  /** Keeps one spare once there is a configuration. */
+  void WarmSpare();
+  /** Calls `fn` on Home, the spare and every thread's session. */
+  void ForEach(const std::function<void(AgentSession&)>& fn);
+  /** The thread's session, the spare if it has none; closes an idle one first if over the soft cap. */
   AgentSession& Open(const std::string& thread_id);
   /** Runs `submit` in the thread's session if a turn may start there (Home for an empty thread). */
   SubmitOutcome SubmitIn(const std::string& thread_id, const std::function<SubmitOutcome(AgentSession&)>& submit);
@@ -141,6 +154,7 @@ private:
   BriefAiStreamFn brief_stream_;
 
   std::unique_ptr<AgentSession> home_;
+  std::unique_ptr<AgentSession> spare_;
   std::map<std::string, ThreadSession> threads_;
 };
 

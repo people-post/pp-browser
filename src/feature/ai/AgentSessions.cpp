@@ -47,60 +47,56 @@ std::unique_ptr<AgentSession> AgentSessions::MakeSession() {
 
 // --- settings --------------------------------------------------------------------------------------
 
+void AgentSessions::ForEach(const std::function<void(AgentSession&)>& fn) {
+  fn(*home_);
+  if (spare_) {
+    fn(*spare_);
+  }
+  for (auto& [thread_id, entry] : threads_) {
+    fn(*entry.session);
+  }
+}
+
+void AgentSessions::WarmSpare() {
+  if (!spare_ && config_) {
+    spare_ = MakeSession(); // configures in the background
+  }
+}
+
 void AgentSessions::Configure(const AppConfig& config) {
   config_ = config;
-  home_->Configure(config);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->Configure(config);
-  }
+  ForEach([&](AgentSession& session) { session.Configure(config); });
+  WarmSpare();
 }
 
 void AgentSessions::SetToolRegistrationHook(ToolRegistrationHook hook) {
   tool_registration_hook_ = std::move(hook);
-  home_->SetToolRegistrationHook(tool_registration_hook_);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetToolRegistrationHook(tool_registration_hook_);
-  }
+  ForEach([&](AgentSession& session) { session.SetToolRegistrationHook(tool_registration_hook_); });
 }
 
 void AgentSessions::SetToolPermissions(ToolPermissionsPrefs permissions) {
   tool_permissions_ = std::move(permissions);
-  home_->SetToolPermissions(tool_permissions_);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetToolPermissions(tool_permissions_);
-  }
+  ForEach([&](AgentSession& session) { session.SetToolPermissions(tool_permissions_); });
 }
 
 void AgentSessions::SetToolPermissionsSaver(ToolPermissionsSaveFn saver) {
   tool_permissions_saver_ = std::move(saver);
-  home_->SetToolPermissionsSaver(tool_permissions_saver_);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetToolPermissionsSaver(tool_permissions_saver_);
-  }
+  ForEach([&](AgentSession& session) { session.SetToolPermissionsSaver(tool_permissions_saver_); });
 }
 
 void AgentSessions::SetThreadStore(IThreadStore* store) {
   thread_store_ = store;
-  home_->SetThreadStore(store);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetThreadStore(store);
-  }
+  ForEach([&](AgentSession& session) { session.SetThreadStore(store); });
 }
 
 void AgentSessions::SetLocalContactsSource(LocalContactsFn source) {
   local_contacts_ = std::move(source);
-  home_->SetLocalContactsSource(local_contacts_);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetLocalContactsSource(local_contacts_);
-  }
+  ForEach([&](AgentSession& session) { session.SetLocalContactsSource(local_contacts_); });
 }
 
 void AgentSessions::SetBriefAiStream(BriefAiStreamFn fn) {
   brief_stream_ = std::move(fn);
-  home_->SetBriefAiStream(brief_stream_);
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->SetBriefAiStream(brief_stream_);
-  }
+  ForEach([&](AgentSession& session) { session.SetBriefAiStream(brief_stream_); });
 }
 
 // --- turns -----------------------------------------------------------------------------------------
@@ -141,8 +137,9 @@ AgentSession& AgentSessions::Open(const std::string& thread_id) {
     }
   }
   ThreadSession& entry = threads_[thread_id];
-  entry.session = MakeSession();
+  entry.session = spare_ ? std::move(spare_) : MakeSession();
   entry.last_active = Now();
+  WarmSpare(); // the next new thread finds one ready too
   return *entry.session;
 }
 
@@ -172,6 +169,9 @@ SubmitOutcome AgentSessions::Submit(const std::string& user_text, std::optional<
 SubmitOutcome AgentSessions::SubmitToThread(const std::string& thread_id, const std::string& user_text,
                                             std::optional<std::string> user_payload,
                                             std::optional<AgentImageTurn> image) {
+  if (user_text.empty()) {
+    return SubmitOutcome::Ignored; // checked before a session is taken for it
+  }
   return SubmitIn(thread_id, [&](AgentSession& session) {
     return session.SubmitToThread(thread_id, user_text, std::move(user_payload), std::move(image));
   });
@@ -179,6 +179,9 @@ SubmitOutcome AgentSessions::SubmitToThread(const std::string& thread_id, const 
 
 SubmitOutcome AgentSessions::SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                                                 std::optional<std::string> user_payload, const AtAiMode mode) {
+  if (prompt.empty()) {
+    return SubmitOutcome::Ignored;
+  }
   return SubmitIn(thread_id, [&](AgentSession& session) {
     return session.SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
   });
@@ -186,6 +189,10 @@ SubmitOutcome AgentSessions::SubmitScopedAssist(const std::string& thread_id, co
 
 SubmitOutcome AgentSessions::SubmitLocalAction(const std::string& thread_id, const std::string& user_text,
                                                const std::string& tool, Object args, const bool in_peer_chat) {
+  if (!AgentSession::IsLocalActionTool(tool)) {
+    log().warning << "local action payload with a tool outside the whitelist ignored: " << tool;
+    return SubmitOutcome::Ignored;
+  }
   return SubmitIn(thread_id, [&](AgentSession& session) {
     return session.SubmitLocalAction(thread_id, user_text, tool, std::move(args), in_peer_chat);
   });
@@ -233,10 +240,6 @@ void AgentSessions::CloseIdle() {
   }
 }
 
-void AgentSessions::Cancel() {
-  home_->Cancel();
-}
-
 void AgentSessions::Cancel(const std::string& thread_id) {
   if (thread_id.empty()) {
     home_->Cancel();
@@ -248,10 +251,7 @@ void AgentSessions::Cancel(const std::string& thread_id) {
 }
 
 void AgentSessions::CancelAll() {
-  home_->Cancel();
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->Cancel();
-  }
+  ForEach([](AgentSession& session) { session.Cancel(); });
 }
 
 bool AgentSessions::IsBusy(const std::string& thread_id) const {
@@ -271,14 +271,14 @@ bool AgentSessions::ThreadTurnsFull() const {
 }
 
 void AgentSessions::WaitForConfigureIdle() {
-  home_->WaitForConfigureIdle();
-  for (auto& [thread_id, entry] : threads_) {
-    entry.session->WaitForConfigureIdle();
-  }
+  ForEach([](AgentSession& session) { session.WaitForConfigureIdle(); });
 }
 
 void AgentSessions::ForgetThread(const std::string& thread_id) {
-  home_->ForgetThread(thread_id); // the memory every session shares
+  home_->ForgetThread(thread_id); // also the last-role memory every session shares
+  if (const auto it = threads_.find(thread_id); it != threads_.end()) {
+    it->second.session->ForgetThread(thread_id); // its card and question asked back: then it can close when idle
+  }
 }
 
 } // namespace pbr
