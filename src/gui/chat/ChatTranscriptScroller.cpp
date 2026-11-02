@@ -347,8 +347,8 @@ void ChatTranscriptScroller::OnJumpToLatest() {
 }
 
 ChatTranscriptScroller::JumpWindow ChatTranscriptScroller::WindowForJump(const int64_t order,
-                                                                       const std::optional<int64_t> loaded_min,
-                                                                       const std::optional<int64_t> loaded_max) {
+                                                                         const std::optional<int64_t> loaded_min,
+                                                                         const std::optional<int64_t> loaded_max) {
   const bool older = !loaded_min || order < *loaded_min;
   const bool newer = loaded_max && order > *loaded_max;
   if (!older && !newer) {

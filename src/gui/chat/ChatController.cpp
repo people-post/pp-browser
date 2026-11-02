@@ -1781,8 +1781,7 @@ void ChatController::SyncDisplayFromThread() {
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
   const size_t prev_count = chat_.messages.size();
 
-  chat_.messages =
-      scroller_.Rows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
+  chat_.messages = scroller_.Rows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;
@@ -1794,7 +1793,8 @@ void ChatController::SyncDisplayFromThread() {
     } else {
       // Messages added or removed (not a redraw): in the rows shown, or at the chat's end when the rows shown are
       // older history.
-      const std::string tail = chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
+      const std::string tail =
+          chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
       bool changed = tail != prev_tail_id || chat_.messages.size() != prev_count;
       if (auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1); newest && !newest->empty()) {
         changed = changed || newest->back().id != search_thread_tail_;

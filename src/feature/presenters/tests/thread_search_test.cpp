@@ -87,8 +87,7 @@ TEST(ThreadSearchTest, QuoteReplyMatchesOnlyTheReply) {
 }
 
 TEST(ThreadSearchTest, AiBlocksDocumentMatchesItsPlainText) {
-  const std::string blocks =
-      R"({"blocks":[{"type":"paragraph","text":"The capital of France is Paris."}]})";
+  const std::string blocks = R"({"blocks":[{"type":"paragraph","text":"The capital of France is Paris."}]})";
   const std::vector<ThreadMessage> messages = {Text("ai", 1, blocks)};
   EXPECT_EQ(Search(messages, "paris"), (std::vector<std::string>{"ai"}));
   EXPECT_TRUE(Search(messages, "paragraph").empty());

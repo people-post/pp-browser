@@ -20,7 +20,9 @@ std::string PlainTextOf(const ThreadMessage& message) {
 }
 
 std::string FoldForSearch(const std::string_view text) {
-  const auto is_space = [](const char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; };
+  const auto is_space = [](const char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+  };
   size_t begin = 0;
   size_t end = text.size();
   while (begin < end && is_space(text[begin])) {

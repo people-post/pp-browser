@@ -134,10 +134,10 @@ TEST(ThreadSearchSessionTest, MessagesChangedWhileBuildingOnlyMarksARebuild) {
   EXPECT_FALSE(session.MessagesChanged(100).has_value()); // the first build still runs
   EXPECT_FALSE(session.Tick(200).has_value());
   ASSERT_TRUE(session.IndexReady(generation, FiveTeas(), 300));
-  EXPECT_FALSE(session.Tick(1000).has_value());         // too soon after the build
+  EXPECT_FALSE(session.Tick(1000).has_value()); // too soon after the build
   const std::optional<uint64_t> rebuild = session.Tick(2300);
   ASSERT_TRUE(rebuild.has_value());
-  EXPECT_FALSE(session.Tick(5000).has_value());          // one at a time, and nothing more pending
+  EXPECT_FALSE(session.Tick(5000).has_value());            // one at a time, and nothing more pending
   EXPECT_FALSE(session.MessagesChanged(5000).has_value()); // the rebuild is still running
   ASSERT_TRUE(session.IndexReady(*rebuild, FiveTeas(), 5100));
   EXPECT_TRUE(session.Tick(7100).has_value());
@@ -175,8 +175,13 @@ TEST(ThreadSearchSessionTest, RebuildKeepsTheCursorOnTheSameMessage) {
   ASSERT_TRUE(rebuild.has_value());
   // A new message with the word arrived: the count grows, the cursor stays on t3, the view does not move.
   ASSERT_TRUE(session.IndexReady(*rebuild,
-                                 Index({{"t1", "tea"}, {"x", "coffee"}, {"t2", "tea"}, {"t3", "tea"}, {"t4", "tea"},
-                                        {"t5", "tea"}, {"t6", "more tea"}}),
+                                 Index({{"t1", "tea"},
+                                        {"x", "coffee"},
+                                        {"t2", "tea"},
+                                        {"t3", "tea"},
+                                        {"t4", "tea"},
+                                        {"t5", "tea"},
+                                        {"t6", "more tea"}}),
                                  5100));
   EXPECT_EQ(session.view().hit_count, 6U);
   EXPECT_EQ(session.CurrentMessageId(), "t3");

@@ -414,9 +414,9 @@ private:
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn
-  ThreadSearchSession search_;               // search inside the open chat; its index lives only while open
-  std::string search_thread_;                // the chat it was opened on
-  std::string search_thread_tail_;           // that chat's newest message id when last checked
+  ThreadSearchSession search_;            // search inside the open chat; its index lives only while open
+  std::string search_thread_;             // the chat it was opened on
+  std::string search_thread_tail_;        // that chat's newest message id when last checked
   std::unordered_set<std::string> search_hit_ids_; // what the row decorator tints
   std::string search_current_id_;
   /** Typing settles for kSearchDebounce before the query is applied. */
