@@ -330,5 +330,55 @@ TEST_F(RemoteVideoDecodeTest, TwoStalledErrorsResetTheDecoderOnce) {
   EXPECT_EQ(script->decodes.load(), 4) << "the rebuilt decoder is configured again and keeps decoding";
 }
 
+/** Decode-only stub whose destructor blocks until released, like a wedged vendor codec (B128). */
+class WedgedDecoder final : public IVideoCodec {
+public:
+  struct Gate {
+    std::atomic<bool> release{false};
+    std::atomic<bool> destroyed{false};
+  };
+  explicit WedgedDecoder(std::shared_ptr<Gate> gate) : gate_(std::move(gate)) {}
+  ~WedgedDecoder() override {
+    // Bounded so a failing test cannot hang the run.
+    WaitFor([this] { return gate_->release.load(); }, std::chrono::seconds(10));
+    gate_->destroyed.store(true);
+  }
+  std::string BackendName() const override { return "wedged-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return true; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
+    return std::optional<VideoFrameRgba>();
+  }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+
+private:
+  std::shared_ptr<Gate> gate_;
+};
+
+// B128: Stop runs on the calls owner thread; a decoder whose teardown hangs must not hang it.
+TEST_F(MediaSessionSpecTest, StopDoesNotWaitForADecoderTeardown) {
+  auto gate = std::make_shared<WedgedDecoder::Gate>();
+  engine_.SetVideoCodecFactoryForTest([gate] { return std::make_unique<WedgedDecoder>(gate); });
+  ASSERT_TRUE(engine_.StartSfu("call:wedged", CountingSend()));
+  CallMediaEngine::SfuPacket video;
+  video.stream_id = 7;
+  video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
+  video.payload = {0, 0, 0, 1, 0x65, 0x88};
+  engine_.OnSfuPacket(video);
+
+  const auto started = std::chrono::steady_clock::now();
+  engine_.Stop();
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(2));
+  EXPECT_FALSE(gate->destroyed.load()) << "still tearing down, off the stopping thread";
+
+  gate->release.store(true);
+  EXPECT_TRUE(WaitFor([&] { return gate->destroyed.load(); }, std::chrono::seconds(2)))
+      << "the decoder is still destroyed";
+}
+
 } // namespace
 } // namespace pbr

@@ -1672,6 +1672,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
 void CallMediaEngine::Stop() {
   StateChangedFn state_cb;
   std::shared_ptr<SfuSendFn> abandoned_send;
+  std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> doomed_decoders;
   {
     std::lock_guard lock(impl_->mutex);
     if (!impl_->active && !impl_->sfu_mode) {
@@ -1692,13 +1693,22 @@ void CallMediaEngine::Stop() {
     impl_->capture_running = false;
     impl_->playout_running = false;
     // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
-    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
-    impl_->remote_decoders.clear();
+    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen. Taken out under the lock, so
+    // the receive path (OnSfuPacket holds the lock while it decodes) and ResetStalledDecoder (looks
+    // the decoder up again under it) can no longer reach them; destroyed below, off this thread.
+    doomed_decoders.swap(impl_->remote_decoders);
     impl_->decoder_resets.clear();
     impl_->video_decode_fail_logs = 0;
     impl_->lock_wait_warns.store(0, std::memory_order_relaxed);
   }
   abandoned_send = nullptr;
+  // B128: destroying a hardware decoder (AMediaCodec_stop / delete) can block for good when the
+  // vendor codec is wedged, and this is the calls owner thread. A decoder owns only its codec and
+  // never touches Impl, so a detached thread may outlive the engine here — the "always join" rule
+  // below is about threads that use Impl.
+  if (!doomed_decoders.empty()) {
+    std::thread([decoders = std::move(doomed_decoders)]() mutable { decoders.clear(); }).detach();
+  }
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
   {
     std::lock_guard drain(impl_->sfu_send_call_mu);
