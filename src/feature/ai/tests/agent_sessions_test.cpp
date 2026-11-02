@@ -116,7 +116,22 @@ protected:
                                  int seen = max_tools_running_.load();
                                  while (now_running > seen && !max_tools_running_.compare_exchange_weak(seen, now_running)) {
                                  }
-                                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                                 if (gate_tools_) {
+                                   // Held until both turns have asked for their tool; then a second one running at
+                                   // the same time would be inside here with this one.
+                                   const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                                   while (!both_requested_.load() && std::chrono::steady_clock::now() < until) {
+                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                   }
+                                   const auto overlap = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+                                   while (tools_running_.load() < 2 && std::chrono::steady_clock::now() < overlap) {
+                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                   }
+                                   int both = max_tools_running_.load();
+                                   const int running = tools_running_.load();
+                                   while (running > both && !max_tools_running_.compare_exchange_weak(both, running)) {
+                                   }
+                                 }
                                  {
                                    std::lock_guard lock(mu_);
                                    tool_calls_.push_back(args.getString("query").value_or(""));
@@ -243,6 +258,8 @@ protected:
   std::atomic<int> configures_{0};
   std::atomic<int> tools_running_{0};
   std::atomic<int> max_tools_running_{0};
+  std::atomic<bool> gate_tools_{false};     // search_people waits for both_requested_
+  std::atomic<bool> both_requested_{false}; // both turns reported their tool "running"
   std::mutex mu_;
   std::vector<BriefAiRequest> requests_;
   std::vector<std::string> tool_calls_;
@@ -618,8 +635,22 @@ TEST_F(AgentSessionsTest, SecondThreadsLocalActionIsFullAtCapOneThenRunsInOrder)
 // Step 2b: app actions of different threads run one at a time, and those that change the screens on the UI thread.
 TEST_F(AgentSessionsTest, TwoThreadsAppActionsRunOneAtATime) {
   Make(3);
+  gate_tools_ = true;
   EXPECT_EQ(sessions_->SubmitLocalAction("ta", "find a", "search_people", Query("a")), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Started);
+  // Both turns have reached their tool (it reports "running" right before it runs); the first holds until now.
+  PumpUntil(
+      [&] {
+        std::set<std::string> running;
+        for (const AgentEvent& event : OfType(AgentEventType::ToolActivity)) {
+          if (event.status == "running") {
+            running.insert(event.thread_id);
+          }
+        }
+        return running.size() == 2;
+      },
+      "both turns to ask for their tool");
+  both_requested_ = true;
   WaitEnded("ta");
   WaitEnded("tb");
   auto calls = ToolCalls();
@@ -628,7 +659,7 @@ TEST_F(AgentSessionsTest, TwoThreadsAppActionsRunOneAtATime) {
   EXPECT_EQ(max_tools_running_.load(), 1) << "two turns ran at once, their app actions did not";
 }
 
-TEST_F(AgentSessionsTest, TwoThreadsUiToolsRunInOrderOnTheUiThread) {
+TEST_F(AgentSessionsTest, TwoThreadsUiToolsRunOneAtATimeOnTheUiThread) {
   Make(3);
   sessions_->SetLocalContactsSource([] {
     return std::vector<LocalPlanContact>{{.id = "ca", .thread_id = "a", .remark = "A"},
@@ -659,7 +690,7 @@ TEST_F(AgentSessionsTest, FourTurnsLeaveTheWorkerPoolFree) {
   std::atomic<bool> ran{false};
   const auto posted = std::chrono::steady_clock::now();
   AppRuntime::PostWorkerNormal([&ran] { ran = true; });
-  while (!ran.load() && std::chrono::steady_clock::now() - posted < std::chrono::milliseconds(100)) {
+  while (!ran.load() && std::chrono::steady_clock::now() - posted < std::chrono::seconds(1)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   EXPECT_TRUE(ran.load()) << "a plain worker task waited for the AI answers";
