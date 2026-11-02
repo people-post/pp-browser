@@ -209,10 +209,10 @@ void CallHopMigrateWorkflow::RunSoftMigrate(const std::string& call_id, SoftMigr
       return;
     }
     if (action == SoftMigrateAction::WaitForAttach) {
-      host_.SetMediaActivity(Localized("call.status.waiting_for_media_path"));
+      reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.waiting_for_media_path")});
       // Owner may have already fan-out CallSfuAttach; do not sit behind TailSync-starved polls.
-      host_.RequestInboxSync();
-      host_.NotifyRingChanged();
+      reports_.Emit(hop_report::InboxSyncWanted{call_id_});
+      reports_.Emit(hop_report::Changed{call_id_});
       pick->on_done(Roe<void>());
       return;
     }
@@ -225,8 +225,9 @@ void CallHopMigrateWorkflow::RunSoftMigrate(const std::string& call_id, SoftMigr
     pick->on_done(Error(Localized("call.error.no_media_relay_hop")));
     return;
   }
-  host_.SetMediaActivity(repick ? Localized("call.status.switching_media_path") : Localized("call.status.finding_media_path"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{
+      call_id_, repick ? Localized("call.status.switching_media_path") : Localized("call.status.finding_media_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
   pick->failures.reserve(pick->ranked.size());
   TryPickHop(std::move(pick), 0);
 }
@@ -287,8 +288,8 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
     ops_.fan_out_sfu_attach_for_hop(call_id, in.current_hop, pick.local_identity);
     ops_.sync_sfu_subscriptions(call_id);
     if (action == RepickOnHopAction::StayOnNamedHop) {
-      host_.ClearMediaActivity();
-      host_.NotifyRingChanged();
+      reports_.Emit(hop_report::Activity{call_id_, {}});
+      reports_.Emit(hop_report::Changed{call_id_});
     }
     pick.on_done(Roe<void>());
     return true;
@@ -308,8 +309,8 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
   }
   log().info << "SoftMigrate re-pick detach call_id=" << call_id << " prefer=" << prefer_hop_peer_id
              << " leaving_prefer_local=" << (in.local_hop_attached ? 1 : 0);
-  host_.SetMediaActivity(Localized("call.status.switching_media_path"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.switching_media_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
   relay_deps_->relay->Detach();
   sfu_.SetAttached(false);
   flight_.attached_hop_peer_id.clear();
@@ -420,8 +421,8 @@ void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size
     return;
   }
   flight_.attaching_hop_peer_id = hop.peer_id;
-  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.connecting_media_relay")});
+  reports_.Emit(hop_report::Changed{call_id_});
   CallSfuAttachDetail attach;
   attach.call_id = pick->call_id;
   attach.hop_peer_id = hop.peer_id;
@@ -555,7 +556,7 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
     ops_.note_remote_publisher_from_attach(at.attach);
     ops_.sync_sfu_subscriptions(call_id);
     flight_.attached_hop_peer_id = at.attach.hop_peer_id;
-    host_.ClearMediaActivity();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
     on_done(Roe<void>());
     return;
   }
@@ -759,7 +760,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   }
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
-  host_.note_media_attempted(call_id);
+  reports_.Emit(hop_report::MediaAttempted{call_id});
   if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
     call_media->HoldSeatForHop();
   }
@@ -786,7 +787,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
                << " same_hop=" << (same_hop ? 1 : 0) << " gen_current=" << (gen_current ? 1 : 0);
     // Do not ReleaseDirect / DirectConnected again — duplicate completes flash chrome.
     MarkHopAttachLive(at, /*fresh_start=*/false);
-    host_.ClearMediaActivity();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
     log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
     return {};
   }
@@ -1060,7 +1061,7 @@ void CallHopMigrateWorkflow::ReleaseDirectSettled(const hop_migrate_event::Relea
       }
     }
   }
-  host_.ClearMediaActivity();
+  reports_.Emit(hop_report::Activity{call_id_, {}});
 }
 
 void CallHopMigrateWorkflow::ReleaseDirectWhenHopHeard(const hop_migrate_event::ReleaseDirectWhenHopHeard& wait) {
@@ -1090,7 +1091,7 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   // stampede leaves gen_at_start permanently stale (dogfood UI). #431 (b): the 1:1 leg goes once the
   // others are heard on the hop (at most kKeepDirectUntilHopHeardMs): until then its live link is how
   // the peer gets our CallSfuAttach at once, control going direct-first.
-  host_.ClearMediaActivity();
+  reports_.Emit(hop_report::Activity{call_id_, {}});
   const int64_t attached_ms = util::NowUnixMs();
   ReleaseDirectWhenHopHeard(hop_migrate_event::ReleaseDirectWhenHopHeard{
       .call_id = at.call_id, .attached_ms = attached_ms, .deadline_ms = attached_ms + kKeepDirectUntilHopHeardMs});
@@ -1139,7 +1140,7 @@ void CallHopMigrateWorkflow::ScheduleSlowGuestReattach(const std::string& call_i
   // The call reads Reconnecting (not Connected: nothing flows) while the guest keeps trying at a
   // steady pace: a phone out of coverage comes back without its network moving, and waiting for
   // a move (OnLocalNetworkMoved) left it out of the call for good (lab: group_call_on_the_road).
-  host_.SetLastMediaError(Localized("call.error.hop_unreachable_guest"));
+  reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.hop_unreachable_guest")});
   guest_.slow_retry_pending =
       outbox_.After(kGuestSfuSlowRetry, hop_migrate_event::GuestReattachRetry{.slow = true}) != 0;
 }
@@ -1169,11 +1170,11 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
   const int attempt = guest_.reattach_attempts;
   log().warning << "Guest SFU duplex lost — reattach attempt=" << attempt
                 << " hop=" << attach.hop_peer_id << " call_id=" << call_id;
-  host_.SetMediaActivity(Localized("call.status.reconnecting"));
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.reconnecting")});
   if (attempt == 1) {
     // The hop path is down: the call is no longer live (it read Connected while nothing flowed).
     // Recovery() (Reattaching, then HopLost) keeps the Reconnecting line up until a reattach succeeds.
-    reports_.Emit(HopReport{call_id, CallHopPlannerPhase::Attaching});
+    reports_.Emit(hop_report::Progress{call_id, CallHopPlannerPhase::Attaching});
   }
 
   // The completion runs on the owner (from the attach's event, or a deferred early failure).
@@ -1185,8 +1186,8 @@ void CallHopMigrateWorkflow::StartGuestReattachAttempt(const std::string& call_i
     if (ok) {
       log().info << "Guest SFU reattach ok call_id=" << call_id;
       guest_.reattach_attempts = 0;
-      host_.ClearMediaActivity();
-      reports_.Emit(HopReport{call_id, CallHopPlannerPhase::Live});
+      reports_.Emit(hop_report::Activity{call_id_, {}});
+      reports_.Emit(hop_report::Progress{call_id, CallHopPlannerPhase::Live});
       return;
     }
     log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message

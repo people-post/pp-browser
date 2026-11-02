@@ -204,8 +204,9 @@ private:
   void SetLastMediaError(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
-  /** The group path's host ports, bound to its call (`path_call_id`). */
-  CallTopologyController::HostPorts MakeTopologyHostPorts(const std::string& path_call_id);
+  CallTopologyController::HostPorts MakeTopologyHostPorts();
+  /** What a call's group path reported (events up): move the call's state, or act for it. */
+  void OnHopReport(const HopReport& report);
 
   // CallDirectPathQueries (the 1:1 path's questions)
   const LiveCall* LiveCallOf(const std::string& call_id) const override { return live_calls_.Find(call_id); }

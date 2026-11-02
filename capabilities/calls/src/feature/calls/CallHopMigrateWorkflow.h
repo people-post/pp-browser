@@ -48,42 +48,10 @@ struct CallHopMigrateHostPorts {
   std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail_json,
                           const std::string& display, const std::string& skip_identity)>
       fan_out_joined;
-  std::function<void()> notify_ring_changed;
-  std::function<void(std::string message)> set_last_media_error;
-  std::function<void(std::string message)> set_media_activity;
-  std::function<void()> clear_media_activity;
-  std::function<void(const std::string& call_id)> note_media_attempted;
   /** The call's `CallMedia`: the hop path starts / stops the engine through it. */
   std::function<CallMedia*(const std::string& call_id)> call_media;
-  std::function<void()> request_inbox_sync;
 
   bool IsBound() const { return static_cast<bool>(local_relay_identity); }
-
-  void ClearMediaActivity() const {
-    if (clear_media_activity) {
-      clear_media_activity();
-    }
-  }
-  void NotifyRingChanged() const {
-    if (notify_ring_changed) {
-      notify_ring_changed();
-    }
-  }
-  void RequestInboxSync() const {
-    if (request_inbox_sync) {
-      request_inbox_sync();
-    }
-  }
-  void SetMediaActivity(std::string message) const {
-    if (set_media_activity) {
-      set_media_activity(std::move(message));
-    }
-  }
-  void SetLastMediaError(std::string message) const {
-    if (set_last_media_error) {
-      set_last_media_error(std::move(message));
-    }
-  }
 };
 
 /**

@@ -174,13 +174,7 @@ CallHopMigrateHostPorts CallTopologyController::MakeMigrateHostPorts(const HostP
   CallHopMigrateHostPorts out;
   out.local_relay_identity = ports.local_relay_identity;
   out.fan_out_joined = ports.fan_out_joined;
-  out.notify_ring_changed = ports.notify_ring_changed;
-  out.set_last_media_error = ports.set_last_media_error;
-  out.set_media_activity = ports.set_media_activity;
-  out.clear_media_activity = ports.clear_media_activity;
-  out.note_media_attempted = ports.note_media_attempted;
   out.call_media = ports.call_media;
-  out.request_inbox_sync = ports.request_inbox_sync;
   return out;
 }
 
@@ -305,7 +299,7 @@ void CallTopologyController::SetHopPlannerPhase(const CallHopPlannerPhase next,
 
 void CallTopologyController::ReportHopProgress(const CallHopPlannerPhase phase,
                                                const std::string& call_id) {
-  reports_.Emit(HopReport{call_id, phase});
+  reports_.Emit(hop_report::Progress{call_id, phase});
 }
 
 void CallTopologyController::SetReports(OwnerOutbox<HopReport> reports) {
@@ -386,7 +380,7 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   guest_.active = false;
   guest_.reattach_attempts = 0;
   guest_.reattach_in_flight = false;
-  host_.ClearMediaActivity();
+  reports_.Emit(hop_report::Activity{call_id_, {}});
   hop_hint_repicked_.clear();
   planning_.Forget(call_id);
   if (attach_wait_.waiting && call_id == call_id_) {
@@ -417,9 +411,9 @@ void CallTopologyController::PollPendingSfuAttach() {
     return;
   case SfuAttachWaitPollResult::TimeoutLeave:
     ClearSfuAttachWait();
-    host_.SetLastMediaError(Localized("call.error.no_media_relay_hop"));
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.no_media_relay_hop")});
     log().warning << "SFU attach wait timed out call_id=" << call_id;
-    (void)host_.leave_call(call_id);
+    reports_.Emit(hop_report::LeaveWanted{call_id});
     return;
   }
 }
@@ -430,7 +424,7 @@ void CallTopologyController::EjectParticipantAfterMigrateFailure(const std::stri
   if (identity.empty()) {
     return;
   }
-  host_.SetLastMediaError(reason);
+  reports_.Emit(hop_report::MediaError{call_id_, reason});
   log().warning << "Ejecting " << identity << " after soft-migrate failure: " << reason;
 
   CallLeaveDetail leave;
@@ -450,7 +444,7 @@ void CallTopologyController::EjectParticipantAfterMigrateFailure(const std::stri
                                          *local);
     }
   }
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 uint32_t CallTopologyController::PublisherStreamIdForLocal() const {
@@ -516,7 +510,7 @@ bool CallTopologyController::SettleFinishedMigrate(const std::string& call_id) {
   SyncSfuSubscriptions(call_id);
   inbound_gate_.pending_attach.reset();
   inbound_gate_.pending = false;
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
   return true;
 }
 
@@ -647,7 +641,7 @@ void CallTopologyController::FlushPendingHopPrefer(const std::string& call_id) {
       ReleaseMigrateFlight();
       FlushPendingHopPrefer(call_id);
       FlushPendingInboundSfuAttach();
-      host_.NotifyRingChanged();
+      reports_.Emit(hop_report::Changed{call_id_});
     });
   });
 }
@@ -886,10 +880,10 @@ void CallTopologyController::AttachFromInviteHint(const std::string& call_id, co
   attach.hop_peer_id = hop_peer_id;
   attach.hop_multiaddr = ranking_.HopMultiaddr(hop_peer_id);
   attach.publisher_stream_id = PublisherStreamIdForLocal();
-  host_.note_media_attempted(call_id);
+  reports_.Emit(hop_report::MediaAttempted{call_id});
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.connecting_media_relay")});
+  reports_.Emit(hop_report::Changed{call_id_});
   if (MigrateFlightBusyFor(call_id)) {
     // Inbound CallSfuAttach already dialing — do not bump flight_.migrate_generation.
     log().info << "OnLocalAcceptJoined keep in-flight attach (invite hint) call_id=" << call_id;
@@ -910,11 +904,11 @@ void CallTopologyController::FinishInviteHintAttach(const std::string& call_id, 
   if (!ok) {
     if (sfu_.attached && engine_->Runs()) {
       SyncSfuSubscriptions(call_id);
-      host_.NotifyRingChanged();
+      reports_.Emit(hop_report::Changed{call_id_});
       return;
     }
     log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
-    host_.SetLastMediaError(ok.error().message);
+    reports_.Emit(hop_report::MediaError{call_id_, ok.error().message});
     // V050: a joiner the group's hop cannot serve asks the owner (one hop change per joiner, or a
     // refusal) — ReportSfuAttachFailedToInitiator leaves when we are the owner ourselves.
     std::string hop;
@@ -927,14 +921,14 @@ void CallTopologyController::FinishInviteHintAttach(const std::string& call_id, 
     inbound_gate_.pending = false;
   }
   FlushPendingInboundSfuAttach();
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, size_t n_joined) {
-  host_.note_media_attempted(call_id);
+  reports_.Emit(hop_report::MediaAttempted{call_id});
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.setting_up_group")});
+  reports_.Emit(hop_report::Changed{call_id_});
   JoinWithoutHintInput in;
   in.on_hop_for_call = IsOnSfuForCall(call_id);
   in.flight_busy_for_call = MigrateFlightBusyFor(call_id);
@@ -982,16 +976,16 @@ void CallTopologyController::FinishJoinSoftMigrate(const std::string& call_id, u
   }
   if (!mig) {
     log().warning << "MaybeSoftMigrateToSfu failed: " << mig.error().message;
-    host_.SetLastMediaError(mig.error().message);
+    reports_.Emit(hop_report::MediaError{call_id_, mig.error().message});
     ClearSfuAttachWait();
-    (void)host_.leave_call(call_id);
+    reports_.Emit(hop_report::LeaveWanted{call_id});
   } else if (!attached_when_done && !sfu_.attached) {
     // Wait for CallSfuAttach (LocalJoinedWithoutHint → WaitForAttach).
     FlushPendingInboundSfuAttach();
   } else {
     ClearSfuAttachWait();
   }
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 void CallTopologyController::StayDirectAfterAccept(const std::string& call_id, size_t n_joined) {
@@ -1003,7 +997,7 @@ void CallTopologyController::StayDirectAfterAccept(const std::string& call_id, s
   flight_.attaching_hop_peer_id.clear();
   inbound_gate_.pending_attach.reset();
   inbound_gate_.pending = false;
-  host_.ClearMediaActivity();
+  reports_.Emit(hop_report::Activity{call_id_, {}});
   log().info << "OnLocalAcceptJoined → P2P ScheduleStart call_id=" << call_id << " n=" << n_joined;
 }
 
@@ -1027,7 +1021,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     log().info << "OnRemoteAcceptJoined stay P2P call_id=" << call_id << " n=" << n_joined
                << " joiner=" << joiner_identity;
     ClearSfuAttachWait();
-    host_.ClearMediaActivity();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
     return false;
   case RemoteAcceptHopAction::RefreshOnHop:
     // 2nd concurrent accept: re-fan-out the attach so a joiner that missed the SoftMigrate fan-out
@@ -1035,7 +1029,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     SyncSfuSubscriptions(call_id);
     RefanOutHopForJoiner(call_id, joiner_identity);
     ClearSfuAttachWait();
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Changed{call_id_});
     return true;
   case RemoteAcceptHopAction::JoinFlight:
   case RemoteAcceptHopAction::ResolveAndMigrate:
@@ -1049,14 +1043,14 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     return true;  // joiner refused; nothing to schedule for it
   }
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.setting_up_group")});
+  reports_.Emit(hop_report::Changed{call_id_});
   if (action == RemoteAcceptHopAction::JoinFlight) {
     // Overlapping Accept: keep the in-flight SoftMigrate; bumping gen would Detach mid-attach.
     log().info << "OnRemoteAcceptJoined defer SoftMigrate (already in flight) joiner=" << joiner_identity;
     return true;
   }
-  host_.note_media_attempted(call_id);
+  reports_.Emit(hop_report::MediaAttempted{call_id});
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen,
@@ -1117,7 +1111,7 @@ void CallTopologyController::FinishRemoteAcceptMigrate(const std::string& call_i
   }
   // Non-initiator WaitForAttach: keep wait; apply deferred CallSfuAttach from owner.
   FlushPendingInboundSfuAttach();
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_id,
@@ -1147,7 +1141,7 @@ void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_
         if (!mig) {
           log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
         }
-        Defer([this]() { host_.NotifyRingChanged(); });
+        Defer([this]() { reports_.Emit(hop_report::Changed{call_id_}); });
       });
 }
 
@@ -1181,7 +1175,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   case JoinedCountHopAction::SkipAttachWait:
     // Re-entry would only bump the generation and thrash the inbox.
     log().info << "OnJoinedCountObserved skip SoftMigrate (attach wait) n=" << n_joined << " call_id=" << call_id;
-    host_.RequestInboxSync();
+    reports_.Emit(hop_report::InboxSyncWanted{call_id_});
     return;
   case JoinedCountHopAction::AwaitJoinerAccept:
     log().info << "OnJoinedCountObserved: wait for the joiner's CallAccept (planned hop) n=" << n_joined
@@ -1191,10 +1185,10 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
     break;
   }
 
-  host_.note_media_attempted(call_id);
+  reports_.Emit(hop_report::MediaAttempted{call_id});
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.setting_up_group"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.setting_up_group")});
+  reports_.Emit(hop_report::Changed{call_id_});
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen,
@@ -1208,15 +1202,15 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
       }
       if (!mig) {
         log().warning << "MaybeSoftMigrateToSfu (roster) failed: " << mig.error().message;
-        host_.SetLastMediaError(mig.error().message);
+        reports_.Emit(hop_report::MediaError{call_id_, mig.error().message});
         // Do not LeaveCall here — attach-wait / inviter eject paths handle failure.
       } else {
         FlushPendingInboundSfuAttach();
         if (!sfu_.attached) {
-          host_.RequestInboxSync();
+          reports_.Emit(hop_report::InboxSyncWanted{call_id_});
         }
       }
-      host_.NotifyRingChanged();
+      reports_.Emit(hop_report::Changed{call_id_});
     });
   });
 }
@@ -1301,8 +1295,8 @@ bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string
     NoteRemotePublisherFromAttach(attach);
     SyncSfuSubscriptions(call_id);
     ClearSfuAttachWait();
-    host_.ClearMediaActivity();
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
+    reports_.Emit(hop_report::Changed{call_id_});
     return true;
   }
   // An attach already dialing (seat flight, or attaching_hop even if flight_.in_flight briefly
@@ -1332,8 +1326,8 @@ bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string
     DeferInboundSfuAttach(call_id, attach);
     log().info << "OnInboundSfuAttach deferred (SoftMigrate in flight) call_id=" << call_id;
     BeginSfuAttachWait(call_id);
-    host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.connecting_media_relay")});
+    reports_.Emit(hop_report::Changed{call_id_});
     return true;
   }
   return RefusePrivateHopMultiaddr(call_id, attach);
@@ -1353,16 +1347,16 @@ bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_i
   log().warning << "OnInboundSfuAttach skip private hop MA hop=" << attach.hop_peer_id << " ma=" << attach.hop_multiaddr
                 << " may_dial=" << (may_dial ? 1 : 0) << " lan_hop=" << (lan_hop ? 1 : 0);
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.looking_for_another_path"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.looking_for_another_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
   ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, "hop multiaddr not reachable (private)");
   return true;
 }
 
 void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) {
   BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Localized("call.status.connecting_media_relay"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.connecting_media_relay")});
+  reports_.Emit(hop_report::Changed{call_id_});
   const uint64_t gen = ClaimMigrateFlight(call_id);
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, attach, gen](Roe<void> ok) {
     const bool superseded = !IsMigrateGenerationCurrent(gen);
@@ -1391,21 +1385,21 @@ void CallTopologyController::FinishInboundSfuAttach(const std::string& call_id, 
     inbound_gate_.pending_attach.reset();
     inbound_gate_.pending = false;
     SyncSfuSubscriptions(call_id);
-    host_.ClearMediaActivity();
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
+    reports_.Emit(hop_report::Changed{call_id_});
     return;
   }
   if (sfu_.attached && engine_->Runs()) {
     SyncSfuSubscriptions(call_id);
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Changed{call_id_});
     return;
   }
-  host_.SetLastMediaError(ok.error().message);
+  reports_.Emit(hop_report::MediaError{call_id_, ok.error().message});
   log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
   // V029: ask owner to re-pick or refuse — keep attach-wait for a re-fan-out.
   ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, ok.error().message);
   BeginSfuAttachWait(call_id);
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string& call_id, uint64_t gen,
@@ -1421,7 +1415,7 @@ void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string&
     inbound_gate_.pending = false;
     ClearSfuAttachWait();
     SyncSfuSubscriptions(call_id);
-    host_.ClearMediaActivity();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
   } else {
     if (owns_flight) {
       FlushPendingInboundSfuAttach();
@@ -1432,7 +1426,7 @@ void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string&
       BeginSfuAttachWait(call_id);
     }
   }
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 void CallTopologyController::FlushPendingInboundSfuAttach() {
@@ -1494,9 +1488,9 @@ void CallTopologyController::ReportSfuAttachFailedToInitiator(const std::string&
   const std::string initiator = SelectCallInitiator(joined_peers);
   if (initiator.empty() || initiator == *local) {
     // Local is initiator (or unknown): cannot ask self — leave with friendly copy.
-    host_.SetLastMediaError(Localized("call.error.hop_unreachable_guest"));
+    reports_.Emit(hop_report::MediaError{call_id_, Localized("call.error.hop_unreachable_guest")});
     ClearSfuAttachWait();
-    (void)host_.leave_call(call_id);
+    reports_.Emit(hop_report::LeaveWanted{call_id});
     return;
   }
 
@@ -1515,8 +1509,8 @@ void CallTopologyController::ReportSfuAttachFailedToInitiator(const std::string&
   inbound_gate_.last_fail_hop = failed_hop;
   log().info << "ReportSfuAttachFailed to initiator=" << initiator << " prefs="
              << detail.preferred_hop_peer_ids.size();
-  host_.SetMediaActivity(Localized("call.status.looking_for_another_path"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.looking_for_another_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
   (void)host_.send_direct(initiator, CallControlType::CallSfuAttachFailed, *encoded,
                                  "Call hop attach failed");
 }
@@ -1658,8 +1652,8 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
     log().info << "Hop hint no-op: already on prefer hop=" << prefer << " guest=" << guest;
     FanOutSfuAttachForHop(detail.call_id, prefer, *local);
     SyncSfuSubscriptions(detail.call_id);
-    host_.ClearMediaActivity();
-    host_.NotifyRingChanged();
+    reports_.Emit(hop_report::Activity{call_id_, {}});
+    reports_.Emit(hop_report::Changed{call_id_});
     return;
   case HopFailureAction::Coalesce:
     flight_.pending_hop_prefer = prefer;
@@ -1704,8 +1698,8 @@ bool CallTopologyController::IsOnOrHintedHop(const std::string& call_id, const s
 void CallTopologyController::StartHopHintRepick(const std::string& call_id, const std::string& prefer,
                                                 const std::string& guest) {
   log().info << "Hop hint re-pick prefer=" << prefer << " guest=" << guest;
-  host_.SetMediaActivity(Localized("call.status.switching_media_path"));
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, Localized("call.status.switching_media_path")});
+  reports_.Emit(hop_report::Changed{call_id_});
   BeginSfuAttachWait(call_id);
   // V035: do not bump flight_.migrate_generation on hop-hint (Leave/teardown only).
   const uint64_t gen = flight_.migrate_generation.load(std::memory_order_acquire);
@@ -1735,8 +1729,8 @@ void CallTopologyController::FinishHopHintRepick(const std::string& call_id, con
     return;
   }
   SyncSfuSubscriptions(call_id);
-  host_.ClearMediaActivity();
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::Activity{call_id_, {}});
+  reports_.Emit(hop_report::Changed{call_id_});
   FlushPendingHopPrefer(call_id);
   FlushPendingInboundSfuAttach();
 }
@@ -1758,11 +1752,11 @@ void CallTopologyController::OnInboundHopRefuse(const CallHopRefuseDetail& detai
   }
   const std::string message =
       detail.message.empty() ? Localized("call.error.hop_unreachable_guest") : detail.message;
-  host_.SetLastMediaError(message);
+  reports_.Emit(hop_report::MediaError{call_id_, message});
   log().warning << "CallHopRefuse call_id=" << detail.call_id << " reason=" << detail.reason;
   ClearSfuAttachWait();
-  (void)host_.leave_call(detail.call_id);
-  host_.NotifyRingChanged();
+  reports_.Emit(hop_report::LeaveWanted{detail.call_id});
+  reports_.Emit(hop_report::Changed{call_id_});
 }
 
 } // namespace pbr

@@ -103,10 +103,9 @@ CallDevice::CallDevice(const IThreadCatalog& threads, IThreadTranscript& transcr
   BindReachSignalPorts();
 }
 
-CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts(const std::string& path_call_id) {
+CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalIdentity(); };
-  ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
   ports.call_media = [this](const std::string& call_id) { return call_media_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
@@ -114,16 +113,32 @@ CallTopologyController::HostPorts CallDevice::MakeTopologyHostPorts(const std::s
   };
   ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) { return SendDirect(peer, type, detail, display); };
-  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
-  ports.set_last_media_error = [this](std::string message) { SetLastMediaError(std::move(message)); };
-  // The activity line is the path's call's (V057 3).
-  ports.set_media_activity = [this, path_call_id](std::string message) {
-    live_calls_.NoteActivity(path_call_id, std::move(message));
-  };
-  ports.clear_media_activity = [this, path_call_id]() { live_calls_.NoteActivity(path_call_id, {}); };
-  ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
-  ports.request_inbox_sync = [this]() { RequestInboxSync(); };
   return ports;
+}
+
+void CallDevice::OnHopReport(const HopReport& report) {
+  std::visit(
+      [this](const auto& r) {
+        using R = std::decay_t<decltype(r)>;
+        if constexpr (std::is_same_v<R, hop_report::Progress>) {
+          live_calls_.ReportHopProgress(r.call_id, r.phase);
+        } else if constexpr (std::is_same_v<R, hop_report::Changed>) {
+          NotifyRingChanged();
+        } else if constexpr (std::is_same_v<R, hop_report::MediaError>) {
+          SetLastMediaError(r.message);
+        } else if constexpr (std::is_same_v<R, hop_report::Activity>) {
+          live_calls_.NoteActivity(r.call_id, r.text);
+        } else if constexpr (std::is_same_v<R, hop_report::MediaAttempted>) {
+          TopologyNoteMediaAttempted(r.call_id);
+        } else if constexpr (std::is_same_v<R, hop_report::InboxSyncWanted>) {
+          RequestInboxSync();
+        } else if constexpr (std::is_same_v<R, hop_report::LeaveWanted>) {
+          (void)TopologyLeaveCall(r.call_id);
+        } else {
+          static_assert(!sizeof(R), "take every HopReport");
+        }
+      },
+      report);
 }
 
 void CallDevice::BindWorkflowHostPorts() {
@@ -432,7 +447,7 @@ void CallDevice::Handle(SessionEvent& event) {
             doorway_->Handle(e.event);
           }
         } else if constexpr (std::is_same_v<E, session_event::FromHopPath>) {
-          live_calls_.ReportHopProgress(e.report.call_id, e.report.phase);
+          OnHopReport(e.report);
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }
@@ -599,7 +614,7 @@ std::unique_ptr<CallHopDriver> CallDevice::MakeHopPath(const std::string& call_i
   path->SetReports(outbox_.For<HopReport>(
       [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
   path->SetMediaKeyStore(&media_keys_);
-  path->SetHostPorts(MakeTopologyHostPorts(call_id));
+  path->SetHostPorts(MakeTopologyHostPorts());
   path->SetHopArmingPorts(MakeHopArmingPorts());
   path->SetSeatPorts(MakeTopologySeatPorts());
   path->OnRelayDepsChanged(); // watch the relay client the device has now

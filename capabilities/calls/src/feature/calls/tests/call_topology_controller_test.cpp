@@ -108,10 +108,6 @@ public:
       }
       return local_identity;
     };
-    ports.leave_call = [this](const std::string& call_id) -> Roe<void> {
-      leave_calls.push_back(call_id);
-      return {};
-    };
     ports.fan_out_joined = [this](const std::string& call_id, CallControlType type,
                                   const std::string& detail_json, const std::string& /*display*/,
                                   const std::string& /*skip_identity*/) -> Roe<void> {
@@ -122,8 +118,7 @@ public:
       fanouts.push_back(std::move(f));
       return {};
     };
-    ports.send_direct = [this](const std::string& peer_identity, CallControlType type,
-                               const std::string& detail_json,
+    ports.send_direct = [this](const std::string& peer_identity, CallControlType type, const std::string& detail_json,
                                const std::string& /*display*/) -> Roe<void> {
       Direct d;
       d.peer_identity = peer_identity;
@@ -132,12 +127,6 @@ public:
       directs.push_back(std::move(d));
       return {};
     };
-    ports.notify_ring_changed = [this]() { ++ring_notifies; };
-    ports.set_last_media_error = [this](std::string message) { last_media_error = std::move(message); };
-    ports.set_media_activity = [this](std::string message) { media_activity = std::move(message); };
-    ports.clear_media_activity = [this]() { media_activity.clear(); };
-    ports.note_media_attempted = [this](const std::string& call_id) { media_attempted.push_back(call_id); };
-    ports.request_inbox_sync = [this]() { ++inbox_sync_requests; };
     return ports;
   }
 
@@ -524,8 +513,28 @@ protected:
     }
   }};
   /** The hop path's reports, taken as the session manager takes them. */
-  CallsLoopbackOutbox<HopReport> topo_reports_{
-      [this](HopReport& report) { host_->live.ReportHopProgress(report.call_id, report.phase); }};
+  CallsLoopbackOutbox<HopReport> topo_reports_{[this](HopReport& report) {
+    std::visit(
+        [this](const auto& r) {
+          using R = std::decay_t<decltype(r)>;
+          if constexpr (std::is_same_v<R, hop_report::Progress>) {
+            host_->live.ReportHopProgress(r.call_id, r.phase);
+          } else if constexpr (std::is_same_v<R, hop_report::Changed>) {
+            ++host_->ring_notifies;
+          } else if constexpr (std::is_same_v<R, hop_report::MediaError>) {
+            host_->last_media_error = r.message;
+          } else if constexpr (std::is_same_v<R, hop_report::Activity>) {
+            host_->media_activity = r.text;
+          } else if constexpr (std::is_same_v<R, hop_report::MediaAttempted>) {
+            host_->media_attempted.push_back(r.call_id);
+          } else if constexpr (std::is_same_v<R, hop_report::InboxSyncWanted>) {
+            ++host_->inbox_sync_requests;
+          } else if constexpr (std::is_same_v<R, hop_report::LeaveWanted>) {
+            host_->leave_calls.push_back(r.call_id);
+          }
+        },
+        report);
+  }};
 };
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {

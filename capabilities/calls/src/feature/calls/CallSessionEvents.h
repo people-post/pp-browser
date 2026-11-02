@@ -371,11 +371,45 @@ using DirectReport =
                  direct_report::Changed, direct_report::MediaError, direct_report::MediaKeyResendWanted,
                  direct_report::InboxSyncWanted, direct_report::InboundHello>;
 
-/** What the group (hop) path reports to the calls it serves: its planner moved. */
-struct HopReport {
+/** What a call's group (hop) path tells the device (V057 2): events on the calls owner's queue. */
+namespace hop_report {
+
+/** The path's planner moved. */
+struct Progress {
   std::string call_id;
   CallHopPlannerPhase phase = CallHopPlannerPhase::Idle;
 };
+/** What the device shows about the call may have changed (the ring / call chrome refreshes). */
+struct Changed {
+  std::string call_id;
+};
+/** A media error for the screen to show once. */
+struct MediaError {
+  std::string call_id;
+  std::string message;
+};
+/** The call's media activity line ("Switching media path…"); empty clears it. */
+struct Activity {
+  std::string call_id;
+  std::string text;
+};
+/** The path started trying media for the call. */
+struct MediaAttempted {
+  std::string call_id;
+};
+/** A guest waits for CallSfuAttach: fetch the relay inbox now. */
+struct InboxSyncWanted {
+  std::string call_id;
+};
+/** The path cannot keep the call (no hop everyone reaches, an owner gone): leave it. */
+struct LeaveWanted {
+  std::string call_id;
+};
+
+} // namespace hop_report
+
+using HopReport = std::variant<hop_report::Progress, hop_report::Changed, hop_report::MediaError, hop_report::Activity,
+                               hop_report::MediaAttempted, hop_report::InboxSyncWanted, hop_report::LeaveWanted>;
 
 namespace session_event {
 
