@@ -23,7 +23,7 @@
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsLoop.h"
 #include "common/runtime/RuntimeOwnerExecutor.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "common/chat/SystemControl.h"

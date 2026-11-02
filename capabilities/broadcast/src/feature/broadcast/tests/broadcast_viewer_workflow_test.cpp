@@ -9,7 +9,7 @@
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/runtime/OwnerOutbox.h"
 #include "common/runtime/QueueOwnerExecutor.h"
 #include "common/PbrCompat.h"
@@ -438,7 +438,7 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
 // thread-ownership t2b-4: hub steps run on the media-sessions owner; the GUI reads a snapshot and
 // hears results on UI; the workflows end on the owner when the hub goes.
 TEST_F(BroadcastViewerWorkflowTest, HubStepsRunOnTheMediaSessionsOwner) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
   admission_.emplace("hop", Admit("hop"));
   PeerAnnounceTip tip;

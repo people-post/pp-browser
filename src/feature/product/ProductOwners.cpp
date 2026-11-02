@@ -1,9 +1,9 @@
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 
 namespace pbr {
 
 std::vector<pp::OwnerThreadSpec> ProductOwnerThreads() {
-  return {{kMediaSessionsOwner, "pp-media-sess"}};
+  return {MediaSessionsOwnerThread()};
 }
 
 AppRuntimeConfig ProductRuntimeConfig() {

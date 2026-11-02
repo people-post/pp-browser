@@ -25,7 +25,7 @@
 #include "lib/delivery/IPeerSessionStore.h"
 #include "lib/delivery/SessionKeyDeriver.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <chrono>
@@ -191,7 +191,7 @@ class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_csm_" + util::GenerateUuid());

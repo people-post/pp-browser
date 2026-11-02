@@ -14,6 +14,12 @@ namespace pbr {
 using TextArgs = std::map<std::string, std::string>;
 using Translator = std::function<std::string(std::string_view key, const TextArgs& args)>;
 
+/**
+ * The running app's name ("PP"). The app's translator answers it, and fills `{product}` in every text when the
+ * caller passes none: capabilities never name the product themselves (CR023 step 3).
+ */
+inline constexpr char kProductNameKey[] = "product.name";
+
 /** The tip for a network that blocks peer-to-peer media: the app picks its platform's text. */
 inline constexpr char kPlatformNetworkHintKey[] = "hints.network.platform";
 

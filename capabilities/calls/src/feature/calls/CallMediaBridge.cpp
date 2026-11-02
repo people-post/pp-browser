@@ -9,7 +9,7 @@
 #include "lib/calls/CallHopAttachLogic.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <algorithm>

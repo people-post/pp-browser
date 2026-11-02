@@ -2,7 +2,7 @@
 #include "feature/calls/LiveCallMedia.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "common/runtime/RuntimeOwnerExecutor.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
 #include "feature/calls/tests/calls_on_owner.h"
@@ -379,7 +379,7 @@ public:
 class CallMediaBridgeAnswererStartTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_bridge_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);

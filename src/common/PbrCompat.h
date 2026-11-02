@@ -124,7 +124,7 @@ using ::pp::MetricLabels;
 using ::pp::MetricsRegistry;
 using ::pp::ScopedMetricsCollector;
 
-// Runtime (pp-cpp-common common/runtime/; pp-browser's owners: foundation/runtime/ProductOwners.h).
+// Runtime (pp-cpp-common common/runtime/; pp-browser's owners: feature/product/ProductOwners.h).
 using ::pp::AppRuntime;
 using ::pp::AppRuntimeConfig;
 using ::pp::CoordinatorPriority;

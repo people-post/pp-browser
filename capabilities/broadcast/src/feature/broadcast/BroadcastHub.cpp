@@ -6,7 +6,7 @@
 #include "lib/broadcast/BroadcastMedia.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/MeshAlias.h"
 
 #include <chrono>

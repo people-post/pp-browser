@@ -5,7 +5,7 @@
 
 #include "lib/calls/testing/InMemoryCallStores.h"
 #include "feature/calls/tests/call_stack_compose_support.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 
@@ -252,7 +252,7 @@ protected:
 
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
 
     const char* tags[kSides] = {"group_a", "group_b", "group_c", "group_d"};

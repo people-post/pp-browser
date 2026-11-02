@@ -4,15 +4,10 @@
 pp_browser_add_foundation_library(pp_foundation_runtime_core
   SOURCES
     AppRuntimeMeshExecutors.cpp
-    ProductOwners.cpp
   PUBLIC_LIBS
     pp_common
     pp_mesh_types
 )
-
-target_compile_definitions(pp_foundation_runtime_core PUBLIC
-  "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
-  "PP_BROWSER_VERSION=\"${PP_BROWSER_VERSION}\"")
 
 # Time to finish a transfer in the background (BackgroundActivity): iOS asks UIKit; elsewhere nothing to ask.
 # Here (base) rather than foundation/platform: capabilities hold one and may not include the product's platform.

@@ -3,12 +3,10 @@
 
 namespace pbr {
 
-#ifndef PP_BROWSER_RELEASE_VERSION
-#define PP_BROWSER_RELEASE_VERSION "1.0.0-rc14"
-#endif
-
-#ifndef PP_BROWSER_VERSION
-#define PP_BROWSER_VERSION "1.0.0"
+// The build's version, from pp_foundation_product (CMake PP_BROWSER_RELEASE_VERSION / PP_BROWSER_VERSION). No
+// fallback: a target that reads the version without linking it would ship a made-up one.
+#if !defined(PP_BROWSER_RELEASE_VERSION) || !defined(PP_BROWSER_VERSION)
+#error "AppVersion.h needs the build's version: link pp_foundation_product"
 #endif
 
 /** Full release string (may include -rc / -beta); used for About and User-Agent. */

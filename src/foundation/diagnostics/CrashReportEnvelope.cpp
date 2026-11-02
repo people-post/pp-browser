@@ -1,6 +1,5 @@
 #include "foundation/diagnostics/CrashReportEnvelope.h"
 
-#include "foundation/runtime/ProductBranding.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 
@@ -84,7 +83,6 @@ std::string ValueAfterPrefix(const std::string& line, const char* prefix) {
 
 CrashReportEnvelope BuildCrashReportEnvelope(const std::string& dump_text) {
   CrashReportEnvelope env;
-  env.product = kProductSlug;
   // The sample carries metadata and frames only. Breadcrumbs are recent log lines and may hold peer ids
   // and addresses; of those only the logger tags leave the device (PB-038).
   const size_t breadcrumbs_at = dump_text.find("--- breadcrumbs ---");

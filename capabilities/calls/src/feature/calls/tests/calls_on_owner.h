@@ -2,7 +2,7 @@
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 
 #include <optional>
 #include <type_traits>

@@ -7,7 +7,7 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
 #include "common/runtime/OwnerTasks.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/runtime/RuntimeOwnerExecutor.h"
 
 #include "common/Error.h"

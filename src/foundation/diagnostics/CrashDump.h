@@ -8,6 +8,12 @@ namespace pbr {
  * Bare-minimal crash capture: write `{data_dir}/diagnostics/crash_pending.txt`
  * from signal / terminate handlers, then optionally upload on next launch.
  */
+/** Who crashed, as the dump says: the app's slug and release version (the app hands them in). */
+struct CrashIdentity {
+  std::string product;
+  std::string version;
+};
+
 class CrashDump {
 public:
   /** "android" / "windows" / "ios" / "macos" / "linux" — the same label the dump carries. */
@@ -18,9 +24,10 @@ public:
 
   /**
    * Remember dump directory, install signal / terminate handlers, and feed
-   * CrashBreadcrumbs. Safe to call once early in main (after DataDir is known).
+   * CrashBreadcrumbs. Safe to call once early in main (after DataDir is known). `identity` goes into every
+   * dump (kept in fixed buffers: the signal handler reads them).
    */
-  static void Install(const std::string& data_dir);
+  static void Install(const std::string& data_dir, const CrashIdentity& identity);
 
   /** True when a pending dump file exists. */
   static bool HasPending(const std::string& data_dir);

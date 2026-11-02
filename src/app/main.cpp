@@ -15,8 +15,8 @@
 #include "foundation/platform/PlatformStartupHints.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
-#include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/AppVersion.h"
+#include "foundation/product/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -115,7 +115,7 @@ int main(int argc, char** argv) {
   pbr::PlatformHooks::Register();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
-  pbr::CrashDump::Install(pbr::AppPaths::DataDir());
+  pbr::CrashDump::Install(pbr::AppPaths::DataDir(), {pbr::kProductSlug, pbr::AppVersionString()});
 
   if (log_file_enabled) {
     const std::string log_path = pbr::LogFile::Install(

@@ -9,7 +9,7 @@
 #include "mesh/reachability/dial_back/DialBackTypes.h"
 #include "mesh/reachability/punch/PunchTypes.h"
 #include "foundation/platform/os/OsProcessStats.h"
-#include "foundation/runtime/AppVersion.h"
+#include "foundation/product/AppVersion.h"
 
 #include <chrono>
 #include <string>

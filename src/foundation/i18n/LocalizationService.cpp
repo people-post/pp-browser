@@ -1,5 +1,6 @@
 #include "foundation/i18n/LocalizationService.h"
 
+#include "foundation/product/ProductBranding.h"
 #include "common/Localized.h"
 
 #include "foundation/platform/AssetIO.h"
@@ -113,8 +114,19 @@ Roe<void> LocalizationService::LoadFromAssets(const std::string& assets_root) {
   }
 
   ResolveAndNotify(false);
-  // Capabilities ask for text by key through the base's port (common/Localized.h): these catalogs answer.
-  SetTranslator([this](std::string_view key, const TextArgs& args) { return Tr(key, args); });
+  // Capabilities ask for text by key through the base's port (common/Localized.h): these catalogs answer, and
+  // the product's name is the app's to give (kProductNameKey, `{product}`).
+  SetTranslator([this](std::string_view key, const TextArgs& args) -> std::string {
+    if (key == kProductNameKey) {
+      return kProductName;
+    }
+    if (args.count("product") != 0) {
+      return Tr(key, args);
+    }
+    TextArgs with_product = args;
+    with_product.emplace("product", kProductName);
+    return Tr(key, with_product);
+  });
   return {};
 }
 

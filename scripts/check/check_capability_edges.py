@@ -47,7 +47,7 @@ GROUPS: dict[str, list[str]] = {
     "base": ["common", "foundation"],
     # The product's own base (rule 1, CR015): config and its file format, data paths, platform hooks, user-facing
     # text. The apps read it and pass capabilities values and ports.
-    "product": ["foundation/data", "foundation/platform", "foundation/i18n"],
+    "product": ["foundation/data", "foundation/platform", "foundation/i18n", "foundation/product"],
     # Identity (CR008): keys, cards, contacts, devices, the locker format.
     "people": ["lib/people", "domain/peers", "common/directory"],
     # The Brief backend client (CR008): registration, directory, blobs, push. Deployment-specific.

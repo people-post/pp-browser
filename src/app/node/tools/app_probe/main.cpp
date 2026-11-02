@@ -93,7 +93,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>

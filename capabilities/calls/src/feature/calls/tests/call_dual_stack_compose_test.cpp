@@ -1,5 +1,5 @@
 #include "feature/calls/tests/call_stack_compose_support.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 #include "common/MeshAlias.h"
@@ -22,7 +22,7 @@ class CallDualStackComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
 
     offer_.on_send = [this](const std::string&, const ThreadMessage& msg) { answer_inbox_.push_back(msg); };

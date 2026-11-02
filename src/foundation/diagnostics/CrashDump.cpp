@@ -1,8 +1,6 @@
 #include "foundation/diagnostics/CrashDump.h"
 
 #include "foundation/diagnostics/CrashBreadcrumbs.h"
-#include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/ProductBranding.h"
 #include "common/PbrCompat.h"
 
 #include <atomic>
@@ -50,6 +48,9 @@ char g_dump_path[kPathBytes] = {};
 #if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
 // Main image load address ("%p"), resolved at Install — lets tools map ASLR frames to the binary.
 char g_image_base[32] = {};
+/** The app's slug and version (CrashIdentity), set once by Install; read by the handlers. */
+char g_product[64] = "app";
+char g_version[64] = "0";
 #endif
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_writing{false};
@@ -123,9 +124,9 @@ void WriteSignalDump(int signo) {
 
   WriteCString(fd, "pp-browser crash dump\n");
   WriteCString(fd, "product=");
-  WriteCString(fd, kProductSlug);
+  WriteCString(fd, g_product);
   WriteCString(fd, "\nversion=");
-  WriteCString(fd, AppVersionString());
+  WriteCString(fd, g_version);
   WriteCString(fd, "\nos=");
   WriteCString(fd, CrashOsLabel());
   WriteCString(fd, "\nreason=signal ");
@@ -192,8 +193,8 @@ LONG WINAPI OnUnhandledException(EXCEPTION_POINTERS* /*info*/) {
   if (f == nullptr) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
-  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\nos=%s\nreason=unhandled_exception\n",
-               kProductSlug, AppVersionString(), CrashOsLabel());
+  std::fprintf(f, "pp-browser crash dump\nproduct=%s\nversion=%s\nos=%s\nreason=unhandled_exception\n", g_product,
+               g_version, CrashOsLabel());
   std::fprintf(f, "--- breadcrumbs ---\n");
   char crumbs[kBreadcrumbDumpBytes];
   CrashBreadcrumbs::CopySignalSafe(crumbs, sizeof(crumbs));
@@ -307,13 +308,15 @@ std::string CrashDump::PendingPath(const std::string& data_dir) {
   return (std::filesystem::path(data_dir) / "diagnostics" / "crash_pending.txt").string();
 }
 
-void CrashDump::Install(const std::string& data_dir) {
+void CrashDump::Install(const std::string& data_dir, const CrashIdentity& identity) {
   if (data_dir.empty()) {
     return;
   }
   if (g_installed.exchange(true, std::memory_order_acq_rel)) {
     return;
   }
+  std::snprintf(g_product, sizeof(g_product), "%s", identity.product.c_str());
+  std::snprintf(g_version, sizeof(g_version), "%s", identity.version.c_str());
 
   EnsureDiagnosticsDir(data_dir);
   const std::string path = PendingPath(data_dir);
@@ -378,8 +381,8 @@ void CrashDump::WritePending(const std::string& data_dir, const std::string& rea
     return;
   }
   out << "pp-browser crash dump\n";
-  out << "product=" << kProductSlug << "\n";
-  out << "version=" << AppVersionString() << "\n";
+  out << "product=" << g_product << "\n";
+  out << "version=" << g_version << "\n";
   out << "os=" << CrashOsLabel() << "\n";
   out << "reason=" << reason << "\n";
   out << "--- breadcrumbs ---\n";

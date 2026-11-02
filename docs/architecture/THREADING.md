@@ -5,7 +5,7 @@
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, Amp mesh pump, mesh-control waiters, and bounded worker pool.
 
-**Code map:** `AppRuntime`, `CoordinatorThread`, owner threads, `WorkerPool` — pp-cpp-common (`common/runtime/`, `common/`), the product's owners in `src/foundation/runtime/ProductOwners.h`; Amp pump + mesh control — `MeshHost` (pp-cpp-mesh `host/`).
+**Code map:** `AppRuntime`, `CoordinatorThread`, owner threads, `WorkerPool` — pp-cpp-common (`common/runtime/`, `common/`), the product's owners in `src/feature/product/ProductOwners.h` (calls names its own: `common/media/MediaSessionsOwner.h`); Amp pump + mesh control — `MeshHost` (pp-cpp-mesh `host/`).
 
 ---
 

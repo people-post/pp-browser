@@ -15,8 +15,7 @@
 #include "lib/people/MeshHopPolicy.h"
 #include "common/Localized.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -42,7 +41,7 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
   if (failure != HopPickFailure::AllUndialable) {
     return msg;
   }
-  const std::string tip = Localized(kPlatformNetworkHintKey, {{"product", kProductName}});
+  const std::string tip = Localized(kPlatformNetworkHintKey);
   if (!tip.empty()) {
     msg += " ";
     msg += tip;

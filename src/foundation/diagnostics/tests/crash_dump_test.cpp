@@ -105,12 +105,13 @@ TEST(CrashDump, AbortWritesBacktraceThenHandsTheSignalBack) {
       {
         ::signal(SIGABRT, PreviousAbortHandler);
         pbr::CrashBreadcrumbs::Append("[W] Test: before-abort");
-        pbr::CrashDump::Install(dir);
+        pbr::CrashDump::Install(dir, {"test-app", "9.9.9"});
         std::abort();
       },
       ::testing::ExitedWithCode(kPreviousHandlerExit), "");
 
   const std::string body = pbr::CrashDump::ReadPending(dir);
+  EXPECT_NE(body.find("product=test-app\nversion=9.9.9\n"), std::string::npos) << "the app's identity" << body;
   EXPECT_NE(body.find("reason=signal 6"), std::string::npos) << body;
   const std::size_t tag = body.find("backtrace_frames=");
   ASSERT_NE(tag, std::string::npos) << body;

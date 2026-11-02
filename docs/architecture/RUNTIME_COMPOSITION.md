@@ -334,6 +334,6 @@ Full model: [THREADING.md](THREADING.md).
 | **ProfileIdentityView** | `lib/people/` | Presentation projection of local identity |
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
-| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by `foundation/runtime/ProductOwners.h`) | UI mailbox + worker pool + coordinator + owner threads |
+| **AppRuntime** | pp-cpp-common `common/runtime/` (owners registered by the app, `feature/product/ProductOwners.h`; calls names its own, `common/media/MediaSessionsOwner.h`) | UI mailbox + worker pool + coordinator + owner threads |
 | **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **MediaEngine** | `lib/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
