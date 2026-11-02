@@ -64,8 +64,10 @@ struct CallDirectSeatPorts {
  */
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
-  CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys, MediaEngine& media,
-                  ICallMediaTransport& direct, mesh::PeerReachPorts reach);
+  /** The 1:1 path of `call_id` (V056): built for that call by its media coordinator, lives with it. */
+  CallMediaBridge(std::string call_id, CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
+                  MediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
+  const std::string& CallId() const { return call_id_; }
   ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
@@ -325,10 +327,14 @@ private:
   bool MediaConnected(const std::string& call_id);
   /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
   void StopEngineFor(const std::string& call_id, const char* why);
+  /** `call_id` is this path's call; else logs `what` and says no (a mis-routed call). */
+  bool ForThisCall(const std::string& call_id, const char* what) const;
   /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
   std::string CallPeerMeshId();
   void OnDirectHealthTimerFire();
 
+  /** The one call this path serves. */
+  const std::string call_id_;
   CallMediaHost& host_;
   ICallSessionStore& sessions_;
   ICallMediaKeyStore& media_keys_;
@@ -352,8 +358,10 @@ private:
   bool tx_only_escalation_done_ = false;
 
   std::string media_peer_identity_;
-  std::string media_call_id_;
-  std::string pending_answerer_call_id_;
+  /** This path's media session runs (BeginSession .. stop). */
+  bool media_session_ = false;
+  /** The answerer waits here for the call's key. */
+  bool pending_answerer_ = false;
   std::string pending_answerer_peer_;
   /** Inbound hello PeerId while stream_id deferred (non-contact / pre-Accept). */
   std::string inbound_deferred_peer_id_;
@@ -391,17 +399,17 @@ private:
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   uint64_t upgrade_timer_id_ = 0;
-  std::string standby_call_id_;
+  bool standby_armed_ = false;
   int standby_attempt_ = 0;
   uint64_t standby_timer_id_ = 0;
   mesh::PeerReachId standby_reach_id_ = 0;
   int standby_delay_ms_for_test_ = 0;
-  std::string upgrade_call_id_;
+  bool upgrade_armed_ = false;
   int upgrade_attempt_ = 0;
   int upgrade_delay_ms_for_test_ = 0;
   /** k3-4: circuit being built under a TX-only call (0 = none). */
   mesh::PeerReachId escalate_reach_id_ = 0;
-  std::string reanchor_call_id_;
+  bool reanchor_armed_ = false;
   uint64_t reanchor_timer_id_ = 0;
   mesh::PeerReachId reanchor_reach_id_ = 0;
   int reanchor_retry_ms_ = 2000;
@@ -414,12 +422,11 @@ private:
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   /**
-   * The call whose connect failed here while it stays open (failed ≠ closed). Its peer and role are
-   * the LiveCall's (P2pLiveCall); this only marks that our media gave up on it. Set by
-   * SurfaceConnectFailed after the stop; cleared by any other stop (Leave) or a new session.
+   * This path's connect gave up while the call stays open (failed ≠ closed; LiveCall's Failed). Its
+   * peer and role are the LiveCall's (P2pLiveCall). Set by SurfaceConnectFailed after the stop;
+   * cleared by any other stop (Leave) or a new session.
    */
   struct FailedOpenCall {
-    std::string call_id;
     /** PeerReconnected already raised: a second inbound bundle must not queue a second resume. */
     bool resume_requested = false;
   };

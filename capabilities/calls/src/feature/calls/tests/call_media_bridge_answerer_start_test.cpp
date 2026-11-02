@@ -390,12 +390,6 @@ protected:
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();
     transport_ = std::make_unique<FakeCallMediaTransport>();
-    bridge_ = std::make_unique<CallMediaBridge>(
-        *host_, *sessions_, *keys_, *media_, *transport_,
-        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
-    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
-    bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
-    bridge_->SetReports(bridge_reports_.Get());
     // The device's doorway hands inbound hellos to the path, as CallSessionManager wires it.
     doorway_ = std::make_unique<CallMediaDoorway>(*transport_);
     doorway_->SetOutbox(doorway_events_.Get());
@@ -410,7 +404,9 @@ protected:
       }
       return std::nullopt;
     };
-    inbound.on_accepted = [this](const CallMediaInboundHello& hello) { return bridge_->AcceptInbound(hello); };
+    inbound.on_accepted = [this](const CallMediaInboundHello& hello) {
+      return bridge_ ? bridge_->AcceptInbound(hello) : CallMediaDirectCallbacks{};
+    };
     doorway_->SetPorts(std::move(inbound));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
@@ -464,7 +460,21 @@ protected:
     host_->live.NoteOutboundStarted(call_id);
   }
 
+  /** The call's 1:1 path (V056: one per call), as its media coordinator builds it; the fixture plays the owner. */
+  void BuildBridge(const std::string& call_id) {
+    bridge_ = std::make_unique<CallMediaBridge>(
+        call_id, *host_, *sessions_, *keys_, *media_, *transport_,
+        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
+    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
+    bridge_->SetOutbox(bridge_events_.Get());
+    bridge_->SetReports(bridge_reports_.Get());
+  }
+
+  /** Seeds the stored call and builds its 1:1 path (each test drives one call). */
   void SeedActiveCall(const std::string& call_id) {
+    if (!bridge_) {
+      BuildBridge(call_id);
+    }
     CallSession session;
     session.call_id = call_id;
     session.origin_thread_id = "thread:1";
@@ -541,6 +551,7 @@ protected:
 
 // Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.
 TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
+  BuildBridge("call:path-kind");
   transport_->active = true;
   transport_->link_kind = CallMediaLinkKind::Relayed;
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
@@ -617,12 +628,11 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
 
 // k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
 TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
+  const std::string call_id = "call:answerer-renew";
+  SeedActiveCall(call_id);
   std::atomic<int> reserves{0};
   bridge_->SetSeedReserve([&] { reserves.fetch_add(1); });
   bridge_->SetReserveRenewIntervalMsForTest(30);
-
-  const std::string call_id = "call:answerer-renew";
-  SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");

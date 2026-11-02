@@ -643,8 +643,8 @@ std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(const std::
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
-  auto path = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *direct_deps_.transport,
-                                                direct_deps_.Reach());
+  auto path = std::make_unique<CallMediaBridge>(call_id, AsMediaHost(), sessions_, media_keys_, media_,
+                                                *direct_deps_.transport, direct_deps_.Reach());
   path->SetOutbox(outbox_.For<DirectPathEvent>([call_id, serial](DirectPathEvent event) {
     return SessionEvent{session_event::ForDirectPath{call_id, serial, std::move(event)}};
   }));
