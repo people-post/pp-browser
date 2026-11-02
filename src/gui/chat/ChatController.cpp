@@ -3553,9 +3553,11 @@ void ChatController::ApplySearchView() {
     search_hit_ids_.insert(hit.message_id);
   }
   search_current_id_ = search_.CurrentMessageId();
+  search_folded_query_ = view.open ? FoldForSearch(view.query) : std::string();
   if (view.open) {
-    scroller_.SetRowDecorator(
-        [this](std::vector<MessageDisplayRow>& rows) { MarkSearchRows(rows, search_hit_ids_, search_current_id_); });
+    scroller_.SetRowDecorator([this](std::vector<MessageDisplayRow>& rows) {
+      MarkSearchRows(rows, search_hit_ids_, search_current_id_, search_folded_query_);
+    });
   } else {
     scroller_.SetRowDecorator({});
   }

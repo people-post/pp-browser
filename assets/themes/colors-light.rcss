@@ -308,13 +308,18 @@ select selectbox option:hover {
   border-left: 3dp #d97706;
 }
 
-/* Search inside the chat: every hit pale yellow, the one the search is on deeper. */
-.message-row-search-hit {
-  background-color: #fef9c3;
+/* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
+.search-mark {
+  background-color: #fff3a0;
 }
 
-.message-row-search-current {
-  background-color: #fde047;
+.search-mark-current {
+  background-color: #f2c14e;
+}
+
+/* In our own (blue) bubble the text is white: dark on the mark, so it stays readable. */
+.bubble-user .search-mark {
+  color: #1a1a1a;
 }
 
 .chat-search-cancel,

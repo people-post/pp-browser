@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/chat/ChatTranscriptScroller.h"
+#include "gui/chat/ChatSearchRows.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "common/chat/MessagingLimits.h"
@@ -36,8 +37,7 @@ std::vector<MessageDisplayRow> ChatTranscriptScroller::Rows(const std::string& t
 
 void ChatTranscriptScroller::Redecorate() {
   for (MessageDisplayRow& row : view_.messages) {
-    row.search_hit = false;
-    row.search_current = false;
+    ClearSearchMarks(row);
   }
   if (decorator_) {
     decorator_(view_.messages);

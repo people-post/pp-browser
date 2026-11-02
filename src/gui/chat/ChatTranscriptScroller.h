@@ -46,7 +46,7 @@ public:
   /** The thread's rows in [oldest, newest], built and decorated. */
   std::vector<MessageDisplayRow> Rows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                       std::optional<int64_t> newest_inclusive) const;
-  /** Marks the rows already shown again (search marks cleared, then the decorator), without building them. */
+  /** Marks the rows already shown again (search marks taken off, then the decorator), without building them. */
   void Redecorate();
 
   void Reset();

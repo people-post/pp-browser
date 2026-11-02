@@ -417,8 +417,9 @@ private:
   ThreadSearchSession search_;            // search inside the open chat; its index lives only while open
   std::string search_thread_;             // the chat it was opened on
   std::string search_thread_tail_;        // that chat's newest message id when last checked
-  std::unordered_set<std::string> search_hit_ids_; // what the row decorator tints
+  std::unordered_set<std::string> search_hit_ids_; // the rows whose matching text the decorator marks
   std::string search_current_id_;
+  std::string search_folded_query_;
   /** Typing settles for kSearchDebounce before the query is applied. */
   std::optional<std::chrono::steady_clock::time_point> search_query_due_;
   enum class SearchFocus { None, Input, Composer };

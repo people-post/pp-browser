@@ -225,6 +225,12 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* A search match in a message (colours in colors-*.rcss); like the mention chip, it stays inline. */
+.search-mark {
+  padding: 0 1dp;
+  border-radius: 3dp;
+}
+
 .chat-search-step:disabled {
   opacity: 0.35;
   cursor: auto;

@@ -307,13 +307,13 @@ select selectbox option:hover {
   border-left: 3dp #f59e0b;
 }
 
-/* Search inside the chat: every hit pale yellow, the one the search is on deeper. */
-.message-row-search-hit {
-  background-color: #3a3514;
+/* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
+.search-mark {
+  background-color: #6b5a14;
 }
 
-.message-row-search-current {
-  background-color: #6b5d10;
+.search-mark-current {
+  background-color: #a67c00;
 }
 
 .chat-search-cancel,
