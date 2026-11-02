@@ -143,8 +143,11 @@ TEST(ConfigBackendTest, ProdIgnoresSavedUrlsButKeepsThemForSave) {
 
   const std::string out = (std::filesystem::temp_directory_path() / "pp_browser_config_backend_out.json").string();
   ASSERT_TRUE(static_cast<bool>(pbr::Config::SaveToFile(out, *loaded)));
-  std::ifstream in(out);
-  const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::string text;
+  {
+    std::ifstream in(out);
+    text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  }
   EXPECT_NE(text.find("custom.example.test"), std::string::npos) << "saved custom URLs survive a save";
   std::filesystem::remove(path);
   std::filesystem::remove(out);
