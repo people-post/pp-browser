@@ -21,7 +21,7 @@ curl_socket_t OpenPublicOnlySocket(void* clientp, curlsocktype purpose, struct c
     allowed = true;
   } else if (address->family == AF_INET) {
     const auto* sin = reinterpret_cast<const sockaddr_in*>(&address->addr);
-    allowed = mesh::IsPublicIPv4(ntohl(sin->sin_addr.s_addr));
+    allowed = PublicOnlySocketAllowsIPv4(ntohl(sin->sin_addr.s_addr));
   } else if (address->family == AF_INET6) {
     const auto* sin6 = reinterpret_cast<const sockaddr_in6*>(&address->addr);
     allowed = mesh::IsPublicIPv6(reinterpret_cast<const uint8_t*>(&sin6->sin6_addr));
