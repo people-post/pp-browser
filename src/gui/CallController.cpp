@@ -554,6 +554,8 @@ void CallController::Render() {
     in_call_.stage_visible = screen.answered_video;
     in_call_.remote_video = false;
     in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
+    in_call_.show_speaker = screen.show_speaker;
+    in_call_.speaker_on = screen.speaker_on;
     SyncShellState();
     SyncRingtone();
     return;
