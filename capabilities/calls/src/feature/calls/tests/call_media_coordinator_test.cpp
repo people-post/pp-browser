@@ -15,7 +15,7 @@ protected:
     with_seat_.engine = &engine_;
     with_seat_.seat = &seat_;
     with_seat_.make_direct = test::ForwardTo(direct_);
-    with_seat_.hop = &hop_;
+    with_seat_.make_hop = test::ForwardHopTo(hop_);
     no_seat_.engine = &engine_;
   }
   void TearDown() override { engine_.Stop(); }
@@ -31,7 +31,7 @@ protected:
   };
 
   /** The group path: takes a call once `group_from` are joined; answers the hop questions. */
-  struct FakeHopDriver final : CallHopDriver {
+  struct FakeHopDriver final : test::NullHopDriver {
     size_t group_from = 3;
     bool attached = false;
     bool in_flight = false;

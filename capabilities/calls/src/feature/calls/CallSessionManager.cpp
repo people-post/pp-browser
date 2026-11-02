@@ -73,7 +73,6 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
       delivery_(std::move(delivery)),
       media_(media),
       hop_service_(sessions, contacts),
-      topology_(sessions, contacts, media, hop_service_),
       control_(transcript, account, sessions, delivery_),
       key_exchange_(
           sessions, media_keys,
@@ -86,8 +85,11 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
       workflow_(threads, sessions, key_exchange_, billing_, live_calls_, call_media_),
       peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
-  topology_.SetMediaKeyStore(&media_keys_);
-  key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) { topology_.OnMediaKeyInstalled(call_id); });
+  key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) {
+    if (CallHopDriver* hop = HopPathIfBuilt(call_id)) {
+      hop->OnMediaKeyInstalled(call_id);
+    }
+  });
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
     if (doorway_) {
       doorway_->NotifyKeyAvailable(); // wake inbound hellos waiting for a key
@@ -98,15 +100,16 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
     }
   });
   BindSeat();
-  call_media_.BindHopDriver(&topology_);
+  call_media_.BindHopPathFactory(
+      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
+        return MakeHopPath(call_id, serial, std::move(carries));
+      });
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
-  topology_.SetHopArmingPorts(MakeHopArmingPorts());
-  BindTopologyHostPorts();
   BindWorkflowHostPorts();
   BindReachSignalPorts();
 }
 
-void CallSessionManager::BindTopologyHostPorts() {
+CallTopologyController::HostPorts CallSessionManager::MakeTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
@@ -123,7 +126,7 @@ void CallSessionManager::BindTopologyHostPorts() {
   ports.clear_media_activity = [this]() { ClearMediaActivity(); };
   ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
   ports.request_inbox_sync = [this]() { RequestInboxSync(); };
-  topology_.SetHostPorts(std::move(ports));
+  return ports;
 }
 
 void CallSessionManager::BindWorkflowHostPorts() {
@@ -188,7 +191,10 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
 CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
   CallSessionWorkflow::HopPathPorts ports;
   ports.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
-    topology_.OnJoinedCountObserved(call_id, n);
+    CallMediaCoordinator* call = call_media_.Media(call_id);
+    if (CallHopDriver* hop = call ? call->Hop() : nullptr) {
+      hop->OnJoinedCountObserved(call_id, n);
+    }
   };
   ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
     return hop_service_.Planning().Plan(invitees, local);
@@ -201,17 +207,30 @@ CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
                                         const CallHopReport& report) {
     hop_service_.Planning().NoteAcceptReport(call_id, identity, report);
   };
-  ports.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
+  ports.clear_sfu_attach_wait = [this](const std::string& call_id) {
+    if (CallHopDriver* hop = HopPathIfBuilt(call_id)) {
+      hop->ClearSfuAttachWait();
+    }
+  };
   ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
-                                           const std::string& sender) {
-    return topology_.OnInboundSfuAttach(call_id, d, sender);
+                                       const std::string& sender) -> Roe<void> {
+    CallMediaCoordinator* call = call_media_.Media(call_id);
+    CallHopDriver* hop = call ? call->Hop() : nullptr;
+    return hop ? hop->OnInboundSfuAttach(call_id, d, sender) : Roe<void>(Error("no group path for the call"));
   };
   ports.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
-    topology_.OnInboundSfuAttachFailed(d);
+    if (CallHopDriver* hop = HopPathIfBuilt(d.call_id)) {
+      hop->OnInboundSfuAttachFailed(d);
+    }
   };
-  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
+  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) {
+    if (CallHopDriver* hop = HopPathIfBuilt(d.call_id)) {
+      hop->OnInboundHopRefuse(d);
+    }
+  };
   ports.is_on_sfu_for_call = [this](const std::string& call_id) {
-    return topology_.IsOnSfuForCall(call_id);
+    CallHopDriver* hop = HopPathIfBuilt(call_id);
+    return hop && hop->IsOnSfuForCall(call_id);
   };
   ports.has_media_relay_hop_candidates = [this]() { return hop_service_.Ranking().HasCandidates(); };
   return ports;
@@ -491,11 +510,8 @@ void CallSessionManager::RetryAnswererKick(const std::string& call_id) {
 void CallSessionManager::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
-  topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
   hop_service_.SetOutbox(outbox_.For<PlanningEvent>(
       [](PlanningEvent event) { return SessionEvent{session_event::ForHopService{std::move(event)}}; }));
-  topology_.SetReports(outbox_.For<HopReport>(
-      [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
 }
 
 void CallSessionManager::Handle(SessionEvent& event) {
@@ -508,8 +524,10 @@ void CallSessionManager::Handle(SessionEvent& event) {
           RunMediaRestart(e.call_id, e.resume);
         } else if constexpr (std::is_same_v<E, WorkflowEvent>) {
           workflow_.Handle(e);
-        } else if constexpr (std::is_same_v<E, TopologyEvent>) {
-          topology_.Handle(e);
+        } else if constexpr (std::is_same_v<E, session_event::ForHopPath>) {
+          if (CallHopDriver* hop = HopPathFor(e.call_id, e.serial)) {
+            hop->Handle(e.event);
+          }
         } else if constexpr (std::is_same_v<E, session_event::ForDirectPath>) {
           if (CallDirectDriver* path = DirectPathFor(e.call_id, e.serial)) {
             path->Handle(e.event);
@@ -577,9 +595,9 @@ void CallSessionManager::SetInitiationBillingStore(IInitiationBillingBook* store
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
-  topology_.UnwatchRelay(); // the old relay is still alive here
+  call_media_.ForEachHopPath([](CallHopDriver& hop) { hop.UnwatchRelay(); }); // the old relay is still alive
   hop_service_.SetMediaRelayDeps(std::move(deps));
-  topology_.OnRelayDepsChanged();
+  call_media_.ForEachHopPath([](CallHopDriver& hop) { hop.OnRelayDepsChanged(); });
 }
 
 // Port setters swap a snapshot; the workflow / topology host ports (bound once in the ctor) read the
@@ -604,11 +622,15 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
 
 void CallSessionManager::BindSeat() {
   call_media_.BindMediaResources(&media_, &seat_);
-  topology_.SetSeatPorts(MakeTopologySeatPorts());
-  seat_.SetTeardownHooks([this](const std::string& call_id) { topology_.OnMediaStopped(call_id); },
-                         [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
-                           StopMediaForSeat(call_id, epoch_at_post, force);
-                         });
+  seat_.SetTeardownHooks(
+      [this](const std::string& call_id) {
+        if (CallHopDriver* hop = HopPathIfBuilt(call_id)) {
+          hop->OnMediaStopped(call_id);
+        }
+      },
+      [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+        StopMediaForSeat(call_id, epoch_at_post, force);
+      });
 }
 
 void CallSessionManager::StopMediaForSeat(const std::string& call_id, const uint64_t epoch_at_post, const bool force) {
@@ -640,11 +662,13 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
   }
   direct_deps_ = std::move(deps);
   call_media_.BindDirectPathFactory(
-      [this](const std::string& call_id, const uint64_t serial) { return MakeDirectPath(call_id, serial); });
+      [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
+        return MakeDirectPath(call_id, serial, std::move(carries));
+      });
 }
 
-std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(const std::string& call_id,
-                                                                     const uint64_t serial) {
+std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(
+    const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media) {
   if (!direct_deps_.IsUsable()) {
     return nullptr;
   }
@@ -659,7 +683,46 @@ std::unique_ptr<CallDirectDriver> CallSessionManager::MakeDirectPath(const std::
   path->AttachReach(direct_deps_);
   path->SetDirectArmingPorts(DirectArmingPorts());
   path->SetSeatPorts(DirectSeatPorts());
+  path->SetHopCarriesMediaFlag(std::move(hop_carries_media));
   return path;
+}
+
+std::unique_ptr<CallHopDriver> CallSessionManager::MakeHopPath(const std::string& call_id, const uint64_t serial,
+                                                               std::shared_ptr<std::atomic<bool>> hop_carries_media) {
+  auto path = std::make_unique<CallTopologyController>(sessions_, contacts_, media_, hop_service_);
+  path->SetCarriesMediaFlag(std::move(hop_carries_media));
+  path->SetOutbox(outbox_.For<TopologyEvent>([call_id, serial](TopologyEvent event) {
+    return SessionEvent{session_event::ForHopPath{call_id, serial, std::move(event)}};
+  }));
+  path->SetReports(outbox_.For<HopReport>(
+      [](HopReport report) { return SessionEvent{session_event::FromHopPath{std::move(report)}}; }));
+  path->SetMediaKeyStore(&media_keys_);
+  path->SetHostPorts(MakeTopologyHostPorts());
+  path->SetHopArmingPorts(MakeHopArmingPorts());
+  path->SetSeatPorts(MakeTopologySeatPorts());
+  path->OnRelayDepsChanged(); // watch the relay client the device has now
+  return path;
+}
+
+CallHopDriver* CallSessionManager::HopPathFor(const std::string& call_id, const uint64_t serial) {
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  return call && call->HopSerial() == serial ? call->HopIfBuilt() : nullptr;
+}
+
+CallHopDriver* CallSessionManager::HopPathIfBuilt(const std::string& call_id) {
+  CallMediaCoordinator* call = call_media_.Find(call_id);
+  return call ? call->HopIfBuilt() : nullptr;
+}
+
+const CallHopDriver* CallSessionManager::ActiveHopPath() const {
+  const LiveCall* active = live_calls_.Active();
+  const CallMediaCoordinator* call = active ? call_media_.Peek(active->Id()) : nullptr;
+  return call ? call->HopIfBuilt() : nullptr;
+}
+
+CallHopDriver* CallSessionManager::ActiveHopPathMutable() {
+  const LiveCall* active = live_calls_.Active();
+  return active ? HopPathIfBuilt(active->Id()) : nullptr;
 }
 
 CallDirectDriver* CallSessionManager::DirectPathFor(const std::string& call_id, const uint64_t serial) {
@@ -685,7 +748,9 @@ void CallSessionManager::SetDirectPathFactoryForTest(CallDirectPathFactory make)
     call_media_.BindDirectPathFactory(std::move(make));
   } else if (direct_deps_.IsUsable()) {
     call_media_.BindDirectPathFactory(
-        [this](const std::string& call_id, const uint64_t serial) { return MakeDirectPath(call_id, serial); });
+        [this](const std::string& call_id, const uint64_t serial, std::shared_ptr<std::atomic<bool>> carries) {
+          return MakeDirectPath(call_id, serial, std::move(carries));
+        });
   } else {
     call_media_.BindDirectPathFactory({});
   }
@@ -748,7 +813,9 @@ void CallSessionManager::OnLocalNetworkMoved() {
   if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
     direct->OnLocalNetworkChanged();
   }
-  topology_.OnLocalNetworkMoved();
+  if (CallHopDriver* hop = ActiveHopPathMutable()) {
+    hop->OnLocalNetworkMoved();
+  }
 }
 
 void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
@@ -848,11 +915,12 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
 }
 
 CallHopHealth CallSessionManager::HopHealth() const {
-  if (!topology_.IsSfuAttached()) {
+  const CallHopDriver* hop = ActiveHopPath();
+  if (!hop || !hop->IsSfuAttached()) {
     return {};
   }
   // Topology holds relay deps; sample via public IsSfuAttached + Media PathPressure elsewhere.
-  return topology_.HopHealth();
+  return hop->HopHealth();
 }
 
 CallLinkCounters CallSessionManager::MediaLinkCounters() const {
@@ -864,7 +932,8 @@ std::string CallSessionManager::MediaPathKind() const {
 }
 
 bool CallSessionManager::IsSfuAttached() const {
-  return topology_.IsSfuAttached();
+  const CallHopDriver* hop = ActiveHopPath();
+  return hop && hop->IsSfuAttached();
 }
 
 MediaEngine& CallSessionManager::Media() {
@@ -1016,7 +1085,9 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
   // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
   if (media_relay_caps_.Note(peer_id, media_relay)) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
-      topology_.OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
+      if (CallHopDriver* hop = HopPathIfBuilt((*active)->call_id)) {
+        hop->OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
+      }
     }
   }
 }
@@ -1267,11 +1338,13 @@ Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(con
 }
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const {
-  return topology_.IsAwaitingSfuRecovery();
+  const CallHopDriver* hop = ActiveHopPath();
+  return hop && hop->IsAwaitingSfuRecovery();
 }
 
 CallRecovery CallSessionManager::Recovery() const {
-  return topology_.Recovery();
+  const CallHopDriver* hop = ActiveHopPath();
+  return hop ? hop->Recovery() : CallRecovery::None;
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
@@ -1311,7 +1384,7 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 void CallSessionManager::LeaveIfOrphaned(const std::string& call_id) {
   // A call this process never had (force-quit / restart), with nothing running for it. A call it had
   // — open, or ended with its leave still on the way — is not an orphan.
-  if (call_id.empty() || live_calls_.Find(call_id) || media_.IsActive() || topology_.IsAwaitingSfuRecovery()) {
+  if (call_id.empty() || live_calls_.Find(call_id) || media_.IsActive() || IsAwaitingSfuRecovery()) {
     return;
   }
   auto session = sessions_.LoadSession(call_id);
@@ -1642,10 +1715,6 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
     return;
   }
   (void)key_exchange_.SendCurrent(call_id, peer_identity);
-}
-
-bool CallSessionManager::HopCarriesMedia() const {
-  return topology_.IsSfuAttached();  // an atomic flag: safe from the transport's I/O
 }
 
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,

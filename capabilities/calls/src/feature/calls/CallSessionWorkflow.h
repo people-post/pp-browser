@@ -78,7 +78,7 @@ public:
   /** Hop-path / SFU attach outcomes observed by durable session. */
   struct HopPathPorts {
     std::function<void(const std::string& call_id, size_t n_joined)> on_joined_count_observed;
-    std::function<void()> clear_sfu_attach_wait;
+    std::function<void(const std::string& call_id)> clear_sfu_attach_wait;
     /** `sender`: who fanned it out — a hop change is followed only from the hop owner (V050). */
     std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&, const std::string& sender)>
         on_inbound_sfu_attach;

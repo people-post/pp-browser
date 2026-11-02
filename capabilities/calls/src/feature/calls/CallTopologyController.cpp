@@ -361,7 +361,7 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   if (sfu_.attached && relay_deps_.relay) {
     relay_deps_.relay->Detach();
   }
-  sfu_.attached = false;
+  sfu_.SetAttached(false);
   ReleaseMigrateFlight();
   flight_.attaching_hop_peer_id.clear();
   flight_.attached_hop_peer_id.clear();
@@ -1232,7 +1232,7 @@ bool CallTopologyController::LeaveHopForOwnerMove(const std::string& call_id, co
   if (relay_deps_.relay) {
     relay_deps_.relay->Detach();
   }
-  sfu_.attached = false;
+  sfu_.SetAttached(false);
   flight_.attached_hop_peer_id.clear();
   flight_.attaching_hop_peer_id.clear();
   if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {

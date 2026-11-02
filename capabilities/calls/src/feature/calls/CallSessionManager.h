@@ -287,7 +287,7 @@ private:
   void SetMediaActivity(std::string message);
   void TopologyNoteMediaAttempted(const std::string& call_id);
   void RequestInboxSync();
-  void BindTopologyHostPorts();
+  CallTopologyController::HostPorts MakeTopologyHostPorts();
 
   // CallMediaHost
   Roe<std::string> P2pLocalIdentity() const override;
@@ -303,7 +303,6 @@ private:
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
   CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
-  bool HopCarriesMedia() const override;
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
 
@@ -330,7 +329,18 @@ private:
   CallTopologySeatPorts MakeTopologySeatPorts();
   CallDirectSeatPorts DirectSeatPorts();
   /** The device-level 1:1 deps (V056): each call's path is built from them. */
-  std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial);
+  std::unique_ptr<CallDirectDriver> MakeDirectPath(const std::string& call_id, uint64_t serial,
+                                                   std::shared_ptr<std::atomic<bool>> hop_carries_media);
+  /** Each call's group path is built from the device's hop service (V056). */
+  std::unique_ptr<CallHopDriver> MakeHopPath(const std::string& call_id, uint64_t serial,
+                                             std::shared_ptr<std::atomic<bool>> hop_carries_media);
+  /** `call_id`'s built group path, when it is path `serial`. */
+  CallHopDriver* HopPathFor(const std::string& call_id, uint64_t serial);
+  /** `call_id`'s group path if built (never builds one). */
+  CallHopDriver* HopPathIfBuilt(const std::string& call_id);
+  /** The active call's group path if built. */
+  const CallHopDriver* ActiveHopPath() const;
+  CallHopDriver* ActiveHopPathMutable();
   /** `call_id`'s built 1:1 path, when it is path `serial` (a newer one, or none, drops the event). */
   CallDirectDriver* DirectPathFor(const std::string& call_id, uint64_t serial);
   /** The active call's 1:1 path status (empty when it has none). */
@@ -381,12 +391,11 @@ private:
   ICallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   MediaEngine& media_;
-  /** Before topology_ / live_calls_: both hold it (ports / media resources). */
+  /** Before live_calls_ and the calls' media (they hold it: ports / media resources). */
   CallMediaSeat seat_;
   uint64_t doorway_generation_ = 0;
   /** The device's hop side (V056): relay deps, hop ranking and planning; the hop path reads it. */
   CallHopService hop_service_;
-  CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
   /** Each live call's media coordinator (after live_calls_, which it reads). */

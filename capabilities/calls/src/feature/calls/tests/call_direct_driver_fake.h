@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/calls/CallDirectDriver.h"
+#include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <memory>
@@ -61,7 +62,65 @@ private:
 
 /** Every call's 1:1 path forwards to `target`. */
 inline CallDirectPathFactory ForwardTo(CallDirectDriver& target) {
-  return [&target](const std::string&, uint64_t) { return std::make_unique<ForwardingDirectDriver>(target); };
+  return [&target](const std::string&, uint64_t, std::shared_ptr<std::atomic<bool>>) {
+    return std::make_unique<ForwardingDirectDriver>(target);
+  };
+}
+
+/** A group path that does nothing (takes no call): fakes derive from it. */
+struct NullHopDriver : CallHopDriver {
+  bool OnLocalAcceptJoined(const std::string&, size_t, const std::optional<std::string>&) override { return false; }
+  bool OnRemoteAcceptJoined(const std::string&, size_t, const std::string&) override { return false; }
+  bool IsSfuAttached() const override { return false; }
+  bool IsAwaitingSfuRecovery() const override { return false; }
+  bool ExpectsGroupMedia(const std::string&) const override { return false; }
+  void BeginSfuAttachWait(const std::string&) override {}
+  void OnMediaStopped(const std::string&) override {}
+  void RefreshAdaptation(const std::string&, bool) override {}
+  void Handle(TopologyEvent&) override {}
+  void OnMediaKeyInstalled(const std::string&) override {}
+  void OnJoinedCountObserved(const std::string&, size_t) override {}
+  void ClearSfuAttachWait() override {}
+  Roe<void> OnInboundSfuAttach(const std::string&, const CallSfuAttachDetail&, const std::string&) override {
+    return {};
+  }
+  void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail&) override {}
+  void OnInboundHopRefuse(const CallHopRefuseDetail&) override {}
+  bool IsOnSfuForCall(const std::string&) const override { return false; }
+  CallRecovery Recovery() const override { return CallRecovery::None; }
+  CallHopHealth HopHealth() const override { return {}; }
+  void OnPeerMediaRelayCapLearned(const std::string&, const std::string&) override {}
+  void OnLocalNetworkMoved() override {}
+  void UnwatchRelay() override {}
+  void OnRelayDepsChanged() override {}
+};
+
+/** A call's group path that forwards the coordinator's questions to `target` (a test-owned fake). */
+class ForwardingHopDriver final : public NullHopDriver {
+public:
+  explicit ForwardingHopDriver(CallHopDriver& target) : target_(target) {}
+  bool OnLocalAcceptJoined(const std::string& c, size_t n, const std::optional<std::string>& h) override {
+    return target_.OnLocalAcceptJoined(c, n, h);
+  }
+  bool OnRemoteAcceptJoined(const std::string& c, size_t n, const std::string& j) override {
+    return target_.OnRemoteAcceptJoined(c, n, j);
+  }
+  bool IsSfuAttached() const override { return target_.IsSfuAttached(); }
+  bool IsAwaitingSfuRecovery() const override { return target_.IsAwaitingSfuRecovery(); }
+  bool ExpectsGroupMedia(const std::string& c) const override { return target_.ExpectsGroupMedia(c); }
+  void BeginSfuAttachWait(const std::string& c) override { target_.BeginSfuAttachWait(c); }
+  void OnMediaStopped(const std::string& c) override { target_.OnMediaStopped(c); }
+  void RefreshAdaptation(const std::string& c, bool on) override { target_.RefreshAdaptation(c, on); }
+
+private:
+  CallHopDriver& target_;
+};
+
+/** Every call's group path forwards to `target`. */
+inline CallHopPathFactory ForwardHopTo(CallHopDriver& target) {
+  return [&target](const std::string&, uint64_t, std::shared_ptr<std::atomic<bool>>) {
+    return std::make_unique<ForwardingHopDriver>(target);
+  };
 }
 
 } // namespace pbr::test

@@ -68,6 +68,10 @@ public:
   CallMediaBridge(std::string call_id, CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
                   MediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
+  /** The call's "the hop carries its media" flag: once set, 1:1 frames are dropped (before any traffic). */
+  void SetHopCarriesMediaFlag(std::shared_ptr<const std::atomic<bool>> flag) {
+    receive_->hop_carries_media = std::move(flag);
+  }
   ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
@@ -447,6 +451,8 @@ private:
     std::atomic<uint32_t> remote_stream{0};
     /** Steady-clock ms before which I/O does not ask for another rebind (one in flight / just failed). */
     std::atomic<int64_t> rebind_not_before_ms{0};
+    /** The call's "the hop carries its media" flag (its hop path writes it); null: no hop. Set before traffic. */
+    std::shared_ptr<const std::atomic<bool>> hop_carries_media;
   };
   std::shared_ptr<ReceiveGate> receive_ = std::make_shared<ReceiveGate>();
 };

@@ -1656,7 +1656,7 @@ Roe<void> CallSessionWorkflow::ParticipantGone(const std::string& call_id, const
   }
   if (identity == local_identity) {
     // Ejected after failed soft-migrate (or remote Leave for us): clear local chrome/media.
-    host_.hop.clear_sfu_attach_wait();
+    host_.hop.clear_sfu_attach_wait(call_id);
     if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
       std::optional<int64_t> duration;
       if ((*session)->created_at > 0) {

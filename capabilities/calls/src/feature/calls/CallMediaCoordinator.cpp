@@ -32,10 +32,21 @@ CallMediaCoordinator::CallMediaCoordinator(std::string call_id, CallMediaResourc
 
 CallMediaCoordinator::~CallMediaCoordinator() = default;
 
+CallHopDriver* CallMediaCoordinator::Hop() {
+  if (!hop_ && resources_.make_hop) {
+    hop_serial_ = ++resources_.next_path_serial;
+    hop_ = resources_.make_hop(call_id_, hop_serial_, hop_carries_media_);
+    if (hop_) {
+      CallMediaCoordinatorLog().info << "group path built call_id=" << call_id_ << " serial=" << hop_serial_;
+    }
+  }
+  return hop_.get();
+}
+
 CallDirectDriver* CallMediaCoordinator::Direct() {
   if (!direct_ && resources_.make_direct) {
-    direct_serial_ = ++resources_.next_direct_serial;
-    direct_ = resources_.make_direct(call_id_, direct_serial_);
+    direct_serial_ = ++resources_.next_path_serial;
+    direct_ = resources_.make_direct(call_id_, direct_serial_, hop_carries_media_);
     if (direct_) {
       CallMediaCoordinatorLog().info << "1:1 path built call_id=" << call_id_ << " serial=" << direct_serial_;
     }
@@ -118,7 +129,7 @@ void CallMediaCoordinator::ReleaseDirect() {
 
 CallMediaPath CallMediaCoordinator::DecideOnLocalAccept(const size_t n_joined,
                                                        const std::optional<std::string>& sfu_hint) {
-  CallHopDriver* hop = resources_.hop;
+  CallHopDriver* hop = Hop();
   const CallMediaPath path =
       hop && hop->OnLocalAcceptJoined(call_id_, n_joined, sfu_hint) ? CallMediaPath::Hop : CallMediaPath::Direct;
   CallMediaCoordinatorLog().info << "local accept call_id=" << call_id_ << " n=" << n_joined
@@ -128,7 +139,7 @@ CallMediaPath CallMediaCoordinator::DecideOnLocalAccept(const size_t n_joined,
 
 CallMediaPath CallMediaCoordinator::DecideOnRemoteAccept(const size_t n_joined, const std::string& joiner_identity,
                                                          const CallMediaPath current) {
-  CallHopDriver* hop = resources_.hop;
+  CallHopDriver* hop = Hop();
   CallMediaPath path = CallMediaPath::Direct;
   if ((hop && hop->OnRemoteAcceptJoined(call_id_, n_joined, joiner_identity)) || current == CallMediaPath::Hop) {
     path = CallMediaPath::Hop; // a group call never goes back to 1:1
@@ -139,20 +150,21 @@ CallMediaPath CallMediaCoordinator::DecideOnRemoteAccept(const size_t n_joined, 
 }
 
 bool CallMediaCoordinator::HopAttached() const {
-  return resources_.hop && resources_.hop->IsSfuAttached();
+  return hop_ && hop_->IsSfuAttached();
 }
 
 bool CallMediaCoordinator::HopInFlight() const {
-  return resources_.hop && resources_.hop->IsAwaitingSfuRecovery();
+  return hop_ && hop_->IsAwaitingSfuRecovery();
 }
 
-bool CallMediaCoordinator::ExpectsHop() const {
-  return resources_.hop && resources_.hop->ExpectsGroupMedia(call_id_);
+bool CallMediaCoordinator::ExpectsHop() {
+  CallHopDriver* hop = Hop(); // the store may already say "group" before the hop path ran
+  return hop && hop->ExpectsGroupMedia(call_id_);
 }
 
 void CallMediaCoordinator::ExpectHopAttach() {
-  if (resources_.hop) {
-    resources_.hop->BeginSfuAttachWait(call_id_);
+  if (CallHopDriver* hop = Hop()) {
+    hop->BeginSfuAttachWait(call_id_);
   }
 }
 
@@ -161,8 +173,8 @@ void CallMediaCoordinator::SetMuted(const bool muted) {
 }
 
 Roe<void> CallMediaCoordinator::SetCamera(const bool enabled, const int display_rotation_degrees) {
-  if (resources_.hop) {
-    resources_.hop->RefreshAdaptation(call_id_, enabled);
+  if (hop_) {
+    hop_->RefreshAdaptation(call_id_, enabled);
   }
   if (!enabled) {
     (void)Engine().SetCameraEnabled(false, 0);

@@ -173,6 +173,14 @@ public:
   struct SfuSurface {
     /** Owner writes; the 1:1 receive path reads it on transport I/O (the hop carries the call). */
     std::atomic<bool> attached{false};
+    /** The call's "the hop carries its media" flag (its 1:1 path reads it on I/O); null: none. */
+    std::shared_ptr<std::atomic<bool>> carries_media;
+    void SetAttached(const bool on) {
+      attached = on;
+      if (carries_media) {
+        carries_media->store(on, std::memory_order_release);
+      }
+    }
     int64_t last_quote_a_up_bps = 0;
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };

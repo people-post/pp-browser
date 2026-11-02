@@ -28,8 +28,10 @@ public:
   void DropDirectPaths();
   /** Each call's built 1:1 path. */
   void ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn);
-  /** The group path the coordinators drive (null: harness). */
-  void BindHopDriver(CallHopDriver* hop) { resources_.hop = hop; }
+  /** How a call's group path is built (empty: none — harness). */
+  void BindHopPathFactory(CallHopPathFactory make) { resources_.make_hop = std::move(make); }
+  /** Each call's built group path. */
+  void ForEachHopPath(const std::function<void(CallHopDriver&)>& fn);
 
   /**
    * The call's media coordinator, created on first use. Null for a call this device never admitted

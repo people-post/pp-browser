@@ -38,6 +38,14 @@ void LiveCallMedia::DropDirectPaths() {
   }
 }
 
+void LiveCallMedia::ForEachHopPath(const std::function<void(CallHopDriver&)>& fn) {
+  for (auto& [id, entry] : media_) {
+    if (CallHopDriver* hop = entry.coordinator ? entry.coordinator->HopIfBuilt() : nullptr) {
+      fn(*hop);
+    }
+  }
+}
+
 void LiveCallMedia::ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn) {
   for (auto& [id, entry] : media_) {
     if (CallDirectDriver* direct = entry.coordinator ? entry.coordinator->DirectIfBuilt() : nullptr) {
@@ -66,10 +74,10 @@ void LiveCallMedia::StopMedia(const std::string& call_id) {
     resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
     return;
   }
-  if (resources_.hop) {
-    resources_.hop->OnMediaStopped(call_id);
-  }
   CallMediaCoordinator* call = Find(call_id);
+  if (CallHopDriver* hop = call ? call->HopIfBuilt() : nullptr) {
+    hop->OnMediaStopped(call_id);
+  }
   if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
     direct->StopMeshMedia(call_id);
   } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsSfuMode())) {

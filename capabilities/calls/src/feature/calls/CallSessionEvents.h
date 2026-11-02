@@ -361,6 +361,12 @@ struct FromDirectPath {
   uint64_t serial = 0;
   DirectReport report;
 };
+/** An event of `call_id`'s group path `serial` (a path built since, or the call gone, drops it). */
+struct ForHopPath {
+  std::string call_id;
+  uint64_t serial = 0;
+  TopologyEvent event;
+};
 /** A report of the group path. */
 struct FromHopPath {
   HopReport report;
@@ -377,8 +383,9 @@ struct ForDoorway {
 
 } // namespace session_event
 
-using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
-                                  TopologyEvent, session_event::ForDirectPath, session_event::FromDirectPath,
-                                  session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
+using SessionEvent =
+    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                 session_event::ForHopPath, session_event::ForDirectPath, session_event::FromDirectPath,
+                 session_event::FromHopPath, session_event::ForDoorway, session_event::ForHopService>;
 
 } // namespace pbr

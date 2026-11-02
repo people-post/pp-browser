@@ -97,16 +97,18 @@ public:
   CallTopologyController& operator=(const CallTopologyController&) = delete;
 
   void SetHostPorts(HostPorts ports);
+  /** The call's "the hop carries its media" flag, written as the hop attaches / detaches (its 1:1 path reads it). */
+  void SetCarriesMediaFlag(std::shared_ptr<std::atomic<bool>> flag) { sfu_.carries_media = std::move(flag); }
   /** The device's relay deps are about to change: stop watching the relay client (it is still alive). */
-  void UnwatchRelay();
+  void UnwatchRelay() override;
   /** The device's relay deps changed (mesh start / stop): watch the relay client again. */
-  void OnRelayDepsChanged();
+  void OnRelayDepsChanged() override;
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
-  void OnLocalNetworkMoved();
+  void OnLocalNetworkMoved() override;
   /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
-  void OnMediaKeyInstalled(const std::string& call_id) { hop_migrate_.InstallMediaKey(call_id); }
+  void OnMediaKeyInstalled(const std::string& call_id) override { hop_migrate_.InstallMediaKey(call_id); }
   /** V046 exclusive media bind / epoch via ports. */
   void SetSeatPorts(CallTopologySeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
@@ -116,22 +118,22 @@ public:
   /** Where the hop path reports to the calls it serves (events up; V055). */
   void SetReports(OwnerOutbox<HopReport> reports);
   /** An event it reported, back from the calls owner's queue. */
-  void Handle(TopologyEvent& event);
+  void Handle(TopologyEvent& event) override;
 
   bool IsAwaitingSfuRecovery() const override;
   /** This guest's hop transport was lost and is not back yet (the call screen reads Reconnecting). */
   bool IsSfuAttached() const override;
   /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
   bool ExpectsGroupMedia(const std::string& call_id) const override;
-  bool IsOnSfuForCall(const std::string& call_id) const;
+  bool IsOnSfuForCall(const std::string& call_id) const override;
   /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
   bool IsSoftMigrateInFlight() const;
   /** Why the hop path is being recovered, for the screen (one reason; path decisions use the above). */
-  CallRecovery Recovery() const;
+  CallRecovery Recovery() const override;
   bool IsSfuAttachWaitActive() const;
 
   void BeginSfuAttachWait(const std::string& call_id) override;
-  void ClearSfuAttachWait();
+  void ClearSfuAttachWait() override;
   void PollPendingSfuAttach();
 
   void OnMediaStopped(const std::string& call_id) override;
@@ -164,24 +166,24 @@ public:
   /**
    * After CallRoster updated local joined count (mid-call invite path): initiator may SoftMigrate.
    */
-  void OnJoinedCountObserved(const std::string& call_id, size_t n_joined);
+  void OnJoinedCountObserved(const std::string& call_id, size_t n_joined) override;
 
   /**
    * Peer learned media_relay=true (caps). SoftMigrate re-pick for N≥3 / attach-wait only
    * (V038 — never nudge plain 1:1 onto PreferLocal SoftMigrate).
    */
-  void OnPeerMediaRelayCapLearned(const std::string& call_id, const std::string& peer_id);
+  void OnPeerMediaRelayCapLearned(const std::string& call_id, const std::string& peer_id) override;
 
   /**
    * `sender` fanned the attach out. Attached to another hop, a guest follows only the hop owner's
    * attach (V050: the owner moved the group); others' attaches there are publisher announces.
    */
   Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach,
-                               const std::string& sender = {});
+                               const std::string& sender = {}) override;
   /** Guest attach failed with hop preferences (V029) — initiator only. */
-  void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail);
+  void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail) override;
   /** Owner refused guest after empty hop intersection (V029). */
-  void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
+  void OnInboundHopRefuse(const CallHopRefuseDetail& detail) override;
 
   void RefreshAdaptation(const std::string& call_id);
   void RefreshAdaptation(const std::string& call_id, bool camera_user_wants) override;
@@ -189,7 +191,7 @@ public:
   void SyncSfuSubscriptions(const std::string& call_id);
   uint32_t PublisherStreamIdForLocal() const;
   /** Hop health when SFU attached (V032). */
-  CallHopHealth HopHealth() const;
+  CallHopHealth HopHealth() const override;
 
   /** V039 Hop planner Apply. */
   void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});

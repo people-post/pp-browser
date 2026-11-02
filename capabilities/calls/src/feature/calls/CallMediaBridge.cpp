@@ -843,7 +843,7 @@ void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, MediaEngine& media, 
   // The data plane stays on I/O, like the hop's frames: only atomics and the engine's thread-safe
   // surface here. Owner state it needs (the bound stream) is published into the gate.
   if (!gate.open.load(std::memory_order_acquire) || !media.IsActive() || media.ActiveCallId() != call_id ||
-      host.HopCarriesMedia()) {
+      (gate.hop_carries_media && gate.hop_carries_media->load(std::memory_order_acquire))) {
     return;
   }
   // Outbound bundles know the dialed identity; inbound ones use the bound (or deferred) stream.

@@ -8,6 +8,7 @@
 
 #include "common/Error.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -16,9 +17,14 @@
 
 namespace pbr {
 
-/** Builds one call's 1:1 path (V056); `serial` names that path in its events. */
-using CallDirectPathFactory =
-    std::function<std::unique_ptr<CallDirectDriver>(const std::string& call_id, uint64_t serial)>;
+/**
+ * Builds one call's 1:1 / group path (V056); `serial` names that path in its events, `hop_carries_media`
+ * is the call's flag the hop path writes and the 1:1 path reads on I/O.
+ */
+using CallDirectPathFactory = std::function<std::unique_ptr<CallDirectDriver>(
+    const std::string& call_id, uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
+using CallHopPathFactory = std::function<std::unique_ptr<CallHopDriver>(
+    const std::string& call_id, uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
 
 /** What every call's coordinator drives: the one engine, the seat, and how its paths are made. */
 struct CallMediaResources {
@@ -27,10 +33,10 @@ struct CallMediaResources {
   CallMediaSeat* seat = nullptr;
   /** Empty: no 1:1 path (mesh media not wired). */
   CallDirectPathFactory make_direct;
-  /** Names each 1:1 path built (shared by the coordinators). */
-  uint64_t next_direct_serial = 0;
-  /** Null: no group path (harness). */
-  CallHopDriver* hop = nullptr;
+  /** Empty: no group path (harness). */
+  CallHopPathFactory make_hop;
+  /** Names each path built (shared by the coordinators). */
+  uint64_t next_path_serial = 0;
 };
 
 /**
@@ -95,6 +101,11 @@ public:
   /** Drop the built path (the mesh's transport goes; a later use builds a new one). */
   void DropDirect();
 
+  /** The call's group path, built on first use; null when none can be made (harness). */
+  CallHopDriver* Hop();
+  CallHopDriver* HopIfBuilt() const { return hop_.get(); }
+  uint64_t HopSerial() const { return hop_serial_; }
+
   // --- What the 1:1 path needs to know about the group path ----------------------------------------
 
   /** Media runs on a hop now. */
@@ -102,7 +113,7 @@ public:
   /** A hop attach / migration / recovery is in flight. */
   bool HopInFlight() const;
   /** The call is (or is about to be) a group call: its 1:1 stream closing is expected. */
-  bool ExpectsHop() const;
+  bool ExpectsHop();
   /** The 1:1 stream dropped ahead of the hop attach: have the hop wait for it. */
   void ExpectHopAttach();
 
@@ -123,8 +134,13 @@ private:
 
   std::string call_id_;
   CallMediaResources& resources_;
+  /** The hop carries this call's media: the hop path writes it, the 1:1 path reads it on I/O. */
+  std::shared_ptr<std::atomic<bool>> hop_carries_media_ = std::make_shared<std::atomic<bool>>(false);
+  /** Destroyed hop first (it releases the call's media hop), then the 1:1 path. */
   std::unique_ptr<CallDirectDriver> direct_;
   uint64_t direct_serial_ = 0;
+  std::unique_ptr<CallHopDriver> hop_;
+  uint64_t hop_serial_ = 0;
 };
 
 } // namespace pbr

@@ -310,7 +310,7 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
   host_.SetMediaActivity(Localized("call.status.switching_media_path"));
   host_.NotifyRingChanged();
   relay_deps_->relay->Detach();
-  sfu_.attached = false;
+  sfu_.SetAttached(false);
   flight_.attached_hop_peer_id.clear();
   flight_.attaching_hop_peer_id.clear();
   if (pick.session) {
@@ -918,7 +918,7 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
   if (auto started = call_media->StartEngine(CallMediaPath::Hop, MakeHopSendFn(at)); !started) {
     log().info << "AttachLocalToSfu aborted at StartSfu (" << started.error().message << ") call_id=" << call_id;
     relay_deps_->relay->Detach();
-    sfu_.attached = false;
+    sfu_.SetAttached(false);
     return started.error();
   }
   if (!ops_.is_active_call_for_topology(call_id)) {
@@ -927,7 +927,7 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
                << " gen_have=" << flight_.migrate_generation.load(std::memory_order_acquire);
     relay_deps_->relay->Detach();
     call_media->StopEngine("hop attach aborted: call inactive");
-    sfu_.attached = false;
+    sfu_.SetAttached(false);
     return Error("attach aborted");
   }
   return {};
@@ -938,7 +938,7 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   const auto arming_ports = arming_.Get();
   const std::string& call_id = at.call_id;
   at.frames_ready->store(true, std::memory_order_release);
-  sfu_.attached = true;
+  sfu_.SetAttached(true);
   flight_.attached_hop_peer_id = at.attach.hop_peer_id;
   flight_.attaching_hop_peer_id.clear();
   if (!at.self_hop) {
