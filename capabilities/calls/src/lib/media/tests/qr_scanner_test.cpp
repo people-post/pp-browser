@@ -39,6 +39,7 @@ struct FakeState {
   CameraRequestFormat requested_format;
   std::string error;
   bool no_frames = false;
+  std::atomic<bool> permission_pending{false};
   bool zoom_required = false;
   float blank_until_zoom = 0.f;  // frames show nothing at all below this magnification
   int candidate_offset_x = 0;
@@ -55,6 +56,7 @@ public:
   ~FakeCamera() override { ++state_.closes; }
   CameraGeometry Geometry() const override { return {}; }
   std::string CaptureError() const override { return state_.error; }
+  bool PermissionPending() const override { return state_.permission_pending; }
   std::optional<VideoFrameRgba> NextFrame() override {
     if (state_.blank_until_zoom > 0.f && state_.zoom < state_.blank_until_zoom) {
       VideoFrameRgba blank;
@@ -208,6 +210,21 @@ TEST(QrScannerTest, MissingFramesBecomeVisibleErrorAndReleaseCamera) {
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(18)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
+}
+TEST(QrScannerTest, PermissionPromptDoesNotCountTowardsNoFrameTimeout) {
+  FakeState state;
+  state.no_frames = true;
+  state.permission_pending = true;
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices, std::chrono::milliseconds(300));
+  scanner.Start();
+  ASSERT_TRUE(WaitFor([&] { return state.opens == 1; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds(900));
+  EXPECT_TRUE(scanner.Poll().error.empty());
+  state.permission_pending = false;  // user granted, still no frames: the clock starts now
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
+  EXPECT_NE(result.error.find("no frames"), std::string::npos);
 }
 TEST(QrScannerTest, StopDiscardsAlreadyCompletedUnconsumedPayload) {
   FakeState state;

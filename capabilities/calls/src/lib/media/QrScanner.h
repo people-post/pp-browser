@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/media/MediaDeviceArbiter.h"
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -15,7 +16,9 @@ public:
     std::string error;
   };
 
-  explicit QrScanner(MediaDeviceArbiter& devices);
+  /** `no_frame_timeout` is how long a camera may stay silent (outside an OS permission prompt) before an error. */
+  explicit QrScanner(MediaDeviceArbiter& devices,
+                     std::chrono::milliseconds no_frame_timeout = std::chrono::seconds(15));
   ~QrScanner();
   QrScanner(const QrScanner&) = delete;
   QrScanner& operator=(const QrScanner&) = delete;

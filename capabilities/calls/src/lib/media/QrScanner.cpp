@@ -171,8 +171,10 @@ struct ScanCaptureStats {
 } // namespace
 
 struct QrScanner::State {
-  explicit State(MediaDeviceArbiter& arbiter) : devices(arbiter) {}
+  State(MediaDeviceArbiter& arbiter, std::chrono::milliseconds timeout)
+      : devices(arbiter), no_frame_timeout(timeout) {}
   MediaDeviceArbiter& devices;
+  const std::chrono::milliseconds no_frame_timeout;
   std::mutex mutex;
   std::condition_variable cv;
   std::thread worker;
@@ -241,7 +243,11 @@ struct QrScanner::State {
         if (complete) {
           return;
         }
-      } else if (std::chrono::steady_clock::now() - last_frame > std::chrono::seconds(15)) {
+      } else if (lease->PermissionPending()) {
+        // The OS permission dialog is up: frames cannot arrive yet, so the no-frame clock only
+        // starts once the user has answered.
+        last_frame = std::chrono::steady_clock::now();
+      } else if (std::chrono::steady_clock::now() - last_frame > no_frame_timeout) {
         Publish(epoch, Update{{}, {}, "Camera produced no frames; check camera permission and availability"}, true);
         return;
       }
@@ -267,7 +273,8 @@ struct QrScanner::State {
   }
 };
 
-QrScanner::QrScanner(MediaDeviceArbiter& devices) : state_(std::make_unique<State>(devices)) {
+QrScanner::QrScanner(MediaDeviceArbiter& devices, std::chrono::milliseconds no_frame_timeout)
+    : state_(std::make_unique<State>(devices, no_frame_timeout)) {
   state_->worker = std::thread([this] { state_->Run(); });
 }
 QrScanner::~QrScanner() { Shutdown(); }
