@@ -49,7 +49,7 @@ License: **MIT** (`LICENSE`). Source is intended to be **publicly available** op
 | Public-tier auto-key (`e2e_public`) | ML-KEM-768 | FIPS 203; pk 1184 B, ct 1088 B, sk 2400 B | `pp-cpp-crypto` / `mlkem-native` |
 | Account / device signing (PQ path) | ML-DSA-65 | FIPS 204 | `pp-cpp-crypto` / `mldsa-native` |
 
-Normative detail: [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Code: `src/foundation/crypto/` (`MessageCipher`, `HybridKem`, `MlDsa`, …), `capabilities/delivery/src/lib/delivery/` (`SessionKeyDeriver`, `CanonicalAad`, …), pp-cpp-crypto.
+Normative detail: [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). Code: `capabilities/base/src/foundation/crypto/` (`MessageCipher`, `HybridKem`, `MlDsa`, …), `capabilities/delivery/src/lib/delivery/` (`SessionKeyDeriver`, `CanonicalAad`, …), pp-cpp-crypto.
 
 ### At-rest (PIN vault / DEK)
 

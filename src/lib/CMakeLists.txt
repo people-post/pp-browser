@@ -23,6 +23,7 @@ if(NOT PP_BROWSER_HEADLESS)
     pp_lib_pricing
     pp_lib_content
     pp_lib_posts
+    pp_common_ui
     pp_lib_ai
     pp_lib_ai_conversation
     pp_lib_ai_mcp

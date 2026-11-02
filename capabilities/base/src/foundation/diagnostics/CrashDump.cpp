@@ -45,12 +45,12 @@ constexpr std::size_t kPathBytes = 1024;
 constexpr std::size_t kBreadcrumbDumpBytes = 24 * 1024;
 
 char g_dump_path[kPathBytes] = {};
-#if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
-// Main image load address ("%p"), resolved at Install — lets tools map ASLR frames to the binary.
-char g_image_base[32] = {};
 /** The app's slug and version (CrashIdentity), set once by Install; read by the handlers. */
 char g_product[64] = "app";
 char g_version[64] = "0";
+#if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
+// Main image load address ("%p"), resolved at Install — lets tools map ASLR frames to the binary.
+char g_image_base[32] = {};
 #endif
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_writing{false};

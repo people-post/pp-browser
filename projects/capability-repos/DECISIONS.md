@@ -418,7 +418,7 @@ external code nobody edits, which the checks, formatting and lint skip.
 ## CR023 — Calls becomes repo-ready first
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); steps 1–2 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
+**Status:** accepted (Hongwei, 2026-11-02); steps 1–3 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
 
 **Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
 testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
@@ -454,6 +454,19 @@ Namespaces and an `include/` split wait for an actual repo split (CR022).
 - **QR scanning → the app's `lib/scan`** (`pp_lib_scan`); **the call's sounds → calls' `lib/call_audio`**
   (`pp_lib_call_audio`), so `pp_lib_calls` stays pure logic without SDL.
 - The gate's map, CI's path filters (`media`, and calls / broadcast / messaging on it) and the test labels follow.
+
+**Step 3, as done (2026-11-02):**
+- **The base has its folder:** `capabilities/base/src/` (`common/` except the app's `common/ui`; foundation's
+  runtime, TLS, error, diagnostics, crypto, identity), with its own label and CI filter. `src/foundation/` keeps
+  the product's base (`data`, `platform`, `i18n` and the new `product`).
+- **`src/` is no include root of a capability:** the helpers give a capability's targets its own `src/` only
+  (`pp_browser_own_include_root`); everything else comes by link. All capability sources compile so: the compiler
+  now holds what the gate checks.
+- **App concepts became values:** calls names its owner thread (`common/media/MediaSessionsOwner.h`) and the app
+  registers it (`feature/product/ProductOwners`); the product's name and version are the product's
+  (`foundation/product`): the crash dump takes a `CrashIdentity`, text gets `product.name` / `{product}` from the
+  app's translator, net's upgrade fallback is passed in. `AppLifecycle`, background activity / sync and diagnostics
+  stay base mechanisms.
 
 ## CR024 — Capabilities own ideas; the app owns the database
 

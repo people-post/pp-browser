@@ -91,12 +91,11 @@ jobs:
               - 'third_party/**'
               - '.github/workflows/build.yml'
             # A moved capability's tests (CTest label capability:<name>) run on a PR only when its folder or
-            # something below it changed: the base (src/common, src/foundation), cmake/, third_party/ and the
+            # something below it changed: the base (capabilities/base), cmake/, third_party/ and the
             # capabilities before it (projects/capability-repos CR022). Each filter is the one below it plus its
             # folder; the Test step lists the folders.
-            capability_base: &capability_base
-              - 'src/common/**'
-              - 'src/foundation/**'
+            base: &capability_base
+              - 'capabilities/base/**'
               - 'src/CMakeLists.txt'
               - 'cmake/**'
               - 'CMakeLists.txt'
@@ -278,7 +277,7 @@ jobs:
         run: |
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in people net social delivery pricing media messaging calls broadcast node; do
+            for capability in base people net social delivery pricing media messaging calls broadcast node; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

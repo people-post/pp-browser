@@ -1,4 +1,4 @@
-# `src/common`
+# `capabilities/base/src/common`
 
 pp-browser **shared language**: tiny helpers and **contracts** (ports / vocabulary DTOs). Namespace / CMake: `pp_pbr_common`.
 

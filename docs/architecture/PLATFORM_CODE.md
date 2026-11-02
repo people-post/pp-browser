@@ -25,7 +25,7 @@ Hard rules:
 1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`MediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
 2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
-4. **Process runtime** lives in pp-cpp-common (`common/runtime/`: threads, coordinator, owners); lifecycle, the product's owners, branding and version in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
+4. **Process runtime** lives in pp-cpp-common (`common/runtime/`: threads, coordinator, owners); lifecycle, the product's owners, branding and version in [`capabilities/base/src/foundation/runtime/`](../../capabilities/base/src/foundation/runtime/) — not here.
 5. **Public headers must not expose OS types** (`SOCKET`, `HANDLE`, `NativeSocket`). Hide them in the `.cpp` or a private impl header.
 6. **`common/` CRT shims** — thread naming (`WorkerPool`) and civil-time (`CivilTime`) may use CRT/pthread `#ifdef`s. New OS behavior does not belong in `common/` beyond that.
 
@@ -89,7 +89,7 @@ Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
 - Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `capabilities/media/src/lib/media/` (and in pp-cpp-mesh `src/reachability/`)
-- `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
+- `capabilities/base/src/common/CivilTime.cpp`, `capabilities/base/src/common/WorkerPool.cpp`, `capabilities/base/src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)
 - `src/lib/libp2p/` (upstream; not product policy)

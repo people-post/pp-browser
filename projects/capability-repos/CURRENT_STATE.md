@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, step 2 of 5 done; storage in the app (CR024) done
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done
 
 ## Done
 
@@ -134,8 +134,14 @@
   scanning to the app's `lib/scan`. The ringback's audio-session hold is a `CallAudioSession` tone hold. Gate map,
   CI filters and labels updated.
 
+- **CR023 step 3, the base's folder:** `capabilities/base/src` (common, foundation's runtime / TLS / error /
+  diagnostics / crypto / identity); `src/foundation` keeps the product's base (+ `product`: name, version). No
+  capability target has `src/` as an include root any more (all 563 capability sources compile without it). Calls
+  names its owner thread and the app registers it; the crash dump, the text layer and net take the product's identity
+  as values.
+
 ## Next
 
-1. CR023 steps 3–5 for calls (the base's folder, a standalone build, the host contract).
+1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

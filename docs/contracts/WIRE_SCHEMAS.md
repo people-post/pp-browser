@@ -7,7 +7,7 @@
 
 **Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (AAD, ciphertext, signing), [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [COMPATIBILITY.md](COMPATIBILITY.md), [e2e DESIGN](../../projects/e2e-message-crypto/DESIGN.md) (planning), [chat-storage CURRENT_STATE](../../projects/chat-storage-and-memory/CURRENT_STATE.md).
 
-**C++ reference:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
+**C++ reference:** [`capabilities/base/src/common/Serialize.hpp`](../../capabilities/base/src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`capabilities/base/src/common/BinaryPack.hpp`](../../capabilities/base/src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 

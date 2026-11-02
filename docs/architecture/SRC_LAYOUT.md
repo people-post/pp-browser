@@ -6,14 +6,14 @@
 
 **North Star sentence:** `common` names the shared language; `foundation` implements the shared kernel; `lib` implements independent product capabilities; `domain` combines them into capabilities features share; `feature` composes those into what the user does; **`gui` presents** them; `app` constructs the graph.
 
-> **Paths:** Top-level folders are `src/common/`, `src/foundation/`, `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). A capability moved out of `src/` keeps the same paths under [`capabilities/<name>/src/`](#capability-folders) (`capabilities/people/src/lib/people/…`); every path in this file reads the same there.
+> **Paths:** Top-level folders are `common/` and `foundation/` (the base's in `capabilities/base/src/`, the product's `foundation/{data,platform,i18n,product}` and the app's `common/ui` in `src/`), `src/lib/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/`. Foundation bands use `#include "foundation/…"`, `pp_foundation_*`. Lib peers use `#include "lib/…"`, `pp_lib_*` (aggregate `pp_lib` in [`lib/CMakeLists.txt`](../../src/lib/CMakeLists.txt)). Domain modules use `#include "domain/…"`, `pp_domain_*` (aggregate `pp_domain` in [`domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt)). GUI uses `#include "gui/…"`, `pp_gui`. Convenience `pp_base` (foundation + Amp + `pp_lib`) lives in [`src/CMakeLists.txt`](../../src/CMakeLists.txt). A capability moved out of `src/` keeps the same paths under [`capabilities/<name>/src/`](#capability-folders) (`capabilities/people/src/lib/people/…`); every path in this file reads the same there.
 
 ## Layers
 
 | Layer | Target path | Role |
 |-------|-------------|------|
 | Common (external) | FetchContent [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) | App-independent utilities (logger, `ResultOrError`, `Module`, `WorkerPool`, serialize) — namespace `pp` |
-| **Common (in-tree)** | [`src/common/`](../../src/common/) | pp-browser **helpers + contracts**: tiny utilities and shared vocabulary/seams any peer may use without linking another peer (`pp_pbr_common`) |
+| **Common (in-tree)** | [`capabilities/base/src/common/`](../../capabilities/base/src/common/) | pp-browser **helpers + contracts**: tiny utilities and shared vocabulary/seams any peer may use without linking another peer (`pp_pbr_common`) |
 | Crypto (external) | FetchContent [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) | libsodium + ML-KEM-768 / ML-DSA-65 natives + thin `pp::` wrappers; product wire helpers stay in foundation/lib crypto |
 | UI (external) | FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) | Hard-forked RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3/GL3; product host/overlays stay in browser |
 | **Foundation** | [`src/foundation/`](../../src/foundation/) | Shared **kernel implementations** every lib peer may use (runtime, platform, data, error/i18n, crypto, identity/PeerId) |
@@ -115,23 +115,26 @@ the map and the order and checks includes and CMake links (CR016); edges still t
 
 A capability moves out of `src/` into its own folder, `capabilities/<name>/`, before any repo split
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
-Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`); `src/` keeps the
-base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the app's `feature/` modules). The
+Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`), and so does the base:
+`capabilities/base/src/` holds `common` and foundation's runtime, TLS, errors, diagnostics, crypto and identity
+(CR023 step 3). `src/` keeps the product's base (`foundation/data`, `platform`, `i18n`, `product` — config, paths,
+platform hooks, catalogs, the product's name and version) and the app (`app`, `gui`, `common/ui`, `lib/ui`, `lib/ai`,
+`lib/storage`, `lib/scan`, the app's `feature/` modules). The
 `common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`,
 media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus itself, so a split of media carries those.
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
   calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
-  then add that `src/` as an include root of their targets, and its tests get the label. Its targets link only what
+  then add that `src/` — and only that, never the app's `src/` (`pp_browser_own_include_root`) — as an include root of
+  their targets, and its tests get the label. Its targets link only what
   they name: a feature module there gets no `pp_base` and its tests no `pp_feature`, so the gate, which reads named
   links, sees every link a folder has. It builds its `common/`
   part, if any (`pp_<name>_common`), and adds its lib and domain folders; `src/CMakeLists.txt` adds the folders in
-  the capability order, after foundation.
+  the capability order, after the base.
 - The gate and the include checks read every folder as they read `src/` (`scripts/check/source_trees.sh`); the
   gate fails when a folder holds another capability's path.
 - A target sees the include roots of what it links, so a capability's code cannot even include a capability above
-  it or beside it: the compiler holds the order too. `src/` stays an include root of every target, so an app path
-  (`feature/product/…`, `gui/…`) still resolves there; the gate is what stops it.
+  it or beside it, the product's base or the app: the compiler holds the order too (the gate checks it first).
 - Its tests carry the CTest label `capability:<name>`. A PR skips them (`ctest -LE`) when neither the folder nor
   anything below it changed (CI's changes filter: one filter per folder, the one below it plus the folder); pushes
   to develop and main run all.
@@ -147,7 +150,7 @@ media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus its
   (`lib/calls/CallStores.h`). An in-memory store and its SQLite one pass the same contract test
   (`lib/storage/tests/*_contract_test`).
 
-## What `src/common` provides
+## What `capabilities/base/src/common` provides
 
 Two buckets only:
 
@@ -162,7 +165,7 @@ Guardrails:
 2. Prefer pure headers for contracts (virtual iface + POD/DTO). No orchestration `.cpp`.
 3. Promote a type to common only when a **second lib peer** must compile against it without linking the owner. Otherwise keep it in the owning foundation/lib module.
 
-See [`src/common/README.md`](../../src/common/README.md).
+See [`capabilities/base/src/common/README.md`](../../capabilities/base/src/common/README.md).
 
 ## Foundation vs lib
 
