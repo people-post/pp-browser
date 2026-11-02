@@ -36,6 +36,15 @@ struct GroupEnding {
   std::vector<PendingGroupSend> sends;
 };
 
+/** A change to a group's metadata or roster, as the store saw it. */
+struct GroupRosterChange {
+  std::string group_id;
+  /** A member taken off the roster (left, removed, or dropped by a roster check); empty: no one was. */
+  std::string member_gone;
+  /** The group ended (G016): its roster is empty, nobody is in it. */
+  bool ended = false;
+};
+
 /**
  * Where a device keeps its groups (CR024): metadata, rosters, invites, the sends a dissolve still owes, and each
  * group's numbering (its send target, its members' pair numbering). The app's storage keeps them; tests use an
@@ -53,8 +62,11 @@ public:
    */
   [[nodiscard]] static std::unique_lock<std::recursive_mutex> LockForUpdate();
 
-  /** Called after any change to a group's metadata or roster (the account locker is republished on it). */
-  virtual void SetOnChanged(std::function<void(const std::string& group_id)> on_changed) = 0;
+  /**
+   * Called after any change to a group's metadata or roster (the account locker is republished on it; a group call
+   * drops who is gone). On the writer's thread, maybe under LockForUpdate: post, do not block.
+   */
+  virtual void SetOnChanged(std::function<void(const GroupRosterChange& change)> on_changed) = 0;
 
   virtual Roe<void> UpsertMetadata(const GroupMetadata& metadata) const = 0;
   virtual Roe<std::optional<GroupMetadata>> LoadMetadata(const std::string& group_id) const = 0;

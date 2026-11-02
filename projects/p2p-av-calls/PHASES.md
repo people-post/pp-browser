@@ -326,7 +326,7 @@ One PR per phase; compose tests + call lab scenarios each time.
 
 - [x] cl1 — Prompt retries for a failed control-lane send: `ControlRetryAfter` (lib/delivery), `DeliveryOutbox` retries on a coordinator timer bound to its lifetime; `Cancel` stops one
 - [ ] cl2 — One multi-recipient control send in delivery; calls' fan-outs and group membership's use it; an invite to many does not stop at the first failure
-- [ ] cl3 — Group roster events from messaging; calls subscribes and drops `DropWhoLeftTheGroup`'s one-second poll
+- [x] cl3 — Group roster events from messaging; calls subscribes and drops `DropWhoLeftTheGroup`'s one-second poll. Done: the roster store's change says who it took off or that the group ended (`GroupRosterChange`, from `RemoveMember` / `EndGroup`); the hub hands it to its participants (`HubParticipant::OnGroupRosterChanged`); calls enqueues `GroupMembersGone` and the workflow drops them from the group's live and ringing calls. The compose tests raise the event instead of waiting out the poll
 
 ## Later horizons
 

@@ -1949,12 +1949,11 @@ bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std
   return members.has_value() && members->count(identity) == 0;  // an unknown roster (nullopt) refuses nobody
 }
 
-void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity, const int64_t now) {
-  constexpr int64_t kCheckEveryMs = 1000;
-  if (!host_.wire.group_members || now - group_members_checked_ms_ < kCheckEveryMs) {
+void CallSessionWorkflow::OnGroupMembersGone(const std::string& group_id, const std::optional<std::string>& identity) {
+  auto local = host_.wire.local_relay_identity();
+  if (!local) {
     return;
   }
-  group_members_checked_ms_ = now;
   std::vector<std::string> calls;
   if (const LiveCall* active = live_calls_.Active()) {
     calls.push_back(active->Id());
@@ -1962,47 +1961,30 @@ void CallSessionWorkflow::DropWhoLeftTheGroup(const std::string& local_identity,
   for (const LiveCall* ring : live_calls_.Ringing()) {
     calls.push_back(ring->Id());
   }
-  std::unordered_map<std::string, std::set<std::string>> seen;
   for (const std::string& call_id : calls) {
     auto session = sessions_.LoadSession(call_id);
-    if (!session || !session->has_value() || !(*session)->origin_group_id || (*session)->origin_group_id->empty()) {
+    if (!session || !session->has_value() || (*session)->origin_group_id != group_id) {
       continue;
     }
-    auto members = host_.wire.group_members(*(*session)->origin_group_id);
-    if (!members) {
+    if (!identity || *identity == *local) {
+      log().info << "No longer in the group — leaving its call call_id=" << call_id;
+      const LiveCall* call = live_calls_.Find(call_id);
+      if (call && call->State() == LiveCallState::Ringing) {
+        (void)DeclineInvite(call_id);
+      } else {
+        (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
+      }
+      reports_.Emit(workflow_report::Notice{"You are no longer in this group"});
       continue;
     }
-    auto before = group_members_seen_.find(call_id);
-    seen[call_id] = *members;
-    if (before == group_members_seen_.end()) {
+    auto row = sessions_.FindParticipant(call_id, *identity);
+    if (!row || !row->has_value() || (*row)->state == CallParticipantState::Left ||
+        (*row)->state == CallParticipantState::Declined || (*row)->state == CallParticipantState::Missed) {
       continue;
     }
-    for (const std::string& gone : before->second) {
-      if (members->count(gone) > 0) {
-        continue;
-      }
-      if (gone == local_identity) {
-        log().info << "No longer in the group — leaving its call call_id=" << call_id;
-        const LiveCall* call = live_calls_.Find(call_id);
-        if (call && call->State() == LiveCallState::Ringing) {
-          (void)DeclineInvite(call_id);
-        } else {
-          (void)LeaveCall(call_id, LiveCallEndReason::LocalLeave);
-        }
-        reports_.Emit(workflow_report::Notice{"You are no longer in this group"});
-        seen.erase(call_id);
-        break;
-      }
-      auto row = sessions_.FindParticipant(call_id, gone);
-      if (!row || !row->has_value() || (*row)->state == CallParticipantState::Left ||
-          (*row)->state == CallParticipantState::Declined || (*row)->state == CallParticipantState::Missed) {
-        continue;
-      }
-      log().info << "Out of the group — out of its call call_id=" << call_id << " who=" << gone;
-      (void)ParticipantGone(call_id, gone, local_identity);
-    }
+    log().info << "Out of the group — out of its call call_id=" << call_id << " who=" << *identity;
+    (void)ParticipantGone(call_id, *identity, *local);
   }
-  group_members_seen_ = std::move(seen);
 }
 
 int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
@@ -2011,7 +1993,6 @@ int64_t CallSessionWorkflow::AloneUntilMs(const std::string& call_id) const {
 }
 
 void CallSessionWorkflow::SweepJoinsAndAloneCalls(const std::string& local_identity, const int64_t now) {
-  DropWhoLeftTheGroup(local_identity, now);
   ResendRotatedMediaKeys(local_identity, now);
   for (auto it = join_requested_until_ms_.begin(); it != join_requested_until_ms_.end();) {
     if (now < it->second) {

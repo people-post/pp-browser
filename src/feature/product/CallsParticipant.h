@@ -40,6 +40,7 @@ public:
   void OnMeshStopping(const std::function<void()>& abort_circuits) override;
   void OnMeshStopped() override;
   void OnObservedAddressChanged() override;
+  void OnGroupRosterChanged(const GroupRosterChange& change) override;
   void OnLocalNetworkChanged(const NetworkChange& change, const mesh::LocalNetworkChange* local) override;
   void OnShutdownRequested() override;
   bool WantsEphemeralListen() const override;

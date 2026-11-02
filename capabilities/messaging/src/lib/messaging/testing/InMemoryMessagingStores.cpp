@@ -11,13 +11,13 @@ InMemoryGroupRosterStore::InMemoryGroupRosterStore(InMemoryDeliveryStore& thread
   threads_.SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread);
 }
 
-void InMemoryGroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
+void InMemoryGroupRosterStore::SetOnChanged(std::function<void(const GroupRosterChange& change)> on_changed) {
   on_changed_ = std::move(on_changed);
 }
 
-void InMemoryGroupRosterStore::NotifyChanged(const std::string& group_id) const {
+void InMemoryGroupRosterStore::NotifyChanged(GroupRosterChange change) const {
   if (on_changed_) {
-    on_changed_(group_id);
+    on_changed_(change);
   }
 }
 
@@ -26,7 +26,7 @@ Roe<void> InMemoryGroupRosterStore::UpsertMetadata(const GroupMetadata& metadata
     std::lock_guard lock(mutex_);
     metadata_[metadata.group_id] = metadata;
   }
-  NotifyChanged(metadata.group_id);
+  NotifyChanged({.group_id = metadata.group_id});
   return {};
 }
 
@@ -53,19 +53,20 @@ Roe<void> InMemoryGroupRosterStore::UpsertMember(const std::string& group_id, co
     std::lock_guard lock(mutex_);
     rosters_[group_id][member.member_identity] = member;
   }
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id});
   return {};
 }
 
 Roe<void> InMemoryGroupRosterStore::RemoveMember(const std::string& group_id,
                                                  const std::string& member_identity) const {
+  bool removed = false;
   {
     std::lock_guard lock(mutex_);
     if (auto roster = rosters_.find(group_id); roster != rosters_.end()) {
-      roster->second.erase(member_identity);
+      removed = roster->second.erase(member_identity) > 0;
     }
   }
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id, .member_gone = removed ? member_identity : std::string{}});
   return {};
 }
 
@@ -126,7 +127,7 @@ Roe<void> InMemoryGroupRosterStore::UpdateInviteStatus(const std::string& invite
     invite->second.status = status;
     group_id = invite->second.group_id;
   }
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id});
   return {};
 }
 
@@ -191,7 +192,7 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> InMemoryGroupRosterStore::En
       sends_[{group_id, send.recipient, send.control_type}] = send;
     }
   }
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id, .ended = true});
   return std::optional<std::vector<PendingGroupInvite>>(std::move(voided));
 }
 

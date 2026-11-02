@@ -32,7 +32,7 @@ public:
    */
   explicit InMemoryGroupRosterStore(InMemoryDeliveryStore& threads);
 
-  void SetOnChanged(std::function<void(const std::string& group_id)> on_changed) override;
+  void SetOnChanged(std::function<void(const GroupRosterChange& change)> on_changed) override;
 
   Roe<void> UpsertMetadata(const GroupMetadata& metadata) const override;
   Roe<std::optional<GroupMetadata>> LoadMetadata(const std::string& group_id) const override;
@@ -76,10 +76,10 @@ private:
   };
 
   std::vector<PendingGroupInvite> VoidPendingInvitesLocked(const std::string& group_id) const;
-  void NotifyChanged(const std::string& group_id) const;
+  void NotifyChanged(GroupRosterChange change) const;
 
   InMemoryDeliveryStore& threads_;
-  std::function<void(const std::string& group_id)> on_changed_;
+  std::function<void(const GroupRosterChange&)> on_changed_;
   // The SQLite store's methods are const (each opens its own handle); these are its tables.
   mutable std::mutex mutex_;
   mutable std::map<std::string, GroupMetadata> metadata_;

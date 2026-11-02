@@ -218,6 +218,11 @@ public:
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
   Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
                                      const std::string& local_identity);
+  /**
+   * V053 / V058 3: `identity` is no longer in the group (`nullopt`: the group ended — nobody is), so no longer in
+   * its call: taken as gone (the key rotates without them); this device, if it is the one, leaves.
+   */
+  void OnGroupMembersGone(const std::string& group_id, const std::optional<std::string>& identity);
 
 private:
   bool IsGroupCall(const CallSession& session) const;
@@ -228,15 +233,8 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
-  /** Whether `identity` is in the group now (true when membership is not checked). */
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
-  /**
-   * V053: who is no longer in the group is no longer in its call — they are taken as gone (the
-   * key rotates without them); this device, if it is the one, leaves. Only who this device saw in
-   * the group drops: a member it has not heard of yet is not taken for a removed one.
-   */
-  void DropWhoLeftTheGroup(const std::string& local_identity, int64_t now);
   /** `identity` is no longer in the call (left, or out of its group). */
   Roe<void> ParticipantGone(const std::string& call_id, const std::string& identity,
                             const std::string& local_identity);
@@ -377,8 +375,6 @@ private:
   std::unordered_map<std::string, MediaKeyResend> media_key_resends_;
   void ResendRotatedMediaKeys(const std::string& local_identity, int64_t now);
   /** V053: the group's members at the last check, per group call this device is in or rung for. */
-  std::unordered_map<std::string, std::set<std::string>> group_members_seen_;
-  int64_t group_members_checked_ms_ = 0;
 };
 
 } // namespace pbr

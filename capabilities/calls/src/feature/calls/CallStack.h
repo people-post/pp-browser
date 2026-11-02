@@ -35,6 +35,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -131,6 +132,8 @@ public:
   void OnLocalNetwork(const MobilityAttachment& attachment, bool changed, bool moved);
   /** k6 (any thread): our observed public address moved without a local change (NAT rebind). */
   void OnObservedAddressChanged();
+  /** V058 3 (any thread): `identity` is no longer in the group (`nullopt`: the group ended); its call drops them. */
+  void OnGroupMembersGone(const std::string& group_id, std::optional<std::string> identity);
   /** k6: re-read the mobility override (config `mesh.mobility` / `--mobility=`) — any thread. */
   void ReloadMobilityOverride();
   /** k6: this endpoint's mobility class as advertised in caps (any thread). */

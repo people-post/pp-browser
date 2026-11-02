@@ -1340,14 +1340,9 @@ TEST_F(CallGroupStackComposeTest, RemovedFromTheGroupIsOutOfTheCall) {
     }
     PumpWire();
   };
-  // Each side sees the group as it is during the call once.
-  const int64_t seen_at = util::NowUnixMs();
-  DrainUntil([&]() {
-    sweep();
-    return util::NowUnixMs() - seen_at > 1200;
-  });
   for (size_t i : {kA, kB}) {
     group_of_[i] = {sides_[kA].local_identity, sides_[kB].local_identity, sides_[kD].local_identity};
+    sides_[i].stack->OnGroupMembersGone(*group_id_, sides_[kC].local_identity); // the roster store's change (V058 3)
   }
   auto state_of_c = [&](size_t i) {
     ICallSessionStore& sessions = *sides_[i].stack->Sessions();
@@ -1382,13 +1377,8 @@ TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
   group_id_ = "group-1";
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
-  const int64_t seen_at = util::NowUnixMs();
-  DrainUntil([&]() {
-    sides_[kC].ui->SweepExpiredInvites();
-    PumpWire();
-    return util::NowUnixMs() - seen_at > 1200;
-  });
   group_of_[kC] = {sides_[kA].local_identity, sides_[kB].local_identity};
+  sides_[kC].stack->OnGroupMembersGone(*group_id_, sides_[kC].local_identity);
   DrainUntil(
       [&]() {
         sides_[kC].ui->SweepExpiredInvites();
@@ -1400,20 +1390,15 @@ TEST_F(CallGroupStackComposeTest, TheOneRemovedLeavesTheCall) {
   EXPECT_EQ(sides_[kC].ui->JoinableCallInThread("thread-group-call"), std::nullopt);
 }
 
-// G016: the owner dissolves the group mid-call: every device sees a group with nobody in it and leaves the call.
+// G016: the owner dissolves the group mid-call: every device hears the group ended and leaves the call.
 TEST_F(CallGroupStackComposeTest, ADissolvedGroupEndsItsLiveCall) {
   group_id_ = "group-1";
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
-  const int64_t seen_at = util::NowUnixMs();
-  DrainUntil([&]() {
-    for (StackSide& side : sides_) {
-      side.ui->SweepExpiredInvites();
-    }
-    PumpWire();
-    return util::NowUnixMs() - seen_at > 1200;
-  });
   dissolved_ = true;
+  for (StackSide& side : sides_) {
+    side.stack->OnGroupMembersGone(*group_id_, std::nullopt);
+  }
   DrainUntil(
       [&]() {
         for (StackSide& side : sides_) {

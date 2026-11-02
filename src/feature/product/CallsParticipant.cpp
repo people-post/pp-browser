@@ -237,6 +237,14 @@ void CallsParticipant::OnObservedAddressChanged() {
   stack_.OnObservedAddressChanged();
 }
 
+void CallsParticipant::OnGroupRosterChanged(const GroupRosterChange& change) {
+  if (change.ended) {
+    stack_.OnGroupMembersGone(change.group_id, std::nullopt);
+  } else if (!change.member_gone.empty()) {
+    stack_.OnGroupMembersGone(change.group_id, change.member_gone);
+  }
+}
+
 void CallsParticipant::OnLocalNetworkChanged(const NetworkChange& change, const mesh::LocalNetworkChange* local) {
   ReactCallsToNetworkChange(change, local, stack_);
 }
