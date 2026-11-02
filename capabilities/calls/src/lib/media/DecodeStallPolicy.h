@@ -59,7 +59,7 @@ private:
 /**
  * When the engine rebuilds a stalled decoder (B125): after kStallsBeforeReset stalls in a row (no
  * frame between), at most kMaxResets times per call and at least kMinResetGapMs apart — a rebuild
- * runs under the media lock, so it must not repeat. Pure; times in ms.
+ * runs under the media lock, so it must not repeat. Pure; times in steady-clock ms.
  */
 class DecoderResetBudget {
 public:

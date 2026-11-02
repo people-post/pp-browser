@@ -1323,7 +1323,7 @@ struct CallMediaEngine::Impl {
       }
       NoteVideoRefreshNeeded(stream_id);
       if (decoded.error().message == kDecoderStalledError) {
-        ResetStalledDecoder(stream_id, *decoder);
+        ResetStalledDecoder(stream_id);
       }
       return;
     }
@@ -1332,8 +1332,11 @@ struct CallMediaEngine::Impl {
       return;
     }
     {
+      // Per frame, but OnSfuPacket already holds this (recursive) lock: no extra contention.
       std::lock_guard lock(mutex);
-      decoder_resets[stream_id].NoteFrame();
+      if (auto it = decoder_resets.find(stream_id); it != decoder_resets.end()) {
+        it->second.NoteFrame();
+      }
     }
     PublishRemoteFrame(stream_id, std::move(**decoded));
   }
@@ -1343,14 +1346,22 @@ struct CallMediaEngine::Impl {
    * seconds apart (it runs under the media lock). The next packet configures it again; it shows
    * nothing until an IDR, which the stall has already asked for.
    */
-  void ResetStalledDecoder(uint32_t stream_id, IVideoCodec& decoder) {
+  void ResetStalledDecoder(uint32_t stream_id) {
     std::lock_guard lock(mutex);
-    DecoderResetBudget& budget = decoder_resets[stream_id];
-    if (!budget.NoteStall(util::NowUnixMs())) {
+    // Looked up again under the lock: Stop / SoftMigrate may have dropped the decoder (and the
+    // budgets) since Decode returned — then there is nothing to rebuild and no budget to start.
+    auto it = remote_decoders.find(stream_id);
+    if (it == remote_decoders.end() || !it->second) {
       return;
     }
+    DecoderResetBudget& budget = decoder_resets[stream_id];
     const auto started = std::chrono::steady_clock::now();
-    decoder.ResetDecoder();
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count();
+    if (!budget.NoteStall(now_ms)) {
+      return;
+    }
+    it->second->ResetDecoder();
     const auto took_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
     EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets="
