@@ -341,7 +341,7 @@ private:
   Roe<void> CommitLocalJoin(CallSession& row, const std::string& local_identity);
   /** Another accept / a leave moved on while our CallAccept was on the wire: leave this one. */
   bool AcceptSuperseded(const std::string& call_id);
-  /** The call's media coordinator picks the path; a 1:1 call schedules the answerer's start. */
+  /** The call's `CallMedia` picks the path; a 1:1 call schedules the answerer's start. */
   void ArmMediaAfterAccept(CallSession& row, const std::string& inviter, const CallAcceptDetail& accept);
   void PostRosterAfterAccept(const std::string& call_id, const std::string& inviter, const std::string& local_identity);
   void SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after);

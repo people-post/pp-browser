@@ -64,7 +64,7 @@ struct CallDirectSeatPorts {
  */
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
-  /** The 1:1 path of `call_id` (V056): built for that call by its media coordinator, lives with it. */
+  /** The 1:1 path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
   CallMediaBridge(std::string call_id, CallMediaHost& host, ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
                   MediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
   const std::string& CallId() const { return call_id_; }
@@ -323,13 +323,13 @@ private:
   }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
-  /** `call_id`'s media coordinator; null (quietly) for a call not admitted here. */
-  CallMediaCoordinator* CallMediaFor(const std::string& call_id);
+  /** `call_id`'s `CallMedia`; null (quietly) for a call not admitted here. */
+  CallMedia* CallMediaFor(const std::string& call_id);
   /** The group path carries `call_id`'s media now (its coordinator says so). */
   bool HopAttachedFor(const std::string& call_id);
   /** Media flows on the call's path: this path's stream committed connected, or the hop carries it. */
   bool MediaConnected(const std::string& call_id);
-  /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
+  /** Stop the engine through `call_id`'s `CallMedia` (a leftover without one: directly). */
   void StopEngineFor(const std::string& call_id, const char* why);
   /** `call_id` is this path's call; else logs `what` and says no (a mis-routed call). */
   bool ForThisCall(const std::string& call_id, const char* what) const;

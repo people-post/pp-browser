@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 
 #include "common/Error.h"
 
@@ -30,8 +30,8 @@ struct CallTopologyHostPorts {
   std::function<void(std::string message)> set_media_activity;
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
-  std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
+  /** The call's `CallMedia` (engine + seat use); null for a call not admitted here. */
+  std::function<CallMedia*(const std::string& call_id)> call_media;
   /** Guest WaitForAttach — force relay inbox poll for CallSfuAttach. */
   std::function<void()> request_inbox_sync;
 

@@ -48,10 +48,10 @@ class CallMediaBridge;
 
 /**
  * The calls on this device (a2 / V014 / a4): intents from the UI (`Apply`), inbound call control, and the parts
- * that run them, which it owns — the durable session workflow, the live calls, the seat, the 1:1 path
- * (CallMediaBridge) and the group path (CallTopologyController). Media starts and stops through each call's
- * media coordinator (LiveCallMedia), not the engine. Being thinned to an intent / inbound router
- * (p2p-av-calls V055, PHASES § cm4).
+ * that run them, which it owns — the durable session workflow, the live calls, each call's media
+ * (LiveCallMedia: the call's `CallMedia`, which owns its 1:1 and group paths), the seat, the hop service
+ * and the inbound doorway. It reaches a path only through the call's `CallMedia`. Being thinned to an
+ * intent / inbound router (p2p-av-calls V055, PHASES § cm4).
  */
 class CallSessionManager : public Module, private CallMediaHost {
 public:
@@ -151,7 +151,6 @@ public:
   CallMediaBridge* DirectPathForTest(const std::string& call_id);
   /** Build calls' 1:1 paths with `make` (empty: the product's); drops the paths built so far (tests). */
   void SetDirectPathFactoryForTest(CallDirectPathFactory make);
-  /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(IInitiationBillingBook* store);
   /** Offer amount stored for inviter when inbound invite carried pricing. */
@@ -302,7 +301,7 @@ private:
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
-  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
+  CallMedia* P2pCallMedia(const std::string& call_id) override { return call_media_.Media(call_id); }
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
 
@@ -334,17 +333,9 @@ private:
   /** Each call's group path is built from the device's hop service (V056). */
   std::unique_ptr<CallHopDriver> MakeHopPath(const std::string& call_id, uint64_t serial,
                                              std::shared_ptr<std::atomic<bool>> hop_carries_media);
-  /** `call_id`'s built group path, when it is path `serial`. */
-  CallHopDriver* HopPathFor(const std::string& call_id, uint64_t serial);
-  /** `call_id`'s group path if built (never builds one). */
-  CallHopDriver* HopPathIfBuilt(const std::string& call_id);
-  /** The active call's group path if built. */
-  const CallHopDriver* ActiveHopPath() const;
-  CallHopDriver* ActiveHopPathMutable();
-  /** `call_id`'s built 1:1 path, when it is path `serial` (a newer one, or none, drops the event). */
-  CallDirectDriver* DirectPathFor(const std::string& call_id, uint64_t serial);
-  /** The active call's 1:1 path status (empty when it has none). */
-  CallDirectPathStatus ActiveDirectStatus() const;
+
+  /** What the screen reads of the active call's media paths. */
+  CallMedia::View ActivePathsView() const;
   void BindSeat();
   /** The seat released (or was taken over): stop that call's media. */
   void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
@@ -398,7 +389,7 @@ private:
   CallHopService hop_service_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
-  /** Each live call's media coordinator (after live_calls_, which it reads). */
+  /** Each live call's `CallMedia` (after live_calls_, which it reads). */
   LiveCallMedia call_media_{live_calls_};
   /** Outbound call-control I/O (after delivery_ / the stores it borrows). */
   CallControlClient control_;

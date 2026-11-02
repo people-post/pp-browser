@@ -156,7 +156,7 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
 }
 
 void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason, const CallMediaErr code) {
-  CallMediaCoordinator* call_media = media_.ActiveCallId() == call_id ? CallMediaFor(call_id) : nullptr;
+  CallMedia* call_media = media_.ActiveCallId() == call_id ? CallMediaFor(call_id) : nullptr;
   BundleFailureInput in;
   in.engine_call = media_.ActiveCallId() == call_id;
   in.engine_running = media_.IsActive();
@@ -921,7 +921,7 @@ void CallMediaBridge::PollMeshConnectHealth() {
   in.already_failed = mesh_connect_failed_;
   in.engine_running = media_.IsActive() && media_.IsSfuMode();
   if (in.engine_running && !in.already_failed) {
-    CallMediaCoordinator* call_media = CallMediaFor(call_id);
+    CallMedia* call_media = CallMediaFor(call_id);
     in.hop_in_flight = call_media && call_media->HopInFlight();
     in.connect_in_flight = connect_.InFlight();
     in.media_connected = MediaConnected(call_id);
@@ -1336,7 +1336,7 @@ void CallMediaBridge::ParkOnBootstrapSeed() {
 
 Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
-  CallMediaCoordinator* call_media = host_.P2pCallMedia(call_id);
+  CallMedia* call_media = host_.P2pCallMedia(call_id);
   if (!call_media) {
     return Error("no live call for media " + call_id);
   }
@@ -1630,7 +1630,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   StopEngineFor(call_id.empty() ? active : call_id, "stop mesh media");
 }
 
-CallMediaCoordinator* CallMediaBridge::CallMediaFor(const std::string& call_id) {
+CallMedia* CallMediaBridge::CallMediaFor(const std::string& call_id) {
   // Quietly null for a call not admitted here (a leftover engine id): nothing to ask about it.
   return !call_id.empty() && host_.P2pLiveCall(call_id) ? host_.P2pCallMedia(call_id) : nullptr;
 }
@@ -1640,12 +1640,12 @@ bool CallMediaBridge::MediaConnected(const std::string& call_id) {
 }
 
 bool CallMediaBridge::HopAttachedFor(const std::string& call_id) {
-  CallMediaCoordinator* call_media = CallMediaFor(call_id);
+  CallMedia* call_media = CallMediaFor(call_id);
   return call_media && call_media->HopAttached();
 }
 
 void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
-  if (CallMediaCoordinator* call_media = CallMediaFor(call_id)) {
+  if (CallMedia* call_media = CallMediaFor(call_id)) {
     call_media->StopEngine(why);
     return;
   }

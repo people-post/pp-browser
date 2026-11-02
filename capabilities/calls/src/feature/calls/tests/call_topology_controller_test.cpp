@@ -96,7 +96,7 @@ public:
       if (!live.Find(call_id)) {
         live.AdmitPlaced(call_id, {});
       }
-      CallMediaCoordinator* media = call_media.Media(call_id);
+      CallMedia* media = call_media.Media(call_id);
       if (media) {
         (void)media->Direct(); // the harness's calls ran 1:1 first: the hop may release that path
       }

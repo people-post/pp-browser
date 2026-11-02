@@ -73,7 +73,7 @@ public:
   Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
   /** Harness: every call the bridge drives is live here (the harness seeds store rows only). */
-  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override {
+  CallMedia* P2pCallMedia(const std::string& call_id) override {
     if (!live.Find(call_id)) {
       live.AdmitPlaced(call_id, {"account:peer"});
     }
@@ -460,7 +460,7 @@ protected:
     host_->live.NoteOutboundStarted(call_id);
   }
 
-  /** The call's 1:1 path (V056: one per call), as its media coordinator builds it; the fixture plays the owner. */
+  /** The call's 1:1 path (V056: one per call), as its `CallMedia` builds it; the fixture plays the owner. */
   void BuildBridge(const std::string& call_id) {
     bridge_ = std::make_unique<CallMediaBridge>(
         call_id, *host_, *sessions_, *keys_, *media_, *transport_,

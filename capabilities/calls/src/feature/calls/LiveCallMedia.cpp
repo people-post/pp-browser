@@ -19,28 +19,28 @@ void LiveCallMedia::BindMediaResources(MediaEngine* engine, CallMediaSeat* seat)
   resources_.seat = seat;
 }
 
-CallMediaCoordinator* LiveCallMedia::Find(const std::string& call_id) {
+CallMedia* LiveCallMedia::Find(const std::string& call_id) {
   Sweep();
   auto it = media_.find(call_id);
-  return it == media_.end() ? nullptr : it->second.coordinator.get();
+  return it == media_.end() ? nullptr : it->second.media.get();
 }
 
-const CallMediaCoordinator* LiveCallMedia::Peek(const std::string& call_id) const {
+const CallMedia* LiveCallMedia::Peek(const std::string& call_id) const {
   auto it = media_.find(call_id);
-  return it == media_.end() ? nullptr : it->second.coordinator.get();
+  return it == media_.end() ? nullptr : it->second.media.get();
 }
 
 void LiveCallMedia::DropDirectPaths() {
   for (auto& [id, entry] : media_) {
-    if (entry.coordinator) {
-      entry.coordinator->DropDirect();
+    if (entry.media) {
+      entry.media->DropDirect();
     }
   }
 }
 
 void LiveCallMedia::ForEachHopPath(const std::function<void(CallHopDriver&)>& fn) {
   for (auto& [id, entry] : media_) {
-    if (CallHopDriver* hop = entry.coordinator ? entry.coordinator->HopIfBuilt() : nullptr) {
+    if (CallHopDriver* hop = entry.media ? entry.media->HopIfBuilt() : nullptr) {
       fn(*hop);
     }
   }
@@ -48,13 +48,13 @@ void LiveCallMedia::ForEachHopPath(const std::function<void(CallHopDriver&)>& fn
 
 void LiveCallMedia::ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn) {
   for (auto& [id, entry] : media_) {
-    if (CallDirectDriver* direct = entry.coordinator ? entry.coordinator->DirectIfBuilt() : nullptr) {
+    if (CallDirectDriver* direct = entry.media ? entry.media->DirectIfBuilt() : nullptr) {
       fn(*direct);
     }
   }
 }
 
-CallMediaCoordinator* LiveCallMedia::Media(const std::string& call_id) {
+CallMedia* LiveCallMedia::Media(const std::string& call_id) {
   Sweep();
   const LiveCall* call = live_.Find(call_id);
   if (!call) {
@@ -63,10 +63,10 @@ CallMediaCoordinator* LiveCallMedia::Media(const std::string& call_id) {
   }
   Entry& entry = media_[call_id];  // Sweep dropped an earlier admission's
   entry.instance = call->Instance();
-  if (!entry.coordinator && resources_.engine) {
-    entry.coordinator = std::make_unique<CallMediaCoordinator>(call_id, resources_);
+  if (!entry.media && resources_.engine) {
+    entry.media = std::make_unique<CallMedia>(call_id, resources_);
   }
-  return entry.coordinator.get();
+  return entry.media.get();
 }
 
 void LiveCallMedia::StopMedia(const std::string& call_id) {
@@ -74,14 +74,11 @@ void LiveCallMedia::StopMedia(const std::string& call_id) {
     resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
     return;
   }
-  CallMediaCoordinator* call = Find(call_id);
-  if (CallHopDriver* hop = call ? call->HopIfBuilt() : nullptr) {
-    hop->OnMediaStopped(call_id);
-  }
-  if (CallDirectDriver* direct = call ? call->DirectIfBuilt() : nullptr) {
-    direct->StopMeshMedia(call_id);
+  if (CallMedia* call = Find(call_id)) {
+    call->OnMediaStopped();
+    call->StopMedia();
   } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsSfuMode())) {
-    resources_.engine->Stop();
+    resources_.engine->Stop(); // a leftover with no live call here
   }
 }
 

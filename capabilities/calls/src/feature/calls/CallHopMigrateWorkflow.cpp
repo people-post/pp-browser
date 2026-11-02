@@ -762,7 +762,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);
-  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+  if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
     call_media->HoldSeatForHop();
   }
   if (auto wanted = CheckHopAttachStillWanted(at); !wanted) {
@@ -909,7 +909,7 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
     log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
   }
   log().info << "AttachLocalToSfu StartSfu call_id=" << call_id << " pub_stream=" << publishers_.local_stream_id.load();
-  CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
+  CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
   if (!call_media) {
     relay_deps_->relay->Detach();
     return Error("no live call for media " + call_id);
@@ -962,7 +962,7 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
 
 void CallHopMigrateWorkflow::ReleaseDirectFor(const std::string& call_id) {
   // The call runs on the hop now: its coordinator drops the 1:1 transport (seat-checked).
-  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+  if (CallMedia* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
     call_media->ReleaseDirect();
   }
 }

@@ -2,7 +2,7 @@
 
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 
 #include <memory>
 #include <string>

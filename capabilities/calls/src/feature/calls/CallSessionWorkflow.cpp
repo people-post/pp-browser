@@ -670,8 +670,8 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   const std::string& call_id = row.call_id;
   auto joined_after = sessions_.CountJoined(call_id);
   const size_t planner_n = joined_after ? *joined_after : 0;  // V050: joined only — ringing invitees never arm the hop
-  // The call's media coordinator decides the path (the hop takes a group call; else 1:1 Direct).
-  CallMediaCoordinator* call_media = call_media_.Media(call_id);
+  // The call's `CallMedia` decides the path (the hop takes a group call; else 1:1 Direct).
+  CallMedia* call_media = call_media_.Media(call_id);
   const CallMediaPath path =
       call_media ? call_media->DecideOnLocalAccept(planner_n, row.sfu_hint) : CallMediaPath::Undecided;
   live_calls_.NotePath(call_id, path);
@@ -1566,7 +1566,7 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
   if (!implicit && host_.hop.note_accept_hop_report) {
     host_.hop.note_accept_hop_report(accept.call_id, identity, accept.hop_report);
   }
-  CallMediaCoordinator* call_media = call_media_.Media(accept.call_id);
+  CallMedia* call_media = call_media_.Media(accept.call_id);
   const CallMediaPath path =
       call_media ? call_media->DecideOnRemoteAccept(n_joined, identity, live_calls_.Path(accept.call_id))
                  : CallMediaPath::Direct;
@@ -1769,7 +1769,7 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
                                                         *local, call_media_.MediaRunningCallId(), sender_joined)) {
     return {};
   }
-  if (CallMediaCoordinator* call_media = call_media_.Media(refresh->call_id)) {
+  if (CallMedia* call_media = call_media_.Media(refresh->call_id)) {
     call_media->RequestKeyframe();
   }
   return {};

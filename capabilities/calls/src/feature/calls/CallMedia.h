@@ -26,7 +26,7 @@ using CallDirectPathFactory = std::function<std::unique_ptr<CallDirectDriver>(
 using CallHopPathFactory = std::function<std::unique_ptr<CallHopDriver>(
     const std::string& call_id, uint64_t serial, std::shared_ptr<std::atomic<bool>> hop_carries_media)>;
 
-/** What every call's coordinator drives: the one engine, the seat, and how its paths are made. */
+/** What every call's media drives: the one engine, the seat, and how its paths are made. */
 struct CallMediaResources {
   MediaEngine* engine = nullptr;
   /** Null: no seat bound (mesh stopped / harness). */
@@ -35,27 +35,24 @@ struct CallMediaResources {
   CallDirectPathFactory make_direct;
   /** Empty: no group path (harness). */
   CallHopPathFactory make_hop;
-  /** Names each path built (shared by the coordinators). */
+  /** Names each path built (shared by the calls' media). */
   uint64_t next_path_serial = 0;
 };
 
 /**
- * One call's media: this call's use of the one media engine and the media seat. Owned by
- * LiveCallMedia for one admission of the call; the path drivers (1:1 CallMediaBridge, group hop
- * workflow) start and stop the engine through it instead of touching the engine and seat
- * themselves. Calls owner only.
- *
- * Grows toward the call's media-mode owner (Direct ↔ Hop selection and switching); today it owns
- * the engine start / stops, the 1:1 start (BeginDirect) and the Direct → Hop hand-off
- * (HoldSeatForHop, ReleaseDirect).
+ * One call's media (V056, call level): this call's use of the one media engine and the seat, and
+ * the call's paths — it builds and owns its 1:1 path (CallMediaBridge) and its group path (hop
+ * topology + migrate), both naming this call. Owned by LiveCallMedia for one admission of the call.
+ * The session manager reaches a path only through this object; the paths start and stop the engine
+ * through it. Direct → Hop is a hand-off: both paths live until the hop is heard. Calls owner only.
  */
-class CallMediaCoordinator {
+class CallMedia {
 public:
-  /** `resources` outlives the coordinator (LiveCallMedia owns both); its engine must be set. */
-  CallMediaCoordinator(std::string call_id, CallMediaResources& resources);
-  ~CallMediaCoordinator();
-  CallMediaCoordinator(const CallMediaCoordinator&) = delete;
-  CallMediaCoordinator& operator=(const CallMediaCoordinator&) = delete;
+  /** `resources` outlives this object (LiveCallMedia owns both); its engine must be set. */
+  CallMedia(std::string call_id, CallMediaResources& resources);
+  ~CallMedia();
+  CallMedia(const CallMedia&) = delete;
+  CallMedia& operator=(const CallMedia&) = delete;
 
   const std::string& CallId() const { return call_id_; }
 
@@ -105,6 +102,49 @@ public:
   CallHopDriver* Hop();
   CallHopDriver* HopIfBuilt() const { return hop_.get(); }
   uint64_t HopSerial() const { return hop_serial_; }
+
+  // --- What the call's paths are told (the session routes; the device never reaches a path) ---------
+
+  /** The call's media key landed: the deferred 1:1 answerer goes on. */
+  void OnMediaKeyReady();
+  /** The call's media key epoch landed: the hop re-keys its streams. */
+  void OnMediaKeyInstalled();
+  /** The doorway accepted an inbound 1:1 bundle for the call (the 1:1 path is built if needed). */
+  CallMediaDirectCallbacks AcceptInbound(const CallMediaInboundHello& hello);
+  /** H013: the call's peer gave up reaching us. */
+  void OnPeerGaveUpReaching();
+  void OnPathPolicyChanged();
+  void OnLocalNetworkMoved();
+  /** Group: the joined count moved (the group path is built if needed). */
+  void OnJoinedCountObserved(size_t n_joined);
+  /** Inbound hop control for the call (an attach builds the group path if needed). */
+  Roe<void> OnInboundSfuAttach(const CallSfuAttachDetail& attach, const std::string& sender);
+  void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail);
+  void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
+  void ClearSfuAttachWait();
+  void OnPeerMediaRelayCapLearned(const std::string& peer_id);
+  /** The engine runs the call on the hop. */
+  bool IsOnHop() const;
+  /** The seat released the call's media: the hop lets go of the call (Detach, attach state). */
+  void OnMediaStopped();
+  /** The seat stops the call's media: the 1:1 path tears down (engine included), else the engine stops. */
+  void StopMedia();
+  /** A path's own event: run if `serial` is still that path. */
+  void HandleDirectEvent(uint64_t serial, DirectPathEvent& event);
+  void HandleHopEvent(uint64_t serial, TopologyEvent& event);
+  /** A report from 1:1 path `serial` is still this call's current path's. */
+  bool IsDirectPath(uint64_t serial) const { return serial != 0 && serial == direct_serial_; }
+
+  /** What the screen reads of the call's paths. */
+  struct View {
+    CallDirectPathStatus direct;
+    bool hop_attached = false;
+    /** A hop attach / migration / recovery is in flight. */
+    bool hop_in_flight = false;
+    CallRecovery recovery = CallRecovery::None;
+    CallHopHealth hop_health;
+  };
+  View PathsView() const;
 
   // --- What the 1:1 path needs to know about the group path ----------------------------------------
 

@@ -90,7 +90,7 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  /** The group path of `call_id` (V056): built for that call by its media coordinator, lives with it. */
+  /** The group path of `call_id` (V056): built for that call by its `CallMedia`, lives with it. */
   CallTopologyController(std::string call_id, ICallSessionStore& sessions, const IContactBook& contacts,
                          MediaEngine& media, CallHopService& hops);
   const std::string& CallId() const { return call_id_; }

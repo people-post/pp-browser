@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/media/MediaEngine.h"
-#include "feature/calls/CallMediaCoordinator.h"
+#include "feature/calls/CallMedia.h"
 #include "feature/calls/SharedPorts.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
@@ -51,8 +51,8 @@ struct CallHopMigrateHostPorts {
   std::function<void(std::string message)> set_media_activity;
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  /** The call's media coordinator: the hop path starts / stops the engine through it. */
-  std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
+  /** The call's `CallMedia`: the hop path starts / stops the engine through it. */
+  std::function<CallMedia*(const std::string& call_id)> call_media;
   std::function<void()> request_inbox_sync;
 
   bool IsBound() const { return static_cast<bool>(local_relay_identity); }
