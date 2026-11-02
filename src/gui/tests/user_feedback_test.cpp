@@ -69,5 +69,4 @@ TEST_F(AppErrorTest, BlobStatusRowsShowPlainText) {
   EXPECT_EQ(show(Err::Blob::Unavailable), "Can't send right now — please try again in a moment.");
   EXPECT_EQ(show(Err::Blob::RateLimited), "You're sending too fast — please wait a moment.");
   EXPECT_EQ(show(Err::Blob::Generic), "Upload failed — try again.");
-  EXPECT_EQ(show(Err::Blob::CopyNotDeleted), "Couldn't delete the copy on the server.");
 }

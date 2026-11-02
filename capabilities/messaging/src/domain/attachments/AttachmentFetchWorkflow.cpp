@@ -433,12 +433,18 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
             }
             return;
           }
-          if (!plaintext) {
-            report(false);
-            // Every server GET spends one of the file's few downloads (expired, used up and deleted all look
-            // the same): no automatic retry asks again; the card's Download button does (RetryDownload).
+          // Every answer of the relay spends one of the file's few downloads (expired, used up and deleted all look
+          // the same 404): after one, no automatic retry asks again; the card's Download button does
+          // (RetryDownload). A failure that never reached it (offline, no DNS, no connection) spent nothing.
+          const auto hold_back_spent_download = [&] {
             if (suppression_ && !job.fields.url.empty()) {
               (void)suppression_->Suppress(job.thread_id, job.fields.content_hash);
+            }
+          };
+          if (!plaintext) {
+            report(false);
+            if (FetchFailureReachedTheServer(plaintext.error())) {
+              hold_back_spent_download();
             }
             MarkFailed(key);
             if (on_done) {
@@ -450,6 +456,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           const ByteVector dek_copy = CopyDek();
           if (dek_copy.empty() || profile_id_.empty()) {
             report(false);
+            hold_back_spent_download(); // the bytes came, so the download was spent
             MarkFailed(key);
             if (on_done) {
               on_done();
@@ -459,6 +466,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
           if (auto saved = SaveAttachmentPlaintext(profile_dir_, profile_id_, job.fields.content_hash, job.fields.mime, bytes, job.fields.filename, dek_copy);
               !saved) {
             report(false);
+            hold_back_spent_download();
             MarkFailed(key);
             if (on_done) {
               on_done();

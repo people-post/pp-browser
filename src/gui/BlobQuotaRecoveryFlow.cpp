@@ -43,20 +43,19 @@ std::vector<std::string> BlobQuotaRecoveryFlow::Detail::IdsToDelete(const BlobQu
   return {plan.blob_to_delete.blob_id};
 }
 
-Roe<void> BlobQuotaRecoveryFlow::Detail::FreeAll(const std::function<Roe<void>(const std::string& blob_id)>& free_slot,
-                                                 const std::vector<std::string>& blob_ids) {
+Roe<void> BlobQuotaRecoveryFlow::Detail::FreeAll(const BlobQuotaFreeSlot& free_slot,
+                                                 const std::vector<std::string>& blob_ids, const BlobTier tier) {
   for (const std::string& blob_id : blob_ids) {
-    if (auto freed = free_slot(blob_id); !freed) {
+    if (auto freed = free_slot(blob_id, tier); !freed) {
       return freed;
     }
   }
   return {};
 }
 
-void BlobQuotaRecoveryFlow::RunVoidUpload(std::function<Roe<void>()> upload,
-                                            std::function<void(Roe<void>)> on_complete,
-                                            std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery,
-                                            std::function<Roe<void>(const std::string& blob_id)> free_slot) {
+void BlobQuotaRecoveryFlow::RunVoidUpload(
+    std::function<Roe<void>()> upload, std::function<void(Roe<void>)> on_complete,
+    std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_recovery, BlobQuotaFreeSlot free_slot) {
   Detail::RunUploadImpl(std::move(upload), std::move(on_complete), std::move(plan_recovery), std::move(free_slot));
 }
 

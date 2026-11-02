@@ -2,6 +2,7 @@
 
 #include "domain/attachments/ChatBlobRequest.h"
 #include "domain/attachments/RelayFileUrl.h"
+#include "lib/delivery/AttachmentContentCipher.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/Logger.h"
@@ -184,14 +185,24 @@ Roe<void> DeleteUploadedAttachmentCopy(IBlobClient& blob, const std::string& rel
   }
   const std::string blob_id = RelayFileUrl::BlobIdOf(url);
   if (blob_id.empty()) {
-    return AppError::Blob(Err::Blob::CopyNotDeleted, "Not a relay file link: " + RelayFileUrl::Redacted(url));
+    // An old CDN link: nothing this account can delete through the files relay.
+    logging::getLogger("AttachmentClient").info << "uploaded copy skipped: not a relay file link";
+    return {};
   }
   auto deleted = DeleteRelayFile(blob, relay_user_id, blob_id);
   if (!deleted && !(AppError::CategoryOf(deleted.error()) == ErrorCategory::Blob &&
                     deleted.error().code == static_cast<int32_t>(Err::Blob::Expired))) {
-    return AppError::Blob(Err::Blob::CopyNotDeleted, "blob=" + blob_id + " " + deleted.error().message);
+    Error failed = deleted.error(); // its own code (network, rate limit, ...), with the id for the log
+    failed.message = "blob=" + blob_id + " " + failed.message;
+    return failed;
   }
   return {}; // deleted, or already gone
+}
+
+uint64_t AttachmentQuotaNeededBytes(const Error& quota_error) {
+  const uint64_t asked = RelayFileQuotaNeededBytes(quota_error);
+  // No size in the error: free enough for the largest attachment this client sends.
+  return asked > 0 ? asked : kDefaultAttachmentSendMaxBytes + kAttachmentCipherOverheadBytes;
 }
 
 bool AttachmentTriesPeerDirect(const std::optional<Thread>& thread, const uint64_t plaintext_bytes) {

@@ -18,6 +18,8 @@
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
+#include "lib/messaging/AttachmentLimits.h"
+#include "lib/net/HttpClient.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/IdentityStore.h"
 
@@ -26,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -176,13 +179,59 @@ TEST(AttachmentUploadedCopyTest, DeletingTheServerCopyUsesTheLinksBlobId) {
   EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"abc-123"}));
 }
 
-TEST(AttachmentUploadedCopyTest, ALinkThatIsNotARelayFileIsAnErrorNotASilentSuccess) {
+TEST(AttachmentUploadedCopyTest, AnOldCdnLinkHasNothingToDeleteAndIsSkipped) {
   MockBlobClient blob;
-  auto deleted = DeleteUploadedAttachmentCopy(blob, "relay:u1", "https://cdn.example/pp/files/abc-123?sig=1");
-  ASSERT_FALSE(deleted);
-  EXPECT_EQ(deleted.error().code, static_cast<int32_t>(Err::Blob::CopyNotDeleted));
-  EXPECT_EQ(deleted.error().message.find("sig=1"), std::string::npos) << "the query is not repeated";
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(blob, "relay:u1", "https://cdn.example/pp/files/abc-123?sig=1"));
   EXPECT_TRUE(blob.DeletedFileIds().empty());
+  EXPECT_TRUE(blob.DeletedBlobIds().empty());
+}
+
+/** A blob client whose file delete fails with a given error. */
+class FailingDeleteBlob : public MockBlobClient {
+public:
+  explicit FailingDeleteBlob(Error error) : error_(std::move(error)) {}
+  Roe<void> FileDelete(const std::string&, const std::string&) override { return error_; }
+
+private:
+  Error error_;
+};
+
+TEST(AttachmentUploadedCopyTest, AFailedDeleteKeepsItsOwnErrorAndNamesTheBlob) {
+  FailingDeleteBlob limited(AppError::Blob(Err::Blob::RateLimited, "HTTP 429: Rate limit exceeded"));
+  auto deleted = DeleteUploadedAttachmentCopy(limited, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+  ASSERT_FALSE(deleted);
+  EXPECT_EQ(deleted.error().code, static_cast<int32_t>(Err::Blob::RateLimited));
+  EXPECT_NE(deleted.error().message.find("blob=abc-1"), std::string::npos);
+  EXPECT_EQ(deleted.error().message.find("t=tok"), std::string::npos);
+
+  FailingDeleteBlob offline(AppError::Network(Err::Network::ConnectFailed, "HTTP request failed: no route"));
+  auto down = DeleteUploadedAttachmentCopy(offline, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok");
+  ASSERT_FALSE(down);
+  EXPECT_EQ(down.error().code, static_cast<int32_t>(Err::Network::ConnectFailed));
+
+  FailingDeleteBlob gone(AppError::Blob(Err::Blob::Expired, "HTTP 404 BLOB_NOT_FOUND: Blob not found"));
+  EXPECT_TRUE(DeleteUploadedAttachmentCopy(gone, "relay:u1", "https://h/api/relay/v1/files/abc-1/download?t=tok"))
+      << "already gone is what was wanted";
+}
+
+TEST(AttachmentQuotaNeededTest, TheRefusedSizeOrElseTheLargestAttachment) {
+  EXPECT_EQ(AttachmentQuotaNeededBytes(AppError::Blob(
+                Err::Blob::QuotaExceeded, "HTTP 429 QUOTA_FILE_BYTES: File storage quota exceeded byte_length=1234")),
+            1234u);
+  EXPECT_EQ(AttachmentQuotaNeededBytes(
+                AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429 QUOTA_FILE_BYTES: File storage quota exceeded")),
+            kDefaultAttachmentSendMaxBytes + kAttachmentCipherOverheadBytes);
+}
+
+TEST(AttachmentFetchReachTest, OnlyAFailureBeforeAnyAnswerSpentNothing) {
+  EXPECT_FALSE(FetchFailureReachedTheServer(AppError::Network(Err::Network::DnsFailed, "")));
+  EXPECT_FALSE(FetchFailureReachedTheServer(AppError::Network(Err::Network::ConnectFailed, "")));
+  EXPECT_FALSE(FetchFailureReachedTheServer(AppError::Network(Err::Network::Unreachable, "")));
+  EXPECT_FALSE(FetchFailureReachedTheServer(AppError::Network(Err::Network::Timeout, "")));
+  EXPECT_FALSE(FetchFailureReachedTheServer(AppError::Network(Err::Network::TlsFailed, "")));
+  EXPECT_TRUE(FetchFailureReachedTheServer(AppError::Network(Err::Network::HttpError, "after a redirect")));
+  EXPECT_TRUE(FetchFailureReachedTheServer(AppError::Blob(Err::Blob::Expired, "status 404")));
+  EXPECT_TRUE(FetchFailureReachedTheServer(Error("Attachment size does not match what the message declared")));
 }
 
 /** Every line any logger emits while `on`. */
@@ -243,8 +292,10 @@ protected:
     logging::getRootLogger().setLevel(logging::kLevelDebug);
     capture_->Take();
     capture_->on = true;
+    HttpClient::SetPlainHttpRedirectsForTest(true); // the loopback "storage" is plain http
   }
   void TearDown() override {
+    HttpClient::SetPlainHttpRedirectsForTest(false);
     capture_->on = false;
     logging::getRootLogger().setLevel(previous_level_);
     AttachmentRelayUploadTest::TearDown();
@@ -345,6 +396,30 @@ protected:
     std::filesystem::remove_all(dir_, ec);
   }
   size_t Gets() const { return server_.Requests().size(); }
+  /** A small attachment message from alice whose link points at `origin`. */
+  ThreadMessage Message(const std::string& origin, const std::string& id, ChatAttachmentFields* fields_out) {
+    auto prepared = PrepareChatAttachmentFromBytes(std::vector<uint8_t>(2000, static_cast<uint8_t>(id.back())), "p.jpg",
+                                                   "", 1'000'000);
+    EXPECT_TRUE(prepared);
+    cipher_ = std::string(prepared->ciphertext.begin(), prepared->ciphertext.end());
+    ChatAttachmentFields fields = prepared->fields;
+    fields.url = origin + "/api/relay/v1/files/f-" + id + "/download?t=Some_Token-abcdefghijk";
+    ThreadMessage message;
+    message.id = id;
+    message.thread_id = "t1";
+    message.sender_contact_id = "alice";
+    message.content_type = ChatContentType::Attachment;
+    message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+    message.timestamp = 1;
+    EXPECT_TRUE(threads_.AppendMessage(message));
+    *fields_out = fields;
+    return message;
+  }
+  AttachmentFetchWorkflow::DownloadState State(const ChatAttachmentFields& fields) const {
+    return workflow_.StateFor("t1", fields.content_hash, fields.byte_length);
+  }
+
+  std::string cipher_;
 
   std::filesystem::path dir_;
   std::unique_ptr<AttachmentSuppressionStore> suppression_;
@@ -352,6 +427,48 @@ protected:
   AttachmentFetchWorkflow workflow_;
   ScriptedHttpServer server_;
 };
+
+// Offline (nothing answered): no download was spent, so opening the chat again may try again by itself.
+TEST_F(AttachmentDownloadSuppressionTest, AFailureBeforeAnyAnswerIsNotHeldBack) {
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
+  unsigned short port = 0;
+  {
+    ScriptedHttpServer gone; // a port where nothing listens once it is gone
+    port = gone.Port();
+  }
+  ChatAttachmentFields fields;
+  const ThreadMessage message = Message("http://127.0.0.1:" + std::to_string(port), "m-offline", &fields);
+  workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
+  ASSERT_TRUE(WaitFor([&] { return State(fields) == AttachmentFetchWorkflow::DownloadState::Failed; }));
+  EXPECT_FALSE(suppression_->IsSuppressed("t1", fields.content_hash)) << "the connection was refused: nothing spent";
+
+  // Back online: the automatic path asks again, and that answer (a 404) is what holds it back.
+  ScriptedHttpServer back(port);
+  back.SetHandler([](const ScriptedHttpServer::Request&) {
+    return ScriptedHttpServer::Reply{.status = 404, .headers = {}, .body = R"({"error":"Not found"})"};
+  });
+  workflow_.EnqueueFromMessage("t1", message);
+  ASSERT_TRUE(WaitFor([&] { return back.Requests().size() == 1u; })) << "the automatic retry went out";
+  ASSERT_TRUE(WaitFor([&] { return suppression_->IsSuppressed("t1", fields.content_hash); }));
+}
+
+// The bytes came (the download was spent) but could not be stored: held back like a 404.
+TEST_F(AttachmentDownloadSuppressionTest, AStoreFailureAfterTheDownloadIsHeldBack) {
+  ChatAttachmentFields fields;
+  const ThreadMessage message = Message(server_.Origin(), "m-store", &fields);
+  const std::string cipher = cipher_;
+  server_.SetHandler([cipher](const ScriptedHttpServer::Request&) {
+    return ScriptedHttpServer::Reply{.status = 200, .headers = {}, .body = cipher};
+  });
+  std::ofstream(dir_ / "cas") << "not a folder"; // the private content store cannot be created
+  workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
+  ASSERT_TRUE(WaitFor([&] { return State(fields) == AttachmentFetchWorkflow::DownloadState::Failed; }));
+  EXPECT_EQ(Gets(), 1u);
+  EXPECT_TRUE(suppression_->IsSuppressed("t1", fields.content_hash));
+  workflow_.EnqueueFromMessage("t1", message);
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  EXPECT_EQ(Gets(), 1u);
+}
 
 TEST_F(AttachmentDownloadSuppressionTest, AFailedDownloadIsNotFetchedAgainUntilTheRetryTap) {
   auto prepared = PrepareChatAttachmentFromBytes(std::vector<uint8_t>(2000, 0x21), "p.jpg", "", 1'000'000);

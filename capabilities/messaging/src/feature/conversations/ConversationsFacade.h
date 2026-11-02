@@ -299,7 +299,7 @@ public:
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
-  Roe<void> DeleteRelayBlobById(const std::string& blob_id);
+  Roe<void> DeleteRelayBlobById(const std::string& blob_id, BlobTier tier);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();

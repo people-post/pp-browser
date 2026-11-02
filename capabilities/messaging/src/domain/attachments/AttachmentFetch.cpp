@@ -156,6 +156,22 @@ void CleanIncomingCiphertext(const std::string& profile_data_dir) {
   std::filesystem::remove_all(IncomingCiphertextDir(profile_data_dir), ec);
 }
 
+bool FetchFailureReachedTheServer(const Error& error) {
+  if (AppError::CategoryOf(error) != ErrorCategory::Network) {
+    return true;
+  }
+  switch (static_cast<Err::Network>(error.code)) {
+    case Err::Network::Unreachable:
+    case Err::Network::DnsFailed:
+    case Err::Network::ConnectFailed:
+    case Err::Network::TlsFailed:
+    case Err::Network::Timeout:
+      return false; // HttpClient reports a failure after a followed redirect as HttpError
+    default:
+      return true;
+  }
+}
+
 bool CanFetchAttachment(const ChatAttachmentFields& fields, const AttachmentFetchContext& context) {
   if (!fields.url.empty()) {
     return true;

@@ -840,7 +840,9 @@ Roe<BlobQuotaRecoveryPlan> ConversationsFacade::PlanRelayQuotaRecovery(const Err
   return hub_.PlanRelayQuotaRecovery(quota_error);
 }
 
-Roe<void> ConversationsFacade::DeleteRelayBlobById(const std::string& blob_id) { return hub_.DeleteRelayBlobById(blob_id); }
+Roe<void> ConversationsFacade::DeleteRelayBlobById(const std::string& blob_id, const BlobTier tier) {
+  return hub_.DeleteRelayBlobById(blob_id, tier);
+}
 
 void ConversationsFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
 
