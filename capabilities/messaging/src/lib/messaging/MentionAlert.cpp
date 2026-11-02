@@ -8,7 +8,7 @@
 namespace pbr {
 
 MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string& group_id,
-                                 const std::string& local_account, GroupRosterStore& roster, const bool sender_blocked) {
+                                 const std::string& local_account, IGroupRosterStore& roster, const bool sender_blocked) {
   if (group_id.empty() || local_account.empty() || message.content_type != ChatContentType::Text ||
       message.sender_contact_id == local_account || sender_blocked) {
     return MentionVerdict::No;
@@ -41,7 +41,7 @@ MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string
 }
 
 bool MessageMentionsUs(const ThreadMessage& message, const std::string& group_id, const std::string& local_account,
-                       GroupRosterStore& roster, const bool sender_blocked) {
+                       IGroupRosterStore& roster, const bool sender_blocked) {
   return MentionVerdictFor(message, group_id, local_account, roster, sender_blocked) == MentionVerdict::Us;
 }
 

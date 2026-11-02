@@ -360,7 +360,7 @@ Roe<ThreadMessage> ConversationsFacade::SendGroupText(const std::string& thread_
 }
 
 std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
-  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
   if (!mentions) {
     return {};
   }
@@ -369,7 +369,7 @@ std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
 }
 
 std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
-  ThreadMentionsStore* mentions = hub_.ThreadMentions();
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
   if (!mentions) {
     return std::nullopt;
   }

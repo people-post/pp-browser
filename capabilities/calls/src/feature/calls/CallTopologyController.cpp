@@ -39,7 +39,7 @@
 
 namespace pbr {
 
-CallTopologyController::CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts,
+CallTopologyController::CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts,
                                                CallMediaEngine& media)
     : hop_migrate_(sessions, media),
       flight_(hop_migrate_.Flight()),
@@ -142,7 +142,7 @@ void CallTopologyController::UnwatchRelayLoss() {
   ++relay_watch_;  // a loss the old relay reported is stale
 }
 
-void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
+void CallTopologyController::SetMediaKeyStore(ICallMediaKeyStore* keys) {
   media_keys_ = keys;
   hop_migrate_.SetMediaKeyStore(keys);
 }

@@ -9,7 +9,7 @@
 #include "feature/settings/SettingsTools.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/ai/ToolRegistry.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 
 #include <gtest/gtest.h>
 

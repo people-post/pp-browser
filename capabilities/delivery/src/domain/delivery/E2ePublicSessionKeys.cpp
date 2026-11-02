@@ -6,7 +6,7 @@
 
 namespace pbr {
 
-E2ePublicSessionKeys::E2ePublicSessionKeys(IPskSessionStore& psk_store, IPeerKemKeyResolver& kem_key_resolver)
+E2ePublicSessionKeys::E2ePublicSessionKeys(IPeerSessionStore& psk_store, IPeerKemKeyResolver& kem_key_resolver)
     : psk_store_(psk_store), kem_key_resolver_(kem_key_resolver) {}
 
 Roe<E2ePublicSessionKeys::Session> E2ePublicSessionKeys::Resolve(const std::string& peer_identity) {
@@ -53,7 +53,7 @@ Roe<EnsuredE2ePublicSessionKey> E2ePublicSessionKeys::Ensure(const std::string& 
   return out;
 }
 
-Roe<ByteVector> E2ePublicSessionKeys::PeerKemPublicKey(const ChatTargetKey& key) const {
+Roe<ByteVector> E2ePublicSessionKeys::PeerKemPublicKey(const PeerSessionKey& key) const {
   auto kem = kem_key_resolver_.Resolve(key.peer_identity_kind, key.peer_identity_value);
   if (!kem) {
     return kem.error();

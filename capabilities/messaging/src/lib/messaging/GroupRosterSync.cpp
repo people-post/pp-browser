@@ -12,7 +12,7 @@ namespace pbr {
 namespace group_roster_sync {
 namespace {
 
-Roe<GroupMetadata> MetadataOf(GroupRosterStore& roster, const std::string& group_id) {
+Roe<GroupMetadata> MetadataOf(IGroupRosterStore& roster, const std::string& group_id) {
   auto metadata = roster.LoadMetadata(group_id);
   if (!metadata) {
     return metadata.error();
@@ -54,11 +54,11 @@ std::optional<GroupRosterStatement> Held(const GroupMetadata& metadata) {
   return std::move(*statement);
 }
 
-Roe<bool> KeepStatement(GroupRosterStore& roster, const GroupRosterStatement& statement) {
+Roe<bool> KeepStatement(IGroupRosterStore& roster, const GroupRosterStatement& statement) {
   if (statement.dissolved) {
     return Error("roster statement: a dissolve is not a roster");  // G016: never held as the group's roster
   }
-  auto lock = GroupRosterStore::LockForUpdate();
+  auto lock = IGroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, statement.group_id);
   if (!metadata) {
     return metadata.error();
@@ -79,8 +79,8 @@ Roe<bool> KeepStatement(GroupRosterStore& roster, const GroupRosterStatement& st
   return true;
 }
 
-Roe<void> Adopt(GroupRosterStore& roster, const GroupRosterStatement& statement) {
-  auto lock = GroupRosterStore::LockForUpdate();
+Roe<void> Adopt(IGroupRosterStore& roster, const GroupRosterStatement& statement) {
+  auto lock = IGroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, statement.group_id);
   if (!metadata) {
     return metadata.error();
@@ -120,8 +120,8 @@ Roe<void> Adopt(GroupRosterStore& roster, const GroupRosterStatement& statement)
   return roster.UpsertMetadata(*metadata);
 }
 
-Roe<bool> KeepAndCatchUp(GroupRosterStore& roster, const GroupRosterStatement& statement) {
-  auto lock = GroupRosterStore::LockForUpdate();
+Roe<bool> KeepAndCatchUp(IGroupRosterStore& roster, const GroupRosterStatement& statement) {
+  auto lock = IGroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, statement.group_id);
   if (!metadata) {
     return metadata.error();
@@ -139,9 +139,9 @@ Roe<bool> KeepAndCatchUp(GroupRosterStore& roster, const GroupRosterStatement& s
   return true;
 }
 
-Roe<Check> BeginCheck(GroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+Roe<Check> BeginCheck(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                       const int64_t now_ms) {
-  auto lock = GroupRosterStore::LockForUpdate();
+  auto lock = IGroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, group_id);
   if (!metadata) {
     return metadata.error();
@@ -179,7 +179,7 @@ Roe<Check> BeginCheck(GroupRosterStore& roster, const std::string& group_id, con
   return check;
 }
 
-Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore& roster,
+Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(IGroupRosterStore& roster,
                                                                 const group_roster_sync_codec::RosterRequest& request,
                                                                 const std::string& asker) {
   auto metadata = roster.LoadMetadata(request.group_id);
@@ -203,10 +203,10 @@ Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(GroupRosterStore
   return std::optional<group_roster_sync_codec::RosterReply>(std::move(reply));
 }
 
-Roe<ReplyOutcome> ApplyReply(GroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
+Roe<ReplyOutcome> ApplyReply(IGroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
                              const std::string& local_identity, const std::string& replier,
                              GroupDissolvedApplied* dissolved) {
-  auto lock = GroupRosterStore::LockForUpdate();
+  auto lock = IGroupRosterStore::LockForUpdate();
   auto metadata = MetadataOf(roster, reply.group_id);
   if (!metadata) {
     return metadata.error();

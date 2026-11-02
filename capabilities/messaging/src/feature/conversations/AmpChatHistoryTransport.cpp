@@ -56,13 +56,13 @@ std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
 } // namespace
 
 struct AmpChatHistoryTransport::Impl {
-  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPskSessionStore& psk_store_in,
+  Impl(IThreadStore& store_in, IdentityStore& identity_in, IPeerSessionStore& psk_store_in,
        IPeerSigningKeyResolver& signing_keys_in)
       : store(store_in), identity(identity_in), psk_store(psk_store_in), signing_keys(signing_keys_in) {}
 
   IThreadStore& store;
   IdentityStore& identity;
-  IPskSessionStore& psk_store;
+  IPeerSessionStore& psk_store;
   IPeerSigningKeyResolver& signing_keys;
   mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
@@ -130,7 +130,7 @@ struct AmpChatHistoryTransport::Impl {
 };
 
 AmpChatHistoryTransport::AmpChatHistoryTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                             IdentityStore& identity, IPskSessionStore& psk_store,
+                                             IdentityStore& identity, IPeerSessionStore& psk_store,
                                              IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker,
                                              IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity, psk_store, signing_keys)), links_(links), io_pump_(std::move(io_pump)),

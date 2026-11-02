@@ -2,14 +2,13 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupRosterSyncFamily.h"
-#include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestRosterSigner.h"
 
 #include "common/Utilities.h"
 
 #include <filesystem>
-#include <sqlite3.h>
 #include <memory>
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
@@ -29,9 +28,9 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_group_roster_sync_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+    roster_ = std::make_unique<InMemoryGroupRosterStore>(*store_);
     bob_ = "account:bob";
     carol_ = "account:carol";
     dave_ = "account:dave";
@@ -87,8 +86,8 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<GroupRosterStore> roster_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
+  std::unique_ptr<InMemoryGroupRosterStore> roster_;
   TestSigner alice_;
   std::string bob_, carol_, dave_;
 };
@@ -433,26 +432,13 @@ TEST_F(GroupRosterSyncTest, AFormerOwnersDissolveLosesToTheChainWeHold) {
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
 }
 
-// G016: ending a group is one transaction — the roster, the invites and what is still to send land together.
-TEST_F(GroupRosterSyncTest, EndingAGroupIsAllOrNothing) {
+// G016: ending a group dissolves it in one step — the roster, the invites and what is still to send land together
+// (that a failure part-way leaves it all as it was, and that the sends survive a restart, is the app storage's:
+// sqlite_group_roster_store_test).
+TEST_F(GroupRosterSyncTest, EndingAGroupDissolvesItAndKeepsWhatIsStillToSend) {
   Seed(Statement(3, {bob_, carol_}));
   PendingGroupSend send{kGroup, bob_, "group_dissolved", "{}", "The group owner dissolved this group"};
 
-  // A failure part-way (here a trigger on the pending sends) leaves the group exactly as it was.
-  sqlite3* db = nullptr;
-  ASSERT_EQ(sqlite3_open(store_->ProfileDbPath().c_str(), &db), SQLITE_OK);
-  ASSERT_EQ(sqlite3_exec(db,
-                         "CREATE TRIGGER fail_send BEFORE INSERT ON group_pending_sends BEGIN "
-                         "SELECT RAISE(ABORT, 'boom'); END;",
-                         nullptr, nullptr, nullptr),
-            SQLITE_OK);
-  EXPECT_FALSE(EndGroupInRoster(*roster_, kGroup, alice_.Id(), 4, "stmt", {send}));
-  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Active);
-  EXPECT_EQ(Members().size(), 3u);
-  EXPECT_TRUE(roster_->ListPendingSends().value().empty());
-
-  ASSERT_EQ(sqlite3_exec(db, "DROP TRIGGER fail_send;", nullptr, nullptr, nullptr), SQLITE_OK);
-  sqlite3_close(db);
   auto ended = EndGroupInRoster(*roster_, kGroup, alice_.Id(), 4, "stmt", {send});
   ASSERT_TRUE(ended);
   EXPECT_TRUE(ended->applied);
@@ -460,15 +446,14 @@ TEST_F(GroupRosterSyncTest, EndingAGroupIsAllOrNothing) {
   EXPECT_TRUE(Members().empty());
   EXPECT_EQ(Metadata().roster_statement_json, "stmt");
 
-  // What is still to send survives (a restart reads it back) until its copy is in the outbox.
-  GroupRosterStore reopened(store_->ProfileDbPath());
-  auto pending = reopened.ListPendingSends(kGroup);
+  // What is still to send stays until its copy is in the outbox.
+  auto pending = roster_->ListPendingSends(kGroup);
   ASSERT_TRUE(pending);
   ASSERT_EQ(pending->size(), 1u);
   EXPECT_EQ(pending->front().recipient, bob_);
   EXPECT_EQ(pending->front().control_type, "group_dissolved");
-  ASSERT_TRUE(reopened.DeletePendingSend(pending->front()));
-  EXPECT_TRUE(reopened.ListPendingSends().value().empty());
+  ASSERT_TRUE(roster_->DeletePendingSend(pending->front()));
+  EXPECT_TRUE(roster_->ListPendingSends().value().empty());
 
   // A second ending (a member's redelivery) changes nothing and records nothing.
   auto again = EndGroupInRoster(*roster_, kGroup, alice_.Id(), 9, "other", {send});

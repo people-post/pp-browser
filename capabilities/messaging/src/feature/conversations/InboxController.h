@@ -3,7 +3,7 @@
 #include "common/chat/SystemControl.h"
 
 #include "common/Module.h"
-#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/messaging/TranscriptAssembly.h"
 #include "common/thread/IThreadStore.h"
@@ -153,7 +153,7 @@ public:
   void SetProfileDataDir(std::string profile_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /** The unread-mention marker (G015): a thread's rows go when it is opened or deleted, a message's when it is. */
-  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
+  void SetThreadMentions(IThreadMentionsStore* mentions) { mentions_ = mentions; }
 
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
@@ -171,7 +171,7 @@ private:
   /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
   mutable std::unordered_map<std::string, bool> inline_image_ok_;
   std::string active_thread_id_;
-  ThreadMentionsStore* mentions_ = nullptr;
+  IThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;
 };
 

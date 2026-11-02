@@ -671,7 +671,7 @@ public:
           out.set("owner", *owner);
         }
         // G013: a restored group's member check (active / checking / removed) and the roster epoch.
-        if (GroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
+        if (IGroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
           if (auto metadata = rosters->LoadMetadata(request->getString("group_id").value_or(""));
               metadata && *metadata) {
             out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));

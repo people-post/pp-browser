@@ -52,7 +52,7 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 
 } // namespace
 
-CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media)
+CallHopMigrateWorkflow::CallHopMigrateWorkflow(ICallSessionStore& sessions, CallMediaEngine& media)
     : sessions_(sessions), media_(media) {
   redirectLogger("CallHopMigrateWorkflow");
 }
@@ -78,7 +78,7 @@ void CallHopMigrateWorkflow::SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps)
   relay_deps_ = deps;
 }
 
-void CallHopMigrateWorkflow::SetMediaKeyStore(CallMediaKeyStore* keys) {
+void CallHopMigrateWorkflow::SetMediaKeyStore(ICallMediaKeyStore* keys) {
   media_keys_ = keys;
 }
 

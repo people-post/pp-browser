@@ -43,7 +43,7 @@ std::string RefusedDisplay(const std::string& reason) {
 } // namespace
 
 GroupMembershipWorkflow::GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                               GroupRosterStore& roster, GroupInviteGate& invite_gate,
+                                               IGroupRosterStore& roster, GroupInviteGate& invite_gate,
                                                MeshDeliveryOrchestrator& mesh_messaging, AccountKeyResolver& account_keys)
     : store_(store), contacts_(contacts), identity_(identity), roster_(roster), invite_gate_(invite_gate),
       mesh_messaging_(mesh_messaging), account_keys_(account_keys) {
@@ -577,7 +577,7 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
 
 Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group_id,
                                                         const std::string& member_identity) {
-  auto update = GroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
+  auto update = IGroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -674,7 +674,7 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
   if (!local) {
     return local.error();
   }
-  auto update = GroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
+  auto update = IGroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -793,7 +793,7 @@ Roe<void> GroupMembershipWorkflow::DissolveGroup(const std::string& group_id) {
   }
   std::string sibling_detail;
   {
-    auto update = GroupRosterStore::LockForUpdate();  // the roster we sign and the one we end, as one
+    auto update = IGroupRosterStore::LockForUpdate();  // the roster we sign and the one we end, as one
     auto metadata = LoadMetadataOrError(group_id);
     if (!metadata) {
       return metadata.error();
@@ -1424,7 +1424,7 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
   if (!account) {
     return account.error();
   }
-  auto update = GroupRosterStore::LockForUpdate();  // the roster read and the statement kept, as one
+  auto update = IGroupRosterStore::LockForUpdate();  // the roster read and the statement kept, as one
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -1602,7 +1602,7 @@ Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const
 }
 
 Roe<void> GroupMembershipWorkflow::RestoreGroup(const AccountStateGroup& group) {
-  auto update = GroupRosterStore::LockForUpdate();
+  auto update = IGroupRosterStore::LockForUpdate();
   GroupMetadata metadata;
   metadata.group_id = group.group_id;
   metadata.owner_identity = group.owner_identity;

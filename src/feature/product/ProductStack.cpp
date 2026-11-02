@@ -6,6 +6,7 @@
 #include "foundation/platform/VideoPosterExtractor.h"
 #include "foundation/platform/os/OsDownloadMark.h"
 #include "lib/messaging/AttachmentPlatform.h"
+#include "lib/storage/ProfileStorage.h"
 
 #include "common/PbrCompat.h"
 
@@ -25,6 +26,7 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
   // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).
   const AppConfig defaults = PlatformDefaults::For(Platform::Detect());
   hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
+  hub_->SetStorage(&OpenSqliteProfileStores);
   // Order matters: up in this order (calls, then broadcast), down in reverse.
   hub_->AddParticipant(calls_);
   hub_->AddParticipant(broadcast_);

@@ -10,8 +10,8 @@
 
 namespace pbr {
 
-Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_store,
-                                                      const ChatTargetKey& target_key,
+Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPeerSessionStore& psk_store,
+                                                      const PeerSessionKey& target_key,
                                                       const uint32_t session_epoch,
                                                       const ByteVector& peer_kem_public) {
   if (target_key.channel != CryptoChannel::E2ePublic) {
@@ -47,7 +47,7 @@ Roe<E2ePublicPskEnsureResult> EnsureE2ePublicMasterPsk(IPskSessionStore& psk_sto
   if (!established) {
     return established.error();
   }
-  PskSessionRecord record;
+  PeerSessionRecord record;
   if (loaded->has_value()) {
     record = **loaded;  // keep what the row holds besides the session (retired epochs, scope …)
   }
@@ -73,7 +73,7 @@ std::string AutoKeySessionId(const std::string& key_init_b64) {
   return BytesToHex(ByteVector(hash.begin(), hash.end()));
 }
 
-Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
+Roe<void> ReconcileE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
                                     const uint32_t session_epoch, const AutoKeyRead& read,
                                     const std::optional<std::string>& envelope_key_init_b64,
                                     const int64_t envelope_timestamp_ms) {
@@ -82,7 +82,7 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
     return loaded.error();
   }
   const bool have_row = loaded->has_value();
-  PskSessionRecord record;
+  PeerSessionRecord record;
   if (have_row) {
     record = **loaded;
   } else {
@@ -152,7 +152,7 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
   return psk_store.Save(record);
 }
 
-Roe<void> RestartE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
+Roe<void> RestartE2ePublicSession(IPeerSessionStore& psk_store, const PeerSessionKey& target_key,
                                   const uint32_t old_epoch, const uint32_t new_epoch, const int64_t now_ms) {
   auto loaded = psk_store.Load(target_key);
   if (!loaded) {
@@ -161,7 +161,7 @@ Roe<void> RestartE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetK
   if (!loaded->has_value()) {
     return {};
   }
-  PskSessionRecord record = **loaded;
+  PeerSessionRecord record = **loaded;
   if (record.master_psk_b64 && old_epoch < new_epoch) {
     record.retired_psks.push_back(RetiredPskEntry{.epoch = old_epoch,
                                                   .master_psk_b64 = *record.master_psk_b64,

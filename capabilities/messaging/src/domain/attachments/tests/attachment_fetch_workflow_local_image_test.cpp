@@ -5,7 +5,7 @@
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
 #include "lib/delivery/ChatPayloadCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/Utilities.h"
 
@@ -88,7 +88,7 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAn
   const ByteVector bytes = {0xFF, 0xD8, 0xFF, 0xE0, 9, 8, 7, 6, 5};
   {
     // Windows CI: the store closes before the harness removes the directory.
-    SqliteThreadStore store(h.data_dir.string());
+    InMemoryDeliveryStore store;
     ASSERT_TRUE(store.SetDek(TestDek()));
     Thread thread;
     thread.id = "thread-ai";

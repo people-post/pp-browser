@@ -4,8 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "mesh/testing/mesh_test_harness.h"
 #include "lib/people/IdentityStore.h"
 
@@ -38,9 +37,9 @@ public:
       : data_dir(std::filesystem::temp_directory_path() /
                  ("pp_browser_amp_history_" + suffix + "_" + util::GenerateUuid())) {
     std::filesystem::remove_all(data_dir);
-    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
     identity = std::make_unique<IdentityStore>(data_dir.string(), "test");
-    psk_store = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), "test");
+    psk_store = std::make_unique<InMemoryPeerSessions>(*store);
     if (!identity->SetDek(TestDek()) || !psk_store->SetDek(TestDek()) || !store->SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
     }
@@ -66,7 +65,7 @@ public:
     }
     thread = *created;
 
-    PskSessionRecord psk;
+    PeerSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
     psk.session_epoch = 1;
     const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
@@ -105,9 +104,9 @@ public:
   }
 
   std::filesystem::path data_dir;
-  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<SqlitePskSessionStore> psk_store;
+  std::unique_ptr<InMemoryPeerSessions> psk_store;
   Thread thread;
 };
 

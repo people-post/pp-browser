@@ -111,8 +111,8 @@ struct SendKey {
 };
 
 Roe<SendKey> ResolveSendKey(const ThreadMessage& message, const Thread& thread, const SendRelayOptions& options,
-                            IPskSessionStore& psk_store, const PeerKemPublicFn& peer_kem) {
-  const ChatTargetKey target = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+                            IPeerSessionStore& psk_store, const PeerKemPublicFn& peer_kem) {
+  const PeerSessionKey target = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
   const uint32_t epoch = *message.session_epoch;
   const bool rotating = options.key_init_b64 && !options.key_init_b64->empty();
   auto stored = psk_store.ResolveMasterPskForEpoch(target, epoch);
@@ -192,7 +192,7 @@ Roe<SealedPayload> EncryptNumbered(const ThreadMessage& message, const CryptoCha
 
 Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread& thread,
                                      const std::string& sender_account_id, const SendRelayOptions& options,
-                                     IPskSessionStore& psk_store, const PeerKemPublicFn& peer_kem) {
+                                     IPeerSessionStore& psk_store, const PeerKemPublicFn& peer_kem) {
   if (!E2eRelayPayloadCodec::RequiresEncryption(thread.channel)) {
     auto plaintext = RelayWirePayload::EncodePlaintextText(message.text);
     if (!plaintext) {
@@ -212,7 +212,7 @@ Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread&
 }
 
 Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& sender_account_id,
-                           const SendRelayOptions& options, IPskSessionStore& psk_store, const ChatTargetKey& pair,
+                           const SendRelayOptions& options, IPeerSessionStore& psk_store, const PeerSessionKey& pair,
                            const ByteVector& peer_device_kem) {
   if (pair.peer_device.empty() || pair.channel != CryptoChannel::E2ePublic) {
     return Error("A pair copy is for one device, on a public chat");

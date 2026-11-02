@@ -25,7 +25,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
                                              const std::string& local_relay_user_id,
                                              const std::string& peer_relay_user_id,
                                              const std::string& local_account_id,
-                                             const std::string& local_device, IPskSessionStore& psk_store,
+                                             const std::string& local_device, IPeerSessionStore& psk_store,
                                              const ChatHistoryResponder::SignBytesFn& sign_bytes) {
   if (!message.sender_seq || !message.session_epoch) {
     return Error("History row missing seq fields");
@@ -38,7 +38,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
 
   std::optional<std::string> payload_b64;
   if (E2eRelayPayloadCodec::RequiresEncryption(thread.channel)) {
-    const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
+    const PeerSessionKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
     auto master_psk_b64 = psk_store.ResolveMasterPskForEpoch(target_key, *message.session_epoch);
     if (!master_psk_b64 || !master_psk_b64->has_value()) {
       return Error("PSK not configured for history export");
@@ -119,7 +119,7 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
 
 } // namespace
 
-Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSessionStore& psk_store,
+Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPeerSessionStore& psk_store,
                                                      const ChatHistoryRequest& request,
                                                      const std::string& local_relay_user_id,
                                                      const std::string& local_account_id,

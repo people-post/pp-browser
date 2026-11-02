@@ -7,7 +7,7 @@
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
 #include <cstdint>
 #include <functional>
@@ -54,7 +54,7 @@ struct DirectSendGate {
 Roe<void> CheckDirectSendAllowed(const DirectSendGate& gate);
 
 /** The peer's account KEM public key (the directory's, M015). */
-using PeerKemPublicFn = std::function<Roe<ByteVector>(const ChatTargetKey&)>;
+using PeerKemPublicFn = std::function<Roe<ByteVector>(const PeerSessionKey&)>;
 
 struct SealedPayload {
   std::string payload_b64;
@@ -69,7 +69,7 @@ struct SealedPayload {
  */
 Roe<SealedPayload> SealDirectPayload(const ThreadMessage& message, const Thread& thread,
                                      const std::string& sender_account_id, const SendRelayOptions& options,
-                                     IPskSessionStore& psk_store, const PeerKemPublicFn& peer_kem);
+                                     IPeerSessionStore& psk_store, const PeerKemPublicFn& peer_kem);
 
 /** A copy of a message for one of the peer's devices (M021): numbered in that device pair, sealed under its session. */
 struct PairCopy {
@@ -83,7 +83,7 @@ struct PairCopy {
  * device is heard under it), numbered by the pair. E2E public only.
  */
 Roe<PairCopy> SealPairCopy(const ThreadMessage& message, const std::string& sender_account_id,
-                           const SendRelayOptions& options, IPskSessionStore& psk_store, const ChatTargetKey& pair,
+                           const SendRelayOptions& options, IPeerSessionStore& psk_store, const PeerSessionKey& pair,
                            const ByteVector& peer_device_kem);
 
 /** Who sends, as an envelope names us. */

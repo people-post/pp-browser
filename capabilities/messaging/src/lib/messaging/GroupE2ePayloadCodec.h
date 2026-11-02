@@ -4,7 +4,7 @@
 #include "lib/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 
 #include "common/Error.h"
 
@@ -26,7 +26,7 @@ namespace pbr {
  */
 struct GroupMemberTarget {
   std::string member_identity;
-  ChatTargetKey target_key;
+  PeerSessionKey target_key;
   uint32_t session_epoch = 1;
   uint64_t sender_seq = 0;
 };
@@ -49,13 +49,13 @@ struct GroupEncryptResult {
 class GroupE2ePayloadCodec {
 public:
   /** The pair's session key with `member_identity` — with one of its devices, or its account (M021). */
-  static ChatTargetKey PairTargetKey(const std::string& member_identity, const std::string& member_device = {});
+  static PeerSessionKey PairTargetKey(const std::string& member_identity, const std::string& member_device = {});
   static Roe<GroupEncryptResult> EncryptForMembers(const std::string& text, const std::string& group_id,
                                                    const std::string& sender_contact_id,
                                                    const std::string& message_id, int64_t timestamp,
                                                    const std::vector<GroupMemberTarget>& members,
-                                                   IPskSessionStore& psk_store,
-                                                   const std::function<Roe<ByteVector>(const ChatTargetKey&)>&
+                                                   IPeerSessionStore& psk_store,
+                                                   const std::function<Roe<ByteVector>(const PeerSessionKey&)>&
                                                        resolve_peer_kem_public,
                                                    const std::optional<std::vector<uint8_t>>& chat_payload_plaintext =
                                                        std::nullopt);
@@ -66,7 +66,7 @@ public:
    */
   static Roe<ThreadMessage> DecryptForLocalMember(const RelayEnvelope& envelope,
                                                   const std::string& local_contact_id,
-                                                  const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                                  const PeerSessionKey& target_key, IPeerSessionStore& psk_store,
                                                   const std::optional<ByteVector>& local_kem_private_key,
                                                   AutoKeyRead* read = nullptr);
   static bool IsGroupEnvelope(const RelayEnvelope& envelope);

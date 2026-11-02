@@ -4,12 +4,11 @@
 #include "foundation/error/AppError.h"
 
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/RelayReceivePipeline.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/chat/RelayStreamKey.h"
@@ -42,10 +41,10 @@ struct Device {
     root = std::filesystem::temp_directory_path() / ("pp_outbound_" + tag + "_" + util::GenerateUuid());
     std::filesystem::create_directories(root);
     keys = test::TestAccount::Make();
-    store = std::make_unique<SqliteThreadStore>(root.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
     EXPECT_TRUE(store->SetDek(TestDek(seed)) && store->ListThreads());
-    roster = std::make_unique<GroupRosterStore>(store->ProfileDbPath());
-    psk = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), tag);
+    roster = std::make_unique<InMemoryGroupRosterStore>(*store);
+    psk = std::make_unique<InMemoryPeerSessions>(*store);
     EXPECT_TRUE(psk->SetDek(TestDek(seed)));
     pipeline = std::make_unique<RelayReceivePipeline>(
         *store,
@@ -84,7 +83,7 @@ struct Device {
       return appended.error();
     }
     auto sealed = SealDirectPayload(*appended, thread, keys.account_id, options, *psk,
-                                    [&peer](const ChatTargetKey&) -> Roe<ByteVector> { return peer.keys.kem_public; });
+                                    [&peer](const PeerSessionKey&) -> Roe<ByteVector> { return peer.keys.kem_public; });
     if (!sealed) {
       return sealed.error();
     }
@@ -101,9 +100,9 @@ struct Device {
   test::TestAccount keys;
   /** The peers' cards this device keeps. */
   std::map<std::string, AccountCard> cards;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<GroupRosterStore> roster;
-  std::unique_ptr<SqlitePskSessionStore> psk;
+  std::unique_ptr<InMemoryDeliveryStore> store;
+  std::unique_ptr<InMemoryGroupRosterStore> roster;
+  std::unique_ptr<InMemoryPeerSessions> psk;
   std::unique_ptr<RelayReceivePipeline> pipeline;
 };
 

@@ -5,7 +5,7 @@
 #include "feature/conversations/GroupMentions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "lib/messaging/GroupTypes.h"
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/people/ContactTypes.h"
 
 #include <cstdint>

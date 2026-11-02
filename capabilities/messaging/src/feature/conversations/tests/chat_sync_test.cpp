@@ -6,7 +6,7 @@
 #include "lib/people/PeerSigningKeyStore.h"
 #include "common/chat/RelayStreamKey.h"
 #include "lib/delivery/RelayWirePayload.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/SyncStateCodec.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
@@ -16,11 +16,10 @@
 #include "domain/peers/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/PeerDisplaySources.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/delivery/LocalKeysFromIdentity.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
 #include "common/MeshAlias.h"
 
 #include <filesystem>
@@ -44,11 +43,11 @@ class SyncTestHarness {
 public:
   explicit SyncTestHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_sync_" + suffix)),
-        store(data_dir.string()),
+        store(),
         identity(data_dir.string(), "test"),
-        psk_store(store.ProfileDbPath(), "test"),
+        psk_store(store),
         peer(test::TestAccount::Make()),
-        roster_store(store.ProfileDbPath()),
+        roster_store(store),
         contacts(data_dir.string()),
         shadows(directory),
         labels(contacts, PeerDisplaySourcesFrom(shadows)),
@@ -101,7 +100,7 @@ public:
     local_relay_id = identity.Get()->relay_user_id;
     local_account_id = identity.Get()->account_id;
 
-    PskSessionRecord psk;
+    PeerSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
     psk.session_epoch = 1;
     const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
@@ -177,14 +176,14 @@ public:
   }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
+  InMemoryDeliveryStore store;
   IdentityStore identity;
-  SqlitePskSessionStore psk_store;
+  InMemoryPeerSessions psk_store;
   MockRelayClient relay;
   MockChatHistoryPeerClient peer_history;
   /** The peer: its device signs what it sends. */
   test::TestAccount peer;
-  GroupRosterStore roster_store;
+  InMemoryGroupRosterStore roster_store;
   ContactsStore contacts;
   MockDirectoryClient directory;
   DirectoryShadowCache shadows;

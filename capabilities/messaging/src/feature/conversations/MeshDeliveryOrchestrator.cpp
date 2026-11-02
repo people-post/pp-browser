@@ -6,6 +6,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 #include "domain/delivery/AmpDirectChatTransport.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
+
 #include "common/Localized.h"
 
 #include "common/Diag.h"
@@ -31,10 +32,9 @@
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/delivery/ControlLaneEnvelope.h"
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/SqliteThreadSchema.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -94,8 +94,8 @@ DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
 
 MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                          IRelayClient* relay, InboxController& inbox, AccountKeyResolver& account_keys,
-                                         IPskSessionStore& psk_store,
-                                         GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
+                                         IPeerSessionStore& psk_store,
+                                         IGroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
                                          std::function<void(std::function<void()>)> amp_post_io,
@@ -446,7 +446,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendDirectCopy(const Thread& thread, const
     return device_kem.error();
   }
   const SendRelayOptions options = ResendOptions(message);
-  const ChatTargetKey pair = GroupE2ePayloadCodec::PairTargetKey(asker, device.peer_id);
+  const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(asker, device.peer_id);
   auto copy = SealPairCopy(message, identity->account_id, options, psk_store_, pair, *device_kem);
   if (!copy) {
     return copy.error();
@@ -500,7 +500,7 @@ Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const 
     }
     rich_plaintext = std::move(*plaintext);
   }
-  auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
+  auto resolve_kem = [this](const PeerSessionKey& key) { return PeerKemPublicKey(key); };
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(message.text, group_id, identity->account_id, message.id,
                                                            message.timestamp, {target}, psk_store_, resolve_kem,
                                                            rich_plaintext);
@@ -627,11 +627,14 @@ void MeshDeliveryOrchestrator::SetGroupMembership(GroupMembershipWorkflow* group
 
 void MeshDeliveryOrchestrator::SetProfileDataDir(std::string profile_data_dir) {
   profile_data_dir_ = std::move(profile_data_dir);
-  control_lane_seen_ = std::make_unique<ControlLaneSeenStore>(SqliteThreadProfileDbFile(profile_data_dir_));
-  if (receive_pipeline_) {
-    receive_pipeline_->SetControlLaneSeen(control_lane_seen_.get());
-  }
   transports_.SetProfileDataDir(profile_data_dir_);
+}
+
+void MeshDeliveryOrchestrator::SetControlLaneSeen(IControlLaneSeenStore* seen) {
+  control_lane_seen_ = seen;
+  if (receive_pipeline_) {
+    receive_pipeline_->SetControlLaneSeen(control_lane_seen_);
+  }
 }
 
 IChatBlobPeerClient* MeshDeliveryOrchestrator::PeerBlobClient() const {
@@ -895,7 +898,7 @@ Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSession
   return session_keys_.Ensure(peer_identity);
 }
 
-Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const ChatTargetKey& key) const {
+Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey& key) const {
   if (key.peer_device.empty()) {
     return session_keys_.PeerKemPublicKey(key);  // the account's (an account copy)
   }
@@ -1376,7 +1379,7 @@ Roe<void> MeshDeliveryOrchestrator::StartNextEpochIfRestored(const Thread& threa
   return StartNextPairEpochIfRestored(E2eRelayPayloadCodec::ChatTargetFromThread(thread));
 }
 
-Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const ChatTargetKey& key) {
+Roe<void> MeshDeliveryOrchestrator::StartNextPairEpochIfRestored(const PeerSessionKey& key) {
   auto loaded = psk_store_.Load(key);
   if (!loaded) {
     return loaded.error();
@@ -1510,7 +1513,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     bool any = false;
     std::vector<RelayCopy> relay_copies;
     for (const AccountCardDevice& device : devices) {
-      const ChatTargetKey pair = GroupE2ePayloadCodec::PairTargetKey(amp_peer_key, device.peer_id);
+      const PeerSessionKey pair = GroupE2ePayloadCodec::PairTargetKey(amp_peer_key, device.peer_id);
       if (auto restarted = StartNextPairEpochIfRestored(pair); !restarted) {
         log().warning << "device pair restart failed peer=" << amp_peer_key << ": " << restarted.error().message;
       }
@@ -1567,7 +1570,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     }
   } else {
     auto sealed = SealDirectPayload(wire, **thread, identity->account_id, options, psk_store_,
-                                    [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); });
+                                    [this](const PeerSessionKey& key) { return PeerKemPublicKey(key); });
     if (!sealed) {
       return FailOutbound(store_, *appended, sealed.error());
     }
@@ -1740,7 +1743,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     }
   }
 
-  auto resolve_kem = [this](const ChatTargetKey& key) { return PeerKemPublicKey(key); };
+  auto resolve_kem = [this](const PeerSessionKey& key) { return PeerKemPublicKey(key); };
 
   std::optional<std::vector<uint8_t>> rich_plaintext;
   // Rich content, or a text with marked ranges (mentions, G015): the whole ChatPayload, not the bare text.

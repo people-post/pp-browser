@@ -1,5 +1,6 @@
 #include "feature/product/CallsParticipant.h"
 
+#include "lib/storage/ProfileStorage.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
@@ -21,7 +22,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.store = &hub.Store();
   deps.contacts = &hub.Contacts();
   deps.identity = &hub.Identity();
-  deps.psk = hub.PskSessions();
+  deps.psk = hub.PeerSessions();
   if (hub.MeshMessagingOrNull()) {
     deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
                                         const std::optional<std::string>& key_init_b64, const bool urgent) -> Roe<void> {
@@ -77,7 +78,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
     };
     deps.delivery.group_members = [&hub](const std::string& group_id) -> std::optional<std::set<std::string>> {
       // The roster store, not Groups(): the membership workflow goes with the session; the calls may outlive it.
-      GroupRosterStore* rosters = hub.GroupRosterOrNull();
+      IGroupRosterStore* rosters = hub.GroupRosterOrNull();
       if (rosters == nullptr) {
         return std::nullopt;
       }
@@ -186,14 +187,15 @@ Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std
 }
 
 Roe<void> CallsParticipant::OnStoresOpened(ConversationsHub& hub) {
-  return stack_.InitializeStores(hub.ProfileDbPath(), hub.ProfileId());
+  auto stores = OpenSqliteCallStores(hub.ProfileDbPath(), hub.ProfileId());
+  if (!stores) {
+    return stores.error();
+  }
+  return stack_.InitializeStores(std::move(*stores));
 }
 
 std::vector<IDekConsumer*> CallsParticipant::DekConsumers() {
-  if (auto* keys = stack_.MediaKeys()) {
-    return {keys};
-  }
-  return {};
+  return stack_.AtRestStores();
 }
 
 void CallsParticipant::OnMessagingBuilt(ConversationsHub& hub) {

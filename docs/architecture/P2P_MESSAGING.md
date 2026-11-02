@@ -117,7 +117,7 @@ Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenv
 
 **AEAD plaintext** is binary **ChatPayload** (D087/D090) — not JSON `body.content`. See [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md).
 
-Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
+Inbound routing: `PeerSessionKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
 
 **Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
 
@@ -252,7 +252,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/product/MessagingTools.*` | Agent tool definitions (messaging meets AI in the product composition) |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
-| `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
+| `src/base/messaging/DirectChatTarget.*` | Contact → `PeerSessionKey` identity (relay preferred, peer fallback) |
 
 ## System-control families
 
@@ -301,7 +301,7 @@ ordered chat stream:
 - **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
   that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
   through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
-  skew between devices), **first seen** (`ControlLaneSeenStore`, `control_lane_seen` in profile.db,
+  skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen` in profile.db,
   per sender and id, kept three hours), then the family's `apply`. Never stored, never a transcript
   row, no inbox chrome.
 

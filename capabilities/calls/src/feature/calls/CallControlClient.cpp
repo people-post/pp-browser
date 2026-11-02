@@ -4,7 +4,7 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/delivery/PairwiseFanoutLogic.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -16,8 +16,8 @@
 
 namespace pbr {
 
-CallControlClient::CallControlClient(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                                     IPskSessionStore& psk_store, const CallDeliveryPorts& delivery)
+CallControlClient::CallControlClient(IThreadStore& store, IdentityStore& identity, ICallSessionStore& sessions,
+                                     IPeerSessionStore& psk_store, const CallDeliveryPorts& delivery)
     : store_(store), identity_(identity), sessions_(sessions), psk_store_(psk_store), delivery_(delivery) {
   redirectLogger("CallControlClient");
 }
@@ -172,7 +172,7 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
 }
 
 Roe<ByteVector> CallControlClient::ResolvePeerSessionKey(const std::string& peer_identity) const {
-  ChatTargetKey target_key;
+  PeerSessionKey target_key;
   target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target_key.peer_identity_value = peer_identity;
   target_key.channel = CryptoChannel::E2ePublic;
@@ -228,7 +228,7 @@ Roe<void> CallControlClient::SendMediaKey(const std::string& call_id, const std:
   if (!session_key) {
     return session_key.error();
   }
-  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
+  auto wrapped = ICallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
   if (!wrapped) {
     return wrapped.error();
   }

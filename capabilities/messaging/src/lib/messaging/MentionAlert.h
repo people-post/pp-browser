@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "common/thread/ThreadTypes.h"
 
 #include <cstdint>
@@ -16,7 +16,7 @@ namespace pbr {
  * removed from, nor while the group is still checking its members (G013: its roster may be stale).
  */
 bool MessageMentionsUs(const ThreadMessage& message, const std::string& group_id, const std::string& local_account,
-                       GroupRosterStore& roster, bool sender_blocked);
+                       IGroupRosterStore& roster, bool sender_blocked);
 
 enum class MentionVerdict {
   No,
@@ -29,7 +29,7 @@ enum class MentionVerdict {
 };
 /** MessageMentionsUs, telling a mention that cannot be decided yet (Held) from one that does not reach us. */
 MentionVerdict MentionVerdictFor(const ThreadMessage& message, const std::string& group_id,
-                                 const std::string& local_account, GroupRosterStore& roster, bool sender_blocked);
+                                 const std::string& local_account, IGroupRosterStore& roster, bool sender_blocked);
 /** A held mention older than this when its group's check settles is dropped: no marker, no alert. */
 inline constexpr int64_t kHeldMentionMaxAgeMs = 10 * 60 * 1000;
 

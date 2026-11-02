@@ -25,7 +25,7 @@ std::optional<GroupMembershipControlType> LaneTypeOf(const ThreadMessage& messag
   return kind;
 }
 
-Roe<void> ApplyRequest(GroupRosterStore& roster, const std::string& local_account, const std::string& detail,
+Roe<void> ApplyRequest(IGroupRosterStore& roster, const std::string& local_account, const std::string& detail,
                        const std::string& asker,
                        const std::function<void(group_roster_sync_codec::RosterRequest, std::string)>& answer) {
   auto request = group_roster_sync_codec::DecodeRequest(detail);
@@ -47,7 +47,7 @@ Roe<void> ApplyRequest(GroupRosterStore& roster, const std::string& local_accoun
 
 using DissolvedFn = std::function<void(GroupDissolvedEnd)>;
 
-Roe<void> ApplyReply(GroupRosterStore& roster, const std::string& local_account, const std::string& detail,
+Roe<void> ApplyReply(IGroupRosterStore& roster, const std::string& local_account, const std::string& detail,
                      const std::string& replier, const DissolvedFn& on_dissolved) {
   // A reply may reach a member the replier says was removed: no membership check here.
   auto reply = group_roster_sync_codec::DecodeReply(detail);
@@ -70,7 +70,7 @@ Roe<void> ApplyReply(GroupRosterStore& roster, const std::string& local_account,
 }
 
 /** The owner's other device says it dissolved a group (G016): the same dissolve, from our own account. */
-Roe<void> ApplySiblingDissolved(GroupRosterStore& roster, const std::string& local_account, const std::string& detail,
+Roe<void> ApplySiblingDissolved(IGroupRosterStore& roster, const std::string& local_account, const std::string& detail,
                                 const std::string& sender, const DissolvedFn& on_dissolved) {
   if (sender != local_account) {
     return {};  // only our own devices speak for our account
@@ -92,7 +92,7 @@ Roe<void> ApplySiblingDissolved(GroupRosterStore& roster, const std::string& loc
 } // namespace
 
 SystemControlFamily MakeGroupRosterSyncFamily(
-    GroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
+    IGroupRosterStore& roster, std::function<std::optional<std::string>()> local_account,
     std::function<void(group_roster_sync_codec::RosterRequest request, std::string asker)> answer,
     std::function<void(GroupDissolvedEnd end)> on_dissolved) {
   SystemControlFamily family;

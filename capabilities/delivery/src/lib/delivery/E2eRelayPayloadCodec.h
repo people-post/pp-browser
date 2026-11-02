@@ -1,7 +1,7 @@
 #pragma once
 
 #include "foundation/crypto/CryptoTypes.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "common/thread/ThreadTypes.h"
 
@@ -35,7 +35,7 @@ struct E2eEncryptResult {
 class E2eRelayPayloadCodec {
 public:
   static CryptoChannel ChannelFromThread(ThreadChannel channel);
-  static ChatTargetKey ChatTargetFromThread(const Thread& thread);
+  static PeerSessionKey ChatTargetFromThread(const Thread& thread);
   static bool RequiresEncryption(ThreadChannel channel);
 
   static Roe<std::string> EncryptText(const E2eEncryptParams& params, const ByteVector& master_psk);
@@ -54,7 +54,7 @@ public:
    * that proves is the caller's (ReconcileE2ePublicSession — after the signature checked out).
    */
   static Roe<ThreadMessage> DecryptEnvelope(const RelayEnvelope& envelope, const std::string& local_contact_id,
-                                            const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                            const PeerSessionKey& target_key, IPeerSessionStore& psk_store,
                                             const std::optional<ByteVector>& local_kem_private_key = std::nullopt,
                                             AutoKeyRead* read = nullptr);
 };

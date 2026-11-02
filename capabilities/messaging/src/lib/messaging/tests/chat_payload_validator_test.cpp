@@ -3,7 +3,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "lib/delivery/RelayWirePayload.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -130,7 +130,7 @@ TEST(ChatPayloadValidatorTest, TransportColumnRoundTrip) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_transport_test";
   std::filesystem::remove_all(data_dir);
-  SqliteThreadStore store(data_dir.string());
+  InMemoryDeliveryStore store;
   ASSERT_TRUE(store.SetDek(TestDek()));
 
   Thread thread;

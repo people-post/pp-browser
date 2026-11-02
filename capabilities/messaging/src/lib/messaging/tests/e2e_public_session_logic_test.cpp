@@ -4,8 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -29,8 +28,8 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_browser_e2e_public_session_logic_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-    psk_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), "test");
+    store_ = std::make_unique<InMemoryDeliveryStore>();
+    psk_ = std::make_unique<InMemoryPeerSessions>(*store_);
     ASSERT_TRUE(static_cast<bool>(store_->SetDek(TestDek())));
     ASSERT_TRUE(static_cast<bool>(psk_->SetDek(TestDek())));
     // Create profile.db (and chat_targets) before PSK OpenDb.
@@ -44,8 +43,8 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<SqlitePskSessionStore> psk_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
+  std::unique_ptr<InMemoryPeerSessions> psk_;
 };
 
 // M021: a session per device pair, apart from the account's and from the peer's other devices, numbered in
@@ -54,10 +53,10 @@ TEST_F(E2ePublicSessionLogicTest, EachPeerDeviceHasItsOwnSessionAndNumbering) {
   auto phone = HybridKem::GenerateKeyPair();
   auto laptop = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(phone && laptop);
-  const ChatTargetKey account{"account", "account:bob", CryptoChannel::E2ePublic};
-  ChatTargetKey bob_phone = account;
+  const PeerSessionKey account{"account", "account:bob", CryptoChannel::E2ePublic};
+  PeerSessionKey bob_phone = account;
   bob_phone.peer_device = "QmBobPhone";
-  ChatTargetKey bob_laptop = account;
+  PeerSessionKey bob_laptop = account;
   bob_laptop.peer_device = "QmBobLaptop";
 
   auto with_phone = EnsureE2ePublicMasterPsk(*psk_, bob_phone, 1, phone->public_key);
@@ -71,7 +70,7 @@ TEST_F(E2ePublicSessionLogicTest, EachPeerDeviceHasItsOwnSessionAndNumbering) {
   EXPECT_EQ(psk_->AllocateSenderSeq(bob_phone).value(), 2u);
   EXPECT_EQ(psk_->AllocateSenderSeq(bob_laptop).value(), 1u) << "each pair counts on its own";
   EXPECT_FALSE(psk_->AllocateSenderSeq(account)) << "the account's numbering is the thread's";
-  ChatTargetKey nobody = account;
+  PeerSessionKey nobody = account;
   nobody.peer_device = "QmUnknown";
   EXPECT_FALSE(psk_->AllocateSenderSeq(nobody)) << "no session to number in";
 
@@ -85,7 +84,7 @@ TEST_F(E2ePublicSessionLogicTest, EachPeerDeviceHasItsOwnSessionAndNumbering) {
   auto listed = psk_->List();
   ASSERT_TRUE(listed);
   EXPECT_EQ(std::count_if(listed->begin(), listed->end(),
-                          [](const PskSessionRecord& r) { return r.key.peer_identity_value == "account:bob"; }),
+                          [](const PeerSessionRecord& r) { return r.key.peer_identity_value == "account:bob"; }),
             2);
 }
 
@@ -93,7 +92,7 @@ TEST_F(E2ePublicSessionLogicTest, CreatesOnceAndAnnouncesUntilConfirmed) {
   auto bob = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(static_cast<bool>(bob));
 
-  ChatTargetKey key;
+  PeerSessionKey key;
   key.peer_identity_kind = "account";
   key.peer_identity_value = "account:bob";
   key.channel = CryptoChannel::E2ePublic;
@@ -130,9 +129,9 @@ TEST_F(E2ePublicSessionLogicTest, BothOpeningAtOnceSettleOnTheLowerId) {
   auto alice = HybridKem::GenerateKeyPair();
   auto bob = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(alice && bob);
-  ChatTargetKey to_bob{"account", "account:bob", CryptoChannel::E2ePublic};
-  ChatTargetKey to_alice{"account", "account:alice", CryptoChannel::E2ePublic};
-  SqlitePskSessionStore bob_psk(store_->ProfileDbPath(), "bob");
+  PeerSessionKey to_bob{"account", "account:bob", CryptoChannel::E2ePublic};
+  PeerSessionKey to_alice{"account", "account:alice", CryptoChannel::E2ePublic};
+  InMemoryPeerSessions bob_psk(*store_);
   ASSERT_TRUE(bob_psk.SetDek(TestDek()));
 
   auto alice_opened = EnsureE2ePublicMasterPsk(*psk_, to_bob, 1, bob->public_key);
@@ -158,7 +157,7 @@ TEST_F(E2ePublicSessionLogicTest, BothOpeningAtOnceSettleOnTheLowerId) {
 TEST_F(E2ePublicSessionLogicTest, AConfirmedSessionGivesWayToTheOneThePeerNowUses) {
   auto bob = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(bob);
-  ChatTargetKey key{"account", "account:bob", CryptoChannel::E2ePublic};
+  PeerSessionKey key{"account", "account:bob", CryptoChannel::E2ePublic};
   auto opened = EnsureE2ePublicMasterPsk(*psk_, key, 1, bob->public_key);
   ASSERT_TRUE(opened);
   ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{opened->master_psk, false}, std::nullopt, 1000));
@@ -180,7 +179,7 @@ TEST_F(E2ePublicSessionLogicTest, AConfirmedSessionGivesWayToTheOneThePeerNowUse
 TEST_F(E2ePublicSessionLogicTest, AnOlderOpenerDoesNotUndoTheSessionThePeerUses) {
   auto alice = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(alice);
-  ChatTargetKey key{"account", "account:bob", CryptoChannel::E2ePublic};
+  PeerSessionKey key{"account", "account:bob", CryptoChannel::E2ePublic};
   auto current = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   auto earlier = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   ASSERT_TRUE(current && earlier);

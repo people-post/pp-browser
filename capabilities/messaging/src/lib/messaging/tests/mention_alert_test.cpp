@@ -1,7 +1,7 @@
 // Who a group message's mentions reach (group-chat G015): checked against the local roster on arrival.
 #include "lib/messaging/MentionAlert.h"
-#include "lib/messaging/GroupRosterStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/delivery/TextSpans.h"
 
 #include "common/Utilities.h"
@@ -23,9 +23,9 @@ class MentionAlertTest : public ::testing::Test {
 protected:
   void SetUp() override {
     dir_ = std::filesystem::temp_directory_path() / ("pp_mention_alert_" + util::GenerateUuid());
-    store_ = std::make_unique<SqliteThreadStore>(dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->ListThreads());
-    roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+    roster_ = std::make_unique<InMemoryGroupRosterStore>(*store_);
     GroupMetadata metadata;
     metadata.group_id = kGroup;
     metadata.owner_identity = kOwner;
@@ -73,8 +73,8 @@ protected:
   static TextSpan Everyone() { return TextSpan{.kind = static_cast<uint8_t>(TextSpanKind::Everyone), .start = 0, .end = 9}; }
 
   std::filesystem::path dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
-  std::unique_ptr<GroupRosterStore> roster_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
+  std::unique_ptr<InMemoryGroupRosterStore> roster_;
 };
 
 TEST_F(MentionAlertTest, AMentionOfUsReachesUs) {

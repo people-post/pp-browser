@@ -1,7 +1,7 @@
 #pragma once
 
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupRosterSyncFamily.h"
 #include "lib/people/AccountStateCodec.h"
@@ -32,7 +32,7 @@ public:
   ~GroupMembershipWorkflow();
 
   GroupMembershipWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                         GroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
+                         IGroupRosterStore& roster, GroupInviteGate& invite_gate, MeshDeliveryOrchestrator& mesh_messaging,
                          AccountKeyResolver& account_keys);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
@@ -177,7 +177,7 @@ private:
   IThreadStore& store_;
   ContactsStore& contacts_;
   IdentityStore& identity_;
-  GroupRosterStore& roster_;
+  IGroupRosterStore& roster_;
   GroupInviteGate& invite_gate_;
   MeshDeliveryOrchestrator& mesh_messaging_;
   AccountKeyResolver& account_keys_;

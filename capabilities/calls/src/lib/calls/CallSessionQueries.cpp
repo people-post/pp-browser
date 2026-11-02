@@ -7,7 +7,7 @@
 namespace pbr {
 namespace call_queries {
 
-Roe<CallRosterDetail> RosterDetail(const CallSessionStore& sessions, const std::string& call_id) {
+Roe<CallRosterDetail> RosterDetail(const ICallSessionStore& sessions, const std::string& call_id) {
   auto session = sessions.LoadSession(call_id);
   if (!session || !session->has_value()) {
     return Error("Call session not found");
@@ -31,7 +31,7 @@ Roe<CallRosterDetail> RosterDetail(const CallSessionStore& sessions, const std::
   return detail;
 }
 
-Roe<std::optional<CallParticipant>> FirstRemoteParticipant(const CallSessionStore& sessions,
+Roe<std::optional<CallParticipant>> FirstRemoteParticipant(const ICallSessionStore& sessions,
                                                            const std::string& call_id,
                                                            const std::string& local_identity) {
   auto participants = sessions.ListParticipants(call_id);
@@ -46,7 +46,7 @@ Roe<std::optional<CallParticipant>> FirstRemoteParticipant(const CallSessionStor
   return std::optional<CallParticipant>{};
 }
 
-Roe<std::vector<CallParticipant>> JoinedParticipants(const CallSessionStore& sessions, const std::string& call_id) {
+Roe<std::vector<CallParticipant>> JoinedParticipants(const ICallSessionStore& sessions, const std::string& call_id) {
   auto participants = sessions.ListParticipants(call_id);
   if (!participants) {
     return participants.error();
@@ -61,7 +61,7 @@ Roe<std::vector<CallParticipant>> JoinedParticipants(const CallSessionStore& ses
   return joined;
 }
 
-std::vector<std::string> JoinedRemoteIdentities(const CallSessionStore& sessions, const std::string& call_id,
+std::vector<std::string> JoinedRemoteIdentities(const ICallSessionStore& sessions, const std::string& call_id,
                                                 const std::string& local_identity) {
   std::vector<std::string> out;
   if (auto joined = JoinedParticipants(sessions, call_id)) {
@@ -74,7 +74,7 @@ std::vector<std::string> JoinedRemoteIdentities(const CallSessionStore& sessions
   return out;
 }
 
-Roe<bool> AwaitingExplicitAnswer(const CallSessionStore& sessions, const std::string& call_id) {
+Roe<bool> AwaitingExplicitAnswer(const ICallSessionStore& sessions, const std::string& call_id) {
   auto participants = sessions.ListParticipants(call_id);
   if (!participants) {
     return participants.error();
@@ -88,7 +88,7 @@ Roe<bool> AwaitingExplicitAnswer(const CallSessionStore& sessions, const std::st
   return false;
 }
 
-bool AwaitsOwnInviteeAccept(const CallSessionStore& sessions, const std::string& call_id,
+bool AwaitsOwnInviteeAccept(const ICallSessionStore& sessions, const std::string& call_id,
                             const std::string& local_identity) {
   for (const std::string& identity : JoinedRemoteIdentities(sessions, call_id, local_identity)) {
     auto invite = sessions.LoadPendingInvite(call_id, identity);
@@ -101,7 +101,7 @@ bool AwaitsOwnInviteeAccept(const CallSessionStore& sessions, const std::string&
   return false;
 }
 
-bool IsStickyInitiator(const CallSessionStore& sessions, const std::string& call_id,
+bool IsStickyInitiator(const ICallSessionStore& sessions, const std::string& call_id,
                        const std::string& local_identity) {
   auto joined = JoinedParticipants(sessions, call_id);
   if (!joined) {
@@ -118,7 +118,7 @@ bool IsStickyInitiator(const CallSessionStore& sessions, const std::string& call
   return SelectCallInitiator(peers) == local_identity;
 }
 
-bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id,
+bool SenderIsInCall(const ICallSessionStore& sessions, const std::string& call_id,
                     const std::string& sender_identity) {
   if (call_id.empty() || sender_identity.empty()) {
     return false;
@@ -144,7 +144,7 @@ bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id
   return false;
 }
 
-bool SenderMayJoin(const CallSessionStore& sessions, const std::string& call_id, const std::string& sender_identity) {
+bool SenderMayJoin(const ICallSessionStore& sessions, const std::string& call_id, const std::string& sender_identity) {
   if (call_id.empty() || sender_identity.empty()) {
     return false;
   }
@@ -159,7 +159,7 @@ bool SenderMayJoin(const CallSessionStore& sessions, const std::string& call_id,
   return participant && participant->has_value();
 }
 
-std::optional<CallSession> JoinableGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+std::optional<CallSession> JoinableGroupCall(const ICallSessionStore& sessions, const std::string& group_id,
                                              const std::string& local_identity, const int64_t now_ms) {
   if (group_id.empty() || local_identity.empty()) {
     return std::nullopt;
@@ -205,7 +205,7 @@ bool GroupCall(const CallSession& session) {
 
 } // namespace
 
-std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions, const std::string& peer,
+std::optional<CallSession> OurUnansweredCallTo(const ICallSessionStore& sessions, const std::string& peer,
                                                const std::string& local_identity, const std::string& except_call_id) {
   auto active = sessions.ListActiveSessions();
   if (!active) {
@@ -235,7 +235,7 @@ std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions,
   return std::nullopt;
 }
 
-std::optional<CallSession> OurUnansweredGroupCall(const CallSessionStore& sessions, const std::string& group_id,
+std::optional<CallSession> OurUnansweredGroupCall(const ICallSessionStore& sessions, const std::string& group_id,
                                                   const std::string& local_identity, const std::string& except_call_id) {
   auto active = sessions.ListActiveSessions();
   if (!active || group_id.empty()) {
@@ -254,7 +254,7 @@ std::optional<CallSession> OurUnansweredGroupCall(const CallSessionStore& sessio
   return std::nullopt;
 }
 
-bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::string& call_id, const std::string& peer,
+bool PeerStillToAnswerOurCall(const ICallSessionStore& sessions, const std::string& call_id, const std::string& peer,
                               const std::string& local_identity) {
   auto session = sessions.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
@@ -278,7 +278,7 @@ bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::strin
 
 } // namespace call_queries
 
-Roe<void> ApplyCallRosterToStore(const CallSessionStore& sessions, const CallRosterDetail& roster,
+Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRosterDetail& roster,
                                  const std::string& local_identity) {
   if (auto session = sessions.LoadSession(roster.call_id);
       session && session->has_value() && roster.media_epoch > (*session)->media_epoch) {

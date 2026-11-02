@@ -48,8 +48,8 @@ logging::Logger& DirectReceiveLog() {
 
 } // namespace
 
-CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
-                                             CallMediaKeyStore& media_keys, CallMediaEngine& media,
+CallMediaBridge::CallMediaBridge(CallMediaHost& host, ICallSessionStore& sessions,
+                                             ICallMediaKeyStore& media_keys, CallMediaEngine& media,
                                              ICallMediaTransport& direct, mesh::PeerReachPorts reach)
     : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct),
       reach_(std::move(reach)), connect_(direct, reach_),

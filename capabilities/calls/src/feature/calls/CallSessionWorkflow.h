@@ -7,7 +7,7 @@
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "lib/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
@@ -137,7 +137,7 @@ public:
     bool IsBound() const { return wire.IsBound(); }
   };
 
-  CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
+  CallSessionWorkflow(IThreadStore& store, ICallSessionStore& sessions,
                       CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls,
                       LiveCallMedia& call_media);
   ~CallSessionWorkflow() override;
@@ -349,7 +349,7 @@ private:
   void SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after);
   void SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after);
   IThreadStore& store_;
-  CallSessionStore& sessions_;
+  ICallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
   CallMediaKeyExchange& key_exchange_;
   /** P001 initiation pricing on invite / accept (owned by CallSessionManager). */

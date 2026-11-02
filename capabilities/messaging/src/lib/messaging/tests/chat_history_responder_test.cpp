@@ -4,9 +4,8 @@
 #include "lib/messaging/ChatHistoryResponder.h"
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "common/Utilities.h"
@@ -30,7 +29,7 @@ class ResponderHarness {
 public:
   explicit ResponderHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix + "_" + util::GenerateUuid())),
-        store(data_dir.string()), local(test::TestAccount::Make()), psk_store(store.ProfileDbPath(), "test"),
+        store(), local(test::TestAccount::Make()), psk_store(store),
         requester(test::TestAccount::Make()), keys_resolver(keys) {
     std::filesystem::remove_all(data_dir);
     if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
@@ -53,7 +52,7 @@ public:
     }
     thread = *created;
 
-    PskSessionRecord psk;
+    PeerSessionRecord psk;
     psk.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
     psk.session_epoch = 1;
     const auto master = HexToBytes("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
@@ -113,9 +112,9 @@ public:
   }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
+  InMemoryDeliveryStore store;
   test::TestAccount local;
-  SqlitePskSessionStore psk_store;
+  InMemoryPeerSessions psk_store;
   test::TestAccount requester;
   PeerSigningKeyStore keys;
   PeerSigningKeyResolver keys_resolver;

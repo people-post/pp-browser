@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 
@@ -29,7 +29,7 @@ public:
    *        signed by its `requester_account_id` for this peer (PeerRequestAuth); that account's
    *        thread is served.
    */
-  static Roe<ChatHistoryResponse> Serve(IThreadStore& store, IPskSessionStore& psk_store,
+  static Roe<ChatHistoryResponse> Serve(IThreadStore& store, IPeerSessionStore& psk_store,
                                         const ChatHistoryRequest& request, const std::string& local_relay_user_id,
                                         const std::string& local_account_id, const std::string& local_device,
                                         const SignBytesFn& sign_bytes,

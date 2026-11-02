@@ -1,6 +1,6 @@
 // How a feature's control messages draw in a transcript: lines from the family, lane signaling never.
 #include "common/chat/SystemControl.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"

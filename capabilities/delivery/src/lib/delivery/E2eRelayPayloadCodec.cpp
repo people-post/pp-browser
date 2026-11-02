@@ -18,8 +18,8 @@ CryptoChannel E2eRelayPayloadCodec::ChannelFromThread(const ThreadChannel channe
   return channel == ThreadChannel::E2ePublic ? CryptoChannel::E2ePublic : CryptoChannel::E2e;
 }
 
-ChatTargetKey E2eRelayPayloadCodec::ChatTargetFromThread(const Thread& thread) {
-  ChatTargetKey key;
+PeerSessionKey E2eRelayPayloadCodec::ChatTargetFromThread(const Thread& thread) {
+  PeerSessionKey key;
   key.peer_identity_kind = thread.peer_identity_kind;
   key.peer_identity_value = thread.peer_identity_value;
   key.channel = ChannelFromThread(thread.channel);
@@ -178,7 +178,7 @@ Roe<ThreadMessage> DecryptUnder(const RelayEnvelope& envelope, const AadFields& 
 
 Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& envelope,
                                                          const std::string& local_contact_id,
-                                                         const ChatTargetKey& target_key, IPskSessionStore& psk_store,
+                                                         const PeerSessionKey& target_key, IPeerSessionStore& psk_store,
                                                          const std::optional<ByteVector>& local_kem_private_key,
                                                          AutoKeyRead* read) {
   if (envelope.body.e2e.payload_b64.empty()) {

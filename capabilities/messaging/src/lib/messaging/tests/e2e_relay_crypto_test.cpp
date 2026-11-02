@@ -4,12 +4,11 @@
 #include "lib/delivery/E2eRelayPayloadCodec.h"
 #include "lib/delivery/EnvelopeSigner.h"
 #include "lib/people/PeerSigningKeyStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "foundation/crypto/MlDsa.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/TestAccount.h"
-#include "lib/delivery/SqlitePskSessionStore.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -32,8 +31,8 @@ ByteVector TestDek() {
   return dek;
 }
 
-void InstallTestPsk(SqlitePskSessionStore& psk_store, const Thread& thread) {
-  PskSessionRecord record;
+void InstallTestPsk(InMemoryPeerSessions& psk_store, const Thread& thread) {
+  PeerSessionRecord record;
   record.key = E2eRelayPayloadCodec::ChatTargetFromThread(thread);
   record.session_epoch = 1;
   record.master_psk_b64 = Base64Encode(TestMasterPsk());
@@ -45,8 +44,8 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_e2e_relay_crypto";
   std::filesystem::remove_all(data_dir);
-  SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  InMemoryDeliveryStore store;
+  InMemoryPeerSessions psk_store(store);
   ASSERT_TRUE(static_cast<bool>(store.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
 
@@ -90,7 +89,7 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(body_hash_again));
   EXPECT_EQ(*body_hash, *body_hash_again);
 
-  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
+  const PeerSessionKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
   auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, "account:local", target_key, psk_store);
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(decrypted->text, "Hello");
@@ -100,8 +99,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   const std::filesystem::path data_dir =
       std::filesystem::temp_directory_path() / "pp_browser_e2e_pipeline_crypto";
   std::filesystem::remove_all(data_dir);
-  SqliteThreadStore store(data_dir.string());
-  SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
+  InMemoryDeliveryStore store;
+  InMemoryPeerSessions psk_store(store);
   ASSERT_TRUE(static_cast<bool>(store.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
   const test::TestAccount local = test::TestAccount::Make();
@@ -118,7 +117,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   ASSERT_TRUE(static_cast<bool>(thread));
   InstallTestPsk(psk_store, *thread);
 
-  GroupRosterStore roster_store(store.ProfileDbPath());
+  InMemoryGroupRosterStore roster_store(store);
   RelayReceivePipeline pipeline(
       store, [&peer_card](const std::string& account) -> std::optional<AccountCard> {
         return account == "account:peer" ? std::optional<AccountCard>(peer_card) : std::nullopt;

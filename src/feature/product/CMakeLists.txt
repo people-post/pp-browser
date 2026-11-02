@@ -18,6 +18,7 @@ pp_browser_add_feature_library(pp_feature_product
     pp_feature_broadcast
     pp_lib_ai
     pp_domain_node
+    pp_lib_storage
     pp_foundation_platform)
 
 if(PP_BROWSER_BUILD_TESTS)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/GroupTypes.h"
 
 #include "common/Error.h"
@@ -20,7 +20,7 @@ public:
   enum class InviterStanding { Unknown, Contact, Blocked };
   using StandingFn = std::function<InviterStanding(const std::string& identity)>;
 
-  GroupInviteGate(StandingFn standing, GroupRosterStore& roster);
+  GroupInviteGate(StandingFn standing, IGroupRosterStore& roster);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
   GroupInvitePolicy inbound_policy() const { return inbound_policy_; }
@@ -31,7 +31,7 @@ public:
 
 private:
   StandingFn standing_;
-  GroupRosterStore& roster_;
+  IGroupRosterStore& roster_;
   GroupInvitePolicy inbound_policy_ = GroupInvitePolicy::ContactsOnly;
 };
 

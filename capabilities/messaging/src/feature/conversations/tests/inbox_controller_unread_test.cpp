@@ -1,5 +1,6 @@
 #include "lib/messaging/GroupMembershipCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/messaging/testing/InMemoryMessagingStores.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "domain/peers/DirectoryShadowCache.h"
@@ -29,7 +30,8 @@ struct InboxTestEnv {
   explicit InboxTestEnv(const std::string& suffix) {
     data_dir = std::filesystem::temp_directory_path() / ("pp_browser_inbox_" + suffix);
     std::filesystem::remove_all(data_dir);
-    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    store = std::make_unique<InMemoryDeliveryStore>();
+    store->SetHiddenInDirectThread(&GroupMembershipCodec::IsHiddenInDirectThread);  // as the app's storage does
     if (!store->SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
@@ -41,7 +43,7 @@ struct InboxTestEnv {
 
   std::filesystem::path data_dir;
   MockDirectoryClient directory;
-  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<InMemoryDeliveryStore> store;
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<DirectoryShadowCache> shadows;
   std::unique_ptr<PeerDisplayResolver> labels;
@@ -144,7 +146,7 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
 TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   InboxTestEnv env("clear_drops_mentions");
   ASSERT_TRUE(env.inbox->ListThreads());
-  ThreadMentionsStore mentions(env.store->ProfileDbPath());
+  InMemoryThreadMentionsStore mentions;
   env.inbox->SetThreadMentions(&mentions);
 
   Thread group;

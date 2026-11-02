@@ -10,12 +10,12 @@
 #include "lib/pricing/PaymentPromiseStore.h"
 #include "lib/messaging/CardAsk.h"
 #include "lib/messaging/CopyAsk.h"
-#include "lib/messaging/ThreadMentionsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/messaging/SentCopy.h"
 #include "lib/delivery/DeliveryNotice.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerKemKeyStore.h"
-#include "lib/delivery/IPskSessionStore.h"
+#include "lib/delivery/IPeerSessionStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "feature/conversations/ChatSyncWorkflow.h"
@@ -31,7 +31,7 @@
 #include "lib/delivery/PublicPskLockCoordinator.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
-#include "lib/delivery/ControlLaneSeenStore.h"
+#include "lib/delivery/IControlLaneSeenStore.h"
 #include "domain/delivery/PeerRouteBook.h"
 #include "domain/delivery/ControlLane.h"
 #include "domain/delivery/DeliveryOutbox.h"
@@ -95,8 +95,8 @@ class MeshDeliveryOrchestrator : public Module {
 public:
   /** Amp single entry for chat / history / blob ([A020]); requires `amp_links`. */
   MeshDeliveryOrchestrator(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity, IRelayClient* relay,
-                      InboxController& inbox, AccountKeyResolver& account_keys, IPskSessionStore& psk_store,
-                      GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
+                      InboxController& inbox, AccountKeyResolver& account_keys, IPeerSessionStore& psk_store,
+                      IGroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
                       std::function<void(std::function<void()>)> amp_post_io = {},
@@ -143,9 +143,11 @@ public:
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
+  /** The control lane's applied ids (the hub's store; null: none kept, every copy applies). */
+  void SetControlLaneSeen(IControlLaneSeenStore* seen);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /** Where a live message that mentions us is marked (G015); null: not marked. */
-  void SetThreadMentions(ThreadMentionsStore* mentions) { mentions_ = mentions; }
+  void SetThreadMentions(IThreadMentionsStore* mentions) { mentions_ = mentions; }
   /**
    * A group's member check settled (its roster changed): its held mentions are decided — those still under
    * kHeldMentionMaxAgeMs that reach us are marked and alert like a fresh one; the rest are dropped.
@@ -311,7 +313,7 @@ private:
   /** The direct-chat transport is attached and reaches `peer_key` now. */
   bool AmpReaches(const std::string& peer_key) const;
   /** The peer's account KEM public key (directory, M015). */
-  Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
+  Roe<ByteVector> PeerKemPublicKey(const PeerSessionKey& key) const;
   void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
@@ -324,7 +326,7 @@ private:
   /** A pair whose session came back without this device's numbering starts its next epoch (D014, #378). */
   Roe<void> StartNextEpochIfRestored(const Thread& thread);
   /** A pair this device lost its numbering in starts its next epoch (D014): 1:1 sends and group copies. */
-  Roe<void> StartNextPairEpochIfRestored(const ChatTargetKey& key);
+  Roe<void> StartNextPairEpochIfRestored(const PeerSessionKey& key);
   /** One member's copy of a group message: that member's reachability, and the row once any copy is out. */
   void ApplyGroupMemberOutcome(const DeliveryOutcome& outcome);
   void MarkGroupMemberMissed(const std::string& group_id, const std::string& member);
@@ -356,14 +358,14 @@ private:
   IRelayClient* relay_ = nullptr;
   InboxController& inbox_;
   AccountKeyResolver& account_keys_;
-  IPskSessionStore& psk_store_;
-  GroupRosterStore& group_roster_;
+  IPeerSessionStore& psk_store_;
+  IGroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
-  std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
+  IControlLaneSeenStore* control_lane_seen_ = nullptr;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   /** The mesh transports (direct chat, history, blobs) and the peers' dial endpoints; after the
    *  pipeline their inbound handler feeds, so they go first. */
@@ -410,7 +412,7 @@ private:
     std::string local_account;
     int64_t held_at_ms = 0;
   };
-  ThreadMentionsStore* mentions_ = nullptr;
+  IThreadMentionsStore* mentions_ = nullptr;
   /** How long a suspected missing copy waits for the message to come another way before it is asked for. */
   static constexpr int64_t kMissingCopyWaitMs = 20 * 1000;
   std::mutex asked_copies_mutex_;

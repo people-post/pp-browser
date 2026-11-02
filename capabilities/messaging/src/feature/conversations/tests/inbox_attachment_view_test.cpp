@@ -5,7 +5,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/ChatPayloadCodec.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/delivery/testing/InMemoryDeliveryStore.h"
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "common/Utilities.h"
@@ -33,7 +33,7 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_inbox_view_" + util::GenerateUuid());
     std::filesystem::create_directories(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
+    store_ = std::make_unique<InMemoryDeliveryStore>();
     ASSERT_TRUE(store_->SetDek(TestDek()));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
@@ -81,7 +81,7 @@ protected:
 
   std::filesystem::path data_dir_;
   MockDirectoryClient directory_;
-  std::unique_ptr<SqliteThreadStore> store_;
+  std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<DirectoryShadowCache> shadows_;
   std::unique_ptr<PeerDisplayResolver> labels_;

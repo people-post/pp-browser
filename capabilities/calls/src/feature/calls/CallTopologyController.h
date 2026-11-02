@@ -5,12 +5,12 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/CallHopPlan.h"
-#include "lib/calls/CallSessionStore.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/PeerCapsLogic.h"
 #include "lib/calls/SoftMigrateLogic.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/MeshHopPolicy.h"
-#include "lib/calls/CallMediaKeyStore.h"
+#include "lib/calls/ICallMediaKeyStore.h"
 #include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallHopPlanning.h"
 #include "feature/calls/CallHopRanking.h"
@@ -95,7 +95,7 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
   CallTopologyController& operator=(const CallTopologyController&) = delete;
@@ -104,7 +104,7 @@ public:
   /** Swapping deps moves the relay session-end observer to the new relay (empty = unwatch). */
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
-  void SetMediaKeyStore(CallMediaKeyStore* keys);
+  void SetMediaKeyStore(ICallMediaKeyStore* keys);
   /** The device's network came back or moved (the hop path, as the direct path's OnLocalNetworkChanged). */
   void OnLocalNetworkMoved();
   /** A new media epoch for `call_id` is stored: the hop path switches to it (V003). */
@@ -295,10 +295,10 @@ private:
   SfuSurface& sfu_;
 
   HostPorts host_;
-  CallSessionStore& sessions_;
+  ICallSessionStore& sessions_;
   ContactsStore& contacts_;
   CallMediaEngine& media_;
-  CallMediaKeyStore* media_keys_ = nullptr;
+  ICallMediaKeyStore* media_keys_ = nullptr;
   SharedPorts<CallTopologySeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;
   MediaRelayDeps relay_deps_;

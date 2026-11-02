@@ -20,15 +20,15 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/PeerDisplaySources.h"
 #include "lib/people/PeerKemKeyStore.h"
-#include "lib/messaging/GroupRosterStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
-#include "lib/messaging/SqliteThreadStore.h"
-#include "lib/messaging/ThreadMentionsStore.h"
-#include "lib/messaging/ThreadLocalPrefsStore.h"
+#include "lib/messaging/ProfileStores.h"
+#include "lib/messaging/IThreadMentionsStore.h"
+#include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/pricing/PaymentPromiseInbound.h"
 #include "lib/pricing/InitiationBillingStore.h"
 #include "common/Lifetime.h"
@@ -80,12 +80,11 @@
 
 namespace pbr {
 
-class IPskSessionStore;
+class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
 class PeerCardStore;
-class SqlitePskSessionStore;
 
 /**
  * App-only messaging composition root (also known as ConversationsCore).
@@ -200,9 +199,9 @@ public:
 
   InboxController& Inbox();
   /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
-  ThreadLocalPrefsStore& ThreadPrefs();
+  IThreadLocalPrefsStore& ThreadPrefs();
   /** Unread mentions of this account per thread (G015); null until the stores open. */
-  ThreadMentionsStore* ThreadMentions();
+  IThreadMentionsStore* ThreadMentions();
   MeshDeliveryOrchestrator& MeshMessaging();
   /** This account's card as a link bundle carries it (JSON text); none before messaging is up (M021). */
   std::optional<std::string> OwnAccountCardJson();
@@ -226,10 +225,9 @@ public:
   /** Null until a messaging stack is built (and after it is dropped). */
   MeshDeliveryOrchestrator* MeshMessagingOrNull() { return mesh_messaging_.get(); }
   SystemControlRegistry& SystemControls() { return system_controls_; }
-  SqlitePskSessionStore* PskSessions() { return psk_store_.get(); }
   /** The group rosters (from stores open to hub teardown; null outside that). */
-  GroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
-  std::string ProfileDbPath() const { return store_ ? store_->ProfileDbPath() : std::string(); }
+  IGroupRosterStore* GroupRosterOrNull() { return group_roster_.get(); }
+  std::string ProfileDbPath() const { return profile_db_path_; }
   const std::string& ProfileId() const { return profile_id_; }
   const mesh::AddressDisclosureGate& AddressDisclosure() const { return address_disclosure_; }
   /** What the mesh's reach reads (the mesh, directory / DHT nodes, seed probe, LAN notes). */
@@ -245,7 +243,8 @@ public:
   IThreadStore& Store();
   ContactsStore& Contacts();
   IdentityStore& Identity();
-  IPskSessionStore* PskStore();
+  /** The peer sessions (null before messaging is ready). */
+  IPeerSessionStore* PeerSessions();
   ProfileSecretsEngine* Secrets();
   mesh::IDirectoryClient& Directory();
   ContactCardExchange& ContactCards();
@@ -408,6 +407,8 @@ public:
   void SetHost(Host host) { host_ = host; }
   /** The endpoints an empty config entry falls back to (the app's platform defaults); set before Initialize. */
   void SetBackendDefaults(BackendClientSet::Endpoints defaults) { clients_.SetDefaults(std::move(defaults)); }
+  /** Where the profile's stores come from (CR024): the app's storage, or a test's in-memory ones. */
+  void SetStorage(OpenProfileStores open) { open_stores_ = std::move(open); }
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -525,18 +526,24 @@ private:
   ProfileSecretsEngine* secrets_ = nullptr;
 
   // --- ConversationsCore stores / HTTP / inbox ---------------------------------
-  std::unique_ptr<SqliteThreadStore> store_;
+  /** Opens the profile's stores (the app's storage); set before Initialize. */
+  OpenProfileStores open_stores_;
+  std::unique_ptr<IThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<InitiationBillingStore> initiation_billing_;
   std::unique_ptr<PaymentPromiseStore> payment_promises_;
   PeerSigningKeyStore signing_key_store_;
   PeerKemKeyStore kem_key_store_;
-  std::unique_ptr<SqlitePskSessionStore> psk_store_;
-  std::unique_ptr<GroupRosterStore> group_roster_;
-  std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
+  std::unique_ptr<IPeerSessionStore> psk_store_;
+  std::unique_ptr<IControlLaneSeenStore> control_lane_seen_;
+  /** The stores encrypted at rest (the profile's data key goes to them). */
+  std::vector<IDekConsumer*> at_rest_;
+  std::string profile_db_path_;
+  std::unique_ptr<IGroupRosterStore> group_roster_;
+  std::unique_ptr<IThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */
-  std::unique_ptr<ThreadMentionsStore> thread_mentions_;
+  std::unique_ptr<IThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
