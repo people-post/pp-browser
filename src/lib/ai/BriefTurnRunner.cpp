@@ -39,8 +39,9 @@ bool WaitUnlessCancelled(const std::chrono::milliseconds wait, const std::atomic
 void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& request,
                           const std::atomic<bool>& cancel, const BriefTurnSinks& sinks,
                           const std::chrono::milliseconds server_busy_wait) {
+  std::multiset<std::string> shown;
   for (int attempt = 1;; ++attempt) {
-    if (RunOnce(stream, request, cancel, sinks, /*may_retry=*/attempt == 1) == Attempt::Finished) {
+    if (RunOnce(stream, request, cancel, sinks, /*may_retry=*/attempt == 1, shown) == Attempt::Finished) {
       return;
     }
     LogBusy(server_busy_wait);
@@ -53,8 +54,21 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
 
 BriefTurnRunner::Attempt BriefTurnRunner::RunOnce(const BriefAiStreamFn& stream, const BriefAiRequest& request,
                                                   const std::atomic<bool>& cancel, const BriefTurnSinks& sinks,
-                                                  const bool may_retry) {
+                                                  const bool may_retry, std::multiset<std::string>& shown) {
   std::string text;
+  // Step events stay live (a step label shows while brief_AI searches); after a busy first attempt the retry's
+  // repeats of what that attempt already showed are not passed on again.
+  const auto first_time = [&shown, may_retry](std::string key) {
+    if (may_retry) {
+      shown.insert(std::move(key));
+      return true;
+    }
+    if (const auto it = shown.find(key); it != shown.end()) {
+      shown.erase(it);
+      return false;
+    }
+    return true;
+  };
   // Set by a terminal stream event; the outcome returned by Stream() confirms it.
   std::optional<BriefAiEvent> done;
   std::optional<BriefAiEvent> error;
@@ -64,10 +78,14 @@ BriefTurnRunner::Attempt BriefTurnRunner::RunOnce(const BriefAiStreamFn& stream,
   const auto on_event = [&](const BriefAiEvent& event) {
     switch (event.type) {
     case BriefAiEvent::Type::Meta:
-      Call(sinks.on_meta, event.route);
+      if (first_time("meta\n" + event.route)) {
+        Call(sinks.on_meta, event.route);
+      }
       break;
     case BriefAiEvent::Type::Status:
-      Call(sinks.on_status, event.tool, event.phase, event.query);
+      if (first_time("status\n" + event.tool + "\n" + event.phase + "\n" + event.query)) {
+        Call(sinks.on_status, event.tool, event.phase, event.query);
+      }
       break;
     case BriefAiEvent::Type::Token:
       text += event.delta;

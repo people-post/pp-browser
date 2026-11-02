@@ -381,3 +381,31 @@ TEST(BriefTurnRunnerBusyTest, StopDuringTheWaitEndsTheTurnAsCancelled) {
   EXPECT_EQ(rec.cancelled, 1);
   EXPECT_EQ(rec.Terminals(), 1);
 }
+
+TEST(BriefTurnRunnerBusyTest, AStepShownBeforeABusyEventIsNotShownAgainByTheRetry) {
+  ScriptedStream stream;
+  ScriptedStream::Step retry;
+  retry.events = {Status("search_web", "tool"), Status("read_url", "tool"), Token("hi"), Done("hi")};
+  stream.steps = {BusyEvent({Status("search_web", "tool")}), retry};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(rec.statuses, (std::vector<std::string>{"search_web:tool", "read_url:tool"}))
+      << "the step reaches the sink exactly once; the retry's new step still shows";
+  EXPECT_EQ(rec.done, 1);
+}
+
+TEST(BriefTurnRunnerTest, ARepeatedStepWithoutARetryStillShowsEachTime) {
+  const pbr::BriefAiStreamFn stream = [](const pbr::BriefAiRequest&,
+                                         const std::function<void(const BriefAiEvent&)>& on_event,
+                                         const std::atomic<bool>&) -> pbr::Roe<BriefAiOutcome> {
+    on_event(Status("search_web", "tool"));
+    on_event(Status("search_web", "tool"));
+    on_event(Done("x"));
+    return BriefAiOutcome::Done;
+  };
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream, pbr::BriefAiRequest{}, cancel, rec.Sinks());
+  EXPECT_EQ(rec.statuses.size(), 2u);
+}
