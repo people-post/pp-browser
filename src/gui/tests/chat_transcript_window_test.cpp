@@ -75,3 +75,33 @@ TEST(ChatTranscriptWindowTest, UnderCapIsNoOp) {
   EXPECT_FALSE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, true, loaded_min, loaded_max, has_more));
   EXPECT_EQ(rows.size(), 10U);
 }
+
+TEST(ChatTranscriptWindowTest, WindowForJumpOlderThanTheWindowStartsAtTheTarget) {
+  const auto window = pbr::ChatTranscriptScroller::WindowForJump(5, /*loaded_min=*/100, /*loaded_max=*/std::nullopt);
+  EXPECT_TRUE(window.refetch);
+  EXPECT_EQ(window.loaded_min, std::optional<int64_t>(5));
+  EXPECT_FALSE(window.loaded_max.has_value());
+  // Nothing loaded yet: same.
+  EXPECT_TRUE(pbr::ChatTranscriptScroller::WindowForJump(5, std::nullopt, std::nullopt).refetch);
+}
+
+TEST(ChatTranscriptWindowTest, WindowForJumpNewerThanAHistoryWindowStartsAtTheTarget) {
+  // After a jump far back the window ends at 400 (trimmed): a newer hit must be drawn again, not missed.
+  const auto window = pbr::ChatTranscriptScroller::WindowForJump(900, /*loaded_min=*/100, /*loaded_max=*/400);
+  EXPECT_TRUE(window.refetch);
+  EXPECT_EQ(window.loaded_min, std::optional<int64_t>(900));
+  EXPECT_FALSE(window.loaded_max.has_value());
+}
+
+TEST(ChatTranscriptWindowTest, WindowForJumpInsideTheWindowKeepsIt) {
+  auto window = pbr::ChatTranscriptScroller::WindowForJump(250, /*loaded_min=*/100, /*loaded_max=*/400);
+  EXPECT_FALSE(window.refetch);
+  EXPECT_EQ(window.loaded_min, std::optional<int64_t>(100));
+  EXPECT_EQ(window.loaded_max, std::optional<int64_t>(400));
+  // A tip window (no upper bound) holds every newer message.
+  window = pbr::ChatTranscriptScroller::WindowForJump(5000, /*loaded_min=*/100, std::nullopt);
+  EXPECT_FALSE(window.refetch);
+  // The ends are inside.
+  EXPECT_FALSE(pbr::ChatTranscriptScroller::WindowForJump(100, 100, 400).refetch);
+  EXPECT_FALSE(pbr::ChatTranscriptScroller::WindowForJump(400, 100, 400).refetch);
+}
