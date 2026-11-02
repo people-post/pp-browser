@@ -35,7 +35,7 @@ DiagnosticsClientToken& ClientToken() {
 std::string UtcStamp(const int64_t unix_ms) {
   std::tm utc{};
   (void)os::UtcTime(static_cast<std::time_t>(unix_ms / 1000), &utc);
-  char buf[40];
+  char buf[96]; // room for any int in each field (GCC -Wformat-truncation)
   std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d:%02d.%03d", utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
                 utc.tm_hour, utc.tm_min, utc.tm_sec, static_cast<int>(unix_ms % 1000));
   return buf;
