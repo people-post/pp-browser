@@ -24,6 +24,12 @@ struct SettingsUiState {
   std::string promoted_mcp_url;
   std::string search_provider = "duckduckgo";
   std::vector<McpServerUiState> mcp_servers;
+  /** Backend picked in Me -> Network: prod | qa | custom (config `backend.env`). */
+  std::string backend_env = "prod";
+  /** False when the build has no QA origin: the QA choice is not offered. */
+  bool backend_qa_available = false;
+  /** The pick differs from the backend this run started with; applies after a restart. */
+  bool backend_restart_pending = false;
   std::string relay_base_url;
   std::string directory_base_url;
   std::string registration_base_url;

@@ -3,6 +3,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/Platform.h"
 #include "feature/settings/SettingsLogic.h"
 #include "common/PbrCompat.h"
@@ -23,9 +24,15 @@ SettingsFlushMode NetworkSettingsSection::FlushMode() const {
 }
 
 void NetworkSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
-  state.relay_base_url = bootstrap.config.relay.base_url;
-  state.directory_base_url = bootstrap.config.directory.base_url;
-  state.registration_base_url = bootstrap.config.registration.base_url;
+  state.backend_env = bootstrap.config.backend.env;
+  state.backend_qa_available = QaBackendAvailable();
+  state.backend_restart_pending = ParseBackendEnv(state.backend_env) != ActiveBackend();
+  // Prod / qa derive the URLs from the origin; the fields edit the custom ones.
+  const BackendConfig& backend = bootstrap.config.backend;
+  const bool saved = backend.has_saved_urls;
+  state.relay_base_url = saved ? backend.saved_relay.base_url : bootstrap.config.relay.base_url;
+  state.directory_base_url = saved ? backend.saved_directory.base_url : bootstrap.config.directory.base_url;
+  state.registration_base_url = saved ? backend.saved_registration.base_url : bootstrap.config.registration.base_url;
   state.node_enabled = bootstrap.config.mesh.node_enabled ? "on" : "off";
   state.circuit_relay_enabled = bootstrap.config.mesh.capabilities.circuit_relay ? "on" : "off";
   state.media_relay_enabled = bootstrap.config.mesh.capabilities.media_relay ? "on" : "off";
@@ -45,8 +52,13 @@ bool NetworkSettingsSection::IsPersisted(const SettingsUiState& state, const Boo
   const bool media_on = state.media_relay_enabled == "on";
   const bool dht_on = state.dht_enabled == "on";
   const bool prefer_contacts = state.prefer_contacts_for_routing == "on";
-  return state.relay_base_url == config.relay.base_url && state.directory_base_url == config.directory.base_url &&
-         state.registration_base_url == config.registration.base_url && node_on == config.mesh.node_enabled &&
+  const bool saved = config.backend.has_saved_urls;
+  const std::string& relay = saved ? config.backend.saved_relay.base_url : config.relay.base_url;
+  const std::string& directory = saved ? config.backend.saved_directory.base_url : config.directory.base_url;
+  const std::string& registration =
+      saved ? config.backend.saved_registration.base_url : config.registration.base_url;
+  return (state.backend_env.empty() || state.backend_env == config.backend.env) && state.relay_base_url == relay &&
+         state.directory_base_url == directory && state.registration_base_url == registration && node_on == config.mesh.node_enabled &&
          circuit_on == config.mesh.capabilities.circuit_relay &&
          media_on == config.mesh.capabilities.media_relay && dht_on == config.mesh.capabilities.dht &&
          prefer_contacts == config.mesh.prefer_contacts_for_routing &&
@@ -66,6 +78,7 @@ Roe<void> NetworkSettingsSection::Flush(SettingsUiState& state, SessionStore& st
 
 void NetworkSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
   const AppConfig defaults = Config::DefaultAppConfig();
+  state.backend_env = defaults.backend.env;
   state.relay_base_url = defaults.relay.base_url;
   state.directory_base_url = defaults.directory.base_url;
   state.registration_base_url = defaults.registration.base_url;
