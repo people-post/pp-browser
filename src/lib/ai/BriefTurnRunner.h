@@ -4,6 +4,7 @@
 #include "lib/ai/BriefAiClient.h"
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <string>
 #include <vector>
@@ -34,9 +35,24 @@ struct BriefTurnSinks {
 // Drives one brief_AI stream and turns its events into sink calls (no UI, no stores).
 class BriefTurnRunner {
 public:
-  // Runs synchronously on the calling thread. Never logs message content.
+  /** How long a turn waits before asking a busy brief_AI (code server_busy) again. */
+  static constexpr std::chrono::milliseconds kServerBusyRetryWait{3000};
+
+  /**
+   * Runs synchronously on the calling thread. Never logs message content.
+   * brief_AI busy (HTTP 429 code server_busy, or an `error` event with that code before any token): waits
+   * `server_busy_wait` (a cancel ends the wait) and asks once more within the same turn. A per-user limit
+   * (user_concurrency, rate_limited, a 429 without a code) is never retried.
+   */
   static void Run(const BriefAiStreamFn& stream, const BriefAiRequest& request, const std::atomic<bool>& cancel,
-                  const BriefTurnSinks& sinks);
+                  const BriefTurnSinks& sinks, std::chrono::milliseconds server_busy_wait = kServerBusyRetryWait);
+
+private:
+  enum class Attempt { Finished, ServerBusy };
+  /** One stream. ServerBusy (only when `may_retry`): nothing reached a terminal sink; ask again. */
+  static Attempt RunOnce(const BriefAiStreamFn& stream, const BriefAiRequest& request, const std::atomic<bool>& cancel,
+                         const BriefTurnSinks& sinks, bool may_retry);
+  static void LogBusy(std::chrono::milliseconds wait);
 };
 
 } // namespace pbr

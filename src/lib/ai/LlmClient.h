@@ -45,6 +45,14 @@ struct ChatCompletionResponse {
 /** Which limit a 429 from the AI gateway hit; picks the words the user reads. */
 enum class LlmLimitKind { GuestDaily, PerMinute, Other };
 
+/**
+ * Machine-readable codes of a busy server (brief_AI contract section 8), in a 429 body or an SSE `error` event.
+ * Only kServerBusyCode is worth retrying (BriefTurnRunner, once); the other two are the gateway's per-user limits.
+ */
+inline constexpr const char* kServerBusyCode = "server_busy";
+inline constexpr const char* kUserConcurrencyCode = "user_concurrency";
+inline constexpr const char* kRateLimitedCode = "rate_limited";
+
 class LlmClient : public Module {
 public:
   explicit LlmClient(LlmConfig config);
@@ -58,6 +66,11 @@ public:
 
   // Which limit a 429 hit, from the gateway's message (its code is the same for every limit).
   static LlmLimitKind ClassifyLimit(const std::string& api_message);
+  /**
+   * The machine code of a 429 body: its `code` (top level, or the error object's when it is one of the three), and
+   * kRateLimitedCode when it carries none (the gateway's 429s carry none today).
+   */
+  static std::string LimitCodeOf429(const std::string& response_body);
   // A limit message from the Brief gateway (English; never shown as is).
   static bool IsBriefGatewayLimit(const std::string& api_message);
 

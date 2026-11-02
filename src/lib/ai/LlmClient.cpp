@@ -151,6 +151,32 @@ LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
   return LlmLimitKind::Other;
 }
 
+std::string LlmClient::LimitCodeOf429(const std::string& response_body) {
+  const auto known = [](const std::string& code) {
+    return code == kServerBusyCode || code == kUserConcurrencyCode || code == kRateLimitedCode;
+  };
+  if (auto json = TryParseObject(response_body)) {
+    if (auto code = json->getString("code"); code && !code->empty()) {
+      return *code; // brief_AI: {"detail":"too_many_requests","code":"server_busy"}
+    }
+    std::string api_message;
+    std::string api_code;
+    if (auto err_slot = json->fields().tryGet("error")) {
+      ReadOpenAiErrorField(err_slot->get(), api_message, api_code);
+    } else if (auto detail_slot = json->fields().tryGet("detail")) {
+      if (const Object* detail_obj = asObject(detail_slot->get())) {
+        if (auto nested = detail_obj->fields().tryGet("error")) {
+          ReadOpenAiErrorField(nested->get(), api_message, api_code);
+        }
+      }
+    }
+    if (known(api_code)) {
+      return api_code;
+    }
+  }
+  return kRateLimitedCode;
+}
+
 Error LlmClient::MapHttpError(long http_code, const std::string& response_body) {
   std::string api_message;
   std::string api_code;
@@ -177,6 +203,9 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
                                  : ("LLM HTTP " + std::to_string(http_code));
 
   if (http_code == 429) {
+    if (LimitCodeOf429(response_body) == kServerBusyCode) {
+      return AppError::Auth(Err::Auth::ServerBusy, detail); // the catalog's "service is busy"
+    }
     auto err = AppError::Auth(Err::Auth::RateLimited, detail);
     // The gateway's own text is English; the user reads our wording for the limit that was hit.
     // Other limits keep the catalog's "service is busy".
