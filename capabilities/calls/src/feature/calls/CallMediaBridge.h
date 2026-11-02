@@ -12,6 +12,7 @@
 #include "lib/calls/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
+#include "feature/calls/CallMediaDoorway.h"
 #include "mesh/reach/PeerReachCoordinator.h"
 #include "domain/call_media/ICallMediaTransport.h"
 
@@ -91,6 +92,8 @@ public:
 
   /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
   void OnMediaKeyReady(const std::string& call_id);
+  /** The doorway accepted an inbound bundle for `hello.call_id`: bind its peer, return its callbacks (calls owner). */
+  CallMediaDirectCallbacks AcceptInbound(const CallMediaInboundHello& hello);
 
   /**
    * Test seam: answerer deferred-key inbox poll rounds (production default 90 ≈ 90s).
@@ -184,9 +187,6 @@ public:
   /** True after PrepareForTeardown. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
 
-  void NoteMediaAttempted(const std::string& call_id);
-  bool MediaAttempted(const std::string& call_id) const;
-
   /** Keep dial/circuit pointers valid when ConversationsHub rewires deps (N025 listen sync). */
   void SetReachDeps(mesh::PeerReachPorts reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
@@ -255,8 +255,6 @@ private:
    * stays open, and a later connection for it reconnects it (PeerReconnected).
    */
   void FailUnlessDirectRecovered(const std::string& call_id, const std::string& err, bool grace_used = false);
-  /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
-  CallMediaInboundPorts MakeInboundPorts();
   /** UI: map an accepted inbound bundle's mesh PeerId to the roster identity / mixer stream. */
   void BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id);
   /** Callbacks for one bundle (either direction). fixed_stream 0 = inbound identity binding. */
@@ -412,24 +410,6 @@ private:
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
-  /** Written on the calls owner, read by the GUI (MediaAttemptedThisProcess) — guarded. */
-  struct AttemptedCalls {
-    void Insert(const std::string& id) {
-      std::lock_guard lock(mu);
-      ids.insert(id);
-    }
-    void Erase(const std::string& id) {
-      std::lock_guard lock(mu);
-      ids.erase(id);
-    }
-    bool Contains(const std::string& id) const {
-      std::lock_guard lock(mu);
-      return ids.count(id) > 0;
-    }
-    mutable std::mutex mu;
-    std::unordered_set<std::string> ids;
-  };
-  AttemptedCalls media_attempted_calls_;
   /**
    * The call whose connect failed here while it stays open (failed ≠ closed). Its peer and role are
    * the LiveCall's (P2pLiveCall); this only marks that our media gave up on it. Set by

@@ -155,7 +155,8 @@ using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_
 
 /** The 1:1 path's (CallMediaBridge) own events. */
 /** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
-namespace connect_event {
+/** The device's doorway for inbound call media (V056). */
+namespace doorway_event {
 
 /** An inbound hello arrived (transport I/O). */
 struct InboundHello {
@@ -165,6 +166,13 @@ struct InboundHello {
 struct KeyAvailable {};
 /** Re-check parked hellos (re-armed while any is parked). */
 struct KeyPollTick {};
+
+} // namespace doorway_event
+
+using DoorwayEvent = std::variant<doorway_event::InboundHello, doorway_event::KeyAvailable, doorway_event::KeyPollTick>;
+
+namespace connect_event {
+
 /** Attempt `attempt` of sequence `seq` has its link (or failed to get one). */
 struct LinkReady {
   uint64_t seq = 0;
@@ -195,10 +203,8 @@ struct Finished {
 
 } // namespace connect_event
 
-using ConnectEvent =
-    std::variant<connect_event::InboundHello, connect_event::KeyAvailable, connect_event::KeyPollTick,
-                 connect_event::LinkReady, connect_event::AttemptDone, connect_event::WatchdogDue,
-                 connect_event::RetryDue, connect_event::Finished>;
+using ConnectEvent = std::variant<connect_event::LinkReady, connect_event::AttemptDone, connect_event::WatchdogDue,
+                                  connect_event::RetryDue, connect_event::Finished>;
 
 namespace direct_event {
 
@@ -314,6 +320,10 @@ struct GaveUpReaching {
 struct PeerReconnected {
   std::string call_id;
 };
+/** The path started trying media for the call (connect, key wait or failure). */
+struct MediaAttempted {
+  std::string call_id;
+};
 /** The answerer's media waits for the call's key. */
 struct MediaDeferred {
   std::string call_id;
@@ -329,7 +339,7 @@ struct MediaKeyReady {
 using DirectReport =
     std::variant<direct_report::Progress, direct_report::Connected, direct_report::HandedToHop,
                  direct_report::ConnectFailed, direct_report::GaveUpReaching, direct_report::PeerReconnected,
-                 direct_report::MediaDeferred, direct_report::MediaKeyReady>;
+                 direct_report::MediaAttempted, direct_report::MediaDeferred, direct_report::MediaKeyReady>;
 
 /** What the group (hop) path reports to the calls it serves: its planner moved. */
 struct HopReport {
@@ -353,11 +363,16 @@ struct FromDirectPath {
 struct FromHopPath {
   HopReport report;
 };
+/** An event of the inbound doorway `generation` (one built since drops it). */
+struct ForDoorway {
+  uint64_t generation = 0;
+  DoorwayEvent event;
+};
 
 } // namespace session_event
 
-using SessionEvent =
-    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent, TopologyEvent,
-                 session_event::ForDirectPath, session_event::FromDirectPath, session_event::FromHopPath>;
+using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                                  TopologyEvent, session_event::ForDirectPath, session_event::FromDirectPath,
+                                  session_event::FromHopPath, session_event::ForDoorway>;
 
 } // namespace pbr

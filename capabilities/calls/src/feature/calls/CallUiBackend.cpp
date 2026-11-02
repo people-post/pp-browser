@@ -205,9 +205,9 @@ CallUiBackend::Surface CallUiBackend::Settle() {
     // LeaveClicked sets Idle before LeaveCall IO finishes: do not resurrect the panel from the
     // still-Active disk row (Samsung: End looked hung / "couldn't connect" stuck).
     if (Phase() == CallPhase::Idle) {
-      if (call.state == CallSessionState::Active && !Media().IsActive() &&
-          !MediaAttemptedThisProcess(call.call_id) && !IsAwaitingSfuRecovery()) {
-        LeaveCall(call.call_id, LiveCallEndReason::Orphaned);  // a true orphan: force-quit / restart
+      if (call.state == CallSessionState::Active) {
+        // A true orphan (force-quit / restart) is the calls owner's to judge and leave.
+        OnOwner([call_id = call.call_id](CallSessionManager& calls) { calls.LeaveIfOrphaned(call_id); });
       }
       surface.active.reset();
       return surface;
@@ -284,13 +284,6 @@ int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_ident
     return calls->InitiationOfferMinorForPeer(peer_identity);
   }
   return 0;
-}
-
-bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->MediaAttemptedThisProcess(call_id);
-  }
-  return false;
 }
 
 IMediaView& CallUiBackend::Media() {

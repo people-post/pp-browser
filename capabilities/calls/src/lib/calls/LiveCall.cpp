@@ -299,6 +299,19 @@ void LiveCalls::NotePath(const std::string& call_id, const CallMediaPath path) {
   Changed();
 }
 
+void LiveCalls::NoteMediaAttempted(const std::string& call_id) {
+  LiveCall* call = Find(call_id);
+  if (!call || call->progress_.media_attempted) {
+    return;
+  }
+  call->progress_.media_attempted = true;
+}
+
+bool LiveCalls::MediaAttempted(const std::string& call_id) const {
+  const LiveCall* call = Find(call_id);
+  return call && call->progress_.media_attempted;
+}
+
 bool LiveCalls::AllowsDirectPath(const std::string& call_id) const {
   return AllowsDirect(Status(call_id));
 }

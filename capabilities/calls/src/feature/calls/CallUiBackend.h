@@ -109,7 +109,6 @@ public:
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
-  bool MediaAttemptedThisProcess(const std::string& call_id) const;
 
   // --- Owner state (published snapshot) ----------------------------------------------------------
   /** The whole snapshot, for readers that want one consistent view. */

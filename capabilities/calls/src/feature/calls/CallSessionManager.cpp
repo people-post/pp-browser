@@ -88,6 +88,9 @@ CallSessionManager::CallSessionManager(const IThreadCatalog& threads, IThreadTra
   topology_.SetMediaKeyStore(&media_keys_);
   key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) { topology_.OnMediaKeyInstalled(call_id); });
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
+    if (doorway_) {
+      doorway_->NotifyKeyAvailable(); // wake inbound hellos waiting for a key
+    }
     const auto direct_media = direct_media_.Get();
     if (direct_media->on_media_key_ready) {
       direct_media->on_media_key_ready(call_id);
@@ -514,6 +517,10 @@ void CallSessionManager::Handle(SessionEvent& event) {
           if (e.generation == direct_path_generation_) {
             OnDirectReport(e.report);
           }
+        } else if constexpr (std::is_same_v<E, session_event::ForDoorway>) {
+          if (doorway_ && e.generation == doorway_generation_) {
+            doorway_->Handle(e.event);
+          }
         } else if constexpr (std::is_same_v<E, session_event::FromHopPath>) {
           live_calls_.ReportHopProgress(e.report.call_id, e.report.phase);
         } else {
@@ -539,6 +546,8 @@ void CallSessionManager::OnDirectReport(const DirectReport& report) {
           SendConnectGiveUp(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::PeerReconnected>) {
           RestartMedia(r.call_id, true);
+        } else if constexpr (std::is_same_v<R, direct_report::MediaAttempted>) {
+          live_calls_.NoteMediaAttempted(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
           live_calls_.NoteMediaDeferred(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
@@ -632,6 +641,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     direct_path_->SetReports(outbox_.For<DirectReport>([generation](DirectReport report) {
       return SessionEvent{session_event::FromDirectPath{generation, std::move(report)}};
     }));
+    BuildDoorway(*deps.transport);
     log().info << "1:1 path built";
   } else {
     direct_path_->SetReachDeps(deps.Reach());
@@ -664,11 +674,44 @@ void CallSessionManager::PrepareDirectPathForStop(const int wait_ms) {
     direct_path_->SetSeatPorts({});
     direct_path_->PrepareForTeardown(wait_ms);
   }
+  if (doorway_) {
+    doorway_->Shutdown(); // waiting hellos released, the handler dropped: late streams reach nothing
+  }
+}
+
+void CallSessionManager::BuildDoorway(ICallMediaTransport& transport) {
+  doorway_ = std::make_unique<CallMediaDoorway>(transport);
+  const uint64_t generation = ++doorway_generation_;
+  doorway_->SetOutbox(outbox_.For<DoorwayEvent>([generation](DoorwayEvent event) {
+    return SessionEvent{session_event::ForDoorway{generation, std::move(event)}};
+  }));
+  doorway_->SetPorts(MakeDoorwayPorts());
+}
+
+CallMediaInboundPorts CallSessionManager::MakeDoorwayPorts() {
+  CallMediaInboundPorts ports;
+  ports.session_open = [this](const std::string& call_id) {
+    auto session = sessions_.LoadSession(call_id);
+    return session && session->has_value() && (*session)->state != CallSessionState::Ended;
+  };
+  ports.load_key = [this](const std::string& call_id, const uint32_t epoch) -> std::optional<ByteVector> {
+    if (auto key = media_keys_.LoadEpochKey(call_id, epoch); key && key->has_value()) {
+      return **key;
+    }
+    return std::nullopt;
+  };
+  // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
+  ports.request_key = [this](const std::string& /*call_id*/) { RequestInboxSync(); };
+  ports.on_accepted = [this](const CallMediaInboundHello& hello) {
+    return direct_path_ ? direct_path_->AcceptInbound(hello) : CallMediaDirectCallbacks{};
+  };
+  return ports;
 }
 
 void CallSessionManager::DropDirectPath() {
   SetDirectMediaPorts({});
   SetDirectDriver(nullptr);
+  doorway_.reset();
   direct_path_.reset();
   direct_transport_ = nullptr;
 }
@@ -706,8 +749,6 @@ CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
   ports.connect_seed_unreachable = [bridge]() {
     return bridge->IsMeshConnectFailed() && bridge->MeshConnectSeedUnreachable();
   };
-  ports.media_attempted = [bridge](const std::string& call_id) { return bridge->MediaAttempted(call_id); };
-  ports.note_media_attempted = [bridge](const std::string& call_id) { bridge->NoteMediaAttempted(call_id); };
   ports.on_media_key_ready = [bridge](const std::string& call_id) { bridge->OnMediaKeyReady(call_id); };
   return ports;
 }
@@ -1248,9 +1289,8 @@ bool CallSessionManager::P2pConnectSeedUnreachable() const {
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
-  const auto direct_media = direct_media_.Get();
   CallMediaCoordinator* call_media = call_media_.Media(call_id);
-  if (call_media && direct_media->media_attempted && direct_media->media_attempted(call_id)) {
+  if (call_media && live_calls_.MediaAttempted(call_id)) {
     return call_media->Retry();
   }
   return Error("Call media retry unavailable");
@@ -1270,10 +1310,17 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
   workflow_.AbandonOrphanedCallsAfterRestart();
 }
 
-
-bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
-  const auto direct_media = direct_media_.Get();
-  return direct_media->media_attempted && direct_media->media_attempted(call_id);
+void CallSessionManager::LeaveIfOrphaned(const std::string& call_id) {
+  // A call this process never had (force-quit / restart), with nothing running for it. A call it had
+  // — open, or ended with its leave still on the way — is not an orphan.
+  if (call_id.empty() || live_calls_.Find(call_id) || media_.IsActive() || topology_.IsAwaitingSfuRecovery()) {
+    return;
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state != CallSessionState::Active) {
+    return;
+  }
+  (void)LeaveCall(call_id, LiveCallEndReason::Orphaned);
 }
 
 void CallSessionManager::DropFollowUps() {
@@ -1536,10 +1583,7 @@ void CallSessionManager::ClearMediaActivity() {
 }
 
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
-  const auto direct_media = direct_media_.Get();
-  if (direct_media->note_media_attempted) {
-    direct_media->note_media_attempted(call_id);
-  }
+  live_calls_.NoteMediaAttempted(call_id);
 }
 
 void CallSessionManager::RequestInboxSync() {

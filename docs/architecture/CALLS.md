@@ -31,7 +31,8 @@ What the device shows about calls is a **projection of its calls** ([`LiveCalls`
 | **CallPresenter** | What the call surface shows and what its buttons do, headless: `CallScreen` (ring / answering / in call / none, conflict, pricing, roster, the status line from `DecideInCallStatus`) + one-shot `CallNotice`s; the buttons (start / join / picker, accept, decline, leave, retry, mute, camera, speaker, add people) → `Apply(event)`; the auto camera of video calls. pp-app-probe drives the same presenter |
 | **CallController** | Renders `CallScreen` (words, avatars, video, chrome modes) and owns the devices around it (ringtone, ringback, levels, metrics); Rml clicks → `CallPresenter`; chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallMediaBridge** | Media-key defer, channel connect/retry; reports progress, connected, handed to a hop, failed, gave up, peer reconnected, deferred and key ready as `DirectReport` events on the calls owner's queue — the session manager moves `LiveCalls` on them, and starts the deferred answerer itself once its key is ready |
-| **CallMediaConnectCoordinator** | Both directions of the 1:1 bundle. Outbound: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39). Inbound: owns the transport handler — a hello is an event on the calls owner, parked until its epoch key is available, via `CallMediaInboundPorts` |
+| **CallMediaConnectCoordinator** | The outbound 1:1 bundle: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39) |
+| **CallMediaDoorway** | Device level (V056): owns the call-media transport's inbound handler — a hello is an event on the calls owner, parked until its epoch key is available, then handed to the call's 1:1 path (`CallMediaInboundPorts::on_accepted`) |
 | **PeerReachCoordinator** | Call-agnostic link establishment to one peer (dial → circuit → punch, seed park); `Reach` / `Await` modes |
 | **ICallMediaTransport** | 1:1 `/pp/realtime/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
 | **ConversationsHub** | N025 listen + mDNS as **call-driven** commands (`WantEphemeralListen`), not tick side effects |
@@ -557,6 +558,18 @@ Product phases are the calls' projection (`LiveCall::Phase`). Planners and host 
 Do **not** introduce a host-wide inbound-request SM; leave chat/history/dial-back as procedures.
 
 ---
+
+## Device level and call level
+
+([V056](../../projects/p2p-av-calls/DECISIONS.md#v056--device-level-and-call-level-the-media-paths-are-per-call-objects); being reached through PHASES § cm3.)
+
+| Level | What | Rule |
+|-------|------|------|
+| **Device** — one of each, long-lived | the media engine and the seat (one call has media); the mesh services (connectivity / reach, relay client, hop ranking); the inbound call-media doorway; `LiveCalls` | never a "current call"; a call id only as an index (the doorway's, the seat's holder) |
+| **Call** — one per open call, admission to close | `LiveCall` (the call's facts); the call's media session, holding at most one path — the 1:1 path or the group (hop) path, each built for this call | a path knows its call; it reports to its session; Direct → Hop is the session swapping the path, never back; only the session touches the engine |
+
+A failed call is open: its session and path stay for Retry and the peer's reconnect. A second call ringing
+has a session but no path.
 
 ## Call state: one owner
 

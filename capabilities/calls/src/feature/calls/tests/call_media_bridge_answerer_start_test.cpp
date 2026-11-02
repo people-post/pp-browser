@@ -5,6 +5,7 @@
 #include "common/media/MediaSessionsOwner.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
+#include "feature/calls/CallMediaDoorway.h"
 #include "feature/calls/tests/calls_on_owner.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
@@ -395,6 +396,22 @@ protected:
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
     bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
     bridge_->SetReports(bridge_reports_.Get());
+    // The device's doorway hands inbound hellos to the path, as CallSessionManager wires it.
+    doorway_ = std::make_unique<CallMediaDoorway>(*transport_);
+    doorway_->SetOutbox(doorway_events_.Get());
+    CallMediaInboundPorts inbound;
+    inbound.session_open = [this](const std::string& call_id) {
+      auto session = sessions_->LoadSession(call_id);
+      return session && session->has_value() && (*session)->state != CallSessionState::Ended;
+    };
+    inbound.load_key = [this](const std::string& call_id, uint32_t epoch) -> std::optional<ByteVector> {
+      if (auto key = keys_->LoadEpochKey(call_id, epoch); key && key->has_value()) {
+        return **key;
+      }
+      return std::nullopt;
+    };
+    inbound.on_accepted = [this](const CallMediaInboundHello& hello) { return bridge_->AcceptInbound(hello); };
+    doorway_->SetPorts(std::move(inbound));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
@@ -403,6 +420,9 @@ protected:
     if (bridge_) {
       OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
     }
+    if (doorway_) {
+      OnCallsOwner([&] { doorway_->Shutdown(); });
+    }
     // Join the worker pool before destroying objects a still-running task may touch
     // (see call_session_inbound_compose_test.cpp TearDown).
     AppRuntime::Shutdown();
@@ -410,6 +430,7 @@ protected:
     if (media_) {
       media_->Stop();
     }
+    doorway_.reset();
     bridge_.reset();
     transport_.reset();
     circuit_.reset();
@@ -477,6 +498,12 @@ protected:
   std::unique_ptr<FakeCircuitHopReach> circuit_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<CallMediaBridge> bridge_;
+  std::unique_ptr<CallMediaDoorway> doorway_;
+  CallsLoopbackOutbox<DoorwayEvent> doorway_events_{[this](DoorwayEvent& event) {
+    if (doorway_) {
+      doorway_->Handle(event);
+    }
+  }};
   CallsLoopbackOutbox<DirectPathEvent> bridge_events_{[this](DirectPathEvent& event) {
     if (bridge_) {
       bridge_->Handle(event);
@@ -496,6 +523,8 @@ protected:
             live.NoteDirectHandedToHop(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
             live.NoteMediaFailed(r.call_id);
+          } else if constexpr (std::is_same_v<R, direct_report::MediaAttempted>) {
+            live.NoteMediaAttempted(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::MediaDeferred>) {
             live.NoteMediaDeferred(r.call_id);
           } else if constexpr (std::is_same_v<R, direct_report::MediaKeyReady>) {
@@ -637,7 +666,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
   EXPECT_NE(host_->live.Phase(), CallPhase::MediaPending);
@@ -653,7 +682,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
   // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
@@ -721,7 +750,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
   OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(host_->live.MediaAttempted(call_id));
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
   // Offerer Connect waits inbound grace before ConnectAsync — do not assert dial yet.

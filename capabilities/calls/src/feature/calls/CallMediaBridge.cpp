@@ -59,32 +59,13 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, ICallSessionStore& session
       connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
-
-  connect_.SetInboundPorts(MakeInboundPorts());
 }
 
-CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
-  // Calls owner (the connect sequence's inbound hello event).
-  CallMediaInboundPorts ports;
-  ports.session_open = [this](const std::string& call_id) {
-    auto session = sessions_.LoadSession(call_id);
-    return session && session->has_value() && (*session)->state != CallSessionState::Ended;
-  };
-  ports.load_key = [this](const std::string& call_id, const uint32_t epoch) -> std::optional<ByteVector> {
-    if (auto key = media_keys_.LoadEpochKey(call_id, epoch); key && key->has_value()) {
-      return **key;
-    }
-    return std::nullopt;
-  };
-  // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
-  ports.request_key = [this](const std::string& /*call_id*/) { host_.P2pRequestInboxSync(); };
-  ports.on_accepted = [this](const CallMediaInboundHello& hello) {
-    // On the owner, before the bundle's callbacks exist: bind the stream now. Media is read on the
-    // transport's I/O, so the first frame must already see this call's stream (never the last one's).
-    BindInboundPeer(hello.call_id, hello.peer_id);
-    return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
-  };
-  return ports;
+CallMediaDirectCallbacks CallMediaBridge::AcceptInbound(const CallMediaInboundHello& hello) {
+  // On the owner, before the bundle's callbacks exist: bind the stream now. Media is read on the
+  // transport's I/O, so the first frame must already see this call's stream (never the last one's).
+  BindInboundPeer(hello.call_id, hello.peer_id);
+  return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
 }
 
 void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id) {
@@ -1115,7 +1096,7 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
     reach_.AbandonDial(media_peer_identity_);
   }
   if (!call_id.empty()) {
-    media_attempted_calls_.Insert(call_id);
+    reports_.Emit(direct_report::MediaAttempted{call_id});
     failed_open_ = FailedOpenCall{call_id};
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
@@ -1284,7 +1265,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
     tx_only_escalation_done_ = false;
   }
   failed_open_.reset();
-  media_attempted_calls_.Insert(call_id);
+  reports_.Emit(direct_report::MediaAttempted{call_id});
   media_call_id_ = call_id;
   media_peer_identity_ = peer_identity;
   session_offerer_ = offerer;
@@ -1412,7 +1393,7 @@ void CallMediaBridge::ScheduleDirectStart(const std::string& call_id, const std:
 void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.
-  media_attempted_calls_.Insert(call_id);
+  reports_.Emit(direct_report::MediaAttempted{call_id});
   outbox_.Emit(direct_event::StartOfferer{call_id, peer_identity});
 }
 
@@ -1450,7 +1431,7 @@ void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::str
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
   PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
-  media_attempted_calls_.Insert(call_id);
+  reports_.Emit(direct_report::MediaAttempted{call_id});
   RunAnswererStart(call_id, peer_identity);
 }
 
@@ -1498,7 +1479,7 @@ void CallMediaBridge::DeferAnswererUntilMediaKey(const std::string& call_id, con
   log().info << "Defer answerer media until CallMediaKey call_id=" << call_id << " reason=" << reason;
   pending_answerer_call_id_ = call_id;
   pending_answerer_peer_ = peer_identity;
-  media_attempted_calls_.Insert(call_id);
+  reports_.Emit(direct_report::MediaAttempted{call_id});
   reports_.Emit(direct_report::MediaDeferred{call_id});
   // Each poll round is a delayed event naming this wait; a newer wait (or none) makes it stale.
   const uint64_t wait = ++key_wait_gen_;
@@ -1549,8 +1530,6 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
   if (call_id.empty()) {
     return;
   }
-  // Wake inbound hello key-wait (if any) before hopping to UI for deferred answerer start.
-  connect_.NotifyKeyAvailable();
   // The start runs as its own event, never inside the key exchange that reported the key.
   outbox_.Emit(direct_event::MediaKeyReady{call_id});
 }
@@ -1609,7 +1588,6 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   direct_connected_at_ms_ = 0;
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
-  media_attempted_calls_.Erase(call_id);
   failed_open_.reset();
 
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
@@ -1714,8 +1692,6 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
-  // Also releases waiting inbound hellos and drops the inbound handler before Detach, so late
-  // streams cannot reach the bridge.
   connect_.Shutdown();
   CancelDirectHealthTimer();
   CancelReserveRenewal();
@@ -1817,14 +1793,6 @@ std::optional<CallMediaBridge::CallPeerRole> CallMediaBridge::PeerRoleFromLiveCa
     return std::nullopt;
   }
   return CallPeerRole{*peer, call->Origin() == LiveCallOrigin::Placed};
-}
-
-void CallMediaBridge::NoteMediaAttempted(const std::string& call_id) {
-  media_attempted_calls_.Insert(call_id);
-}
-
-bool CallMediaBridge::MediaAttempted(const std::string& call_id) const {
-  return media_attempted_calls_.Contains(call_id);
 }
 
 } // namespace pbr

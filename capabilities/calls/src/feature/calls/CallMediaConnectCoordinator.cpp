@@ -19,49 +19,29 @@ constexpr int kConnectAttempts = 5;
 constexpr int kConnectAttemptTimeoutMs = 15000;
 /** Drain abandoned stream callbacks before the next attempt. */
 constexpr int kRetryDelayMs = 1500;
-/** Inbound hello waits this long for the epoch key (offerer dials before the relay delivers it). */
-constexpr int kInboundKeyWaitMs = 8000;
-/** Re-ask for the key this often while a hello is parked. */
-constexpr int kInboundKeyPollMs = 250;
 
 } // namespace
 
 CallMediaConnectCoordinator::CallMediaConnectCoordinator(ICallMediaTransport& transport,
                                                          mesh::PeerReachCoordinator& reach)
-    : transport_(transport), reach_(reach), inbound_key_wait_ms_(kInboundKeyWaitMs),
-      attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
+    : transport_(transport), reach_(reach), attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
   redirectLogger("CallMediaConnect");
 }
 
 CallMediaConnectCoordinator::~CallMediaConnectCoordinator() {
   shut_down_.store(true, std::memory_order_release);
-  RejectPendingHellos("coordinator gone");
   Abort();
-  // Do not ClearInboundHandler here: a replacement path may already have installed its own. Ours
-  // holds no pointer to us — a late hello reaches a dropped outbox and is NACKed (the offerer retries).
 }
 
 void CallMediaConnectCoordinator::SetOutbox(OwnerOutbox<ConnectEvent> outbox) {
   outbox_ = std::move(outbox);
-  InstallInboundHandler();
 }
 
 void CallMediaConnectCoordinator::Handle(ConnectEvent& event) {
   std::visit(
       [this](auto& e) {
         using E = std::decay_t<decltype(e)>;
-        if constexpr (std::is_same_v<E, connect_event::InboundHello>) {
-          HandleInboundHello(std::move(e.hello));
-        } else if constexpr (std::is_same_v<E, connect_event::KeyAvailable>) {
-          RecheckPendingHellos(/*ask_again=*/false);
-        } else if constexpr (std::is_same_v<E, connect_event::KeyPollTick>) {
-          if (key_poll_timer_id_ == 0) {
-            return;  // cancelled since
-          }
-          key_poll_timer_id_ = 0;
-          RecheckPendingHellos(/*ask_again=*/true);
-          ArmKeyPoll();
-        } else if constexpr (std::is_same_v<E, connect_event::LinkReady>) {
+        if constexpr (std::is_same_v<E, connect_event::LinkReady>) {
           if (Current(e.seq)) {
             reach_id_ = 0;
             OnLinkReady(e.seq, e.attempt, std::move(e.reached));
@@ -126,13 +106,7 @@ void CallMediaConnectCoordinator::Abort() {
 
 void CallMediaConnectCoordinator::Shutdown() {
   shut_down_.store(true, std::memory_order_release);
-  RejectPendingHellos("shutting down");
   Abort();
-  // Late hellos NACK at the transport from here on.
-  if (inbound_installed_) {
-    transport_.ClearInboundHandler();
-    inbound_installed_ = false;
-  }
 }
 
 void CallMediaConnectCoordinator::SetDiagProbe(CallConnectEnvProbe probe) {
@@ -146,130 +120,6 @@ CallConnectEnv CallMediaConnectCoordinator::DiagEnv() const {
 int64_t CallMediaConnectCoordinator::DiagMs() const {
   return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - diag_started_)
       .count();
-}
-
-void CallMediaConnectCoordinator::SetInboundKeyWaitMsForTest(const int wait_ms) {
-  inbound_key_wait_ms_ = wait_ms > 0 ? wait_ms : kInboundKeyWaitMs;
-}
-
-void CallMediaConnectCoordinator::SetInboundPorts(CallMediaInboundPorts ports) {
-  inbound_ports_ = std::move(ports);
-  inbound_installed_ = true;
-  InstallInboundHandler();
-}
-
-void CallMediaConnectCoordinator::InstallInboundHandler() {
-  if (!inbound_installed_ || !outbox_.IsBound()) {
-    return;  // both ports and the outbox are needed; the later of the two installs
-  }
-  // Called on the transport's IO hop: hand the hello over as an event and return. The handler
-  // holds only the outbox — never this coordinator.
-  transport_.SetInboundHandler([outbox = outbox_](CallMediaDirectConnectParams params, CallMediaInboundAnswer answer) {
-    outbox.Emit(connect_event::InboundHello{
-        std::make_shared<CallMediaInboundReply>(std::move(params), std::move(answer))});
-  });
-}
-
-void CallMediaConnectCoordinator::NotifyKeyAvailable() {
-  outbox_.Emit(connect_event::KeyAvailable{});
-}
-
-void CallMediaConnectCoordinator::HandleInboundHello(std::shared_ptr<CallMediaInboundReply> hello) {
-  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
-  CallMediaDirectConnectParams& params = hello->Params();
-  log().info << "Inbound hello call_id=" << params.call_id << " epoch=" << params.media_epoch
-             << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
-  const CallMediaInboundPorts& ports = inbound_ports_;
-  if (shut_down_.load(std::memory_order_acquire) || !ports.session_open || !ports.session_open(params.call_id)) {
-    log().warning << "Inbound rejected: no open session call_id=" << params.call_id;
-    hello->Reject();
-    return;
-  }
-  if (TryLoadInboundKey(params)) {
-    AcceptInboundHello(*hello);
-    return;
-  }
-  if (ports.request_key) {
-    ports.request_key(params.call_id);
-  }
-  pending_hellos_.push_back(PendingHello{std::move(hello), std::chrono::steady_clock::now() +
-                                                               std::chrono::milliseconds(inbound_key_wait_ms_)});
-  ArmKeyPoll();
-}
-
-bool CallMediaConnectCoordinator::TryLoadInboundKey(CallMediaDirectConnectParams& params) const {
-  if (!inbound_ports_.load_key) {
-    return false;
-  }
-  if (auto key = inbound_ports_.load_key(params.call_id, params.media_epoch)) {
-    params.media_key = std::move(*key);
-    return true;
-  }
-  return false;
-}
-
-void CallMediaConnectCoordinator::AcceptInboundHello(CallMediaInboundReply& reply) {
-  CallMediaDirectCallbacks cbs;
-  if (inbound_ports_.on_accepted) {
-    const CallMediaDirectConnectParams& params = reply.Params();
-    CallMediaInboundHello hello;
-    hello.call_id = params.call_id;
-    hello.media_epoch = params.media_epoch;
-    hello.peer_id = params.peer_key;
-    cbs = inbound_ports_.on_accepted(hello);
-  }
-  reply.Accept(std::move(cbs));
-}
-
-void CallMediaConnectCoordinator::RecheckPendingHellos(const bool ask_again) {
-  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
-  const auto now = std::chrono::steady_clock::now();
-  std::vector<PendingHello> still;
-  auto parked = std::move(pending_hellos_);
-  pending_hellos_.clear();
-  for (auto& hello : parked) {
-    const CallMediaInboundPorts& ports = inbound_ports_;
-    CallMediaDirectConnectParams& params = hello.reply->Params();
-    if (!ports.session_open || !ports.session_open(params.call_id)) {
-      hello.reply->Reject();  // ended while parked
-      continue;
-    }
-    if (TryLoadInboundKey(params)) {
-      AcceptInboundHello(*hello.reply);
-      continue;
-    }
-    if (now >= hello.deadline) {
-      // No key in time: the transport NACKs the hello; the offerer retries.
-      log().info << "Inbound rejected: media key not ready call_id=" << params.call_id;
-      hello.reply->Reject();
-      continue;
-    }
-    if (ask_again && ports.request_key) {
-      ports.request_key(params.call_id);
-    }
-    still.push_back(std::move(hello));
-  }
-  // Appended, not assigned: an answer runs inline and could, in principle, park another hello.
-  for (auto& hello : still) {
-    pending_hellos_.push_back(std::move(hello));
-  }
-}
-
-void CallMediaConnectCoordinator::ArmKeyPoll() {
-  if (key_poll_timer_id_ != 0 || pending_hellos_.empty()) {
-    return;
-  }
-  key_poll_timer_id_ = outbox_.After(std::chrono::milliseconds(kInboundKeyPollMs), connect_event::KeyPollTick{});
-}
-
-void CallMediaConnectCoordinator::RejectPendingHellos(const char* why) {
-  outbox_.Cancel(key_poll_timer_id_);
-  auto parked = std::move(pending_hellos_);
-  pending_hellos_.clear();
-  for (auto& hello : parked) {
-    log().info << "Inbound rejected (" << why << ") call_id=" << hello.reply->Params().call_id;
-    hello.reply->Reject();
-  }
 }
 
 void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMediaConnectHooks hooks) {

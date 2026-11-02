@@ -347,7 +347,7 @@ protected:
     });
     ASSERT_NE(csm_->Live().Phase(), CallPhase::Accepting) << csm_->LastError();
     ASSERT_NE(csm_->Live().Phase(), CallPhase::Ringing) << csm_->LastError();
-    EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+    EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
 
     OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::LeaveClicked, call_id); });
     EXPECT_EQ(csm_->Live().Phase(), CallPhase::Idle);
@@ -580,7 +580,7 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
 
   EXPECT_NE(csm_->Live().Phase(), CallPhase::Accepting) << csm_->LastError();
   EXPECT_NE(csm_->Live().Phase(), CallPhase::Ringing) << csm_->LastError();
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
 
   auto active = csm_->ActiveLocalCall();
   ASSERT_TRUE(active && active->has_value());
@@ -1138,7 +1138,7 @@ TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {
            csm_->Live().Phase() == CallPhase::MediaConnecting || media_->IsActive();
   });
   // Accept without pre-seeded key → MediaPending / KeyWait.
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
   if (media_->IsActive()) {
     // Rare: key race; still exercise unwrap path below.
   } else {
@@ -1369,7 +1369,7 @@ TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecti
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  DrainUntil([&]() { return bridge_->MediaAttempted(call_id) || media_->IsActive(); });
+  DrainUntil([&]() { return csm_->Live().MediaAttempted(call_id) || media_->IsActive(); });
   ASSERT_TRUE(csm_->Live().AllowsDirectPath());
 
   CallSfuAttachDetail attach;
@@ -1561,7 +1561,7 @@ TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedAc
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::InviteSeen, call_id); });
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
-  DrainUntil([&]() { return media_->IsActive() || bridge_->MediaAttempted(call_id); });
+  DrainUntil([&]() { return media_->IsActive() || csm_->Live().MediaAttempted(call_id); });
 
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
 }
@@ -1599,8 +1599,8 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
                                                   "account:peer");
   ASSERT_TRUE(msg);
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
-  DrainUntil([&]() { return bridge_->MediaAttempted(call_id) || media_->IsActive(); });
-  ASSERT_TRUE(bridge_->MediaAttempted(call_id));
+  DrainUntil([&]() { return csm_->Live().MediaAttempted(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(csm_->Live().MediaAttempted(call_id));
 
   OnCallsOwner([&] { csm_->LiveCallsForTest().NoteMediaFailed(call_id); });
   EXPECT_EQ(csm_->Live().Phase(), CallPhase::ConnectFailed);
@@ -1630,7 +1630,6 @@ TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
   ports.media_path_kind = []() { return std::string("direct"); };
   ports.is_connect_failed = []() { return false; };
   ports.connect_missing_mic = []() { return false; };
-  ports.media_attempted = [](const std::string&) { return false; };
   std::atomic<bool> stop{false};
   std::thread swapper([&]() {
     for (int i = 0; !stop.load(); ++i) {
@@ -1642,7 +1641,6 @@ TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
     EXPECT_TRUE(kind.empty() || kind == "direct");
     (void)csm_->IsP2pConnectFailed();
     (void)csm_->P2pConnectMissingMic();
-    (void)csm_->MediaAttemptedThisProcess("call:swap");
   }
   stop.store(true);
   swapper.join();
@@ -1770,7 +1768,7 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   OnCallsOwner([&] { return csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id); });
   DrainUntil([&]() { return media_->IsActive(); });
   ASSERT_TRUE(media_->IsActive());
-  EXPECT_TRUE(csm_->MediaAttemptedThisProcess(call_id));
+  EXPECT_TRUE(csm_->Live().MediaAttempted(call_id));
 
   auto peer = csm_->PeerIdentityForCall(call_id);
   ASSERT_TRUE(peer && peer->has_value());

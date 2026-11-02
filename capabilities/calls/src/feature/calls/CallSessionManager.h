@@ -58,8 +58,6 @@ struct CallDirectMediaPorts {
   std::function<bool()> is_connect_failed;
   std::function<bool()> connect_missing_mic;
   std::function<bool()> connect_seed_unreachable;
-  std::function<bool(const std::string& call_id)> media_attempted;
-  std::function<void(const std::string& call_id)> note_media_attempted;
   std::function<void(const std::string& call_id)> on_media_key_ready;
 
   bool IsBound() const { return static_cast<bool>(media_path_kind); }
@@ -267,7 +265,8 @@ public:
 
   void SweepExpiredInvites();
   void AbandonOrphanedCallsAfterRestart();
-  bool MediaAttemptedThisProcess(const std::string& call_id) const;
+  /** A stored Active call this process never had and nothing runs for: leave it (Orphaned). Calls owner. */
+  void LeaveIfOrphaned(const std::string& call_id);
 
   Roe<void> ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
                                 std::optional<int64_t> relay_created_at_ms = std::nullopt,
@@ -334,6 +333,9 @@ private:
 
   void StopMediaIfCall(const std::string& call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  /** Build the inbound doorway on `transport` (with the 1:1 path that takes its bundles). */
+  void BuildDoorway(ICallMediaTransport& transport);
+  CallMediaInboundPorts MakeDoorwayPorts();
   /** What the 1:1 path reported (events up): move the call's state, or call the path down. */
   void OnDirectReport(const DirectReport& report);
   void OnAnswererKeyReady(const std::string& call_id, const std::string& peer_identity);
@@ -400,6 +402,7 @@ private:
   ICallMediaTransport* direct_transport_ = nullptr;
   /** Names the current 1:1 path: its events carry it (one built since drops the old ones). */
   uint64_t direct_path_generation_ = 0;
+  uint64_t doorway_generation_ = 0;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
@@ -440,6 +443,8 @@ private:
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
   OwnerOutbox<SessionEvent> outbox_;
+  /** The device's doorway for inbound call media, on the 1:1 path's transport (V056). */
+  std::unique_ptr<CallMediaDoorway> doorway_;
   /** The 1:1 path: last, so it goes first (it calls into the seat, LiveCalls and this manager). */
   std::unique_ptr<CallMediaBridge> direct_path_;
   std::string media_activity_;
