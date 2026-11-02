@@ -265,5 +265,18 @@ TEST(OutboxRetryTest, WhatIsStillWorthSending) {
   EXPECT_FALSE(OutboxRetryAgain(1, AppError::Network(Err::Network::HttpRejected, "400")));
 }
 
+TEST(OutboxRetryTest, TheControlLaneBacksOffWithinItsWindow) {
+  using std::chrono::milliseconds;
+  const Error unreachable = AppError::Network(Err::Network::Unreachable, "relay down");
+  EXPECT_EQ(ControlRetryAfter(1, 0, unreachable), milliseconds(1000)) << "live signaling goes again at once";
+  EXPECT_EQ(ControlRetryAfter(2, 0, unreachable), milliseconds(2000));
+  EXPECT_EQ(ControlRetryAfter(4, 0, unreachable), milliseconds(8000));
+  EXPECT_EQ(ControlRetryAfter(5, 0, unreachable), kControlRetryMaxDelay);
+  EXPECT_EQ(ControlRetryAfter(40, 0, unreachable), kControlRetryMaxDelay) << "not bound by the wake's attempt cap";
+  EXPECT_EQ(ControlRetryAfter(1, kControlRetryWindowMs - 1000, unreachable), milliseconds(1000));
+  EXPECT_FALSE(ControlRetryAfter(1, kControlRetryWindowMs - 999, unreachable)) << "it would land too late";
+  EXPECT_FALSE(ControlRetryAfter(1, 0, AppError::Network(Err::Network::HttpRejected, "400")));
+}
+
 } // namespace
 } // namespace pbr

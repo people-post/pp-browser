@@ -320,6 +320,14 @@ One PR per phase; compose tests + call lab scenarios each time.
   - [x] cn6b — The hop's media data plane (frame sink / send, the call's key ring, publisher streams) as its own object. Done: `CallHopMediaChannel`, shared with the relay's I/O threads (the sink / send capture it, not the path); `CallHopPath` 2846 → 2762 lines
 - [x] cn7 — Compose tests through events; fewer `*ForTest` hooks; the group split race. Done: the race was the 1:1 path stuck Reconnecting on the link its call rode, which then refused the third join's hop and ejected the joiner — fixed with its gtest (`AReconnectOntoTheLinkTheCallRidesIsConnected`; lab group_call_three 10/10 and every run since); the resume test sends the 1:1 path's real `PeerReconnected` report instead of a hook; the unused `SeatForTest` / `DirectPathForTest` are gone. Left as they are: the timing knobs (`Set*MsForTest`: tests shorten real timeouts) and `LiveCallsForTest`, which one compose suite uses to admit calls whose rows it seeds directly — driving those through `StartCall` is a rewrite of that suite, not a cleanup
 
+## cl — Call control on a live lane (V058)
+
+[V058](DECISIONS.md#v058--call-control-is-live-on-the-control-lane-group-calls-ride-the-groups-roster).
+
+- [x] cl1 — Prompt retries for a failed control-lane send: `ControlRetryAfter` (lib/delivery), `DeliveryOutbox` retries on a coordinator timer bound to its lifetime; `Cancel` stops one
+- [ ] cl2 — One multi-recipient control send in delivery; calls' fan-outs and group membership's use it; an invite to many does not stop at the first failure
+- [ ] cl3 — Group roster events from messaging; calls subscribes and drops `DropWhoLeftTheGroup`'s one-second poll
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

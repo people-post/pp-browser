@@ -9,6 +9,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "lib/delivery/IPeerSessionStore.h"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -151,5 +152,16 @@ bool OutboxSendStillWanted(bool control_lane, int64_t age_ms, bool thread_paused
  * again on every poll).
  */
 bool OutboxRetryAgain(int attempts, const Error& failure);
+
+/** The control lane's prompt retries back off to this and stay there for the rest of the window. */
+inline constexpr std::chrono::milliseconds kControlRetryMaxDelay{16000};
+
+/**
+ * When to send a control-lane envelope again after its relay send failed (`attempts` sends so far, the
+ * last ending in `failure`; the envelope `age_ms` old): 1 s, then doubling to kControlRetryMaxDelay.
+ * Signaling is live, so it does not wait for an inbox wake. None when the relay refused the request
+ * itself, or when the retry would land past kControlRetryWindowMs.
+ */
+std::optional<std::chrono::milliseconds> ControlRetryAfter(int attempts, int64_t age_ms, const Error& failure);
 
 } // namespace pbr

@@ -329,10 +329,31 @@ bool OutboxSendStillWanted(const bool control_lane, const int64_t age_ms, const 
   return control_lane ? age_ms <= kControlRetryWindowMs : !thread_paused;
 }
 
+namespace {
+
+/** The relay refused the request itself (#391): the same bytes would be refused again. */
+bool RelayRefused(const Error& failure) {
+  return AppError::CategoryOf(failure) == ErrorCategory::Network &&
+         static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected;
+}
+
+} // namespace
+
 bool OutboxRetryAgain(const int attempts, const Error& failure) {
-  const bool refused = AppError::CategoryOf(failure) == ErrorCategory::Network &&
-                       static_cast<Err::Network>(failure.code) == Err::Network::HttpRejected;
-  return !refused && attempts < kMaxOutboxRetryAttempts;
+  return !RelayRefused(failure) && attempts < kMaxOutboxRetryAttempts;
+}
+
+std::optional<std::chrono::milliseconds> ControlRetryAfter(const int attempts, const int64_t age_ms,
+                                                           const Error& failure) {
+  if (RelayRefused(failure)) {
+    return std::nullopt;
+  }
+  const int doublings = std::clamp(attempts - 1, 0, 4);
+  const auto delay = std::min(std::chrono::milliseconds(1000 << doublings), kControlRetryMaxDelay);
+  if (age_ms + delay.count() > kControlRetryWindowMs) {
+    return std::nullopt;
+  }
+  return delay;
 }
 
 } // namespace pbr

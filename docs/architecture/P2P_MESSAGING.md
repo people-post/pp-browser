@@ -297,7 +297,11 @@ ordered chat stream:
   account pair's AutoKey session, the one media keys are wrapped under; no thread. Its own relay
   stream (`v1:control:…`), so it never shows up as a gap in the chat stream or in history sync.
   Built by `BuildControlLaneEnvelope`; sent by `MeshDeliveryOrchestrator::SendControl` on the
-  critical worker lane — relay when a route is known (retried for two minutes), else Amp.
+  critical worker lane — relay when a route is known, plus a copy over a live link at once
+  (`ControlAlsoGoesDirect`), else Amp. Signaling is live: a failed relay send goes again on a short
+  backoff (1 s, doubling to 16 s — `ControlRetryAfter`) while it is fresh (two minutes), not on the
+  next inbox wake. No acks: a family that must know its peer has a message resends it itself (a
+  call's media keys).
 - **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
   that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
   through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
