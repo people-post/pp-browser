@@ -160,8 +160,12 @@ Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& al
       std::all_of(plan.tools.begin(), plan.tools.end(), [](const PlannedToolCall& call) {
         return call.name == "search_people" || call.name == "list_contacts";
       });
-  if (people_only && (plan.response_goal == ResponseGoal::General ||
-                      plan.response_goal == ResponseGoal::PeopleDiscovery)) {
+  // A General plan that only lists contacts may be a count or a yes/no question ("how many contacts do I
+  // have"), so its render mode stays the planner's choice; search results always need to be selectable.
+  const bool searches = std::any_of(plan.tools.begin(), plan.tools.end(),
+                                    [](const PlannedToolCall& call) { return call.name == "search_people"; });
+  if (people_only && (plan.response_goal == ResponseGoal::PeopleDiscovery ||
+                      (plan.response_goal == ResponseGoal::General && searches))) {
     plan.render_mode = RenderMode::PeopleList;
   }
 

@@ -80,6 +80,22 @@ TEST(TurnPlanTest, PeopleSearchShowsSelectableResultsEvenWhenPlannerOmitsListMod
   }
 }
 
+TEST(TurnPlanTest, GeneralContactsOnlyPlanIsNotForcedIntoAList) {
+  pbr::TurnPlan plan;
+  plan.response_goal = pbr::ResponseGoal::General;
+  plan.user_request = "How many contacts do I have?";
+  plan.tools = {{.name = "list_contacts"}};
+  auto validated = pbr::ValidateTurnPlan(plan, {"list_contacts"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::Blocks);
+  EXPECT_EQ(validated->response_goal, pbr::ResponseGoal::General);
+
+  plan.response_goal = pbr::ResponseGoal::PeopleDiscovery;
+  validated = pbr::ValidateTurnPlan(plan, {"list_contacts"});
+  ASSERT_TRUE(validated);
+  EXPECT_EQ(validated->render_mode, pbr::RenderMode::PeopleList);
+}
+
 TEST(TurnPlanTest, MixedDomainRequestsKeepTheirReplyMode) {
   pbr::TurnPlan plan;
   plan.tools = {{.name = "search_people"}, {.name = "web_search"}};
