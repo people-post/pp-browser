@@ -89,6 +89,7 @@ void QrScanController::BeginCapture() {
 }
 
 void QrScanController::OnDismissed() {
+  preview_ = nullptr;
   layer_id_ = -1;
   scanner_.Stop();
   on_result_ = nullptr;
@@ -143,7 +144,13 @@ void QrScanController::Tick() {
     if (!preview_) {
       FindPreview();
     }
-    if (auto* preview = static_cast<ElementScanPreview*>(preview_.get())) {
+    auto* preview = dynamic_cast<ElementScanPreview*>(preview_.get());
+    if (!preview && preview_) {
+      preview_ = nullptr;  // the id now names something else: look again
+      FindPreview();
+      preview = dynamic_cast<ElementScanPreview*>(preview_.get());
+    }
+    if (preview) {
       preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
     }
     Dirty();
