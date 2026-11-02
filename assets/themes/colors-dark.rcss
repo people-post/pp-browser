@@ -496,6 +496,11 @@ select selectbox option:hover {
   image-color: #4d0000;
 }
 
+/* White on the green zoom dot (the close and minimize dots keep the dark macOS glyphs). */
+.shell-titlebar-btn--traffic-zoom svg {
+  image-color: #ffffff;
+}
+
 .shell-banner {
   background-color: #422006;
   border-bottom: 1dp #854d0e;
@@ -1517,13 +1522,14 @@ select selectbox option:hover {
   background-color: #22c55e;
 }
 
-.chat-header-call-btn--join svg {
-  image-color: #ffffff;
-}
-
 .chat-header-call-btn svg,
 .chat-header-more-btn svg {
   image-color: #f9fafb;
+}
+
+/* After the plain call button's rule (same specificity): white on the green join button. */
+.chat-header-call-btn--join svg {
+  image-color: #ffffff;
 }
 
 .context-menu-panel {
