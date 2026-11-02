@@ -1,6 +1,7 @@
 #include "lib/media/CallMediaEngine.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/VideoCodecUnavailable.h"
+#include "common/Logger.h"
 
 #include <gtest/gtest.h>
 
@@ -9,7 +10,9 @@
 #include <chrono>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -751,6 +754,80 @@ TEST_F(EngineDeviceLeaseTest, ReopenKeepsLeasesAndReplacesEndpoints) {
   EXPECT_EQ(opens_before(), before + 2) << "mic and speaker reopened";
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic).size(), 1u);
   engine.Stop();
+}
+
+/** Encoder stub whose ConfigureEncoder blocks until released — a camera/encoder step that hangs (B128). */
+class HangingEncoder final : public IVideoCodec {
+public:
+  struct Gate {
+    std::atomic<bool> entered{false};
+    std::atomic<bool> release{false};
+  };
+  explicit HangingEncoder(std::shared_ptr<Gate> gate) : gate_(std::move(gate)) {}
+  std::string BackendName() const override { return "hanging-encoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return false; }
+  Roe<void> ConfigureEncoder(int, int, int) override {
+    gate_->entered.store(true);
+    // Bounded so a failing test cannot hang the run.
+    for (int i = 0; i < 2000 && !gate_->release.load(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return Error("no encoder");
+  }
+  Roe<void> ConfigureDecoder() override { return Error("no decoder"); }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return Error("no decoder"); }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+
+private:
+  std::shared_ptr<Gate> gate_;
+};
+
+/** Collects the engine channel's lines (logger handlers cannot be removed: kept for the process). */
+struct EngineLogCapture : logging::Handler {
+  void emit(logging::Level, const std::string&, const std::string& message) override {
+    std::lock_guard lock(mu);
+    lines.push_back(message);
+  }
+  bool Has(const std::string& needle) {
+    std::lock_guard lock(mu);
+    return std::any_of(lines.begin(), lines.end(),
+                       [&](const std::string& line) { return line.find(needle) != std::string::npos; });
+  }
+  std::mutex mu;
+  std::vector<std::string> lines;
+};
+
+// B128: a Stop that cannot join the video thread says where that thread is stuck, and still waits
+// for it (the thread uses the engine) — it returns once the stuck step does.
+TEST_F(EngineDeviceLeaseTest, StopStuckJoiningTheVideoThreadLogsItsStage) {
+  auto capture = std::make_shared<EngineLogCapture>();
+  logging::getLogger("CallMediaEngine").addHandler(capture);
+  auto gate = std::make_shared<HangingEncoder::Gate>();
+  auto engine = std::make_unique<CallMediaEngine>(*arbiter_);
+  engine->SetVideoCodecFactoryForTest([gate] { return std::make_unique<HangingEncoder>(gate); });
+  ASSERT_TRUE(engine->StartSfu("call:stuck", NoopSend()));
+  ASSERT_TRUE(engine->SetCameraEnabled(true));
+  ASSERT_TRUE(WaitUntil([&] { return gate->entered.load(); })) << "the video thread reached the encoder";
+
+  std::atomic<bool> stopped{false};
+  std::thread stopper([&] {
+    engine->Stop();
+    stopped.store(true);
+  });
+  bool warned = false;
+  for (int i = 0; i < 700 && !warned; ++i) {  // ~3.5 s
+    warned = capture->Has("media stop join_video slow stage=configure_encoder");
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_TRUE(warned);
+  EXPECT_FALSE(stopped.load()) << "Stop keeps waiting for the thread";
+
+  gate->release.store(true);
+  EXPECT_TRUE(WaitUntil([&] { return stopped.load(); })) << "Stop returns once the step does";
+  stopper.join();
 }
 
 } // namespace

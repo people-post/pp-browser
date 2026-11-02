@@ -48,6 +48,9 @@ struct CallMediaEngineHealth {
   uint64_t fec_frames = 0;
   /** Call audio device path: "vpio" (OS voice processing / AEC), "sdl", or "none". */
   std::string audio_io = "none";
+  /** The engine was started and not stopped (with or without audio devices). A sample taken after it
+   *  stopped has all-zero counters; the call summary keeps the last running sample instead (B125). */
+  bool engine_running = false;
   /** VPIO render callbacks padded with zeros, per call, after playout started (0 on SDL). */
   uint64_t io_underruns = 0;
   /** Adaptive jitter target (max over remote streams), and catch-up drops summed over streams. */

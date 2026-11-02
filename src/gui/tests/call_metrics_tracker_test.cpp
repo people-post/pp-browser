@@ -32,6 +32,18 @@ Tracker::MediaTick Media(bool connected, uint64_t rx_audio = 0, uint64_t rx_vide
   t.health.rx_video_frames = rx_video;
   t.health.tx_video_frames = rx_video;
   t.health.audio_io = "vpio";
+  t.health.engine_running = true;
+  return t;
+}
+
+/** A sample taken after the engine stopped (reconnect / teardown): no devices, counters zero. */
+Tracker::MediaTick StoppedMedia(bool connected) {
+  Tracker::MediaTick t;
+  t.connected = connected;
+  t.path = "direct";
+  t.quality = CallPathQuality::Excellent;
+  t.health.audio_io = "none";
+  t.health.engine_running = false;
   return t;
 }
 
@@ -223,6 +235,49 @@ TEST(CallMetricsTrackerTest, LinesCarryNoIdentityOrAddress) {
     EXPECT_FALSE(std::regex_search(line, ip)) << line;
     EXPECT_EQ(line.find("0123456789abcdef0123456789abcdef"), std::string::npos) << "full call id: " << line;
   }
+}
+
+// B125: the summary's audio fields come from the last sample taken while the engine ran; a call
+// whose engine was already stopped at its last sample says so.
+TEST(CallMetricsTrackerTest, EngineNeverRunningKeepsAudioIoNone) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  t.NoteMedia(kCall, StoppedMedia(true), now += 1000, Vitals());
+  t.NoteMedia(kCall, StoppedMedia(true), now += 1000, Vitals());
+  const std::string summary = EndCall(t, now);
+  EXPECT_TRUE(Has(summary, "event=call.summary")) << summary;
+  EXPECT_TRUE(Has(summary, "audio_io=none")) << summary;
+  EXPECT_TRUE(Has(summary, "rx_audio=0")) << summary;
+  EXPECT_EQ(summary.find("ended_with_engine_stopped"), std::string::npos) << summary;
+}
+
+TEST(CallMetricsTrackerTest, StoppedEngineSampleDoesNotOverwriteTheLastRunningOne) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  t.NoteMedia(kCall, Media(true, 10), now += 1000, Vitals());
+  t.NoteMedia(kCall, Media(true, 60), now += 1000, Vitals());
+  t.NoteMedia(kCall, StoppedMedia(false), now += 1000, Vitals());
+  const std::string summary = EndCall(t, now);
+  EXPECT_TRUE(Has(summary, "audio_io=vpio")) << summary;
+  EXPECT_TRUE(Has(summary, "rx_audio=50")) << summary;
+  EXPECT_TRUE(Has(summary, "tx_audio=50")) << summary;
+  EXPECT_TRUE(Has(summary, "ended_with_engine_stopped=1")) << summary;
+}
+
+TEST(CallMetricsTrackerTest, EngineRunningThroughoutReportsAsBefore) {
+  Tracker t;
+  int64_t now = 1000;
+  t.NoteOutbound(kCall, false, now, Vitals());
+  t.NoteMedia(kCall, Media(true, 10), now += 1000, Vitals());
+  t.NoteMedia(kCall, Media(true, 30), now += 1000, Vitals());
+  t.NoteMedia(kCall, Media(true, 60), now += 1000, Vitals());
+  const std::string summary = EndCall(t, now);
+  EXPECT_TRUE(Has(summary, "audio_io=vpio")) << summary;
+  EXPECT_TRUE(Has(summary, "rx_audio=50")) << summary;
+  EXPECT_TRUE(Has(summary, "tx_audio=50")) << summary;
+  EXPECT_EQ(summary.find("ended_with_engine_stopped"), std::string::npos) << summary;
 }
 
 } // namespace

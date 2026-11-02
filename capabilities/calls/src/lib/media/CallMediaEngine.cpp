@@ -8,6 +8,7 @@
 #include "lib/media/CallRingtone.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/CaptureStarvePolicy.h"
+#include "lib/media/DecodeStallPolicy.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -23,6 +24,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -59,11 +61,124 @@ constexpr int kVideoFps = 20;
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
+/** A getter waiting this long for the media mutex is logged (B125), at most kMaxLockWaitWarns per call. */
+constexpr int64_t kLockWaitWarnMs = 50;
+constexpr int kMaxLockWaitWarns = 10;
+/** A Stop() step (thread join, decoder hand-off, audio teardown) longer than this is a WARN (B128). */
+constexpr int64_t kSlowStopStepMs = 500;
 
 /** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
 logging::Logger& EngineLog() {
   static logging::Logger log = logging::getLogger("CallMediaEngine");
   return log;
+}
+
+int64_t MsSince(std::chrono::steady_clock::time_point since) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since).count();
+}
+
+int64_t SteadyNowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+/** A join still waiting after this logs which stage the thread is in (B128), then keeps waiting. */
+constexpr auto kJoinStageWarnAfter = std::chrono::milliseconds(2000);
+
+/** Where a media thread is (B128: Stop hung joining one; which call was it in?). */
+enum class MediaThreadStage : uint8_t {
+  Idle,
+  OpenDevices,  // capture: audio leases open / reopen
+  WaitCamera,   // video: no camera wanted / open yet
+  OpenCamera,
+  ConfigureEncoder,
+  ResetEncoder,
+  CloseCamera,
+  SetBitrate,
+  WaitFrame,
+  Convert,      // video: orient / crop / preview
+  ReadMic,
+  Encode,
+  LockMedia,    // waiting for the media mutex
+  Mix,          // playout: decode + mix + speaker write, under the media mutex
+  Send,
+  Sleep,
+  Exiting,
+};
+
+const char* MediaThreadStageName(MediaThreadStage stage) {
+  switch (stage) {
+    case MediaThreadStage::Idle: return "idle";
+    case MediaThreadStage::OpenDevices: return "open_devices";
+    case MediaThreadStage::WaitCamera: return "wait_camera";
+    case MediaThreadStage::OpenCamera: return "open_camera";
+    case MediaThreadStage::ConfigureEncoder: return "configure_encoder";
+    case MediaThreadStage::ResetEncoder: return "reset_encoder";
+    case MediaThreadStage::CloseCamera: return "close_camera";
+    case MediaThreadStage::SetBitrate: return "set_bitrate";
+    case MediaThreadStage::WaitFrame: return "wait_frame";
+    case MediaThreadStage::Convert: return "convert";
+    case MediaThreadStage::ReadMic: return "read_mic";
+    case MediaThreadStage::Encode: return "encode";
+    case MediaThreadStage::LockMedia: return "lock_media";
+    case MediaThreadStage::Mix: return "mix";
+    case MediaThreadStage::Send: return "send";
+    case MediaThreadStage::Sleep: return "sleep";
+    case MediaThreadStage::Exiting: return "exiting";
+  }
+  return "unknown";
+}
+
+/** One media thread's current stage and since when (steady ms); relaxed stores from that thread. */
+struct MediaThreadStageTracker {
+  std::atomic<uint8_t> stage{static_cast<uint8_t>(MediaThreadStage::Idle)};
+  std::atomic<int64_t> since_ms{0};
+
+  void Set(MediaThreadStage next) {
+    if (stage.load(std::memory_order_relaxed) == static_cast<uint8_t>(next)) {
+      return;
+    }
+    stage.store(static_cast<uint8_t>(next), std::memory_order_relaxed);
+    since_ms.store(SteadyNowMs(), std::memory_order_relaxed);
+  }
+  const char* Name() const { return MediaThreadStageName(static_cast<MediaThreadStage>(stage.load(std::memory_order_relaxed))); }
+  int64_t MsInStage() const { return SteadyNowMs() - since_ms.load(std::memory_order_relaxed); }
+};
+
+/**
+ * Joins `thread`. If it is still running after kJoinStageWarnAfter, logs the stage it is in
+ * ("<context> join_<name> slow stage=… since_ms=…") and keeps waiting — never detaches: the media
+ * threads use Impl, which the caller may free next.
+ */
+void JoinThreadWatched(std::thread& thread, const char* context, const char* name,
+                       const MediaThreadStageTracker& stage) {
+  if (!thread.joinable()) {
+    return;
+  }
+  struct Done {
+    std::mutex mu;
+    std::condition_variable cv;
+    bool done = false;
+  };
+  auto done = std::make_shared<Done>();
+  std::thread waiter([joining = std::move(thread), done]() mutable {
+    joining.join();
+    {
+      std::lock_guard lock(done->mu);
+      done->done = true;
+    }
+    done->cv.notify_all();
+  });
+  bool finished = false;
+  {
+    std::unique_lock lock(done->mu);
+    finished = done->cv.wait_for(lock, kJoinStageWarnAfter, [&] { return done->done; });
+  }
+  if (!finished) {
+    EngineLog().warning << context << " join_" << name << " slow stage=" << stage.Name()
+                        << " since_ms=" << stage.MsInStage();
+  }
+  waiter.join();
 }
 
 } // namespace
@@ -182,7 +297,11 @@ struct CallMediaEngine::Impl {
   /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
+  std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   int video_decode_fail_logs = 0;
+  /** Getter waits for `mutex` over kLockWaitWarnMs logged this call (B125: is decode holding it?). */
+  std::atomic<int> lock_wait_warns{0};
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
    * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
@@ -209,6 +328,10 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> capture_running{false};
   std::atomic<bool> video_running{false};
   std::atomic<bool> playout_running{false};
+  /** Where each media thread is, for a join that does not return (B128). */
+  MediaThreadStageTracker capture_stage;
+  MediaThreadStageTracker playout_stage;
+  MediaThreadStageTracker video_stage;
   /** Capture worker closes+reopens SDL devices (speaker route / SoftMigrate). */
   std::atomic<bool> audio_reopen_requested{false};
   std::atomic<float> local_input_level{0.f};
@@ -288,6 +411,38 @@ struct CallMediaEngine::Impl {
     local_video_frame.rgba = std::move(copy.rgba);
     local_video_frame.seq = ++local_video_seq;
   }
+
+  /**
+   * A public getter's hold on `mutex` (B125: the UI thread polls several every frame; does decode
+   * keep it waiting?). Times the wait; a long one is logged after the lock is released.
+   */
+  class TimedGetterLock {
+  public:
+    TimedGetterLock(Impl& impl, const char* getter)
+        : impl_(impl),
+          getter_(getter),
+          since_(std::chrono::steady_clock::now()),
+          lock_(impl.mutex),
+          waited_ms_(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - since_)
+                         .count()) {}
+    ~TimedGetterLock() {
+      if (waited_ms_ <= kLockWaitWarnMs || impl_.lock_wait_warns.fetch_add(1) >= kMaxLockWaitWarns) {
+        return;
+      }
+      const std::string call = impl_.call_id;
+      lock_.unlock();
+      EngineLog().warning << "media lock wait getter=" << getter_ << " waited_ms=" << waited_ms_ << " call=" << call;
+    }
+    TimedGetterLock(const TimedGetterLock&) = delete;
+    TimedGetterLock& operator=(const TimedGetterLock&) = delete;
+
+  private:
+    Impl& impl_;
+    const char* getter_;
+    std::chrono::steady_clock::time_point since_;
+    std::unique_lock<std::recursive_mutex> lock_;
+    int64_t waited_ms_;
+  };
 
   void NoteVideoRefreshNeeded(uint32_t stream_id) {
     const int64_t now = util::NowUnixMs();
@@ -421,14 +576,15 @@ struct CallMediaEngine::Impl {
     CallAudioSession::ClearCaptureAudioHints();
   }
 
-  void JoinCaptureThread() {
+  /** `context` names the caller in the slow-join warning ("media stop", "media restart"). */
+  void JoinCaptureThread(const char* context) {
     capture_running = false;
-    JoinThreadBudgeted(capture_thread, std::chrono::milliseconds::max(), "capture");
+    JoinThreadWatched(capture_thread, context, "capture", capture_stage);
   }
 
-  void JoinPlayoutThread() {
+  void JoinPlayoutThread(const char* context) {
     playout_running = false;
-    JoinThreadBudgeted(playout_thread, std::chrono::milliseconds::max(), "playout");
+    JoinThreadWatched(playout_thread, context, "playout", playout_stage);
   }
 
   /** Product quit: cap capture/playout joins so SDL device close cannot hang Shutdown. */
@@ -565,6 +721,7 @@ struct CallMediaEngine::Impl {
 
   void StartPlayoutLoop() {
     playout_running = true;
+    playout_stage.Set(MediaThreadStage::Idle);
     playout_thread = std::thread([this]() {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
@@ -578,7 +735,9 @@ struct CallMediaEngine::Impl {
         last_tick = t0;
         double pressure = 0.0;
         {
+          playout_stage.Set(MediaThreadStage::LockMedia);
           std::lock_guard lock(mutex);
+          playout_stage.Set(MediaThreadStage::Mix);
           AudioDeviceLease* out = speaker_lease && speaker_lease->HasDevice() ? speaker_lease.get() : nullptr;
           if (t0 - last_diag >= std::chrono::seconds(2)) {
             last_diag = t0;
@@ -636,10 +795,12 @@ struct CallMediaEngine::Impl {
                             std::memory_order_relaxed);
         const auto elapsed = std::chrono::steady_clock::now() - t0;
         const auto period = std::chrono::milliseconds(kFrameMs);
+        playout_stage.Set(MediaThreadStage::Sleep);
         if (elapsed < period) {
           std::this_thread::sleep_for(period - elapsed);
         }
       }
+      playout_stage.Set(MediaThreadStage::Exiting);
     });
   }
 
@@ -799,7 +960,7 @@ struct CallMediaEngine::Impl {
       return;
     }
     if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
-      SDL_Log("CallMediaEngine: audio_io=sdl reason=vpio disabled for call (capture starved)");
+      EngineLog().info << "audio_io=sdl reason=vpio disabled for call (capture starved)";
       return;
     }
     AudioLeaseRequest request;
@@ -808,10 +969,10 @@ struct CallMediaEngine::Impl {
     request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
     auto pair = DeviceArbiter().AcquireVoiceDuplex(request);
     if (!pair) {
-      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", pair.error().message.c_str());
+      EngineLog().info << "audio_io=sdl reason=" << pair.error().message;
       return;
     }
-    SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+    EngineLog().info << "audio_io=vpio (voice processing: echo cancellation on)";
     mic = std::move(pair->mic);
     speaker = std::move(pair->speaker);
   }
@@ -821,15 +982,18 @@ struct CallMediaEngine::Impl {
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
     vpio_disabled_for_call.store(false, std::memory_order_relaxed);
+    capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
+      capture_stage.Set(MediaThreadStage::OpenDevices);
       if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
         SDL_Log("CallMediaEngine: audio devices: %s", audio.error().message.c_str());
       } else if (!capture_available) {
         SDL_Log("CallMediaEngine: started without capture device — sending silence; playback still active");
       }
       if (!capture_running.load()) {
+        capture_stage.Set(MediaThreadStage::Exiting);
         return;
       }
 
@@ -854,6 +1018,7 @@ struct CallMediaEngine::Impl {
           // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
           SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
+          capture_stage.Set(MediaThreadStage::OpenDevices);
           if (auto audio = EnsureAudioLeases(/*reopen=*/true); !audio) {
             SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
@@ -876,6 +1041,7 @@ struct CallMediaEngine::Impl {
         bool can_send = false;
         bool capturing = true;
         {
+          capture_stage.Set(MediaThreadStage::LockMedia);
           std::lock_guard lock(mutex);
           capturing = spec.capture;
           enc = encoder;
@@ -895,6 +1061,7 @@ struct CallMediaEngine::Impl {
         bool paced_silence_frame = false;
         if (capture_available) {
           int16_t chunk[kFrameSamples];
+          capture_stage.Set(MediaThreadStage::ReadMic);
           const int got = mic_lease->Read(chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
@@ -991,6 +1158,7 @@ struct CallMediaEngine::Impl {
           bitrate_enc = enc;
           applied_audio_bps = want_bps;
         }
+        capture_stage.Set(MediaThreadStage::Encode);
         const int encoded =
             opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
@@ -1002,6 +1170,7 @@ struct CallMediaEngine::Impl {
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
+            capture_stage.Set(MediaThreadStage::Send);
             std::lock_guard send_lock(sfu_send_call_mu);
             (*send_fn)(pkt);
             tx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1011,20 +1180,23 @@ struct CallMediaEngine::Impl {
         }
         // Pace silence / starved-capture TX to one Opus frame per period.
         if (paced_silence_frame) {
+          capture_stage.Set(MediaThreadStage::Sleep);
           std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
         }
       }
+      capture_stage.Set(MediaThreadStage::Exiting);
     });
   }
 
   void StartVideoLoop() {
     video_running = true;
+    video_stage.Set(MediaThreadStage::Idle);
     video_thread = std::thread([this]() { RunVideoLoop(); });
   }
 
-  void JoinVideoThread() {
+  void JoinVideoThread(const char* context) {
     video_running = false;
-    JoinThreadBudgeted(video_thread, std::chrono::milliseconds::max(), "video");
+    JoinThreadWatched(video_thread, context, "video", video_stage);
   }
 
   /**
@@ -1129,6 +1301,7 @@ struct CallMediaEngine::Impl {
     if (!video_codec || !video_codec->HasEncoder()) {
       return;
     }
+    video_stage.Set(MediaThreadStage::Encode);
     auto encoded = video_codec->Encode(i420, need_keyframe);
     if (!encoded || encoded->annex_b.empty()) {
       return;
@@ -1136,6 +1309,7 @@ struct CallMediaEngine::Impl {
     need_keyframe = false;
     std::shared_ptr<SfuSendFn> send_fn;
     {
+      video_stage.Set(MediaThreadStage::LockMedia);
       std::lock_guard lock(mutex);
       if (sfu_mode && sfu_send) {
         send_fn = sfu_send;
@@ -1150,6 +1324,7 @@ struct CallMediaEngine::Impl {
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
     try {
+      video_stage.Set(MediaThreadStage::Send);
       std::lock_guard send_lock(sfu_send_call_mu);
       (*send_fn)(pkt);
       tx_video_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1183,10 +1358,12 @@ struct CallMediaEngine::Impl {
       // FlipCamera: release the open camera like a turn-off (the preview keeps its last frame);
       // the open below takes the other facing. A flip pending when the camera is off is dropped.
       if (camera_reopen_requested.exchange(false, std::memory_order_acq_rel) && wanted && camera) {
+        video_stage.Set(MediaThreadStage::CloseCamera);
         camera.reset();
         camera_open.store(false, std::memory_order_release);
         camera_requested.reset();  // the open below is timed on its own (camera.start lease_ms)
         if (video_codec) {
+          video_stage.Set(MediaThreadStage::ResetEncoder);
           video_codec->ResetEncoder();
         }
       }
@@ -1194,30 +1371,37 @@ struct CallMediaEngine::Impl {
         if (!camera_requested) {
           camera_requested = std::chrono::steady_clock::now();
         }
+        video_stage.Set(MediaThreadStage::OpenCamera);
         camera = OpenCameraLease();
         if (camera) {
           camera_lease_ms = ms_since(*camera_requested);
           geometry = EncodeGeometry(camera->Geometry());
           camera_front_facing.store(geometry.front_facing, std::memory_order_relaxed);
           camera_open.store(true, std::memory_order_release);
+          video_stage.Set(MediaThreadStage::ConfigureEncoder);
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
           need_keyframe = true;
         }
       } else if (!wanted && camera) {
+        video_stage.Set(MediaThreadStage::CloseCamera);
         camera.reset();
         camera_open.store(false, std::memory_order_release);
         if (video_codec) {
+          video_stage.Set(MediaThreadStage::ResetEncoder);
           video_codec->ResetEncoder();
         }
         ClearLocalPreview();
       }
       if (!camera) {
+        video_stage.Set(MediaThreadStage::WaitCamera);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         continue;
       }
       const auto t0 = std::chrono::steady_clock::now();
+      video_stage.Set(MediaThreadStage::SetBitrate);
       ApplyVideoBitrate(applied_bps);
+      video_stage.Set(MediaThreadStage::WaitFrame);
       auto frame = camera->NextFrame();
       if (!frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -1227,12 +1411,17 @@ struct CallMediaEngine::Impl {
         MetricsLine("camera.start").Add("lease_ms", camera_lease_ms).Add("first_frame_ms", ms_since(*camera_requested)).Emit();
         camera_requested.reset();
       }
+      video_stage.Set(MediaThreadStage::Convert);
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
       const auto elapsed = std::chrono::steady_clock::now() - t0;
+      video_stage.Set(MediaThreadStage::Sleep);
       if (elapsed < frame_period) {
         std::this_thread::sleep_for(frame_period - elapsed);
       }
     }
+    // Leaving the loop closes the camera (the lease's destructor, device thread) — the step a stop
+    // waits on here.
+    video_stage.Set(MediaThreadStage::Exiting);
   }
 
   void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
@@ -1303,9 +1492,51 @@ struct CallMediaEngine::Impl {
                       << decoded.error().message << " call=" << call_id;
       }
       NoteVideoRefreshNeeded(stream_id);
+      if (decoded.error().message == kDecoderStalledError) {
+        ResetStalledDecoder(stream_id);
+      }
       return;
     }
-    PublishRemoteFrame(stream_id, std::move(*decoded));
+    if (!decoded->has_value()) {
+      // No frame to show yet (decoder filling its pipeline / waiting for an IDR): not an error.
+      return;
+    }
+    {
+      // Per frame, but OnSfuPacket already holds this (recursive) lock: no extra contention.
+      std::lock_guard lock(mutex);
+      if (auto it = decoder_resets.find(stream_id); it != decoder_resets.end()) {
+        it->second.NoteFrame();
+      }
+    }
+    PublishRemoteFrame(stream_id, std::move(**decoded));
+  }
+
+  /**
+   * B125: a decoder that stays stalled is rebuilt — two stalls in a row, at most twice per call, ten
+   * seconds apart (it runs under the media lock). The next packet configures it again; it shows
+   * nothing until an IDR, which the stall has already asked for.
+   */
+  void ResetStalledDecoder(uint32_t stream_id) {
+    std::lock_guard lock(mutex);
+    // Looked up again under the lock: Stop / SoftMigrate may have dropped the decoder (and the
+    // budgets) since Decode returned — then there is nothing to rebuild and no budget to start.
+    auto it = remote_decoders.find(stream_id);
+    if (it == remote_decoders.end() || !it->second) {
+      return;
+    }
+    DecoderResetBudget& budget = decoder_resets[stream_id];
+    const auto started = std::chrono::steady_clock::now();
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count();
+    if (!budget.NoteStall(now_ms)) {
+      return;
+    }
+    it->second->ResetDecoder();
+    const auto took_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets="
+                        << budget.Resets() << (budget.Exhausted() ? " (no more rebuilds this call)" : "")
+                        << " took_ms=" << took_ms << " call=" << call_id;
   }
 
 };
@@ -1346,7 +1577,7 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
 }
 
 CallMediaEngine::SessionSpec CallMediaEngine::ActiveSpec() const {
-  std::lock_guard lock(impl_->mutex);
+  Impl::TimedGetterLock lock(*impl_, "ActiveSpec");
   return impl_->spec;
 }
 
@@ -1412,9 +1643,9 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec s
   abandoned_send = nullptr;
   if (need_rebuild) {
     impl_->playout_running = false;
-    impl_->JoinCaptureThread();
-    impl_->JoinPlayoutThread();
-    impl_->JoinVideoThread();  // outside `mutex`: the video thread takes it to read the send callback
+    impl_->JoinCaptureThread("media restart");
+    impl_->JoinPlayoutThread("media restart");
+    impl_->JoinVideoThread("media restart");  // outside `mutex`: the video thread takes it to read the send callback
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
   }
@@ -1505,7 +1736,7 @@ void CallMediaEngine::ClearRemoteAudioTracks() {
 }
 
 bool CallMediaEngine::IsSfuMode() const {
-  std::lock_guard lock(impl_->mutex);
+  Impl::TimedGetterLock lock(*impl_, "IsSfuMode");
   return impl_->sfu_mode;
 }
 
@@ -1534,6 +1765,9 @@ void CallMediaEngine::NoteOutboundDrop() {
 CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   CallMediaEngineHealth h;
   h.active = impl_->active.load(std::memory_order_relaxed);
+  // Started and not stopped — also while running without an audio device (RX muted, device still
+  // opening); a stopped engine's counters are not the call's.
+  h.engine_running = h.active;
   h.connected = impl_->connected.load(std::memory_order_relaxed);
   h.muted = impl_->muted.load(std::memory_order_relaxed);
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
@@ -1553,7 +1787,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
-    std::lock_guard lock(impl_->mutex);
+    Impl::TimedGetterLock lock(*impl_, "HealthSnapshot");
     AudioDeviceLease* speaker = impl_->speaker_lease.get();
     const bool voice = speaker && speaker->IsVoiceDuplex();
     const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
@@ -1587,6 +1821,14 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
 void CallMediaEngine::Stop() {
   StateChangedFn state_cb;
   std::shared_ptr<SfuSendFn> abandoned_send;
+  std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> doomed_decoders;
+  const auto stop_from = std::chrono::steady_clock::now();
+  std::string stopping_call;
+  // B128: logged before the lock — a decode wedged inside OnSfuPacket would hold it. Idle Stops
+  // (destructor, repeated ends) stay quiet.
+  if (impl_->active.load(std::memory_order_relaxed)) {
+    log().info << "media stop begin";
+  }
   {
     std::lock_guard lock(impl_->mutex);
     if (!impl_->active && !impl_->sfu_mode) {
@@ -1607,30 +1849,62 @@ void CallMediaEngine::Stop() {
     impl_->capture_running = false;
     impl_->playout_running = false;
     // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
-    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
-    impl_->remote_decoders.clear();
+    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen. Taken out under the lock, so
+    // the receive path (OnSfuPacket holds the lock while it decodes) and ResetStalledDecoder (looks
+    // the decoder up again under it) can no longer reach them; destroyed below, off this thread.
+    doomed_decoders.swap(impl_->remote_decoders);
+    impl_->decoder_resets.clear();
     impl_->video_decode_fail_logs = 0;
+    impl_->lock_wait_warns.store(0, std::memory_order_relaxed);
+    stopping_call = impl_->call_id;
+  }
+  // B128: which step of a stop hangs (codec teardown vs. capture / playout / camera joins).
+  auto timed_step = [this](const char* step, const auto& run) {
+    const auto from = std::chrono::steady_clock::now();
+    run();
+    const int64_t ms = MsSince(from);
+    if (ms > kSlowStopStepMs) {
+      log().warning << "media stop slow step=" << step << " ms=" << ms;
+    } else {
+      log().info << "media stop step=" << step << " ms=" << ms;
+    }
+  };
+  {
+    const int64_t lock_ms = MsSince(stop_from);
+    if (lock_ms > kSlowStopStepMs) {
+      log().warning << "media stop slow step=lock ms=" << lock_ms << " call=" << stopping_call;
+    } else {
+      log().info << "media stop step=lock ms=" << lock_ms << " call=" << stopping_call;
+    }
   }
   abandoned_send = nullptr;
+  // B128: destroying a hardware decoder (AMediaCodec_stop / delete) can block for good when the
+  // vendor codec is wedged, and this is the calls owner thread. A decoder owns only its codec and
+  // never touches Impl, so a detached thread may outlive the engine here — the "always join" rule
+  // below is about threads that use Impl.
+  timed_step("decoders", [&] {
+    if (!doomed_decoders.empty()) {
+      std::thread([decoders = std::move(doomed_decoders)]() mutable { decoders.clear(); }).detach();
+    }
+  });
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
-  {
-    std::lock_guard drain(impl_->sfu_send_call_mu);
-  }
+  timed_step("drain_send", [&] { std::lock_guard drain(impl_->sfu_send_call_mu); });
   // Always join — never detach. Budgeted detach raced TearDownAudioLocked / ~Impl with
   // capture still inside SDL_OpenAudioDeviceStream (Windows CI headless: segfault after
   // "OpenAudioDevices failed"). Product quit must wait for the worker; SDL open fails fast
   // when no device is present.
-  impl_->JoinCaptureThread();
-  impl_->JoinPlayoutThread();
-  impl_->JoinVideoThread();
-  {
+  timed_step("join_capture", [&] { impl_->JoinCaptureThread("media stop"); });
+  timed_step("join_playout", [&] { impl_->JoinPlayoutThread("media stop"); });
+  timed_step("join_video", [&] { impl_->JoinVideoThread("media stop"); });
+  timed_step("teardown_audio", [&] {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
     impl_->call_id.clear();
     impl_->spec = SessionSpec::Duplex();
     impl_->ApplyStateLocked("closed");
     state_cb = impl_->on_state_changed;
-  }
+  });
+  log().info << "media stop done call=" << stopping_call << " ms=" << MsSince(stop_from);
   if (state_cb) {
     state_cb("closed");
   }
@@ -1781,7 +2055,7 @@ void CallMediaEngine::RefreshRemoteVideoHealth() {
   const int64_t now = util::NowUnixMs();
   std::string state;
   {
-    std::lock_guard lock(impl_->mutex);
+    Impl::TimedGetterLock lock(*impl_, "RefreshRemoteVideoHealth");
     state = impl_->connection_state;
   }
   if (state == "failed" || state == "closed") {
@@ -1848,6 +2122,11 @@ std::vector<uint32_t> CallMediaEngine::TakePendingVideoRefreshStreamIds() {
   return out;
 }
 
+std::vector<uint32_t> CallMediaEngine::PendingVideoRefreshStreamsForTest() const {
+  std::lock_guard lock(impl_->video_refresh_mu);
+  return {impl_->pending_video_refresh_streams.begin(), impl_->pending_video_refresh_streams.end()};
+}
+
 bool CallMediaEngine::IsActive() const {
   return impl_->active.load();
 }
@@ -1861,12 +2140,12 @@ void CallMediaEngine::SetConnectionState(const std::string& state) {
 }
 
 std::string CallMediaEngine::ActiveCallId() const {
-  std::lock_guard lock(impl_->mutex);
+  Impl::TimedGetterLock lock(*impl_, "ActiveCallId");
   return impl_->call_id;
 }
 
 std::string CallMediaEngine::ConnectionState() const {
-  std::lock_guard lock(impl_->mutex);
+  Impl::TimedGetterLock lock(*impl_, "ConnectionState");
   return impl_->connection_state;
 }
 
@@ -1879,7 +2158,7 @@ int64_t CallMediaEngine::StartedAtMs() const {
 }
 
 bool CallMediaEngine::HasLocalCapture() const {
-  std::lock_guard lock(impl_->mutex);
+  Impl::TimedGetterLock lock(*impl_, "HasLocalCapture");
   return impl_->capture_available;
 }
 

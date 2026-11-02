@@ -1076,7 +1076,9 @@ public:
   Roe<void> ConfigureEncoder(int width, int height, int fps) override;
   Roe<void> ConfigureDecoder() override;
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) override;
-  Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) override;
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t* annex_b, size_t size) override {
+    return OneFrameDecodeResult(DecodeFrame(annex_b, size));
+  }
   void ResetEncoder() override;
   void ResetDecoder() override;
 
@@ -1084,6 +1086,7 @@ public:
   bool CapsHasDecoder() const { return caps_.has_decode; }
 
 private:
+  Roe<VideoFrameRgba> DecodeFrame(const uint8_t* annex_b, size_t size);
   bool EnsureDecoderContext(const ParsedSps& sps, std::string& error);
   Roe<VideoFrameRgba> DecodeSliceAccessUnit(const std::vector<AnnexBNal>& nals);
 
@@ -1739,7 +1742,7 @@ Roe<VideoFrameRgba> VaapiVideoCodec::DecodeSliceAccessUnit(const std::vector<Ann
   return rgba;
 }
 
-Roe<VideoFrameRgba> VaapiVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
+Roe<VideoFrameRgba> VaapiVideoCodec::DecodeFrame(const uint8_t* annex_b, size_t size) {
   if (!decoder_configured_) {
     return Error("H264 decoder not configured");
   }

@@ -56,12 +56,15 @@ std::atomic<bool> g_writing{false};
 std::terminate_handler g_prev_terminate = nullptr;
 
 #if !defined(_WIN32)
-using SignalHandlerFn = void (*)(int);
-SignalHandlerFn g_prev_segv = SIG_DFL;
-SignalHandlerFn g_prev_abrt = SIG_DFL;
-SignalHandlerFn g_prev_fpe = SIG_DFL;
-SignalHandlerFn g_prev_ill = SIG_DFL;
-SignalHandlerFn g_prev_bus = SIG_DFL;
+/** The fatal signals we hook, and what was installed before us (Android: debuggerd's handler). */
+constexpr int kHookedSignals[] = {
+    SIGSEGV, SIGABRT, SIGFPE, SIGILL,
+#if defined(SIGBUS)
+    SIGBUS,
+#endif
+};
+constexpr std::size_t kHookedSignalCount = sizeof(kHookedSignals) / sizeof(kHookedSignals[0]);
+struct sigaction g_prev_actions[kHookedSignalCount];
 #endif
 
 void EnsureDiagnosticsDir(const std::string& data_dir) {
@@ -138,6 +141,8 @@ void WriteSignalDump(int signo) {
     WriteCString(fd, "\n");
   }
 #endif
+  // If the dump ends on this line, unwinding itself died (the system handler then has the crash).
+  WriteCString(fd, "backtrace=unwinding\n");
   CrashDump::WriteNativeBacktrace(fd);
 
   WriteCString(fd, "--- breadcrumbs ---\n");
@@ -148,9 +153,29 @@ void WriteSignalDump(int signo) {
   ::close(fd);
 }
 
+/** Put back what was installed before Install, for every hooked signal (sigaction: async-signal-safe). */
+void RestorePreviousHandlers() {
+  for (std::size_t i = 0; i < kHookedSignalCount; ++i) {
+    struct sigaction prev = g_prev_actions[i];
+    if (!(prev.sa_flags & SA_SIGINFO) && prev.sa_handler == SIG_IGN) {
+      prev.sa_handler = SIG_DFL;  // an ignored fault would re-fault forever
+    }
+    ::sigaction(kHookedSignals[i], &prev, nullptr);
+  }
+}
+
+/**
+ * Write our dump, then hand the signal back to whoever had it before us — Android's debuggerd
+ * (tombstone, `logcat -b crash`), macOS ReportCrash, or the default action — instead of exiting:
+ * exiting here swallowed the system's crash report (B126: an fdsan abort left 87 bytes and no
+ * tombstone). The previous handlers go back first, so a fault while writing (the unwinder) reaches
+ * the system handler too instead of cutting the dump off silently. This signal is blocked while
+ * we run: the raise is delivered as we return; a fault re-executes and traps into it anyway.
+ */
 void OnFatalSignal(int signo) {
+  RestorePreviousHandlers();
   WriteSignalDump(signo);
-  std::_Exit(128 + (signo & 0x7f));
+  ::raise(signo);
 }
 #endif
 
@@ -248,7 +273,7 @@ void CrashDump::WriteNativeBacktrace(int fd) {
   }
 #elif defined(__ANDROID__)
   // _Unwind_Backtrace and dladdr are not strictly async-signal-safe; a crash dump that
-  // occasionally fails is better than none (the handler _Exits right after).
+  // occasionally fails is better than none (the handler hands the signal to the system next).
   UnwindState state{};
   _Unwind_Backtrace(CollectFrame, &state);
   char line[160];
@@ -307,18 +332,16 @@ void CrashDump::Install(const std::string& data_dir) {
   g_prev_terminate = std::set_terminate(OnTerminate);
 
 #if !defined(_WIN32)
-  g_prev_segv = ::signal(SIGSEGV, OnFatalSignal);
-  g_prev_abrt = ::signal(SIGABRT, OnFatalSignal);
-  g_prev_fpe = ::signal(SIGFPE, OnFatalSignal);
-  g_prev_ill = ::signal(SIGILL, OnFatalSignal);
-#if defined(SIGBUS)
-  g_prev_bus = ::signal(SIGBUS, OnFatalSignal);
-#endif
-  (void)g_prev_segv;
-  (void)g_prev_abrt;
-  (void)g_prev_fpe;
-  (void)g_prev_ill;
-  (void)g_prev_bus;
+  // sigaction, not signal(): the previous action is kept whole (debuggerd's is SA_SIGINFO) so the
+  // handler can hand the signal back to it. SA_ONSTACK: Android threads have an alternate signal
+  // stack, so a stack overflow can still be reported.
+  struct sigaction action {};
+  action.sa_handler = OnFatalSignal;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_ONSTACK;
+  for (std::size_t i = 0; i < kHookedSignalCount; ++i) {
+    ::sigaction(kHookedSignals[i], &action, &g_prev_actions[i]);
+  }
 #else
   SetUnhandledExceptionFilter(OnUnhandledException);
 #endif

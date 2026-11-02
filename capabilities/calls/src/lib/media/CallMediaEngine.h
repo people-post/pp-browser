@@ -187,6 +187,8 @@ public:
   void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
   std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
+  /** Test-only: the stream ids waiting for an IDR, without draining them. */
+  std::vector<uint32_t> PendingVideoRefreshStreamsForTest() const;
 
   bool IsActive() const;
   bool IsConnected() const;

@@ -1,5 +1,6 @@
 #include "lib/media/CallMediaEngine.h"
 #include "mesh/types/MediaChannel.h"
+#include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/IVideoCodec.h"
 #include "common/MeshAlias.h"
 
@@ -10,6 +11,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -158,7 +161,7 @@ public:
     return {};
   }
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
-  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override { return Error("broken session"); }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override { return Error("broken session"); }
   void ResetEncoder() override {}
   void ResetDecoder() override { has_decoder_ = false; }
 
@@ -197,12 +200,12 @@ public:
   Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
   Roe<void> ConfigureDecoder() override { return {}; }
   Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
-  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override {
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
     VideoFrameRgba frame;
     frame.width = 2;
     frame.height = 2;
     frame.rgba.assign(2 * 2 * 4, 0xff);
-    return frame;
+    return std::optional<VideoFrameRgba>(std::move(frame));
   }
   void ResetEncoder() override {}
   void ResetDecoder() override {}
@@ -225,6 +228,156 @@ TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
   EXPECT_FALSE(engine_.IsRemoteVideoLive(50)) << "no frame within the window";
   engine_.ClearRemoteVideo();
   EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "cleared (camera off / hard stall)";
+}
+
+/** What a ScriptedDecoder's decodes return, and how often the engine reset it. */
+struct DecodeScript {
+  /** Empty: no frame this call (nullopt). Otherwise every decode fails with this message. */
+  std::string error;
+  std::atomic<int> decodes{0};
+  std::atomic<int> resets{0};
+};
+
+/** Decode-only stub whose decodes follow a DecodeScript. */
+class ScriptedDecoder final : public IVideoCodec {
+public:
+  explicit ScriptedDecoder(std::shared_ptr<DecodeScript> script) : script_(std::move(script)) {}
+  std::string BackendName() const override { return "scripted-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return has_decoder_; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override {
+    has_decoder_ = true;
+    return {};
+  }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
+    script_->decodes.fetch_add(1);
+    if (!script_->error.empty()) {
+      return Error(script_->error);
+    }
+    return std::optional<VideoFrameRgba>();
+  }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {
+    has_decoder_ = false;
+    script_->resets.fetch_add(1);
+  }
+
+private:
+  std::shared_ptr<DecodeScript> script_;
+  bool has_decoder_ = false;
+};
+
+class RemoteVideoDecodeTest : public MediaSessionSpecTest {
+protected:
+  void StartWith(std::shared_ptr<DecodeScript> script) {
+    engine_.SetVideoCodecFactoryForTest([script] { return std::make_unique<ScriptedDecoder>(script); });
+    ASSERT_TRUE(engine_.StartSfu("call:decode", CountingSend()));
+  }
+  void DeliverVideo(int count) {
+    CallMediaEngine::SfuPacket video;
+    video.stream_id = 7;
+    video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
+    video.payload = {0, 0, 0, 1, 0x41, 0x9a};
+    for (int i = 0; i < count; ++i) {
+      engine_.OnSfuPacket(video);
+    }
+  }
+  bool KeyframeRequestedFor(uint32_t stream_id) {
+    for (const uint32_t id : engine_.PendingVideoRefreshStreamsForTest()) {
+      if (id == stream_id) {
+        return true;
+      }
+    }
+    return false;
+  }
+};
+
+// B125: a hardware decoder still starting up has no frame yet. That is not an error: no keyframe
+// request (each one made the sender produce a large IDR) and no frame published.
+TEST_F(RemoteVideoDecodeTest, EmptyDecodeOutputIsNotAnErrorAndAsksNoKeyframe) {
+  auto script = std::make_shared<DecodeScript>();
+  StartWith(script);
+  DeliverVideo(3);
+  EXPECT_EQ(script->decodes.load(), 3);
+  EXPECT_TRUE(engine_.PendingVideoRefreshStreamsForTest().empty());
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500));
+  EXPECT_EQ(script->resets.load(), 0);
+}
+
+TEST_F(RemoteVideoDecodeTest, DecodeErrorStillAsksForAKeyframe) {
+  auto script = std::make_shared<DecodeScript>();
+  script->error = "broken session";
+  StartWith(script);
+  DeliverVideo(1);
+  EXPECT_TRUE(KeyframeRequestedFor(7));
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500));
+  EXPECT_EQ(script->resets.load(), 0) << "an ordinary error never rebuilds the decoder";
+}
+
+// Two stalls in a row rebuild the decoder once; two more within ten seconds do not rebuild again
+// (a rebuild runs under the media lock).
+TEST_F(RemoteVideoDecodeTest, TwoStalledErrorsResetTheDecoderOnce) {
+  auto script = std::make_shared<DecodeScript>();
+  script->error = std::string(kDecoderStalledError);
+  StartWith(script);
+  DeliverVideo(2);
+  EXPECT_EQ(script->resets.load(), 1);
+  EXPECT_TRUE(KeyframeRequestedFor(7));
+  DeliverVideo(2);
+  EXPECT_EQ(script->resets.load(), 1) << "under ten seconds since the last rebuild";
+  EXPECT_EQ(script->decodes.load(), 4) << "the rebuilt decoder is configured again and keeps decoding";
+}
+
+/** Decode-only stub whose destructor blocks until released, like a wedged vendor codec (B128). */
+class WedgedDecoder final : public IVideoCodec {
+public:
+  struct Gate {
+    std::atomic<bool> release{false};
+    std::atomic<bool> destroyed{false};
+  };
+  explicit WedgedDecoder(std::shared_ptr<Gate> gate) : gate_(std::move(gate)) {}
+  ~WedgedDecoder() override {
+    // Bounded so a failing test cannot hang the run.
+    WaitFor([this] { return gate_->release.load(); }, std::chrono::seconds(10));
+    gate_->destroyed.store(true);
+  }
+  std::string BackendName() const override { return "wedged-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return true; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t*, size_t) override {
+    return std::optional<VideoFrameRgba>();
+  }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+
+private:
+  std::shared_ptr<Gate> gate_;
+};
+
+// B128: Stop runs on the calls owner thread; a decoder whose teardown hangs must not hang it.
+TEST_F(MediaSessionSpecTest, StopDoesNotWaitForADecoderTeardown) {
+  auto gate = std::make_shared<WedgedDecoder::Gate>();
+  engine_.SetVideoCodecFactoryForTest([gate] { return std::make_unique<WedgedDecoder>(gate); });
+  ASSERT_TRUE(engine_.StartSfu("call:wedged", CountingSend()));
+  CallMediaEngine::SfuPacket video;
+  video.stream_id = 7;
+  video.channel_id = mesh::VideoChannel(mesh::kDefaultVideoLevel);
+  video.payload = {0, 0, 0, 1, 0x65, 0x88};
+  engine_.OnSfuPacket(video);
+
+  const auto started = std::chrono::steady_clock::now();
+  engine_.Stop();
+  EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(2));
+  EXPECT_FALSE(gate->destroyed.load()) << "still tearing down, off the stopping thread";
+
+  gate->release.store(true);
+  EXPECT_TRUE(WaitFor([&] { return gate->destroyed.load(); }, std::chrono::seconds(2)))
+      << "the decoder is still destroyed";
 }
 
 } // namespace

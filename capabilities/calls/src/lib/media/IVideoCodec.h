@@ -4,7 +4,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -56,8 +58,12 @@ public:
    * software H264 holds its first frames); that is not an error — callers skip the send.
    */
   virtual Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) = 0;
-  /** Input: Annex-B access unit (possibly multiple NALs). */
-  virtual Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) = 0;
+  /**
+   * Input: Annex-B access unit (possibly multiple NALs). nullopt = no frame to show from this call
+   * (a decoder still filling its pipeline, or a frame dropped until the next IDR) — not an error:
+   * callers neither log it nor ask for a keyframe (B125).
+   */
+  virtual Roe<std::optional<VideoFrameRgba>> Decode(const uint8_t* annex_b, size_t size) = 0;
 
   /** Optional; no-op when the backend cannot reconfigure mid-stream. */
   virtual void SetTargetBitrate(int64_t bps) { (void)bps; }
@@ -65,6 +71,14 @@ public:
   virtual void ResetEncoder() = 0;
   virtual void ResetDecoder() = 0;
 };
+
+/** Decode result of a backend that turns every access unit into one frame (or an error). */
+inline Roe<std::optional<VideoFrameRgba>> OneFrameDecodeResult(Roe<VideoFrameRgba> frame) {
+  if (!frame) {
+    return frame.error();
+  }
+  return std::optional<VideoFrameRgba>(std::move(*frame));
+}
 
 /** OS-selected HW codec, or unavailable stub when no backend builds. */
 std::unique_ptr<IVideoCodec> CreatePlatformVideoCodec();
