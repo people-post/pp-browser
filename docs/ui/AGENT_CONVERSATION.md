@@ -9,7 +9,7 @@ pp-browser chat uses a **conversation-first** design: one shared transcript driv
 | User expectation | Design response |
 |------------------|-----------------|
 | Follow-ups work | Durable transcript fed into every LLM call |
-| New chat = fresh start | `StartNewConversation()` clears transcript |
+| New chat = fresh start | A new chat is a new AI thread (`CreateNewAiThread`) with its own `AgentSession` and transcript |
 | Long threads stay usable | Sliding-window context policy trims oldest turns |
 | Tool noise stays invisible | Tool-call messages live in ephemeral turn buffer only |
 | UI and model stay aligned | One `Conversation` object, dual render fields per turn |
@@ -24,7 +24,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 ## Core types
 
-[`src/base/ai/conversation/`](../../src/base/ai/conversation/)
+[`src/lib/ai/conversation/`](../../src/lib/ai/conversation/)
 
 - **`TranscriptEntry`** — one user message and optional assistant reply
   - `user_text`, optional `user_payload` (LLM-only structured JSON fence), `assistant_raw` (LLM context)
@@ -36,7 +36,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 ## Sessions: one per conversation
 
-[`AgentSessions`](../../src/feature/ai/AgentSessions.h) (held by `Application`) owns the turns. The Home composer has one fixed `AgentSession` (Conversation mode, no thread); every thread (AI thread, or a person chat for `@ai`) gets its own `AgentSession` the first time it asks, so a thread's permission card, a question the app asked back and its events stay with it. One spare session is kept configured, so a thread's first question does not wait for a whole configure (MCP start included); a new thread takes it and the next spare starts configuring. Settings (configuration, tool hook, permissions, thread store) reach every live session and every later one; the events of all sessions come out of one queue, each carrying its thread, and the brief_AI role that answered a chat last is kept across sessions.
+[`AgentSessions`](../../src/feature/ai/AgentSessions.h) (held by `Application`) owns the turns. The Home composer has one fixed `AgentSession` (Conversation mode, no thread); every thread (AI thread, or a person chat for `@ai`) gets its own `AgentSession` the first time it asks, so a thread's permission card, a question the app asked back and its events stay with it. One spare session is kept configured, so a thread's first question does not wait for a whole configure (MCP start included); a new thread takes it and the next spare starts configuring. Settings (configuration, tool hook, permissions, thread store) reach every live session and every later one; the events of all sessions come out of one queue, each carrying its thread (except Error events, which carry none today), and the brief_AI role that answered a chat last is kept across sessions.
 
 - **Cap.** Up to `kMaxConcurrentTurns` (3) thread turns run at once for a registered brief_AI key (`brf_llm_*`), `kMaxConcurrentGuestTurns` (1) for a guest key (`brf_guest_*`; the gateway allows a guest 10 requests a minute and a turn may take two) or no key yet (it is minted after launch): `MaxConcurrentTurnsFor(config)`. Another provider's own key keeps 3. The Home composer's turn does not count, nor does a Home permission card; resuming a thread's card counts from the tap. Only the client limits this today; a per-user limit at the gateway (`user_concurrency`) is requested from its owner.
 - **`SubmitOutcome`.** `Submit*` answer `Started` (it runs, or starts once that session has configured), `Full` (the cap is reached: nothing was taken, the UI queues it), `BusyHere` (this thread's turn runs) or `Ignored` (empty text, a button tool outside the whitelist). `CanStart(thread)` asks the same without submitting; the messaging router asks it per thread before it stores or relays anything. A question is never dropped silently.
@@ -112,7 +112,7 @@ An MCP tool's risk comes from `SchemaAdapter::RiskClass` (name floor, then the s
 | Deny | Fail the turn with a clear error |
 | Ask | Stop the turn, emit an in-chat `choice` (Allow once / Always allow / Deny), **park** the plan |
 
-At most **one** `ParkedApproval` is active. Resume payload:
+At most **one** `ParkedApproval` is active per session. Resume payload:
 
 ```json
 { "type": "tool_permission", "approval_id": "…", "decision": "allow_once|allow_always|deny" }
@@ -122,11 +122,11 @@ Handled in `ChatController::HandleLocalAction` → `AgentSession::ResumeToolPerm
 
 ### Settings / Govern tools
 
-`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**) into `base/ai/ToolRegistry` (no `feature/ai` link). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
+`SettingsToolProvider` (`feature/settings/SettingsTools.*`) registers Me-tab capabilities (prefs, reachability, mesh flags, LLM/integrations **status**) into `lib/ai/ToolRegistry` (no `feature/ai` link). Wired from `Application` alongside `RegisterMessagingTools`. Mutating settings tools use the same Ask park as other write tools. Identity register/nickname stay on messaging tools — not duplicated.
 
 ## Turn planning
 
-Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
+Each agent turn produces a [`TurnPlan`](../../src/lib/ai/TurnPlan.h):
 
 | Field | Purpose |
 |-------|---------|
@@ -140,7 +140,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 
 **NL path** — [`TurnPlanner`](../../src/lib/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
 
-[`AgentSession`](../../src/feature/ai/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../../src/base/ai/TurnTrace.h).
+[`AgentSession`](../../src/feature/ai/AgentSession.cpp) runs plan → execute → synthesize → validate. The synthesis LLM may request additional tools (refinement loop) when planned results are insufficient. Per-turn metrics are logged via [`TurnTrace`](../../src/lib/ai/TurnTrace.h).
 
 | Goal | Typical source | Expected reply shape |
 |------|----------------|----------------------|

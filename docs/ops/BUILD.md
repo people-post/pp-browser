@@ -45,7 +45,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux, Androi
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). The in-tree libp2p fork is retired ([LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md)).
 
 If base `third_party/` trees are missing, run `./scripts/vendor/vendor_import.sh` from the repo root.
 
@@ -66,7 +66,7 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-First-party targets (`capabilities/base/src/common`, `src/base`, `src/feature`, `src/app`, and render/libp2p integration glue) compile with `-Wall -Wextra` (MSVC `/W4`) and treat warnings as errors by default (`PP_BROWSER_WARNINGS_AS_ERRORS=ON`). On GCC/Clang, `-Wmissing-field-initializers` and `-Wunused-parameter` are suppressed (noisy with aggregate init and interface overrides). On MSVC, `_CRT_SECURE_NO_WARNINGS`, `/wd4100` (unused parameter), and `/wd4458` (member shadowing; GCC has no `-Wshadow` by default) are applied for the same reasons. Disable the whole policy with `-DPP_BROWSER_WARNINGS_AS_ERRORS=OFF` if you need a temporary escape hatch. Vendored `third_party/` and the RmlUi / libp2p forks keep their own warning settings.
+First-party targets (everything under `capabilities/*/src` and `src/`, plus integration glue) compile with `-Wall -Wextra` (MSVC `/W4`) and treat warnings as errors by default (`PP_BROWSER_WARNINGS_AS_ERRORS=ON`). On GCC/Clang, `-Wmissing-field-initializers` and `-Wunused-parameter` are suppressed (noisy with aggregate init and interface overrides). On MSVC, `_CRT_SECURE_NO_WARNINGS`, `/wd4100` (unused parameter), and `/wd4458` (member shadowing; GCC has no `-Wshadow` by default) are applied for the same reasons. Disable the whole policy with `-DPP_BROWSER_WARNINGS_AS_ERRORS=OFF` if you need a temporary escape hatch. Vendored `third_party/` and the RmlUi fork keeps their own warning settings.
 
 Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
 
@@ -256,7 +256,7 @@ ctest --test-dir build -R ClickRouting --output-on-failure
 To run a subset of pp-browser GoogleTest suites by name:
 
 ```bash
-ctest --test-dir build -R "BindingsManifestTest|TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure
+ctest --test-dir build -R "TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure
 ```
 
 ## Android (local)
