@@ -76,6 +76,8 @@ struct LiveCallMediaProgress {
    * and a path change: the call timer counts the call, and "was connected" reads it.
    */
   int64_t live_since_ms = 0;
+  /** Which path carries the call: decided at the join, Hop for good once the hop has it. */
+  CallMediaPath path = CallMediaPath::Undecided;
 };
 
 const char* LiveCallStateName(LiveCallState state);
@@ -164,6 +166,8 @@ public:
   CallMediaStatus Status(const std::string& call_id = {}) const;
   /** The planner that Status arms. */
   CallArmedPlanner ArmedPlanner(const std::string& call_id = {}) const;
+  /** Which path carries the call's media (empty `call_id`: the active call). */
+  CallMediaPath Path(const std::string& call_id = {}) const;
   /** The 1:1 path may start / run for the call. */
   bool AllowsDirectPath(const std::string& call_id = {}) const;
   /** The group path may attach / migrate / run for the call. */
@@ -177,6 +181,8 @@ public:
 
   // --- A call's media progress (empty `call_id`: the active call) -------------------------------
   void SetMediaStatus(const std::string& call_id, CallMediaStatus status, const char* reason);
+  /** The path decided for the call (its join). Hop stays: a group call never goes back to Direct. */
+  void NotePath(const std::string& call_id, CallMediaPath path);
   /** A path planner's progress, shown as the call's Status (CallMediaStatusLogic). */
   void ReportDirectProgress(const std::string& call_id, CallDirectPlannerPhase phase);
   void ReportHopProgress(const std::string& call_id, CallHopPlannerPhase phase);

@@ -136,6 +136,7 @@ public:
     return !call_id.empty() && state->active_call_id == call_id ? state->live_since_ms : 0;
   }
   CallMediaStatus MediaStatus() const { return State()->media_status; }
+  CallMediaPath MediaPath() const { return State()->media_path; }
   std::string LastError() const { return State()->last_error; }
   bool ShouldSuppressRing(const std::string& call_id) const { return State()->ShouldSuppressRing(call_id); }
   CallPhase Phase() const { return State()->phase; }

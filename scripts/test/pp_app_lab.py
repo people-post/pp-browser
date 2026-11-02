@@ -2274,7 +2274,7 @@ def scenario_group_leave_one_by_one(lab):
     b.wait_surface("none", 20)
     for u in (a, c):
         assert_hears(u, 1)
-        if not u.state().get("sfu_mode"):
+        if u.state().get("path") != "hop":
             raise ProbeError("%s: left the hop when Bob left (N→2 stays on the hop)" % u.name)
     a.cmd("leave")
     c.cmd("leave", check=False)

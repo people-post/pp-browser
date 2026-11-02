@@ -104,7 +104,7 @@ public:
    * tracks internally; ReleaseDirect must not wipe live media_relay tracks.
    */
   void ClearRemoteAudioTracks();
-  bool IsSfuMode() const override;
+  bool IsSfuMode() const;
   /** Retire the session; returns at once (its cleanup runs on its own thread). Emits "closed". */
   void Stop();
   /**

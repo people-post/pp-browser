@@ -57,6 +57,16 @@ enum class CallMediaStatus {
   Reconnecting,
 };
 
+/** Which path carries a call's media — the call's one value (V055). A group call never goes back to Direct. */
+enum class CallMediaPath {
+  /** Not decided yet (before a join). */
+  Undecided,
+  /** 1:1 direct / punched / relayed carrier (Bridge). */
+  Direct,
+  /** Group, on a hop / media_relay (Topology). */
+  Hop,
+};
+
 enum class CallArmedPlanner {
   None = 0,
   Lifecycle,
@@ -81,5 +91,6 @@ enum class CallLifecycleEvent {
 const char* CallPhaseName(CallPhase phase);
 const char* CallMediaStatusName(CallMediaStatus status);
 const char* CallArmedPlannerName(CallArmedPlanner planner);
+const char* CallMediaPathName(CallMediaPath path);
 
 } // namespace pbr

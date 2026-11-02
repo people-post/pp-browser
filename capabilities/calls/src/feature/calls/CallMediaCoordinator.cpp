@@ -99,23 +99,23 @@ void CallMediaCoordinator::ReleaseDirect() {
 CallMediaPath CallMediaCoordinator::DecideOnLocalAccept(const size_t n_joined,
                                                        const std::optional<std::string>& sfu_hint) {
   CallHopDriver* hop = resources_.hop;
-  media_path_ = hop && hop->OnLocalAcceptJoined(call_id_, n_joined, sfu_hint) ? CallMediaPath::Hop : CallMediaPath::Direct;
+  const CallMediaPath path =
+      hop && hop->OnLocalAcceptJoined(call_id_, n_joined, sfu_hint) ? CallMediaPath::Hop : CallMediaPath::Direct;
   CallMediaCoordinatorLog().info << "local accept call_id=" << call_id_ << " n=" << n_joined
-                                 << " mode=" << (media_path_ == CallMediaPath::Hop ? "hop" : "direct");
-  return media_path_;
+                                 << " mode=" << CallMediaPathName(path);
+  return path;
 }
 
-CallMediaPath CallMediaCoordinator::DecideOnRemoteAccept(const size_t n_joined, const std::string& joiner_identity) {
+CallMediaPath CallMediaCoordinator::DecideOnRemoteAccept(const size_t n_joined, const std::string& joiner_identity,
+                                                         const CallMediaPath current) {
   CallHopDriver* hop = resources_.hop;
-  if (hop && hop->OnRemoteAcceptJoined(call_id_, n_joined, joiner_identity)) {
-    media_path_ = CallMediaPath::Hop;
-  } else if (media_path_ != CallMediaPath::Hop) {  // a group call never goes back to 1:1
-    media_path_ = CallMediaPath::Direct;
+  CallMediaPath path = CallMediaPath::Direct;
+  if ((hop && hop->OnRemoteAcceptJoined(call_id_, n_joined, joiner_identity)) || current == CallMediaPath::Hop) {
+    path = CallMediaPath::Hop; // a group call never goes back to 1:1
   }
   CallMediaCoordinatorLog().info << "remote accept call_id=" << call_id_ << " n=" << n_joined
-                                 << " joiner=" << joiner_identity
-                                 << " mode=" << (media_path_ == CallMediaPath::Hop ? "hop" : "direct");
-  return media_path_;
+                                 << " joiner=" << joiner_identity << " mode=" << CallMediaPathName(path);
+  return path;
 }
 
 bool CallMediaCoordinator::HopAttached() const {

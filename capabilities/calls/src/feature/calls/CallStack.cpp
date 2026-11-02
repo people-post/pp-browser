@@ -211,6 +211,7 @@ void CallStack::PublishUiState() {
     const LiveCalls& live = call_sessions_->Live();
     state.phase = live.Phase();
     state.media_status = live.Status();
+    state.media_path = live.Path();
     if (const LiveCall* shown = live.Shown()) {
       state.active_call_id = shown->Id();
       state.live_since_ms = shown->MediaProgress().live_since_ms;

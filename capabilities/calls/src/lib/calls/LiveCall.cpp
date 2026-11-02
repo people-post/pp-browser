@@ -283,6 +283,22 @@ CallArmedPlanner LiveCalls::ArmedPlanner(const std::string& call_id) const {
   return PlannerFor(Status(call_id));
 }
 
+CallMediaPath LiveCalls::Path(const std::string& call_id) const {
+  const LiveCall* call = Resolve(call_id);
+  return call ? call->progress_.path : CallMediaPath::Undecided;
+}
+
+void LiveCalls::NotePath(const std::string& call_id, const CallMediaPath path) {
+  LiveCall* call = Resolve(call_id);
+  if (!call || path == CallMediaPath::Undecided || call->progress_.path == path ||
+      call->progress_.path == CallMediaPath::Hop) {
+    return;
+  }
+  call->progress_.path = path;
+  LiveCallLog().info << "media path call_id=" << call->call_id_ << " path=" << CallMediaPathName(path);
+  Changed();
+}
+
 bool LiveCalls::AllowsDirectPath(const std::string& call_id) const {
   return AllowsDirect(Status(call_id));
 }
@@ -318,6 +334,12 @@ void LiveCalls::SetStatus(LiveCall& call, const CallMediaStatus next, const char
     ++media_cancel_gen_;  // a new path decision: late work for the previous one aborts
   }
   progress.status = next;
+  // The status names its path: a Hop status puts the call on the hop for good; a Direct one decides it.
+  if (AllowsHop(next)) {
+    progress.path = CallMediaPath::Hop;
+  } else if (AllowsDirect(next) && progress.path == CallMediaPath::Undecided) {
+    progress.path = CallMediaPath::Direct;
+  }
   if (IsLiveStatus(next)) {
     progress.reached_live = true;
     progress.key_pending = false;

@@ -27,7 +27,7 @@ TEST(LiveCallMediaTest, OneCoordinatorPerAdmission) {
   live.AdmitPlaced("call:a", {"account:peer"});
   CallMediaCoordinator* second = media.Media("call:a");
   ASSERT_NE(second, nullptr);
-  EXPECT_EQ(second->MediaPath(), CallMediaPath::Undecided) << "a re-admitted id starts fresh";
+  EXPECT_EQ(live.Path("call:a"), CallMediaPath::Undecided) << "a re-admitted id starts fresh";
 }
 
 } // namespace

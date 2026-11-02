@@ -160,7 +160,8 @@ struct InCallSignals {
   bool p2p_seed_unreachable = false;
   /** Why the hop path is being recovered (None: it is not). */
   CallRecovery recovery = CallRecovery::None;
-  bool sfu_mode = false;
+  /** The call is on the group (hop) path — the call's path, not the engine's packet mode (1:1 uses it too). */
+  bool on_hop = false;
   bool group_context = false;
   bool media_chrome_live = false;
   CallMediaStatus media_status = CallMediaStatus::None;

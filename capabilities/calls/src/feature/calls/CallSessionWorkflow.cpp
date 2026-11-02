@@ -672,8 +672,10 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
   const size_t planner_n = joined_after ? *joined_after : 0;  // V050: joined only — ringing invitees never arm the hop
   // The call's media coordinator decides the path (the hop takes a group call; else 1:1 Direct).
   CallMediaCoordinator* call_media = call_media_.Media(call_id);
-  const bool topology_took_media =
-      call_media && call_media->DecideOnLocalAccept(planner_n, row.sfu_hint) == CallMediaPath::Hop;
+  const CallMediaPath path =
+      call_media ? call_media->DecideOnLocalAccept(planner_n, row.sfu_hint) : CallMediaPath::Undecided;
+  live_calls_.NotePath(call_id, path);
+  const bool topology_took_media = path == CallMediaPath::Hop;
   if (topology_took_media) {
     pending_answerer_kick_call_id_.clear();
     pending_answerer_kick_peer_.clear();
@@ -1565,8 +1567,11 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
     host_.hop.note_accept_hop_report(accept.call_id, identity, accept.hop_report);
   }
   CallMediaCoordinator* call_media = call_media_.Media(accept.call_id);
-  const bool stays_direct =
-      !call_media || call_media->DecideOnRemoteAccept(n_joined, identity) == CallMediaPath::Direct;
+  const CallMediaPath path =
+      call_media ? call_media->DecideOnRemoteAccept(n_joined, identity, live_calls_.Path(accept.call_id))
+                 : CallMediaPath::Direct;
+  live_calls_.NotePath(accept.call_id, path);
+  const bool stays_direct = path == CallMediaPath::Direct;
   if (stays_direct) {
     live_calls_.SetMediaStatus(accept.call_id, CallMediaStatus::DirectConnecting, "ScheduleStartDirect");
     host_.duplex.schedule_start_direct(accept.call_id, identity, true);

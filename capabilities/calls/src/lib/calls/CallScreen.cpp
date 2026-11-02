@@ -115,7 +115,7 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   using Status = CallScreen::Status;
   InCallStatus out;
   const bool recovering = s.recovery != CallRecovery::None;
-  out.show_retry = s.p2p_connect_failed && !recovering && !s.sfu_mode;
+  out.show_retry = s.p2p_connect_failed && !recovering && !s.on_hop;
   // Connected when the call's media is live (InCall + DirectLive|HopLive): the call's own state, not
   // the seat's (a reattach keeps the seat bound while nothing flows).
   out.media_connected = s.media_chrome_live;

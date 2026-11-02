@@ -569,7 +569,7 @@ events.
 | One media state: Deciding / Direct (Connecting, Live, TxOnly, Reconnecting) / Hop (Waiting, Attaching, Live, Migrating) / Failed (with its details: missing mic, seed unreachable) | the seat holds no media state; the planners' progress comes in as their reports; the engine holds no call connection state |
 | `live_since_ms`: when the call first went live, kept through failures, reconnects and path changes | the call timer and "was connected" read it, not the engine's per-path time |
 | The recovery reason (`CallRecovery`: Migrating / WaitingForHop / Reattaching / HopLost) | one reason, not a flag per cause |
-| The path (Direct / Hop) | one value |
+| The path (Direct / Hop; `LiveCalls::Path`): the join's decision (`CallMediaCoordinator::Decide*`, recorded by the workflow), Hop for good once a Hop status or a hand-off puts the call there | one value — not the coordinator's copy, not the engine's packet mode (`IsSfuMode` is true for 1:1 too); the screen reads it from `CallUiState::media_path` |
 
 - **Planners** (direct, hop) keep their own phase tables (`Decide*PlannerPhase`) and send events into `LiveCall`; they never set the call's media state beside their own phase.
 - **The seat** (`CallMediaSeat`) is the exclusive lock only: holder, epoch, attach ticket.

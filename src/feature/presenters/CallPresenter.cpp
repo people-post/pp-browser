@@ -294,9 +294,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   // The hop path being recovered, also a guest's lost transport between reattach attempts (the
   // Reconnecting line stays up; the seat stays Live by design).
   signals.recovery = backend.Recovery();
-  signals.sfu_mode = backend.Media().IsSfuMode();
-  signals.group_context =
-      group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.sfu_mode;
+  signals.on_hop = backend.MediaPath() == CallMediaPath::Hop;
+  signals.group_context = group_call || joined > 2 || signals.recovery != CallRecovery::None || signals.on_hop;
   signals.media_chrome_live = backend.MediaChromeLive();
   signals.media_status = backend.MediaStatus();
   signals.media_active = backend.Media().IsActive();

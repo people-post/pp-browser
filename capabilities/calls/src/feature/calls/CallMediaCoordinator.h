@@ -3,6 +3,7 @@
 #include "lib/media/MediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
+#include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
@@ -21,16 +22,6 @@ struct CallMediaResources {
   CallDirectDriver* direct = nullptr;
   /** Null: no group path (harness). */
   CallHopDriver* hop = nullptr;
-};
-
-/** Which path carries a call's media. */
-enum class CallMediaPath {
-  /** Not decided yet (before a join). */
-  Undecided,
-  /** 1:1 direct / punched / relayed carrier (Bridge). */
-  Direct,
-  /** Group, on a hop / media_relay (Topology). A call never goes back to Direct. */
-  Hop,
 };
 
 /**
@@ -74,13 +65,12 @@ public:
 
   /**
    * Our accept landed with `n_joined` in the call: the hop driver takes it (group, via hint or
-   * SoftMigrate) or it stays 1:1. Records and returns the mode; the caller starts Direct (after its
-   * own chrome / store steps) when this returns Direct.
+   * SoftMigrate) or it stays 1:1. Returns the path for the call to record (LiveCall owns it); the
+   * caller starts Direct (after its own chrome / store steps) when this returns Direct.
    */
   CallMediaPath DecideOnLocalAccept(size_t n_joined, const std::optional<std::string>& sfu_hint);
-  /** A peer accepted our call: as above (Hop also when the call is no longer the active one). */
-  CallMediaPath DecideOnRemoteAccept(size_t n_joined, const std::string& joiner_identity);
-  CallMediaPath MediaPath() const { return media_path_; }
+  /** A peer accepted our call: as above. A call already on `current` Hop stays there. */
+  CallMediaPath DecideOnRemoteAccept(size_t n_joined, const std::string& joiner_identity, CallMediaPath current);
 
   // --- What the 1:1 path needs to know about the group path ----------------------------------------
 
@@ -110,7 +100,6 @@ private:
 
   std::string call_id_;
   const CallMediaResources& resources_;
-  CallMediaPath media_path_ = CallMediaPath::Undecided;
 };
 
 } // namespace pbr

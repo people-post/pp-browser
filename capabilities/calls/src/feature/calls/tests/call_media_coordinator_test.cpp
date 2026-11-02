@@ -117,15 +117,13 @@ TEST_F(CallMediaCoordinatorTest, ReleaseDirectOnlyWhileTheCallHoldsTheSeat) {
 }
 
 // The call's coordinator decides the path at a join: the hop takes a group call, else 1:1 — and a
-// call that went group never goes back to Direct.
+// call already on the hop (the call's path, which LiveCall keeps) never goes back to Direct.
 TEST_F(CallMediaCoordinatorTest, JoinDecidesThePathAndGroupIsOneWay) {
   CallMediaCoordinator call("call:1", with_seat_);
-  EXPECT_EQ(call.MediaPath(), CallMediaPath::Undecided);
-  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob"), CallMediaPath::Direct);
-  EXPECT_EQ(call.DecideOnRemoteAccept(3, "account:carol"), CallMediaPath::Hop);
-  EXPECT_EQ(call.MediaPath(), CallMediaPath::Hop);
+  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob", CallMediaPath::Undecided), CallMediaPath::Direct);
+  EXPECT_EQ(call.DecideOnRemoteAccept(3, "account:carol", CallMediaPath::Direct), CallMediaPath::Hop);
   hop_.group_from = 99;  // even if the hop would not take a later join
-  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob"), CallMediaPath::Hop) << "group is one-way";
+  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob", CallMediaPath::Hop), CallMediaPath::Hop) << "group is one-way";
 
   CallMediaCoordinator accepted("call:2", with_seat_);
   EXPECT_EQ(accepted.DecideOnLocalAccept(2, std::nullopt), CallMediaPath::Direct);

@@ -123,5 +123,25 @@ TEST(LiveCallsTest, TheRingIsTheNewestRingingOrAcceptingCall) {
   EXPECT_EQ(calls.TheRing(), nullptr);
 }
 
+// V055: the call owns its path, one value. The join decides it; a Hop status (the hop's progress, a
+// 1:1 stream handed to a hop) puts it on the hop for good; a later Direct decision does not undo that.
+TEST(LiveCallsTest, TheCallKeepsOnePathAndGroupIsOneWay) {
+  LiveCalls calls;
+  calls.AdmitPlaced("call:1", {"account:bob"});
+  calls.MarkJoined("call:1");
+  EXPECT_EQ(calls.Path("call:1"), CallMediaPath::Undecided);
+  calls.SetMediaStatus("call:1", CallMediaStatus::DirectConnecting, "test");
+  EXPECT_EQ(calls.Path("call:1"), CallMediaPath::Direct) << "a Direct status decides an undecided call";
+  calls.NoteDirectHandedToHop("call:1");
+  EXPECT_EQ(calls.Path("call:1"), CallMediaPath::Hop);
+  calls.NotePath("call:1", CallMediaPath::Direct);
+  calls.SetMediaStatus("call:1", CallMediaStatus::DirectConnecting, "test");
+  EXPECT_EQ(calls.Path("call:1"), CallMediaPath::Hop) << "a group call never goes back to Direct";
+
+  calls.AdmitPlaced("call:2", {"account:carol"});
+  calls.NotePath("call:2", CallMediaPath::Hop);
+  EXPECT_EQ(calls.Path("call:2"), CallMediaPath::Hop) << "the join's decision";
+}
+
 } // namespace
 } // namespace pbr

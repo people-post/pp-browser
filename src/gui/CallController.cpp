@@ -1011,10 +1011,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
   // A call that was live and then failed reads "disconnected" (CallScreen decides); the mesh
   // "couldn't connect" copy below is for calls that never connected.
-  const bool mesh_messaging_failed =
-      backend && backend->Available() && backend->IsP2pConnectFailed() &&
-      !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode() &&
-      presenter_.Screen().status != CallScreen::Status::Disconnected;
+  const bool mesh_messaging_failed = backend && backend->Available() && backend->IsP2pConnectFailed() &&
+                                     !backend->IsAwaitingSfuRecovery() && backend->MediaPath() != CallMediaPath::Hop &&
+                                     presenter_.Screen().status != CallScreen::Status::Disconnected;
   const bool path_lost =
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   const bool media_reconnect =

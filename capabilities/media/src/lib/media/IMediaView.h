@@ -33,7 +33,6 @@ public:
   // --- The session, as it is ---
   virtual bool IsActive() const = 0;
   virtual std::string ActiveCallId() const = 0;
-  virtual bool IsSfuMode() const = 0;
   virtual bool IsMuted() const = 0;
   virtual MediaEngineHealth HealthSnapshot() const = 0;
   /** 0..1 receiver / path pressure. */

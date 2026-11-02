@@ -40,7 +40,7 @@ TEST(CallScreenTest, AFailedMeshPathCouldNotConnectWithItsHintAndRetry) {
 
   s.group_context = true;
   EXPECT_EQ(Decide(s).hint, CallScreen::Hint::GroupMedia);
-  s.sfu_mode = true;  // the hop owns recovery: no Retry
+  s.on_hop = true; // the hop owns recovery: no Retry
   EXPECT_FALSE(Decide(s).show_retry);
 }
 

@@ -113,7 +113,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-0. **Call model (V055)** — [PHASES § cm](PHASES.md#cm--call-model-v055): cm0 hygiene (done) → cm1 narrow interfaces (done) → **cm2 one owner per fact (next)** → cm2 one owner per fact → cm3 per-call media session → cm4 thin session manager → cm5 call concepts out of the layers below.
+0. **Call model (V055)** — [PHASES § cm](PHASES.md#cm--call-model-v055): cm0 hygiene (done) → cm1 narrow interfaces (done) → cm2 one owner per fact (done) → **cm3 per-call media session (next)** → cm4 thin session manager → cm5 call concepts out of the layers below.
 1. Keep **pm** / **rd** / **cs** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
 2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
@@ -188,9 +188,11 @@ shown, a click the owner has not taken yet). Pure deciders stay pure (`Decide*Pl
 `HopReport`) instead of `report_progress` / `on_*` ports, and the owner arms and starts the deferred
 answerer itself (cm2b); the engine holds no call connection state — the bridge uses its own facts
 (stream committed, hop attached), the screen and the health bars read the call, and the dead "failed" /
-"disconnected" / raw-state branches are gone (cm2c).
+"disconnected" / raw-state branches are gone (cm2c); the path is one value on `LiveCall` — the
+coordinator's copy is gone and the screen reads the call's path, not the engine's packet mode (cm2d).
 
-**Next:** one path value.
+The remaining copies (the hop's `sfu_.attached` beside the engine's mode, the bridge's own call ids)
+belong to the per-call media session (cm3).
 
 End state: [CALLS.md § Call state: one owner](../../docs/architecture/CALLS.md#call-state-one-owner).
 

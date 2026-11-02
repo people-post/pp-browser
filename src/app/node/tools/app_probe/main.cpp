@@ -318,6 +318,7 @@ public:
       out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
       out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
       out.set("sfu_mode", health.sfu_mode);
+      out.set("path", CallMediaPathName(calls_->MediaPath()));
       std::vector<Value> streams;
       for (const MediaStreamHealth& stream : health.streams) {
         Object row;

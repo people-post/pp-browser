@@ -70,6 +70,18 @@ const char* CallMediaStatusName(const CallMediaStatus status) {
   return "Unknown";
 }
 
+const char* CallMediaPathName(const CallMediaPath path) {
+  switch (path) {
+    case CallMediaPath::Undecided:
+      return "undecided";
+    case CallMediaPath::Direct:
+      return "direct";
+    case CallMediaPath::Hop:
+      return "hop";
+  }
+  return "?";
+}
+
 const char* CallArmedPlannerName(const CallArmedPlanner planner) {
   switch (planner) {
   case CallArmedPlanner::None:
