@@ -228,14 +228,14 @@ TEST(QrScannerTest, PermissionPromptDoesNotCountTowardsNoFrameTimeout) {
   state.no_frames = true;
   state.permission_pending = true;
   MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
-  QrScanner scanner(devices, std::chrono::milliseconds(300));
+  QrScanner scanner(devices, std::chrono::milliseconds(200));
   scanner.Start();
   ASSERT_TRUE(WaitFor([&] { return state.opens == 1; }));
-  std::this_thread::sleep_for(std::chrono::milliseconds(900));
+  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
   EXPECT_TRUE(scanner.Poll().error.empty());
   state.permission_pending = false;  // user granted, still no frames: the clock starts now
   QrScanner::Update result;
-  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
+  ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(10)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
 }
 TEST(QrScannerTest, QuarterTurnGeometryDecodesAndKeepsPreviewOrientation) {

@@ -14,6 +14,7 @@
 
 namespace pbr {
 namespace {
+// Reference implementation: RotateRgba90Cw (VideoYuv.cpp); keep the two in sync.
 // One pass and one allocation for any multiple of 90 degrees clockwise (was one full-frame copy per turn).
 VideoFrameRgba Upright(VideoFrameRgba frame, int rotation) {
   const int turns = ((rotation % 360 + 360) % 360) / 90;
