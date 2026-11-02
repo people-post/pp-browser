@@ -41,7 +41,6 @@ set(_pp_platform_gui_sources
   VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
   PlatformOpenUrl.cpp
-  PlatformOpenFile.cpp
   PlatformHooks.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp
@@ -84,6 +83,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
+    PlatformOpenFile.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -105,11 +105,11 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
-         NativeFileDialog_Default.cpp CameraCapture_Default.cpp)
+         NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
-         NativeFileDialog_Ios.mm CameraCapture_Ios.mm)
+         NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -124,6 +124,7 @@ else()
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
+    PlatformOpenFile.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -288,6 +289,7 @@ if(PP_BROWSER_IS_IOS)
     "-framework UserNotifications"
     "-framework UIKit"
     "-framework PhotosUI"
+    "-framework QuickLook"
     "-framework UniformTypeIdentifiers")
 endif()
 
