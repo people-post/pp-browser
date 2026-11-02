@@ -250,6 +250,11 @@ struct ScriptedStream {
 constexpr std::chrono::milliseconds kShortWait{30};
 const std::string kServerBusyBody = R"({"detail":"too_many_requests","code":"server_busy"})";
 
+/** What MapHttpError makes of a 429 with this body: ServerBusy (retried once) or RateLimited (never). */
+pbr::Err::Auth KindOf429(const std::string& body) {
+  return static_cast<pbr::Err::Auth>(pbr::LlmClient::MapHttpError(429, body).code);
+}
+
 ScriptedStream::Step Http429(const std::string& body) {
   ScriptedStream::Step step;
   step.http_error = pbr::LlmClient::MapHttpError(429, body);
@@ -323,7 +328,7 @@ TEST(BriefTurnRunnerBusyTest, ServerBusyEventAfterTokensIsNotRetried) {
 
 TEST(BriefTurnRunnerBusyTest, UserConcurrencyIsNotRetried) {
   const std::string body = R"({"error":{"message":"Too many concurrent AI turns","code":"user_concurrency"}})";
-  EXPECT_EQ(pbr::LlmClient::LimitCodeOf429(body), pbr::kUserConcurrencyCode);
+  EXPECT_EQ(KindOf429(body), pbr::Err::Auth::RateLimited);
   ScriptedStream stream;
   stream.steps = {Http429(body)};
   Recorder rec;
@@ -336,7 +341,7 @@ TEST(BriefTurnRunnerBusyTest, UserConcurrencyIsNotRetried) {
 
 TEST(BriefTurnRunnerBusyTest, RateLimitedIsNotRetried) {
   const std::string body = R"({"detail":"too_many_requests","code":"rate_limited"})";
-  EXPECT_EQ(pbr::LlmClient::LimitCodeOf429(body), pbr::kRateLimitedCode);
+  EXPECT_EQ(KindOf429(body), pbr::Err::Auth::RateLimited);
   ScriptedStream stream;
   stream.steps = {Http429(body)};
   Recorder rec;
@@ -351,9 +356,11 @@ TEST(BriefTurnRunnerBusyTest, A429WithoutCodeIsRateLimited) {
   // The gateway's 429s today: its own message and rate_limit_error, none of the three codes.
   const std::string gateway =
       R"({"error":{"message":"Per-user Brief LLM rate limit exceeded","code":"rate_limit_error"}})";
-  EXPECT_EQ(pbr::LlmClient::LimitCodeOf429(gateway), pbr::kRateLimitedCode);
-  EXPECT_EQ(pbr::LlmClient::LimitCodeOf429(R"({"detail":"too_many_requests"})"), pbr::kRateLimitedCode);
-  EXPECT_EQ(pbr::LlmClient::LimitCodeOf429("not json"), pbr::kRateLimitedCode);
+  EXPECT_EQ(KindOf429(gateway), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429(R"({"detail":"too_many_requests"})"), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429("not json"), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429(kServerBusyBody), pbr::Err::Auth::ServerBusy);
+  EXPECT_EQ(KindOf429(R"({"error":{"message":"busy","code":"server_busy"}})"), pbr::Err::Auth::ServerBusy);
 
   ScriptedStream stream;
   stream.steps = {Http429(gateway)};

@@ -46,12 +46,10 @@ struct ChatCompletionResponse {
 enum class LlmLimitKind { GuestDaily, PerMinute, Other };
 
 /**
- * Machine-readable codes of a busy server (brief_AI contract section 8), in a 429 body or an SSE `error` event.
- * Only kServerBusyCode is worth retrying (BriefTurnRunner, once); the other two are the gateway's per-user limits.
+ * brief_AI as a whole is busy (contract section 8), in a 429 body's `code` or an SSE `error` event's: retried once
+ * by BriefTurnRunner. Every other 429 (the gateway's user_concurrency / rate_limited, or no code) is not.
  */
 inline constexpr const char* kServerBusyCode = "server_busy";
-inline constexpr const char* kUserConcurrencyCode = "user_concurrency";
-inline constexpr const char* kRateLimitedCode = "rate_limited";
 
 class LlmClient : public Module {
 public:
@@ -61,16 +59,12 @@ public:
   Roe<std::string> Complete(const std::string& system_prompt, const std::string& user_prompt) const;
   Roe<ChatCompletionResponse> Complete(const ChatCompletionRequest& request) const;
 
-  // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient).
+  // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient). A 429 whose `code` (top level,
+  // or the error object's) is kServerBusyCode is Err::Auth::ServerBusy; any other 429 is RateLimited.
   static Error MapHttpError(long http_code, const std::string& response_body);
 
   // Which limit a 429 hit, from the gateway's message (its code is the same for every limit).
   static LlmLimitKind ClassifyLimit(const std::string& api_message);
-  /**
-   * The machine code of a 429 body: its `code` (top level, or the error object's when it is one of the three), and
-   * kRateLimitedCode when it carries none (the gateway's 429s carry none today).
-   */
-  static std::string LimitCodeOf429(const std::string& response_body);
   // A limit message from the Brief gateway (English; never shown as is).
   static bool IsBriefGatewayLimit(const std::string& api_message);
 
