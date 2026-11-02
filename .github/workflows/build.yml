@@ -117,12 +117,17 @@ jobs:
             pricing: &pricing
               - *delivery
               - 'capabilities/pricing/**'
+            media: &media
+              - *capability_base
+              - 'capabilities/media/**'
             messaging: &messaging
               - *pricing
               - *social
+              - *media
               - 'capabilities/messaging/**'
             calls: &calls
               - *pricing
+              - *media
               - 'capabilities/calls/**'
             broadcast: &broadcast
               - *calls
@@ -273,7 +278,7 @@ jobs:
         run: |
           skip=()
           if [ "$PP_IS_PR" = true ]; then
-            for capability in people net social delivery pricing messaging calls broadcast node; do
+            for capability in people net social delivery pricing media messaging calls broadcast node; do
               case "$PP_CHANGED_FILTERS" in
                 *"\"$capability\""*) ;;
                 *) skip+=("$capability") ;;

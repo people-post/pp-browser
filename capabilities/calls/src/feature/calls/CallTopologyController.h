@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "feature/calls/SharedPorts.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallControlCodec.h"
@@ -95,7 +95,7 @@ public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
-  CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, MediaEngine& media);
   ~CallTopologyController() override;
   CallTopologyController(const CallTopologyController&) = delete;
   CallTopologyController& operator=(const CallTopologyController&) = delete;
@@ -297,7 +297,7 @@ private:
   HostPorts host_;
   ICallSessionStore& sessions_;
   ContactsStore& contacts_;
-  CallMediaEngine& media_;
+  MediaEngine& media_;
   ICallMediaKeyStore* media_keys_ = nullptr;
   SharedPorts<CallTopologySeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;

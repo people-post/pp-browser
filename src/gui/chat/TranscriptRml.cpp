@@ -5,7 +5,7 @@
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
-#include "lib/media/VoiceFile.h"
+#include "lib/voice/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 

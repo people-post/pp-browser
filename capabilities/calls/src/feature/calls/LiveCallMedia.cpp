@@ -14,7 +14,7 @@ logging::Logger& LiveCallMediaLog() {
 
 } // namespace
 
-void LiveCallMedia::BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat) {
+void LiveCallMedia::BindMediaResources(MediaEngine* engine, CallMediaSeat* seat) {
   resources_.engine = engine;
   resources_.seat = seat;
 }
@@ -56,7 +56,7 @@ std::string LiveCallMedia::MediaRunningCallId() const {
 }
 
 void LiveCallMedia::StopMediaExcept(const std::string& keep_call_id) {
-  CallMediaEngine* engine = resources_.engine;
+  MediaEngine* engine = resources_.engine;
   if (!engine || (!engine->IsActive() && !engine->IsSfuMode())) {
     return;
   }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "mesh/host/MeshPorts.h"
 #include "lib/broadcast/PeerAnnounceTypes.h"
@@ -101,8 +101,8 @@ public:
   BroadcasterWorkflow::Status Live() const;
 
   /** Levels / health for the watch UI (engine health reads are thread-safe). */
-  const CallMediaEngine& Media() const { return *engine_; }
-  const CallMediaEngine& CaptureMedia() const { return *capture_engine_; }
+  const MediaEngine& Media() const { return *engine_; }
+  const MediaEngine& CaptureMedia() const { return *capture_engine_; }
 
   /** Runs on UI after every viewer or broadcaster status change. */
   void SetOnChanged(std::function<void()> callback);
@@ -121,8 +121,8 @@ private:
   // Destroyed after the workflows (declared first).
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
   std::unique_ptr<mesh::PeerReachCoordinator> reach_;
-  std::unique_ptr<CallMediaEngine> engine_;
-  std::unique_ptr<CallMediaEngine> capture_engine_;
+  std::unique_ptr<MediaEngine> engine_;
+  std::unique_ptr<MediaEngine> capture_engine_;
   std::unique_ptr<BroadcastViewerWorkflow> viewer_;
   std::unique_ptr<BroadcasterWorkflow> broadcaster_;
   std::shared_ptr<const std::atomic<uint64_t>> frames_sent_;

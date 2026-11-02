@@ -18,7 +18,7 @@ See [SDL wiki: AppFreezeDuringDrag](https://wiki.libsdl.org/SDL3/AppFreezeDuring
 
 ## A/V media (SDL + calls)
 
-Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMediaEngine`](../../capabilities/calls/src/lib/media/CallMediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp/realtime/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../capabilities/calls/src/lib/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
+Voice/video capture and playback go through **SDL3 audio/camera** in [`MediaEngine`](../../capabilities/media/src/lib/media/MediaEngine.cpp) — [p2p-av-calls](../../projects/p2p-av-calls/) V014 / V017–V019 / **V026**. Signaling is mesh/E2E; **media is libp2p** (direct `/pp/realtime/1.0.0` or blind `media_relay`). Every active call encodes Opus + H264 (V019); video encode/decode uses **platform HW H264** (Media Foundation / VideoToolbox / MediaCodec; Linux **libva DRM** VA-API best-effort) — not OpenH264 as product default. Audio is mandatory; video is best-effort. Mobile upright capture uses [`CameraCaptureOrientation`](../../capabilities/media/src/lib/media/CameraCaptureOrientation.h) (Android Camera2 `SENSOR_ORIENTATION` + display rotation; iOS interface orientation).
 
 | Platform | SDL audio backend | Extra build packages? | Product needs |
 |----------|-------------------|----------------------|----------------------------------|
@@ -41,7 +41,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`CallMedia
 | Test LAN calls only from an IDE's integrated terminal | Prefer a normal OS terminal or the packaged `.app` — an IDE's environment can break host UDP while signaling still works |
 | Hardcode Android camera rotation | Use `CameraCaptureOrientation` / Camera2 metadata |
 
-`Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `CallMediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
+`Backend::Initialize` must **not** fail window bring-up on audio — init audio on demand in `MediaEngine` (`SDL_InitSubSystem(SDL_INIT_AUDIO)`).
 
 ## Android (milestone 2)
 
@@ -85,7 +85,7 @@ Android still keeps the activity alive across other config changes (`configChang
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 
-**A/V:** `RECORD_AUDIO` for voice; a3 also needs `CAMERA` + runtime prompt before `CallMediaEngine` opens capture (V019). See [§ A/V media](#av-media-sdl--calls).
+**A/V:** `RECORD_AUDIO` for voice; a3 also needs `CAMERA` + runtime prompt before `MediaEngine` opens capture (V019). See [§ A/V media](#av-media-sdl--calls).
 
 Build: [BUILD.md](../ops/BUILD.md#android-local).
 

@@ -3,7 +3,8 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/CallAudioSession.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/calls/CallMediaAdaptation.h"
+#include "lib/media/MediaEngine.h"
 #include "feature/calls/CallUiBackend.h"
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
@@ -338,7 +339,7 @@ void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s,
   no_media_checked_ms_ = now;
   NoMediaSample sample;
   if (s.kind == CallScreen::Kind::InCall && s.group) {
-    const CallMediaEngineHealth health = backend.Media().HealthSnapshot();
+    const MediaEngineHealth health = backend.Media().HealthSnapshot();
     sample.call_id = s.call_id;
     sample.group = s.group;
     // A hop reattach keeps the seat "live" while nothing flows: recovering pauses the count too.
@@ -378,7 +379,9 @@ void CallPresenter::MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s)
   }
   // Deliberately the path rule (not ShowsCameraButton, which keeps the button for a camera that is on):
   // never auto-turn the camera on under path pressure.
-  const bool camera_offerable = backend.Media().VideoEncoderAvailable() && backend.Media().CameraPathAllowsVideo();
+  const bool camera_offerable =
+      backend.Media().VideoEncoderAvailable() &&
+      CallMediaAdaptation::CameraPathAllowsVideo(backend.Media().PathPressure(), backend.Media().UplinkBudget());
   auto awaiting_answer = backend.AwaitingExplicitAnswerForCall(active_call_id_);
   // In a 1:1 call the peer's video arriving also answers "video or voice?" (a slow relay delivered
   // the explicit Accept 51 s after connect, 2026-09-30). Not in a group: one member's video says

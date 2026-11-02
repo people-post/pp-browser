@@ -425,12 +425,12 @@ protected:
   /** Decoded audio frames side `rx` has from the streams side `tx` published through the hop. */
   uint64_t RxFrom(size_t rx, size_t tx) const {
     const std::set<uint32_t> streams = hop_.PublishedStreams(relays_[tx].get());
-    const CallMediaEngine* engine = sides_[rx].stack->MediaEngine();
+    const MediaEngine* engine = sides_[rx].stack->Engine();
     if (streams.empty() || !engine) {
       return 0;
     }
     uint64_t n = 0;
-    for (const CallMediaStreamHealth& s : engine->HealthSnapshot().streams) {
+    for (const MediaStreamHealth& s : engine->HealthSnapshot().streams) {
       if (streams.count(s.stream_id) > 0) {
         n += s.rx_frames;
       }
@@ -439,7 +439,7 @@ protected:
   }
 
   uint64_t RxAudioFrames(size_t i) const {
-    const CallMediaEngine* engine = sides_[i].stack->MediaEngine();
+    const MediaEngine* engine = sides_[i].stack->Engine();
     return engine ? engine->HealthSnapshot().rx_audio_frames : 0;
   }
 
@@ -538,7 +538,7 @@ protected:
   /** Joined + direct media on both ends, and neither is on the hop (V050: 1:1 first). */
   bool DirectPairLive(size_t x, size_t y) const {
     for (size_t i : {x, y}) {
-      const CallMediaEngine* engine = sides_[i].stack->MediaEngine();
+      const MediaEngine* engine = sides_[i].stack->Engine();
       if (sides_[i].ui->Phase() != CallPhase::InCall || !engine || !engine->IsActive() || relays_[i]->IsAttached()) {
         return false;
       }

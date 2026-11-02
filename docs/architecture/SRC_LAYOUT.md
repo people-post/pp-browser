@@ -57,7 +57,7 @@ Folders **are** layers. Default: modules **inside** a layer do not depend on eac
 |-------|-------------------|
 | **common** | Fully independent units (headers / small TUs). No cycles. Depend only on `pp_common` (+ `pp_crypto` for wire Base64) and other common headers. |
 | **foundation** | **Exception:** small **ordered bands** (not peer-independent). Config/paths/crypto naturally stack. Documented below. |
-| **lib** | **Peers only down the capability order** ([CR013](../../projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order)). A peer may `#include` and `PUBLIC_LIBS`-link a peer of a lower capability (`lib/messaging` → `lib/people`); two peers of one capability (`lib/calls` / `lib/media`, `lib/messaging` / `lib/pricing`), or an edge against the order, may not — share through a contract/DTO in `common`, or wire in `feature` (or `app` for lifetimes). `check_base_includes.sh` / `check_base_public_libs.sh` take the allowed pairs from `check_capability_edges.py --lib-edges`. |
+| **lib** | **Peers only down the capability order** ([CR013](../../projects/capability-repos/DECISIONS.md#cr013--lib-peers-follow-the-capability-order)). A peer may `#include` and `PUBLIC_LIBS`-link a peer of a lower capability (`lib/messaging` → `lib/people`); two peers of one capability (`lib/calls` / `lib/call_audio`, `lib/messaging` / `lib/voice`), or an edge against the order, may not — share through a contract/DTO in `common`, or wire in `feature` (or `app` for lifetimes). `check_base_includes.sh` / `check_base_public_libs.sh` take the allowed pairs from `check_capability_edges.py --lib-edges`. |
 | **domain** | **Ordered**, acyclic: a module uses only the ones before it in [`src/domain/CMakeLists.txt`](../../src/domain/CMakeLists.txt) (`check_domain_includes.sh` holds the order). |
 | **feature** | Acyclic module order (see [`src/feature/README.md`](../../src/feature/README.md)). Prefer ports over reverse edges. Must not include `gui/`. |
 | **gui** | May use feature/lib/foundation; must not include `app/`. Bands share `pp_gui` for now. |
@@ -80,8 +80,9 @@ one ([capability-repos](../../projects/capability-repos/DESIGN.md)). Both hold: 
 every capability, and a capability's DTOs under `common/<capability>/` belong to it.
 
 ```
-base (common, foundation) ─► people ─┬─► net ─────┬─► delivery ─► pricing ─┬─► messaging (+ social)
-                                     └─► social ──┘                         └─► calls ─► broadcast
+base (common, foundation) ─► people ─┬─► net ─────┬─► delivery ─► pricing ─┬─► messaging (+ social, media)
+                                     └─► social ──┘                         └─► calls ─► broadcast (+ media)
+base ─► media (devices, codecs, the engine)
                              people, net ─► node            app (shell, GUI, AI): anything
 product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node): people, net, node, product
 ```
@@ -93,13 +94,14 @@ product (foundation/data, platform, i18n) ─► apps only     node_app (pp-node
 | social | `lib/posts`, `lib/content` |
 | delivery | `lib/delivery`, `common/chat`, `common/thread`, `domain/delivery` — sessions, envelopes, codecs, the control lane, the outbox, the records they carry and the store ports (CR020) |
 | pricing | `lib/pricing` |
-| messaging | `lib/messaging`, `domain/attachments`, `feature/conversations` — chat: stores, inbox, groups, attachments, history, the hub |
-| calls | `lib/calls`, `lib/media`, `common/media`, `domain/call_media`, `feature/calls` |
+| media | `lib/media`, `common/media_engine` — devices (`MediaDeviceArbiter`), hardware codecs, the media engine (`MediaEngine`) every realtime feature runs on (CR023 step 2) |
+| messaging | `lib/messaging`, `lib/voice`, `domain/attachments`, `feature/conversations` — chat: stores, inbox, groups, attachments, history, the hub; voice messages |
+| calls | `lib/calls`, `lib/call_audio`, `common/media`, `domain/call_media`, `feature/calls` |
 | broadcast | `lib/broadcast`, `feature/broadcast` |
 | node | `domain/node` |
 | node_app | `app/node` — pp-node, an app (CR017) |
 | product | `foundation/data`, `foundation/platform`, `foundation/i18n` — config, paths, platform hooks, text (CR015) |
-| app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `feature/ai`, `common/ui` |
+| app | `app`, `gui`, `feature/product`, `feature/presenters`, `feature/settings`, `lib/ui`, `lib/ai`, `lib/storage`, `lib/scan`, `feature/ai`, `common/ui` |
 
 A capability includes and links only those before it in the order (tests included: they move with it). The
 product's base is the apps' to read; capabilities take values and ports from them, and ask for user-facing text by key
@@ -115,8 +117,8 @@ A capability moves out of `src/` into its own folder, `capabilities/<name>/`, be
 ([CR022](../../projects/capability-repos/DECISIONS.md#cr022--capabilities-move-into-capabilitiesname-before-any-repo-split)).
 Every capability has its folder (the paths in the table above, under `capabilities/<name>/src/`); `src/` keeps the
 base (`common`, `foundation`) and the app (`app`, `gui`, `lib/ui`, `lib/ai`, the app's `feature/` modules). The
-`common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`;
-`lib/media` links SDL3 and Opus itself, so a split of calls carries those.
+`common/` parts of people, delivery and calls build as `pp_people_common`, `pp_delivery_common` and `pp_calls_common`,
+media's (headers only) as `pp_media_common`; `lib/media` links SDL3 and Opus itself, so a split of media carries those.
 
 - `capabilities/<name>/src/` mirrors `src/`, so include paths do not change. The folder's `CMakeLists.txt`
   calls `pp_browser_capability(<name>)` (`cmake/PpBrowserCapability.cmake`): the lib / domain / feature helpers
@@ -196,13 +198,16 @@ crypto
 | `lib/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`); link-device (`LinkDeviceCoordinator`); account recovery — the encrypted account locker and the account state it keeps (`AccountLocker`, `AccountStateCodec`, the contacts' sync register `ContactClock`), the link bundle a recovery phrase rebuilds (`RecoveryBundle`), the retired Keychain item's cleanup (`RetiredKeychainBackup`, over the `ISecureBlobStore` port in `common/` the app hands in); account cards and what is known of peers' keys (`AccountCard`, `AccountCardRequest`, `PeerCards` over the `IPeerCardStore` port, `PeerSigningKeyStore`, `PeerKemKeyStore`); a device's PeerId from its key (`DevicePeerIdFromKey`) |
 | `lib/delivery/` | Secure delivery (CR020): pairwise and public E2E sessions (`PskSessionCoordinator`, `SqlitePeerSessionStore`, `E2ePublicSessionLogic`), envelopes and their signing (`EnvelopeSigner`, `RelayWirePayload`, `E2eRelayPayloadCodec`), the record payload codecs (`ChatPayloadCodec`, `ChatPayloadValidator`), the control lane's envelopes, the outbound row (`OutboundMessage`), the relay's message client and its ports (`HttpRelayClient`, `RelayClients`, mocks in `testing/`), the local keys (`LocalKeys`) |
 | `lib/messaging/` | Chat: SQLite/JSON stores, group codecs; the inbound receive engine (`RelayReceivePipeline`: verify, replay, decrypt, membership, control lane; the local keys through a `LocalKeys` port) and the group invite gate (`GroupInviteGate`; the inviter's standing through a port; both filled from people by `LocalKeysFromIdentity`, `GroupInviteStanding`); messaging over people: a peer's Brief route (`PeerBriefRoute`, `ContactRelayRoute`), the name a thread or sender shows (`PeerDisplayResolver`; the directory cache and group titles through `feature/conversations/PeerDisplaySources`), a direct thread's target from a contact (`DirectChatTargetFromContact`), what the AI model is told about people and threads (`ModelFacingJson`); the ports to the relay and to peers (`RelayClients`: `IRelayClient`, peer-direct history and chat blobs) and the relay's message API over HTTP (`HttpRelayClient`, signing with `RelayMessageSignPayload`; mocks in `lib/delivery/testing`); the control lane (`ControlLaneEnvelope`, `SqliteControlLaneSeenStore`); what a send of ours writes and puts on the wire (`OutboundMessage`: the row, the sealed payload, the envelope); what a transcript shows (`TranscriptAssembly`; the GUI draws it); a peer's DM (`PeerThreadLogic`); attachment prepare; chat attachment policy (views, posters, suppression, the RAM plaintext cache) — features wire it to `lib/content` |
-| `lib/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
+| `lib/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec and its system-control family (`CallControlFamily`), session and media-key stores and what a call's rows say (`CallSessionQueries`: who is in it, a peer's roster applied), the media key exchange (`CallMediaKeyExchange`, its control-lane sends through a port), the call-to-media seat (`CallMediaSeat`), the calls on this device and what they show (`LiveCalls`: call state, media Status, path gates), pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `CallPathMobility`, `SoftMigrateLogic`, `PeerCapsLogic`), the adaptation policy (`CallMediaAdaptation`: V024, turned into the engine's `MediaTargets`). No messaging include: messaging carries call control as a system-control family |
 | `lib/broadcast/` | Live broadcast: join tickets, viewer ladders, relay media, broadcast RPC codec; the signed peer-announce feed (`PeerAnnounce*`, `Announce*`) |
 | `lib/pricing/` | Initiation billing and payment promises: codecs, stores, lifecycle, and their system-control families (`PricingControlFamilies`) |
 | `lib/posts/` | Public posts ([social-posts](../../projects/social-posts/DESIGN.md)): entries and head statements (`PostEntry`: canonical bytes, hash, sign / verify, chain, fork), kind bodies and protocol limits (`PostBodies`, `PostTypes`), the post store's port (`IPostStore`: entries with forks and stubs, heads, the device's own lane; SQLite in `lib/storage`), the device's writer (`PostAuthor`). Keys come from callers; no lib peers |
 | `lib/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore` over the `IObjectIndex` port, `CasTypes`; the SQLite index is `lib/storage`'s), the library (`CasLibrary`), private content by hash (`PrivateContent`); its functions take the profile's `CasStore`, which the conversations hub owns. Messaging's lib never includes it: features wire attachments to it (`domain/attachments/AttachmentContent`, `ChatBlobContentSource`) |
 | `lib/net/` | HTTP client and the Brief backend's own clients: registration, directory, blobs, the locker, push devices, client compat; the relay API's signed header (`RelayApiSignPayload`). No messaging types: the relay's message client is delivery's |
-| `lib/media/` | `CallMediaEngine` — capture/playback + HW H264 |
+| `lib/media/` | The media capability: devices (`MediaDeviceArbiter`: a device thread per family, budgets, the SDL3 backend; the OS audio session `CallAudioSession` with its tone holds), hardware codecs (`IVideoCodec`, the platform's, behind `GuardedVideoCodec`), the media engine (`MediaEngine`: capture, encode, send / receive, decode, play; per-session, L016). It applies `MediaTargets` and reports `MediaEngineHealth` (`common/media_engine`); the policies are the features' |
+| `lib/call_audio/` | Calls' sounds: the ringtone and the caller's ringback (`CallRingtone`, `Ringback`), on a media speaker lease |
+| `lib/voice/` | Voice messages (messaging): record and play a clip as Ogg Opus (`VoiceRecorder`, `VoicePlayer`, `OggOpus`, `VoiceFile`), the touch-and-hold gesture, their audio session (`VoiceAudioSession`) |
+| `lib/scan/` | QR scanning (the app's): one camera scan at a time and the decoder (`QrScanner`, `QrDecode`), for `gui/scan` |
 | `lib/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
 | `lib/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
 

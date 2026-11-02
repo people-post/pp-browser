@@ -180,7 +180,7 @@ protected:
   pp::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
-  CallMediaEngine engine_{devices_};
+  MediaEngine engine_{devices_};
   FakeDial dial_;
   FakeRelay relay_;
   std::unique_ptr<BroadcastViewerWorkflow> workflow_;
@@ -202,7 +202,7 @@ TEST_F(BroadcastViewerWorkflowTest, AdmittedViewerListensReceiveOnlyOnThePublish
   EXPECT_EQ(relay_.last_quote.want_up_bps, 0) << "receive-only";
   EXPECT_EQ(relay_.subscriptions,
             (std::vector<std::pair<uint32_t, uint16_t>>{{BroadcastPublisherStreamId(kPublisher), 0}}));
-  EXPECT_EQ(engine_.ActiveSpec(), CallMediaEngine::SessionSpec::PlaybackOnly());
+  EXPECT_EQ(engine_.ActiveSpec(), MediaEngine::SessionSpec::PlaybackOnly());
   EXPECT_TRUE(devices_.Holders(MediaDeviceKind::Mic).empty()) << "a viewer never takes the mic";
 
   relay_.sink(SealedFrame(context_, 1));

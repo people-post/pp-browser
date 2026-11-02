@@ -45,7 +45,7 @@ flowchart TB
 | Own a thread when… | Share `WorkerPool` when… |
 |--------------------|--------------------------|
 | Role is long-lived, fixed cardinality, abort/join lifecycle of its own | Work is event-fan-out, sync I/O, or must compete under Critical/Normal/Background |
-| Examples: Amp MeshPump, owner threads, CallMediaEngine, CallRingtone, MediaDeviceArbiter device thread, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
+| Examples: Amp MeshPump, owner threads, MediaEngine, CallRingtone, MediaDeviceArbiter device thread, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
 
 Contain unbounded item fan-out with **internal queues** on the shared pool (e.g. `AttachmentFetchWorkflow::DrainQueue`), not one thread per item.
 
@@ -258,7 +258,7 @@ Each component tree on an owner thread is run by **one runner**, its root — th
 5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
 6. **UI mailbox liveness** — power-save is an optimization; it must not defer `RunUITasks` / Present until user input.
 7. **Media is special** — do not run Opus/H264 in the general pool.
-8. **Hardware never blocks control** ([L016](../../projects/media-client-layers/DECISIONS.md#l016--no-control-thread-waits-on-hardware-per-session-media-a-background-cleanup-devices-with-budgets)) — the calls owner, UI and mesh I/O never join a media thread or wait on an OS device or codec. `CallMediaEngine::Stop` retires the session and returns; the session joins its threads and releases its devices on a cleanup thread of its own. `MediaDeviceArbiter` runs each device family (audio, camera) on its own device thread; an operation past its budget makes that family "not responding" (refused at once, recovers by itself when the operation returns). Hardware video codecs run behind `GuardedVideoCodec`: a thread of their own, every call at most its budget, a hung one dropped and replaced.
+8. **Hardware never blocks control** ([L016](../../projects/media-client-layers/DECISIONS.md#l016--no-control-thread-waits-on-hardware-per-session-media-a-background-cleanup-devices-with-budgets)) — the calls owner, UI and mesh I/O never join a media thread or wait on an OS device or codec. `MediaEngine::Stop` retires the session and returns; the session joins its threads and releases its devices on a cleanup thread of its own. `MediaDeviceArbiter` runs each device family (audio, camera) on its own device thread; an operation past its budget makes that family "not responding" (refused at once, recovers by itself when the operation returns). Hardware video codecs run behind `GuardedVideoCodec`: a thread of their own, every call at most its budget, a hung one dropped and replaced.
 9. **Join on shutdown** — abort inflight → stop L4 (MeshPump still drives their posted completions) → join MeshPump → free L4 → join general pool / coordinator. `AppRuntime::Shutdown` clears `ThreadRuntime::running_` then joins **before** uninstalling `WorkerDispatch`. In-flight `PostWorker` no-ops once `!IsRunning()` (and the pool no-ops once `stopped_`), so nested posts during join neither assert nor race onto another live worker. `ConversationsHub::RequestShutdown` must run **before** that join so unlock → `EnsureMessagingReady` discards mesh bring-up instead of finishing Amp during join (StopMesh after a dead pool segfaulted).
 
 ---
@@ -278,7 +278,7 @@ RequestExit → HideWindow (<100ms close feel)
 **Budgets:**
 - Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
 - `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
-- `CallRingtone::StopAndJoin(≤500ms)`; `CallMediaEngine::Stop` returns at once (drains an in-flight send only); the engine's destructor waits ≤5s for retired sessions to clean up, then leaves a stuck one to the process exit
+- `CallRingtone::StopAndJoin(≤500ms)`; `MediaEngine::Stop` returns at once (drains an in-flight send only); the engine's destructor waits ≤5s for retired sessions to clean up, then leaves a stuck one to the process exit
 - `MediaDeviceArbiter::ShutdownDefault(≤1s)`: runs queued device closes, then joins the device threads (before `SDL_Quit`)
 - `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
 - Full graceful exit target: ~3s wall clock; `AppRuntime` watchdog calls `std::_Exit(0)` at deadline as **last resort** if joins hang
@@ -382,8 +382,8 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 |------|----------|-------|
 | Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park); gated when `IsShuttingDown` |
 | Detached WorkerPool / coordinator on join timeout | ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
-| Call ringtone playback | `capabilities/calls/src/lib/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit`; speaker via a shared `MediaDeviceArbiter` lease |
-| Media device open / close / reopen | `capabilities/calls/src/lib/media/MediaDeviceArbiter.*` | One device thread per family — audio (mic + speaker) and camera — for every SDL open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease` / `CameraDeviceLease`; `Acquire*` / `Reopen` block the caller at most the open budget (`MediaDeviceBudgets`) — never the UI thread; a family past its budget is refused at once until it recovers (L016). Camera: `SetCameraEnabled` (UI) only records the request + display rotation; the engine's video thread takes the lease, owns the local encoder, and reports a failed open through `TakeCameraFailure` (polled by `CallController`) |
+| Call ringtone playback | `capabilities/calls/src/lib/call_audio/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit`; speaker via a shared `MediaDeviceArbiter` lease |
+| Media device open / close / reopen | `capabilities/media/src/lib/media/MediaDeviceArbiter.*` | One device thread per family — audio (mic + speaker) and camera — for every SDL open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease` / `CameraDeviceLease`; `Acquire*` / `Reopen` block the caller at most the open budget (`MediaDeviceBudgets`) — never the UI thread; a family past its budget is refused at once until it recovers (L016). Camera: `SetCameraEnabled` (UI) only records the request + display rotation; the engine's video thread takes the lease, owns the local encoder, and reports a failed open through `TakeCameraFailure` (polled by `CallController`) |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 

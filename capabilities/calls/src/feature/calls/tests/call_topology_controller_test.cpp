@@ -6,7 +6,7 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/tests/calls_loopback_outbox.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/CallControlCodec.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/ICallMediaKeyStore.h"
@@ -329,7 +329,7 @@ protected:
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(ByteVector(kDataEncryptionKeySize, 0x5a)));
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
-    media_ = std::make_unique<CallMediaEngine>();
+    media_ = std::make_unique<MediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeTopologyHost>();
     host_->call_media.BindMediaResources(media_.get(), nullptr);
@@ -456,7 +456,7 @@ protected:
   std::unique_ptr<InMemoryCallSessionStore> sessions_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
   std::unique_ptr<ContactsStore> contacts_;
-  std::unique_ptr<CallMediaEngine> media_;
+  std::unique_ptr<MediaEngine> media_;
   std::unique_ptr<FakeTopologyHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
@@ -1592,7 +1592,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
 }
 
 TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
-  // Dogfood cbe535: End left CallMediaEngine on call:old. With V036 MediaSeat, End/Leave must
+  // Dogfood cbe535: End left MediaEngine on call:old. With V036 MediaSeat, End/Leave must
   // Release the seat; leftover engine ActiveCallId must not veto call:new attach.
   AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();

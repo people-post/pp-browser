@@ -114,7 +114,7 @@ protected:
         MakeOwnerOutbox<BroadcasterEvent>(tasks_, [this](BroadcasterEvent& event) { workflow_->Handle(event); }));
   }
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
-  CallMediaEngine engine_{devices_};
+  MediaEngine engine_{devices_};
   FakeDial dial_;
   FakeRelay relay_;
   std::unique_ptr<BroadcasterWorkflow> workflow_;
@@ -140,7 +140,7 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   EXPECT_EQ(live[0].hop_peer_id, "hop1");
   EXPECT_EQ(live[0].l1_hop_peer_ids, std::vector<std::string>{"hop2"});
 
-  EXPECT_EQ(engine_.ActiveSpec(), CallMediaEngine::SessionSpec::CaptureOnly());
+  EXPECT_EQ(engine_.ActiveSpec(), MediaEngine::SessionSpec::CaptureOnly());
   EXPECT_TRUE(devices_.Holders(MediaDeviceKind::Speaker).empty()) << "a broadcaster never plays";
   ASSERT_TRUE(WaitFrames(3)) << "capture (silence without a device) is sealed and sent";
   const uint32_t stream = BroadcastPublisherStreamId(kSelf);

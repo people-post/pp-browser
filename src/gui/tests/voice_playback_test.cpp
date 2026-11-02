@@ -1,6 +1,6 @@
 #include "gui/chat/VoicePlayback.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/media/tests/voice_test_support.h"
+#include "lib/voice/tests/voice_test_support.h"
 
 #include <gtest/gtest.h>
 

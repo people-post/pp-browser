@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready and storage in the app (CR023, CR024) in progress
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, step 2 of 5 done; storage in the app (CR024) done
 
 ## Done
 
@@ -128,8 +128,14 @@
   the attachment workflow, the blob transport and Me → Storage; content's functions take it instead of a path. No
   capability holds SQL now.
 
+- **CR023 step 2, the media split:** `capabilities/media` (devices, hardware codecs, `MediaEngine` — renamed from
+  `CallMediaEngine`; `common/media_engine`) on the base only; calls' adaptation policy to `lib/calls` (the engine
+  applies `MediaTargets`), the call's sounds to `lib/call_audio`, voice messages to messaging's `lib/voice`, QR
+  scanning to the app's `lib/scan`. The ringback's audio-session hold is a `CallAudioSession` tone hold. Gate map,
+  CI filters and labels updated.
+
 ## Next
 
-1. CR023 steps 2–5 for calls (the `media` split, the base's folder, a standalone build, the host contract).
+1. CR023 steps 3–5 for calls (the base's folder, a standalone build, the host contract).
 2. Contracts repo (CR010) when convenient.
 3. P3's namespaces when a second app needs a capability.

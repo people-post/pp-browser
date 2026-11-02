@@ -7,7 +7,7 @@
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 #include "lib/calls/CallHopPlannerLogic.h"
 
-#include "lib/media/CallMediaAdaptation.h"
+#include "lib/calls/CallMediaAdaptation.h"
 #include "lib/calls/CallHopPlan.h"
 #include "lib/calls/CallHopAttachLogic.h"
 #include "lib/pricing/InitiationPricing.h"
@@ -39,8 +39,7 @@
 
 namespace pbr {
 
-CallTopologyController::CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts,
-                                               CallMediaEngine& media)
+CallTopologyController::CallTopologyController(ICallSessionStore& sessions, ContactsStore& contacts, MediaEngine& media)
     : hop_migrate_(sessions, media),
       flight_(hop_migrate_.Flight()),
       attach_wait_(hop_migrate_.AttachWaitState()),
@@ -483,7 +482,7 @@ void CallTopologyController::RefreshAdaptation(const std::string& call_id, bool 
   }
   in.path_pressure = pressure;
   media_.NoteUplinkBudget(sfu_.last_quote_a_up_bps);
-  media_.ApplyAdaptation(CallMediaAdaptation::Evaluate(in));
+  media_.ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
 }
 
 CallHopHealth CallTopologyController::HopHealth() const {

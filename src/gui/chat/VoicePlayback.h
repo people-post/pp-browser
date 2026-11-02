@@ -2,7 +2,7 @@
 
 #include "feature/conversations/InboxController.h"
 #include "lib/media/MediaDeviceArbiter.h"
-#include "lib/media/VoicePlayer.h"
+#include "lib/voice/VoicePlayer.h"
 
 #include <atomic>
 #include <functional>

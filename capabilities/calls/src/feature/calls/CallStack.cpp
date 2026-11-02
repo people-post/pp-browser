@@ -367,7 +367,7 @@ Roe<void> CallStack::InitializeStoresOnOwner(CallStores stores) {
   call_session_store_ = std::move(stores.sessions);
   call_media_keys_ = std::move(stores.media_keys);
   at_rest_ = std::move(stores.at_rest);
-  call_media_engine_ = std::make_unique<CallMediaEngine>();
+  call_media_engine_ = std::make_unique<MediaEngine>();
   if (!media_plane_) {
     media_plane_ = std::make_unique<CallMediaPlane>();
   }

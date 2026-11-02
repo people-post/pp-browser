@@ -8,7 +8,7 @@
 #include "feature/calls/tests/calls_on_owner.h"
 #include "lib/calls/CallLifecycleTypes.h"
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallMediaKeyStore.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallTypes.h"
@@ -389,7 +389,7 @@ protected:
     sessions_ = std::make_unique<InMemoryCallSessionStore>();
     keys_ = std::make_unique<InMemoryCallMediaKeyStore>();
     ASSERT_TRUE(keys_->SetDek(TestDek()));
-    media_ = std::make_unique<CallMediaEngine>();
+    media_ = std::make_unique<MediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
     host_->call_media.BindMediaResources(media_.get(), nullptr);
@@ -478,7 +478,7 @@ protected:
   std::unique_ptr<InMemoryDeliveryStore> store_;
   std::unique_ptr<InMemoryCallSessionStore> sessions_;
   std::unique_ptr<InMemoryCallMediaKeyStore> keys_;
-  std::unique_ptr<CallMediaEngine> media_;
+  std::unique_ptr<MediaEngine> media_;
   std::unique_ptr<FakeMediaHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCircuitHopReach> circuit_;

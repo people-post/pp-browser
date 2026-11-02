@@ -2,7 +2,7 @@
 
 #include "mesh/types/AddressDisclosure.h"
 #include "common/MeshConfig.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionStore.h"
 #include "lib/calls/CallStores.h"
 #include "lib/delivery/IPeerSessionStore.h"
@@ -160,7 +160,7 @@ public:
   ICallSessionStore* Sessions() { return call_session_store_.get(); }
   /** The call stores encrypted at rest (the profile's data key goes to them). */
   const std::vector<IDekConsumer*>& AtRestStores() const { return at_rest_; }
-  CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
+  MediaEngine* Engine() { return call_media_engine_.get(); }
 
   /**
    * Run `op` on the calls owner and wait (hub wiring that must touch the session manager, e.g.
@@ -242,7 +242,7 @@ private:
   std::unique_ptr<ICallSessionStore> call_session_store_;
   std::unique_ptr<ICallMediaKeyStore> call_media_keys_;
   std::vector<IDekConsumer*> at_rest_;
-  std::unique_ptr<CallMediaEngine> call_media_engine_;
+  std::unique_ptr<MediaEngine> call_media_engine_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */

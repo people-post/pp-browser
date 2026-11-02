@@ -238,7 +238,7 @@ protected:
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(controls_.Find(CallControlProbeMessage())) << "the call family is bound";
     sessions_identity_ = ui_->SessionsIdentity();
-    if (CallMediaEngine* media = stack_->MediaEngine()) {
+    if (MediaEngine* media = stack_->Engine()) {
       media->SetSkipDeviceOpenForTest(true);
     }
 
@@ -515,15 +515,13 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 
   DrainUntil([&]() {
-    return (stack_->MediaEngine() && stack_->MediaEngine()->IsActive() &&
-            stack_->MediaEngine()->ActiveCallId() == call_id) ||
+    return (stack_->Engine() && stack_->Engine()->IsActive() && stack_->Engine()->ActiveCallId() == call_id) ||
            ui_->Phase() == CallPhase::InCall || ui_->Phase() == CallPhase::MediaConnecting ||
            ui_->Phase() == CallPhase::ConnectFailed;
   });
-  ASSERT_TRUE(stack_->MediaEngine());
-  EXPECT_TRUE(stack_->MediaEngine()->IsActive()) << "phase=" << CallPhaseName(ui_->Phase())
-                                                 << " err=" << ui_->LastError();
-  EXPECT_EQ(stack_->MediaEngine()->ActiveCallId(), call_id);
+  ASSERT_TRUE(stack_->Engine());
+  EXPECT_TRUE(stack_->Engine()->IsActive()) << "phase=" << CallPhaseName(ui_->Phase()) << " err=" << ui_->LastError();
+  EXPECT_EQ(stack_->Engine()->ActiveCallId(), call_id);
   // Peer reach settles on its lane, so the dial follows StartSfu asynchronously.
   DrainUntil([&]() { return transport_->connect_async_calls >= 1 || ui_->Phase() == CallPhase::ConnectFailed; });
   EXPECT_GE(transport_->connect_async_calls, 1) << "phase=" << CallPhaseName(ui_->Phase())
@@ -541,8 +539,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   DrainUntil([&]() {
     auto after = ui_->ActiveLocalCall();
-    return after && !after->has_value() &&
-           (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive());
+    return after && !after->has_value() && (!stack_->Engine() || !stack_->Engine()->IsActive());
   });
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
   EXPECT_FALSE(stack_->HasActiveLocalCall());

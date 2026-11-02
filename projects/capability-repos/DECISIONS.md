@@ -418,7 +418,7 @@ external code nobody edits, which the checks, formatting and lint skip.
 ## CR023 — Calls becomes repo-ready first
 
 **Date:** 2026-11-02  
-**Status:** accepted (Hongwei, 2026-11-02); step 1 done
+**Status:** accepted (Hongwei, 2026-11-02); steps 1–2 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
 
 **Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
 testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
@@ -439,6 +439,21 @@ called the app's Android activity by method name, and `src/` (the app) stays an 
    and `docs/` (CALLS.md and its wire schemas).
 
 Namespaces and an `include/` split wait for an actual repo split (CR022).
+
+**Step 2, as done (2026-11-02):**
+- **`media`** (`capabilities/media`, on the base only): devices (`MediaDeviceArbiter`, the SDL3 backend, the OS
+  audio session), hardware codecs (`GuardedVideoCodec` over the platform's), and the engine — renamed
+  `CallMediaEngine` → **`MediaEngine`**, since broadcast runs on it too (Hongwei). Its `common/media_engine` holds
+  what the engine reports and is told (`MediaEngineHealth`, `MediaTargets`), headers only (`pp_media_common`).
+- Three calls concepts the engine reached are cut: it applies neutral **`MediaTargets`** (calls' `CallMediaAdaptation`,
+  now in `lib/calls`, turns its V024 decision into them and answers "may the camera go on" from the engine's path
+  pressure and uplink quote); the ringback's hold on the phone's audio session is a **tone hold** in
+  `CallAudioSession` that the engine waits for; its health type is media's.
+- **Voice messages → messaging's `lib/voice`** (`pp_lib_voice`), not the app (amends the decision; Hongwei): they
+  are a messaging idea, and messaging may sit on media.
+- **QR scanning → the app's `lib/scan`** (`pp_lib_scan`); **the call's sounds → calls' `lib/call_audio`**
+  (`pp_lib_call_audio`), so `pp_lib_calls` stays pure logic without SDL.
+- The gate's map, CI's path filters (`media`, and calls / broadcast / messaging on it) and the test labels follow.
 
 ## CR024 — Capabilities own ideas; the app owns the database
 

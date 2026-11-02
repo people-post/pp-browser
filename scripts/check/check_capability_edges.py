@@ -59,15 +59,17 @@ GROUPS: dict[str, list[str]] = {
     "delivery": ["lib/delivery", "common/chat", "common/thread", "domain/delivery"],
     # Initiation pricing and payment promises: what contacting someone costs, for messages and calls alike.
     "pricing": ["lib/pricing"],
-    # Chat on top of delivery (CR008, CR020): the stores, inbox, groups, attachments, history, the hub.
-    "messaging": ["lib/messaging", "domain/attachments", "feature/conversations"],
-    "calls": ["lib/calls", "lib/media", "common/media", "domain/call_media", "feature/calls"],
+    # Devices, hardware codecs and the media engine every realtime feature runs on (CR023 step 2, L016).
+    "media": ["lib/media", "common/media_engine"],
+    # Chat on top of delivery (CR008, CR020): the stores, inbox, groups, attachments, history, the hub; voice messages.
+    "messaging": ["lib/messaging", "lib/voice", "domain/attachments", "feature/conversations"],
+    "calls": ["lib/calls", "lib/call_audio", "common/media", "domain/call_media", "feature/calls"],
     "broadcast": ["lib/broadcast", "feature/broadcast"],
     "node": ["domain/node"],
     # pp-node, the headless app (CR017): an app, so it reads the product's base; it picks people, net and node.
     "node_app": ["app/node"],
     # The app: shell, GUI, composition — and AI, the shell's planner rather than a capability (CR007).
-    "app": ["app", "gui", "feature/product", "feature/presenters", "feature/settings", "lib/ui", "lib/ai", "lib/storage", "feature/ai", "common/ui"],
+    "app": ["app", "gui", "feature/product", "feature/presenters", "feature/settings", "lib/ui", "lib/ai", "lib/storage", "lib/scan", "feature/ai", "common/ui"],
 }
 
 # What each capability may include besides itself. DESIGN § Target.
@@ -78,10 +80,11 @@ ALLOWED: dict[str, set[str]] = {
     "social": {"base", "people"},
     "delivery": {"base", "people", "net"},
     "pricing": {"base", "people", "net", "delivery"},
-    "messaging": {"base", "people", "net", "social", "delivery", "pricing"},
+    "media": {"base"},
+    "messaging": {"base", "people", "net", "social", "delivery", "pricing", "media"},
     # Realtime rides delivery, not chat (CR020): call history reaches the records through delivery's store port.
-    "calls": {"base", "people", "net", "delivery", "pricing"},
-    "broadcast": {"base", "people", "net", "delivery", "pricing", "calls"},
+    "calls": {"base", "people", "net", "delivery", "pricing", "media"},
+    "broadcast": {"base", "people", "net", "delivery", "pricing", "media", "calls"},
     "node": {"base", "people", "net"},
     "product": {"base"},
     "node_app": {"base", "product", "people", "net", "node"},
