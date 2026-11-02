@@ -55,7 +55,9 @@ check_tree "foundation/error/ must not use OS #ifdefs" src/foundation/error
 check_tree "foundation/i18n/ must not use OS #ifdefs" src/foundation/i18n
 check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
-check_tree "lib/media/ portable TUs must not use OS #ifdefs" src/lib/media \
+check_tree "lib/media/ portable TUs must not use OS #ifdefs" capabilities/media/src/lib/media \
+  "${BACKEND_GLOBS[@]}"
+check_tree "lib/voice/ portable TUs must not use OS #ifdefs" capabilities/messaging/src/lib/voice \
   "${BACKEND_GLOBS[@]}"
 
 check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cpp, Logger.h)" src/common \

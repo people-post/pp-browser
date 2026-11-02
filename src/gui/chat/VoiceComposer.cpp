@@ -3,7 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/Platform.h"
 #include "common/runtime/AppRuntime.h"
-#include "lib/media/VoiceSupport.h"
+#include "lib/voice/VoiceSupport.h"
 
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>

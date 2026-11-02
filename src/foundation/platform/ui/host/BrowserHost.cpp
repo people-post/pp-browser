@@ -235,12 +235,12 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 #endif
 
 #if SDL_MAJOR_VERSION >= 3
-	// Audio is initialized on demand by CallMediaEngine (a2); do not fail window
-	// bring-up if Pulse/ALSA is missing on a headless or minimal host.
-	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-		ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
-		return false;
-	}
+        // Audio is initialized on demand by MediaEngine (a2); do not fail window
+        // bring-up if Pulse/ALSA is missing on a headless or minimal host.
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+          ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
+          return false;
+        }
 #else
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
 		ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());

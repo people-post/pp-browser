@@ -2,7 +2,6 @@
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
-#include "foundation/runtime/AppVersion.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -192,11 +191,11 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
   return doc;
 }
 
-std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc) {
+std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::string& fallback) {
   if (!doc.upgrade_url.empty()) {
     return doc.upgrade_url;
   }
-  return kDefaultUpgradeUrl;
+  return fallback;
 }
 
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc) {

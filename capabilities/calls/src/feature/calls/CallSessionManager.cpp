@@ -7,7 +7,7 @@
 #include "lib/calls/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "lib/media/CallMediaAdaptation.h"
+#include "lib/calls/CallMediaAdaptation.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/delivery/PairwiseFanoutLogic.h"
@@ -66,22 +66,26 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
 
 } // namespace
 
-
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        ICallSessionStore& sessions, ICallMediaKeyStore& media_keys,
-                                       CallDeliveryPorts delivery, IPeerSessionStore& psk_store, CallMediaEngine& media)
-    : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
-      delivery_(std::move(delivery)), media_(media),
+                                       CallDeliveryPorts delivery, IPeerSessionStore& psk_store, MediaEngine& media)
+    : contacts_(contacts),
+      sessions_(sessions),
+      media_keys_(media_keys),
+      delivery_(std::move(delivery)),
+      media_(media),
       topology_(sessions, contacts, media),
       control_(store, identity, sessions, psk_store, delivery_),
-      key_exchange_(sessions, media_keys,
-                    CallMediaKeyExchange::Transport{
-                        [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); },
-                        [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
-                               const std::string& key_id, const ByteVector& key) {
-                          return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
-                        }}), billing_(identity), reach_signals_(control_),
-      workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_), peer_accounts_(contacts) {
+      key_exchange_(
+          sessions, media_keys,
+          CallMediaKeyExchange::Transport{
+              [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); },
+              [this](const std::string& call_id, const std::string& peer, uint32_t epoch, const std::string& key_id,
+                     const ByteVector& key) { return control_.SendMediaKey(call_id, peer, epoch, key_id, key); }}),
+      billing_(identity),
+      reach_signals_(control_),
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_, call_media_),
+      peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   key_exchange_.SetOnEpochInstalled([this](const std::string& call_id) { topology_.OnMediaKeyInstalled(call_id); });
@@ -820,7 +824,7 @@ bool CallSessionManager::IsSfuAttached() const {
   return topology_.IsSfuAttached();
 }
 
-CallMediaEngine& CallSessionManager::Media() {
+MediaEngine& CallSessionManager::Media() {
   return media_;
 }
 

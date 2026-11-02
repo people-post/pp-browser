@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/MediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
 #include "lib/calls/CallMediaSeat.h"
@@ -14,7 +14,7 @@ namespace pbr {
 
 /** What every call's coordinator drives: the one engine, the seat and the 1:1 driver (bindable). */
 struct CallMediaResources {
-  CallMediaEngine* engine = nullptr;
+  MediaEngine* engine = nullptr;
   /** Null: no seat bound (mesh stopped / harness). */
   CallMediaSeat* seat = nullptr;
   /** Null: no 1:1 path (mesh media not wired). */
@@ -55,7 +55,7 @@ public:
    * call's media), start — or, when it already runs this call, re-point — the engine, and mark the
    * seat started on `path`. Fails when the seat will not hold this call.
    */
-  Roe<void> StartEngine(CallMediaSeat::PathKind path, CallMediaEngine::SfuSendFn send);
+  Roe<void> StartEngine(CallMediaSeat::PathKind path, MediaEngine::SfuSendFn send);
 
   /** Stop the engine (capture threads, send). The seat stays bound — the call may restart. */
   void StopEngine(const char* why);
@@ -109,7 +109,7 @@ public:
   Roe<void> ResumeFromInbound();
 
 private:
-  CallMediaEngine& Engine() const { return *resources_.engine; }
+  MediaEngine& Engine() const { return *resources_.engine; }
 
   std::string call_id_;
   const CallMediaResources& resources_;

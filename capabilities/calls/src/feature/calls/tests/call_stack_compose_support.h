@@ -284,7 +284,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   side.stack->BuildSessions(deps);
   ASSERT_TRUE(side.ui->Available());
   ASSERT_FALSE(side.controls.Snapshot()->empty()) << "the call family is bound";
-  if (CallMediaEngine* media = side.stack->MediaEngine()) {
+  if (MediaEngine* media = side.stack->Engine()) {
     media->SetSkipDeviceOpenForTest(true);
   }
 

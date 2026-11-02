@@ -1,7 +1,7 @@
 #include "gui/chat/VoiceComposer.h"
-#include "lib/media/VoiceSupport.h"
+#include "lib/voice/VoiceSupport.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/media/tests/voice_test_support.h"
+#include "lib/voice/tests/voice_test_support.h"
 
 #include <gtest/gtest.h>
 

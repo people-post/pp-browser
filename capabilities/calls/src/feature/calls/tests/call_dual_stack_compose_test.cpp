@@ -1,5 +1,5 @@
 #include "feature/calls/tests/call_stack_compose_support.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "lib/calls/CallControlCodec.h"
 #include "common/ValueJson.h"
 #include "common/MeshAlias.h"
@@ -22,7 +22,7 @@ class CallDualStackComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+    AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
     AppRuntime::InitializeUI();
 
     offer_.on_send = [this](const std::string&, const ThreadMessage& msg) { answer_inbox_.push_back(msg); };
@@ -135,10 +135,9 @@ protected:
     DrainUntil([&]() {
       PumpWire();
       const bool answer_ok =
-          answer_.stack->MediaEngine() && answer_.stack->MediaEngine()->IsActive() &&
-          answer_.ui->Phase() == CallPhase::InCall;
-      const bool offer_ok = offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive() &&
-                            offer_.ui->Phase() == CallPhase::InCall;
+          answer_.stack->Engine() && answer_.stack->Engine()->IsActive() && answer_.ui->Phase() == CallPhase::InCall;
+      const bool offer_ok =
+          offer_.stack->Engine() && offer_.stack->Engine()->IsActive() && offer_.ui->Phase() == CallPhase::InCall;
       return answer_ok && offer_ok;
     });
     EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
@@ -501,12 +500,12 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
   DrainUntil([&]() {
     PumpWire();
-    return offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive() &&
-           offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall;
+    return offer_.stack->Engine() && offer_.stack->Engine()->IsActive() && offer_.ui->Phase() == CallPhase::InCall &&
+           answer_.ui->Phase() == CallPhase::InCall;
   });
   ASSERT_FALSE(held_to_offer_.empty()) << "the accept never reached the offerer";
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the answerer's hello stood in for the accept";
-  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  EXPECT_TRUE(offer_.stack->Engine()->IsActive());
   // The answer mode (e.g. voice-only) rides the real accept: until it lands the offerer holds its
   // auto camera (PR #230 review).
   auto awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
@@ -521,7 +520,7 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   held_to_offer_.clear();
   PumpWire();
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
-  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  EXPECT_TRUE(offer_.stack->Engine()->IsActive());
   awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
   ASSERT_TRUE(awaiting);
   EXPECT_FALSE(*awaiting) << "the late CallAccept is the answer";
@@ -570,7 +569,7 @@ TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth
   });
   EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the offerer's failed call accepted the peer's retry";
-  EXPECT_TRUE(offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive());
+  EXPECT_TRUE(offer_.stack->Engine() && offer_.stack->Engine()->IsActive());
   EXPECT_EQ(offer_.transport->connect_async_calls, offer_dials) << "resumed over the inbound stream, no redial";
   FinishAnswerLeaveExpectBothIdle(call_id);
   const auto offer_end = offer_.ui->TakeRemoteEnd();

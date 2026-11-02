@@ -27,7 +27,7 @@ User-visible product identity for the AI-centric browsing shell.
 
 ### Constants (single source of truth)
 
-C++ — [`src/foundation/runtime/ProductBranding.h`](../../src/foundation/runtime/ProductBranding.h):
+C++ — [`src/foundation/product/ProductBranding.h`](../../src/foundation/product/ProductBranding.h):
 
 ```cpp
 kProductName       = "PP"           // user-visible (marketing)

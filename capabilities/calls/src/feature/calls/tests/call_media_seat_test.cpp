@@ -2,7 +2,7 @@
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -12,7 +12,7 @@ namespace pbr {
 namespace {
 
 TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
@@ -45,7 +45,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
 
 TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
   // Dogfood b60d82: Accept leftover Stop must not kill new StartSfu.
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsManualRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;

@@ -1,5 +1,4 @@
 #include "lib/net/ClientCompat.h"
-#include "foundation/runtime/AppVersion.h"
 
 #include <gtest/gtest.h>
 
@@ -194,15 +193,9 @@ TEST(ClientCompatCache, RoundTripAndFreshness) {
 
 TEST(ClientCompatUpgradeUrl, FallsBackToDefault) {
   ClientCompatDocument doc;
-  EXPECT_EQ(ResolvedUpgradeUrl(doc), kDefaultUpgradeUrl);
+  EXPECT_EQ(ResolvedUpgradeUrl(doc, "https://example.com/releases"), "https://example.com/releases");
   doc.upgrade_url = "https://example.com/app";
-  EXPECT_EQ(ResolvedUpgradeUrl(doc), "https://example.com/app");
-}
-
-TEST(AppVersion, ConstantsPresent) {
-  EXPECT_FALSE(std::string(AppVersionString()).empty());
-  EXPECT_GE(kProtocolGen, 1);
-  EXPECT_GE(kMinPeerProtocolGen, 1);
+  EXPECT_EQ(ResolvedUpgradeUrl(doc, "https://example.com/releases"), "https://example.com/app");
 }
 
 } // namespace

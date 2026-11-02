@@ -15,7 +15,7 @@
 #include "gui/chat/VoiceSendPolicy.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_touch.h>
-#include "lib/media/VoiceSupport.h"
+#include "lib/voice/VoiceSupport.h"
 #include "foundation/platform/PickedFileName.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"

@@ -35,7 +35,7 @@ struct BroadcasterWorkflow::Sender {
   std::atomic<bool> live{false};
   std::shared_ptr<std::atomic<uint64_t>> sent;  // the workflow's counter (outlives the show)
 
-  void Send(const CallMediaEngine::SfuPacket& packet) {
+  void Send(const MediaEngine::SfuPacket& packet) {
     if (!live.load(std::memory_order_acquire)) {
       return;
     }
@@ -331,8 +331,8 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
       ports_.engine->SetVideoLevel(video_level_);
     }
     auto sender = sender_;
-    if (auto started = ports_.engine->Start(status_.join_handle, CallMediaEngine::SessionSpec::CaptureOnly(),
-                                            [sender](const CallMediaEngine::SfuPacket& packet) { sender->Send(packet); });
+    if (auto started = ports_.engine->Start(status_.join_handle, MediaEngine::SessionSpec::CaptureOnly(),
+                                            [sender](const MediaEngine::SfuPacket& packet) { sender->Send(packet); });
         !started) {
       Fail("capture: " + started.error().message);
       return;

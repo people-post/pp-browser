@@ -37,7 +37,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/AppVersion.h"
+#include "foundation/product/AppVersion.h"
 #include "common/Metrics.h"
 
 #include <algorithm>

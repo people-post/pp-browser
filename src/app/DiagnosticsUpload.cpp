@@ -10,8 +10,8 @@
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/AppVersion.h"
+#include "foundation/product/ProductBranding.h"
 #include "lib/net/HttpClient.h"
 
 #include <cstdio>

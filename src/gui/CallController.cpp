@@ -3,7 +3,8 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/CallAudioSession.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/calls/CallMediaAdaptation.h"
+#include "lib/media/MediaEngine.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/DeviceVitals.h"
 #include "common/media/CallMediaHealth.h"
@@ -895,7 +896,7 @@ void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
 
-void CallController::ApplyAudioLevels(CallMediaEngine& media) {
+void CallController::ApplyAudioLevels(MediaEngine& media) {
   media.RefreshRemoteVideoHealth();
 
   auto& in_call = in_call_;
@@ -932,8 +933,9 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     if (auto allowed = backend->VideoAllowedForCall(presenter_.ActiveCallId());
         allowed && allowed->has_value() && **allowed) {
       in_call.video_allowed = true;
-      in_call.show_camera =
-          ShowsCameraButton(media.VideoEncoderAvailable(), media.CameraPathAllowsVideo(), in_call.camera_on);
+      in_call.show_camera = ShowsCameraButton(
+          media.VideoEncoderAvailable(),
+          CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget()), in_call.camera_on);
       camera_sync_off_done_ = false;
     } else if (!camera_sync_off_done_ && media.IsCameraEnabled() && allowed && allowed->has_value() &&
                !**allowed) {
@@ -1024,7 +1026,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
 
-  CallMediaEngine::VideoTileFrame local_tile;
+  MediaEngine::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
   if (in_call.local_preview) {
     CallVideoTileRenderer::Frame frame;
@@ -1035,7 +1037,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     CallVideoTileRenderer::Instance().SubmitLocalFrame(std::move(frame));
   }
   if (in_call.remote_video) {
-    CallMediaEngine::VideoTileFrame remote_tile;
+    MediaEngine::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
@@ -1059,7 +1061,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       continue;
     }
     live_peer_streams.push_back(stream);
-    CallMediaEngine::VideoTileFrame peer_tile;
+    MediaEngine::VideoTileFrame peer_tile;
     if (!media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
       continue;
     }
@@ -1155,7 +1157,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   ApplyMediaHealth(media, backend, media_reconnect || mesh_messaging_failed);
 }
 
-CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
+CallMediaHealthView CallController::BuildMediaHealthView(MediaEngine& media, CallUiBackend* backend,
                                                          const bool media_reconnect) const {
   CallMediaHealthInput in;
   in.engine = media.HealthSnapshot();
@@ -1192,8 +1194,7 @@ void CallController::SampleLinkHealth(CallUiBackend* backend, const int64_t now_
   link_counters_ = now;
 }
 
-void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend,
-                                      const bool media_reconnect) {
+void CallController::ApplyMediaHealth(MediaEngine& media, CallUiBackend* backend, const bool media_reconnect) {
   auto& in_call = in_call_;
   if (!in_call.active) {
     return;

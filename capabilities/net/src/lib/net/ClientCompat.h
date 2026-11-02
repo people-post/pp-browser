@@ -57,8 +57,8 @@ enum class CompatUiAction {
 
 Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text);
 
-/** Resolve upgrade_url (fallback to kDefaultUpgradeUrl when empty). */
-std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc);
+/** Resolve upgrade_url: the document's, else `fallback` (the app's releases page). */
+std::string ResolvedUpgradeUrl(const ClientCompatDocument& doc, const std::string& fallback);
 
 CompatUiAction DecideCompatUiAction(std::string_view local_version, const ClientCompatDocument& doc);
 
