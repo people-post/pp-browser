@@ -190,7 +190,7 @@ The client ships with no backend origin. Every backend URL (LLM, relay, director
 
 - Compile time, two origins: `cmake -B build -S . -DPP_API_URL_PROD=https://backend.example.test -DPP_API_URL_QA=https://qa.backend.example.test`. `PP_API_URL_QA` is optional; when empty the QA choice is not offered in Me → Network.
 - CI: `PP_API_URL_PROD` and `PP_API_URL_QA` are repository secrets of the same names, passed to `release.yml` (desktop and Android) and `ios-testflight.yml`; `scripts/platform/ios_build.sh` and `android_build.sh` read the environment variables of those names.
-- Runtime override: `PP_BROWSER_ORIGIN=https://backend.example.test pp-browser` (wins over everything below).
+- Runtime override: `PP_BROWSER_ORIGIN=https://backend.example.test pp-browser` (wins over everything below). It selects a `custom-<hash>` profile, so the same install launched with and without it has two separate identities.
 
 Precedence: `PP_BROWSER_ORIGIN` > the backend picked in Me → Network (`backend.env` in the config file: `prod` → `PP_API_URL_PROD`, `qa` → `PP_API_URL_QA`, `custom` → the relay / directory / registration URLs saved in the config file). Each backend has its own local profile, so switching never mixes identities ([DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md#per-backend-profiles)). `XDG_DATA_HOME` / `--config` still keep whole data sets apart.
 
