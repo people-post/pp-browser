@@ -1202,11 +1202,13 @@ void ChatController::ToggleVoiceMode() {
   DataModelHost::Instance().Dirty("chat", "voice_mode");
 }
 
-void ChatController::BeginAttachmentPreparing() {
+void ChatController::BeginAttachmentPreparing(const std::string& name) {
   if (chat_.attachment_uploading || !preparing_.Begin(std::chrono::steady_clock::now())) {
     return;
   }
   SyncAttachmentPreparing();
+  chat_.attachment_draft_name = name.c_str(); // empty when the platform did not say
+  DataModelHost::Instance().Dirty("chat", "attachment_draft_name");
 }
 
 void ChatController::EndAttachmentPreparing() {
@@ -1219,6 +1221,12 @@ void ChatController::SyncAttachmentPreparing() {
     return;
   }
   chat_.attachment_preparing = preparing_.Busy();
+  // Background time for the copy, so a quick switch to another app does not stall it.
+  if (chat_.attachment_preparing) {
+    preparing_activity_ = std::make_unique<BackgroundActivity>("attachment-prepare");
+  } else {
+    preparing_activity_.reset();
+  }
   if (chat_.attachment_preparing) {
     attachment_thread_ = ActiveThreadId();
     chat_.attachment_failed = false;
@@ -1311,8 +1319,9 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   // "Photo" on a phone: the library with pictures and videos.
   const auto pick_photo_or_video = [this, picked_picture]() {
     return [this, on_picked = picked_picture()]() {
-      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked,
-                                 [this]() { AppRuntime::PostUI([this]() { BeginAttachmentPreparing(); }); });
+      ShowOpenPhotoLibraryDialog(Backend::GetWindow(), on_picked, [this](const std::string& name) {
+        AppRuntime::PostUI([this, name]() { BeginAttachmentPreparing(name); });
+      });
     };
   };
   // "Picture" on the desktop: the image-file dialog.
@@ -1387,7 +1396,7 @@ void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
           HandleCaptureResult(MakeCaptureFlowPorts(), outcome, std::move(paths));
         });
       },
-      [this]() { AppRuntime::PostUI([this]() { BeginAttachmentPreparing(); }); });
+      [this](const std::string& name) { AppRuntime::PostUI([this, name]() { BeginAttachmentPreparing(name); }); });
 }
 
 CaptureFlowPorts ChatController::MakeCaptureFlowPorts() {

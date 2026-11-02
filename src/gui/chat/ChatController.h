@@ -9,6 +9,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "foundation/runtime/BackgroundActivity.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
@@ -203,7 +204,7 @@ private:
   void ShowPictureSendChoice(std::string path);
   void ToggleVoiceMode();
   /** A video was accepted and is being copied out by the system (iOS): the chip says "Sending…" until it arrives. */
-  void BeginAttachmentPreparing();
+  void BeginAttachmentPreparing(const std::string& name);
   /** Every way out of that wait (path arrived, nothing came, cancelled, failed) ends it. */
   void EndAttachmentPreparing();
   /** Mirror preparing_ into the chat fields (the one place chat_.attachment_preparing is written). */
@@ -277,6 +278,8 @@ private:
   /** Deletes a picked / captured file once it is read or given up; tests swap it to count the releases. */
   std::function<void(const std::string& path)> release_pick_ = [](const std::string& path) { ReleasePickedFile(path); };
   AttachmentPreparing preparing_;
+  /** Held while the system copies a picked / captured video, so the copy gets background time on iOS. */
+  std::unique_ptr<BackgroundActivity> preparing_activity_;
   int attach_menu_x_ = 12;
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */

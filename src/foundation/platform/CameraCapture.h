@@ -30,10 +30,11 @@ using CameraCaptureCallback = std::function<void(CameraCaptureOutcome outcome, s
  * `max_video_seconds` and `max_video_bytes` as far as the platform camera honours them; the caller checks the size
  * again. The callback may run on any thread.
  * `on_preparing` (iOS only, main thread; other platforms never call it) fires when the person has accepted a video,
- * before it is copied out: the caller can say "Sending…" while the callback is still to come.
+ * before it is copied out (`name` empty here): the caller can say "Sending…" while the callback is still to come.
  */
 void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video_seconds, uint64_t max_video_bytes,
-                       CameraCaptureCallback callback, std::function<void()> on_preparing = nullptr);
+                       CameraCaptureCallback callback,
+                       std::function<void(const std::string& name)> on_preparing = nullptr);
 
 /**
  * The directory captured files live in: Android the app's cache `capture/`, iOS `tmp/pp-picks` (shared with the

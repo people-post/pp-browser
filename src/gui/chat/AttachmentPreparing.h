@@ -9,12 +9,12 @@ namespace pbr {
  * The gap on a phone between the person accepting a video (camera "Use Video", library pick) and the file path
  * arriving: the system copies it out first. While it lasts the composer shows "Sending…" and takes no second
  * attachment. Pure state: the chat controller starts it from the platform's `on_preparing` and ends it on every
- * way out (path delivered, nothing came, cancelled, failed); a deadline ends it anyway if no exit ever reports.
+ * way out (path delivered, nothing came, cancelled, failed); a 5-minute deadline (a safety net; the picker's own completion or failure is the real end) ends it anyway.
  */
 class AttachmentPreparing {
 public:
   using Clock = std::chrono::steady_clock;
-  static constexpr std::chrono::seconds kTimeout{60};
+  static constexpr std::chrono::seconds kTimeout{300};
 
   /** False (and nothing changes) when a preparation is already on: the second entry is refused. */
   bool Begin(Clock::time_point now = Clock::now()) {

@@ -39,11 +39,11 @@ TEST(AttachmentPreparing, ItExpiresWhenNoExitEverReports) {
   AttachmentPreparing preparing;
   const auto start = AttachmentPreparing::Clock::now();
   ASSERT_TRUE(preparing.Begin(start));
-  EXPECT_FALSE(preparing.Expire(start + seconds(59)));
+  EXPECT_FALSE(preparing.Expire(start + seconds(299)));
   EXPECT_TRUE(preparing.Busy());
-  EXPECT_TRUE(preparing.Expire(start + seconds(61)));
+  EXPECT_TRUE(preparing.Expire(start + seconds(301)));
   EXPECT_FALSE(preparing.Busy());
-  EXPECT_FALSE(preparing.Expire(start + seconds(62))) << "reported once";
+  EXPECT_FALSE(preparing.Expire(start + seconds(302))) << "reported once";
 }
 
 TEST(AttachmentPreparing, TheChipBelongsToTheChatTheFileIsSentIn) {

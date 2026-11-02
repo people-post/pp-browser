@@ -20,7 +20,7 @@
 @interface PPCameraDelegate : NSObject <UIImagePickerControllerDelegate, UINavigationControllerDelegate> {
 @public
   pbr::CameraCaptureCallback callback;
-  std::function<void()> preparing; // a video was accepted and is being copied (may be empty)
+  std::function<void(const std::string& name)> preparing; // a video was accepted and is being copied (may be empty)
 }
 @end
 
@@ -135,7 +135,7 @@ void ExportCleanVideo(AVAsset* asset, NSString* dir, bool mpeg4, void (^done)(NS
   if ([media_type isEqualToString:UTTypeMovie.identifier]) {
     // The export below takes a while on a long clip: let the caller show "Sending…" meanwhile.
     if (preparing) {
-      preparing();
+      preparing(std::string()); // the camera has no file name yet
     }
     [self finishVideo:info[UIImagePickerControllerMediaURL]];
   } else {
@@ -261,7 +261,7 @@ void PresentCamera(SDL_Window* window, PPCameraDelegate* delegate, pbr::CameraCa
 namespace pbr {
 
 void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video_seconds, uint64_t /*max_video_bytes*/,
-                       CameraCaptureCallback callback, std::function<void()> on_preparing) {
+                       CameraCaptureCallback callback, std::function<void(const std::string& name)> on_preparing) {
   if (!callback) {
     return;
   }

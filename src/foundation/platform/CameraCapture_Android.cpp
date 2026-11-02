@@ -75,7 +75,7 @@ bool CallActivityStatic(const char* name, const char* signature, jvalue* args, j
 } // namespace
 
 void ShowCameraCapture(SDL_Window* /*window*/, CameraCaptureKind kind, int max_video_seconds, uint64_t max_video_bytes,
-                       CameraCaptureCallback callback, std::function<void()> /*on_preparing*/) {
+                       CameraCaptureCallback callback, std::function<void(const std::string& name)> /*on_preparing*/) {
   if (!callback) {
     return;
   }
