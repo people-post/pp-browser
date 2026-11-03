@@ -142,6 +142,7 @@ private:
   /** The row a jump landed on, tinted (message-row-jump-target) until `flash_until_` so the eye finds it. */
   std::string flash_id_;
   std::chrono::steady_clock::time_point flash_until_{};
+  void KeepJumpFlash();
   void ClearJumpFlash();
   ConversationsFacade* facade_ = nullptr;
   RowBuilder rows_;

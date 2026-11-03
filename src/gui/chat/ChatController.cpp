@@ -2419,9 +2419,10 @@ void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
     }
     break;
   }
-  // The scroller loads the original's place when it is outside the rows on screen (a long chat), keeps it in view
-  // while images above it settle, and tints it for a moment; a DOM-only lookup said "not found" for those.
-  if (target_id.empty() || scroller_.JumpToMessage(target_id) == ChatTranscriptScroller::JumpResult::NotFound) {
+  // The original is looked for among the newest 500 messages (above). The scroller then loads its place when it is
+  // outside the rows on screen, keeps it in view while images above it settle, and tints it for a moment; a
+  // DOM-only lookup said "not found" for an original outside the rows on screen.
+  if (target_id.empty() || scroller_.JumpToMessage(target_id) != ChatTranscriptScroller::JumpResult::Jumped) {
     ShowToast(Tr("chat.quote.not_found"));
   }
 }
