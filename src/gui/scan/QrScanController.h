@@ -16,6 +16,9 @@ class Context;
 
 namespace pbr {
 
+/** The locale key of the hint for a failed scan, chosen from the scanner's error kind. */
+const char* ScanErrorTextKey(QrScanner::ErrorKind kind);
+
 /** Presents a scanner and returns one QR text after closing. Callers own the next action. */
 class QrScanController {
 public:

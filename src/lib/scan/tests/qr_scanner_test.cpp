@@ -206,11 +206,17 @@ TEST(QrScannerTest, ReportsPermissionDenialAndDeviceOpenFailure) {
   QrScanner::Update result;
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
   EXPECT_EQ(result.error, state.error);
+  EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::PermissionDenied);
   EXPECT_FALSE(result.text);
   MediaDeviceArbiter no_camera(CreateNullMediaDeviceBackend());
   QrScanner unavailable(no_camera);
   unavailable.Start();
-  EXPECT_TRUE(WaitFor([&] { return !unavailable.Poll().error.empty(); }));
+  QrScanner::Update missing;
+  ASSERT_TRUE(WaitFor([&] {
+    missing = unavailable.Poll();
+    return !missing.error.empty();
+  }));
+  EXPECT_EQ(missing.error_kind, QrScanner::ErrorKind::Other);
 }
 TEST(QrScannerTest, MissingFramesBecomeVisibleErrorAndReleaseCamera) {
   FakeState state;
@@ -221,6 +227,7 @@ TEST(QrScannerTest, MissingFramesBecomeVisibleErrorAndReleaseCamera) {
   QrScanner::Update result;
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }, std::chrono::seconds(18)));
   EXPECT_NE(result.error.find("no frames"), std::string::npos);
+  EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::Other);
   EXPECT_TRUE(WaitFor([&] { return state.closes == 1; }));
 }
 TEST(QrScannerTest, PermissionPromptDoesNotCountTowardsNoFrameTimeout) {
@@ -290,6 +297,7 @@ TEST(QrScannerTest, ReportsCameraAlreadyHeldWithoutOpeningAnother) {
   QrScanner::Update result;
   ASSERT_TRUE(WaitFor([&] { result = scanner.Poll(); return !result.error.empty(); }));
   EXPECT_NE(result.error.find("held by call"), std::string::npos);
+  EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::CameraBusy);
   EXPECT_EQ(state.opens, 1);
 }
 TEST(QrScannerTest, RearPreferenceKeepsBorrowedCamerasLast) {

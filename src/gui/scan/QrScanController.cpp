@@ -88,6 +88,19 @@ void QrScanController::BeginCapture() {
   Dirty();
 }
 
+const char* ScanErrorTextKey(const QrScanner::ErrorKind kind) {
+  switch (kind) {
+    case QrScanner::ErrorKind::PermissionDenied:
+      return "scan.camera_denied";
+    case QrScanner::ErrorKind::CameraBusy:
+      return "scan.camera_busy";
+    case QrScanner::ErrorKind::None:
+    case QrScanner::ErrorKind::Other:
+      break;
+  }
+  return "scan.camera_error";
+}
+
 void QrScanController::OnDismissed() {
   preview_ = nullptr;
   layer_id_ = -1;
@@ -125,9 +138,7 @@ void QrScanController::Tick() {
   auto update = scanner_.Poll();
   if (!update.error.empty()) {
     // Hint from the diagnosed cause, never a blanket "check permissions".
-    const bool denied = update.error.find("permission denied") != std::string::npos;
-    const bool held = update.error.find("held by") != std::string::npos;
-    status_ = Tr(denied ? "scan.camera_denied" : held ? "scan.camera_busy" : "scan.camera_error");
+    status_ = Tr(ScanErrorTextKey(update.error_kind));
     failed_ = true;
     Dirty();
   }

@@ -10,10 +10,14 @@ namespace pbr {
 /** One local camera scan at a time. Start/Stop/Poll are nonblocking, called by its owner thread. */
 class QrScanner {
 public:
+  /** Why a scan failed, for choosing the hint without reading `error`'s text. */
+  enum class ErrorKind { None, PermissionDenied, CameraBusy, Other };
+
   struct Update {
     std::optional<VideoFrameRgba> preview;
     std::optional<std::string> text;
     std::string error;
+    ErrorKind error_kind = ErrorKind::None;
   };
 
   /** `no_frame_timeout` is how long a camera may stay silent (outside an OS permission prompt) before an error. */
