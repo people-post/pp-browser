@@ -670,9 +670,13 @@ void PeoplePickerController::SyncGroupMemberRows() {
     }
   }
   local_identity_ = local_identity;
-  group_is_owner_ = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
-    return member.member_identity == local_identity && member.role == MemberRole::Owner;
-  });
+  // The engine decides by the group's recorded owner; the roster's role column can disagree.
+  group_is_owner_ = false;
+  if (picker_ports_.is_local_owner) {
+    if (auto owner = picker_ports_.is_local_owner(group_id_)) {
+      group_is_owner_ = *owner;
+    }
+  }
   show_add_members_ = group_is_owner_;
   std::unordered_set<std::string> unreachable;
   if (picker_ports_.list_unreachable_members) {

@@ -423,11 +423,10 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   std::string local_identity;
   if (auto identity = facade_->GetIdentity()) {
     local_identity = identity->account_id;
-    if (auto roster = facade_->ListGroupRoster(group_id)) {
-      sheet.is_owner = std::any_of(roster->begin(), roster->end(), [&](const GroupRosterMember& member) {
-        return member.member_identity == local_identity && member.role == MemberRole::Owner;
-      });
-    }
+  }
+  // The engine decides by the group's recorded owner; the roster's role column can disagree.
+  if (auto owner = facade_->IsLocalOwner(group_id)) {
+    sheet.is_owner = *owner;
   }
   sheet.owner_unreachable = facade_->IsOwnerUnreachable(group_id);
   if (!sheet.is_owner) {
@@ -750,10 +749,6 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
   bool is_owner = false;
   if (auto owner = facade_->IsLocalOwner(plan.group_id)) {
     is_owner = *owner;
-  } else {
-    is_owner = std::any_of(members.begin(), members.end(), [&](const GroupRosterMember& member) {
-      return member.member_identity == me && member.role == MemberRole::Owner;
-    });
   }
   for (const GroupRosterMember& member : members) {
     if (member.member_identity != me && !facade_->IsMemberUnreachable(plan.group_id, member.member_identity)) {
