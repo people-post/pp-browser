@@ -3600,15 +3600,15 @@ input.checkbox {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 52dp;
-  height: 52dp;
-  border-radius: 26dp;
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
 }
 
 .chat-row-avatar-letter {
   margin: 0;
-  font-size: 20dp;
-  line-height: 25dp;
+  font-size: 19dp;
+  line-height: 24dp;
   font-weight: bold;
 }
 
@@ -3622,7 +3622,7 @@ input.checkbox {
   padding-right: 16dp;
   box-sizing: border-box;
   justify-content: center;
-  gap: 2dp;
+  gap: 5dp;
 }
 
 .shell-layer-compact .sidebar-session-line {
@@ -3634,16 +3634,21 @@ input.checkbox {
 }
 
 .shell-layer-compact .sidebar-session-title {
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 16dp;
+  line-height: 21dp;
   font-weight: bold;
 }
 
-.shell-layer-compact .sidebar-session-date,
+/* Kenneth 2026-11-03: one size smaller than the spec's subhead, more air ("不要塞的太满"). */
 .shell-layer-compact .sidebar-session-preview,
 .shell-layer-compact .sidebar-session-mention {
-  font-size: 15dp;
-  line-height: 20dp;
+  font-size: 14dp;
+  line-height: 19dp;
+}
+
+.shell-layer-compact .sidebar-session-date {
+  font-size: 12dp;
+  line-height: 16dp;
 }
 
 .shell-layer-compact .chat-row-type,
