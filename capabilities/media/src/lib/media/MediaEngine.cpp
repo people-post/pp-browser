@@ -1553,9 +1553,12 @@ struct MediaEngine::Impl {
           // No frame will ever come: say so, with where to allow it, instead of a camera that is
           // "on" and black (B147, a phone that never showed the prompt again). The next turn of the
           // loop closes the lease like the person turning video off.
+          // The reason is noted before video goes off (whoever sees it off finds why), and only the
+          // refused request is withdrawn: a switch the person flips at the same moment stays.
           EngineLog().info << "camera permission denied by the OS";
-          camera_enabled.store(false, std::memory_order_relaxed);
           NoteCameraFailure(CameraFailure::Kind::PermissionDenied, "camera permission denied");
+          bool refused = true;
+          (void)camera_enabled.compare_exchange_strong(refused, false, std::memory_order_acq_rel);
           continue;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
