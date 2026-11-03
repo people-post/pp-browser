@@ -124,10 +124,10 @@ jobs:
           set -euo pipefail
           if [[ -z "${PP_API_URL_PROD}" ]]; then
             if [[ "${PUBLISH_RELEASE}" == "true" ]]; then
-              echo "::error::PP_API_URL_PROD secret is empty: a released node would have no backend (no registration, no heartbeat)."
+              echo "::error::PP_API_URL_PROD secret is empty: a released node would have no registration URL (a publishing node could not register)."
               exit 1
             fi
-            echo "::warning::PP_API_URL_PROD is empty: this dogfood node needs registration.base_url in its config or PP_NODE_REGISTRATION_BASE_URL."
+            echo "::warning::PP_API_URL_PROD is empty: a publishing dogfood node needs registration.base_url in its config or PP_NODE_REGISTRATION_BASE_URL."
           fi
           bash scripts/platform/pp_node_package_linux.sh all
 
