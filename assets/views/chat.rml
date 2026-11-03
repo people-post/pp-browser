@@ -151,9 +151,20 @@
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
            data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-class-message-row-mentions-me="row.mentions_me"
+           data-class-message-row-run-start="row.run_start"
            data-class-message-row-search-hit="row.search_hit"
            data-class-message-row-search-current="row.search_current"
            data-attr-message-id="row.message_id">
+        <div class="chat-date-strip" data-if="row.date_label != ''"><span class="chat-date-pill">{{row.date_label}}</span></div>
+        <p class="chat-group-name" data-if="row.group_name != ''"
+           data-class-chat-group-name--0="row.group_name_tone == 0"
+           data-class-chat-group-name--1="row.group_name_tone == 1"
+           data-class-chat-group-name--2="row.group_name_tone == 2"
+           data-class-chat-group-name--3="row.group_name_tone == 3"
+           data-class-chat-group-name--4="row.group_name_tone == 4"
+           data-class-chat-group-name--5="row.group_name_tone == 5"
+           data-class-chat-group-name--6="row.group_name_tone == 6"
+           data-class-chat-group-name--7="row.group_name_tone == 7">{{row.group_name}}</p>
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span>{{row.sender_label}}</span><span class="chat-time-inline muted" data-if="row.time_label != ''"> · <span>{{row.time_label}}</span></span>
         </p>

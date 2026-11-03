@@ -18,6 +18,7 @@
 #include "lib/delivery/PskRotateCodec.h"
 #include "lib/messaging/QuoteReply.h"
 #include "lib/delivery/TextSpans.h"
+#include "lib/people/AvatarGlyph.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -525,6 +526,11 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
   } else {
     text_rml = paragraph + LinkedTextRml(message.text, id_arg, mention_runs) + "</p>";
   }
+  // The time sits at the bottom right inside the bubble (phones; hidden on the desktop, which has the meta line).
+  const std::string clock = MessageClockLabel(message.timestamp);
+  if (!clock.empty()) {
+    text_rml += "<div class=\"bubble-time\">" + clock + "</div>";
+  }
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
@@ -591,6 +597,14 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
   }
   std::vector<MessageDisplayRow> rows;
   rows.reserve(entries.size());
+  // Phone layout: date strips and runs. A run is consecutive plain messages from one sender, each within
+  // kRunGapMs of the one before and on the same day; a system / call row or a day change ends it.
+  constexpr int64_t kRunGapMs = 5 * 60 * 1000;
+  const bool group_thread = mentions.has_value();
+  const int64_t now_ms = util::NowUnixMs();
+  int64_t prev_ms = 0;
+  std::string run_sender; // empty: no run open
+  int64_t run_start_ms = 0; // time of the previous message of the open run
   for (const TranscriptRow& entry : entries) {
     if (entry.orphan_annotation) {
       rows.push_back(OrphanAnnotationRow(entry, facts));
@@ -627,7 +641,26 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
                              : RowClass(message.sender_contact_id).c_str();
     row.mentions_me = mentions_me;
     if (!entry.control) {
-      row.time_label = MessageTimeLabel(message.timestamp, util::NowUnixMs()).c_str();
+      row.time_label = MessageTimeLabel(message.timestamp, now_ms).c_str();
+    }
+    const bool new_day = message.timestamp > 0 && !SameLocalDay(prev_ms, message.timestamp);
+    if (new_day) {
+      row.date_label = MessageDateLabel(message.timestamp, now_ms).c_str();
+    }
+    if (message.timestamp > 0) {
+      prev_ms = message.timestamp;
+    }
+    const bool plain = !entry.control && message.content_type != ChatContentType::System;
+    const bool continues_run = plain && !new_day && run_sender == message.sender_contact_id &&
+                               message.timestamp - run_start_ms <= kRunGapMs && message.timestamp >= run_start_ms;
+    row.run_start = !continues_run;
+    run_sender = plain ? message.sender_contact_id : std::string();
+    run_start_ms = message.timestamp;
+    if (group_thread && plain && row.run_start && message.sender_contact_id != kLocalSelfContactId &&
+        message.sender_contact_id != kAiAssistantContactId && facts.sender_label) {
+      const std::string name = facts.sender_label(message.sender_contact_id);
+      row.group_name = name.c_str();
+      row.group_name_tone = MakeAvatarGlyph(name, message.sender_contact_id).tone;
     }
     row.has_content = true;
     rows.push_back(std::move(row));

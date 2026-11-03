@@ -187,6 +187,85 @@ TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip
   EXPECT_TRUE(rows[1].time_label.empty());
 }
 
+// Phone chat window: date strips, runs, the group name and the time inside the bubble.
+namespace phone_rows {
+// 2023-11-15 12:00 UTC: the same local day for a few minutes in any time zone.
+constexpr int64_t kNoon = 1700049600000;
+constexpr int64_t kMinute = 60 * 1000;
+constexpr int64_t kDay = 24 * 60 * kMinute;
+
+TranscriptRow TextRow(const std::string& id, const std::string& sender, const int64_t at) {
+  TranscriptRow row;
+  row.message.id = id;
+  row.message.sender_contact_id = sender;
+  row.message.content_type = ChatContentType::Text;
+  row.message.text = "hi " + id;
+  row.message.timestamp = at;
+  return row;
+}
+
+TranscriptFacts NamedFacts() {
+  TranscriptFacts facts;
+  facts.sender_label = [](const std::string& id) { return id == "account:a" ? std::string("Alice") : std::string("Bob"); };
+  return facts;
+}
+} // namespace phone_rows
+
+TEST(TranscriptRmlTest, ADateStripSitsOnlyWhereTheDayChanges) {
+  using namespace phone_rows;
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto rows = RenderTranscript({TextRow("1", "account:a", kNoon), TextRow("2", "account:a", kNoon + kMinute),
+                                      TextRow("3", "account:a", kNoon + 3 * kDay)},
+                                     NamedFacts());
+  ASSERT_EQ(rows.size(), 3u);
+  EXPECT_FALSE(rows[0].date_label.empty()) << "the first row opens its day";
+  EXPECT_TRUE(rows[1].date_label.empty());
+  EXPECT_FALSE(rows[2].date_label.empty());
+  EXPECT_NE(std::string(rows[0].date_label.c_str()), std::string(rows[2].date_label.c_str()));
+}
+
+TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
+  using namespace phone_rows;
+  MentionRoster roster; // a group chat has one
+  roster.local_account = "account:me";
+  const std::vector<TranscriptRow> entries = {
+      TextRow("1", "account:a", kNoon),
+      TextRow("2", "account:a", kNoon + kMinute),          // same run
+      TextRow("3", "account:b", kNoon + 2 * kMinute),      // another sender
+      TextRow("4", "account:b", kNoon + 12 * kMinute),     // gap over 5 minutes: a new run
+      TextRow("5", kLocalSelfContactId, kNoon + 13 * kMinute)};
+  const auto rows = RenderTranscript(entries, NamedFacts(), roster);
+  ASSERT_EQ(rows.size(), 5u);
+  EXPECT_EQ(std::string(rows[0].group_name.c_str()), "Alice");
+  EXPECT_TRUE(rows[0].run_start);
+  EXPECT_TRUE(rows[1].group_name.empty());
+  EXPECT_FALSE(rows[1].run_start);
+  EXPECT_EQ(std::string(rows[2].group_name.c_str()), "Bob");
+  EXPECT_EQ(std::string(rows[3].group_name.c_str()), "Bob");
+  EXPECT_TRUE(rows[4].group_name.empty()) << "our own bubbles carry no name";
+  // A direct chat (no roster) never shows names above bubbles.
+  const auto direct = RenderTranscript(entries, NamedFacts());
+  for (const MessageDisplayRow& row : direct) {
+    EXPECT_TRUE(row.group_name.empty());
+  }
+  EXPECT_TRUE(direct[0].run_start);
+  EXPECT_FALSE(direct[1].run_start);
+}
+
+TEST(TranscriptRmlTest, TheTimeSitsInsideTheBubble) {
+  using namespace phone_rows;
+  const auto rows = RenderTranscript({TextRow("1", "account:a", phone_rows::kNoon)}, NamedFacts());
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  const size_t bubble = rml.find("class=\"bubble ");
+  const size_t time = rml.find("<div class=\"bubble-time\">");
+  ASSERT_NE(time, std::string::npos) << rml;
+  EXPECT_LT(bubble, time);
+  EXPECT_LT(time, rml.rfind("</div>"));
+  EXPECT_EQ(rml.find("bubble-time\">", time) + 13 + 5, rml.find("</div>", time)) << "HH:MM";
+}
+
 // G016: the group's own chat says who ended it; the owner's device says "You".
 TEST(TranscriptRmlTest, ADissolvedGroupSaysWhoDissolvedIt) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));

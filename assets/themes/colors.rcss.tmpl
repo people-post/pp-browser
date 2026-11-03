@@ -1789,4 +1789,87 @@ select selectbox option:hover {
 .context-menu-item--danger svg {
   image-color: {{danger}};
 }
+/* ---- Phone chat window (UI refresh batch 3): date strips, in-bubble time, quotes, group names, composer. ---- */
+.shell-chat-overlay .chat-date-pill,
+.shell-chat-overlay .chat-system-line p {
+  background-color: {{fill-2}};
+  color: {{label-2}};
+}
+
+.bubble-time {
+  color: {{label-2}};
+}
+
+.bubble-assistant .bubble-time {
+  color: {{label-2}};
+}
+
+.bubble-user .bubble-time {
+  color: {{bubble-out-meta}};
+}
+
+.shell-chat-overlay .bubble-assistant .chat-quote {
+  border-left: 3dp {{quote-bar}};
+  background-color: {{quote-bg-in}};
+}
+
+.shell-chat-overlay .bubble-user .chat-quote {
+  border-left: 3dp {{label-on-accent}};
+  background-color: {{quote-bg-out}};
+}
+
+.shell-chat-overlay .chat-attachment-card {
+  background-color: {{bubble-in}};
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card,
+.shell-chat-overlay .message-row-user .chat-voice-card {
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card .muted,
+.shell-chat-overlay .message-row-user .chat-attachment-card .heading-3,
+.shell-chat-overlay .message-row-user .chat-voice-time {
+  color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-play {
+  background-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-play svg {
+  image-color: {{bubble-out}};
+}
+
+.shell-chat-overlay .message-row-user .chat-voice-fill {
+  background-color: {{label-on-accent}};
+}
+
+.chat-group-name--0 { color: {{avatar-0}}; }
+.chat-group-name--1 { color: {{avatar-1}}; }
+.chat-group-name--2 { color: {{avatar-2}}; }
+.chat-group-name--3 { color: {{avatar-3}}; }
+.chat-group-name--4 { color: {{avatar-4}}; }
+.chat-group-name--5 { color: {{avatar-5}}; }
+.chat-group-name--6 { color: {{avatar-6}}; }
+.chat-group-name--7 { color: {{avatar-7}}; }
+
+.prompt-composer-label {
+  color: {{label-3}};
+}
+
+.shell-chat-overlay .shell-composer-mount .prompt-composer-pill {
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+  box-shadow: none;
+}
+
+.shell-chat-overlay .prompt-icon-v2 {
+  image-color: {{label-2}};
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
+  image-color: {{accent}};
+}
 }

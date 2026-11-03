@@ -5470,3 +5470,149 @@ input.checkbox {
   font-size: 13dp;
   line-height: 18dp;
 }
+
+/* ---- Phone chat window (UI refresh batch 3, DESIGN-pp-ui.md 8.4 / 8.5): the desktop keeps the rules above. ---- */
+
+.chat-date-strip,
+.chat-group-name,
+.bubble-time,
+.prompt-composer-label,
+.prompt-icon-v2 {
+  display: none;
+}
+
+.prompt-composer-pill {
+  position: relative;
+}
+
+.shell-chat-overlay .messages {
+  padding-left: 16dp;
+  padding-right: 16dp;
+}
+
+/* Rows: 2dp inside a run, 8dp between runs; bubbles take 75% of the width, so the desktop's side gutters go. */
+.shell-chat-overlay .message-row {
+  margin: 2dp 0 0 0;
+}
+
+.shell-chat-overlay .message-row-run-start {
+  margin-top: 8dp;
+}
+
+.shell-chat-overlay .message-row-peer,
+.shell-chat-overlay .message-row-ai {
+  padding-right: 0;
+}
+
+.shell-chat-overlay .message-row-user {
+  padding-left: 0;
+}
+
+/* The per-message "name · time" line is replaced by date strips, the in-bubble time and the group name. */
+.shell-chat-overlay .sender-label {
+  display: none;
+}
+
+.shell-chat-overlay .chat-date-strip {
+  display: block;
+  margin: 8dp 0;
+  text-align: center;
+}
+
+.shell-chat-overlay .chat-date-pill,
+.shell-chat-overlay .chat-system-line p {
+  display: inline-block;
+  margin: 0;
+  padding: 3dp 10dp;
+  border-radius: 999dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-chat-overlay .chat-group-name {
+  display: block;
+  margin: 0 0 2dp 12dp;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: left;
+}
+
+.shell-chat-overlay .bubble {
+  padding: 8dp 12dp;
+  border-radius: 18dp;
+}
+
+.shell-chat-overlay .bubble-user,
+.shell-chat-overlay .bubble-assistant {
+  max-width: 75%;
+}
+
+.shell-chat-overlay .bubble-assistant {
+  border-width: 0;
+}
+
+.shell-chat-overlay .bubble-time {
+  display: block;
+  margin-top: 2dp;
+  font-size: 11dp;
+  line-height: 13dp;
+  text-align: right;
+}
+
+.shell-chat-overlay .bubble-deleted .bubble-time {
+  display: none;
+}
+
+.shell-chat-overlay .chat-quote {
+  margin-top: 0;
+  padding: 5dp 8dp;
+  border-radius: 6dp;
+}
+
+/* Pictures, files and voice notes take the bubble colours and corners. */
+.shell-chat-overlay .chat-attachment-card {
+  padding: 8dp 12dp;
+  border-radius: 18dp;
+}
+
+/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. */
+.shell-chat-overlay .prompt-composer-pill {
+  min-height: 36dp;
+  padding: 0 4dp 0 12dp;
+  border-radius: 18dp;
+}
+
+.shell-chat-overlay .prompt-composer-input {
+  padding: 7dp 0;
+}
+
+.shell-chat-overlay .prompt-composer-label {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 12dp;
+  height: 34dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 34dp;
+  pointer-events: none;
+}
+
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn {
+  margin-bottom: 2dp;
+}
+
+.shell-chat-overlay .prompt-icon-classic {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-icon-v2 {
+  display: block;
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}

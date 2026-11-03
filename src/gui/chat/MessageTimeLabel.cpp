@@ -13,7 +13,49 @@ bool SameDay(const std::tm& a, const std::tm& b) {
   return a.tm_year == b.tm_year && a.tm_mon == b.tm_mon && a.tm_mday == b.tm_mday;
 }
 
+bool LocalDay(const int64_t ms, std::tm* out) {
+  return ms > 0 && pp::civil_time::LocalTime(static_cast<std::time_t>(ms / 1000), out);
+}
+
 } // namespace
+
+std::string MessageClockLabel(const int64_t message_ms) {
+  std::tm msg{};
+  if (!LocalDay(message_ms, &msg)) {
+    return {};
+  }
+  char hhmm[8];
+  std::snprintf(hhmm, sizeof hhmm, "%02d:%02d", msg.tm_hour, msg.tm_min);
+  return hhmm;
+}
+
+bool SameLocalDay(const int64_t a_ms, const int64_t b_ms) {
+  std::tm a{};
+  std::tm b{};
+  return LocalDay(a_ms, &a) && LocalDay(b_ms, &b) && SameDay(a, b);
+}
+
+std::string MessageDateLabel(const int64_t message_ms, const int64_t now_ms) {
+  std::tm msg{};
+  std::tm now{};
+  if (!LocalDay(message_ms, &msg) || !LocalDay(now_ms, &now)) {
+    return {};
+  }
+  if (SameDay(msg, now)) {
+    return Tr("chat.date.today");
+  }
+  std::tm yesterday = now;
+  yesterday.tm_mday -= 1;
+  yesterday.tm_isdst = -1;
+  std::mktime(&yesterday);
+  if (SameDay(msg, yesterday)) {
+    return Tr("chat.date.yesterday");
+  }
+  const std::map<std::string, std::string> args{{"month", Tr("chat.time.month." + std::to_string(msg.tm_mon + 1))},
+                                                {"day", std::to_string(msg.tm_mday)},
+                                                {"year", std::to_string(msg.tm_year + 1900)}};
+  return Tr(msg.tm_year == now.tm_year ? "chat.date.this_year" : "chat.date.older", args);
+}
 
 std::string MessageTimeLabel(const int64_t message_ms, const int64_t now_ms) {
   if (message_ms <= 0) {

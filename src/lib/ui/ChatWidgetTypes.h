@@ -78,6 +78,14 @@ struct MessageDisplayRow {
   std::optional<std::string> search_source_rml;
   /** Local send / receive time, e.g. "18:32"; empty when unknown. */
   ui::String time_label;
+  /** Phone: the centred date strip above this row, set when its day differs from the row before; else empty. */
+  ui::String date_label;
+  /** Phone: this row starts a run (a different sender, a gap over 5 minutes, a day change, or a non-message row before). */
+  bool run_start = true;
+  /** Phone, group chats: a peer's name above the first bubble of their run, in their avatar colour; else empty. */
+  ui::String group_name;
+  /** Index of the avatar colour (0 .. kAvatarToneCount-1) for `group_name`. */
+  int group_name_tone = 0;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
   /** `ThreadMessage::ai_image_json` of an AI question that carried an image — not bound to RML. */
