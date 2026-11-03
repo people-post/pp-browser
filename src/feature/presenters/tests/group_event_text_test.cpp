@@ -39,15 +39,29 @@ TEST_F(GroupEventTextTest, TheChatListPreviewAndTheTranscriptUseTheSameChineseWo
 }
 
 TEST_F(GroupEventTextTest, TheStoredEnglishTextsAreRecognisedAsMembershipPreviews) {
-  for (const char* stored : {"Member joined the group", "You joined the group", "Owner created the group",
-                             "Member removed", "Member left", "Group ownership transferred",
-                             "Ownership transferred; previous owner left", "Group renamed to Sunday hike",
-                             "The group is full: you were not added", "Group forked", "Forked from group",
-                             "Invitation declined"}) {
+  for (const char* stored :
+       {"Member joined the group", "You joined the group", "Owner created the group", "Member removed", "Member left",
+        "Group ownership transferred", "Ownership transferred; previous owner left", "Group renamed to Sunday hike",
+        "The group is full: you were not added", "Group forked", "Forked from group", "Invitation declined",
+        "Group dissolved"}) {
     EXPECT_TRUE(IsStoredGroupEventText(stored)) << stored;
   }
   EXPECT_FALSE(IsStoredGroupEventText("see you at 7"));
   EXPECT_FALSE(IsStoredGroupEventText("Member joined the group chat later"));
+}
+
+TEST_F(GroupEventTextTest, ADissolvedGroupPreviewNamesTheOwnerOrYou) {
+  const auto dissolved = [](const std::string& sender) {
+    return Event(GroupMembershipControlType::GroupDissolved,
+                 GroupMembershipCodec::EncodeGroupDissolved("group:hike", "acct-ann"), "Group dissolved", sender);
+  };
+  EXPECT_TRUE(IsStoredGroupEventText("Group dissolved"));
+  const auto by_ann = GroupEventText(dissolved("acct-ann"), kNames, "acct-me");
+  ASSERT_TRUE(by_ann);
+  EXPECT_EQ(*by_ann, "Ann \xE8\xA7\xA3\xE6\x95\xA3\xE4\xBA\x86\xE8\xBF\x99\xE4\xB8\xAA\xE7\xBE\xA4");
+  const auto by_me = GroupEventText(dissolved("acct-me"), kNames, "acct-me");
+  ASSERT_TRUE(by_me);
+  EXPECT_EQ(*by_me, "\xE4\xBD\xA0\xE8\xA7\xA3\xE6\x95\xA3\xE4\xBA\x86\xE8\xBF\x99\xE4\xB8\xAA\xE7\xBE\xA4");
 }
 
 TEST_F(GroupEventTextTest, ForkedLinesTellTheTwoSidesApart) {

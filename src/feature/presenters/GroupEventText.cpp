@@ -83,6 +83,14 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
   }
   case GroupMembershipControlType::GroupInviteDecline:
     return line("chat.group_event.declined", nullptr, message.sender_contact_id);
+  case GroupMembershipControlType::GroupDissolved: {
+    // The sender is the owner; same words as the transcript line.
+    if (message.sender_contact_id == kLocalSelfContactId || is_self(message.sender_contact_id)) {
+      return Tr("chat.group.dissolved_by_you");
+    }
+    const std::string name = message.sender_contact_id.empty() ? std::string() : member_name(message.sender_contact_id);
+    return name.empty() ? Tr("chat.group.dissolved_line_unnamed") : Tr("chat.group.dissolved_line", {{"name", name}});
+  }
   case GroupMembershipControlType::GroupInviteRefused:
     return Tr("chat.group_event.full");
   case GroupMembershipControlType::GroupForked:
@@ -97,11 +105,18 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
 }
 
 bool IsStoredGroupEventText(const std::string& preview) {
-  static const char* const kExact[] = {"Member joined the group", "You joined the group", "Owner created the group",
-                                       "Member removed",          "Member left",          "Group ownership transferred",
+  static const char* const kExact[] = {"Member joined the group",
+                                       "You joined the group",
+                                       "Owner created the group",
+                                       "Member removed",
+                                       "Member left",
+                                       "Group ownership transferred",
                                        "Ownership transferred; previous owner left",
                                        "The group is full: you were not added",
-                                       "Group forked",            "Forked from group",    "Invitation declined"};
+                                       "Group forked",
+                                       "Forked from group",
+                                       "Invitation declined",
+                                       "Group dissolved"};
   for (const char* text : kExact) {
     if (preview == text) {
       return true;
