@@ -1802,22 +1802,30 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
-  const bool is_video = info && IsAttachmentVideoMime(info->mime);
-  if (info && info->byte_length > kMaxDirectAttachmentBytes) {
-    UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
-  }
-  // The decrypt of a stored copy is blocking work (seconds for a large file): off the UI thread.
-  AppRuntime::PostWorkerNormal([this, thread_id, message_id, is_video]() {
-    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+  const auto tapped = std::chrono::steady_clock::now();
+  UserFeedback::Ok(Tr("chat.attachment.opening")); // seen within a frame, whatever the size
+  // The lookup, the decrypt of a stored copy and the checks are blocking work: off the UI thread.
+  AppRuntime::PostWorkerNormal([this, thread_id, message_id, tapped]() {
+    const auto ms_since = [](const std::chrono::steady_clock::time_point from) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count();
+    };
+    const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
+    const int64_t lookup_ms = ms_since(tapped);
+    const bool is_video = info && IsAttachmentVideoMime(info->mime);
+    bool made_view = false;
+    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
-    AppRuntime::PostUI([this, thread_id, message_id, is_video, path = std::move(path), needs_confirm]() {
+    const int64_t worker_ms = ms_since(tapped);
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,
+                        path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
       if (!path) {
         UserFeedback::Fail(Tr("chat.attachment.not_ready"));
         return;
       }
-      SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
+      if (made_view) {
+        SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
+      }
       const auto open_file = [path = *path, is_video]() {
         if (!PlatformOpenFile(path)) {
           // A video this device has no player for (an iPhone's HEVC .mov on an Android phone or a Windows PC,
@@ -1825,6 +1833,9 @@ void ChatController::OpenAttachment(const std::string& message_id) {
           UserFeedback::Fail(Tr(is_video ? "chat.attachment.video_unplayable" : "chat.attachment.open_failed"));
         }
       };
+      log().info << "Attachment tap: lookup " << lookup_ms << " ms, worker " << worker_ms << " ms, to open call "
+                 << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tapped).count()
+                 << " ms" << (made_view ? " (made view)" : "");
       if (needs_confirm) {
         ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
                     [open_file](const bool ok) {

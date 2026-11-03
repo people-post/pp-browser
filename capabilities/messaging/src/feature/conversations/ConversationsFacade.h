@@ -334,8 +334,9 @@ public:
   };
   /** Declared type and size of an attachment message (none: not an attachment). */
   std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
-  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                           const std::string& message_id);
+  /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
+  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                           bool* made_view = nullptr);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   struct StoredAiImage {
     std::vector<uint8_t> content_hash;
