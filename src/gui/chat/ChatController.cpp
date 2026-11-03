@@ -26,6 +26,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/NotificationBody.h"
+#include "feature/presenters/HomeToday.h"
 #include "feature/presenters/SessionListText.h"
 #include "feature/presenters/SessionMenu.h"
 #include "feature/presenters/ThreadSearch.h"
@@ -1028,6 +1029,27 @@ std::string LowerAscii(std::string s) {
   }
   return s;
 }
+
+// One chats-list row as the RML binds it. Both texts are bound as text ({{session.title}}), so names and message text
+// need no escaping here.
+SessionDisplayRow ToDisplayRow(const ChatSessionRow& from) {
+  SessionDisplayRow row;
+  row.id = from.id.c_str();
+  row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
+  row.preview = from.preview.c_str();
+  row.avatar_letter = from.avatar_letter.c_str();
+  row.avatar_tone = from.avatar_tone;
+  row.kind = from.kind.c_str();
+  row.unread_count = from.unread_count;
+  row.unread_display = FormatBadgeCount(from.unread_count).c_str();
+  row.date_label = from.date_label.c_str();
+  row.active = from.active;
+  row.pinned = from.pinned;
+  row.muted = from.muted;
+  row.unread_dot = from.unread_dot;
+  row.mentioned = from.mentioned;
+  return row;
+}
 }  // namespace
 
 void ChatController::ApplySessionList() {
@@ -1053,28 +1075,33 @@ void ChatController::ApplySessionList() {
   shell_.sessions.reserve(visible);
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
-    SessionRow row;
-    row.id = from.id.c_str();
-    // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
-    row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
-    row.preview = from.preview.c_str();
+    SessionRow row = ToDisplayRow(from);
     if (searching && LowerAscii(row.title.c_str()).find(query) == std::string::npos &&
         LowerAscii(from.preview).find(query) == std::string::npos) {
       continue;
     }
-    row.avatar_letter = from.avatar_letter.c_str();
-    row.avatar_tone = from.avatar_tone;
-    row.kind = from.kind.c_str();
-    row.unread_count = from.unread_count;
-    row.unread_display = FormatBadgeCount(from.unread_count).c_str();
-    row.date_label = from.date_label.c_str();
-    row.active = from.active;
-    row.pinned = from.pinned;
-    row.muted = from.muted;
-    row.unread_dot = from.unread_dot;
-    row.mentioned = from.mentioned;
     shell_.sessions.push_back(std::move(row));
   }
+  ApplyHomeToday(list);
+}
+
+void ChatController::ApplyHomeToday(const ChatListScreen& list) {
+  std::tm now{};
+  if (pp::civil_time::LocalTime(static_cast<std::time_t>(util::NowUnixMs() / 1000), &now)) {
+    shell_.home_date_label = HomeDateLabel(now).c_str();
+  }
+  // The archived list replaces the rows while it shows: the Today widgets keep what the main list said.
+  if (list.showing_archived) {
+    return;
+  }
+  const HomeTodaySummary summary = SummarizeHomeToday(list.rows);
+  shell_.home_unread.clear();
+  for (const ChatSessionRow& from : summary.unread) {
+    shell_.home_unread.push_back(ToDisplayRow(from));
+  }
+  shell_.home_all_label = Tr("home.all_count", {{"count", std::to_string(summary.unread_total)}}).c_str();
+  shell_.home_new_contacts = summary.new_contacts;
+  shell_.home_new_contacts_label = Tr("home.new_contacts_row", {{"count", std::to_string(summary.new_contacts)}}).c_str();
 }
 
 void ChatController::OnMessagesScroll() {

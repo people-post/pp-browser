@@ -135,6 +135,12 @@ struct ChatShellState {
   bool sessions_more = false;
   /** The search box above the list: rows are kept when their title or preview contains it. */
   ui::String sessions_query;
+  /** Phone Today page: the date line, the first unread chats ("New messages") and the "New contacts" count. */
+  ui::String home_date_label;
+  std::vector<SessionDisplayRow> home_unread;
+  ui::String home_all_label;
+  int home_new_contacts = 0;
+  ui::String home_new_contacts_label;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

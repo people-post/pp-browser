@@ -4,6 +4,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "feature/presenters/GroupEventText.h"
+#include "feature/presenters/HomeToday.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/ChatPayloadValidator.h"
@@ -250,7 +251,9 @@ void ChatPresenter::Refresh() {
     }
     ChatSessionRow row;
     row.id = thread.id;
-    row.title = facade_->ResolveThreadLabel(thread).title;
+    const PeerDisplayLabel label = facade_->ResolveThreadLabel(thread);
+    row.title = label.title;
+    row.from_stranger = IsStrangerChat(thread.kind, label);
     // The stored default AI title is English; the renderer shows it in the UI language.
     row.title_is_default_ai = thread.kind == ThreadKind::Ai && row.title == "New chat";
     const std::string text = GroupEventPreviewOr(thread, local_account);

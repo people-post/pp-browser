@@ -1789,7 +1789,8 @@ select selectbox option {
 
 .shell-layer-compact .sidebar-panel,
 .shell-layer-compact .contacts-panel,
-.shell-layer-compact .settings-panel {
+.shell-layer-compact .settings-panel,
+.shell-layer-compact .home-panel {
   position: relative;
   padding-top: 0;
 }
@@ -5580,17 +5581,20 @@ input.checkbox {
 }
 
 /* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. */
-.shell-chat-overlay .prompt-composer-pill {
+.shell-chat-overlay .prompt-composer-pill,
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
   min-height: 36dp;
   padding: 0 4dp 0 12dp;
   border-radius: 18dp;
 }
 
-.shell-chat-overlay .prompt-composer-input {
+.shell-chat-overlay .prompt-composer-input,
+.shell-layer-compact .home-composer-mount .prompt-composer-input {
   padding: 7dp 0;
 }
 
-.shell-chat-overlay .prompt-composer-label {
+.shell-chat-overlay .prompt-composer-label,
+.shell-layer-compact .home-composer-mount .prompt-composer-label {
   display: block;
   position: absolute;
   top: 2dp;
@@ -5606,15 +5610,22 @@ input.checkbox {
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
 .shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
-.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn {
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-voice-toggle-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-capture-btn {
   margin-bottom: 2dp;
 }
 
-.shell-chat-overlay .prompt-icon-classic {
+.shell-chat-overlay .prompt-icon-classic,
+.shell-layer-compact .home-composer-mount .prompt-icon-classic {
   display: none;
 }
 
-.shell-chat-overlay .prompt-icon-v2 {
+.shell-chat-overlay .prompt-icon-v2,
+.shell-layer-compact .home-composer-mount .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
   width: 20dp;
@@ -6028,4 +6039,131 @@ input.checkbox {
 
 .shell-layer-compact .settings-device-title {
   gap: 8dp;
+}
+
+/* ---- Phone Today page (UI refresh batch 4, DESIGN-pp-ui.md 8.16). The desktop keeps the brand header and the centred
+   composer above; the scroller below only exists on the phone. ---- */
+
+.home-scroll {
+  display: none;
+}
+
+.shell-layer-compact .home-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .home-header {
+  display: none;
+}
+
+.shell-layer-compact .home-scroll {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 44dp 0 16dp 0;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-date {
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-scroll .large-title {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .home-widget-head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin: 20dp 16dp 6dp 16dp;
+}
+
+.shell-layer-compact .home-widget-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-widget-more,
+.shell-layer-compact .home-friend-view {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  font-size: 15dp;
+  line-height: 22dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-card {
+  margin: 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .home-friend-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8dp;
+  min-height: 60dp;
+  padding: 0 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-friend-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .home-friend-view {
+  flex-shrink: 0;
+  height: 44dp;
+  font-size: 17dp;
+}
+
+/* The ask-AI block is pinned above the tab bar and does not scroll with the widgets. */
+.shell-layer-compact .home-landing {
+  flex: none;
+  display: block;
+  padding: 8dp 0;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-landing-inner {
+  max-width: none;
+  gap: 8dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  margin: 0 16dp;
+}
+
+.shell-layer-compact .home-suggestions {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 16dp;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shell-layer-compact .home-suggestions .chat-suggestion {
+  flex: none;
+  height: 32dp;
+  min-height: 32dp;
+  margin: 0 8dp 0 0;
+  padding: 0 12dp;
+  font-size: 15dp;
+  line-height: 32dp;
 }

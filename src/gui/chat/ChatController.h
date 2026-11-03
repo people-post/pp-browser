@@ -175,6 +175,8 @@ private:
                      bool show_error_text = false);
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
+  /** The phone Today page's date line, "New messages" rows and "New contacts" count, from the same list. */
+  void ApplyHomeToday(const ChatListScreen& list);
   void OnToggleArchived();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;

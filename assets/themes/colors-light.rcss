@@ -1854,17 +1854,20 @@ select selectbox option:hover {
   color: #3c3c434c;
 }
 
-.shell-chat-overlay .shell-composer-mount .prompt-composer-pill {
+.shell-chat-overlay .shell-composer-mount .prompt-composer-pill,
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
   background-color: #ffffff;
   border: 1dp #3c3c434a;
   box-shadow: none;
 }
 
-.shell-chat-overlay .prompt-icon-v2 {
+.shell-chat-overlay .prompt-icon-v2,
+.shell-layer-compact .home-composer-mount .prompt-icon-v2 {
   image-color: #3c3c4399;
 }
 
-.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
+.shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2,
+.shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn .prompt-icon-v2 {
   image-color: #007aff;
 }
 
@@ -1969,4 +1972,38 @@ select selectbox option:hover {
 .shell-layer-compact .settings-section--grouped .btn:active {
   opacity: 0.6;
 }
+}
+
+/* Phone Today page (DESIGN-pp-ui 8.16); geometry in components.rcss. */
+.shell-layer-compact .home-panel {
+  background-color: #f2f2f7;
+}
+
+.shell-layer-compact .home-date {
+  color: #3c3c4399;
+}
+
+.shell-layer-compact .home-widget-title, .shell-layer-compact .home-friend-text {
+  color: #000000;
+}
+
+.shell-layer-compact .home-widget-more, .shell-layer-compact .home-friend-view {
+  color: #007aff;
+}
+
+.shell-layer-compact .home-card {
+  background-color: #ffffff;
+}
+
+.shell-layer-compact .home-card .sidebar-session {
+  background-color: #ffffff;
+}
+
+.shell-layer-compact .home-card .sidebar-session:active {
+  background-color: #7878801f;
+}
+
+.shell-layer-compact .home-landing {
+  background-color: #f9f9f9f0;
+  border-top: 1dp #3c3c434a;
 }

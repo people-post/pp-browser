@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallSystemUiBridge.cpp
     ChatPresenter.cpp
     GroupEventText.cpp
+    HomeToday.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
   PUBLIC_LIBS

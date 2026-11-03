@@ -1,9 +1,79 @@
 <div class="home-panel" data-model="chat">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <p class="pane-nav-title">{{i18n:home.title}}</p>
+  </div>
   <div class="home-header row">
     <div class="home-brand stack">
       <h1 class="home-brand-name">{{i18n:app.name}}</h1>
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="fonts_ready">{{i18n:app.tagline}}</p>
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="!fonts_ready">…</p>
+    </div>
+  </div>
+  <!-- Phone only (hidden on the desktop): date line, large title and the widgets. A widget with nothing to show is
+       not drawn; with none, the title sits above the ask-AI block and nothing else. -->
+  <div class="home-scroll root-scroll" data-model="shell">
+    <p class="home-date">{{home_date_label}}</p>
+    <p class="large-title">{{i18n:home.title}}</p>
+    <div class="home-widget" data-if="home_unread.size > 0">
+      <div class="home-widget-head row">
+        <p class="home-widget-title">{{i18n:home.new_messages}}</p>
+        <button class="home-widget-more" type="button" data-model="window"
+                data-event-click="select_nav_tab('sessions')"><span data-model="shell">{{home_all_label}}</span></button>
+      </div>
+      <div class="home-card">
+        <div data-for="session : home_unread" class="sidebar-session"
+             data-attr-session-id="session.id"
+             data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
+             data-class-sidebar-session--ai="session.kind == 'ai'"
+             data-class-sidebar-session--private="session.kind == 'private'"
+             data-class-sidebar-session--public="session.kind == 'public'"
+             data-class-sidebar-session--group="session.kind == 'group'"
+             data-event-click="select_thread(session.id)">
+          <div class="chat-row-avatar"
+               data-class-chat-row-avatar--ai="session.kind == 'ai'"
+               data-class-chat-row-avatar--group="session.kind == 'group'"
+               data-class-avatar-tone-0="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 0"
+               data-class-avatar-tone-1="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 1"
+               data-class-avatar-tone-2="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 2"
+               data-class-avatar-tone-3="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 3"
+               data-class-avatar-tone-4="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 4"
+               data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 5"
+               data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 6"
+               data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 7">
+            <p class="chat-row-avatar-letter" data-if="session.kind != 'ai' && session.kind != 'group'">{{session.avatar_letter}}</p>
+            <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="28" height="28" data-if="session.kind == 'ai'"></svg>
+            <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="28" height="28" data-if="session.kind == 'group'"></svg>
+          </div>
+          <div class="sidebar-session-body">
+            <div class="sidebar-session-line">
+              <svg class="chat-row-type chat-row-type--ai" src="../icons/v2/sparkle-fill.svg" width="14" height="14" data-if="session.kind == 'ai'"></svg>
+              <svg class="chat-row-type chat-row-type--private" src="../icons/v2/lock.svg" width="14" height="14" data-if="session.kind == 'private'"></svg>
+              <svg class="chat-row-type chat-row-type--public" src="../icons/message.svg" width="14" height="14" data-if="session.kind == 'public'"></svg>
+              <svg class="chat-row-type chat-row-type--group" src="../icons/v2/group.svg" width="14" height="14" data-if="session.kind == 'group'"></svg>
+              <p class="sidebar-session-title">{{session.title}}</p>
+              <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
+            </div>
+            <div class="sidebar-session-line">
+              <span class="sidebar-session-mention" data-if="session.mentioned">{{i18n:sidebar.mentioned}}</span>
+              <p class="sidebar-session-preview">{{session.preview}}</p>
+              <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="home-widget" data-if="home_new_contacts > 0">
+      <div class="home-widget-head row">
+        <p class="home-widget-title">{{i18n:home.new_contacts}}</p>
+      </div>
+      <div class="home-card">
+        <div class="home-friend-row row">
+          <p class="home-friend-text">{{home_new_contacts_label}}</p>
+          <button class="home-friend-view" type="button" data-model="window"
+                  data-event-click="select_nav_tab('contacts')">{{i18n:home.view}}</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="home-landing">
