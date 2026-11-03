@@ -276,6 +276,27 @@ TEST_F(StagedUploadTest, TheServerUploadStreamsTheStagedFileAndReportsProgress) 
   EXPECT_EQ(record->fields.url, fields->url);
 }
 
+// The hub frees the plaintext in on_staged (a 50 MB file is not held twice while it uploads): nothing after
+// staging may read it, and the upload is still the staged file, byte for byte.
+TEST_F(StagedUploadTest, ThePlaintextCanBeFreedOnceStagedAndTheUploadStillGoesOut) {
+  peer_.reachable = false;
+  std::vector<uint8_t> bytes(5000, 0x42);
+  auto options = Staged(direct_);
+  options.on_staged = [this, &bytes](const OutgoingAttachmentRecord& record) {
+    staged_ = record;
+    std::vector<uint8_t>().swap(bytes);
+  };
+  Roe<ChatAttachmentFields> result = Error("not called");
+  UploadChatAttachmentAsync(blob_, *identity_, bytes, "clip.mp4", "", std::move(options),
+                            [&result](Roe<ChatAttachmentFields> value) { result = std::move(value); });
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_TRUE(bytes.empty());
+  auto cipher = store_->ReadCipher(staged_.id);
+  ASSERT_TRUE(cipher);
+  ASSERT_EQ(blob_.UploadedBodies().size(), 1u);
+  EXPECT_EQ(blob_.UploadedBodies().front(), std::string(cipher->begin(), cipher->end()));
+}
+
 TEST_F(StagedUploadTest, AFailedUploadKeepsTheCiphertextAndAResumeSendsTheSameBytesWithTheSameKey) {
   peer_.reachable = false;
   blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));

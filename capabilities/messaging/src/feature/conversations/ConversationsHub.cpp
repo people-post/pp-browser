@@ -2075,7 +2075,8 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   job->dek = Attachments().CopyDek();
   job->started_ms = util::NowUnixMs();
   job->bytes = attachment.bytes.size();
-  // The bytes outlive the upload: the sent copy in the content store is made from them afterwards.
+  // The bytes live until the ciphertext is staged on disk (below): the upload streams from that file, and the
+  // sent copy in the content store is then rebuilt from it, so a large file is not held twice while it uploads.
   job->plaintext = std::make_shared<const ByteVector>(std::move(attachment.bytes));
 
   ChatAttachmentUploadOptions upload_opts;
@@ -2088,7 +2089,10 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   if (!job->dek.empty() && !profile_id_.empty()) {
     upload_opts.outgoing = store.get(); // staged: a failed send can be resumed without the original file
     upload_opts.dek = job->dek;
-    upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) { job->record_id = record.id; };
+    upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) {
+      job->record_id = record.id;
+      job->plaintext.reset();
+    };
   }
 
   auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,

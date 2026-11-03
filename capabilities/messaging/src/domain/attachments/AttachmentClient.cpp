@@ -212,6 +212,8 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
+  // Read before `on_staged`: the caller may free the plaintext there (it is not touched again after staging).
+  const size_t plaintext_size = plaintext.size();
   auto prepared = PrepareChatAttachmentFromBytes(plaintext, filename, mime, options.max_plaintext_bytes);
   if (!prepared) {
     finish(prepared.error());
@@ -234,7 +236,7 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     }
     // A small ciphertext stays in memory for the direct push; a large one is dropped (it is on disk now).
     std::shared_ptr<PreparedChatAttachment> in_memory;
-    if (AttachmentTriesPeerDirect(options.thread, plaintext.size())) {
+    if (AttachmentTriesPeerDirect(options.thread, plaintext_size)) {
       in_memory = std::make_shared<PreparedChatAttachment>(std::move(*prepared));
     } else {
       std::vector<uint8_t>().swap(prepared->ciphertext);
@@ -243,7 +245,7 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
-  if (AttachmentTriesPeerDirect(options.thread, plaintext.size())) {
+  if (AttachmentTriesPeerDirect(options.thread, plaintext_size)) {
     // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").
     const std::string relay_id = *relay_user_id;
