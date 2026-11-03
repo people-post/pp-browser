@@ -71,6 +71,8 @@ struct MessagingContactsPorts {
    * on any thread.
    */
   std::function<void(const Contact& contact, std::function<void(bool kept)> done)> refresh_contact_card;
+  /** The contact's nickname and photo again when its last directory answer is stale; background, silent (B142). */
+  std::function<void(const std::string& contact_id)> refresh_contact_profile;
 };
 
 class ConversationsHub;

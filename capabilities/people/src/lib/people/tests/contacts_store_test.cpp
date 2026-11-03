@@ -283,6 +283,65 @@ TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
   EXPECT_EQ(ContactEffectiveTitle(*filled), "Ada");
 }
 
+TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:ada";
+  hit.nickname = "Ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}, {mesh::ContactIdKind::RelayUser, "relay:ada", false}};
+  hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/QmAda"};
+  hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/old.png", "old", ""};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+
+  mesh::DirectoryHit fresh;
+  fresh.account_id = "account:ada";
+  fresh.nickname = "Ada L.";
+  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
+               {mesh::ContactIdKind::RelayUser, "relay:other", false}};
+  fresh.multiaddrs = {"/ip4/9.9.9.9/tcp/9/p2p/QmElse"};
+  fresh.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/new.png", "new", ""};
+  auto refreshed = store.ApplyProfileRefresh(added->id, fresh, 12345);
+  ASSERT_TRUE(static_cast<bool>(refreshed)) << refreshed.error().message;
+  EXPECT_EQ(refreshed->remote.nickname, "Ada L.");
+  ASSERT_TRUE(refreshed->remote.icon.has_value());
+  EXPECT_EQ(refreshed->remote.icon->url, "https://cdn.example/avatars/new.png");
+  EXPECT_EQ(refreshed->remote.fetched_at, 12345);
+  EXPECT_EQ(refreshed->id, added->id);
+  EXPECT_EQ(refreshed->remote.multiaddrs, added->remote.multiaddrs) << "endpoints are never taken from a refresh";
+  ASSERT_EQ(refreshed->remote.ids.size(), added->remote.ids.size());
+  for (size_t i = 0; i < added->remote.ids.size(); ++i) {
+    EXPECT_EQ(refreshed->remote.ids[i].value, added->remote.ids[i].value);
+  }
+
+  fresh.nickname.clear(); // an empty nickname never wipes the known one
+  auto kept = store.ApplyProfileRefresh(added->id, fresh, 20000);
+  ASSERT_TRUE(static_cast<bool>(kept));
+  EXPECT_EQ(kept->remote.nickname, "Ada L.");
+}
+
+TEST_F(ContactsStoreTest, ProfileRefreshFromAnotherAccountChangesNothing) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:ada";
+  hit.nickname = "Ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added));
+
+  mesh::DirectoryHit other = hit;
+  other.account_id = "account:mallory";
+  other.nickname = "Mallory";
+  other.ids = {{mesh::ContactIdKind::Account, "account:mallory", true}};
+  other.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/m.png", "m", ""};
+  EXPECT_FALSE(static_cast<bool>(store.ApplyProfileRefresh(added->id, other, 999)));
+  auto after = store.Get(added->id);
+  ASSERT_TRUE(static_cast<bool>(after) && after->has_value());
+  EXPECT_EQ((*after)->remote.nickname, "Ada");
+  EXPECT_EQ((*after)->remote.fetched_at, added->remote.fetched_at);
+  EXPECT_FALSE((*after)->remote.icon.has_value());
+}
+
 TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {
   ContactsStore store(data_dir_.string());
   mesh::DirectoryHit hit;

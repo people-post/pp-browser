@@ -1,6 +1,7 @@
 #include "lib/people/ContactsStore.h"
 
 #include "common/AtomicFileWrite.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactJson.h"
 #include "common/PlatformLimits.h"
 #include "common/Utilities.h"
@@ -356,6 +357,30 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& con
   return UpsertUnnotified(contact);
 }
 
+Roe<Contact> ContactsStore::ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                                          const int64_t fetched_at_ms) {
+  auto loaded = Get(contact_id);
+  if (!loaded) {
+    return loaded.error();
+  }
+  if (!loaded->has_value()) {
+    return Error("Contact not found");
+  }
+  Contact contact = **loaded;
+  const auto known = ContactAccountId(contact);
+  const auto offered = PrimaryAccountIdFromHit(hit);
+  if (!known || !offered || *known != *offered) {
+    return Error("Directory hit is for another account");
+  }
+  if (!hit.nickname.empty()) {
+    contact.remote.nickname = hit.nickname;
+  }
+  contact.remote.icon = hit.icon;
+  contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
+  SyncContactMirrors(contact);
+  return UpsertUnnotified(contact);
+}
+
 Roe<Contact> ContactsStore::AddEmptyUnnotified() {
   Contact contact;
   contact.id = util::GenerateUuid();
@@ -433,6 +458,15 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const mesh::DirectoryHit& hit) {
 
 Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, const int64_t fetched_at_ms) {
   auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<Contact> ContactsStore::ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                                const int64_t fetched_at_ms) {
+  auto result = ApplyProfileRefreshUnnotified(contact_id, hit, fetched_at_ms);
   if (result) {
     NotifyChanged();
   }

@@ -4,6 +4,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     ContactCardExchange.cpp
+    ContactProfileRefresh.cpp
     GroupInviteBatch.cpp
     GroupMembershipWorkflow.cpp
     AccountLockerWorkflow.cpp
