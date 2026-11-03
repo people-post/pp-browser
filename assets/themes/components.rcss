@@ -1848,6 +1848,11 @@ select selectbox option {
   align-items: center;
 }
 
+/* Wraps a button whose event lives in the window model (e.g. Scan QR on Contacts). */
+.pane-nav-btn-wrap {
+  display: flex;
+}
+
 .pane-nav-btn {
   display: flex;
   align-items: center;

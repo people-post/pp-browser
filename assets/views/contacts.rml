@@ -3,6 +3,11 @@
     <div class="pane-nav-bg"></div>
     <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
     <div class="pane-nav-actions row">
+      <div class="pane-nav-btn-wrap" data-model="window">
+        <button class="pane-nav-btn" type="button" title="{{i18n:scan.title}}" data-event-click="open_scan_qr()">
+          <svg src="../icons/v2/qr-code.svg" width="24" height="24"></svg>
+        </button>
+      </div>
       <button class="pane-nav-btn" type="button" data-event-click="on_add_contact_menu()">
         <svg src="../icons/v2/user-plus.svg" width="24" height="24"></svg>
       </button>
