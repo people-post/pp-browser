@@ -1531,6 +1531,7 @@
     "dev.perf.title": "Engine test",
     "dev.perf.bars": "Translucent bars",
     "dev.perf.anim": "Animation",
+    "dev.perf.stress": "Stress: 2000 bubbles (real chats keep 200)",
     "dev.perf.waiting": "Scroll the list for 10 seconds to measure",
     "dev.perf.top": "Top bar over the list",
     "dev.perf.bottom": "Bottom bar"

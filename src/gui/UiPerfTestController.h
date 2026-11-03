@@ -29,7 +29,9 @@ public:
     bool mine = false;
   };
 
-  static constexpr int kRowCount = 2000;
+  /** The chat window keeps at most kMaxMessagesDomWindow (200) bubbles in the document; that is the real load.
+   *  The stress switch adds ten times as many. */
+  static constexpr int kStressRowCount = 2000;
   static constexpr std::chrono::seconds kWindow{10};
 
   UiPerfTestController();
@@ -53,7 +55,8 @@ public:
   void OnFrame(std::chrono::steady_clock::time_point presented);
 
   /** The `ui.perftest` log line / overlay text for a window. */
-  static std::string FormatLogLine(const FrameTimeSummary& s, double refresh_hz, bool translucent, bool anim_on);
+  static std::string FormatLogLine(const FrameTimeSummary& s, double refresh_hz, bool translucent, bool anim_on,
+                                   int rows);
   static std::string FormatOverlay(const FrameTimeSummary& s, double refresh_hz);
 
 private:
@@ -62,13 +65,16 @@ private:
   void UpdateOverlay(const FrameTimeSummary& live);
   void ToggleBars();
   void ToggleAnim();
+  void ToggleStress();
   void Close();
+  int RowCount() const;
 
   ui::Context* context_ = nullptr;
   ShellNavigationPorts shell_navigation_;
   bool open_ = false;
   bool bars_translucent_ = true;
   bool anim_on_ = true;
+  bool stress_ = false;
   double refresh_hz_ = 0.0;
 
   std::vector<Row> rows_;

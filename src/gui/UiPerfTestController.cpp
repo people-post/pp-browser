@@ -1,3 +1,4 @@
+#include "common/chat/MessagingLimits.h"
 #include "gui/UiPerfTestController.h"
 
 #include "common/PbrCompat.h"
@@ -60,20 +61,24 @@ bool UiPerfTestController::RegisterModel(ui::Context* context) {
     ctor.Bind("rows", &rows_);
     ctor.Bind("bars_translucent", &bars_translucent_);
     ctor.Bind("anim_on", &anim_on_);
+    ctor.Bind("stress", &stress_);
     ctor.Bind("stats_live", &stats_live_);
     ctor.Bind("stats_last", &stats_last_);
     ctor.BindEventCallback("toggle_bars", DataEvent<>([this]() { ToggleBars(); }));
     ctor.BindEventCallback("toggle_anim", DataEvent<>([this]() { ToggleAnim(); }));
+    ctor.BindEventCallback("toggle_stress", DataEvent<>([this]() { ToggleStress(); }));
     ctor.BindEventCallback("close_ui_perf", DataEvent<>([this]() { Close(); }));
   });
 }
 
 void UiPerfTestController::BuildRows() {
-  if (!rows_.empty()) {
+  const int count = RowCount();
+  if (static_cast<int>(rows_.size()) == count) {
     return;
   }
-  rows_.reserve(kRowCount);
-  for (int i = 0; i < kRowCount; ++i) {
+  rows_.clear();
+  rows_.reserve(count);
+  for (int i = 0; i < count; ++i) {
     Row row;
     row.mine = (i % 3) == 2;
     const std::string n = std::to_string(i + 1);
@@ -87,6 +92,7 @@ void UiPerfTestController::Open() {
   if (open_ || !kDevToolsBuild || !shell_navigation_.push_transient) {
     return;
   }
+  stress_ = false;
   BuildRows();
   bars_translucent_ = true;
   anim_on_ = true;
@@ -154,13 +160,13 @@ void UiPerfTestController::OnFrame(std::chrono::steady_clock::time_point present
 }
 
 std::string UiPerfTestController::FormatLogLine(const FrameTimeSummary& s, double refresh_hz, bool translucent,
-                                                bool anim_on) {
+                                                bool anim_on, int rows) {
   char buf[256];
   std::snprintf(buf, sizeof(buf),
                 "ui.perftest frames=%zu avg_fps=%.1f p99_ms=%.1f max_ms=%.1f over50=%zu refresh_hz=%.0f bars=%s "
                 "anim=%s rows=%d",
                 s.frames, s.avg_fps, s.p99_ms, s.max_ms, s.over50, refresh_hz, translucent ? "translucent" : "opaque",
-                anim_on ? "on" : "off", kRowCount);
+                anim_on ? "on" : "off", rows);
   return buf;
 }
 
@@ -179,7 +185,7 @@ void UiPerfTestController::UpdateOverlay(const FrameTimeSummary& live) {
 void UiPerfTestController::FlushWindow() {
   const FrameTimeSummary s = stats_.Summarize();
   if (s.frames > 0) {
-    log().info << FormatLogLine(s, refresh_hz_, bars_translucent_, anim_on_);
+    log().info << FormatLogLine(s, refresh_hz_, bars_translucent_, anim_on_, RowCount());
     // Pass rule (DEV/PLAN-ui-refresh-impl.md batch 0): avg >= 90% of the refresh rate, p99 <= 33 ms, no frame > 50 ms.
     const bool pass = refresh_hz_ > 0.0 && s.avg_fps >= 0.9 * refresh_hz_ && s.p99_ms <= 33.0 && s.over50 == 0;
     stats_last_ = ((pass ? "PASS  " : "FAIL  ") + FormatOverlay(s, refresh_hz_)).c_str();
@@ -202,6 +208,18 @@ void UiPerfTestController::ToggleAnim() {
   FlushWindow();
   anim_on_ = !anim_on_;
   DataModelHost::Instance().Dirty("ui_perf", "anim_on");
+}
+
+int UiPerfTestController::RowCount() const {
+  return stress_ ? kStressRowCount : static_cast<int>(kMaxMessagesDomWindow);
+}
+
+void UiPerfTestController::ToggleStress() {
+  FlushWindow();
+  stress_ = !stress_;
+  BuildRows();
+  DataModelHost::Instance().Dirty("ui_perf", "stress");
+  DataModelHost::Instance().Dirty("ui_perf", "rows");
 }
 
 } // namespace pbr

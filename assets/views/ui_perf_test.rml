@@ -34,6 +34,14 @@
         <div class="settings-switch-knob"></div>
       </button>
     </div>
+    <div class="settings-toggle-row row">
+      <span class="settings-label settings-toggle-label">{{i18n:dev.perf.stress}}</span>
+      <button class="settings-switch" type="button"
+              data-class-settings-switch--on="stress"
+              data-event-click="toggle_stress()">
+        <div class="settings-switch-knob"></div>
+      </button>
+    </div>
   </div>
 
   <div class="uiperf-bar uiperf-bar--bottom row"

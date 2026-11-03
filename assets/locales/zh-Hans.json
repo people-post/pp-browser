@@ -1470,6 +1470,7 @@
     "dev.perf.title": "引擎测试",
     "dev.perf.bars": "半透明栏",
     "dev.perf.anim": "动画",
+    "dev.perf.stress": "压力测试：2000 条（真实聊天最多 200 条）",
     "dev.perf.waiting": "请连续滚动列表 10 秒来测量",
     "dev.perf.top": "列表上方的顶栏",
     "dev.perf.bottom": "底栏"
