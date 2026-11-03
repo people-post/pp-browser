@@ -11,7 +11,7 @@
 
 **Date:** 2026-08-30  
 **Decision:** ADP HMAC authenticates datagram membership (sender binding / anti-inject). Content encryption stays L2. `K_assoc` is supplied out-of-band.  
-**Amendment proposed:** [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1.3 — a sealed packet's AEAD tag, with the header as its AAD, would do the HMAC's job; the HMAC stays on packets without AEAD (handshake, keepalive). Until A029 is accepted, this entry holds.  
+**Status:** Amended by [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1.3 (wire v2): a sealed data packet carries no HMAC (its AEAD tag, the clear header as associated data, does the HMAC's job); the HMAC stays on handshake and control packets. Now: [ADP.md](../../docs/contracts/ADP.md).  
 **Rationale:** Mobile path churn must not force TLS/QUIC; product already has Noise/AEAD.  
 **Alternatives:** QUIC/TLS as transport.
 
@@ -219,10 +219,10 @@
 ## A029 — A smaller packet: one sealed header, derived nonces, no second tag
 
 **Date:** 2026-11-03  
-**Status:** Proposed (design, for review). Built so far: step 1, 40 ms Opus packets ([CALLS.md § Audio packets](../../docs/architecture/CALLS.md)); H1–H3 are not. Step 1 measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user:
-  - group, one stream up: 130 → 88 kbit/s (60 → 35 pkt/s);
-  - group, two streams down: 189 → 105 kbit/s;
-  - 1:1 through a circuit, each way: up 165 → 112, down 120 → 67 kbit/s. It amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3) and [A024](#a024--amp-call-media-over-circuit--nested-session) (H3) once accepted. Wire changes, with no compatibility kept: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release.
+**Status:** Accepted for step 1 and H1, built; H2 and H3 proposed. Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
+- **Step 1, 40 ms Opus packets:** [CALLS.md § Audio packets](../../docs/architecture/CALLS.md). Measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user: group, one stream up 130 → 88 kbit/s (60 → 35 pkt/s); group, two streams down 189 → 105 kbit/s; 1:1 through a circuit, up 165 → 112 and down 120 → 67 kbit/s each way.
+- **H1, amp wire v2 (pp-cpp-amp v4.0.0):** [ADP.md](../../docs/contracts/ADP.md), [AMP-SESSION.md § Sealing packets](../../docs/contracts/AMP-SESSION.md#sealing-packets), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md). Amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3). Built as decided below, with these changes: the association id stays dialer-chosen (item 4), the key-phase bit is not built, and fragments now fill each link's budget (§ Sizes).
+- **H3** amends [A024](#a024--amp-call-media-over-circuit--nested-session) once built.
 
 **Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
 
@@ -239,7 +239,7 @@
 
 A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8 B length prefix. The duplication: the sequence number 5 times, the channel id twice, a version / type byte at 4–5 layers, two random 24 B nonces, three authenticators (the E2E tag, the L2 tag, the L1 HMAC), a 16 B association id, and length fields that UDP and L3 already give. Video fragments (~1 200 B) pay the same per packet: about 14 %, against 3–4× for audio.
 
-**Decision (proposed):**
+**Decision** (H1 accepted and built; H2 and H3 proposed):
 
 *H1: Amp's packet (every Amp packet, chat included; about −59 B):*
 1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge.
@@ -248,7 +248,7 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
    - A path observer sees less than today, when the L2 envelope shows the channel id and seq. The channel fields belong to the frame, not the packet, so one packet can later carry several frames (a small audio frame with an ack).
 2. **The L2 nonce is derived, not sent:** from the direction, the key epoch, the packet space and the association's packet number. Not from the channel seq: channel ids can be reused within a session, and a reused one restarts at 0. L1 counts best-effort and reliable packets separately (`tx_seq_be_`, `tx_seq_rel_`), so the space is in the nonce.
 3. **No HMAC on sealed packets.** The AEAD tag over the payload, with the header as AAD, authenticates both; the HMAC stays on packets without AEAD (handshake, keepalive). This amends A002.
-4. **An 8 B connection id**, chosen by the receiver at the handshake (was the 16 B association id), and **no L1 length field** (UDP has it).
+4. **An 8 B connection id**, chosen by the dialer as before (was the 16 B association id), and **no L1 length field** (UDP has it). A receiver-chosen id (QUIC's, one per direction) pays off for load balancers and unlinkable path moves; the mesh uses neither.
 5. **A 4 B packet number, sent whole.** At its end the association fails as it does today (`SeqWrap`), and the link redials: a new handshake, new keys, numbers from 1.
 6. **The datagram, not the payload, has the size limit: 1 232 B of UDP payload.** That fits the smallest MTU IPv6 promises (1 280 B, less 40 for IPv6 and 8 for UDP). The bytes H1 saves go to payload.
 
@@ -257,7 +257,7 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
 - **The nested session has an inner layout.** A 1:1 call through a circuit runs a Session inside a channel of the outer one ([A024](#a024--amp-call-media-over-circuit--nested-session)), with no L1 of its own.
   - Its packets carry the inner packet number, the sealed frame fields and the tag, and no connection id: the outer channel already says which session they belong to.
   - The inner session keeps its own counter, under the same rules as L1's (item 5, the nonce rules below).
-- **The type byte may carry a key-phase bit.** It would tell the receiver which key a packet uses during a rekey's grace window, instead of trying the old key when the new one fails, as `Session::Open` does today. Optional while no product path rekeys.
+- **The type byte may carry a key-phase bit.** It would tell the receiver which key a packet uses during a rekey's grace window, instead of trying the old key when the new one fails. Optional while no product path rekeys; not built.
 
 *What H1 costs:*
 - Any change to the packet is a major amp version, shipped together with mesh, pp-node and the apps. One layer can no longer change its wire on its own.
@@ -321,7 +321,6 @@ Each phase is measured in the lab and needs a pp-node release before group calls
   - With 4 B, the odds are 2⁻³² per pair of sessions. That is small for one call but not over every call ever made, and stream ids already collide (devices of one account).
   - With 8 B, the odds are 2⁻⁶⁴ per pair. The cost is 4 B per media packet.
   - The nonce fits XChaCha's 24 B: kind 1 + stream 4 + instance 8 + seq 4 + epoch 4, with 3 B of zeros.
-- **No larger fragments.** Today's datagram is 1 244 B of UDP payload (L1 header 28, payload 1 200, HMAC 16). That is already 12 B over the IPv6 floor, and it works on real paths.
-  - After H1, the 1 232 B cap carries about 40–50 B more fragment data per packet than today. A video frame then takes slightly fewer packets, with a datagram no larger.
-  - Going past ~1 400 B would need path-MTU probing. A VPN, a WireGuard tunnel (1 420), PPPoE (1 492) or a carrier's tunnel would otherwise drop large packets with no error.
-  - Once H1 and H2 cut per-packet overhead, larger fragments would save about 1 % of video bytes. That does not justify the probing or the risk.
+- **Fragments fill the link's budget; no datagram past 1 232 B.** Under wire v1 a fragment carried 900 B on every link (the mux's fixed limit), so a direct link's datagrams stayed near 1 050 B, and on a nested link a full inner frame (~960 B sealed) was over the outer link's 900 B and was fragmented a second time.
+  - Each mux now takes its link's budget: a direct link carries one sealed packet's payload (1 203 B; fragments of 1 178 B), a nested link what rides one outer DATA frame whole (1 168 B; fragments of 1 143 B). About 30 % more video data per packet, never fragmented twice.
+  - Going past ~1 400 B would need path-MTU probing. A VPN, a WireGuard tunnel (1 420), PPPoE (1 492) or a carrier's tunnel would otherwise drop large packets with no error, for about 1 % of video bytes saved once H1 and H2 cut per-packet overhead.

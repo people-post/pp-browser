@@ -2,7 +2,7 @@
 
 **Status:** Foundation spec (2026-08-30). Normative for `lib/amp/L3/`.
 **Stack:** [STACK.md](../../projects/adp/STACK.md) · L2 [AMP-SESSION.md](AMP-SESSION.md) · L1 [ADP.md](ADP.md)  
-**Version axes:** `channel_frame_version`, per-channel `protocol_id`
+**Version axes:** the ADP wire version (a packet's first byte), per-channel `protocol_id`
 
 ## Role
 
@@ -45,9 +45,10 @@ All multi-byte integers **little-endian** unless noted.
 
 ### Common header
 
+9 B, sealed inside the packet (wire v2, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1): a path observer sees neither channel nor seq. The packet's first byte carries the wire version; the frame has none.
+
 | Field | Size | Notes |
 |-------|------|-------|
-| `frame_version` | 1 | `1` |
 | `frame_type` | 1 | see below |
 | `channel_id` | 4 | u32 |
 | `channel_seq` | 4 | per-channel, per-direction; Reliable channels only |
@@ -65,7 +66,7 @@ All multi-byte integers **little-endian** unless noted.
 
 **LenUtf8:** `u32` LE byte count + UTF-8 (same profile as [WIRE_SCHEMAS § pp Binary Wire Profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088) but LE length for L3).
 
-After L2 decrypt, parser validates `frame_version`, dispatches on `frame_type`, enforces per-channel ordering for Reliable.
+After the link opens the packet, the parser dispatches on `frame_type` and enforces per-channel ordering for Reliable.
 
 ## Channel lifecycle
 
@@ -110,7 +111,7 @@ Replaces libp2p Identify stream on the AMP path.
 
 ## Fragmentation (L3)
 
-**L1 max ADP payload 1200 B is fixed.** L3 fragments large L4 messages:
+**A link's frame budget** decides when a message fragments: the largest frame its transport carries in one packet (`ChannelMux::SetMaxFrameBytes`). A direct ADP link carries one sealed packet's payload, **1203 B** (a DATA frame up to 1194 B of message, fragments of 1178 B). A carrier-backed (nested) link carries what rides one DATA frame of its outer link whole, less the inner packet's lane wrapper, header and tag: **1168 B** (1143 B per fragment), so the outer link never fragments an inner packet again. L3 fragments larger L4 messages:
 
 | Field (Frag payload) | Size |
 |----------------------|------|
@@ -280,6 +281,17 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.
 3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime, large outbound queue) so media FRAG bursts are not stalled by ADP `reliable_window`.
+
+**Carrier payloads** (one per carrier DATA message, first byte the kind):
+
+| Kind | Layout | Use |
+|------|--------|-----|
+| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake |
+| `1` Sealed / `5` SealedReliable | `[kind][number u32 LE][frame ciphertext][tag 16]` | inner data, sealed by the inner session ([AMP-SESSION.md § Sealing packets](AMP-SESSION.md#sealing-packets)): spaces CarrierBestEffort / CarrierReliable, `[kind][number]` the associated data |
+| `3` LaneData | `[kind][lane seq u32 LE][inner payload]` | the reliable lane around a SealedReliable packet |
+| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks; cumulative 0 + no bits = the lane probe |
+
+Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 
 Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Session is call-media only. See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 
