@@ -123,6 +123,7 @@ public:
   void Configure(const AppConfig& config);
   void SetToolRegistrationHook(ToolRegistrationHook hook);
   void SetToolPermissions(ToolPermissionsPrefs permissions);
+  /** "Always allow" on a permission card saves through `saver` on the UI thread (posted there). */
   void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */

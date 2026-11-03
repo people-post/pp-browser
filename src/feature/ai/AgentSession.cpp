@@ -494,11 +494,6 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
         ToolPermissionPolicy::SetToolDecision(state->tool_permissions, tool.name, "allow");
       }
     }
-    if (state->tool_permissions_saver) {
-      if (auto saved = state->tool_permissions_saver(state->tool_permissions); !saved) {
-        state->Log().warning << "Failed to persist tool permissions: " << saved.error().message;
-      }
-    }
   }
 
   std::unordered_set<std::string> session_grants;
@@ -517,6 +512,18 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   TurnExecutionOptions options;
   options.start_index = park.next_tool_index;
   options.permissions = state->tool_permissions;
+  if (decision == "allow_always" && state->tool_permissions_saver) {
+    // The saver writes the profile prefs and runs their listeners (which set every session's permissions again):
+    // UI-thread work, never a turn thread's. Posted after this turn took its copy of the permissions above.
+    AppRuntime::PostUI([weak = std::weak_ptr<Impl>(state), saver = state->tool_permissions_saver,
+                        permissions = state->tool_permissions] {
+      if (auto saved = saver(permissions); !saved) {
+        if (const std::shared_ptr<Impl> alive = weak.lock()) {
+          alive->Log().warning << "Failed to persist tool permissions: " << saved.error().message;
+        }
+      }
+    });
+  }
   options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
