@@ -80,7 +80,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!profile_prefs) {
     return profile_prefs.error();
   }
-  if (kUiDemoBuild) {
+  if constexpr (kUiDemoBuild) {
     ApplyUiDemoProfilePrefs(*profile_prefs);
   }
   StartupMark("bootstrap_after_prefs");

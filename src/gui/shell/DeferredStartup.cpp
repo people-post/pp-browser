@@ -202,7 +202,7 @@ void LoadDeferredFonts(const ShellNavigationPorts& shell) {
 
   for (size_t i = 0; i < cjk_faces.size(); ++i) {
     if (cjk_faces[i].first == kCjkFaceSc) {
-      StartupPhase phase(cjk_faces[i].second);
+      StartupPhase sc_phase(cjk_faces[i].second);
       LoadChineseFonts();
     } else {
       LoadCjkFaceFromCollection(cjk_faces[i].first, cjk_faces[i].second);

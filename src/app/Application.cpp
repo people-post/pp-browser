@@ -320,7 +320,7 @@ Application::Application() {
   PeoplePickerController::InstallInstance(*people_picker_);
   emoji_picker_ = std::make_unique<EmojiPickerController>();
   EmojiPickerController::InstallInstance(*emoji_picker_);
-  if (kDevToolsBuild) {
+  if constexpr (kDevToolsBuild) {
     ui_perf_ = std::make_unique<UiPerfTestController>();
   }
   chat_ = std::make_unique<ChatController>();
@@ -1719,7 +1719,7 @@ void Application::SeedAndRefreshUiDemo() {
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   const auto on_ready = [this]() {
-    if (kUiDemoBuild) {
+    if constexpr (kUiDemoBuild) {
       SeedAndRefreshUiDemo();  // first and synchronous: chat_ and contacts_ read the rows right after
     }
     // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
@@ -1741,8 +1741,10 @@ void Application::WireHubCallbacks() {
   messaging.SetOnMessagingReady(on_ready);
   // The demo app unlocks at bootstrap, before this callback exists, so its ready event was already missed. The
   // controllers are not mounted yet and read the stores when they are: seeding now is early enough.
-  if (kUiDemoBuild && messaging.IsMessagingReady()) {
-    SeedAndRefreshUiDemo();
+  if constexpr (kUiDemoBuild) {
+    if (messaging.IsMessagingReady()) {
+      SeedAndRefreshUiDemo();
+    }
   }
   messaging.SetOnMeshReady([this]() {
     chat_->OnMeshReady();

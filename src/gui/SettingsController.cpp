@@ -627,8 +627,10 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
-      if (kDevToolsBuild && open_ui_perf_test_) {
-        open_ui_perf_test_();
+      if constexpr (kDevToolsBuild) {
+        if (open_ui_perf_test_) {
+          open_ui_perf_test_();
+        }
       }
     }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
