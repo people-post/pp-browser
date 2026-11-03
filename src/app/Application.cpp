@@ -652,8 +652,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.delete_relay_file = [&facade](const std::string& blob_id) {
     return facade.DeleteRelayFileById(blob_id);
   };
-  settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
-  settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   // Me → Storage works on the hub's content store: open from messaging's Initialize to its teardown.
   const auto content_store = [this]() -> std::shared_ptr<CasStore> {
     return messaging_ != nullptr ? messaging_->Content() : nullptr;

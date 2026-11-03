@@ -273,9 +273,6 @@ private:
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
   void ToggleAttachmentAutoNetwork(bool cellular);
-  void OnDrainPendingAttachmentMedia();
-  void OnClearDownloadedAttachments();
-  void PerformClearDownloadedAttachments();
 
   ShellChromeSnapshot ChromeSnapshot() const;
 

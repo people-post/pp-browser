@@ -611,8 +611,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
     ctor.BindEventCallback("toggle_attachment_auto_cellular", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
     ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
-    ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
-    ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
@@ -1597,44 +1595,6 @@ void SettingsController::ToggleAttachmentAutoNetwork(const bool cellular) {
   MarkSectionDirty("storage");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::OnDrainPendingAttachmentMedia() {
-  if (!commands_.drain_pending_attachment_media) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment downloads are not available"));
-    return;
-  }
-  commands_.drain_pending_attachment_media();
-  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
-}
-
-void SettingsController::OnClearDownloadedAttachments() {
-  if (!shell_feedback_.show_confirm) {
-    return;
-  }
-  shell_feedback_.show_confirm(Tr("settings.storage.clear_attachments_confirm_title"),
-                               Tr("settings.storage.clear_attachments_confirm_message"),
-                               [this](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 PerformClearDownloadedAttachments();
-                               },
-                               {});
-}
-
-void SettingsController::PerformClearDownloadedAttachments() {
-  if (!commands_.clear_downloaded_attachments) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment storage is not available"));
-    return;
-  }
-  if (auto cleared = commands_.clear_downloaded_attachments(); !cleared) {
-    ReportFailure(cleared.error());
-    return;
-  }
-  SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {

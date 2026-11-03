@@ -27,12 +27,6 @@
           </button>
         </div>
         <p class="text muted">{{i18n:settings.storage.attachment_policy.help}}</p>
-        <div class="settings-actions stack">
-          <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="drain_pending_attachment_media()">{{i18n:settings.storage.pending_media}}</button>
-          <button class="btn btn-secondary settings-action-bar" type="button"
-                  data-event-click="clear_downloaded_attachments()">{{i18n:settings.storage.clear_attachments}}</button>
-        </div>
         <div class="stack" data-if="advanced">
         <p class="text">{{i18n:settings.storage.library.title}}</p>
         <p class="text muted">{{i18n:settings.storage.library.help}}</p>
