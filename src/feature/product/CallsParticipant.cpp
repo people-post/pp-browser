@@ -33,6 +33,21 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
       }
       return messaging->SendControl(peer_identity, control, key_init_b64, urgent);
     };
+    deps.delivery.send_control_to_many = [&hub](std::vector<ControlSend> sends, ControlSendsDone done) {
+      auto* messaging = hub.MeshMessagingOrNull();
+      if (!messaging) {
+        std::vector<ControlSendResult> results;
+        for (const ControlSend& send : sends) {
+          results.push_back(
+              ControlSendResult{.peer_identity = send.peer_identity, .queued = Error("Messaging not ready")});
+        }
+        if (done) {
+          done(std::move(results));
+        }
+        return;
+      }
+      messaging->SendControlToMany(std::move(sends), std::move(done));
+    };
     deps.delivery.notify_own_devices = [&hub](const ThreadMessage& control) -> Roe<void> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {

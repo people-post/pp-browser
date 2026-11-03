@@ -229,13 +229,25 @@ Roe<CallSession> CallSessionWorkflow::CreatePlacedSession(const Thread& thread, 
 
 Roe<void> CallSessionWorkflow::InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                                          const std::string& local_identity) {
+  // Best-effort (V058 2): whoever can be invited rings; the start fails only when nobody could be.
+  std::optional<Error> first_failure;
+  size_t invited_count = 0;
   for (const std::string& invitee : invitee_identities) {
     if (invitee.empty() || invitee == local_identity) {
       continue;
     }
     if (auto invited = InviteParticipant(call_id, invitee, invitee_identities); !invited) {
-      return invited.error();
+      log().warning << "invite not sent call_id=" << call_id << " peer=" << invitee
+                    << " err=" << invited.error().message;
+      if (!first_failure) {
+        first_failure = invited.error();
+      }
+      continue;
     }
+    ++invited_count;
+  }
+  if (invited_count == 0 && first_failure) {
+    return *first_failure;
   }
   if (host_.reach.prefetch_reach) {
     for (const std::string& invitee : invitee_identities) {
@@ -1843,18 +1855,16 @@ void CallSessionWorkflow::SendToEveryoneOffered(const std::string& call_id, cons
                                                const std::string& detail_json, const std::string& display,
                                                const std::string& local_identity) {
   auto participants = sessions_.ListParticipants(call_id);
-  if (!participants || !host_.wire.send_direct) {
+  if (!participants || !host_.wire.send_to_each) {
     return;
   }
+  std::vector<std::string> peers;
   for (const CallParticipant& row : *participants) {
-    if (row.identity.empty() || row.identity == local_identity) {
-      continue;
-    }
-    if (auto sent = host_.wire.send_direct(row.identity, type, detail_json, display); !sent) {
-      log().warning << "send to " << row.identity << " failed call_id=" << call_id << " type="
-                    << CallControlTypeToWire(type) << " err=" << sent.error().message;
+    if (!row.identity.empty() && row.identity != local_identity) {
+      peers.push_back(row.identity);
     }
   }
+  host_.wire.send_to_each(peers, type, detail_json, display);
 }
 
 void CallSessionWorkflow::MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity) {

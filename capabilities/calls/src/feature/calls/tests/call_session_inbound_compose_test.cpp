@@ -220,9 +220,9 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
 
     CallDeliveryPorts delivery;
-    delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
+    delivery.send_control = [this](const std::string& peer, const ThreadMessage& control,
                                    const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
-      if (fail_sends_) {
+      if (fail_sends_ || peer == unreachable_peer_) {
         return Error("offline (test)");
       }
       const ThreadMessage& msg = control;
@@ -238,6 +238,7 @@ protected:
       }
       return {};
     };
+    delivery.send_control_to_many = ControlSendsOneByOne(delivery.send_control);
     delivery.send_to_thread = [this](const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options) -> Roe<ThreadMessage> {
       ThreadMessage msg;
@@ -422,6 +423,8 @@ protected:
   int sent_control_messages_ = 0;
   /** Every call-control send fails (e.g. the relay is unreachable). */
   bool fail_sends_ = false;
+  /** Sends to this peer fail (no route). */
+  std::string unreachable_peer_;
   std::atomic<int> inbox_syncs_{0};  // bumped from the deferred-key poll on workers
   std::string last_sent_payload_;
   /** The last CallAccept on the wire (the answerer start may send more after it). */
@@ -1674,6 +1677,43 @@ TEST_F(CallSessionInboundComposeTest, StartCallThatCannotInviteKeepsTheCurrentCa
   for (const CallSession& row : *sessions) {
     EXPECT_EQ(row.call_id, a->call_id) << "the failed call was left behind: " << row.call_id;
   }
+}
+
+// V058 2: a group call rings whoever can be invited; one invitee out of reach does not stop the start.
+TEST_F(CallSessionInboundComposeTest, AGroupCallRingsWhoeverCanBeInvited) {
+  Thread thread;
+  thread.id = "thread-group-out";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = "group-out";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  unreachable_peer_ = "account:away";
+
+  auto started = OnCallsOwner([&] {
+    return csm_->StartCall(thread.id, false, {"account:away", "account:peer1", "account:peer2"});
+  });
+  ASSERT_TRUE(started) << started.error().message;
+  EXPECT_EQ(started->state, CallSessionState::Ringing);
+  EXPECT_GE(sent_control_messages_, 2) << "the two in reach were invited";
+  ASSERT_NE(device_->Live().Active(), nullptr);
+  EXPECT_EQ(device_->Live().Active()->Id(), started->call_id);
+}
+
+// The start fails only when nobody could be invited.
+TEST_F(CallSessionInboundComposeTest, AGroupCallNobodyCanBeInvitedToDoesNotStart) {
+  Thread thread;
+  thread.id = "thread-group-none";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.group_id = "group-none";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  fail_sends_ = true;
+
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer1", "account:peer2"}); });
+  EXPECT_FALSE(started);
+  EXPECT_EQ(device_->Live().Active(), nullptr);
 }
 
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnanswered) {

@@ -1537,10 +1537,27 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id)
   log().info << "Roster check group=" << group_id << " request_id=" << check->request.request_id
              << " asking=" << check->ask.size();
   const std::string detail = group_roster_sync_codec::EncodeRequest(check->request);
-  (void)FanOutPairwise(check->ask, PairwiseFanoutMode::BestEffort, [&](const std::string& identity) {
-    return SendRosterControl(identity, GroupMembershipControlType::GroupRosterRequest, detail,
-                             "Checking group members", *local);
-  });
+  // To everyone asked at once (V058 2): each copy sealed for its pair, off this thread.
+  std::vector<ControlSend> sends;
+  for (const std::string& identity : check->ask) {
+    auto control = GroupMembershipCodec::BuildSystemMessage(
+        std::string(), GroupMembershipControlType::GroupRosterRequest, "Checking group members", detail, *local);
+    if (control) {
+      sends.push_back(ControlSend{.peer_identity = identity, .control = std::move(*control)});
+    }
+  }
+  mesh_messaging_.SendControlToMany(
+      std::move(sends), [this, alive = alive_, group_id](std::vector<ControlSendResult> results) {
+        if (!alive->load()) {
+          return;
+        }
+        for (const ControlSendResult& result : results) {
+          if (!result.queued) {
+            log().info << "roster check not sent group=" << group_id << " to=" << result.peer_identity
+                       << " err=" << result.queued.error().message;
+          }
+        }
+      });
   return {};
 }
 

@@ -299,6 +299,8 @@ public:
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
                         const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+  /** Each of `sends` on the control lane, sealed per pair and in parallel off this thread (ControlLane::SendToMany). */
+  void SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done = {});
   /**
    * Our card to each of `accounts` on the control lane (the `device_list` notice, as to our siblings): a device
    * they do not know yet — one restored from a recovery phrase — is on their list before they next write.

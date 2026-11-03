@@ -9,6 +9,7 @@ target_link_libraries(pp_browser_domain_delivery_test PRIVATE
   pp_foundation_identity
   pp_lib_net_testing
   pp_lib_delivery_testing
+  pp_lib_people_testing
   GTest::gtest
   GTest::gtest_main)
 pp_browser_apply_warnings(pp_browser_domain_delivery_test)

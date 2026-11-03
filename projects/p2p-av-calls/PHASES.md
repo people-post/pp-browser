@@ -325,7 +325,7 @@ One PR per phase; compose tests + call lab scenarios each time.
 [V058](DECISIONS.md#v058--call-control-is-live-on-the-control-lane-group-calls-ride-the-groups-roster).
 
 - [x] cl1 — Prompt retries for a failed control-lane send: `ControlRetryAfter` (lib/delivery), `DeliveryOutbox` retries on a coordinator timer bound to its lifetime; `Cancel` stops one
-- [ ] cl2 — One multi-recipient control send in delivery; calls' fan-outs and group membership's use it; an invite to many does not stop at the first failure
+- [x] cl2 — One multi-recipient control send in delivery; an invite to many does not stop at the first failure. Done: `ControlLane::SendToMany` (`ControlSend` / `ControlSendResult`, lib/delivery), one critical worker per recipient, the results in order once the last is queued or refused; calls' `send_control_to_many` port and `CallControlClient::SendToEach` (the joined / ringing fan-outs, `SendToEveryoneOffered`), a message per peer as before; `InviteAll` best-effort; the group roster check and the device-list notice to contacts use it too. Hosts without a control lane (the call probe, tests) bind `ControlSendsOneByOne`
 - [x] cl3 — Group roster events from messaging; calls subscribes and drops `DropWhoLeftTheGroup`'s one-second poll. Done: the roster store's change says who it took off or that the group ended (`GroupRosterChange`, from `RemoveMember` / `EndGroup`); the hub hands it to its participants (`HubParticipant::OnGroupRosterChanged`); calls enqueues `GroupMembersGone` and the workflow drops them from the group's live and ringing calls. The compose tests raise the event instead of waiting out the poll
 
 ## Later horizons

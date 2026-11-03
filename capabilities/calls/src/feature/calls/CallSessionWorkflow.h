@@ -42,6 +42,10 @@ public:
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
+    /** The same signaling to each of `peers`, best-effort, off this loop (V058 2). */
+    std::function<void(const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
+                       const std::string& display)>
+        send_to_each;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined;

@@ -248,6 +248,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
     }
     return {};
   };
+  deps.delivery.send_control_to_many = ControlSendsOneByOne(deps.delivery.send_control);
   deps.delivery.group_members = options.group_members;
   deps.delivery.send_to_thread = [&side](const std::string& thread_id, const std::string& text,
                                          const SendRelayOptions& send_options) -> Roe<ThreadMessage> {

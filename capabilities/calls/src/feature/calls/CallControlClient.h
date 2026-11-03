@@ -14,6 +14,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -38,6 +39,12 @@ public:
    */
   Roe<void> SendSummary(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only = false,
                         SummaryWrite write = SummaryWrite::Final);
+  /**
+   * The same signaling to each of `peers`, best-effort (V058 2): sealed per pair off the calls loop, in parallel;
+   * a peer that cannot be sent to is logged and does not hold up the rest.
+   */
+  void SendToEach(const std::vector<std::string>& peers, CallControlType type, const std::string& detail_json,
+                  const std::string& display);
   /** Best-effort to every joined participant but `skip_identity`. */
   Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
                            const std::string& display, const std::string& skip_identity);
