@@ -194,6 +194,9 @@ public:
   bool IsConfigured() const;
   const Conversation& conversation() const;
 
+  /** Tests: runs on the turn's thread the instant a turn releases "busy" (nullptr: none). */
+  static void SetTurnReleasedHookForTests(std::function<void()> hook);
+
   bool CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptChatAction> chat_actions);

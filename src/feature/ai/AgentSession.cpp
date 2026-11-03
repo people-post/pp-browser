@@ -59,6 +59,12 @@ namespace {
 
 constexpr int kMaxIterations = 8;
 
+/** AgentSession::SetTurnReleasedHookForTests. */
+std::function<void()>& TurnReleasedHook() {
+  static std::function<void()> hook;
+  return hook;
+}
+
 /** The buttons the on-device flow renders may run these tools; edit_remark is the UI's (MessageRouter). */
 bool IsDirectActionTool(const std::string& tool) {
   return tool == "open_conversation" || tool == "start_conversation" || tool == "search_people";
@@ -309,7 +315,6 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
       state->handoff_turn = false;
     }
   }
-  state->busy = false;
   state->iterations = 0;
   state->turn_scratch.clear();
   state->people_list_blocks.reset();
@@ -321,6 +326,11 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
+  // Released last: a send taken the instant it is free sets up its own turn, which nothing above may wipe.
+  state->busy = false;
+  if (TurnReleasedHook()) {
+    TurnReleasedHook()();
+  }
   PushLoading(state, false, ended_thread);
 }
 
@@ -2201,6 +2211,10 @@ bool AgentSession::CanClose() const {
     }
   }
   return impl_->local_ask_expires_ms.load() <= util::NowUnixMs();
+}
+
+void AgentSession::SetTurnReleasedHookForTests(std::function<void()> hook) {
+  TurnReleasedHook() = std::move(hook);
 }
 
 bool AgentSession::IsConfigured() const {
