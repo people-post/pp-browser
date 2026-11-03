@@ -221,6 +221,21 @@ std::string ShellLayoutRml::TransientLayer() const {
 std::string ShellLayoutRml::Overlays() const {
   std::ostringstream out;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.page_sheet && state_.layout_mode == LayoutMode::Compact) {
+      // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches the
+      // swipe-down (ShellPageSheetGesture). The view keeps its own Cancel; the close button stays top right.
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet\" data-model=\"window\">";
+      out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
+      out << "<div class=\"shell-page-sheet\" id=\"shell-page-sheet-" << overlay.id << "\">";
+      out << "<div class=\"shell-page-sheet-grabber\"></div>";
+      out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
+          << overlay.id << ")\">";
+      out << "<svg src=\"../icons/v2/close.svg\" width=\"14\" height=\"14\"></svg>";
+      out << "</button>";
+      out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      out << "</div></div>";
+      continue;
+    }
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";

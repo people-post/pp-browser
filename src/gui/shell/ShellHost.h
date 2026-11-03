@@ -16,6 +16,7 @@
 #include "gui/shell/ShellLargeTitleScroll.h"
 #include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/SessionSwipeGesture.h"
+#include "gui/shell/ShellPageSheetGesture.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -289,6 +290,8 @@ private:
   void BeginAnimatedDismiss(DismissTarget target);
   /** Compact only: the element that slides out (and in) for `target`; null when it has no page to slide. */
   ui::Element* PageElementFor(DismissTarget target) const;
+  /** Phone and the top overlay is a page sheet (PaneSpec::page_sheet). */
+  bool TopPageSheet() const;
   /** Slide the element with this id in from the right (adds the shell-page-enter class). */
   void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
@@ -326,6 +329,8 @@ private:
   std::optional<PendingDismiss> pending_dismiss_;
   /** Id of a page to slide in once the next SyncLayout has built it (transient page, chat overlay). */
   std::string page_enter_pending_id_;
+  /** A page sheet just pushed: it gets .shell-page-sheet-enter (slide up) once the layout is built. */
+  std::string sheet_enter_pending_id_;
   /** A swipe-back already started the slide-out; BeginAnimatedDismiss must not restart it. */
   bool slide_out_started_ = false;
   std::vector<LocalBackEntry> local_back_stack_;
@@ -348,6 +353,7 @@ private:
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
+  ShellPageSheetGesture page_sheet_gesture_;
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;

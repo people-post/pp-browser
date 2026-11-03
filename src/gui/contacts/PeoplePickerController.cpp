@@ -412,6 +412,8 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 
   PaneSpec spec;
   spec.key = "people_picker";
+  // New group on the phone: an iOS page sheet (Kenneth 2026-11-04); the other picker uses stay centred panels.
+  spec.page_sheet = mode_ == PeoplePickerMode::Free;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();

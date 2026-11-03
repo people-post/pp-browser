@@ -7,6 +7,7 @@
     <div class="people-picker-search">
       <input class="field people-picker-search-field" type="text" data-value="search_query"
              data-event-change="on_search_changed()" placeholder="{{i18n:people_picker.search_placeholder}}"/>
+      <span class="people-picker-search-hint" data-if="search_query == ''">{{i18n:people_picker.search_placeholder}}</span>
     </div>
 
     <div class="people-picker-list">

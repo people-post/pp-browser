@@ -875,6 +875,33 @@ select selectbox option:hover {
   image-color: #ebebf599;
 }
 
+.shell-page-sheet {
+  background-color: #1c1c1e;
+}
+
+.shell-page-sheet-grabber {
+  background-color: #ebebf54c;
+}
+
+.shell-page-sheet .shell-page-sheet-close,
+.shell-page-sheet .shell-page-sheet-close:hover,
+.shell-page-sheet .shell-page-sheet-close:focus {
+  background-color: transparent;
+}
+
+.shell-page-sheet .people-picker-search-field {
+  background-color: #2c2c2e;
+}
+
+.shell-page-sheet .people-picker-search-hint {
+  color: #ebebf54c;
+}
+
+.shell-page-sheet .people-picker-row:hover,
+.shell-page-sheet .people-picker-row--selected {
+  background-color: transparent;
+}
+
 .shell-dialog {
   background-color: #1c1c1e;
 }

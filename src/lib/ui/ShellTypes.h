@@ -114,6 +114,11 @@ struct PaneSpec {
    * instead of the live focus element (often the button that opened the overlay).
    */
   std::string return_focus_id;
+  /**
+   * PushLayer on phones: an iOS page sheet (slides up over most of the screen, rounded top, grab handle, the
+   * page behind dimmed; swipe down to close) instead of the centred panel. Desktop is unchanged.
+   */
+  bool page_sheet = false;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
@@ -134,6 +139,8 @@ struct OverlayEntry {
   std::string key;
   std::string rml_path;
   std::function<void(bool)> on_result;
+  /** PaneSpec::page_sheet: shown as a page sheet on phones. */
+  bool page_sheet = false;
 };
 
 struct ToastEntry {

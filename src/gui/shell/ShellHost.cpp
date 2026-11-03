@@ -248,7 +248,14 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       }
     }));
     ctor.BindEventCallback("transient_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::Transient); }));
-    ctor.BindEventCallback("close_layer", DataEvent<int>([this](int layer_id) { CloseLayer(layer_id); }));
+    ctor.BindEventCallback("close_layer", DataEvent<int>([this](int layer_id) {
+      // The top page sheet slides down (scrim tap, close button); everything else closes at once.
+      if (TopPageSheet() && state_.overlay_stack.back().id == layer_id) {
+        RequestDismiss(DismissStyle::Animated, DismissTarget::OverlayLayer);
+        return;
+      }
+      CloseLayer(layer_id);
+    }));
     ctor.BindEventCallback("photo_preview_close", DataEvent<>([this]() { MountOverlayBody(kPhotoPreviewMountId, {}); }));
     ctor.BindEventCallback("dismiss_banner", DataEvent<>([this]() { DismissBanner(); }));
     ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
@@ -539,6 +546,10 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.kind = OverlayKind::Generic;
   entry.key = spec.key;
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
+  entry.page_sheet = spec.page_sheet;
+  if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
+    sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
+  }
   state_.overlay_stack.push_back(std::move(entry));
   if (!spec.return_focus_id.empty()) {
     saved_focus_id_ = spec.return_focus_id.c_str();
@@ -608,10 +619,21 @@ ui::Element* ShellHost::PageElementFor(DismissTarget target) const {
   case DismissTarget::CompactChatOverlay:
     id = "shell-chat-overlay";
     break;
+  case DismissTarget::OverlayLayer:
+    if (TopPageSheet()) {
+      const std::string sheet_id = "shell-page-sheet-" + std::to_string(state_.overlay_stack.back().id);
+      return context_->GetDocument(0)->GetElementById(sheet_id.c_str());
+    }
+    break;
   default:
     break;
   }
   return id ? context_->GetDocument(0)->GetElementById(id) : nullptr;
+}
+
+bool ShellHost::TopPageSheet() const {
+  return state_.layout_mode == LayoutMode::Compact && !state_.overlay_stack.empty() &&
+         state_.overlay_stack.back().page_sheet;
 }
 
 void ShellHost::PlayPageEnter(const char* element_id) {
@@ -628,7 +650,16 @@ void ShellHost::BeginAnimatedDismiss(DismissTarget target) {
   const bool gesture_started = std::exchange(slide_out_started_, false);
   if (ui::Element* page = PageElementFor(target)) {
     delay_ms = kPageSlideMs;
-    if (!gesture_started) {
+    if (!gesture_started && target == DismissTarget::OverlayLayer) {
+      // Page sheet (scrim tap, close button): slide it down, as a released swipe does.
+      const float ratio = context_->GetDensityIndependentPixelRatio();
+      const float height_px = page->GetBox().GetSize(ui::BoxArea::Border).y;
+      const float height_dp = ratio > 0.f && height_px > 0.f ? height_px / ratio : 800.f;
+      page->SetClass("shell-page-sheet-enter", false);
+      page->SetClass("shell-swipe-dragging", false);
+      const std::string value = "translateY(" + std::to_string(static_cast<int>(height_dp)) + "dp)";
+      page->SetProperty("transform", value.c_str());
+    } else if (!gesture_started) {
       // Back button / key: slide the page out to the right with the same 0.3s transition a released swipe uses.
       // The drag class (transition: none) and the enter animation must be gone for the transition to run.
       const float ratio = context_->GetDensityIndependentPixelRatio();
@@ -1245,6 +1276,14 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
+  // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
+  // already shrinks above it).
+  for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.page_sheet) {
+      const std::string sheet_id = "shell-page-sheet-" + std::to_string(overlay.id);
+      set_dp(doc->GetElementById(sheet_id.c_str()), "padding-bottom", strip_dp);
+    }
+  }
   // Auxiliary sheet sits above the nav rail.
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
   // Chat overlay fills shell-root (already lifted); no extra bottom inset.
@@ -1380,6 +1419,7 @@ void ShellHost::MountComposer() {
 
 void ShellHost::DetachDismissGestures() {
   swipe_back_gesture_.Detach();
+  page_sheet_gesture_.Detach();
   gesture_axis_lock_.Unlock();
 }
 
@@ -1400,6 +1440,14 @@ void ShellHost::AttachSwipeBackGesture() {
     RequestDismiss(DismissStyle::Animated, target);
     slide_out_started_ = false; // BeginAnimatedDismiss consumed it; an early return must not leave it set
   };
+
+  if (TopPageSheet()) {
+    // A page sheet covers everything under it: its swipe-down is the only dismiss gesture.
+    if (ui::Element* sheet = PageElementFor(DismissTarget::OverlayLayer)) {
+      page_sheet_gesture_.Attach(sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); });
+    }
+    return;
+  }
 
   if (HasLocalBack("settings_detail")) {
     ui::Element* detail = doc->GetElementById("settings-detail-view");
@@ -1628,6 +1676,14 @@ void ShellHost::SyncLayout() {
   ApplySafeAreaLayout();
   if (!page_enter_pending_id_.empty()) {
     PlayPageEnter(std::exchange(page_enter_pending_id_, std::string()).c_str());
+  }
+  if (!sheet_enter_pending_id_.empty()) {
+    const std::string sheet_id = std::exchange(sheet_enter_pending_id_, std::string());
+    if (ui::Element* sheet = context_ && context_->GetNumDocuments() > 0
+                                 ? context_->GetDocument(0)->GetElementById(sheet_id.c_str())
+                                 : nullptr) {
+      sheet->SetClass("shell-page-sheet-enter", true);
+    }
   }
   // Spurious change/blur can land on the next UI turn after remount.
   AppRuntime::PostUI([]() { UiEditSession::Instance().EndRemount(); });

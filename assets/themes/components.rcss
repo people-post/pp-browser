@@ -2576,6 +2576,152 @@ select selectbox option {
   clip: always;
 }
 
+/* Phone page sheet (iOS, Kenneth 2026-11-04: the centred new-group panel looked odd). It rises from the bottom over
+   all but a sliver of the page behind (dimmed by the scrim), rounded top corners and a grab handle; swiping it down
+   closes it (ShellPageSheetGesture). ShellHost pads the bottom by the home-indicator inset. */
+@keyframes shell-page-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0%); }
+}
+
+.shell-page-sheet {
+  position: absolute;
+  top: 10dp;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16dp 16dp 0 16dp;
+  border-radius: 12dp 12dp 0 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
+  transform: translateY(0);
+  transition: transform 0.3s cubic-out;
+}
+
+.shell-page-sheet.shell-swipe-dragging {
+  transition: none;
+}
+
+.shell-page-sheet-enter {
+  animation: 0.3s cubic-out shell-page-sheet-in;
+}
+
+.shell-page-sheet-grabber {
+  position: absolute;
+  top: 6dp;
+  left: 50%;
+  width: 36dp;
+  height: 5dp;
+  margin-left: -18dp;
+  border-radius: 3dp;
+}
+
+/* Close: top right on the title row, a 44dp target around a plain X. */
+.shell-page-sheet .shell-page-sheet-close {
+  top: 16dp;
+  right: 4dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  border-radius: 22dp;
+}
+
+.shell-page-sheet .shell-page-sheet-close svg {
+  width: 18dp;
+  height: 18dp;
+}
+
+/* The people picker in a sheet: a 44dp title row, the title centred between Cancel-side space and the X. */
+.shell-page-sheet .people-picker-header {
+  height: 44dp;
+  justify-content: center;
+}
+
+.shell-page-sheet .people-picker-title {
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: center;
+}
+
+.shell-page-sheet .people-picker-row {
+  min-height: 50dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet .people-picker-row-title {
+  font-size: 17dp;
+  font-weight: normal;
+}
+
+.shell-page-sheet .people-picker-check {
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+  border-width: 2dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet .people-picker-check-mark {
+  display: none;
+}
+
+.shell-page-sheet .people-picker-row--selected .people-picker-check {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+/* The page behind is dimmed up through the status bar, as iOS does. */
+.shell-layer-sheet .shell-scrim {
+  top: -100dp;
+}
+
+/* The engine draws no placeholder: a hint sits over the empty search field (sheet only; desktop unchanged). */
+.people-picker-search-hint {
+  display: none;
+}
+
+.shell-page-sheet .people-picker-search {
+  position: relative;
+}
+
+.shell-page-sheet .people-picker-search-field {
+  height: 36dp;
+  min-height: 36dp;
+  padding: 0 12dp;
+  border-width: 0;
+  border-radius: 10dp;
+  font-size: 17dp;
+  line-height: 36dp;
+}
+
+.shell-page-sheet .people-picker-search-hint {
+  display: block;
+  position: absolute;
+  left: 12dp;
+  top: 0;
+  height: 36dp;
+  font-size: 17dp;
+  line-height: 36dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.shell-page-sheet .people-picker-footer-actions {
+  gap: 12dp;
+}
+
+.shell-page-sheet .people-picker-footer .btn {
+  flex: 1;
+  height: 50dp;
+  min-height: 50dp;
+  line-height: 50dp;
+  padding: 0 20dp;
+  font-size: 17dp;
+}
+
 .shell-dialog {
   position: absolute;
   top: 50%;
