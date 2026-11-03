@@ -11,6 +11,7 @@
 
 **Date:** 2026-08-30  
 **Decision:** ADP HMAC authenticates datagram membership (sender binding / anti-inject). Content encryption stays L2. `K_assoc` is supplied out-of-band.  
+**Amendment proposed:** [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1.3 — a sealed packet's AEAD tag, with the header as its AAD, would do the HMAC's job; the HMAC stays on packets without AEAD (handshake, keepalive). Until A029 is accepted, this entry holds.  
 **Rationale:** Mobile path churn must not force TLS/QUIC; product already has Noise/AEAD.  
 **Alternatives:** QUIC/TLS as transport.
 
@@ -171,7 +172,8 @@
 **Date:** 2026-08-31  
 **Decision:** Amp 1:1 call-media over circuit uses a **nested end-to-end A↔B Session** (inner `Session` + `ChannelMux`) carried on the bridged `ChannelSession`. `CallMediaLegCoordinator` keeps the [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime) control+media bundle on that virtual link. **Rejected:** single-pipe call-media mode; dual protocol-specific circuit tunnels as the long-term shape. SoftMigrate media-relay may continue to adopt one opaque channel ([D9 step 5c](CURRENT_STATE.md)). See [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md).  
 **Rationale:** Preserves Reliable control vs BestEffort media, authenticates A to B (not relay R), aligns with [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blindness, and avoids a second call-media state machine. Opaque single-channel adopt works for media-relay because that L4 is already one pipe — not for the call-media bundle.  
-**Alternatives:** Tagged single-pipe hello+media on the splice; two parallel circuit channels (control + media) without inner Session.
+**Alternatives:** Tagged single-pipe hello+media on the splice; two parallel circuit channels (control + media) without inner Session.  
+**Amendment proposed:** [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H3 — the carrier's outer leg authenticates, without encrypting again, the inner packets that are already sealed end to end; the inner handshake stays fully sealed. The nested Session itself is unchanged. Until A029 is accepted, this entry holds.
 ## A025 — Pre-extract layer cleanup (limits, policies, PeerId)
 
 **Date:** 2026-08-31  
@@ -213,3 +215,80 @@
 **Prepared compositions (2026-09-05):** IPFS-*like* content share = **discover** + **blob** (+ **rpc** announce/meta); live broadcast = **rpc** control + **realtime** blind hop (optional **blob** DVR). Documented in [L4_PROTOCOL_KINDS § Prepared compositions](../../docs/contracts/L4_PROTOCOL_KINDS.md#prepared-compositions-no-new-kinds) — no new kinds.
 
 **Alternatives rejected:** One mega “mesh-control” channel for discover+reach+dht (already considered and rejected for DHT in N028); feature-named protocols forever; collapsing E2E call-media and blind media-relay into a single id (different security postures under the **realtime** kind).
+
+## A029 — A smaller packet: one sealed header, derived nonces, no second tag
+
+**Date:** 2026-11-03  
+**Status:** Proposed (design, for review). Nothing is built. It amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3) and [A024](#a024--amp-call-media-over-circuit--nested-session) (H3) once accepted. Wire changes, with no compatibility kept: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release.
+
+**Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
+
+| Layer | Bytes |
+|---|---|
+| Opus | 60 |
+| E2E media seal: header (version, seq, mark, channel) + random nonce + tag | 7 + 24 + 16 |
+| Relay frame (`MediaDataFrame`: version, stream, channel, type, seq, mark) | 13 |
+| L3 frame (version, type, channel id, channel seq) | 10 |
+| L2 seal: random nonce + tag | 24 + 16 |
+| L2 envelope (kind, channel id, channel seq) | 9 |
+| L1 (version, type, association id 16, seq, timestamp, length) + HMAC | 28 + 16 |
+| UDP / IPv4 (+ Ethernet in the lab) | 28 (+14) |
+
+A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8 B length prefix. The duplication: the sequence number 5 times, the channel id twice, a version / type byte at 4–5 layers, two random 24 B nonces, three authenticators (the E2E tag, the L2 tag, the L1 HMAC), a 16 B association id, and length fields that UDP and L3 already give. Video fragments (~1 200 B) pay the same per packet: about 14 %, against 3–4× for audio.
+
+**Decision (proposed):**
+
+*H1: Amp's packet (every Amp packet, chat included; about −59 B):*
+1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge. In the clear: version / type, a connection id, the packet number, the channel id, the channel seq, and the frame type. Fragment fields only on fragments. Everything after the header is sealed with the whole header as AAD.
+2. **The L2 nonce is derived, not sent:** from the direction, the key epoch and the association's packet number. Not from the channel seq: channel ids can be reused within a session, and a reused one restarts at 0.
+3. **No HMAC on sealed packets.** The AEAD tag over the payload, with the header as AAD, authenticates both; the HMAC stays on packets without AEAD (handshake, keepalive). This amends A002.
+4. **An 8 B connection id**, chosen by the receiver at the handshake (was the 16 B association id), and **no L1 length field** (UDP has it).
+
+*H2: one media frame for both call paths (about −34–40 B per media packet):*
+5. **One media header:** stream id (u32), channel (u8), flags (mark, keyframe) and seq (u32), once. It replaces the E2E header and `MediaDataFrame`, and drops the 1:1 path's 8 B length prefix (L3 already frames a message).
+6. **The E2E nonce is derived** from the media kind, stream id, a sender instance id, the seq and the key epoch. The instance id is 4 random bytes a sender picks at each send-session start and carries in every packet. Net −20 B.
+
+*H3: the carrier's outer leg authenticates, without encrypting, the inner packets already sealed end to end* (1:1 behind NATs, about −24 B after H1). This amends A024.
+- The inner handshake, and anything not inner-sealed, stays fully sealed on the outer leg: no one on the path learns who talks to whom.
+- What an observer on that leg learns is what the hop already sees: inner channel numbers and counters.
+- The outer leg keeps a tag, so the hop still knows each packet comes from its peer, and nobody can inject into a circuit.
+
+**Rejected: media frames skip the per-link seal (item 7).** It would save ~16–24 B more, but the group media header's `stream_id` is a hash of the sender's account (`PublisherStreamIdForIdentity`). Someone on the path between a phone and the hop could then tie its media to an account, and see when that person speaks and has video on. Privacy is not traded for bytes ([projects/privacy](../privacy/)). Revisit only with random per-call stream ids, as a privacy decision first.
+
+**Nonce rules (H1.2, H2.6):** the same key and nonce must never seal two different plaintexts. That breaks XChaCha20-Poly1305 outright (the XOR of the plaintexts, then forgeries).
+- **L2:** the association's packet number only increases in a direction under a key. A reliable resend sends the same bytes again, so the same ciphertext under the same nonce leaks nothing. Rekey before the packet number could wrap (at 2³¹, checked in code). A new handshake gives new keys.
+- **E2E:** the call key is shared by every participant, so the stream id and the media kind are in the nonce. The engine counts audio and video separately, both from 1.
+  - The instance id covers a sender whose engine restarts under the same key epoch (a path move, a reconnect, back from the background), whose counters restart at 1.
+  - Bumping the epoch on every restart instead would mean handing out a new call key each time: rejected.
+- **In code:**
+  - one function per layer builds the nonce, shared by sender and receiver;
+  - the sender refuses to seal when its counter did not move forward under the same key and instance (a bug drops a frame instead of reusing a nonce);
+  - the replay windows stay as they are.
+
+**Tests (before any wire ships):**
+- uniqueness across audio and video, a simulated engine restart under one epoch, rekeys, and reused channel ids;
+- fixed known-answer vectors for both layers;
+- the lab's per-packet report (`video_*`, `voice_*`) before and after each phase.
+
+**Expected:**
+
+| | Group audio packet | One audio stream on the wire |
+|---|---|---|
+| Today | 265 B | ~106 kbit/s |
+| After H1 + H2 | ~170 B | ~68 kbit/s |
+| Plus 40 ms Opus frames (separate, engine-only, +20 ms latency) | ~230 B at half the rate | ~46 kbit/s |
+
+A group video sender's uplink would go from ~520 to ~440 kbit/s.
+
+**Order:**
+1. 40 ms Opus frames.
+2. H1 (pp-cpp-amp major).
+3. H2, with the nonce design reviewed first.
+4. H3.
+
+Each phase is measured in the lab and needs a pp-node release before group calls gain.
+
+**Open:**
+- The packet number's width: 4 B, as today, or 6 B to push the forced rekey further out.
+- The instance id's size: 4 B (2³² restarts per epoch is ample).
+- Whether a larger fragment payload (1 200 B today) is safe on cell paths' MTU.
