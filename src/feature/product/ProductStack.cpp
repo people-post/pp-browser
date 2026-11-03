@@ -21,8 +21,8 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
         return ExtractVideoPosterJpeg(path, max_dimension);
       },
       .soft_poster_jpeg = [](int max_dimension) { return SoftVideoPosterJpeg(max_dimension); },
-      .image_thumbnail_jpeg = [](const std::string& path, int max_dimension) {
-        return MakeImageThumbnailJpeg(path, max_dimension);
+      .image_thumbnail_jpeg = [](const std::vector<uint8_t>& image_bytes, int max_dimension) {
+        return MakeImageThumbnailJpeg(image_bytes, max_dimension);
       },
   });
   hub_->SetMeshOwner(&mesh_);

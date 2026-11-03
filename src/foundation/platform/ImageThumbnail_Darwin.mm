@@ -24,17 +24,17 @@ struct CfRelease {
 
 } // namespace
 
-Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::string& image_path, const int max_dimension) {
-  if (image_path.empty() || max_dimension <= 0) {
-    return Error("Image path and size are required");
+Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& image_bytes, const int max_dimension) {
+  if (image_bytes.empty() || max_dimension <= 0) {
+    return Error("Image bytes and size are required");
   }
-  CfRelease<CFURLRef> url(CFURLCreateFromFileSystemRepresentation(
-      kCFAllocatorDefault, reinterpret_cast<const UInt8*>(image_path.c_str()),
-      static_cast<CFIndex>(image_path.size()), false));
-  if (!url.ref) {
-    return Error("Bad image path");
+  // A view over the caller's bytes (no copy); they outlive every use below.
+  CfRelease<CFDataRef> data_in(CFDataCreateWithBytesNoCopy(kCFAllocatorDefault, image_bytes.data(),
+                                                            static_cast<CFIndex>(image_bytes.size()), kCFAllocatorNull));
+  if (!data_in.ref) {
+    return Error("Cannot read image");
   }
-  CfRelease<CGImageSourceRef> source(CGImageSourceCreateWithURL(url.ref, nullptr));
+  CfRelease<CGImageSourceRef> source(CGImageSourceCreateWithData(data_in.ref, nullptr));
   if (!source.ref) {
     return Error("Cannot read image");
   }

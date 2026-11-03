@@ -112,14 +112,12 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
 
 /**
  * Ensure a low-res JPEG thumbnail of an image attachment, stored at the poster path (so it is wiped with the view
- * cache). Needs the platform's `image_thumbnail_jpeg`; the image is read from its view when there is one, else
- * from `load_plaintext` into a temporary file that is deleted before returning. Fails (nothing stored) without
- * the hook or when the picture cannot be thumbnailed.
+ * cache). Made by the platform's `image_thumbnail_jpeg` from `image_bytes` (the plaintext, in memory: only the
+ * thumbnail is written). Fails (nothing stored) without the hook or when the picture cannot be thumbnailed.
  */
 Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, const std::string& thread_id,
                                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                                const std::string& filename,
-                                                const std::function<Roe<ByteVector>()>& load_plaintext);
+                                                const ByteVector& image_bytes);
 
 /** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);

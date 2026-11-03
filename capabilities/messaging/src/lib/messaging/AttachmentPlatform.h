@@ -22,10 +22,12 @@ struct AttachmentPlatform {
   /** A stand-in poster when the video may not be decoded here (too large for an inline view). */
   std::function<Roe<std::vector<uint8_t>>(int max_dimension)> soft_poster_jpeg;
   /**
-   * A JPEG thumbnail of an image file (EXIF orientation applied), its long side no more than `max_dimension`; fails
-   * for a picture too large to decode safely. With none installed, a large image shows as a file card.
+   * A JPEG thumbnail of an image's plaintext held in memory (never written out for it; EXIF orientation applied),
+   * its long side no more than `max_dimension`; fails for a picture too large to decode safely. With none installed,
+   * a large image shows as a file card.
    */
-  std::function<Roe<std::vector<uint8_t>>(const std::string& image_path, int max_dimension)> image_thumbnail_jpeg;
+  std::function<Roe<std::vector<uint8_t>>(const std::vector<uint8_t>& image_bytes, int max_dimension)>
+      image_thumbnail_jpeg;
 };
 
 /** Installs the platform's hooks (once at start; any thread reads them after). */

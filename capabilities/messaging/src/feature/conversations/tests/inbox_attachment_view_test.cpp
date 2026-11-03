@@ -9,11 +9,20 @@
 #include "lib/net/testing/MockOrgBackendClients.h"
 #include "lib/people/ContactsStore.h"
 #include "common/Utilities.h"
+#include "common/runtime/AppRuntime.h"
+#include "domain/attachments/AttachmentContent.h"
+#include "domain/attachments/AttachmentFetchWorkflow.h"
+#include "foundation/crypto/AttachmentContentHash.h"
+#include "lib/content/testing/InMemoryObjectIndex.h"
+#include "lib/messaging/AttachmentPlatform.h"
 
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <atomic>
+#include <chrono>
 #include <memory>
+#include <thread>
 
 namespace pbr {
 namespace {
@@ -144,6 +153,76 @@ TEST_F(InboxAttachmentViewTest, ALargePictureWithAThumbnailShowsItInlineAndStays
   const auto small = ViewOf(7, PngHeader(10, 10), 1000, /*write_view=*/true);
   EXPECT_FALSE(small.on_demand);
   EXPECT_EQ(small.local_path.find(".poster.jpg"), std::string::npos);
+}
+
+// After a restart the view cache (and the thumbnail in it) is gone: drawing the card asks for it again, it is made on
+// a worker (once, however often the card is drawn) and the next draw shows it.
+TEST_F(InboxAttachmentViewTest, AStoredLargePictureWithoutItsThumbnailGetsItMadeAgainAndThenShowsIt) {
+  const auto content = MakeInMemoryIndexedCasStore(data_dir_.string(), "p1");
+  AttachmentFetchWorkflow downloads;
+  struct Runtime { // after `downloads`, so its workers are joined before it goes
+    Runtime() { AppRuntime::Initialize(); }
+    ~Runtime() {
+      AppRuntime::Shutdown();
+      SetAttachmentPlatform({});
+    }
+  } runtime;
+  downloads.SetProfileDataDir(data_dir_.string());
+  downloads.SetContent(content);
+  ASSERT_TRUE(downloads.SetDek(TestDek()));
+  std::atomic<int> changed{0};
+  downloads.SetOnChanged([&changed]() { ++changed; });
+  inbox_->SetAttachmentDownloads(&downloads);
+
+  std::vector<uint8_t> plain(static_cast<size_t>(kMaxDirectAttachmentBytes) + 1000, 0x37);
+  auto hash = AttachmentContentHash(plain);
+  ASSERT_TRUE(hash);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content, *hash, "image/png", plain, "pic.png", TestDek()));
+  ChatAttachmentFields fields;
+  fields.url = "https://cdn.example/pic";
+  fields.mime = "image/png";
+  fields.filename = "pic.png";
+  fields.byte_length = plain.size();
+  fields.content_hash = *hash;
+  fields.content_key.assign(kSessionKeySize, 1);
+  fields.blob_nonce.assign(kAeadNonceSize, 2);
+  ThreadMessage message;
+  message.id = "big";
+  message.thread_id = "t1";
+  message.content_type = ChatContentType::Attachment;
+  message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+
+  std::atomic<int> calls{0};
+  std::atomic<bool> same_bytes{false};
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes,
+                                                     int) -> Roe<std::vector<uint8_t>> {
+    ++calls;
+    same_bytes = bytes == plain;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20)); // re-draws arrive while it is being made
+    return std::vector<uint8_t>(PngHeader(480, 360));
+  }});
+
+  const auto first = inbox_->Facts().attachment(message);
+  EXPECT_EQ(first.state, AttachmentFetchWorkflow::DownloadState::Ready);
+  EXPECT_TRUE(first.local_path.empty()) << "a file card until the thumbnail exists";
+  EXPECT_TRUE(first.on_demand);
+  (void)inbox_->Facts().attachment(message);
+  (void)inbox_->Facts().attachment(message);
+
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  while (changed.load() == 0 && std::chrono::steady_clock::now() < deadline) {
+    AppRuntime::RunUITasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  EXPECT_GT(changed.load(), 0) << "the transcript is told to re-render";
+  const auto second = inbox_->Facts().attachment(message);
+  EXPECT_EQ(second.local_path, AttachmentPosterPath(data_dir_.string(), "t1", *hash));
+  EXPECT_TRUE(second.inline_image_ok);
+  EXPECT_TRUE(second.on_demand) << "a tap still opens the original";
+  EXPECT_EQ(calls.load(), 1) << "made once";
+  EXPECT_TRUE(same_bytes.load());
+
+  inbox_->SetAttachmentDownloads(nullptr);
 }
 
 } // namespace

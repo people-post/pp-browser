@@ -43,12 +43,12 @@ Roe<std::vector<uint8_t>> VideoPoster(const std::string& video_path) {
   return platform.video_poster_jpeg(video_path, kVideoPosterMaxDimension);
 }
 
-Roe<std::vector<uint8_t>> ImageThumbnail(const std::string& image_path) {
+Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
   if (!platform.image_thumbnail_jpeg) {
     return Error("No image thumbnail on this platform");
   }
-  return platform.image_thumbnail_jpeg(image_path, kImageThumbnailMaxDimension);
+  return platform.image_thumbnail_jpeg(image_bytes, kImageThumbnailMaxDimension);
 }
 
 Roe<std::vector<uint8_t>> SoftPoster() {
@@ -573,8 +573,7 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
 
 Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, const std::string& thread_id,
                                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                                const std::string& filename,
-                                                const std::function<Roe<ByteVector>()>& load_plaintext) {
+                                                const ByteVector& image_bytes) {
   if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return Error("Invalid attachment thumbnail lookup");
   }
@@ -586,36 +585,7 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
   if (std::filesystem::is_regular_file(thumb_path, ec) && !ec) {
     return thumb_path;
   }
-  if (!CurrentAttachmentPlatform().image_thumbnail_jpeg) {
-    return Error("No image thumbnail on this platform");
-  }
-
-  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id));
-  std::string source = FindBlobFile(view_root, content_hash, mime, filename).string();
-  std::filesystem::path temp; // plaintext made only for this call
-  if (source.empty()) {
-    if (!load_plaintext) {
-      return Error("No source for the attachment's plaintext");
-    }
-    auto plain = load_plaintext();
-    if (!plain) {
-      return plain.error();
-    }
-    // A dot name so the view lookup never takes it for the attachment's view.
-    const std::string ext = AttachmentExtensionFromMime(mime, filename);
-    temp = view_root / (".thumb-src-" + AttachmentHashHex(content_hash) + (ext.empty() ? "" : "." + ext));
-    auto written = WriteBytesAtomic(temp, *plain);
-    plain = ByteVector{}; // the decrypted copy is not held while the thumbnail is made
-    if (!written) {
-      std::filesystem::remove(temp, ec);
-      return written.error();
-    }
-    source = temp.string();
-  }
-  auto jpeg = ImageThumbnail(source);
-  if (!temp.empty()) {
-    std::filesystem::remove(temp, ec);
-  }
+  auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
   if (!jpeg) {
     return jpeg.error();
   }

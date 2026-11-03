@@ -6,25 +6,16 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <string>
 #include <vector>
 
 namespace pbr {
 namespace {
 
-// The real platform thumbnailer (ImageIO on Apple, SDL_image elsewhere) on a real JPEG.
+// The real platform thumbnailer (ImageIO on Apple, SDL_image elsewhere) on a real JPEG held in memory.
 class ImageThumbnailTest : public ::testing::Test {
 protected:
-  void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() /
-           ("pp_image_thumb_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
-    std::filesystem::create_directories(dir_);
-  }
-  void TearDown() override { std::filesystem::remove_all(dir_); }
-
-  std::string WriteJpeg(int w, int h) {
+  static std::vector<uint8_t> Jpeg(int w, int h) {
     SDL_Surface* s = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGB24);
     EXPECT_NE(s, nullptr);
     for (int y = 0; y < h; ++y) {
@@ -38,18 +29,12 @@ protected:
     auto jpeg = EncodeJpegBytes(s, 85);
     SDL_DestroySurface(s);
     EXPECT_TRUE(jpeg);
-    const auto path = dir_ / "big.jpg";
-    std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(jpeg->data()),
-                                                 static_cast<std::streamsize>(jpeg->size()));
-    return path.string();
+    return jpeg ? *jpeg : std::vector<uint8_t>{};
   }
-
-  std::filesystem::path dir_;
 };
 
 TEST_F(ImageThumbnailTest, AWidePictureComesBackAsASmallJpegOfTheSameShape) {
-  const std::string path = WriteJpeg(2400, 1600);
-  auto thumb = MakeImageThumbnailJpeg(path, 480);
+  auto thumb = MakeImageThumbnailJpeg(Jpeg(2400, 1600), 480);
   ASSERT_TRUE(thumb) << thumb.error().message;
   ASSERT_GT(thumb->size(), 3u);
   EXPECT_EQ((*thumb)[0], 0xFF);
@@ -64,8 +49,7 @@ TEST_F(ImageThumbnailTest, AWidePictureComesBackAsASmallJpegOfTheSameShape) {
 }
 
 TEST_F(ImageThumbnailTest, ASmallPictureIsNotBlownUp) {
-  const std::string path = WriteJpeg(200, 100);
-  auto thumb = MakeImageThumbnailJpeg(path, 480);
+  auto thumb = MakeImageThumbnailJpeg(Jpeg(200, 100), 480);
   ASSERT_TRUE(thumb) << thumb.error().message;
   SDL_IOStream* io = SDL_IOFromConstMem(thumb->data(), thumb->size());
   SDL_Surface* decoded = IMG_Load_IO(io, true);
@@ -75,9 +59,9 @@ TEST_F(ImageThumbnailTest, ASmallPictureIsNotBlownUp) {
 }
 
 TEST_F(ImageThumbnailTest, NotAPictureFails) {
-  const auto path = dir_ / "junk.jpg";
-  std::ofstream(path) << "not an image";
-  EXPECT_FALSE(MakeImageThumbnailJpeg(path.string(), 480));
+  const std::string junk = "not an image";
+  EXPECT_FALSE(MakeImageThumbnailJpeg(std::vector<uint8_t>(junk.begin(), junk.end()), 480));
+  EXPECT_FALSE(MakeImageThumbnailJpeg({}, 480));
 }
 
 } // namespace

@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -174,47 +175,60 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());
 }
 
-TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsStoredAtThePosterPathAndTheTempPlaintextIsGone) {
-  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+namespace {
+
+/** Every file under `root` (none when it does not exist). */
+std::vector<std::filesystem::path> FilesUnder(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> files;
+  std::error_code ec;
+  for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+    if (it->is_regular_file()) {
+      files.push_back(it->path());
+    }
+  }
+  return files;
+}
+
+} // namespace
+
+TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsMadeFromBytesInMemoryAndOnlyTheThumbnailIsWritten) {
   ByteVector big(5 * 1024 * 1024, 0x5a);
   auto hash = AttachmentContentHash(big);
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x31);
   ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
 
-  std::string seen_path;
-  size_t seen_size = 0;
+  bool same_bytes = false;
   int seen_dimension = 0;
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::string& path, int max_dimension)
+  std::vector<std::filesystem::path> files_while_running{std::filesystem::path("not looked")};
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir_, thread_id_));
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int max_dimension)
                                                      -> Roe<std::vector<uint8_t>> {
-    seen_path = path;
+    same_bytes = bytes == big;
     seen_dimension = max_dimension;
-    std::error_code ec;
-    seen_size = static_cast<size_t>(std::filesystem::file_size(path, ec)); // the plaintext is there while it runs
+    files_while_running = FilesUnder(view_root); // no plaintext copy on disk while it runs
     return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
   }});
-  auto thumb = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
-                                                         "pic.png", dek);
+  auto thumb = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek);
   ASSERT_TRUE(thumb) << thumb.error().message;
   EXPECT_EQ(*thumb, AttachmentPosterPath(profile_dir_, thread_id_, *hash));
   EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
-  EXPECT_EQ(seen_size, big.size());
+  EXPECT_TRUE(same_bytes) << "the hook gets the decrypted picture itself";
   EXPECT_EQ(seen_dimension, 480);
-  std::error_code ec;
-  EXPECT_FALSE(std::filesystem::exists(seen_path, ec)) << "the temporary plaintext is deleted at once";
+  EXPECT_TRUE(files_while_running.empty()) << "nothing was written for the hook";
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "image/png", "pic.png").empty())
       << "no plaintext view is left behind";
-  size_t files = 0;
-  for (const auto& entry : std::filesystem::directory_iterator(AttachmentViewRoot(profile_dir_, thread_id_))) {
-    (void)entry;
-    ++files;
-  }
-  EXPECT_EQ(files, 1u) << "only the thumbnail";
-  (void)kLimit;
+  const auto files = FilesUnder(view_root);
+  ASSERT_EQ(files.size(), 1u) << "only the thumbnail";
+  EXPECT_EQ(files[0].string(), *thumb);
 
-  // The view cache's wipe takes it too ("clear downloaded", lock).
+  // The bytes the caller holds already (a download, a send) make it the same way.
   ASSERT_TRUE(WipeThreadAttachmentBlobs(profile_dir_, thread_id_));
-  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash)) << "the view cache's wipe takes it too";
+  same_bytes = false;
+  ASSERT_TRUE(EnsureAttachmentImageThumbnail(profile_dir_, thread_id_, *hash, "image/png", big));
+  EXPECT_TRUE(same_bytes);
+  EXPECT_EQ(FilesUnder(view_root).size(), 1u);
 }
 
 TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailFailsCleanlyWithoutAHookOrWhenTheHookFails) {
@@ -223,23 +237,21 @@ TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailFailsCleanlyWithoutAHookOrW
   ASSERT_TRUE(hash);
   const auto dek = MakeDek(0x32);
   ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir_, thread_id_));
 
   SetAttachmentPlatform({});
-  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
-                                                         "pic.png", dek));
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek));
   EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
 
-  std::string seen_path;
-  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::string& path, int) -> Roe<std::vector<uint8_t>> {
-    seen_path = path;
+  bool called = false;
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    called = true;
     return Error("too many pixels");
   }});
-  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
-                                                         "pic.png", dek));
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek));
+  EXPECT_TRUE(called);
   EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
-  std::error_code ec;
-  EXPECT_FALSE(seen_path.empty());
-  EXPECT_FALSE(std::filesystem::exists(seen_path, ec)) << "the temporary plaintext is deleted on failure too";
+  EXPECT_TRUE(FilesUnder(view_root).empty()) << "nothing is written when it fails";
 }
 
 TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {

@@ -2344,6 +2344,7 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
       if (job->plaintext) {
         (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *job->plaintext, attachment_dek,
                                       max_receive_bytes);
+        Attachments().MaybeBuildImageThumbnail(job->thread_id, *fields, *job->plaintext); // a large picture we sent
       } else if (!job->record_id.empty()) {
         // A resumed send has no plaintext in memory: it is rebuilt from the staged ciphertext and its key. The
         // ciphertext is moved into Decrypt, which frees it before returning: only the plaintext is held for the copy.
@@ -2352,12 +2353,12 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
                                                             std::move(*cipher), fields->content_hash)) {
             (void)CopyAttachmentPlaintext(data_dir_, *content, job->thread_id, *fields, *plain, attachment_dek,
                                           max_receive_bytes);
+            Attachments().MaybeBuildImageThumbnail(job->thread_id, *fields, *plain);
           }
         }
       }
     }
     Attachments().MaybeBuildPoster(job->thread_id, *fields);
-    Attachments().MaybeBuildImageThumbnail(job->thread_id, *fields); // a large picture we sent
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(job->thread_id, sent);
     }
@@ -2421,16 +2422,18 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetDownloadPolicy(EffectiveAttachmentDownloadPolicy(
       policy_.attachment_download_policy, policy_.attachment_auto_on_wifi, policy_.attachment_auto_on_cellular));
   FeedAttachmentNetwork();
-  if (host_.mobile && attachment_network_.load() == AutoDownloadNetwork::Unknown) {
+  if (host_.mobile && attachment_network_.load() == AutoDownloadNetwork::Unknown &&
+      !attachment_network_timer_armed_.exchange(true)) {
     // No network report yet (none may ever come without a mesh): after a while count it as the mobile network,
-    // the careful side, so large files show "Download" instead of waiting queued for good.
-    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(15), [this]() {
+    // the careful side, so large files show "Download" instead of waiting queued for good. One timer at a time
+    // (a rewire keeps the pending one); bound to the hub's run, so Shutdown (or the hub going) makes it a no-op.
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(15), attachment_network_lifetime_.Bind([this]() {
+      attachment_network_timer_armed_.store(false);
       AutoDownloadNetwork unknown = AutoDownloadNetwork::Unknown;
-      if (!shutdown_requested_.load(std::memory_order_acquire) &&
-          attachment_network_.compare_exchange_strong(unknown, AutoDownloadNetwork::Mobile)) {
-        AppRuntime::PostUI([this]() { FeedAttachmentNetwork(); });
+      if (attachment_network_.compare_exchange_strong(unknown, AutoDownloadNetwork::Mobile)) {
+        AppRuntime::PostUI(attachment_network_lifetime_.Bind([this]() { FeedAttachmentNetwork(); }));
       }
-    });
+    }));
   }
   attachment_downloads_->SetOnChanged([this]() {
     if (mesh_messaging_) {
@@ -2931,6 +2934,9 @@ void ConversationsHub::Shutdown() {
   }
 
   shutdown_requested_.store(true, std::memory_order_release);
+  // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
+  attachment_network_lifetime_.InvalidateAndWait();
+  attachment_network_timer_armed_.store(false);
   transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   AppLifecycle::RemoveListener(lifecycle_foreground_id_);

@@ -132,10 +132,17 @@ public:
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
   /**
-   * Best-effort low-res thumbnail of a stored image above kMaxDirectAttachmentBytes (the chat shows it in place of a
-   * file card; a tap opens the original). Decrypts once into a temporary file: call on a worker, not under a lock.
+   * Best-effort low-res thumbnail of an image above kMaxDirectAttachmentBytes (the chat shows it in place of a file
+   * card; a tap opens the original), made from `plaintext` already in hand: call on a worker, not under a lock.
    */
-  void MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
+  void MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields,
+                                const ByteVector& plaintext);
+  /**
+   * The transcript found a stored large image without its thumbnail (the view cache is wiped at every start): makes
+   * it on a background worker (decrypted once into memory) and notifies the change when it exists. Returns at once;
+   * one build per attachment at a time, and one that failed is not tried again this session.
+   */
+  void RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
 
   DownloadState StateFor(const std::string& thread_id, const ChatAttachmentFields& fields) const;
   /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
@@ -152,8 +159,6 @@ private:
     std::string message_id;
     std::string sender;
     ChatAttachmentFields fields;
-    /** Asked for by a tap: started whatever the policy, the network and the limits. */
-    bool forced = false;
     /** Its start depends on the network allowing "download everything": judged again right before it starts. */
     bool network_dependent = false;
     /** The automatic limits were charged for it (given back when it does not start after all). */
@@ -177,6 +182,8 @@ private:
   AutoVerdict AutoVerdictLocked(const ChatAttachmentFields& fields) const;
   AutoVerdict AutoVerdictFor(const ChatAttachmentFields& fields) const;
   bool JobQueuedLocked(const std::string& key) const;
+  /** Whether a queued job is judged again before it starts: it depends on the network and no tap forced it. */
+  bool RejudgeLocked(const Job& job) const;
   /** Gives back what the automatic limits recorded for a job that did not start after all. */
   void RefundBudget(const Job& job);
   /** A queued job does not start after all (the network or the policy changed): it becomes a Download row. */
@@ -220,6 +227,10 @@ private:
   std::unordered_set<std::string> throttled_;
   /** Held back only because the current network does not allow it (also in pending_): queued when it does. */
   std::unordered_map<std::string, Job> waiting_for_network_;
+  /** Jobs a tap asked for (queued, in the lane or running): started whatever the network; gone when they finish. */
+  std::unordered_set<std::string> forced_;
+  /** Thumbnails being made by RequestImageThumbnail, or that failed this session (not tried again). */
+  std::unordered_set<std::string> thumbnails_requested_;
   std::unordered_map<std::string, int> progress_;
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;

@@ -698,6 +698,13 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, *fields);
     view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
+    if (view.on_demand && view.state == AttachmentFetchWorkflow::DownloadState::Ready &&
+        IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
+        !AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+      // A stored large picture whose thumbnail went with the view cache (wiped at every start): made again on a
+      // worker, never here; the card is a file row until the change notification re-renders it.
+      attachment_downloads_->RequestImageThumbnail(message.thread_id, *fields);
+    }
   } else if (!view.local_path.empty()) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
   }

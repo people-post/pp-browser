@@ -40,15 +40,14 @@ Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_di
                                                    uint64_t max_receive_bytes);
 
 /**
- * The low-res thumbnail of a stored image (kept at the poster path, wiped with the view cache), made once on the
- * caller's worker: the image is decrypted into a temporary file, thumbnailed by the platform hook and the
- * temporary file deleted. Fails when no hook is installed or the picture cannot be thumbnailed.
+ * The low-res thumbnail of a stored image (kept at the poster path, wiped with the view cache), made on the
+ * caller's worker: the image is decrypted once into memory and thumbnailed by the platform hook; only the thumbnail
+ * is written. Fails when no hook is installed or the picture cannot be thumbnailed.
  */
 Roe<std::string> EnsureAttachmentImageThumbnailFromContent(const std::string& profile_dir, const CasStore& content,
                                                            const std::string& thread_id,
                                                            const std::vector<uint8_t>& content_hash,
-                                                           const std::string& mime, const std::string& filename,
-                                                           const ByteVector& dek);
+                                                           const std::string& mime, const ByteVector& dek);
 
 /**
  * A file we sent: its plaintext (exactly the bytes that were encrypted and uploaded) into the content store,

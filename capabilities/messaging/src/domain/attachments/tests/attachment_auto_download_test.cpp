@@ -10,6 +10,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentPlatform.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
 
 #include <atomic>
@@ -37,6 +38,8 @@ bool WaitFor(const std::function<bool()>& done, const std::chrono::milliseconds 
   }
   return true;
 }
+
+constexpr size_t kLargePicture = static_cast<size_t>(kMaxDirectAttachmentBytes) + 1'000'000;
 
 // "Download everything" by network, with a real runtime, the large-file lane and a loopback server whose
 // path names the file it serves.
@@ -74,15 +77,21 @@ protected:
     AppRuntime::ResumeWorkers();
     lane_.Shutdown();
     AppRuntime::Shutdown();
+    SetAttachmentPlatform({});
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
   }
 
-  /** A served attachment message from alice: `name` is its path on the server. */
-  ThreadMessage Message(const std::string& name, const size_t bytes, ChatAttachmentFields* fields_out) {
+  /** The plaintext Message(name, bytes) serves. */
+  static std::vector<uint8_t> Plaintext(const std::string& name, const size_t bytes) {
     std::vector<uint8_t> plain(bytes, static_cast<uint8_t>(name.size() + name.back()));
     plain[0] = static_cast<uint8_t>(name.front()); // a different hash per name
-    auto prepared = PrepareChatAttachmentFromBytes(plain, name + ".bin", "", 200'000'000);
+    return plain;
+  }
+  /** A served attachment message from alice: `name` is its path on the server; `mime` what it says it is. */
+  ThreadMessage Message(const std::string& name, const size_t bytes, ChatAttachmentFields* fields_out,
+                        const std::string& mime = "") {
+    auto prepared = PrepareChatAttachmentFromBytes(Plaintext(name, bytes), name + ".bin", "", 200'000'000);
     EXPECT_TRUE(prepared);
     {
       std::lock_guard lock(mutex_);
@@ -90,6 +99,10 @@ protected:
     }
     ChatAttachmentFields fields = prepared->fields;
     fields.url = server_.Origin() + "/" + name;
+    if (!mime.empty()) {
+      fields.mime = mime;
+      fields.filename = name + ".png";
+    }
     ThreadMessage message;
     message.id = name;
     message.thread_id = "t1";
@@ -113,6 +126,13 @@ protected:
     }
     return count;
   }
+  /** A large picture already in the store (as if downloaded in an earlier run). */
+  void StorePicture(const std::string& name, ChatAttachmentFields* fields) {
+    (void)Message(name, kLargePicture, fields, "image/png");
+    ASSERT_TRUE(SaveAttachmentPlaintext(*content_, fields->content_hash, fields->mime, Plaintext(name, kLargePicture),
+                                        fields->filename, ByteVector(kDataEncryptionKeySize, 0x41)));
+    ASSERT_EQ(StateOf(*fields), State::Ready);
+  }
   State StateOf(const ChatAttachmentFields& fields) const { return workflow_.StateFor("t1", fields); }
   bool Becomes(const ChatAttachmentFields& fields, const State state) {
     return WaitFor([&] { return StateOf(fields) == state; });
@@ -129,6 +149,18 @@ protected:
 };
 
 constexpr size_t kLarge = static_cast<size_t>(kMaxDirectAttachmentBytes) + 1'000'000; // ~5.2 MB
+
+/** Every file under `root` (none when it does not exist). */
+std::vector<std::filesystem::path> FilesUnder(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> files;
+  std::error_code ec;
+  for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+    if (it->is_regular_file()) {
+      files.push_back(it->path());
+    }
+  }
+  return files;
+}
 
 TEST_F(AutoDownloadByNetworkTest, ThirtyMegabytesComeByThemselvesOnWifiAndAreStored) {
   workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
@@ -310,6 +342,142 @@ TEST_F(AutoDownloadByNetworkTest, ATapStartsALargeFileThatWaitsForTheNetworkToBe
   workflow_.EnqueueFromMessage("t1", message, /*force=*/true);  // the person taps it
   ASSERT_TRUE(Becomes(large, State::Ready));
   EXPECT_EQ(Gets("large"), 1u);
+}
+
+// A tap on a large file waiting in the lane behind another: it downloads even though the network does not allow
+// "download everything" any more (the lane's second look skips the network for a tapped one).
+TEST_F(AutoDownloadByNetworkTest, ATapOnALargeFileWaitingInTheLaneDownloadsItOnADisallowedNetwork) {
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
+  workflow_.SetAutoAllowedOnNetwork(true);
+  std::promise<void> release;
+  auto released = release.get_future().share();
+  std::atomic<bool> gate_started{false};
+  lane_.Post(LargeTransferLane::Direction::Download, [&gate_started, released]() {
+    gate_started = true;
+    released.wait();
+  });
+  ASSERT_TRUE(WaitFor([&] { return gate_started.load(); }));
+
+  ChatAttachmentFields large;
+  ChatAttachmentFields small;
+  const ThreadMessage large_message = Message("large", kLarge, &large);
+  workflow_.EnqueueFromMessage("t1", large_message);
+  workflow_.EnqueueFromMessage("t1", Message("small", 2'000, &small));
+  EXPECT_TRUE(Becomes(small, State::Ready)) << "so the large one was handed to the lane";
+  EXPECT_EQ(StateOf(large), State::Downloading);
+
+  workflow_.SetAutoAllowedOnNetwork(false);                       // Wi-Fi lost, cellular not ticked
+  workflow_.EnqueueFromMessage("t1", large_message, /*force=*/true); // the person taps Download meanwhile
+  release.set_value();
+  ASSERT_TRUE(Becomes(large, State::Ready)) << "state " << static_cast<int>(StateOf(large));
+  EXPECT_EQ(Gets("large"), 1u);
+}
+
+// A tap on a large file still in the drain's queue: the drain's look skips the network for it too.
+TEST_F(AutoDownloadByNetworkTest, ATapOnAQueuedLargeFileDownloadsItOnADisallowedNetwork) {
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
+  workflow_.SetAutoAllowedOnNetwork(true);
+  ChatAttachmentFields large;
+  const ThreadMessage message = Message("large", kLarge, &large);
+
+  AppRuntime::PauseWorkers(); // the drain is posted but does not run yet
+  workflow_.EnqueueFromMessage("t1", message);
+  workflow_.SetAutoAllowedOnNetwork(false);
+  workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
+  AppRuntime::ResumeWorkers();
+  ASSERT_TRUE(Becomes(large, State::Ready)) << "state " << static_cast<int>(StateOf(large));
+  EXPECT_EQ(Gets("large"), 1u);
+}
+
+// A large picture that comes in gets its thumbnail from the bytes the download holds: no second decrypt, and
+// nothing but the thumbnail is written under the view cache.
+TEST_F(AutoDownloadByNetworkTest, ADownloadedLargePictureGetsItsThumbnailFromTheBytesInHand) {
+  std::atomic<int> calls{0};
+  std::atomic<bool> same_bytes{false};
+  std::atomic<size_t> files_while_running{99};
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(dir_.string(), "t1"));
+  const std::vector<uint8_t> plain = Plaintext("pic", kLarge);
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes,
+                                                     int) -> Roe<std::vector<uint8_t>> {
+    ++calls;
+    same_bytes = bytes == plain;
+    files_while_running = FilesUnder(view_root).size();
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
+  workflow_.SetDownloadPolicy(AttachmentDownloadPolicy::AlwaysAuto);
+  workflow_.SetAutoAllowedOnNetwork(true);
+  ChatAttachmentFields fields;
+  workflow_.EnqueueFromMessage("t1", Message("pic", kLarge, &fields, "image/png"));
+  ASSERT_TRUE(WaitFor([&] { return AttachmentPosterExists(dir_.string(), "t1", fields.content_hash); }));
+  EXPECT_EQ(StateOf(fields), State::Ready);
+  EXPECT_EQ(Gets("pic"), 1u);
+  EXPECT_EQ(calls.load(), 1);
+  EXPECT_TRUE(same_bytes.load());
+  EXPECT_EQ(files_while_running.load(), 0u) << "no plaintext file for the hook";
+  EXPECT_TRUE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
+  const auto files = FilesUnder(view_root);
+  ASSERT_EQ(files.size(), 1u) << "only the thumbnail";
+  EXPECT_EQ(files[0].string(), AttachmentPosterPath(dir_.string(), "t1", fields.content_hash));
+}
+
+// After a restart (the view cache wiped) the transcript asks again: made once on a worker however often it asks,
+// from the store into memory, and the change is notified.
+TEST_F(AutoDownloadByNetworkTest, AWipedThumbnailIsMadeAgainOnceOnAWorkerAndNotified) {
+  ChatAttachmentFields fields;
+  StorePicture("pic", &fields); // stored earlier; its thumbnail went with the view cache at the restart
+  ASSERT_TRUE(WipeAllAttachmentViewCaches(dir_.string()));
+  ASSERT_FALSE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
+
+  std::atomic<int> changed{0};
+  workflow_.SetOnChanged([&changed]() { ++changed; });
+  std::atomic<int> calls{0};
+  std::atomic<bool> same_bytes{false};
+  std::atomic<bool> on_caller_thread{true};
+  const std::thread::id caller = std::this_thread::get_id();
+  std::promise<void> release;
+  auto released = release.get_future().share();
+  const std::vector<uint8_t> plain = Plaintext("pic", kLarge);
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&, released](const std::vector<uint8_t>& bytes,
+                                                               int) -> Roe<std::vector<uint8_t>> {
+    ++calls;
+    same_bytes = bytes == plain;
+    on_caller_thread = std::this_thread::get_id() == caller;
+    released.wait();
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
+
+  workflow_.RequestImageThumbnail("t1", fields);
+  ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));
+  workflow_.RequestImageThumbnail("t1", fields); // a re-render while it is being made
+  workflow_.RequestImageThumbnail("t1", fields);
+  release.set_value();
+  ASSERT_TRUE(WaitFor([&] {
+    AppRuntime::RunUITasks();
+    return changed.load() > 0;
+  }));
+  EXPECT_TRUE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
+  EXPECT_EQ(calls.load(), 1) << "one build per attachment";
+  EXPECT_TRUE(same_bytes.load());
+  EXPECT_FALSE(on_caller_thread.load()) << "never on the render thread";
+  EXPECT_TRUE(FilesUnder(std::filesystem::path(AttachmentViewRoot(dir_.string(), "t1"))).size() == 1u);
+}
+
+TEST_F(AutoDownloadByNetworkTest, AThumbnailThatCannotBeMadeIsNotTriedAgainThisSession) {
+  ChatAttachmentFields fields;
+  StorePicture("pic", &fields);
+
+  std::atomic<int> calls{0};
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    ++calls;
+    return Error("too many pixels");
+  }});
+  workflow_.RequestImageThumbnail("t1", fields);
+  ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  workflow_.RequestImageThumbnail("t1", fields);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(calls.load(), 1);
+  EXPECT_FALSE(AttachmentPosterExists(dir_.string(), "t1", fields.content_hash));
 }
 
 } // namespace

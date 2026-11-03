@@ -323,6 +323,10 @@ bool AttachmentFetchWorkflow::JobQueuedLocked(const std::string& key) const {
   return std::any_of(queue_.begin(), queue_.end(), [&](const Job& queued) { return JobKey(queued) == key; });
 }
 
+bool AttachmentFetchWorkflow::RejudgeLocked(const Job& job) const {
+  return job.network_dependent && !forced_.contains(JobKey(job));
+}
+
 void AttachmentFetchWorkflow::HoldBackLocked(Job job, const AutoVerdict verdict) {
   const std::string key = JobKey(job);
   pending_.insert(key);
@@ -386,7 +390,6 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
     MarkPending(key);
     return;
   }
-  job.forced = force;
   job.network_dependent = false;
   job.charged = false;
   if (!force) {
@@ -440,14 +443,12 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
     throttled_.erase(key); // asked for (or allowed): no longer held back
     waiting_for_network_.erase(key);
     duplicate = active_.contains(key) || JobQueuedLocked(key);
+    if (force) {
+      // A tap: it starts whatever the network, also one queued by itself or waiting in the large-file lane (the
+      // drain and the lane judge it again right before it starts, and skip the network for a forced one).
+      forced_.insert(key);
+    }
     if (duplicate && force) {
-      // A tap on one queued by itself (it may be waiting for the network to be known): it starts whatever it is.
-      for (Job& queued : queue_) {
-        if (JobKey(queued) == key) {
-          queued.forced = true;
-          queued.network_dependent = false;
-        }
-      }
       should_start = !draining_;
       draining_ = true;
     }
@@ -468,13 +469,14 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
 
 void AttachmentFetchWorkflow::DrainQueue() {
   std::optional<Job> next;
+  bool next_rejudged = false;
   std::vector<Job> held_back;
   {
     std::lock_guard lock(mutex_);
-    // The first job that may start now. One that depends on the network is judged again here: the network may
-    // have changed since it was queued; one waiting for the network to be known stays queued.
+    // The first job that may start now. One that depends on the network is judged again here (unless a tap forced
+    // it): the network may have changed since it was queued; one waiting for the network to be known stays queued.
     for (auto it = queue_.begin(); it != queue_.end();) {
-      const AutoVerdict verdict = it->network_dependent ? AutoVerdictLocked(it->fields) : AutoVerdict::Yes;
+      const AutoVerdict verdict = RejudgeLocked(*it) ? AutoVerdictLocked(it->fields) : AutoVerdict::Yes;
       if (verdict == AutoVerdict::NetworkUnknown) {
         ++it;
         continue;
@@ -490,6 +492,7 @@ void AttachmentFetchWorkflow::DrainQueue() {
     }
     if (next) {
       active_.insert(JobKey(*next));
+      next_rejudged = RejudgeLocked(*next);
     } else {
       draining_ = false;
     }
@@ -504,7 +507,7 @@ void AttachmentFetchWorkflow::DrainQueue() {
     return;
   }
   Job job = std::move(*next);
-  if (job.network_dependent && !job.charged) {
+  if (next_rejudged && !job.charged) {
     // Queued before any network was known, judged only now: the automatic limits apply now.
     if (!TryAutoDownloadBudget(job.sender, job.fields.byte_length)) {
       const std::string key = JobKey(job);
@@ -523,24 +526,25 @@ void AttachmentFetchWorkflow::DrainQueue() {
     // A large download goes to its own lane (one at a time) and the drain goes on with the small ones: the
     // queue is not held for minutes by one big file.
     lane_->Post(LargeTransferLane::Direction::Download, [this, job = std::move(job)]() mutable {
-      if (job.network_dependent) {
-        // It may have waited behind another large file: judged again now (a running one is never stopped).
-        bool start = true;
-        {
-          std::lock_guard lock(mutex_);
-          const std::string key = JobKey(job);
+      // It may have waited behind another large file: judged again now, unless a tap forced it meanwhile (a running
+      // one is never stopped).
+      bool start = true;
+      {
+        std::lock_guard lock(mutex_);
+        const std::string key = JobKey(job);
+        if (active_.contains(key) && RejudgeLocked(job)) {
           const AutoVerdict verdict = AutoVerdictLocked(job.fields);
-          if (active_.contains(key) && verdict != AutoVerdict::Yes && verdict != AutoVerdict::YesOnThisNetwork) {
+          if (verdict != AutoVerdict::Yes && verdict != AutoVerdict::YesOnThisNetwork) {
             start = false;
             active_.erase(key);
             HoldBackLocked(job, verdict);
           }
         }
-        if (!start) {
-          RefundBudget(job);
-          NotifyChanged();
-          return;
-        }
+      }
+      if (!start) {
+        RefundBudget(job);
+        NotifyChanged();
+        return;
       }
       RunJobAsync(std::move(job), []() {});
     });
@@ -670,7 +674,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
                                            job.fields.filename, bytes);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
-          MaybeBuildImageThumbnail(job.thread_id, job.fields);
+          MaybeBuildImageThumbnail(job.thread_id, job.fields, bytes); // from the bytes in hand, no second decrypt
           // Cancelled while writing (message deleted): take back what was just written.
           bool cancelled_meanwhile = false;
           {
@@ -724,6 +728,7 @@ void AttachmentFetchWorkflow::MarkFailed(const std::string& key) {
     std::lock_guard lock(mutex_);
     progress_.erase(key);
     active_.erase(key);
+    forced_.erase(key);
     pending_.erase(key);
     failed_.insert(key);
   }
@@ -735,6 +740,7 @@ void AttachmentFetchWorkflow::MarkReady(const std::string& key) {
     std::lock_guard lock(mutex_);
     progress_.erase(key);
     active_.erase(key);
+    forced_.erase(key);
     pending_.erase(key);
     failed_.erase(key);
   }
@@ -970,6 +976,7 @@ void AttachmentFetchWorkflow::ForgetThread(const std::string& thread_id) {
 void AttachmentFetchWorkflow::CancelJobsLocked(const std::function<bool(const std::string& key)>& matches) {
   std::erase_if(queue_, [&](const Job& job) { return matches(JobKey(job)); });
   std::erase_if(active_, [&](const std::string& key) { return matches(key); });
+  std::erase_if(forced_, [&](const std::string& key) { return matches(key); });
   std::erase_if(pending_, [&](const std::string& key) { return matches(key); });
   std::erase_if(failed_, [&](const std::string& key) { return matches(key); });
   std::erase_if(throttled_, [&](const std::string& key) { return matches(key); });
@@ -995,18 +1002,55 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, con
 }
 
 void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread_id,
-                                                       const ChatAttachmentFields& fields) {
+                                                       const ChatAttachmentFields& fields,
+                                                       const ByteVector& plaintext) {
   if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
       thread_id.empty()) {
     return; // a small image is shown from its own view
   }
-  const ByteVector dek_copy = CopyDek();
-  const std::shared_ptr<CasStore> content = Content();
-  if (dek_copy.empty() || !content) {
-    return;
+  if (!HasDek()) {
+    return; // locked: nothing derived from the plaintext is kept on disk
   }
-  (void)EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content, thread_id, fields.content_hash, fields.mime,
-                                                  fields.filename, dek_copy);
+  (void)EnsureAttachmentImageThumbnail(profile_dir_, thread_id, fields.content_hash, fields.mime, plaintext);
+}
+
+void AttachmentFetchWorkflow::RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields) {
+  if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
+      thread_id.empty() || fields.content_hash.size() != kAttachmentContentHashSize || !AppRuntime::IsRunning()) {
+    return; // never on the caller's (render) thread
+  }
+  const std::string key = JobKey(thread_id, fields.content_hash);
+  {
+    std::lock_guard lock(mutex_);
+    if (dek_.empty() || !content_ || !thumbnails_requested_.insert(key).second) {
+      return; // locked, or being made already (or it failed this session)
+    }
+  }
+  AppRuntime::PostWorkerBackground([this, key, thread_id, hash = fields.content_hash, mime = fields.mime]() {
+    const ByteVector dek = CopyDek();
+    const std::shared_ptr<CasStore> content = Content();
+    if (dek.empty() || !content) {
+      std::lock_guard lock(mutex_);
+      thumbnails_requested_.erase(key); // locked meanwhile: asked again after the unlock
+      return;
+    }
+    // No lock held: the picture is decrypted once into memory and decoded downsampled, which takes a while.
+    auto made = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content, thread_id, hash, mime, dek);
+    bool taken_back = false;
+    if (made && (!HasDek() || !AttachmentBlobExists(*content, hash))) {
+      // Locked (its view cache wiped) or the message deleted meanwhile: nothing made from it stays.
+      std::error_code ec;
+      std::filesystem::remove(*made, ec);
+      taken_back = true;
+    }
+    if (made) {
+      std::lock_guard lock(mutex_);
+      thumbnails_requested_.erase(key); // made: asked again only if it is wiped later
+    }
+    if (made && !taken_back) {
+      NotifyChanged(); // the transcript re-renders with the thumbnail
+    }
+  });
 }
 
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,
