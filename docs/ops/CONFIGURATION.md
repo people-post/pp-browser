@@ -263,6 +263,7 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
 | `--no-log-file` | Disable the file log (console only) |
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+| `--ui-perf-test` | Developer builds only (`-DPP_BROWSER_DEV_TOOLS=ON` or a baked-in `PP_BROWSER_DEV_PIN`): open the engine test page at startup (frame-time stats; log lines `ui.perftest …`). On phones: Settings → About → Engine test |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
 Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):

@@ -99,6 +99,8 @@
 #include "gui/contacts/PeoplePickerController.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerController.h"
+#include "gui/UiPerfTestController.h"
+#include "foundation/product/DevTools.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/SettingsController.h"
 #include "gui/shell/ShellFeedback.h"
@@ -159,7 +161,7 @@ constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 InputCoordinator* g_input_coordinator = nullptr;
 
 void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings,
-                                 ContactsController& contacts, ChatController& chat) {
+                                 ContactsController& contacts, ChatController& chat, UiPerfTestController* ui_perf) {
   shell.SetOnNavTabChanged([badges, &shell, &settings, &contacts, &chat](NavTab tab) {
     static NavTab previous = NavTab::Home;
     chat.CancelVoice(); // a recording is not carried to another tab, and a clip stops
@@ -202,7 +204,15 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnShellLayoutSynced();
   });
 
-  shell.SetOnTransientPopped([&settings, &contacts](const std::string& key) {
+  shell.SetOnTransientMounted([ui_perf](const std::string& key) {
+    if (ui_perf && key == "ui_perf_test") {
+      ui_perf->OnMounted();
+    }
+  });
+  shell.SetOnTransientPopped([&settings, &contacts, ui_perf](const std::string& key) {
+    if (ui_perf && key == "ui_perf_test") {
+      ui_perf->OnClosed();
+    }
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
     }
@@ -312,6 +322,9 @@ Application::Application() {
   PeoplePickerController::InstallInstance(*people_picker_);
   emoji_picker_ = std::make_unique<EmojiPickerController>();
   EmojiPickerController::InstallInstance(*emoji_picker_);
+  if (kDevToolsBuild) {
+    ui_perf_ = std::make_unique<UiPerfTestController>();
+  }
   chat_ = std::make_unique<ChatController>();
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
@@ -1068,6 +1081,10 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
         people_picker_shell_bridge_->OnSurface(snap);
       },
   });
+  if (ui_perf_) {
+    ui_perf_->BindShellNavigation(shell_navigation);
+    settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
+  }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
   emoji_picker_->BindSessionStore(store_);
@@ -1500,6 +1517,10 @@ bool Application::MountPresenters(ui::Context* context) {
     log().error << "EmojiPickerController RegisterModel failed";
     return false;
   }
+  if (ui_perf_ && !ui_perf_->RegisterModel(context)) {
+    log().error << "UiPerfTestController RegisterModel failed";
+    return false;
+  }
   if (!onboarding_->RegisterModel(context)) {
     log().error << "OnboardingController RegisterModel failed";
     return false;
@@ -1597,6 +1618,10 @@ bool Application::MountPresenters(ui::Context* context) {
       emoji_picker_->BindShellNavigation({});
       emoji_picker_->BindShellFeedback({});
       emoji_picker_->BindFlowCoordinator({});
+    }
+    if (ui_perf_) {
+      settings_->BindOpenUiPerfTest({});
+      ui_perf_->BindShellNavigation({});
     }
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
@@ -1731,7 +1756,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   contacts_->BindChatPorts(chat_ports);
   people_picker_->BindChatPorts(std::move(chat_ports));
 
-  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_, ui_perf_.get());
   shell_->SetOnBottomChromeDismissed([this]() {
     if (emoji_picker_) {
       emoji_picker_->Close();
@@ -1922,6 +1947,9 @@ void Application::Run() {
       // Our own work ends here. Present can block on vsync or an occluded window, which is not jank.
       const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
+      if (ui_perf_ && ui_perf_->IsOpen()) {
+        ui_perf_->OnFrame(std::chrono::steady_clock::now()); // engine test page: frame-to-frame timing
+      }
       if (!logged_first_present) {
         first_present_seen->store(true);
         StartupMark("first_present");
@@ -1931,6 +1959,9 @@ void Application::Run() {
                                                               .count()))
             .Emit();
         logged_first_present = true;
+        if (ui_perf_ && UiPerfTestController::OpenAtStartupRequested()) {
+          AppRuntime::PostUI([this]() { ui_perf_->Open(); }); // --ui-perf-test
+        }
         AppRuntime::PostUI([this]() {
           OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));
         });

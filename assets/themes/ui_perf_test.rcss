@@ -1,0 +1,113 @@
+/* Developer engine test page (assets/views/ui_perf_test.rml). Loaded only by that page
+   (UiPerfTestController::OnMounted). No colour literals: colours come from the bubble-* and
+   surface-chrome* classes in the theme files. */
+
+@keyframes uiperf-pulse {
+  0% { transform: translateX(0dp) scale(1.0); }
+  50% { transform: translateX(-28dp) scale(1.5); }
+  100% { transform: translateX(0dp) scale(1.0); }
+}
+
+.uiperf-page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+}
+
+.uiperf-list {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: scroll;
+  padding: 196dp 12dp 96dp 12dp;
+  box-sizing: border-box;
+}
+
+.uiperf-row {
+  display: flex;
+  flex-direction: row;
+  margin-bottom: 10dp;
+}
+
+.uiperf-row--mine {
+  justify-content: flex-end;
+}
+
+/* prompt-composer-pill supplies the fill, border and box-shadow colours (theme files);
+   the rest is reset here so it behaves as a clipped bubble. */
+.uiperf-bubble.prompt-composer-pill {
+  flex: none;
+  display: block;
+  width: 82%;
+  min-height: 0;
+  padding: 0;
+  border-radius: 18dp;
+  overflow: hidden;
+}
+
+.uiperf-bubble-inner {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10dp 14dp;
+  margin: 0;
+  border: 0;
+  border-radius: 0dp;
+}
+
+.uiperf-line {
+  margin: 0;
+  font-size: 14dp;
+}
+
+.uiperf-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: 8dp 16dp;
+  box-sizing: border-box;
+}
+
+/* Below the shell's own back-button strip (48dp). */
+.uiperf-bar--top {
+  top: 48dp;
+}
+
+.uiperf-bar--bottom {
+  bottom: 0;
+  height: 84dp;
+  align-items: center;
+}
+
+.uiperf-bar--glass {
+  backdrop-filter: blur(20px);
+}
+
+.uiperf-stats {
+  flex: 1;
+  min-width: 0;
+}
+
+.uiperf-stat {
+  margin: 0;
+  font-size: 11dp;
+}
+
+.uiperf-spinner {
+  width: 28dp;
+  height: 28dp;
+  flex-shrink: 0;
+  border-radius: 8dp;
+  margin-left: 12dp;
+  margin-right: 28dp;
+}
+
+.uiperf-spinner--on {
+  animation: 1.2s cubic-in-out infinite alternate uiperf-pulse;
+}

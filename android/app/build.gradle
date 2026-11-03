@@ -24,6 +24,9 @@ def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
 if (ppApiUrlQa) {
     ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
 }
+if (System.getenv('PP_BROWSER_DEV_TOOLS')) {
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_DEV_TOOLS=ON"] // developer builds only: Settings -> About -> Engine test
+}
 if (ppBrowserCompilerCache == 'ON') {
     ppBrowserCmakeArgs += [
         "-DCMAKE_C_COMPILER_LAUNCHER=ccache",

@@ -3,6 +3,7 @@
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
@@ -161,6 +162,10 @@ void SettingsController::BindCommands(SettingsCommands commands) {
 
 void SettingsController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
+}
+
+void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
+  open_ui_perf_test_ = std::move(open);
 }
 
 void SettingsController::BindShellFeedback(ShellFeedbackPorts ports) {
@@ -556,6 +561,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
+    controller.bindings_.dev_tools_available = kDevToolsBuild;
+    ctor.Bind("dev_tools_available", &controller.bindings_.dev_tools_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
@@ -618,6 +625,11 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
     ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
+      if (kDevToolsBuild && open_ui_perf_test_) {
+        open_ui_perf_test_();
+      }
+    }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
     ctor.BindEventCallback("toggle_crash_reports", DataEvent<>([this]() { ToggleCrashReports(); }));
     ctor.BindEventCallback("toggle_auto_renew_registration", DataEvent<>([this]() { ToggleAutoRenewRegistration(); }));

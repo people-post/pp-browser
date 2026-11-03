@@ -45,6 +45,7 @@ class ShellHost;
 struct SettingsToolPorts;
 class PeoplePickerController;
 class EmojiPickerController;
+class UiPerfTestController;
 class ChatController;
 
 class Application : public Module {
@@ -123,6 +124,8 @@ private:
   std::unique_ptr<PeoplePickerShellBridge> people_picker_shell_bridge_;
   std::unique_ptr<PeoplePickerController> people_picker_;
   std::unique_ptr<EmojiPickerController> emoji_picker_;
+  /** Developer builds only (kDevToolsBuild); null otherwise. */
+  std::unique_ptr<UiPerfTestController> ui_perf_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::unique_ptr<OnboardingController> onboarding_;

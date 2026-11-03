@@ -10,4 +10,6 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.about.advanced.help}}</p>
+        <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
+                data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
       </div>

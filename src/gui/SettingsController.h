@@ -64,6 +64,8 @@ public:
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
+  void BindOpenUiPerfTest(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
@@ -149,6 +151,8 @@ private:
     ui::String stay_connected = "off";
     /** The "Stay connected" row shows (Android: phones without a push service). */
     bool stay_connected_available = false;
+    /** kDevToolsBuild: the About page shows the developer-only rows. */
+    bool dev_tools_available = false;
     ui::String brief_llm_key_masked;
     ui::String appearance = "system";
     ui::String appearance_label = "System";
@@ -302,6 +306,7 @@ private:
   SettingsCommands commands_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  std::function<void()> open_ui_perf_test_;
   UnlockEnsurePorts unlock_ensure_;
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};

@@ -8,6 +8,7 @@
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/platform/IncomingLink.h"
+#include "gui/UiPerfTestController.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -64,6 +65,8 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
+    } else if (std::strcmp(argv[i], "--ui-perf-test") == 0) {
+      pbr::UiPerfTestController::RequestOpenAtStartup(); // developer builds only: open Settings -> About -> Engine test page
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
       startup_timing = true;
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {

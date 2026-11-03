@@ -1526,6 +1526,13 @@
     "ai.card.get_llm_settings.model": "Model",
     "ai.card.get_llm_settings.api_key": "API key",
     "ai.card.get_integrations.search_provider": "Search provider",
-    "ai.card.get_integrations.mcp_servers": "External services"
+    "ai.card.get_integrations.mcp_servers": "External services",
+    "dev.perf.row": "Engine test",
+    "dev.perf.title": "Engine test",
+    "dev.perf.bars": "Translucent bars",
+    "dev.perf.anim": "Animation",
+    "dev.perf.waiting": "Scroll the list for 10 seconds to measure",
+    "dev.perf.top": "Top bar over the list",
+    "dev.perf.bottom": "Bottom bar"
   }
 }

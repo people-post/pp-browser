@@ -60,6 +60,7 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_security", "views/settings_section_security.rml"},
       {"settings_section_storage", "views/settings_section_storage.rml"},
       {"settings_section_about", "views/settings_section_about.rml"},
+      {"ui_perf_test", "views/ui_perf_test.rml"},
   };
   return keys;
 }

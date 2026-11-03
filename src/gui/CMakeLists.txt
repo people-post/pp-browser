@@ -45,6 +45,7 @@ pp_browser_add_feature_library(pp_gui
     SettingsController.cpp
     SettingsProfileActions.cpp
     SettingsSecurityActions.cpp
+    UiPerfTestController.cpp
     DiagnosticsFeedback.cpp
     shell/DataModelHost.cpp
     shell/DeferredStartup.cpp
