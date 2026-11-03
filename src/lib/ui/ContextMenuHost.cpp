@@ -83,6 +83,7 @@ namespace {
 constexpr float kViewportMarginPx = 8.f;
 constexpr float kBarGapDp = 8.f;
 constexpr float kAnchorGapDp = 6.f;
+constexpr float kPopoverEdgeDp = 8.f;
 constexpr float kActionSheetInsetDp = 12.f;
 constexpr float kActionSheetBottomDp = 20.f;
 constexpr float kActionSheetMaxWidthDp = 480.f;
@@ -384,9 +385,12 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
     return;
   }
 
-  float left = static_cast<float>(preferred.x);
+  float left = float_popover_ ? static_cast<float>(preferred.x) - size.x : static_cast<float>(preferred.x);
   float top = static_cast<float>(preferred.y);
-  const float max_left = static_cast<float>(dims.x) - size.x - kViewportMarginPx;
+  // A pull-down keeps clear of the screen edge (its corner and shadow show) even when its button sits at the edge.
+  const float side_margin =
+      float_popover_ ? kPopoverEdgeDp * context_->GetDensityIndependentPixelRatio() : kViewportMarginPx;
+  const float max_left = static_cast<float>(dims.x) - size.x - side_margin;
   const float max_top = static_cast<float>(dims.y) - size.y - kViewportMarginPx;
 
   if (left > max_left) {
@@ -570,6 +574,7 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     out << "</div>";
   } else {
     const bool anchored = presentation == Presentation::Float && menu_anchor_;
+    const bool phone_popover = float_popover_ && compact_layout_;
     const bool has_quick =
         anchored && std::any_of(actions.begin(), actions.end(), [](const ContextMenuAction& a) { return a.quick; });
     if (has_quick) {
@@ -579,7 +584,7 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     }
     out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x
         << "px; top: " << request.position.y << "px;\">";
-    AppendActionButtons(out, actions, anchored ? ActionFilter::List : ActionFilter::All);
+    AppendActionButtons(out, actions, anchored ? ActionFilter::List : ActionFilter::All, phone_popover ? 20 : 16);
     out << "</div>";
   }
 
@@ -591,6 +596,9 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   }
   if (presentation == Presentation::Bar) {
     layer_element->SetClass("context-menu-layer--bar", true);
+  }
+  if (presentation == Presentation::Float && float_popover_ && compact_layout_) {
+    layer_element->SetClass("context-menu-layer--popover", true);
   }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
@@ -668,18 +676,34 @@ void ContextMenuHost::ShowActionsAbove(ui::Vector2i position, std::vector<Contex
   ShowActions(position, std::move(actions), std::move(on_dismissed));
 }
 
+void ContextMenuHost::ShowActionsPopover(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                                         std::function<void()> on_dismissed) {
+  ui::Vector2i position{0, 0};
+  if (anchor) {
+    const ui::Vector2f offset = anchor->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f size = anchor->GetBox().GetSize(ui::BoxArea::Border);
+    const float gap = context_ ? kAnchorGapDp * context_->GetDensityIndependentPixelRatio() : 4.f;
+    position.x = static_cast<int>(offset.x + size.x);
+    position.y = static_cast<int>(offset.y + size.y + gap);
+  }
+  next_show_popover_ = true;
+  ShowActions(position, std::move(actions), std::move(on_dismissed));
+}
+
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions,
                                   std::function<void()> on_dismissed) {
   const bool above = std::exchange(next_show_above_, false);
+  const bool popover = std::exchange(next_show_popover_, false);
   if (dismiss_pending_) {
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
     // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
-    pending_show_ = PendingShow{position, std::move(actions), above, std::move(on_dismissed)};
+    pending_show_ = PendingShow{position, std::move(actions), above, popover, std::move(on_dismissed)};
     return;
   }
   Dismiss();  // a menu still open went away without a choice: its notice runs in there
   float_above_ = above;
+  float_popover_ = popover;
   if (!context_ || actions.empty()) {
     if (on_dismissed) {
       on_dismissed();  // nothing was shown, so nothing can be chosen
@@ -717,7 +741,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   request.position = position;
   request.context = context_;
   const Presentation presentation =
-      compact_layout_ ? Presentation::ActionSheet : Presentation::Float;
+      compact_layout_ && !float_popover_ ? Presentation::ActionSheet : Presentation::Float;
   RenderMenu(request, active_actions_, presentation);
 }
 
@@ -736,6 +760,7 @@ void ContextMenuHost::Dismiss() {
   panel_ = nullptr;
   presentation_ = Presentation::Float;
   float_above_ = false;
+  float_popover_ = false;
   if (layer) {
     layer->RemoveEventListener(ui::EventId::Mousedown, this, true);
     layer->RemoveEventListener(ui::EventId::Click, this, true);
@@ -776,6 +801,7 @@ void ContextMenuHost::Update() {
     PendingShow show = std::move(*pending_show_);
     pending_show_.reset();
     next_show_above_ = show.above;
+    next_show_popover_ = show.popover;
     ShowActions(show.position, std::move(show.actions), std::move(show.on_dismissed));
   }
   // Not from inside the menu's own click: the old layer had to be gone first.

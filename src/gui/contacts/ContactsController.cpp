@@ -1161,10 +1161,15 @@ std::vector<ContextMenuAction> ContactsController::AddContactMenuActions(const b
 }
 
 void ContactsController::OnAddContactMenu(ui::Event& ev) {
-  const ui::Vector2i position = MenuPositionBelowEvent(ev);
-  ContextMenuHost::Instance().ShowActions(
-      position, AddContactMenuActions(compact_layout_, static_cast<bool>(scan_ports_.scan_qr),
-                                    static_cast<bool>(chat_ports_.open_new_group)));
+  std::vector<ContextMenuAction> actions = AddContactMenuActions(
+      compact_layout_, static_cast<bool>(scan_ports_.scan_qr), static_cast<bool>(chat_ports_.open_new_group));
+  if (compact_layout_) {
+    // The phone header "+": a pull-down under the button, not a sheet from the bottom.
+    ui::Element* button = ev.GetCurrentElement() ? ev.GetCurrentElement() : ev.GetTargetElement();
+    ContextMenuHost::Instance().ShowActionsPopover(button, std::move(actions));
+    return;
+  }
+  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions));
 }
 
 void ContactsController::OnNewGroup() {

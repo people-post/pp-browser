@@ -78,6 +78,10 @@ public:
   /// when it fits above, so it does not cover what is being typed. Compact layout: the action sheet as usual.
   void ShowActionsAbove(ui::Vector2i position, std::vector<ContextMenuAction> actions,
                         std::function<void()> on_dismissed = {});
+  /// ShowActions as a pull-down from a header button: a float menu under `anchor`, its right edge on the button's
+  /// right edge. Compact layout too (no action sheet); there the panel gets the phone pull-down look.
+  void ShowActionsPopover(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                          std::function<void()> on_dismissed = {});
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();
@@ -130,6 +134,7 @@ private:
     ui::Vector2i position;
     std::vector<ContextMenuAction> actions;
     bool above = false;
+    bool popover = false;
     std::function<void()> on_dismissed;
   };
   /// The open action list's "closed without choosing" notice; cleared once an action runs.
@@ -137,6 +142,9 @@ private:
   /// The open float menu ends at its position instead of starting there (ShowActionsAbove).
   bool float_above_ = false;
   bool next_show_above_ = false;
+  /// The open float menu is a pull-down: its position is the top-right corner (ShowActionsPopover).
+  bool float_popover_ = false;
+  bool next_show_popover_ = false;
   std::optional<PendingShow> pending_show_;
   bool restore_focus_on_dismiss_ = false;
   bool compact_layout_ = false;

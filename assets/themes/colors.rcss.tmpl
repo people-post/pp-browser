@@ -1853,6 +1853,32 @@ select selectbox option:hover {
   color: {{label}};
 }
 
+/* Phone pull-down (DESIGN-pp-ui 8.15 card + shadow); a hairline between rows, none above the first. */
+.context-menu-layer--popover .context-menu-panel {
+  background-color: {{bg-card}};
+  box-shadow: 0 4dp 16dp {{shadow}};
+}
+
+.context-menu-layer--popover .context-menu-item {
+  border-top: 1dp {{separator}};
+}
+
+.context-menu-layer--popover .context-menu-item:first-child {
+  border-top-width: 0;
+}
+
+.context-menu-layer--popover .context-menu-item:active {
+  background-color: {{fill-2}};
+}
+
+.context-menu-layer--popover .context-menu-item-icon svg {
+  image-color: {{label}};
+}
+
+.context-menu-layer--popover .context-menu-item--danger .context-menu-item-icon svg {
+  image-color: {{danger}};
+}
+
 .context-menu-item:hover {
   background-color: {{fill-2}};
 }

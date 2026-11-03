@@ -101,5 +101,51 @@ TEST_F(ContextMenuFocusRestoreTest, ClosingTheMenuAfterTheFocusedFieldWasRemoved
   EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
 }
 
+// The phone Contacts "+" opens a pull-down under the button (2026-11-03), not the bottom action sheet that
+// ShowActions gives on a phone; the sheet stays for the other phone menus.
+using ContextMenuPopoverTest = ContextMenuFocusRestoreTest;
+
+std::vector<ContextMenuAction> OneAction() {
+  std::vector<ContextMenuAction> actions;
+  ContextMenuAction action;
+  action.id = "noop";
+  action.label = "Noop";
+  action.run = [] {};
+  actions.push_back(std::move(action));
+  return actions;
+}
+
+TEST_F(ContextMenuPopoverTest, APopoverOnThePhoneIsAPullDownNotASheet) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().ShowActionsPopover(document_->GetElementById("field"), OneAction());
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+  EXPECT_EQ(document_->GetElementById("context-menu-cancel"), nullptr);
+  ContextMenuHost::Instance().Dismiss();
+
+  // Plain ShowActions on the phone is still the sheet, and the popover flag does not stick.
+  ContextMenuHost::Instance().ShowActions({10, 10}, OneAction());
+  context_->Update();
+  layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--sheet"));
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--popover"));
+  ContextMenuHost::Instance().Dismiss();
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
+  ContextMenuHost::Instance().ShowActionsPopover(document_->GetElementById("field"), OneAction());
+  context_->Update();
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+}
+
 }  // namespace
 }  // namespace pbr

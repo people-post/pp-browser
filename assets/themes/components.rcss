@@ -5062,6 +5062,35 @@ input.checkbox {
   white-space: nowrap;
 }
 
+/* Phone pull-down from a header button (ContextMenuHost::ShowActionsPopover): a rounded card right-aligned under
+   the button, 50dp rows, label on the left and icon on the right (iOS pull-down menu). */
+.context-menu-layer--popover .context-menu-panel {
+  min-width: 230dp;
+  max-width: 300dp;
+  padding: 0;
+  border: 0;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.context-menu-layer--popover .context-menu-item {
+  flex-direction: row-reverse;
+  gap: 12dp;
+  min-height: 50dp;
+  padding: 0 16dp;
+  border-radius: 0;
+}
+
+.context-menu-layer--popover .context-menu-item-label {
+  font-size: 17dp;
+  white-space: nowrap;
+}
+
+.context-menu-layer--popover .context-menu-item-icon {
+  width: 20dp;
+  height: 20dp;
+}
+
 /* Compact ShowActions: iOS-style bottom action sheet.
    Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
    Block stack (not flex) avoids min-content overflow past the viewport frame. */
