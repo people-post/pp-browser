@@ -199,11 +199,19 @@ std::string ShellLayoutRml::TransientLayer() const {
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
   out << "<div class=\"shell-layer shell-layer-transient" << compact
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
-  out << "<div class=\"shell-transient-chrome "
+  // The contact page has a titled bar on phones: tinted like the chat header, no lines.
+  const bool titled = compact[0] != '\0' && top.spec.key == "contact_detail";
+  out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
          "<svg src=\"../icons/v2/back.svg\"></svg>"
          "</button>";
+  if (titled) {
+    // The contacts model is the one the page below binds; member_preview is a group member who is not a contact.
+    out << "<p class=\"shell-transient-title\" data-model=\"contacts\">"
+           "<span data-if=\"selected.member_preview\">" << Tr("contacts.member_info") << "</span>"
+           "<span data-if=\"!selected.member_preview\">" << Tr("contacts.info") << "</span></p>";
+  }
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");
   out << "</div>";

@@ -452,6 +452,8 @@
     "onboarding.later": "Later",
     "contacts.title": "Contacts",
     "contacts.add": "Add contact",
+    "contacts.info": "Contact info",
+    "contacts.member_info": "Member info",
     "contacts.member_not_contact": "In this group, not in your contacts.",
     "contacts.new_group": "New group",
     "new_chat.title": "New chat",

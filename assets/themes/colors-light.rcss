@@ -2122,9 +2122,26 @@ select selectbox option:hover {
   decorator: linear-gradient(to bottom, #ffffff00, #ffffff);
 }
 
+/* The dock's last 10dp melt into the tab bar's shade; the bar itself is a plain fill, no line. */
+.shell-layer-compact .home-dock-seam {
+  decorator: linear-gradient(to bottom, #ffffff00, #f2f2f7);
+}
+
 .shell-bottom-chrome--home,
 .shell-bottom-chrome--home.shell-bottom-chrome--frost {
-  background-color: #ffffff;
+  background-color: #f2f2f7;
   border-top-width: 0;
+}
+
+/* Contact page (phone): the title bar is tinted like the chat header, no lines, no shadow. */
+.shell-layer-compact .shell-transient-chrome--titled,
+.shell-layer-compact .shell-transient-chrome--titled.surface-chrome--frost {
+  background-color: #f2f2f7;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-transient-title {
+  color: #000000;
 }
 }

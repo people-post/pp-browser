@@ -54,4 +54,6 @@ x-video-stage	#111827	#111827	extra: call video stage
 x-video-remote	#1f2937	#1f2937	extra: call remote video backdrop
 x-accept-pulse-ring	#16a34a33	#22c55e33	extra: accept-button pulse ring
 x-jump-tint	#ffc40038	#ffc40038	extra: row a jump landed on (develop #482), see-through amber
-x-dock-fade	#ffffff00	#1c1c1e00	extra: Home dock fade start (bg-card at 0%)
+x-dock-fade	#ffffff00	#25252700	extra: Home dock fade start (the dock colour at 0%)
+x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
+x-dock-bar	#f2f2f7	#1a1a1c	extra: Home tab bar fill, a shade off the dock

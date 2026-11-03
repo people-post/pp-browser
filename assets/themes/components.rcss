@@ -2301,6 +2301,29 @@ select selectbox option {
   height: 18dp;
 }
 
+/* Phone contact page: a 48dp title bar (the pane starts 48dp down), back arrow left, centred title. */
+.shell-layer-compact .shell-transient-chrome--titled {
+  min-height: 48dp;
+  height: 48dp;
+  padding: 2dp 0;
+}
+
+.shell-transient-title {
+  position: absolute;
+  margin: 0;
+  top: 0;
+  left: 52dp;
+  right: 52dp;
+  height: 48dp;
+  line-height: 48dp;
+  font-size: 17dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .shell-layer-transient {
   display: flex;
   flex-direction: column;
@@ -6568,22 +6591,34 @@ input.checkbox {
   position: relative;
   flex: none;
   display: block;
-  padding: 8dp 0;
+  padding: 8dp 0 12dp 0;
   box-sizing: border-box;
 }
 
-/* The widgets fade into the dock over 20dp (no divider line); touches pass through. Gradient: colors-*.rcss. */
-.home-dock-fade {
+/* The widgets fade into the dock over 28dp (no divider line); touches pass through. Gradient: colors-*.rcss. */
+.home-dock-fade,
+.home-dock-seam {
   display: none;
 }
 
 .shell-layer-compact .home-dock-fade {
   display: block;
   position: absolute;
-  top: -20dp;
+  top: -28dp;
   left: 0;
   right: 0;
-  height: 20dp;
+  height: 28dp;
+  pointer-events: none;
+}
+
+/* The dock's bottom 10dp melt into the tab bar's shade. */
+.shell-layer-compact .home-dock-seam {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 10dp;
   pointer-events: none;
 }
 

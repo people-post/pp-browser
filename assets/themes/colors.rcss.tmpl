@@ -2120,16 +2120,33 @@ select selectbox option:hover {
 /* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets
    fade into it instead (Apple's widget pages). Other tabs keep the bar as it is. */
 .shell-layer-compact .home-landing {
-  background-color: {{bg-card}};
+  background-color: {{x-dock}};
 }
 
 .shell-layer-compact .home-dock-fade {
-  decorator: linear-gradient(to bottom, {{x-dock-fade}}, {{bg-card}});
+  decorator: linear-gradient(to bottom, {{x-dock-fade}}, {{x-dock}});
+}
+
+/* The dock's last 10dp melt into the tab bar's shade; the bar itself is a plain fill, no line. */
+.shell-layer-compact .home-dock-seam {
+  decorator: linear-gradient(to bottom, {{x-dock-fade}}, {{x-dock-bar}});
 }
 
 .shell-bottom-chrome--home,
 .shell-bottom-chrome--home.shell-bottom-chrome--frost {
-  background-color: {{bg-card}};
+  background-color: {{x-dock-bar}};
   border-top-width: 0;
+}
+
+/* Contact page (phone): the title bar is tinted like the chat header, no lines, no shadow. */
+.shell-layer-compact .shell-transient-chrome--titled,
+.shell-layer-compact .shell-transient-chrome--titled.surface-chrome--frost {
+  background-color: {{bg-card-2}};
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-transient-title {
+  color: {{label}};
 }
 }
