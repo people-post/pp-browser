@@ -749,6 +749,13 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
   bool is_owner = false;
   if (auto owner = facade_->IsLocalOwner(plan.group_id)) {
     is_owner = *owner;
+  } else {
+    // An owner who closes must hand over or dissolve: when the group's record can't be read, trust the roster's role
+    // rather than leaving the group without an owner.
+    log().warning << "IsLocalOwner failed, using the roster role: " << owner.error().message;
+    is_owner = std::any_of(members.begin(), members.end(), [&](const GroupRosterMember& member) {
+      return member.member_identity == me && member.role == MemberRole::Owner;
+    });
   }
   for (const GroupRosterMember& member : members) {
     if (member.member_identity != me && !facade_->IsMemberUnreachable(plan.group_id, member.member_identity)) {

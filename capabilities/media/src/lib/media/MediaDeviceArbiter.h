@@ -103,6 +103,8 @@ public:
   virtual std::string CaptureError() const { return {}; }
   /** True while the OS camera-permission dialog is unanswered; frames legitimately do not arrive. */
   virtual bool PermissionPending() const { return false; }
+  /** The OS refused camera access (the user said no, or it is off in settings). */
+  virtual bool PermissionDenied() const { return false; }
   /** Requests bounded native zoom when supported; false lets the caller use a software viewport. */
   virtual bool SetZoom(float factor) { (void)factor; return false; }
   virtual CameraZoomState ZoomState() const { return {}; }
@@ -233,6 +235,7 @@ public:
   CameraGeometry Geometry() const;
   std::string CaptureError() const;
   bool PermissionPending() const;
+  bool PermissionDenied() const;
   bool SetZoom(float factor);
   CameraZoomState ZoomState() const;
   std::optional<VideoFrameRgba> NextFrame();

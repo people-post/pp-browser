@@ -567,12 +567,12 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   options.session_grants = std::move(session_grants);
 
   TurnExecutionResult execution = TurnExecutor::Execute(park.plan, state->tools, on_activity, options);
+  if (StaleStep(state, "tools")) {
+    return; // before the reset below: the parked approval may be the newer turn's by now
+  }
   {
     std::lock_guard lock(state->park_mutex);
     state->parked_approval.reset();
-  }
-  if (StaleStep(state, "tools")) {
-    return;
   }
 
   if (!execution.ok) {

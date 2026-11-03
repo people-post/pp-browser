@@ -264,8 +264,9 @@ struct QrScanner::State {
     while (Current(epoch)) {
       const auto capture_started = std::chrono::steady_clock::now();
       if (auto error = lease->CaptureError(); !error.empty()) {
-        // The camera endpoint reports a capture failure only when the OS refused access.
-        Publish(epoch, Update{{}, {}, std::move(error), ErrorKind::PermissionDenied}, true);
+        // Only an OS refusal sends the user to Settings; "no camera behind the lease" is not one.
+        const ErrorKind kind = lease->PermissionDenied() ? ErrorKind::PermissionDenied : ErrorKind::Other;
+        Publish(epoch, Update{{}, {}, std::move(error), kind}, true);
         return;
       }
       const auto zoom_state = processor.DecodeDue(capture_started) ? lease->ZoomState() : CameraZoomState{};

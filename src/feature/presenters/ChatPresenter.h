@@ -136,6 +136,9 @@ struct ThreadMessage;
 bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
                       const std::string& emoji_key);
 
+/** What the user sees when a group action fails: a localized line, never the engine's English text. */
+std::string GroupActionFailureText(const Error& error);
+
 /**
  * The chats list's decisions and its buttons, without a GUI: which chats show and how (order,
  * unread, pin, mute, archive), and what opening one or changing its settings does. ChatController
@@ -144,9 +147,6 @@ bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::str
  *
  * UI thread.
  */
-/** What the user sees when a group action fails: a localized line, never the engine's English text. */
-std::string GroupActionFailureText(const Error& error);
-
 class ChatPresenter : public Module {
 public:
   struct Callbacks {

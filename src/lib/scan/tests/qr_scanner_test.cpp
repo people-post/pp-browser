@@ -42,6 +42,7 @@ struct FakeState {
   int rotate_cw = 0;  // geometry the fake camera reports
   bool pre_rotated = false;  // frames arrive rotated so that rotate_cw makes them upright
   std::atomic<bool> permission_pending{false};
+  bool permission_denied = false; // the OS refused access (what SDL reports as permission state < 0)
   bool zoom_required = false;
   float blank_until_zoom = 0.f;  // frames show nothing at all below this magnification
   int candidate_offset_x = 0;
@@ -69,6 +70,7 @@ public:
   }
   std::string CaptureError() const override { return state_.error; }
   bool PermissionPending() const override { return state_.permission_pending; }
+  bool PermissionDenied() const override { return state_.permission_denied; }
   std::optional<VideoFrameRgba> NextFrame() override {
     if (state_.blank_until_zoom > 0.f && state_.zoom < state_.blank_until_zoom) {
       VideoFrameRgba blank;
@@ -197,9 +199,24 @@ TEST(QrScannerTest, StopAndRestartDiscardBlockedOldOpenWithoutBlockingUi) {
   scanner.Shutdown();
   EXPECT_TRUE(WaitFor([&] { return state.closes == 2; }));
 }
+TEST(QrScannerTest, ACaptureErrorThatIsNotARefusalIsNotCalledAPermissionProblem) {
+  FakeState state;
+  state.error = "camera unavailable";
+  MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
+  QrScanner scanner(devices);
+  scanner.Start();
+  QrScanner::Update result;
+  ASSERT_TRUE(WaitFor([&] {
+    result = scanner.Poll();
+    return !result.error.empty();
+  }));
+  EXPECT_EQ(result.error_kind, QrScanner::ErrorKind::Other);
+  scanner.Shutdown();
+}
 TEST(QrScannerTest, ReportsPermissionDenialAndDeviceOpenFailure) {
   FakeState state;
   state.error = "Camera permission denied";
+  state.permission_denied = true;
   MediaDeviceArbiter devices(std::make_unique<FakeBackend>(state));
   QrScanner scanner(devices);
   scanner.Start();
