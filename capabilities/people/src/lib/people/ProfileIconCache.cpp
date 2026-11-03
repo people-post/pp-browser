@@ -8,7 +8,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
+#include <string_view>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -22,6 +24,16 @@ constexpr const char kSelfCacheKey[] = "self";
 
 std::filesystem::path MetaPath(const std::string& profile_dir, const std::string& cache_key) {
   return std::filesystem::path(ProfileIconCacheRoot(profile_dir, cache_key)) / kMetaFilename;
+}
+
+// Names the file after its bytes. The UI caches a texture by file path, so a
+// new picture written over the old file kept showing the old one.
+std::string IconFilename(const std::vector<uint8_t>& bytes, const std::string& ext) {
+  const size_t tag = std::hash<std::string_view>{}(
+      std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+  std::ostringstream name;
+  name << "icon-" << std::hex << tag << "." << ext;
+  return name.str();
 }
 
 } // namespace
@@ -134,7 +146,8 @@ Roe<void> SaveProfileIconCache(const std::string& profile_dir, const std::vector
     return Error("Profile icon bytes are empty");
   }
   const std::string ext = file_extension.empty() ? "jpg" : file_extension;
-  const std::string filename = "icon." + ext;
+  const std::string filename = IconFilename(bytes, ext);
+  const auto previous = LoadProfileIconCacheMeta(profile_dir, cache_key);
   const auto root = std::filesystem::path(ProfileIconCacheRoot(profile_dir, cache_key));
   std::error_code ec;
   std::filesystem::create_directories(root, ec);
@@ -169,6 +182,15 @@ Roe<void> SaveProfileIconCache(const std::string& profile_dir, const std::vector
     return Error("Failed to write profile icon cache metadata");
   }
   meta_out << DumpJson(root_json, 2);
+  meta_out.close();
+  if (previous) {
+    // Only a bare file name inside this folder is ever removed.
+    const std::filesystem::path old_name(previous.value().local_filename);
+    if (!old_name.empty() && old_name == old_name.filename() && old_name.string() != filename &&
+        old_name.string() != kMetaFilename) {
+      std::filesystem::remove(root / old_name, ec);
+    }
+  }
   return Roe<void>{};
 }
 

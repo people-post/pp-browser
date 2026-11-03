@@ -328,6 +328,7 @@ public:
       geometry.encode_width = xform.encode_width;
       geometry.encode_height = xform.encode_height;
       geometry.front_facing = xform.front_facing;
+      geometry.mirror_preview = SDL_GetCameraPosition(id) != SDL_CAMERA_POSITION_BACK_FACING;
 
       SDL_CameraSpec want{};
       // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum entry (often

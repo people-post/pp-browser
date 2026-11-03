@@ -85,6 +85,9 @@ struct CameraGeometry {
   int encode_height = 360;
   /** Lets the holder re-derive rotate_cw per frame as the display turns (CameraFrameRotateCw). */
   bool front_facing = false;
+  /** Draw the self-view as a mirror (any camera not facing away, Mac built-ins included); the sent
+   *  video is never mirrored. */
+  bool mirror_preview = false;
 };
 
 struct CameraZoomState {

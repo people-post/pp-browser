@@ -1071,6 +1071,7 @@
     "call.error.camera_busy": "The camera is in use. Video turns on when it's free.",
     "call.error.camera_not_responding": "The camera isn't responding. Restart the app to use it.",
     "call.error.camera_failed": "The camera couldn't start.",
+    "call.error.camera_denied": "Camera access is off. Allow PP to use the camera in Settings, then turn video on again.",
     "call.title.voice": "Voice call",
     "call.title.video": "Video call",
     "call.title.group_voice": "Group voice call",

@@ -65,6 +65,7 @@ void ChatTranscriptScroller::Reset() {
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
   pending_jump_id_.clear();
+  flash_id_.clear();  // the rows it named are gone
   view_.show_jump_to_latest = false;
   view_.jump_to_latest_label = "";
 }
@@ -152,6 +153,7 @@ void ChatTranscriptScroller::ApplyPolicy() {
     last_messages_scroll_height_ = el->GetScrollHeight();
   }
 
+  KeepJumpFlash();
   if (ApplyPendingJump(el)) {
     return;
   }
@@ -413,6 +415,14 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
   if (!row) {
     return true; // not mounted yet (a remount is coming)
   }
+  if (flash_id_ != pending_jump_id_) {
+    ClearJumpFlash();
+  }
+  // Where the jump landed is tinted for a moment (a quote's original, a search hit, a mention): until 1.5 s
+  // after its place stops moving.
+  flash_id_ = pending_jump_id_;
+  flash_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+  row->SetClass("message-row-jump-target", true);
   suppress_scroll_handler_ = true;
   row->ScrollIntoView(true);
   suppress_scroll_handler_ = false;
@@ -425,6 +435,35 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
     pending_jump_id_.clear();
   }
   return true;
+}
+
+void ChatTranscriptScroller::KeepJumpFlash() {
+  if (flash_id_.empty()) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (now >= flash_until_ || !context_ || context_->GetNumDocuments() == 0) {
+    ClearJumpFlash();
+    return;
+  }
+  // A rebuilt row (new message, download state, remount) comes back without the class: put it on again.
+  if (ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + flash_id_ + "\"]").c_str())) {
+    row->SetClass("message-row-jump-target", true);
+  }
+  // An idle chat draws no frames: wake once more when the tint is due to go.
+  context_->RequestNextUpdate(std::chrono::duration<double>(flash_until_ - now).count());
+}
+
+void ChatTranscriptScroller::ClearJumpFlash() {
+  if (flash_id_.empty()) {
+    return;
+  }
+  if (context_ && context_->GetNumDocuments() > 0) {
+    if (ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + flash_id_ + "\"]").c_str())) {
+      row->SetClass("message-row-jump-target", false);
+    }
+  }
+  flash_id_.clear();
 }
 
 void ChatTranscriptScroller::OnShellRemounted() {
@@ -442,6 +481,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
   const bool thread_changed = thread_id != scroll_thread_id_;
   if (thread_changed) {
     pending_jump_id_.clear();
+    flash_id_.clear();  // another chat's rows
     scroll_thread_id_ = thread_id;
     loaded_min_display_order_.reset();
     loaded_max_display_order_.reset();

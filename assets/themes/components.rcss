@@ -3381,6 +3381,14 @@ input.checkbox {
   padding-left: 48dp;
 }
 
+/* The row a jump landed on (a tapped quote's original, a search hit, a mention): tinted for a moment. Two classes,
+   so it wins over a row's own tint (.message-row-mentions-me in colors-*.rcss); see-through, so it reads on
+   either theme. */
+.message-row.message-row-jump-target {
+  background-color: rgba(255, 196, 0, 0.22);
+  border-radius: 8dp;
+}
+
 /* A peer's message that mentions this account (group-chat G015): the row is tinted (colors-*.rcss). */
 .message-row-mentions-me {
   padding: 4dp 8dp;
@@ -3718,6 +3726,13 @@ input.checkbox {
   max-width: 320dp;
 }
 
+/* Own pictures, files and voice notes sit on the right like own text bubbles: the cards are blocks, which
+   the row's text-align does not move. */
+.message-row-user .chat-attachment-card,
+.message-row-user .chat-voice-card {
+  margin-left: auto;
+}
+
 /* A voice message: play / pause, a progress line, the length. */
 .chat-voice-card {
   display: flex;
@@ -3780,6 +3795,7 @@ input.checkbox {
 
 .chat-attachment-image {
   display: block;
+  cursor: pointer;
   max-width: 100%;
   max-height: 240dp;
   border-radius: 8dp;
