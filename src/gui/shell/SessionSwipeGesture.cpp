@@ -15,6 +15,9 @@ namespace {
 constexpr const char* kListId = "sidebar-sessions";
 constexpr const char* kRowClass = "sidebar-session";
 constexpr const char* kDraggingClass = "session-swipe-dragging";
+// Set while the row is moved off its rest position: the buttons outside the row are only drawn then, so they never
+// peek into the strip the list keeps on its right edge.
+constexpr const char* kShownClass = "session-swipe-shown";
 
 int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
@@ -109,6 +112,7 @@ void SessionSwipeGesture::SetRowOffset(ui::Element* row, float dx_dp, bool anima
     return;
   }
   row->SetClass(kDraggingClass, !animate);
+  row->SetClass(kShownClass, dx_dp != 0.f);
   char buffer[48];
   std::snprintf(buffer, sizeof(buffer), "translateX(%.1fdp)", dx_dp);
   row->SetProperty("transform", buffer);

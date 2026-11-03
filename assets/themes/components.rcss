@@ -3614,6 +3614,10 @@ input.checkbox {
 }
 
 .shell-layer-compact .session-swipe {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-session.session-swipe-shown .session-swipe {
   display: flex;
   flex-direction: row;
   position: absolute;
@@ -5350,7 +5354,14 @@ input.checkbox {
 }
 
 .shell-layer-compact .nc-title {
-  padding: 0 16dp;
+  padding: 12dp 16dp 0 16dp;
+}
+
+/* A name-only row: centre the name in the 60dp row. */
+/* A name-only row: the body keeps the full 60dp (its separator runs along the bottom), the one line fills it. */
+.shell-layer-compact .nc-page .contacts-row-title {
+  margin: 0;
+  line-height: 59dp;
 }
 
 .nc-actions {
