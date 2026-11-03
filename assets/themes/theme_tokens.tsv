@@ -48,3 +48,4 @@ x-traffic-glyph	#4d0000	#4d0000	extra: macOS traffic-light glyph
 x-video-stage	#111827	#111827	extra: call video stage
 x-video-remote	#1f2937	#1f2937	extra: call remote video backdrop
 x-accept-pulse-ring	#16a34a33	#22c55e33	extra: accept-button pulse ring
+x-jump-tint	#ffc40038	#ffc40038	extra: row a jump landed on (develop #482), see-through amber

@@ -282,6 +282,11 @@ select selectbox option:hover {
   border-left: 3dp #ff9500;
 }
 
+/* The row a jump landed on (tapped quote, search hit, mention): see-through amber, wins over the mention tint. */
+.message-row.message-row-jump-target {
+  background-color: #ffc40038;
+}
+
 /* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
 .search-mark {
   background-color: #fff4e0;
