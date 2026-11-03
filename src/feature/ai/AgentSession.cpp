@@ -541,7 +541,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
                            : decision_label);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
-    PushToolActivity(state, tool_name, status);
+    if (!StaleStep(state, "activity")) { // a stopped turn's tools must not report into the newer turn's chat
+      PushToolActivity(state, tool_name, status);
+    }
   };
 
   TurnExecutionOptions options;
@@ -788,6 +790,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
       }
 
       auto result = state->tools.Execute(call.name, call.arguments, &state->cancelled);
+      if (AgentSession::StaleStep(state, "refinement tools")) {
+        return; // stopped and replaced while the tool ran: the scratch and trace are the newer turn's
+      }
       AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
       state->turn_trace.tools_executed.push_back(call.name);
 
@@ -1143,7 +1148,9 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   PopulateTurnTraceFromPlan(state);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
-    AgentSession::PushToolActivity(state, tool_name, status);
+    if (!AgentSession::StaleStep(state, "activity")) { // a stopped turn's tools must not report into the newer turn
+      AgentSession::PushToolActivity(state, tool_name, status);
+    }
   };
 
   TurnExecutionOptions options;
@@ -1169,7 +1176,10 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
       }
     }
   }
-  TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity, options);
+  // The tools run on this turn's own copy of the plan: a Stop frees the session at once, and the next turn
+  // replaces state->turn_plan while these tools may still be running.
+  const TurnPlan running_plan = state->turn_plan;
+  TurnExecutionResult execution = TurnExecutor::Execute(running_plan, state->tools, on_activity, options);
   if (StaleStep(state, "tools")) {
     return; // the tools returned after the turn was stopped and replaced
   }
