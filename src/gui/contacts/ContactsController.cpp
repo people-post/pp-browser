@@ -1625,15 +1625,64 @@ void ContactsController::OnShareContact(const ui::Vector2i position) {
   for (const Thread& thread : targets) {
     const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
     actions.push_back({"share_contact_to_" + thread.id, name, nullptr,
-                       [share = contacts_ports_.share_contact, thread_id = thread.id, contact_id, name]() {
-                         if (auto sent = share(thread_id, contact_id); !sent) {
-                           UserFeedback::Fail(sent.error().message);
-                           return;
-                         }
-                         ContactsController::Instance().ShowToast(Tr("contacts.share.sent", {{"name", name}}));
+                       [thread_id = thread.id, contact_id, name]() {
+                         ContactsController::Instance().ShareContactTo(thread_id, contact_id, name);
                        }});
   }
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ContactsController::ShareContactCard(const std::function<Roe<void>()>& share,
+                                          const std::function<void(std::function<void(bool kept)>)>& refresh_card,
+                                          std::function<void(bool shared)> done) {
+  if (share()) {
+    done(true);
+    return;
+  }
+  if (!refresh_card) {
+    done(false);
+    return;
+  }
+  refresh_card([share, done = std::move(done)](const bool kept) {
+    if (!kept) {
+      done(false);
+      return;
+    }
+    done(static_cast<bool>(share()));
+  });
+}
+
+// The card a share sends is the contact's signed keys; a contact added while its devices were out of reach (and
+// not in the directory) has none on this device yet (#409). Ask for it once, then say so in plain words.
+void ContactsController::ShareContactTo(const std::string& thread_id, const std::string& contact_id,
+                                        const std::string& name) {
+  if (!contacts_ports_.share_contact) {
+    return;
+  }
+  const auto share = [share = contacts_ports_.share_contact, thread_id, contact_id]() {
+    auto sent = share(thread_id, contact_id);
+    if (!sent) {
+      ContactsController::Instance().log().info << "share contact: " << sent.error().message;
+    }
+    return sent;
+  };
+  std::function<void(std::function<void(bool)>)> refresh_card;
+  if (contacts_ports_.refresh_contact_card && contacts_ports_.get_contact) {
+    auto contact = contacts_ports_.get_contact(contact_id);
+    if (contact && *contact) {
+      refresh_card = [refresh = contacts_ports_.refresh_contact_card, found = **contact](std::function<void(bool)> kept) {
+        // The answer comes on a worker or I/O thread; the retry and the toast belong on the UI thread.
+        refresh(found, [kept = std::move(kept)](const bool got) { AppRuntime::PostUI([kept, got]() { kept(got); }); });
+      };
+    }
+  }
+  ShareContactCard(share, refresh_card, [name](const bool shared) {
+    if (shared) {
+      ContactsController::Instance().ShowToast(Tr("contacts.share.sent", {{"name", name}}));
+      return;
+    }
+    UserFeedback::Fail(Tr("contacts.share.not_yet"));
+  });
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {

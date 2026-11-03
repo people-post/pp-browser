@@ -522,6 +522,7 @@
     "contacts.toast.id_copied": "{label} copied",
     "contacts.share.sent": "Contact shared with {name}",
     "contacts.share.no_chats": "No chats to share it into",
+    "contacts.share.not_yet": "Can't share this contact right now. Try again later.",
     "contacts.toast.trust_updated": "Trust updated",
     "contacts.toast.synced": "Contact synced",
     "contacts.toast.removed": "Contact removed",

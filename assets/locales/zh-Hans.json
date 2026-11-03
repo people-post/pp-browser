@@ -510,6 +510,7 @@
     "contacts.toast.id_copied": "已复制{label}",
     "contacts.share.sent": "已把联系人分享给 {name}",
     "contacts.share.no_chats": "没有可分享到的聊天",
+    "contacts.share.not_yet": "暂时分享不了这个联系人，请稍后再试",
     "contacts.toast.trust_updated": "信任级别已更新",
     "contacts.toast.synced": "联系人已同步",
     "contacts.toast.removed": "联系人已移除",

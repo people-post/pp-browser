@@ -152,6 +152,14 @@ public:
   void OnFindSomeone();
   /** Contacts → Scan QR code. Successful friend scans still ask before saving. */
   void OnScanQr();
+  /**
+   * Share a contact into a chat: `share` sends the card. When it fails and `refresh_card` is set, the contact's
+   * card is asked for once (its devices, then the directory — the path opening the contact uses) and, if one
+   * arrives, `share` runs once more. `done(shared)` exactly once. Exposed for tests.
+   */
+  static void ShareContactCard(const std::function<Roe<void>()>& share,
+                               const std::function<void(std::function<void(bool kept)>)>& refresh_card,
+                               std::function<void(bool shared)> done);
   /** The "+" menu: add contact always; on the phone also scan and new group (when wired), then find someone. Exposed for tests. */
   static std::vector<ContextMenuAction> AddContactMenuActions(bool compact, bool can_scan, bool can_new_group);
   /** The Contacts tab's rows in index order (A-Z by name, Chinese by pinyin initial, then #), one section per letter. */
@@ -213,6 +221,7 @@ private:
   void ShowAlreadyContact(const Contact& contact);
   void OnCopyId();
   void OnShareContact(ui::Vector2i position);
+  void ShareContactTo(const std::string& thread_id, const std::string& contact_id, const std::string& name);
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
   void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);

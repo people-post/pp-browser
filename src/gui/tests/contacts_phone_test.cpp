@@ -114,5 +114,71 @@ TEST_F(ContactsPhoneTest, AMemberWhoIsNotAContactGetsAMemberPage) {
   EXPECT_FALSE(MemberPreviewDetail("account:x", "", "").has_icon);
 }
 
+// Kenneth 2026-11-04: Share > a chat showed "No card for this contact yet" (raw, English). The card is asked for
+// once and the share tried again; only when none comes is a plain message shown.
+TEST_F(ContactsPhoneTest, ShareRetriesOnceAfterTheCardArrives) {
+  int shares = 0;
+  int refreshes = 0;
+  std::vector<bool> results;
+  ContactsController::ShareContactCard(
+      [&]() -> Roe<void> {
+        ++shares;
+        if (shares == 1) {
+          return Error("No card for this contact yet");
+        }
+        return {};
+      },
+      [&](std::function<void(bool)> kept) {
+        ++refreshes;
+        kept(true);
+      },
+      [&](bool shared) { results.push_back(shared); });
+  EXPECT_EQ(shares, 2);
+  EXPECT_EQ(refreshes, 1);
+  EXPECT_EQ(results, (std::vector<bool>{true}));
+}
+
+TEST_F(ContactsPhoneTest, ShareGivesUpWhenNoCardComes) {
+  int shares = 0;
+  std::vector<bool> results;
+  ContactsController::ShareContactCard(
+      [&]() -> Roe<void> {
+        ++shares;
+        return Error("No card for this contact yet");
+      },
+      [&](std::function<void(bool)> kept) { kept(false); },
+      [&](bool shared) { results.push_back(shared); });
+  EXPECT_EQ(shares, 1);
+  EXPECT_EQ(results, (std::vector<bool>{false}));
+}
+
+TEST_F(ContactsPhoneTest, ShareThatWorksAsksForNothing) {
+  int refreshes = 0;
+  std::vector<bool> results;
+  ContactsController::ShareContactCard([]() -> Roe<void> { return {}; },
+                                       [&](std::function<void(bool)> kept) {
+                                         ++refreshes;
+                                         kept(true);
+                                       },
+                                       [&](bool shared) { results.push_back(shared); });
+  EXPECT_EQ(refreshes, 0);
+  EXPECT_EQ(results, (std::vector<bool>{true}));
+}
+
+TEST_F(ContactsPhoneTest, ShareWithoutARefreshPathFailsOnce) {
+  std::vector<bool> results;
+  ContactsController::ShareContactCard([]() -> Roe<void> { return Error("Messaging not ready"); }, nullptr,
+                                       [&](bool shared) { results.push_back(shared); });
+  EXPECT_EQ(results, (std::vector<bool>{false}));
+}
+
+TEST_F(ContactsPhoneTest, ShareFailureMessageIsLocalized) {
+  EXPECT_NE(Tr("contacts.share.not_yet"), "contacts.share.not_yet");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  const std::string zh = Tr("contacts.share.not_yet");
+  EXPECT_EQ(zh.find("card"), std::string::npos);
+  EXPECT_NE(zh, "contacts.share.not_yet");
+}
+
 } // namespace
 } // namespace pbr
