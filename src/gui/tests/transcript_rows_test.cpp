@@ -212,5 +212,27 @@ TEST(TranscriptRmlTest, ADissolvedGroupSaysWhoDissolvedIt) {
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+// Card fallbacks are localized, not hard-coded English.
+TEST(TranscriptRmlTest, UnsupportedAndEmptyCardsUseLocalizedText) {
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  const auto render = [](ChatContentType type) {
+    TranscriptRow row;
+    row.message.id = "u1";
+    row.message.sender_contact_id = "account:peer";
+    row.message.content_type = type;
+    const auto rows = RenderTranscript({row}, TranscriptFacts{});
+    return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
+  };
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  EXPECT_NE(render(ChatContentType::Unsupported).find("Update the app to view this message."), std::string::npos);
+  EXPECT_NE(render(ChatContentType::CryptoTx).find("Transaction"), std::string::npos);
+  EXPECT_NE(render(ChatContentType::Attachment).find("Attachment"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_NE(render(ChatContentType::Unsupported).find("请更新应用以查看此消息。"), std::string::npos);
+  EXPECT_NE(render(ChatContentType::CryptoTx).find("交易"), std::string::npos);
+  EXPECT_NE(render(ChatContentType::Attachment).find("附件"), std::string::npos);
+  LocalizationService::Instance().SetPreferredLanguage("en");
+}
+
 } // namespace
 } // namespace pbr

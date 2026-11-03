@@ -240,7 +240,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     return SystemLineRml(*failure);
   }
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
-    return SystemLineRml("They're using only this device for new messages.");
+    return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
   return SystemLineRml(message.text);
 }
@@ -248,7 +248,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 std::string ContactCardRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
   const std::string name =
-      fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
+      fields ? fields->display_name : (message.text.empty() ? Tr("chat.card.contact_fallback") : message.text);
   // The person's own name and Account ID, from the card (checked before *Add*; shown escaped).
   std::string nickname;
   std::string account_id;
@@ -272,7 +272,7 @@ std::string ContactCardRml(const ThreadMessage& message) {
 
 std::string CryptoTxRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json);
-  const std::string summary = message.text.empty() ? "Transaction" : message.text;
+  const std::string summary = message.text.empty() ? Tr("chat.card.transaction_fallback") : message.text;
   std::string html = "<div class=\"chat-card chat-tx-card\"><h3 class=\"heading-3\">" +
                      StructuredTextParser::EscapeText(summary) + "</h3>";
   if (fields) {
@@ -280,7 +280,9 @@ std::string CryptoTxRml(const ThreadMessage& message) {
             StructuredTextParser::EscapeText(fields->amount) + " · " +
             StructuredTextParser::EscapeText(fields->direction) + "</p>";
     if (!fields->status.empty()) {
-      html += "<p class=\"text muted\">Status: " + StructuredTextParser::EscapeText(fields->status) + "</p>";
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(Tr("chat.card.transaction_status", {{"status", fields->status}})) +
+              "</p>";
     }
   }
   html += "</div>";
@@ -291,7 +293,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
                                 ? fields->filename
-                                : (message.text.empty() ? "Attachment" : message.text);
+                                : (message.text.empty() ? Tr("chat.card.attachment_fallback") : message.text);
 
   const TranscriptAttachmentView view =
       fields && facts.attachment ? facts.attachment(message) : TranscriptAttachmentView{};
@@ -319,7 +321,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<img class=\"chat-attachment-video-poster\" src=\"" +
               StructuredTextParser::EscapeText(poster_path) + "\"/>";
     } else {
-      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+      html += "<div class=\"chat-attachment-video-badge\">" +
+              StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
       html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
     }
     if (fields->byte_length > 0) {
@@ -365,8 +368,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 }
 
 std::string UnsupportedRml() {
-  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">Update to view this "
-         "message.</p></div>";
+  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">" +
+         StructuredTextParser::EscapeText(Tr("chat.card.unsupported")) + "</p></div>";
 }
 
 /** One tappable or highlighted piece of a message's text: a link, or a mention the roster allows. */
@@ -559,7 +562,8 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
   row.sender_label = facts.sender_label ? facts.sender_label(annotation.sender_contact_id).c_str() : "";
   const std::string text = annotation.text.empty() ? "?" : annotation.text;
   row.content_rml = ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +
-                     StructuredTextParser::EscapeText(text) + "</span> <span class=\"text-xs\">(unlinked)</span></div>")
+                     StructuredTextParser::EscapeText(text) + "</span> <span class=\"text-xs\">" +
+                     StructuredTextParser::EscapeText(Tr("chat.annotation.unlinked")) + "</span></div>")
                         .c_str();
   row.row_class = "message-row-annotation-orphan";
   row.has_content = true;
