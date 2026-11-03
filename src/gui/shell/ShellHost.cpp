@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <utility>
 #include "gui/shell/ShellHost.h"
+#include "gui/chat/PhotoPreview.h"
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/runtime/FramePacing.h"
@@ -248,6 +249,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     }));
     ctor.BindEventCallback("transient_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::Transient); }));
     ctor.BindEventCallback("close_layer", DataEvent<int>([this](int layer_id) { CloseLayer(layer_id); }));
+    ctor.BindEventCallback("photo_preview_close", DataEvent<>([this]() { MountOverlayBody(kPhotoPreviewMountId, {}); }));
     ctor.BindEventCallback("dismiss_banner", DataEvent<>([this]() { DismissBanner(); }));
     ctor.BindEventCallback("dialog_ok", DataEvent<>([this]() { DialogOk(); }));
     ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));

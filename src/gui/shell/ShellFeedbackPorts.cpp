@@ -1,5 +1,6 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 
+#include "gui/chat/PhotoPreview.h"
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/UserFeedback.h"
@@ -49,6 +50,9 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
                                   const std::string& default_value,
                                   std::function<void(bool, std::string)> on_result) {
     ShellFeedback::ShowPrompt(shell.State(), title, message, default_value, std::move(on_result));
+  };
+  feedback.mount_photo_preview = [&shell](const std::string& body) {
+    shell.MountOverlayBody(kPhotoPreviewMountId, body);
   };
   UserFeedback::BindPorts(feedback);
   return feedback;

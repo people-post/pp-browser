@@ -825,6 +825,15 @@ select selectbox option:hover {
   background-color: #00000099;
 }
 
+.photo-preview {
+  background-color: #000000e6;
+}
+
+.photo-preview-spinner {
+  border-color: #ffffff55;
+  border-top-color: #ffffff;
+}
+
 .shell-startup-cover {
   background-color: #000000;
 }

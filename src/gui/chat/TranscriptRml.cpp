@@ -316,7 +316,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
     // A tap opens the full picture in the system viewer (zoomable): the bubble shows it at most 240 dp high.
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) +
-            "\" data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"/>";
+            "\" data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" +
+            JsArgInAttribute(local_path) + "')\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;

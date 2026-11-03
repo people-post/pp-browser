@@ -71,7 +71,7 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
 TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
   const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
   EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("data-event-click=\"open_attachment('p1')\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("data-event-click=\"open_picture('p1','"), std::string::npos) << rml;
 }
 
 TEST(VoiceBubbleRender, NothingToPlayUntilItHasBeenDownloaded) {

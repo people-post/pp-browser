@@ -89,6 +89,7 @@
 #include "gui/shell/DeferredStartup.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/UnlockEnsurePorts.h"
+#include "gui/chat/PhotoPreview.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/SettingsController.h"
 #include "lib/ui/PaymentFeedback.h"
@@ -1793,6 +1794,17 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
 }
 
 
+void ChatController::OpenPicture(const std::string& message_id, const std::string& local_path) {
+  if (!messaging_ready_ || !facade_ || message_id.empty() || opening_message_ids_.count(message_id) != 0) {
+    return;
+  }
+  // The picture the bubble shows, full screen with a spinner, in this frame; the viewer opens over it.
+  if (!local_path.empty() && shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
+    shell_feedback_.mount_photo_preview(PhotoPreviewRml(local_path));
+  }
+  OpenAttachment(message_id);
+}
+
 void ChatController::OpenAttachment(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
     return;
@@ -1803,7 +1815,6 @@ void ChatController::OpenAttachment(const std::string& message_id) {
   }
   const std::string thread_id = ActiveThreadId();
   const auto tapped = std::chrono::steady_clock::now();
-  UserFeedback::Ok(Tr("chat.attachment.opening")); // seen within a frame, whatever the size
   // The lookup, the decrypt of a stored copy and the checks are blocking work: off the UI thread.
   AppRuntime::PostWorkerNormal([this, thread_id, message_id, tapped]() {
     const auto ms_since = [](const std::chrono::steady_clock::time_point from) {
@@ -1812,6 +1823,13 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
     const int64_t lookup_ms = ms_since(tapped);
     const bool is_video = info && IsAttachmentVideoMime(info->mime);
+    if (info && OpenShowsOpeningToast(/*picture_preview=*/false, info->byte_length)) {
+      AppRuntime::PostUI([this, message_id]() {
+        if (opening_message_ids_.count(message_id) != 0 && !photo_preview_.Up()) {
+          UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
+        }
+      });
+    }
     bool made_view = false;
     auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
@@ -1819,15 +1837,27 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,
                         path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
+      // Result in (ready or not): the preview goes, on the next frame so the viewer is already presenting.
+      const bool clear_preview = photo_preview_.Finish(message_id);
+      const auto dismiss_preview = [this, clear_preview]() {
+        if (clear_preview && shell_feedback_.mount_photo_preview) {
+          AppRuntime::PostUI([this]() { shell_feedback_.mount_photo_preview(std::string()); });
+        }
+      };
       if (!path) {
+        dismiss_preview();
         UserFeedback::Fail(Tr("chat.attachment.not_ready"));
         return;
       }
       if (made_view) {
         SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
       }
-      const auto open_file = [path = *path, is_video]() {
-        if (!PlatformOpenFile(path)) {
+      const auto open_file = [path = *path, is_video, dismiss_preview, needs_confirm]() {
+        const bool opened = PlatformOpenFile(path);
+        if (!needs_confirm) {
+          dismiss_preview(); // a confirmed open already dismissed it before the question
+        }
+        if (!opened) {
           // A video this device has no player for (an iPhone's HEVC .mov on an Android phone or a Windows PC,
           // a codec the system lacks): say so plainly instead of a generic failure.
           UserFeedback::Fail(Tr(is_video ? "chat.attachment.video_unplayable" : "chat.attachment.open_failed"));
@@ -1837,6 +1867,7 @@ void ChatController::OpenAttachment(const std::string& message_id) {
                  << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tapped).count()
                  << " ms" << (made_view ? " (made view)" : "");
       if (needs_confirm) {
+        dismiss_preview();
         ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
                     [open_file](const bool ok) {
                       if (ok) {
@@ -3349,6 +3380,10 @@ bool ChatController::Setup(ui::Context* context) {
         }));
         ctor.BindEventCallback("open_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { OpenAttachment(message_id); }));
+        ctor.BindEventCallback("open_picture", DataEvent<std::string, std::string>(
+            [this](const std::string& message_id, const std::string& local_path) {
+              OpenPicture(message_id, local_path);
+            }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { DownloadAttachment(message_id); }));
         ctor.BindEventCallback("retry_attachment", DataEvent<std::string>(

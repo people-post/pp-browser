@@ -352,6 +352,7 @@ std::string ShellLayoutRml::ShellRoot() const {
   // (scan -> confirm: cancel left a dead OK button and a scrim over the whole app, 2026-10-28).
   // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
   out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
+  out << "<div id=\"shell-photo-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--photo\"></div>";
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";

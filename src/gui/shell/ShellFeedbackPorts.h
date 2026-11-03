@@ -26,6 +26,8 @@ struct ShellFeedbackPorts {
   std::function<void(const std::string& title, const std::string& message, const std::string& checkbox_label,
                      bool checkbox_default, std::function<void(bool confirmed, bool checkbox_checked)> on_result)>
       show_confirm_with_checkbox;
+  /** Full-screen picture preview (PhotoPreviewRml) into #shell-photo-mount; empty body clears. */
+  std::function<void(const std::string& body)> mount_photo_preview;
   std::function<void(const std::string& title, const std::string& message, const std::string& default_value,
                      std::function<void(bool confirmed, std::string value)> on_result)>
       show_prompt;

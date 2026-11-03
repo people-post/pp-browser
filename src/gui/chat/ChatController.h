@@ -13,6 +13,7 @@
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/chat/PhotoPreview.h"
 #include "gui/chat/VoiceComposer.h"
 #include "gui/chat/VoicePlayback.h"
 #include "gui/chat/ChatMentionPicker.h"
@@ -246,6 +247,8 @@ private:
   std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive) const;
   void OpenAttachment(const std::string& message_id);
+  /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
+  void OpenPicture(const std::string& message_id, const std::string& local_path);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState() override;
@@ -294,6 +297,7 @@ private:
   int attach_menu_y_ = 120;
   /** Attachments being opened right now (an Open decrypts on a worker; a second tap waits for the first). */
   std::unordered_set<std::string> opening_message_ids_;
+  PhotoPreviewTracker photo_preview_;
   std::string pending_chip_thread_;
   /** The chat the attachment in flight (preparing, uploading, or the failed one) belongs to. */
   std::string attachment_thread_;

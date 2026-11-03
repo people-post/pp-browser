@@ -2339,6 +2339,49 @@ select selectbox option {
   z-index: 50;
 }
 
+.shell-overlay-chrome-mount--photo {
+  z-index: 56;
+}
+
+/* Picture preview (tap on a picture): the bubble's picture fitted to the screen, a spinner over it. */
+.photo-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+@keyframes photo-preview-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.photo-preview-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28dp;
+  height: 28dp;
+  margin-top: -17dp;
+  margin-left: -17dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 17dp;
+  animation: 0.9s linear infinite photo-preview-spin;
+}
+
 .shell-overlay-chrome-mount--pin {
   z-index: 55;
 }
