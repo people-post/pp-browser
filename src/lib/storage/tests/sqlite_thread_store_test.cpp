@@ -66,6 +66,52 @@ TEST(SqliteThreadStoreTest, AiThreadSurvivesRestartAndClearHistory) {
   EXPECT_EQ(threads->front().unread_count, 0);
 }
 
+// The AI chat screen looks one message up by id (a chat button's entry, the answer it stores): GetMessage finds it
+// in its own thread, the oldest one too, without loading the thread's pages.
+TEST(SqliteThreadStoreTest, GetMessageFindsOneMessageByIdInItsThreadOnly) {
+  const std::filesystem::path data_dir =
+      std::filesystem::temp_directory_path() / "pp_browser_sqlite_thread_store_get_message_test";
+  std::filesystem::remove_all(data_dir);
+  {
+    SqliteThreadStore store(data_dir.string());
+    AssertStoreUnlocked(store);
+    for (const char* id : {"thread-a", "thread-b"}) {
+      Thread thread;
+      thread.id = id;
+      thread.kind = ThreadKind::Ai;
+      thread.updated_at = 1;
+      ASSERT_TRUE(store.UpsertThread(thread));
+    }
+    const auto append = [&store](const std::string& thread_id, const std::string& id, const std::string& text) {
+      ThreadMessage message;
+      message.id = id;
+      message.thread_id = thread_id;
+      message.sender_contact_id = kAiAssistantContactId;
+      message.text = text;
+      message.timestamp = 42;
+      ASSERT_TRUE(store.AppendMessage(message));
+    };
+    append("thread-a", "a1", "oldest answer");
+    append("thread-a", "a2", "second");
+    append("thread-a", "a3", "newest");
+    append("thread-b", "b1", "elsewhere");
+
+    auto found = store.GetMessage("thread-a", "a1");
+    ASSERT_TRUE(found);
+    ASSERT_TRUE(found->has_value());
+    EXPECT_EQ((*found)->text, "oldest answer");
+    EXPECT_EQ((*found)->thread_id, "thread-a");
+
+    auto other = store.GetMessage("thread-a", "b1");
+    ASSERT_TRUE(other);
+    EXPECT_FALSE(other->has_value()) << "a message of another thread";
+    auto unknown = store.GetMessage("thread-a", "no-such-id");
+    ASSERT_TRUE(unknown);
+    EXPECT_FALSE(unknown->has_value());
+  }
+  std::filesystem::remove_all(data_dir);
+}
+
 // "Delete for me": the content goes, the id stays (so a resend still dedupes), AI context and history
 // serving no longer see the row.
 TEST(SqliteThreadStoreTest, DeleteMessageContentKeepsAnIdOnlyTombstone) {
