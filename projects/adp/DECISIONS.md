@@ -268,7 +268,7 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
 
 *H3: the carrier's outer leg authenticates, without encrypting, the inner packets already sealed end to end* (1:1 behind NATs, about −24 B after H1). This amends A024.
 - The inner handshake, and anything not inner-sealed, stays fully sealed on the outer leg: no one on the path learns who talks to whom.
-- What an observer on that leg learns is what the hop already sees: inner channel numbers and counters.
+- What an observer on that leg learns is what the hop already sees: the inner packet numbers. The inner frame fields stay sealed by the inner session.
 - The outer leg keeps a tag, so the hop still knows each packet comes from its peer, and nobody can inject into a circuit.
 
 **Rejected: media frames skip the per-link seal.** It would save ~16–24 B more, but the group media header's `stream_id` is a hash of the sender's account (`PublisherStreamIdForIdentity`). Someone on the path between a phone and the hop could then tie its media to an account, and see when that person speaks and has video on. Privacy is not traded for bytes ([projects/privacy](../privacy/)). Revisit only with random per-call stream ids, as a privacy decision first.
