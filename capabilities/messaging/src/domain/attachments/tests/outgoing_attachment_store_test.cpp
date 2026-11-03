@@ -95,6 +95,25 @@ TEST_F(OutgoingStoreTest, UpdateKeepsTheSameCiphertextAndMarksDelivery) {
   EXPECT_EQ(*store_->ReadCipher("id-3"), cipher);
 }
 
+TEST_F(OutgoingStoreTest, UpdateReplacesTheRecordWholeAndLeavesNoTempFileBehind) {
+  auto record = Record("id-5", "t1");
+  ASSERT_TRUE(store_->Begin(record, std::vector<uint8_t>(10, 1), Dek(1)));
+  for (int i = 0; i < 3; ++i) {
+    record.fields.url = "https://cdn.example/" + std::to_string(i);
+    ASSERT_TRUE(store_->Update(record, Dek(1)));
+  }
+  size_t files = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(store_->Dir())) {
+    ++files;
+    const std::string name = entry.path().filename().string();
+    EXPECT_TRUE(name == "id-5" || name == "id-5.rec") << "stray file: " << name;
+  }
+  EXPECT_EQ(files, 2u);
+  auto loaded = store_->Load("id-5", Dek(1));
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(loaded->fields.url, "https://cdn.example/2");
+}
+
 TEST_F(OutgoingStoreTest, ListsOnlyThisThreadsWhoseCiphertextIsStillThereOldestFirst) {
   ASSERT_TRUE(store_->Begin(Record("b", "t1", 20), {1, 2, 3}, Dek(1)));
   ASSERT_TRUE(store_->Begin(Record("a", "t1", 10), {1, 2, 3}, Dek(1)));
