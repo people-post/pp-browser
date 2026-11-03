@@ -182,4 +182,29 @@
       <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
     </div>
   </div>
+
+  <!-- Phones: a page pushed over Security (Change PIN, Move to a new device); same bar, back and swipe-back. -->
+  <div data-if="show_detail && security_page != ''" class="settings-detail-view settings-subpage-view stack"
+       id="settings-subpage-view">
+    <div class="settings-detail-header row">
+      <button class="settings-back-btn" type="button" data-event-click="close_security_page()">
+        <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
+      </button>
+      <p class="settings-header-title">{{security_page_title}}</p>
+      <button class="settings-help-btn" type="button" title="{{i18n:settings.help.button}}"
+              data-event-click="open_settings_help()">
+        <svg class="settings-help-icon" src="../icons/v2/help-circle.svg" width="24" height="24"></svg>
+      </button>
+    </div>
+
+    <div class="settings-detail-body stack">
+      <div class="settings-section settings-section--grouped stack" data-if="security_page == 'change_pin'">
+{{include:settings_security_pin}}
+      </div>
+      <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
+{{include:settings_security_transfer}}
+      </div>
+      <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
+    </div>
+  </div>
 </div>

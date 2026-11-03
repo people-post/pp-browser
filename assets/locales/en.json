@@ -269,6 +269,7 @@
         "The transfer code contains your account keys and works for 15 minutes. Anyone who has it can add your account to their device, so don't share it. Paste it on the new device.",
     "settings.security.link_device.export_done": "Transfer code copied",
     "settings.security.link_device.not_ready": "Unlock first, then move your account.",
+    "settings.security.transfer_row": "Move to a new device",
     "settings.security.devices": "Your devices",
     "settings.security.devices.help": "Your main device adds and removes devices.",
     "settings.security.devices.this_device": "This device",

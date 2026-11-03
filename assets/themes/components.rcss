@@ -4206,6 +4206,22 @@ input.checkbox {
 .settings-detail-view.shell-swipe-dragging {
 }
 
+/* The transfer page's explanation starts below the bar with the room a card would have. */
+.shell-layer-compact .settings-subpage-view .settings-transfer {
+  padding-top: 14dp;
+}
+
+/* Phones: a page pushed over a settings section (Security > Change PIN): it covers the section, which stays
+   underneath so a swipe back shows it. */
+.settings-subpage-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
 .settings-header,
 .settings-detail-header {
   flex-shrink: 0;

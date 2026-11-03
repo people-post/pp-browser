@@ -246,6 +246,13 @@ private:
   void OpenSettingsDetailPane();
   bool CloseSettingsDetailPane();
   void OnBackToList();
+  /** Phones: Security's own pages ("change_pin", "transfer"), pushed over the section with the local-back stack. */
+  void OpenSecurityPage(const std::string& page);
+  void OnCloseSecurityPage();
+  /** Drops the open security page (state only; the local-back entry is the caller's). */
+  void ApplyCloseSecurityPage();
+  /** Closes the security page with no animation and forgets its local-back entry (the detail is going away). */
+  void ResetSecurityPage();
   void OnResetSection(const std::string& section_id);
   void PerformResetSection(const std::string& section_id);
   /** `show_toast=false` for switches: the knob moving is the feedback (Kenneth 2026-10-14). */
@@ -290,6 +297,9 @@ private:
   ui::String selected_id_;
   ui::String selected_title_;
   bool show_detail_ = false;
+  /** Phones: the Security page pushed over the section ("" none, "change_pin", "transfer") and its title. */
+  ui::String security_page_;
+  ui::String security_page_title_;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

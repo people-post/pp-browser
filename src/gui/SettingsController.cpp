@@ -503,6 +503,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
     ctor.Bind("show_detail", &controller.show_detail_);
+    ctor.Bind("security_page", &controller.security_page_);
+    ctor.Bind("security_page_title", &controller.security_page_title_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
@@ -606,6 +608,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
+    ctor.BindEventCallback("open_security_page",
+                           DataEvent<std::string>([this](const std::string& page) { OpenSecurityPage(page); }));
+    ctor.BindEventCallback("close_security_page", DataEvent<>([this]() { OnCloseSecurityPage(); }));
     ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
     ctor.BindEventCallback("open_settings_help", DataEvent<>([this]() { OnOpenSettingsHelp(); }));
@@ -667,6 +672,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
   host.Dirty("settings", "show_detail");
+  host.Dirty("settings", "security_page");
+  host.Dirty("settings", "security_page_title");
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
@@ -854,6 +861,7 @@ void SettingsController::OnNavTabActivated() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
+  ResetSecurityPage();
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_detail");
   }
@@ -885,6 +893,7 @@ void SettingsController::SyncLayoutMode() {
   const ui::String saved_id = selected_id_;
   const ui::String saved_title = selected_title_;
   const bool had_detail = !saved_id.empty() || show_detail_;
+  ResetSecurityPage(); // desktop shows Change PIN / the transfer code inline
 
   if (chrome.nav_tab != NavTab::Me) {
     return;
@@ -1111,6 +1120,7 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
   FlushPending();
+  ResetSecurityPage();
 
   selected_id_.clear();
   selected_title_.clear();
@@ -1202,6 +1212,7 @@ bool SettingsController::CloseSettingsDetailPane() {
 
 void SettingsController::OnDetailDismissed() {
   FlushPending();
+  ResetSecurityPage();
   selected_id_.clear();
   selected_title_.clear();
   show_detail_ = false;
@@ -1211,6 +1222,7 @@ void SettingsController::OnDetailDismissed() {
 
 void SettingsController::ApplyBackToListUi() {
   FlushPending();
+  ResetSecurityPage();
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
@@ -1249,6 +1261,67 @@ void SettingsController::OnBackToList() {
   } else {
     OnDetailDismissed();
   }
+}
+
+void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (selected_id_ != "security" || !show_detail_) {
+    return; // phones only: desktop shows both inline
+  }
+  if (page == "change_pin") {
+    security_page_title_ = Tr("settings.security.change_pin").c_str();
+  } else if (page == "transfer") {
+    security_page_title_ = Tr("settings.security.transfer_row").c_str();
+  } else {
+    return;
+  }
+  log().info << "OpenSecurityPage " << page;
+  security_page_ = page.c_str();
+  status_ = "";
+  DirtyAll();
+  if (context_) {
+    context_->Update(); // the page must be in the DOM before the shell plays its push
+  }
+  if (shell_navigation_.push_local_back) {
+    shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
+  }
+}
+
+void SettingsController::OnCloseSecurityPage() {
+  if (shell_navigation_.has_local_back && shell_navigation_.has_local_back("settings_subpage")) {
+    if (shell_navigation_.request_dismiss_instant) {
+      shell_navigation_.request_dismiss_instant();
+    }
+    return;
+  }
+  ApplyCloseSecurityPage();
+}
+
+void SettingsController::ApplyCloseSecurityPage() {
+  security_page_ = "";
+  security_page_title_ = "";
+  status_ = "";
+  AppRuntime::PostUI([this]() {
+    DirtyAll();
+    if (context_) {
+      context_->Update();
+    }
+    if (shell_navigation_.refresh_dismiss_gestures) {
+      shell_navigation_.refresh_dismiss_gestures();
+    }
+  });
+}
+
+void SettingsController::ResetSecurityPage() {
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_subpage");
+  }
+  if (security_page_.empty()) {
+    return;
+  }
+  security_page_ = "";
+  security_page_title_ = "";
+  DataModelHost::Instance().Dirty("settings", "security_page");
+  DataModelHost::Instance().Dirty("settings", "security_page_title");
 }
 
 void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
@@ -1658,8 +1731,8 @@ void SettingsController::OnOpenSettingsHelp() {
     return;
   }
   // The question about the current page is prefilled in the composer; the user sends it.
-  if (auto opened = commands_.open_support_chat(
-          Tr("settings.help.draft", {{"title", selected_title_.c_str()}}));
+  const ui::String& title = security_page_.empty() ? selected_title_ : security_page_title_;
+  if (auto opened = commands_.open_support_chat(Tr("settings.help.draft", {{"title", title.c_str()}}));
       !opened) {
     ReportFailure(opened.error());
   }

@@ -2,13 +2,28 @@
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         </div>
+        <!-- Phones: a short list; Change PIN and the transfer code are pages of their own (Kenneth 2026-11-04). -->
         <div class="group-card settings-phone-only">
-          <div class="group-row group-row--static">
+          <button class="group-row" type="button" data-if="show_change_pin"
+                  data-event-click="open_security_page('change_pin')">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.change_pin}}</span></span>
+              <span class="settings-choice-value-text">{{pin_protection_status}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+          <div class="group-row group-row--static" data-if="!show_change_pin">
             <span class="group-row-body">
               <span class="group-row-text">{{i18n:settings.security.protection_title}}</span>
               <span class="settings-choice-value-text">{{pin_protection_status}}</span>
             </span>
           </div>
+          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
         </div>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
@@ -16,47 +31,11 @@
         <p class="text muted group-foot" data-if="pin_protection_not_setup">
           {{i18n:settings.security.not_setup_hint}}
         </p>
-        <div data-if="show_change_pin && security_can_change_pin" class="stack">
-          <div class="group-card">
-            <label class="settings-field group-row group-row--field">
-              <span class="group-row-body group-row-body--field">
-                <span class="settings-label group-row-text">{{i18n:settings.security.current_pin}}</span>
-                <input class="field" type="password" data-value="pin_change_old" placeholder="{{i18n:settings.security.current_pin_placeholder}}"/>
-                <span class="group-field-hint" data-if="pin_change_old == ''">{{i18n:settings.security.current_pin_placeholder}}</span>
-              </span>
-            </label>
-            <label class="settings-field group-row group-row--field">
-              <span class="group-row-body group-row-body--field">
-                <span class="settings-label group-row-text">{{i18n:settings.security.new_pin}}</span>
-                <input class="field" type="password" data-value="pin_change_new" placeholder="{{i18n:settings.security.new_pin_placeholder}}"/>
-                <span class="group-field-hint" data-if="pin_change_new == ''">{{i18n:settings.security.new_pin_placeholder}}</span>
-              </span>
-            </label>
-            <label class="settings-field group-row group-row--field">
-              <span class="group-row-body group-row-body--field">
-                <span class="settings-label group-row-text">{{i18n:settings.security.confirm_pin}}</span>
-                <input class="field" type="password" data-value="pin_change_confirm" placeholder="{{i18n:settings.security.confirm_pin_placeholder}}"/>
-                <span class="group-field-hint" data-if="pin_change_confirm == ''">{{i18n:settings.security.confirm_pin_placeholder}}</span>
-              </span>
-            </label>
-          </div>
-          <p class="text muted settings-help group-foot">{{i18n:pin.forget_warning}}</p>
-          <div class="settings-actions row">
-            <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
-          </div>
+        <div class="settings-desktop-only">
+{{include:settings_security_pin}}
         </div>
-        <p class="text muted group-foot" data-if="show_change_pin && !security_can_change_pin && !pin_protection_not_setup">
-          {{i18n:settings.security.unlock_to_change}}
-        </p>
-        <div class="stack settings-actions">
-          <p class="text group-head">{{i18n:settings.security.link_device}}</p>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.help}}</p>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.reset_hint}}</p>
-          <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main"
-                  data-event-click="export_link_device()">
-            {{i18n:settings.security.link_device.export}}
-          </button>
+        <div class="settings-desktop-only">
+{{include:settings_security_transfer}}
         </div>
         <div class="stack settings-actions" data-if="own_devices_shown">
           <p class="text group-head">{{i18n:settings.security.devices}}</p>

@@ -59,6 +59,8 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_network", "views/settings_section_network.rml"},
       {"settings_section_appearance", "views/settings_section_appearance.rml"},
       {"settings_section_security", "views/settings_section_security.rml"},
+      {"settings_security_pin", "views/settings_security_pin.rml"},
+      {"settings_security_transfer", "views/settings_security_transfer.rml"},
       {"settings_section_storage", "views/settings_section_storage.rml"},
       {"settings_section_about", "views/settings_section_about.rml"},
       {"ui_perf_test", "views/ui_perf_test.rml"},

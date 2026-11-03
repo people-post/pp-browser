@@ -266,6 +266,7 @@
         "转移码里包含你的账号密钥，15 分钟内有效。拿到它的人就能把你的账号加到他的设备上，别发给别人。复制后在新设备上粘贴。",
     "settings.security.link_device.export_done": "转移码已复制",
     "settings.security.link_device.not_ready": "先解锁，再搬账号。",
+    "settings.security.transfer_row": "转移到新设备",
     "settings.security.devices": "你的设备",
     "settings.security.devices.help": "由主设备添加或移除设备。",
     "settings.security.devices.this_device": "这台设备",

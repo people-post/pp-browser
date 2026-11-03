@@ -611,6 +611,8 @@ ui::Element* ShellHost::PageElementFor(DismissTarget target) const {
   case DismissTarget::LocalBack:
     if (!local_back_stack_.empty() && local_back_stack_.back().id == "settings_detail") {
       id = "settings-detail-view";
+    } else if (!local_back_stack_.empty() && local_back_stack_.back().id == "settings_subpage") {
+      id = "settings-subpage-view";
     }
     break;
   case DismissTarget::Transient:
@@ -776,6 +778,8 @@ void ShellHost::PushLocalBack(const std::string& id, std::function<void()> commi
   RefreshDismissGestures();
   if (id == "settings_detail") {
     PlayPageEnter("settings-detail-view"); // the inline detail is already in the DOM here
+  } else if (id == "settings_subpage") {
+    PlayPageEnter("settings-subpage-view"); // likewise the page pushed over a settings section
   }
 }
 
@@ -1447,6 +1451,21 @@ void ShellHost::AttachSwipeBackGesture() {
       page_sheet_gesture_.Attach(sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); });
     }
     return;
+  }
+
+  if (HasLocalBack("settings_subpage")) {
+    // A page pushed over a settings section (Security > Change PIN): it slides, the section stays under it.
+    ui::Element* page = doc->GetElementById("settings-subpage-view");
+    ui::Element* listen = doc->GetElementById("pane-body-settings");
+    if (page && listen) {
+      options.chrome_classes = {"settings-detail-header", "settings-back-btn", "shell-back-btn"};
+      options.transform_target = page;
+      options.content_root = page;
+      options.require_edge = false;
+      swipe_back_gesture_.Attach(listen, context_, std::move(options),
+                                 [slide_out]() { slide_out(DismissTarget::LocalBack); });
+      return;
+    }
   }
 
   if (HasLocalBack("settings_detail")) {
