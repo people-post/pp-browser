@@ -5484,6 +5484,67 @@ input.checkbox {
   line-height: 20dp;
 }
 
+/* Phone Contacts A-Z: a small letter header over each section, and an index strip on the right edge (letters 11dp,
+   touch width 28dp, the list's height) that jumps the list while pressed or dragged, with the letter in a centred
+   bubble. The desktop list is sorted the same way but shows neither. Colours: colors.rcss.tmpl. */
+.contacts-section-header,
+.contacts-index,
+.contacts-index-bubble {
+  display: none;
+}
+
+.shell-layer-compact .contacts-section-header {
+  display: block;
+}
+
+.shell-layer-compact .contacts-index {
+  position: absolute;
+  top: 44dp;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  width: 28dp;
+  padding-right: 3dp;
+  box-sizing: border-box;
+  drag: drag;
+  z-index: 2;
+}
+
+.shell-layer-compact .contacts-index-letter {
+  display: block;
+  width: 16dp;
+  height: 14dp;
+  margin: 0;
+  font-size: 11dp;
+  line-height: 14dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .contacts-index-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 72dp;
+  height: 72dp;
+  margin: -36dp 0 0 -36dp;
+  border-radius: 14dp;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.shell-layer-compact .contacts-index-bubble-letter {
+  margin: 0;
+  font-size: 34dp;
+  line-height: 72dp;
+  font-weight: bold;
+  text-align: center;
+}
+
 /* Phone "New chat" page (pushed from the Chats compose button): title, search, three 56dp action rows with a 36dp
    coloured round icon, then Frequent and A-Z groups of the Contacts tab's 60dp rows. Colours: colors.rcss.tmpl. */
 .nc-page {

@@ -123,7 +123,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
 
   auto contacts = contacts_->List();
   ASSERT_TRUE(contacts);
-  EXPECT_EQ(contacts->size(), 12u);
+  EXPECT_EQ(contacts->size(), 18u);
   for (const Contact& c : *contacts) {
     ASSERT_EQ(c.remote.ids.size(), 1u) << c.id;  // only the local-only demo account id
     EXPECT_EQ(c.remote.ids[0].value, "demo-acct-" + c.id);
@@ -260,7 +260,7 @@ TEST_F(DemoDataSeederTest, NothingCanBeRoutedOrQueued) {
   // has no relay or mesh anyway. A group send stops at "Local relay identity unavailable" (no relay user id).
   auto contacts = contacts_->List();
   ASSERT_TRUE(contacts);
-  ASSERT_EQ(contacts->size(), 12u);
+  ASSERT_EQ(contacts->size(), 18u);
   for (const Contact& c : *contacts) {
     EXPECT_FALSE(ContactRelayUserId(c).has_value()) << c.id;
     EXPECT_TRUE(c.remote.multiaddrs.empty()) << c.id;

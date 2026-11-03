@@ -26,6 +26,7 @@
 #include "foundation/error/AppError.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/ui/ContextMenuHost.h"
+#include "lib/ui/DataEvent.h"
 #include "common/Utilities.h"
 #include "common/Metrics.h"
 #include "gui/ChatSessionPorts.h"
@@ -34,12 +35,14 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "lib/ui/UiEditSession.h"
+#include "lib/ui/NameIndex.h"
 #include "lib/ui/NewChatList.h"
 #include "gui/UserFeedback.h"
 
 #include "lib/ui/ShellTypes.h"
 
 #include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
@@ -48,6 +51,8 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
+#include <string_view>
 #include <cctype>
 #include <sstream>
 #include "common/PbrCompat.h"
@@ -505,6 +510,11 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       section_handle.RegisterMember("rows", &NewChatSectionRow::rows);
     }
     ctor.RegisterArray<std::vector<NewChatSectionRow>>();
+    if (auto index_handle = ctor.RegisterStruct<IndexLetterRow>()) {
+      index_handle.RegisterMember("letter", &IndexLetterRow::letter);
+      index_handle.RegisterMember("present", &IndexLetterRow::present);
+    }
+    ctor.RegisterArray<std::vector<IndexLetterRow>>();
     ctor.RegisterArray<std::vector<ContactIdentityRow>>();
     ctor.RegisterArray<std::vector<ContactThreadRow>>();
     if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
@@ -536,6 +546,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
     }
     ctor.Bind("contacts", &controller.contacts_);
+    ctor.Bind("contact_sections", &controller.contact_sections_);
+    ctor.Bind("contact_index", &controller.contact_index_);
+    ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
     ctor.Bind("search_query", &controller.search_query_);
     ctor.Bind("nc_frequent", &controller.new_chat_frequent_);
     ctor.Bind("nc_sections", &controller.new_chat_sections_);
@@ -563,6 +576,8 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
     ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
     ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
+    ctor.BindEventCallback("contacts_index_at", DataEventAt([this](ui::Event& ev) { OnContactsIndexAt(ev); }));
+    ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
   });
 
   return registered;
@@ -579,6 +594,9 @@ void ContactsController::SetShowAdvanced(const bool advanced) {
 void ContactsController::DirtyAll() {
   auto& host = DataModelHost::Instance();
   host.Dirty("contacts", "contacts");
+  host.Dirty("contacts", "contact_sections");
+  host.Dirty("contacts", "contact_index");
+  host.Dirty("contacts", "contact_index_bubble");
   host.Dirty("contacts", "search_query");
   host.Dirty("contacts", "compact_layout");
   host.Dirty("contacts", "advanced");
@@ -617,6 +635,9 @@ void ContactsController::SyncLayoutMode() {
 
 void ContactsController::SyncFromStore() {
   contacts_.clear();
+  contact_sections_.clear();
+  contact_index_.clear();
+  contact_index_bubble_ = "";
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized) {
     return;
   }
@@ -633,16 +654,115 @@ void ContactsController::SyncFromStore() {
     return;
   }
 
-  std::vector<Contact> sorted = *stored;
-  std::sort(sorted.begin(), sorted.end(), [](const Contact& a, const Contact& b) {
-    const std::string a_title = a.display_name.empty() ? a.server_nickname : a.display_name;
-    const std::string b_title = b.display_name.empty() ? b.server_nickname : b.display_name;
-    return a_title < b_title;
-  });
+  std::vector<ContactListRow> rows;
+  rows.reserve(stored->size());
+  for (const Contact& contact : *stored) {
+    rows.push_back(ToContactListRow(contact, contacts_ports_));
+  }
+  contact_sections_ = ContactSections(std::move(rows));
+  contact_index_ = ContactIndexLetters(contact_sections_);
+  for (const NewChatSectionRow& section : contact_sections_) {
+    contacts_.insert(contacts_.end(), section.rows.begin(), section.rows.end());
+  }
+}
 
-  contacts_.reserve(sorted.size());
-  for (const Contact& contact : sorted) {
-    contacts_.push_back(ToContactListRow(contact, contacts_ports_));
+std::vector<ContactsController::NewChatSectionRow> ContactsController::ContactSections(std::vector<ContactListRow> rows) {
+  std::stable_sort(rows.begin(), rows.end(), [](const ContactListRow& a, const ContactListRow& b) {
+    return NameIndexLess(a.title.c_str(), b.title.c_str());
+  });
+  std::vector<NewChatSectionRow> sections;
+  for (ContactListRow& row : rows) {
+    const ui::String letter(1, NameIndexLetter(row.title.c_str()));
+    if (sections.empty() || sections.back().letter != letter) {
+      sections.push_back({letter, {}});
+    }
+    sections.back().rows.push_back(std::move(row));
+  }
+  return sections;
+}
+
+namespace {
+constexpr std::string_view kIndexLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ#";
+}
+
+std::vector<ContactsController::IndexLetterRow> ContactsController::ContactIndexLetters(
+    const std::vector<NewChatSectionRow>& sections) {
+  std::vector<IndexLetterRow> letters;
+  for (const char letter : kIndexLetters) {
+    const bool present = std::any_of(sections.begin(), sections.end(), [&](const NewChatSectionRow& section) {
+      return section.letter.size() == 1 && section.letter[0] == letter;
+    });
+    letters.push_back({ui::String(1, letter), present});
+  }
+  return letters;
+}
+
+int ContactsController::ContactSectionForLetter(const std::vector<NewChatSectionRow>& sections, const char letter) {
+  if (sections.empty()) {
+    return -1;
+  }
+  const size_t wanted = kIndexLetters.find(letter);
+  for (size_t i = 0; i < sections.size(); ++i) {
+    const size_t at = sections[i].letter.empty() ? std::string_view::npos : kIndexLetters.find(sections[i].letter[0]);
+    if (wanted != std::string_view::npos && at != std::string_view::npos && at >= wanted) {
+      return static_cast<int>(i);
+    }
+  }
+  return static_cast<int>(sections.size()) - 1;
+}
+
+void ContactsController::OnContactsIndexAt(ui::Event& ev) {
+  ui::Element* strip = ev.GetCurrentElement();
+  if (!strip) {
+    return;
+  }
+  // The letter whose centre is nearest the finger (above the first or below the last picks that end).
+  const float y = static_cast<float>(ev.GetParameter<int>("mouse_y", 0));
+  ui::ElementList letters;
+  strip->QuerySelectorAll(letters, ".contacts-index-letter");
+  int nearest = -1;
+  float nearest_distance = 0.f;
+  for (size_t i = 0; i < letters.size() && i < kIndexLetters.size(); ++i) {
+    const float centre = letters[i]->GetAbsoluteOffset(ui::BoxArea::Border).y +
+                         letters[i]->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+    const float distance = std::abs(centre - y);
+    if (nearest < 0 || distance < nearest_distance) {
+      nearest = static_cast<int>(i);
+      nearest_distance = distance;
+    }
+  }
+  if (nearest < 0) {
+    return;
+  }
+  const char letter = kIndexLetters[static_cast<size_t>(nearest)];
+  if (contact_index_bubble_ != ui::String(1, letter)) {
+    contact_index_bubble_ = ui::String(1, letter);
+    DataModelHost::Instance().Dirty("contacts", "contact_index_bubble");
+  }
+
+  // Scroll so the section's header sits just under the bar (the list view's top padding).
+  const int section = ContactSectionForLetter(contact_sections_, letter);
+  ui::Element* panel = strip->GetParentNode();
+  ui::Element* view = panel ? panel->QuerySelector(".contacts-list-view") : nullptr;
+  if (section < 0 || !view) {
+    return;
+  }
+  ui::ElementList headers;
+  view->QuerySelectorAll(headers, ".contacts-section-header");
+  if (static_cast<size_t>(section) >= headers.size()) {
+    return;
+  }
+  const float header_top = headers[static_cast<size_t>(section)]->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  const float view_top = view->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  const float under_bar = view->GetBox().GetEdge(ui::BoxArea::Padding, ui::BoxEdge::Top);
+  const float max_top = std::max(0.f, view->Scroll().GetScrollHeight() - view->GetClientHeight());
+  view->Scroll().SetScrollTop(std::clamp(view->Scroll().GetScrollTop() + header_top - view_top - under_bar, 0.f, max_top));
+}
+
+void ContactsController::OnContactsIndexEnd() {
+  if (!contact_index_bubble_.empty()) {
+    contact_index_bubble_ = "";
+    DataModelHost::Instance().Dirty("contacts", "contact_index_bubble");
   }
 }
 

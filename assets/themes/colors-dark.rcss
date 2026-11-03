@@ -1390,6 +1390,22 @@ select selectbox option:hover {
   background-color: #000000;
 }
 
+.contacts-index-letter {
+  color: #ebebf54c;
+}
+
+.contacts-index-letter--present {
+  color: #0a84ff;
+}
+
+.contacts-index-bubble {
+  background-color: #2c2c2e;
+}
+
+.contacts-index-bubble-letter {
+  color: #ffffff;
+}
+
 .cd-account,
 .contacts-row-subtitle--phone,
 .cd-footnote,

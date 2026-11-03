@@ -44,6 +44,47 @@ TEST_F(ContactsPhoneTest, DesktopMenuKeepsAddAndFindOnly) {
             (std::vector<std::string>{"add_contact", "find_someone"}));
 }
 
+// Kenneth 2026-11-03: "联系人这一页在右边加入一个字母排序吧。中文的用按拼音排序，英文的按字母排序".
+TEST_F(ContactsPhoneTest, ContactsAreSectionedByLetterChineseByPinyinHashLast) {
+  std::vector<ContactsController::ContactListRow> rows;
+  for (const char* title : {"张伟", "Emma", "123 Studio", "李雷", "alice", "王芳", "阿明", "Zoe"}) {
+    ContactsController::ContactListRow row;
+    row.title = title;
+    rows.push_back(row);
+  }
+  const auto sections = ContactsController::ContactSections(rows);
+  std::vector<std::string> letters;
+  std::vector<std::string> titles;
+  for (const auto& section : sections) {
+    letters.push_back(section.letter.c_str());
+    for (const auto& row : section.rows) {
+      titles.push_back(row.title.c_str());
+    }
+  }
+  EXPECT_EQ(letters, (std::vector<std::string>{"A", "E", "L", "W", "Z", "#"}));
+  EXPECT_EQ(titles, (std::vector<std::string>{"alice", "阿明", "Emma", "李雷", "王芳", "Zoe", "张伟", "123 Studio"}));
+
+  const auto index = ContactsController::ContactIndexLetters(sections);
+  ASSERT_EQ(index.size(), 27u);
+  EXPECT_EQ(std::string(index.front().letter.c_str()), "A");
+  EXPECT_EQ(std::string(index.back().letter.c_str()), "#");
+  EXPECT_TRUE(index[0].present);   // A
+  EXPECT_FALSE(index[1].present);  // B
+  EXPECT_TRUE(index[26].present);  // #
+}
+
+TEST_F(ContactsPhoneTest, AnIndexLetterWithoutContactsJumpsToTheNextSection) {
+  std::vector<ContactsController::NewChatSectionRow> sections = {{"A", {}}, {"L", {}}, {"#", {}}};
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'A'), 0);
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'B'), 1);
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'L'), 1);
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'M'), 2);
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, '#'), 2);
+  sections.pop_back();
+  EXPECT_EQ(ContactsController::ContactSectionForLetter(sections, 'Z'), 1);  // past the last: the last
+  EXPECT_EQ(ContactsController::ContactSectionForLetter({}, 'A'), -1);
+}
+
 TEST_F(ContactsPhoneTest, DetailShowsOnlyTheLastSixCharactersAndColoursByName) {
   Contact contact;
   contact.id = "c1";

@@ -55,14 +55,16 @@ TEST(NewChatListTest, SectionsAreLettersAThroughZSortedByNameCaseBlind) {
   EXPECT_EQ(Ids(contacts, list.sections[1].contacts), (std::vector<std::string>{"4", "1"}));
 }
 
-TEST(NewChatListTest, ChineseDigitAndSymbolNamesGoUnderHashAtTheEnd) {
-  const std::vector<NewChatContact> contacts = {C("1", "王五"), C("2", "Zed"), C("3", "7up"), C("4", "Amy")};
+TEST(NewChatListTest, ChineseNamesGoUnderTheirPinyinInitialDigitsAndSymbolsUnderHashAtTheEnd) {
+  const std::vector<NewChatContact> contacts = {C("1", "王五"), C("2", "Zed"), C("3", "7up"), C("4", "Amy"),
+                                                C("5", "@home")};
   const NewChatList list = BuildNewChatList(contacts, {});
-  ASSERT_EQ(list.sections.size(), 3u);
+  ASSERT_EQ(list.sections.size(), 4u);
   EXPECT_EQ(list.sections[0].letter, "A");
-  EXPECT_EQ(list.sections[1].letter, "Z");
-  EXPECT_EQ(list.sections[2].letter, "#");
-  EXPECT_EQ(list.sections[2].contacts.size(), 2u);
+  EXPECT_EQ(list.sections[1].letter, "W");
+  EXPECT_EQ(list.sections[2].letter, "Z");
+  EXPECT_EQ(list.sections[3].letter, "#");
+  EXPECT_EQ(list.sections[3].contacts.size(), 2u);
 }
 
 TEST(NewChatListTest, BlockedContactsAreNotListed) {
@@ -83,7 +85,7 @@ TEST(NewChatListTest, AQueryFiltersByNameAndDropsTheFrequentGroup) {
   EXPECT_EQ(list.sections[1].letter, "T");
   list = BuildNewChatList(contacts, chats, "小明");
   ASSERT_EQ(list.sections.size(), 1u);
-  EXPECT_EQ(list.sections[0].letter, "#");
+  EXPECT_EQ(list.sections[0].letter, "W");
 }
 
 TEST(NewChatListTest, NoContactsGivesAnEmptyList) {

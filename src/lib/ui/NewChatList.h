@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/ui/NameIndex.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -36,7 +38,6 @@ struct NewChatList {
 };
 
 inline constexpr size_t kNewChatFrequentMax = 5;
-inline constexpr const char* kNewChatOtherLetter = "#";
 
 namespace new_chat_detail {
 
@@ -51,24 +52,13 @@ inline std::string LowerAscii(std::string text) {
 
 } // namespace new_chat_detail
 
-/**
- * The section letter of a name: its first character upper-cased when that is a Latin letter A-Z, else "#".
- * Chinese (and every other non-Latin) names go under "#"; there is no pinyin table in the app.
- */
-inline std::string NewChatLetter(const std::string& name) {
-  if (!name.empty()) {
-    const char c = new_chat_detail::Lower(name.front());
-    if (c >= 'a' && c <= 'z') {
-      return std::string(1, static_cast<char>(c - 'a' + 'A'));
-    }
-  }
-  return kNewChatOtherLetter;
-}
+/** The section letter of a name: A-Z (a Chinese name by its pinyin initial), else "#" (NameIndexLetter). */
+inline std::string NewChatLetter(const std::string& name) { return std::string(1, NameIndexLetter(name)); }
 
 /**
  * The page's rows. Blocked contacts are never listed. Without a query: "frequent" is up to five contacts
  * with a direct chat, most recently active first (no activity time, no place), and every contact is also
- * in the lettered sections, sorted by name (A-Z case-blind, then "#" for everything else, by byte order).
+ * in the lettered sections, sorted by name (A-Z case-blind, Chinese by pinyin initial, then "#"; NameIndexLess).
  * With a query: no frequent group; the sections hold the contacts whose name contains it (case-blind).
  */
 inline NewChatList BuildNewChatList(const std::vector<NewChatContact>& contacts,
@@ -116,17 +106,11 @@ inline NewChatList BuildNewChatList(const std::vector<NewChatContact>& contacts,
   }
 
   std::sort(order.begin(), order.end(), [&](const size_t a, const size_t b) {
-    const std::string la = NewChatLetter(contacts[a].name);
-    const std::string lb = NewChatLetter(contacts[b].name);
-    const bool a_other = la == kNewChatOtherLetter;
-    const bool b_other = lb == kNewChatOtherLetter;
-    if (a_other != b_other) {
-      return b_other; // "#" last
+    if (NameIndexLess(contacts[a].name, contacts[b].name)) {
+      return true;
     }
-    const std::string na = new_chat_detail::LowerAscii(contacts[a].name);
-    const std::string nb = new_chat_detail::LowerAscii(contacts[b].name);
-    if (na != nb) {
-      return na < nb;
+    if (NameIndexLess(contacts[b].name, contacts[a].name)) {
+      return false;
     }
     return contacts[a].id < contacts[b].id;
   });

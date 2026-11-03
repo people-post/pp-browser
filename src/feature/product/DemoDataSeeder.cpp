@@ -68,7 +68,8 @@ struct DemoContact {
   const char* name;
 };
 
-constexpr std::array<DemoContact, 12> kContacts = {{
+// Chinese, Latin and digit-led names, so the phone Contacts index has several sections and a "#".
+constexpr std::array<DemoContact, 18> kContacts = {{
     {"demo-contact-01", "李小明"},
     {"demo-contact-02", "Emma Johnson"},
     {"demo-contact-03", "王芳 Fang"},
@@ -81,6 +82,12 @@ constexpr std::array<DemoContact, 12> kContacts = {{
     {"demo-contact-10", "David 陈大卫"},
     {"demo-contact-11", "赵敏"},
     {"demo-contact-12", "Olivia"},
+    {"demo-contact-13", "黄磊"},
+    {"demo-contact-14", "Bob Chen"},
+    {"demo-contact-15", "孙丽"},
+    {"demo-contact-16", "Grace"},
+    {"demo-contact-17", "123 Studio"},
+    {"demo-contact-18", "周杰"},
 }};
 
 struct DirectChat {

@@ -61,10 +61,16 @@ public:
     int avatar_tone = 0;
   };
 
-  /** One lettered group of the phone "New chat" page. */
+  /** One lettered group of a contact list: the phone "New chat" page, the Contacts tab. */
   struct NewChatSectionRow {
     ui::String letter;
     std::vector<ContactListRow> rows;
+  };
+
+  /** One letter of the phone Contacts index strip (A-Z, #); `present` when a section has that letter. */
+  struct IndexLetterRow {
+    ui::String letter;
+    bool present = false;
   };
 
   struct ContactIdentityRow {
@@ -148,6 +154,12 @@ public:
   void OnScanQr();
   /** The "+" menu: add contact always; on the phone also scan and new group (when wired), then find someone. Exposed for tests. */
   static std::vector<ContextMenuAction> AddContactMenuActions(bool compact, bool can_scan, bool can_new_group);
+  /** The Contacts tab's rows in index order (A-Z by name, Chinese by pinyin initial, then #), one section per letter. */
+  static std::vector<NewChatSectionRow> ContactSections(std::vector<ContactListRow> rows);
+  /** The index strip: every letter A-Z then #, marked present where `sections` has it. */
+  static std::vector<IndexLetterRow> ContactIndexLetters(const std::vector<NewChatSectionRow>& sections);
+  /** The section an index letter jumps to: that letter's, else the next one after it, else the last; -1 if none. */
+  static int ContactSectionForLetter(const std::vector<NewChatSectionRow>& sections, char letter);
 
 private:
   void OnNewGroup();
@@ -189,6 +201,10 @@ private:
   void OnStartChat();
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
+  /** A press or drag on the phone index strip: jump the list to the letter under the finger, show it in the bubble. */
+  void OnContactsIndexAt(ui::Event& ev);
+  /** The finger left the index strip: hide the bubble. */
+  void OnContactsIndexEnd();
   void OnAddContact();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
@@ -218,6 +234,10 @@ private:
   void NavigateToChatSession();
 
   std::vector<ContactListRow> contacts_;
+  std::vector<NewChatSectionRow> contact_sections_;
+  std::vector<IndexLetterRow> contact_index_;
+  /** The letter in the centred bubble while a finger is on the index strip; empty otherwise. */
+  ui::String contact_index_bubble_;
   std::vector<ContactListRow> new_chat_frequent_;
   std::vector<NewChatSectionRow> new_chat_sections_;
   ui::String new_chat_query_;
