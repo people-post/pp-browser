@@ -102,6 +102,7 @@ private:
   struct Counts;
 
   void OnChanged();
+  void OnThumbnailReady(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
   void Follow(StorageRecomputeGate::Decision decision);
   void StartRecompute();
   void ApplyCounts(Counts counts);
@@ -131,10 +132,12 @@ private:
   pp::Lifetime lifetime_;
   bool provider_registered_ = false;
   bool on_changed_installed_ = false;
+  bool on_thumbnail_ready_installed_ = false;
 
   // Data.
   std::vector<StoredAttachmentItem> all_items_;
   StorageOverview overview_;
+  StorageHashUses hash_uses_; // all_items_ by hash: a selection is weighed from it
   StorageUsage usage_;
   std::vector<StorageChatName> names_;
   std::vector<std::string> chat_ids_;  // chats_ order
@@ -155,7 +158,6 @@ private:
   bool selecting_ = false;
   bool busy_ = false;
   std::optional<uint64_t> releasable_;
-  uint64_t releasable_seq_ = 0;
   std::set<std::string> opening_;
 
   // Bound fields.

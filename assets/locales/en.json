@@ -372,8 +372,6 @@
     "settings.storage.attachment_policy.on_wifi": "On Wi‑Fi",
     "settings.storage.attachment_policy.on_cellular": "On mobile data",
     "settings.storage.attachment_policy.on_demand": "Nothing (saves data)",
-    "settings.storage.attachment_cache_size": "Downloaded photos and files: about {size}",
-    "settings.storage.profile_size": "Chats and data use about {size}",
     "settings.storage.manage.used": "used by PP on this device",
     "settings.storage.manage.counting": "Counting…",
     "settings.storage.manage.kind.picture": "Photos",

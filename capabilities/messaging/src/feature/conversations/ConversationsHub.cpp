@@ -1468,7 +1468,14 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
 }
 
 void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
   on_stored_attachments_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnGridThumbnailReady(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_grid_thumbnail_ready_ = std::move(callback);
 }
 
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
@@ -2375,8 +2382,8 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
     }
   };
 
-  // Me → Storage may be deleting the same bytes: wait for it, then hold them until the message and the sent copy
-  // are written, so a delete scanning meanwhile keeps them.
+  // Me → Storage may be deleting the same bytes: they are held (without waiting) until the message and the sent copy
+  // are written, so a delete running or scanning meanwhile keeps them.
   Attachments().AcquireBytesForSend(job->thread_id, fields->content_hash);
   auto sent = job->kind == ThreadKind::Group ? MeshMessaging().SendGroupMessage(job->thread_id, display, opts)
                                              : MeshMessaging().SendUserMessage(job->thread_id, display, opts);
@@ -2444,18 +2451,32 @@ void ConversationsHub::WireAttachmentDownloads() {
       }
     }));
   }
-  attachment_downloads_->SetOnChanged([this]() {
+  // Bound to the hub's run: a report still queued when it shuts down (or goes) never reaches it.
+  attachment_downloads_->SetOnChanged(storage_callbacks_lifetime_.Bind([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
     }
-    if (on_stored_attachments_changed_) {
-      AppRuntime::PostUI([this]() {
-        if (on_stored_attachments_changed_) {
-          on_stored_attachments_changed_();
-        }
-      });
+    std::function<void()> callback;
+    {
+      std::lock_guard lock(storage_callbacks_mu_);
+      callback = on_stored_attachments_changed_;
     }
-  });
+    if (callback) {
+      AppRuntime::PostUI(storage_callbacks_lifetime_.Bind(std::move(callback)));
+    }
+  }));
+  // A grid cell's thumbnail: only that cell is refreshed (no chat re-render, no recount of the storage lists).
+  attachment_downloads_->SetOnGridThumbnailReady(
+      storage_callbacks_lifetime_.Bind([this](const std::string& thread_id, const std::vector<uint8_t>& content_hash) {
+        std::function<void(const std::string&, const std::vector<uint8_t>&)> callback;
+        {
+          std::lock_guard lock(storage_callbacks_mu_);
+          callback = on_grid_thumbnail_ready_;
+        }
+        if (callback) {
+          callback(thread_id, content_hash);
+        }
+      }));
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
@@ -2986,6 +3007,7 @@ void ConversationsHub::Shutdown() {
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
+  storage_callbacks_lifetime_.InvalidateAndWait(); // the attachment change reports of this run (rewired at Initialize)
   transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   AppLifecycle::RemoveListener(lifecycle_foreground_id_);

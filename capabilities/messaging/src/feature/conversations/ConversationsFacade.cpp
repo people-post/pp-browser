@@ -939,6 +939,11 @@ void ConversationsFacade::SetOnStoredAttachmentsChanged(std::function<void()> ca
   hub_.SetOnStoredAttachmentsChanged(std::move(callback));
 }
 
+void ConversationsFacade::SetOnGridThumbnailReady(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
+  hub_.SetOnGridThumbnailReady(std::move(callback));
+}
+
 void ConversationsFacade::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                                const std::string& mime, const uint64_t page_generation) {
   hub_.RequestGridThumbnail(thread_id, content_hash, mime, page_generation);

@@ -145,6 +145,21 @@ TEST(StorageManagerModelTest, DeleteFactsCountOnlyHereAndSharedElsewhere) {
 }
 
 // Chat history is the message databases, never more than what the attachments leave; the rest is "other".
+TEST(StorageManagerModelTest, ReleasableBytesFromTheListCountAHashOnlyWhenNoOtherChatHoldsIt) {
+  const std::vector<pbr::StoredAttachmentItem> all = {
+      Item("a", 1, "image/jpeg", 3 * kMiB), Item("b", 1, "image/jpeg", 3 * kMiB), // shared by a and b
+      Item("a", 2, "image/jpeg", 4 * kMiB),                                       // only in a
+      Item("ai", 3, "image/png", 2 * kMiB), Item("a", 3, "image/png", 2 * kMiB),  // also an AI image
+  };
+  const pbr::StorageHashUses uses = pbr::BuildStorageHashUses(all);
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {}), 0u);
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {{"a", Hash(1)}}), 0u) << "b still holds it";
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {{"a", Hash(2)}}), 4 * kMiB);
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {{"a", Hash(1)}, {"a", Hash(2)}, {"a", Hash(3)}}), 4 * kMiB);
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {{"a", Hash(1)}, {"b", Hash(1)}}), 3 * kMiB) << "every chat: once";
+  EXPECT_EQ(pbr::StorageReleasableBytes(uses, {{"a", Hash(9)}}), 0u) << "not in the list";
+}
+
 TEST(StorageManagerModelTest, UsageSplitsTheProfileTotal) {
   pbr::StorageKindTotals attachments;
   attachments.picture_bytes = 400;

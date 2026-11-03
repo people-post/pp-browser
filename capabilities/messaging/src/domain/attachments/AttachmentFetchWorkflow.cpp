@@ -10,6 +10,7 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 #include "lib/content/CasStore.h"
+#include "lib/content/PrivateContent.h"
 #include "lib/messaging/AiImageRef.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "domain/attachments/AttachmentFetch.h"
@@ -24,6 +25,9 @@
 
 namespace pbr {
 namespace {
+
+/** Storage-grid thumbnails made at once. */
+constexpr size_t kMaxGridThumbnailJobs = 2;
 
 /** Content hashes a message refers to (attachment, AI image). */
 std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
@@ -92,10 +96,6 @@ void AttachmentFetchWorkflow::SetAutoAllowedOnNetwork(const bool allowed) {
   if (!again.empty()) {
     NotifyChanged();
   }
-}
-
-void AttachmentFetchWorkflow::SetBacklogDrainActive(const bool active) {
-  backlog_drain_ = active;
 }
 
 void AttachmentFetchWorkflow::SetLimits(const AttachmentLimits& limits) {
@@ -231,16 +231,28 @@ void AttachmentFetchWorkflow::SetOnChanged(ChangedCallback callback) {
   on_changed_ = std::move(callback);
 }
 
+void AttachmentFetchWorkflow::SetOnGridThumbnailReady(GridThumbnailCallback callback) {
+  std::lock_guard lock(mutex_);
+  on_grid_thumbnail_ready_ = std::move(callback);
+}
+
 Roe<void> AttachmentFetchWorkflow::SetDek(ByteVector dek) {
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
+  size_t grid_workers = 0;
   {
     std::lock_guard lock(mutex_);
     if (!dek_.empty()) {
       sodium_memzero(dek_.data(), dek_.size());
     }
     dek_ = std::move(dek);
+    ++dek_generation_;
+    grid_failed_.clear(); // a picture that failed may thumbnail now (another key, another hook state)
+    grid_workers = ClaimGridWorkersLocked(); // the grid's jobs that waited while locked
+  }
+  for (size_t i = 0; i < grid_workers; ++i) {
+    AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
   }
   return {};
 }
@@ -252,6 +264,7 @@ void AttachmentFetchWorkflow::ClearDek() {
       sodium_memzero(dek_.data(), dek_.size());
       dek_.clear();
     }
+    ++dek_generation_;
   }
   if (!profile_dir_.empty()) {
     (void)WipeAllAttachmentViewCaches(profile_dir_);
@@ -290,13 +303,12 @@ AttachmentFetchWorkflow::AutoVerdict AttachmentFetchWorkflow::AutoVerdictLocked(
   if (bytes == 0 || bytes > limits_.max_receive_bytes) {
     return AutoVerdict::No; // an undeclared size is the sender's word for nothing: only a tap fetches it
   }
-  if (policy_ == AttachmentDownloadPolicy::OnDemand && !backlog_drain_) {
+  if (policy_ == AttachmentDownloadPolicy::OnDemand) {
     // "Download nothing" saves data, but a voice message may be urgent and is small.
     return IsDeclaredVoiceMessage(fields.mime, fields.filename, bytes) ? AutoVerdict::Yes : AutoVerdict::No;
   }
-  if (bytes <= kMaxDirectAttachmentBytes &&
-      ShouldAutoEnqueueAttachment(policy_, bytes, backlog_drain_, limits_.auto_download_max_bytes,
-                                  /*network_allows_all_auto=*/false)) {
+  if (bytes <= kMaxDirectAttachmentBytes && ShouldAutoEnqueueAttachment(policy_, bytes, limits_.auto_download_max_bytes,
+                                                                        /*network_allows_all_auto=*/false)) {
     return AutoVerdict::Yes; // the Smart rule, whatever the network
   }
   if (policy_ != AttachmentDownloadPolicy::AlwaysAuto) {
@@ -308,8 +320,7 @@ AttachmentFetchWorkflow::AutoVerdict AttachmentFetchWorkflow::AutoVerdictLocked(
   if (!network_allows_all_auto_) {
     return AutoVerdict::NetworkUnknown;
   }
-  return ShouldAutoEnqueueAttachment(policy_, bytes, backlog_drain_, limits_.auto_download_max_bytes,
-                                     *network_allows_all_auto_)
+  return ShouldAutoEnqueueAttachment(policy_, bytes, limits_.auto_download_max_bytes, *network_allows_all_auto_)
              ? AutoVerdict::YesOnThisNetwork
              : AutoVerdict::NotOnThisNetwork;
 }
@@ -786,6 +797,20 @@ void AttachmentFetchWorkflow::NotifyChanged() {
   });
 }
 
+void AttachmentFetchWorkflow::NotifyGridThumbnailReady(const std::string& thread_id,
+                                                       const std::vector<uint8_t>& content_hash) {
+  GridThumbnailCallback callback;
+  {
+    std::lock_guard lock(mutex_);
+    callback = on_grid_thumbnail_ready_;
+  }
+  if (!callback) {
+    return;
+  }
+  AppRuntime::PostUI(
+      [callback = std::move(callback), thread_id, content_hash]() { callback(thread_id, content_hash); });
+}
+
 AttachmentFetchWorkflow::DownloadState AttachmentFetchWorkflow::StateFor(const std::string& thread_id,
                                                                        const ChatAttachmentFields& fields) const {
   const std::vector<uint8_t>& content_hash = fields.content_hash;
@@ -862,7 +887,7 @@ Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLoc
   if (!hash) {
     return hash.error();
   }
-  AcquireBytesForSend(thread_id, *hash); // not stored while a delete of the same bytes runs
+  AcquireBytesForSend(thread_id, *hash); // a delete of the same bytes running now keeps them (no wait)
   auto saved = SaveAttachmentPlaintext(*content, *hash, mime, plaintext, std::string(), dek_copy);
   ReleaseBytesForSend(*hash);
   if (!saved) {
@@ -1388,10 +1413,37 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
   }
 
   // 2. Who else uses them: every chat's messages (AI images too) and the sends in flight; the items themselves not.
-  const std::unordered_set<std::string> used = HashesUsedElsewhere(store, keys, target_hex);
+  //    A message with the same bytes arriving in another chat after this scan is not seen (accepted: rare; it is
+  //    downloaded again by the usual rules).
+  std::unordered_set<std::string> kept = HashesUsedElsewhere(store, keys, target_hex);
 
-  // 3. Off each chat for good (on disk: no automatic download brings it back), its views gone; the bytes of a hash
-  //    nothing else uses deleted.
+  // 3. The bytes of a hash nothing else uses deleted. Checked and deleted under the lock: a send or an AI image
+  //    storing the same bytes (AcquireBytesForSend, which never waits) either came first and keeps them, or comes
+  //    after and writes them again.
+  for (const auto& [hex, hash] : targets) {
+    if (kept.contains(hex)) {
+      continue;
+    }
+    const uint64_t bytes = AttachmentLocalBytes(*content, hash);
+    {
+      std::lock_guard lock(mutex_);
+      const bool sent_meanwhile =
+          bytes_in_use_.contains(hex) ||
+          std::any_of(sent_during_delete_.begin(), sent_during_delete_.end(),
+                      [&](const StoredAttachmentRef& sent) { return AttachmentHashHex(sent.second) == hex; });
+      if (sent_meanwhile) {
+        kept.insert(hex);
+        continue;
+      }
+      (void)content->Delete(CasRealm::Private, ByteVector(hash.begin(), hash.end())); // the object id is the hash
+      AttachmentPlaintextMemoryCache::Instance().Erase(hex);
+      AttachmentPlaintextMemoryCache::Instance().Erase(hex + ".poster.jpg");
+    }
+    if (!AttachmentBlobExists(*content, hash)) {
+      result.freed_bytes += bytes;
+    }
+  }
+  //    Off each chat for good (on disk: no automatic download brings it back), its views gone.
   for (const auto& [thread_id, hashes] : by_thread) {
     if (suppression_) {
       (void)suppression_->SuppressAll(thread_id, hashes);
@@ -1399,27 +1451,16 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
     for (const std::vector<uint8_t>& hash : hashes) {
       RemoveThreadViewsOf(profile_dir_, thread_id, AttachmentHashHex(hash));
       ++result.deleted;
-      if (used.contains(AttachmentHashHex(hash))) {
+      if (kept.contains(AttachmentHashHex(hash))) {
         ++result.kept_shared;
       }
-    }
-  }
-  for (const auto& [hex, hash] : targets) {
-    if (used.contains(hex)) {
-      continue;
-    }
-    const uint64_t bytes = AttachmentLocalBytes(*content, hash);
-    (void)content->Delete(CasRealm::Private, ByteVector(hash.begin(), hash.end())); // the object id is the hash
-    AttachmentPlaintextMemoryCache::Instance().Erase(hex);
-    AttachmentPlaintextMemoryCache::Instance().Erase(hex + ".poster.jpg");
-    if (!AttachmentBlobExists(*content, hash)) {
-      result.freed_bytes += bytes;
     }
   }
 
   // 4. Unmark; what waited goes on (judged now, by the usual rules).
   std::vector<std::pair<Job, bool>> jobs;
   std::vector<DeferredRequest> requests;
+  std::vector<StoredAttachmentRef> sent;
   {
     std::lock_guard lock(mutex_);
     for (const std::string& hex : target_hex) {
@@ -1427,8 +1468,14 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
     }
     jobs.swap(deferred_jobs_);
     requests.swap(deferred_requests_);
+    sent.swap(sent_during_delete_);
   }
-  delete_cv_.notify_all();
+  // Sent (or stored) into a chat while the delete ran: shown there again, though step 3 suppressed it.
+  for (const auto& [thread_id, hash] : sent) {
+    if (suppression_ && !thread_id.empty()) {
+      (void)suppression_->ClearSuppression(thread_id, hash);
+    }
+  }
   for (const DeferredRequest& request : requests) {
     RequestDownload(request.thread_id, request.message_id, request.store != nullptr ? *request.store : store);
   }
@@ -1446,9 +1493,13 @@ void AttachmentFetchWorkflow::AcquireBytesForSend(const std::string& thread_id,
   }
   const std::string hex = AttachmentHashHex(content_hash);
   {
-    std::unique_lock lock(mutex_);
-    delete_cv_.wait(lock, [&] { return !deleting_.contains(hex); });
+    // Never waits (an AI image is stored from whatever thread asks): a delete of these bytes running now sees
+    // this under the same lock and keeps them, also after the release.
+    std::lock_guard lock(mutex_);
     ++bytes_in_use_[hex];
+    if (deleting_.contains(hex)) {
+      sent_during_delete_.emplace_back(thread_id, content_hash);
+    }
   }
   if (suppression_ && !thread_id.empty()) {
     (void)suppression_->ClearSuppression(thread_id, content_hash); // sent here again: shown here again
@@ -1467,11 +1518,6 @@ void AttachmentFetchWorkflow::ReleaseBytesForSend(const std::vector<uint8_t>& co
   }
 }
 
-namespace {
-/** Storage-grid thumbnails made at once. */
-constexpr size_t kMaxGridThumbnailJobs = 2;
-} // namespace
-
 void AttachmentFetchWorkflow::RequestGridThumbnail(const std::string& thread_id,
                                                    const std::vector<uint8_t>& content_hash, const std::string& mime,
                                                    const uint64_t page_generation) {
@@ -1483,10 +1529,10 @@ void AttachmentFetchWorkflow::RequestGridThumbnail(const std::string& thread_id,
     return;
   }
   const std::string key = JobKey(thread_id, content_hash);
-  bool start = false;
+  size_t workers = 0;
   {
     std::lock_guard lock(mutex_);
-    if (dek_.empty() || !content_ || deleting_.contains(AttachmentHashHex(content_hash)) || grid_failed_.contains(key)) {
+    if (!content_ || deleting_.contains(AttachmentHashHex(content_hash)) || grid_failed_.contains(key)) {
       return;
     }
     const bool queued = std::any_of(grid_queue_.begin(), grid_queue_.end(), [&](const GridThumbnailJob& job) {
@@ -1497,14 +1543,21 @@ void AttachmentFetchWorkflow::RequestGridThumbnail(const std::string& thread_id,
     }
     grid_queue_.push_back(GridThumbnailJob{
         .thread_id = thread_id, .content_hash = content_hash, .mime = mime, .generation = page_generation});
-    if (grid_running_ < kMaxGridThumbnailJobs) {
-      ++grid_running_;
-      start = true;
-    }
+    workers = ClaimGridWorkersLocked(); // none while locked: the job waits for SetDek
   }
-  if (start) {
+  for (size_t i = 0; i < workers; ++i) {
     AppRuntime::PostWorkerBackground([this]() { RunGridThumbnails(); });
   }
+}
+
+size_t AttachmentFetchWorkflow::ClaimGridWorkersLocked() {
+  if (dek_.empty() || !AppRuntime::IsRunning()) {
+    return 0;
+  }
+  const size_t free = grid_running_ < kMaxGridThumbnailJobs ? kMaxGridThumbnailJobs - grid_running_ : 0;
+  const size_t claimed = std::min(free, grid_queue_.size());
+  grid_running_ += claimed;
+  return claimed;
 }
 
 void AttachmentFetchWorkflow::CancelGridThumbnails(const uint64_t page_generation) {
@@ -1524,10 +1577,12 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
   for (;;) {
     GridThumbnailJob job;
     std::string hex;
+    ByteVector dek;
+    uint64_t dek_generation = 0;
     {
       std::lock_guard lock(mutex_);
-      if (grid_queue_.empty()) {
-        --grid_running_;
+      if (grid_queue_.empty() || dek_.empty()) {
+        --grid_running_; // locked: the jobs left wait in the queue for SetDek
         return;
       }
       job = std::move(grid_queue_.front());
@@ -1537,31 +1592,45 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
         continue;
       }
       ++thumbnails_in_progress_[hex]; // started: a delete of these bytes waits for it
+      dek = CopyDekUnlocked();
+      dek_generation = dek_generation_;
     }
     const std::string key = JobKey(job.thread_id, job.content_hash);
-    const ByteVector dek = CopyDek();
     const std::shared_ptr<CasStore> content = Content();
-    const bool attempt = !dek.empty() && content && AttachmentBlobExists(*content, job.content_hash) &&
+    const bool attempt = content && AttachmentBlobExists(*content, job.content_hash) &&
                          !SuppressedIn(job.thread_id, job.content_hash) &&
                          !AttachmentPosterExists(profile_dir_, job.thread_id, job.content_hash);
+    // No lock held: decrypted once into memory (not through the plaintext memory cache: a large picture is not worth
+    // keeping there), only the small JPEG is written (the large-image thumbnail's path).
+    bool decrypted = false;
     Roe<std::string> made = Error("Nothing to thumbnail");
     if (attempt) {
-      // No lock held: decrypted once into memory, only the small JPEG is written (the large-image thumbnail's path).
-      made = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content, job.thread_id, job.content_hash,
-                                                       job.mime, dek);
+      if (auto plain = LoadPrivateContent(*content, job.content_hash, dek)) {
+        decrypted = true;
+        made = EnsureAttachmentImageThumbnail(profile_dir_, job.thread_id, job.content_hash, job.mime, *plain);
+      }
     }
+    sodium_memzero(dek.data(), dek.size());
     bool notify = false;
     {
       std::lock_guard lock(mutex_);
+      const bool deleting = deleting_.contains(hex);
+      // Locked (or unlocked with another key) while it ran: nothing made from it stays, and it is made again at the
+      // next unlock; a decrypt that failed then says nothing about the picture.
+      const bool key_changed = dek_generation_ != dek_generation;
       if (made) {
-        if (dek_.empty() || deleting_.contains(hex) || !AttachmentBlobExists(*content, job.content_hash)) {
+        if (key_changed || deleting || !AttachmentBlobExists(*content, job.content_hash)) {
           std::error_code ec;
-          std::filesystem::remove(*made, ec); // locked or deleted meanwhile: nothing made from it stays
+          std::filesystem::remove(*made, ec);
         } else {
           notify = true;
         }
-      } else if (attempt && !deleting_.contains(hex)) {
-        grid_failed_.insert(key); // the picture cannot be thumbnailed: not tried again this session
+      } else if (decrypted && !key_changed && !deleting) {
+        grid_failed_.insert(key); // the hook could not thumbnail valid bytes: not tried again until the next unlock
+      }
+      // A missing blob, a failed decrypt or a delete: not remembered, asked again when the cell shows again.
+      if (key_changed && !deleting && attempt && !notify) {
+        grid_queue_.push_front(job);
       }
       if (--thumbnails_in_progress_[hex] <= 0) {
         thumbnails_in_progress_.erase(hex);
@@ -1569,7 +1638,7 @@ void AttachmentFetchWorkflow::RunGridThumbnails() {
     }
     delete_cv_.notify_all();
     if (notify) {
-      NotifyChanged();
+      NotifyGridThumbnailReady(job.thread_id, job.content_hash);
     }
   }
 }

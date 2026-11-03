@@ -249,6 +249,36 @@ std::vector<StoredAttachmentRef> StorageDeleteRefs(const std::vector<StoredAttac
   return refs;
 }
 
+StorageHashUses BuildStorageHashUses(const std::vector<StoredAttachmentItem>& items) {
+  StorageHashUses uses;
+  for (const StoredAttachmentItem& item : items) {
+    StorageHashUse& use = uses[HashKey(item.content_hash)];
+    use.bytes = item.bytes;
+    use.threads.push_back(item.thread_id); // the list has one item per (chat, hash)
+  }
+  return uses;
+}
+
+uint64_t StorageReleasableBytes(const StorageHashUses& uses, const std::vector<StoredAttachmentRef>& refs) {
+  std::unordered_map<std::string, std::unordered_set<std::string>> deleting; // hash → the chats it goes from
+  for (const StoredAttachmentRef& ref : refs) {
+    deleting[HashKey(ref.second)].insert(ref.first);
+  }
+  uint64_t total = 0;
+  for (const auto& [key, chats] : deleting) {
+    const auto found = uses.find(key);
+    if (found == uses.end()) {
+      continue;
+    }
+    const std::vector<std::string>& holders = found->second.threads;
+    if (std::all_of(holders.begin(), holders.end(),
+                    [&](const std::string& thread) { return chats.contains(thread); })) {
+      total += found->second.bytes;
+    }
+  }
+  return total;
+}
+
 uint64_t StorageSelectedBytes(const std::vector<StoredAttachmentItem>& selected) {
   return StorageTotalsOf(selected).Bytes();
 }

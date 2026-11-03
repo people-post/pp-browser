@@ -1,12 +1,9 @@
 #include "feature/settings/StorageSettingsSection.h"
 
-#include "feature/settings/StorageManagerModel.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/UserPreferences.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/messaging/AttachmentCache.h"
 
-#include <cstdint>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -65,11 +62,6 @@ void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.config_dir = AppPaths::ConfigDir();
   state.data_dir = bootstrap.data_dir;
   state.profile_dir = bootstrap.profile_data_dir;
-  const uint64_t bytes = DirectoryByteSize(bootstrap.profile_data_dir);
-  state.profile_size_label = Tr("settings.storage.profile_size", {{"size", FormatByteSize(bytes)}});
-  state.attachment_cache_size_label =
-      Tr("settings.storage.attachment_cache_size",
-         {{"size", FormatByteSize(AttachmentCacheByteSize(bootstrap.profile_data_dir))}});
   state.attachment_download_policy = bootstrap.profile_prefs.attachment_download_policy;
   state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
   state.attachment_auto_on_wifi = bootstrap.profile_prefs.attachment_auto_on_wifi ? "on" : "off";

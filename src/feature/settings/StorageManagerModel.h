@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -79,6 +80,22 @@ std::vector<StoredAttachmentItem> StorageItemsOfKind(const std::vector<StoredAtt
  */
 std::vector<StoredAttachmentRef> StorageDeleteRefs(const std::vector<StoredAttachmentItem>& all,
                                                    const std::vector<StoredAttachmentItem>& selected, bool every_chat);
+
+/** Per content hash (its bytes as a string): its stored size and the chats whose list holds it. */
+struct StorageHashUse {
+  uint64_t bytes = 0;
+  std::vector<std::string> threads;
+};
+using StorageHashUses = std::unordered_map<std::string, StorageHashUse>;
+
+/** Built once per count of the list, so a selection is weighed without reading the chats again. */
+StorageHashUses BuildStorageHashUses(const std::vector<StoredAttachmentItem>& items);
+
+/**
+ * What deleting `refs` would free by the list: the size of each hash (once) no chat outside `refs` holds. A send in
+ * flight is not known here; the delete's confirmation asks the device afresh (StorageManagerPorts::releasable_bytes).
+ */
+uint64_t StorageReleasableBytes(const StorageHashUses& uses, const std::vector<StoredAttachmentRef>& refs);
 
 /** Bytes the selected items take, each hash once. */
 uint64_t StorageSelectedBytes(const std::vector<StoredAttachmentItem>& selected);

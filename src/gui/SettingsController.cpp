@@ -378,8 +378,6 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
-  bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
-  bindings_.attachment_cache_size_label = ui_state_.attachment_cache_size_label.c_str();
   bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
   bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.attachment_auto_on_wifi = ui_state_.attachment_auto_on_wifi.c_str();
@@ -570,8 +568,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
-    ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
-    ctor.Bind("attachment_cache_size_label", &controller.bindings_.attachment_cache_size_label);
     ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
     ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("attachment_auto_on_wifi", &controller.bindings_.attachment_auto_on_wifi);
@@ -720,8 +716,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
-  host.Dirty("settings", "profile_size_label");
-  host.Dirty("settings", "attachment_cache_size_label");
   host.Dirty("settings", "attachment_download_policy");
   host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "attachment_auto_on_wifi");

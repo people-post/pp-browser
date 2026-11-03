@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -66,8 +67,12 @@ protected:
     ports.request_thumbnail = [this](const std::string&, const std::vector<uint8_t>&, const std::string&,
                                      const uint64_t generation) { thumbnail_requests_.push_back(generation); };
     ports.cancel_thumbnails = [this](const uint64_t generation) { cancelled_.push_back(generation); };
-    ports.thumbnail_path = [](const std::string&, const std::vector<uint8_t>&) { return std::string(); };
+    ports.thumbnail_path = [this](const std::string& thread_id, const std::vector<uint8_t>& hash) {
+      const auto found = thumbnails_.find(thread_id + "|" + std::to_string(hash[0]));
+      return found != thumbnails_.end() ? found->second : std::string();
+    };
     ports.set_on_changed = [this](std::function<void()> on_changed) { on_changed_ = std::move(on_changed); };
+    ports.set_on_thumbnail_ready = [this](auto on_ready) { on_thumbnail_ready_ = std::move(on_ready); };
     ports.run_later = [this](std::chrono::milliseconds, std::function<void()> task) {
       later_.push_back(std::move(task));
     };
@@ -116,6 +121,8 @@ protected:
   std::vector<uint64_t> thumbnail_requests_;
   std::vector<uint64_t> cancelled_;
   std::function<void()> on_changed_;
+  std::function<void(const std::string&, const std::vector<uint8_t>&)> on_thumbnail_ready_;
+  std::map<std::string, std::string> thumbnails_; // "thread|first hash byte" → path
   std::vector<std::function<void()>> later_;
   std::vector<std::pair<std::string, std::function<void()>>> back_stack_;
   std::string confirm_title_;
@@ -340,4 +347,47 @@ TEST_F(StorageManagerControllerTest, ChangesAreCountedAtMostOnceAWhileAndKeepThe
   const int before = list_calls_;
   on_changed_();
   EXPECT_EQ(list_calls_, before);
+}
+
+TEST_F(StorageManagerControllerTest, PickingWeighsTheSelectionFromTheLoadedListWithoutAskingTheDevice) {
+  items_ = {Item("a", 1, "image/jpeg", 3 * kMiB), Item("b", 1, "image/jpeg", 3 * kMiB),
+            Item("a", 2, "image/jpeg", 4 * kMiB)};
+  bool asked = false;
+  commands_.storage.releasable_bytes = [&asked](std::vector<pbr::StoredAttachmentRef>,
+                                                std::function<void(uint64_t)> done) {
+    asked = true;
+    done(0);
+  };
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  for (int i = 0; i < 48; ++i) {
+    controller_.TapCell(i % 2); // each picked and unpicked 12 times
+  }
+  controller_.TapCell(0);
+  controller_.TapCell(1);
+  EXPECT_FALSE(asked) << "no scan of every chat per tap";
+  EXPECT_EQ(controller_.SelectionLabel(), "已选 2 项 · 可释放 4.0 MB") << "the shared one frees nothing";
+  controller_.TapCell(1); // the shared one off: the 4 MB only here stays
+  EXPECT_EQ(controller_.SelectionLabel(), "已选 1 项 · 可释放 4.0 MB");
+}
+
+TEST_F(StorageManagerControllerTest, AThumbnailMadeRefreshesItsCellOnlyWithoutACount) {
+  items_ = {Item("a", 1, "image/jpeg", kMiB), Item("a", 2, "image/jpeg", kMiB)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Cells().size(), 2u);
+  ASSERT_TRUE(on_thumbnail_ready_);
+  const int lists_before = list_calls_;
+
+  thumbnails_["a|2"] = "/thumbs/2.jpg";
+  on_thumbnail_ready_("a", Hash(2));
+
+  EXPECT_EQ(list_calls_, lists_before) << "nothing is counted again";
+  EXPECT_TRUE(later_.empty());
+  // Newest first: hash 2 is the first cell.
+  EXPECT_EQ(std::string(controller_.Cells()[0].thumb.c_str()), "/thumbs/2.jpg");
+  EXPECT_TRUE(controller_.Cells()[1].thumb.empty());
 }

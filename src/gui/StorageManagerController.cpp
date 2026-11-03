@@ -216,6 +216,13 @@ void StorageManagerController::Enter() {
     on_changed_installed_ = true;
     commands_.storage.set_on_changed(lifetime_.Bind([this]() { OnChanged(); }));
   }
+  if (!on_thumbnail_ready_installed_ && commands_.storage.set_on_thumbnail_ready) {
+    on_thumbnail_ready_installed_ = true;
+    commands_.storage.set_on_thumbnail_ready(
+        lifetime_.Bind([this](const std::string& thread_id, const std::vector<uint8_t>& content_hash) {
+          OnThumbnailReady(thread_id, content_hash);
+        }));
+  }
   ready_ = false;
   DirtyAll();
   StartRecompute();
@@ -317,7 +324,6 @@ void StorageManagerController::LeaveItems() {
   selecting_ = false;
   selected_.clear();
   releasable_.reset();
-  ++releasable_seq_;
   if (generation_ != 0 && commands_.storage.cancel_thumbnails) {
     commands_.storage.cancel_thumbnails(generation_);
   }
@@ -422,6 +428,28 @@ void StorageManagerController::RefreshThumbnails() {
   }
 }
 
+void StorageManagerController::OnThumbnailReady(const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash) {
+  if (page_ != "items" || !commands_.storage.thumbnail_path) {
+    return;
+  }
+  bool changed = false;
+  for (size_t i = 0; i < cells_.size() && i < tab_items_.size(); ++i) {
+    const StoredAttachmentItem& item = tab_items_[i];
+    if (!cells_[i].thumb.empty() || item.thread_id != thread_id || item.content_hash != content_hash) {
+      continue;
+    }
+    const std::string thumb = commands_.storage.thumbnail_path(item.thread_id, item.content_hash);
+    if (!thumb.empty()) {
+      cells_[i].thumb = thumb.c_str();
+      changed = true;
+    }
+  }
+  if (changed) {
+    DataModelHost::Instance().Dirty(kModel, "storage_cells");
+  }
+}
+
 void StorageManagerController::LoadMore() {
   if (page_ != "items" || !has_more_) {
     return;
@@ -483,21 +511,12 @@ void StorageManagerController::TogglePicked(const int index) {
 }
 
 void StorageManagerController::SelectionChanged() {
+  // Weighed from the list already loaded (no read of every chat per tap); the delete's confirmation asks afresh.
   releasable_.reset();
-  const uint64_t seq = ++releasable_seq_;
-  UpdateSelectionLabel();
-  if (selected_.empty() || !commands_.storage.releasable_bytes) {
-    return;
+  if (!selected_.empty()) {
+    releasable_ = StorageReleasableBytes(hash_uses_, StorageDeleteRefs(all_items_, SelectedItems(), items_large_));
   }
-  commands_.storage.releasable_bytes(StorageDeleteRefs(all_items_, SelectedItems(), items_large_),
-                                     lifetime_.Bind([this, seq](const uint64_t bytes) {
-                                       if (seq != releasable_seq_) {
-                                         return;
-                                       }
-                                       releasable_ = bytes;
-                                       UpdateSelectionLabel();
-                                       DataModelHost::Instance().Dirty(kModel, "storage_selection_label");
-                                     }));
+  UpdateSelectionLabel();
 }
 
 void StorageManagerController::UpdateSelectionLabel() {
@@ -737,6 +756,7 @@ void StorageManagerController::StartRecompute() {
 void StorageManagerController::ApplyCounts(Counts counts) {
   all_items_ = std::move(counts.items);
   overview_ = BuildStorageOverview(all_items_);
+  hash_uses_ = BuildStorageHashUses(all_items_);
   usage_ = ComputeStorageUsage(counts.profile_bytes, overview_.totals, counts.message_store_bytes);
   names_ = commands_.storage.chat_names ? commands_.storage.chat_names() : std::vector<StorageChatName>{};
   ready_ = true;

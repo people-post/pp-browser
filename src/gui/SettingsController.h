@@ -165,8 +165,6 @@ private:
     ui::String config_dir;
     ui::String data_dir;
     ui::String profile_dir;
-    ui::String profile_size_label;
-    ui::String attachment_cache_size_label;
     ui::String attachment_download_policy = "smart";
     ui::String attachment_download_policy_label;
     ui::String attachment_auto_on_wifi = "on";

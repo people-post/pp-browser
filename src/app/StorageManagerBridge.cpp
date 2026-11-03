@@ -78,6 +78,10 @@ StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade,
   ports.set_on_changed = [&facade](std::function<void()> on_changed) {
     facade.SetOnStoredAttachmentsChanged(std::move(on_changed));
   };
+  ports.set_on_thumbnail_ready =
+      [&facade](std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_ready) {
+        facade.SetOnGridThumbnailReady(std::move(on_ready));
+      };
   ports.run_later = [](const std::chrono::milliseconds delay, std::function<void()> task) {
     AppRuntime::ScheduleCoordinatorOneShot(delay, [task = std::move(task)]() mutable {
       AppRuntime::PostUI(std::move(task));

@@ -316,15 +316,18 @@ public:
   void DeleteLocalAttachmentsAsync(std::vector<StoredAttachmentRef> items,
                                    std::function<void(StoredAttachmentDeleteResult)> done);
   void MessageStoreBytesAsync(std::function<void(uint64_t)> done);
-  /** A storage-grid cell's thumbnail, made on a background worker (returns at once; the change notifies). */
+  /** A storage-grid cell's thumbnail, made on a background worker (returns at once; SetOnGridThumbnailReady). */
   void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                             const std::string& mime, uint64_t page_generation);
   /** The page `page_generation` is left: its thumbnails not started yet are dropped. */
   void CancelGridThumbnails(uint64_t page_generation);
   /** The cell's thumbnail or video poster, when one exists (empty: none). A stat only. */
   std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
-  /** Called on the UI thread when an attachment arrives, goes, or gets a thumbnail. */
+  /** Called on the UI thread when an attachment arrives or goes. */
   void SetOnStoredAttachmentsChanged(std::function<void()> callback);
+  /** Called on the UI thread when a storage-grid cell's thumbnail (RequestGridThumbnail) is made. */
+  void SetOnGridThumbnailReady(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

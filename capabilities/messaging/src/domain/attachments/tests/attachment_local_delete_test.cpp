@@ -581,6 +581,122 @@ TEST_F(AttachmentLocalDeleteTest, AVideoWithoutAPosterIsNotDecryptedForTheGrid) 
   EXPECT_EQ(ViewFiles("A", video.fields), 0u) << "no plaintext copy was written";
 }
 
+// An AI image stored (StoreAiImage → StoreLocalImage) while a delete of the same bytes runs: the call returns at once,
+// and the delete keeps the bytes it stored.
+TEST_F(AttachmentLocalDeleteTest, StoringAnAiImageDuringADeleteOfTheSameBytesDoesNotWait) {
+  const File photo = MakeFile("asked_again", 3000);
+  Keep(photo);
+  Post("A", "a1", photo.fields);
+  // A thumbnail being made holds the delete in its first step (its mark is set) for as long as the test wants.
+  std::promise<void> entered;
+  std::promise<void> release;
+  auto released = release.get_future().share();
+  std::atomic<int> calls{0};
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    if (calls.fetch_add(1) == 0) {
+      entered.set_value();
+    }
+    released.wait();
+    return std::vector<uint8_t>(64, 0xd8);
+  }});
+  workflow_->RequestGridThumbnail("A", photo.fields.content_hash, photo.fields.mime, 1);
+  ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(5)), std::future_status::ready);
+  std::atomic<bool> deleted{false};
+  StoredAttachmentDeleteResult result;
+  std::thread deleter([&] {
+    result = Delete({{"A", photo.fields.content_hash}});
+    deleted = true;
+  });
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  ASSERT_FALSE(deleted.load()) << "the delete is running";
+
+  const auto started = std::chrono::steady_clock::now();
+  auto stored = workflow_->StoreLocalImage("ai", photo.plain, "image/png");
+  const auto took = std::chrono::steady_clock::now() - started;
+
+  EXPECT_LT(took, std::chrono::milliseconds(500)) << "the calling thread does not wait for the delete";
+  EXPECT_FALSE(deleted.load());
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->content_hash, photo.fields.content_hash);
+  release.set_value();
+  deleter.join();
+  PostAiImage("q1", photo.fields); // the question's message, written after the store
+
+  EXPECT_EQ(result.deleted, 1u);
+  EXPECT_EQ(result.kept_shared, 1u) << "stored during the delete: kept";
+  EXPECT_TRUE(Stored(photo.fields));
+  EXPECT_EQ(StateIn("A", photo.fields), State::Pending) << "still deleted from A";
+  EXPECT_TRUE(workflow_->EnsureLocalViewPath("ai", photo.fields.content_hash, "image/png", ""));
+}
+
+// Locked while a grid thumbnail is being made: nothing made from it stays, and the unlock makes it (the cell gets
+// its thumbnail without being asked again). Only the grid's own callback hears of it, not the chats' change.
+TEST_F(AttachmentLocalDeleteTest, LockedDuringAGridThumbnailTheUnlockMakesIt) {
+  const File photo = MakeFile("relocked", 3000);
+  Keep(photo);
+  Post("A", "a1", photo.fields);
+  std::promise<void> entered;
+  std::promise<void> release;
+  auto released = release.get_future().share();
+  std::atomic<int> calls{0};
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    if (calls.fetch_add(1) == 0) {
+      entered.set_value();
+      released.wait();
+    }
+    return std::vector<uint8_t>(64, 0xd8);
+  }});
+  int changes = 0;
+  std::vector<std::string> ready;
+  workflow_->SetOnChanged([&] { ++changes; });
+  workflow_->SetOnGridThumbnailReady([&](const std::string& thread_id, const std::vector<uint8_t>& hash) {
+    ready.push_back(thread_id + "|" + AttachmentHashHex(hash));
+  });
+
+  workflow_->RequestGridThumbnail("A", photo.fields.content_hash, photo.fields.mime, 1);
+  ASSERT_EQ(entered.get_future().wait_for(std::chrono::seconds(5)), std::future_status::ready);
+  workflow_->ClearDek();
+  release.set_value();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  AppRuntime::RunUITasks();
+  EXPECT_TRUE(workflow_->GridThumbnailPath("A", photo.fields.content_hash).empty()) << "made while locked: not kept";
+  EXPECT_TRUE(ready.empty());
+  EXPECT_EQ(calls.load(), 1) << "nothing is made while locked";
+
+  ASSERT_TRUE(workflow_->SetDek(Dek()));
+  ASSERT_TRUE(WaitFor([&] {
+    AppRuntime::RunUITasks();
+    return !ready.empty();
+  }));
+  EXPECT_FALSE(workflow_->GridThumbnailPath("A", photo.fields.content_hash).empty());
+  EXPECT_EQ(calls.load(), 2);
+  EXPECT_EQ(ready, std::vector<std::string>{"A|" + AttachmentHashHex(photo.fields.content_hash)});
+  EXPECT_EQ(changes, 0) << "a grid thumbnail is not an attachment change";
+}
+
+// A picture the hook cannot thumbnail is not tried again this session, until the next unlock.
+TEST_F(AttachmentLocalDeleteTest, AGridThumbnailTheHookRefusedIsTriedAgainAfterTheNextUnlock) {
+  const File photo = MakeFile("refused", 3000);
+  Keep(photo);
+  Post("A", "a1", photo.fields);
+  std::atomic<int> calls{0};
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    ++calls;
+    return Error("cannot decode");
+  }});
+  workflow_->RequestGridThumbnail("A", photo.fields.content_hash, photo.fields.mime, 1);
+  ASSERT_TRUE(WaitFor([&] { return calls.load() == 1; }));
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  workflow_->RequestGridThumbnail("A", photo.fields.content_hash, photo.fields.mime, 2);
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  EXPECT_EQ(calls.load(), 1) << "remembered as failed";
+
+  workflow_->ClearDek();
+  ASSERT_TRUE(workflow_->SetDek(Dek()));
+  workflow_->RequestGridThumbnail("A", photo.fields.content_hash, photo.fields.mime, 3);
+  EXPECT_TRUE(WaitFor([&] { return calls.load() == 2; })) << "forgotten at the unlock";
+}
+
 // --- What Me → Storage counts -------------------------------------------------------------------------------------
 
 TEST_F(AttachmentLocalDeleteTest, TheListCountsTheBytesOnThisDeviceNotTheDeclaredSize) {

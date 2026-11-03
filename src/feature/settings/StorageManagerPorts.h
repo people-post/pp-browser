@@ -25,7 +25,7 @@ struct StorageChatName {
 struct StorageManagerPorts {
   /** The attachments this device holds, one per (chat, hash) (ListStoredAttachmentsAsync). */
   std::function<void(std::function<void(std::vector<StoredAttachmentItem>)> done)> list_stored;
-  /** What deleting `items` would really free. */
+  /** What deleting `items` would really free (the device asked afresh: the delete's confirmation). */
   std::function<void(std::vector<StoredAttachmentRef> items, std::function<void(uint64_t)> done)> releasable_bytes;
   std::function<void(std::vector<StoredAttachmentRef> items, std::function<void(StoredAttachmentDeleteResult)> done)>
       delete_local;
@@ -47,8 +47,12 @@ struct StorageManagerPorts {
    */
   std::function<void(const StoredAttachmentItem& item, std::function<void(std::string path, bool needs_confirm)> done)>
       open_item;
-  /** Calls `on_changed` on the UI thread whenever an attachment arrives, goes, or gets a thumbnail. */
+  /** Calls `on_changed` on the UI thread whenever an attachment arrives or goes. */
   std::function<void(std::function<void()> on_changed)> set_on_changed;
+  /** Calls `on_ready` on the UI thread when a thumbnail asked for by request_thumbnail is made. */
+  std::function<void(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_ready)>
+      set_on_thumbnail_ready;
   /** Runs `task` on the UI thread after `delay`. */
   std::function<void(std::chrono::milliseconds delay, std::function<void()> task)> run_later;
 };
