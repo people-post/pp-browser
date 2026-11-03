@@ -219,7 +219,10 @@
 ## A029 — A smaller packet: one sealed header, derived nonces, no second tag
 
 **Date:** 2026-11-03  
-**Status:** Proposed (design, for review). Nothing is built. It amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3) and [A024](#a024--amp-call-media-over-circuit--nested-session) (H3) once accepted. Wire changes, with no compatibility kept: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release.
+**Status:** Proposed (design, for review). Built so far: step 1, 40 ms Opus packets ([CALLS.md § Audio packets](../../docs/architecture/CALLS.md)); H1–H3 are not. Step 1 measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user:
+  - group, one stream up: 130 → 88 kbit/s (60 → 35 pkt/s);
+  - group, two streams down: 189 → 105 kbit/s;
+  - 1:1 through a circuit, each way: up 165 → 112, down 120 → 67 kbit/s. It amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3) and [A024](#a024--amp-call-media-over-circuit--nested-session) (H3) once accepted. Wire changes, with no compatibility kept: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release.
 
 **Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
 
