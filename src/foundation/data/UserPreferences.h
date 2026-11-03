@@ -69,6 +69,9 @@ struct ProfilePreferences {
   std::string call_invite_policy = "everyone";
   /** R021 — attachment download: smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
+  /** With always_auto: download everything on Wi-Fi / on the mobile network. Neither ticked reads back as smart. */
+  bool attachment_auto_on_wifi = true;
+  bool attachment_auto_on_cellular = false;
   /** Me → About: show the technical options (ids, endpoints, MCP, paths). Off for everyone by default. */
   bool show_advanced_settings = false;
   /** First-run wizard finished or skipped (or an account was brought over). */

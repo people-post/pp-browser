@@ -170,7 +170,7 @@ TEST_F(LargeDownloadTest, ALargeFileIsDownloadedOnTheLaneStoredEncryptedAndNotMa
 
   workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
   ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length) ==
+    return workflow_.StateFor("t1", prepared->fields) ==
            AttachmentFetchWorkflow::DownloadState::Ready;
   }));
   EXPECT_TRUE(AttachmentBlobExists(*content_, prepared->fields.content_hash)) << "stored (encrypted) in the CAS";
@@ -192,10 +192,10 @@ TEST_F(LargeDownloadTest, ASmallFileIsStillMaterializedAtOnce) {
   server_.SetResponse(std::string(prepared->ciphertext.begin(), prepared->ciphertext.end()));
   workflow_.EnqueueFromMessage("t1", Message(*prepared, server_.Url()), /*force=*/true);
   ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length) ==
+    return workflow_.StateFor("t1", prepared->fields) ==
            AttachmentFetchWorkflow::DownloadState::Ready;
   })) << "state "
-      << static_cast<int>(workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length));
+      << static_cast<int>(workflow_.StateFor("t1", prepared->fields));
   // Ready is read from the stored (encrypted) file; the plaintext view is written right after it, so wait for it.
   EXPECT_TRUE(WaitFor([&] {
     return !AttachmentLocalPath(dir_.string(), "t1", prepared->fields.content_hash, prepared->fields.mime,
@@ -223,7 +223,7 @@ TEST_F(LargeDownloadTest, ACancelledDownloadLeavesNoFailureAndNoPercent) {
 
   workflow_.EnqueueFromMessage("t1", Message(*prepared, server_.Url()), /*force=*/true);
   ASSERT_TRUE(WaitFor([&] {
-    return workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length) ==
+    return workflow_.StateFor("t1", prepared->fields) ==
            AttachmentFetchWorkflow::DownloadState::Downloading;
   }));
   std::this_thread::sleep_for(std::chrono::milliseconds(100));  // the drain has handed it to the lane
@@ -234,7 +234,7 @@ TEST_F(LargeDownloadTest, ACancelledDownloadLeavesNoFailureAndNoPercent) {
   lane_.Post(Direction::Download, [&]() { lane_idle = true; });
   ASSERT_TRUE(WaitFor([&] { return lane_idle.load(); }));
   std::this_thread::sleep_for(std::chrono::milliseconds(300));  // the result is handled on a worker
-  EXPECT_NE(workflow_.StateFor("t1", prepared->fields.content_hash, prepared->fields.byte_length),
+  EXPECT_NE(workflow_.StateFor("t1", prepared->fields),
             AttachmentFetchWorkflow::DownloadState::Failed);
   EXPECT_EQ(workflow_.ProgressPercent("t1", prepared->fields.content_hash), -1);
   EXPECT_FALSE(AttachmentBlobExists(*content_, prepared->fields.content_hash));

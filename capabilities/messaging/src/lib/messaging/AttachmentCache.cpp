@@ -27,6 +27,8 @@ namespace {
 
 /** The poster's size bound (the extractor's default before the hook). */
 constexpr int kVideoPosterMaxDimension = 480;
+/** The thumbnail of a large image: same bound as the poster. */
+constexpr int kImageThumbnailMaxDimension = 480;
 
 Roe<void> MarkDownloaded(const std::string& path) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
@@ -39,6 +41,14 @@ Roe<std::vector<uint8_t>> VideoPoster(const std::string& video_path) {
     return Error("No video poster on this platform");
   }
   return platform.video_poster_jpeg(video_path, kVideoPosterMaxDimension);
+}
+
+Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes) {
+  const AttachmentPlatform platform = CurrentAttachmentPlatform();
+  if (!platform.image_thumbnail_jpeg) {
+    return Error("No image thumbnail on this platform");
+  }
+  return platform.image_thumbnail_jpeg(image_bytes, kImageThumbnailMaxDimension);
 }
 
 Roe<std::vector<uint8_t>> SoftPoster() {
@@ -559,6 +569,34 @@ Roe<std::string> EnsureAttachmentPoster(const std::string& profile_dir, const st
   }
   AttachmentPlaintextMemoryCache::Instance().Put(AttachmentHashHex(content_hash) + ".poster.jpg", bytes);
   return poster_path;
+}
+
+Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                                const ByteVector& image_bytes) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment thumbnail lookup");
+  }
+  if (!IsAttachmentImageMime(mime)) {
+    return Error("Attachment is not an image; no thumbnail");
+  }
+  const std::string thumb_path = AttachmentPosterPath(profile_dir, thread_id, content_hash);
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(thumb_path, ec) && !ec) {
+    return thumb_path;
+  }
+  auto jpeg = ImageThumbnail(image_bytes); // from memory: the plaintext is never written out for it
+  if (!jpeg) {
+    return jpeg.error();
+  }
+  if (jpeg->empty()) {
+    return Error("Image thumbnail JPEG empty");
+  }
+  const ByteVector bytes(jpeg->begin(), jpeg->end());
+  if (auto written = WriteBytesAtomic(std::filesystem::path(thumb_path), bytes); !written) {
+    return written.error();
+  }
+  return thumb_path;
 }
 
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id) {

@@ -678,6 +678,11 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
     view.local_path =
         AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
+  if (view.on_demand && IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
+      AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+    // A large picture shows its low-res thumbnail (a tap opens the original); `on_demand` stays for that open.
+    view.local_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+  }
   if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
     // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
     const auto cached = inline_image_ok_.find(view.local_path);
@@ -691,8 +696,15 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
     }
   }
   if (attachment_downloads_) {
-    view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+    view.state = attachment_downloads_->StateFor(message.thread_id, *fields);
     view.download_percent = attachment_downloads_->ProgressPercent(message.thread_id, fields->content_hash);
+    if (view.on_demand && view.state == AttachmentFetchWorkflow::DownloadState::Ready &&
+        IsAttachmentImageMime(fields->mime) && !profile_data_dir_.empty() &&
+        !AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+      // A stored large picture whose thumbnail went with the view cache (wiped at every start): made again on a
+      // worker, never here; the card is a file row until the change notification re-renders it.
+      attachment_downloads_->RequestImageThumbnail(message.thread_id, *fields);
+    }
   } else if (!view.local_path.empty()) {
     view.state = AttachmentFetchWorkflow::DownloadState::Ready;
   }

@@ -111,6 +111,9 @@ struct SettingsUiState {
   /** R021 — smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
   std::string attachment_download_policy_label;
+  /** "on" / "off": with always_auto, download everything on Wi-Fi / on the mobile network. */
+  std::string attachment_auto_on_wifi = "on";
+  std::string attachment_auto_on_cellular = "off";
   std::string pin_protection_status;
   /** Language-independent flags for pin_protection_status (the text is localized). */
   bool pin_protection_is_default = false;

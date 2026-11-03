@@ -19,4 +19,8 @@ Roe<std::vector<uint8_t>> EncodePngBytes(SDL_Surface* surface);
 // Caller owns the result; nullptr on failure.
 SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, int max_dimension);
 
+/** Rotates / mirrors `source` upright for an EXIF orientation 2..8 (any whole-byte pixel format). Consumes
+ *  `source`; returns it unchanged for 1 or an unknown value, nullptr when the copy cannot be made. */
+SDL_Surface* ApplyExifOrientation(SDL_Surface* source, int orientation);
+
 } // namespace pbr

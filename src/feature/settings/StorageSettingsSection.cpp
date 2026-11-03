@@ -74,6 +74,29 @@ std::string AttachmentDownloadPolicyDisplayLabel(const std::string& policy) {
   return Tr("settings.storage.attachment_policy.smart");
 }
 
+bool AttachmentAutoTogglesVisible(const SettingsUiState& state, const PlatformKind platform) {
+  return platform != PlatformKind::Desktop && state.attachment_download_policy == "always_auto";
+}
+
+void ChooseAttachmentDownloadPolicy(SettingsUiState& state, const std::string& policy) {
+  if (policy == "always_auto" && state.attachment_download_policy != "always_auto") {
+    state.attachment_auto_on_wifi = "on";
+    state.attachment_auto_on_cellular = "off";
+  }
+  state.attachment_download_policy = policy;
+  state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy);
+}
+
+void ToggleAttachmentAutoNetwork(SettingsUiState& state, const bool cellular) {
+  std::string& tick = cellular ? state.attachment_auto_on_cellular : state.attachment_auto_on_wifi;
+  tick = tick == "on" ? "off" : "on";
+  if (state.attachment_auto_on_wifi != "on" && state.attachment_auto_on_cellular != "on") {
+    ChooseAttachmentDownloadPolicy(state, UserPreferences::DefaultProfile().attachment_download_policy);
+    state.attachment_auto_on_wifi = "on";
+    state.attachment_auto_on_cellular = "off";
+  }
+}
+
 const char* StorageSettingsSection::Id() const {
   return "storage";
 }
@@ -102,24 +125,36 @@ void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
          {{"size", FormatByteSize(AttachmentCacheByteSize(bootstrap.profile_data_dir))}});
   state.attachment_download_policy = bootstrap.profile_prefs.attachment_download_policy;
   state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
+  state.attachment_auto_on_wifi = bootstrap.profile_prefs.attachment_auto_on_wifi ? "on" : "off";
+  state.attachment_auto_on_cellular = bootstrap.profile_prefs.attachment_auto_on_cellular ? "on" : "off";
 }
 
 bool StorageSettingsSection::IsPersisted(const SettingsUiState& state, const BootstrapResult& bootstrap) const {
-  return state.attachment_download_policy == bootstrap.profile_prefs.attachment_download_policy;
+  const ProfilePreferences& prefs = bootstrap.profile_prefs;
+  return state.attachment_download_policy == prefs.attachment_download_policy &&
+         (state.attachment_auto_on_wifi == "on") == prefs.attachment_auto_on_wifi &&
+         (state.attachment_auto_on_cellular == "on") == prefs.attachment_auto_on_cellular;
 }
 
 Roe<void> StorageSettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
   ProfilePreferences prefs = store.Snapshot().profile_prefs;
-  if (state.attachment_download_policy == prefs.attachment_download_policy) {
+  const bool wifi = state.attachment_auto_on_wifi == "on";
+  const bool cellular = state.attachment_auto_on_cellular == "on";
+  if (state.attachment_download_policy == prefs.attachment_download_policy &&
+      wifi == prefs.attachment_auto_on_wifi && cellular == prefs.attachment_auto_on_cellular) {
     return Roe<void>{};
   }
   prefs.attachment_download_policy = state.attachment_download_policy;
+  prefs.attachment_auto_on_wifi = wifi;
+  prefs.attachment_auto_on_cellular = cellular;
   return store.SaveProfilePrefs(prefs);
 }
 
 void StorageSettingsSection::ResetToDefaults(SettingsUiState& state, const SessionStore& /*store*/) {
   state.attachment_download_policy = UserPreferences::DefaultProfile().attachment_download_policy;
   state.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(state.attachment_download_policy);
+  state.attachment_auto_on_wifi = UserPreferences::DefaultProfile().attachment_auto_on_wifi ? "on" : "off";
+  state.attachment_auto_on_cellular = UserPreferences::DefaultProfile().attachment_auto_on_cellular ? "on" : "off";
 }
 
 } // namespace pbr

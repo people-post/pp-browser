@@ -57,8 +57,12 @@ struct AttachmentLimits {
   /** Receiving: per sender and minute, how many and how many bytes may start downloading by themselves. */
   int auto_download_max_count_per_minute = 10;
   uint64_t auto_download_max_bytes_per_minute = 20ULL * kAttachmentMegabyte;
-  /** Receiving: once the attachment store is this big nothing starts by itself any more. */
+  /** The same byte limit when "download everything" is chosen and the current network allows it. */
+  uint64_t auto_download_all_max_bytes_per_minute = 80ULL * kAttachmentMegabyte;
+  /** Receiving: once the attachment store is this big no large file (above the direct size) starts by itself. */
   uint64_t auto_download_disk_cap_bytes = 1000ULL * kAttachmentMegabyte;
+  /** ...and once it is this big no small one does either (large files do not stop the small ones). */
+  uint64_t auto_download_small_disk_cap_bytes = 1500ULL * kAttachmentMegabyte;
 };
 
 AttachmentLimits DefaultAttachmentLimits();
@@ -100,8 +104,13 @@ private:
  */
 class AutoDownloadBudget {
 public:
-  /** True and recorded when this download may start now; false when the sender is over a limit. */
+  /**
+   * True and recorded when this download may start now; false when the sender is over a limit: the count is
+   * at `max_count`, or the bytes already let through this minute plus this one are above `max_bytes`.
+   */
   bool TryAcquire(const std::string& sender, uint64_t bytes, int64_t now_ms, int max_count, uint64_t max_bytes);
+  /** Gives back one recorded download of `bytes` (it did not start after all); nothing when it is out of the window. */
+  void Refund(const std::string& sender, uint64_t bytes);
 
 private:
   struct Entry {

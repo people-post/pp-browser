@@ -391,6 +391,8 @@ public:
   /** The mesh slice changed in what it hosts / serves: take `mesh` and rewire the mesh objects. */
   void RefreshMeshCapabilities(const MeshConfig& mesh);
   void WireAttachmentDownloads();
+  /** Tells the downloads whether "download everything" applies on the current network (policy_ and the network). */
+  void FeedAttachmentNetwork();
   void Apply(const NetworkConfig& config);
   void Apply(const PolicyPrefs& prefs);
   void Apply(const NotificationPrefs& prefs);
@@ -577,6 +579,12 @@ private:
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;
+  /** The last known kind of network for automatic downloads (written on the network monitor's thread). */
+  std::atomic<AutoDownloadNetwork> attachment_network_{AutoDownloadNetwork::Unknown};
+  /** The 15 s "no network report yet" timer is pending (at most one). */
+  std::atomic<bool> attachment_network_timer_armed_{false};
+  /** Guards that timer and its UI post: invalidated at Shutdown and when the hub goes. */
+  pp::Lifetime attachment_network_lifetime_;
   AttachmentSendLimiter attachment_send_limiter_;
   /** Server-space warnings: once per level and run, and at most one list call a day. */
   BlobSpaceMonitor blob_space_monitor_;

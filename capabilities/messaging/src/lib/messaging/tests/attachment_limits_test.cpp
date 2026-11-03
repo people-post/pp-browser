@@ -38,7 +38,28 @@ TEST(AttachmentLimitsTest, ShippingDefaultsAreFiftyMegabytesForSendAndReceive) {
   EXPECT_EQ(limits.send_max_per_minute, 10);
   EXPECT_EQ(limits.auto_download_max_count_per_minute, 10);
   EXPECT_EQ(limits.auto_download_max_bytes_per_minute, 20'000'000u);
+  EXPECT_EQ(limits.auto_download_all_max_bytes_per_minute, 80'000'000u);
   EXPECT_EQ(limits.auto_download_disk_cap_bytes, 1'000'000'000u);
+  EXPECT_EQ(limits.auto_download_small_disk_cap_bytes, 1'500'000'000u);
+}
+
+TEST(AutoDownloadBudgetTest, ARefundGivesBackOneDownloadOfThatSize) {
+  AutoDownloadBudget budget;
+  EXPECT_TRUE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000));
+  EXPECT_FALSE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000)) << "100 MB > 80 MB in the minute";
+  budget.Refund("alice", 50'000'000);
+  EXPECT_TRUE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000)) << "the first one gave its bytes back";
+  budget.Refund("bob", 1);  // nothing recorded: no effect
+  budget.Refund("alice", 7);  // no entry of that size: no effect
+  EXPECT_FALSE(budget.TryAcquire("alice", 50'000'000, 1'000, 10, 80'000'000));
+}
+
+TEST(AutoDownloadBudgetTest, ARefundGivesBackTheCountToo) {
+  AutoDownloadBudget budget;
+  EXPECT_TRUE(budget.TryAcquire("alice", 10, 1'000, 1, 1'000));
+  EXPECT_FALSE(budget.TryAcquire("alice", 10, 1'000, 1, 1'000));
+  budget.Refund("alice", 10);
+  EXPECT_TRUE(budget.TryAcquire("alice", 10, 1'000, 1, 1'000));
 }
 
 TEST(AttachmentLimitsTest, EachKindHasItsOwnSendLimit) {
