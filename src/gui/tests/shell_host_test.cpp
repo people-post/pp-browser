@@ -88,17 +88,11 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_chat));
   EXPECT_FALSE(dismiss_chat.compact_chat_open);
 
-  ShellState account_sheet_state{};
-  account_sheet_state.account_sheet_open = true;
-  EXPECT_EQ(ShellInterruption::Top(account_sheet_state), InterruptionKind::AccountSheet);
-
-  ShellState dismiss_account_sheet = account_sheet_state;
-  EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_account_sheet));
-  EXPECT_FALSE(dismiss_account_sheet.account_sheet_open);
-
-  ShellState transient_with_sheet = transient_state;
-  transient_with_sheet.account_sheet_open = true;
-  EXPECT_EQ(ShellInterruption::Top(transient_with_sheet), InterruptionKind::Transient);
+  ShellState compact_me_tab{};
+  compact_me_tab.layout_mode = LayoutMode::Compact;
+  compact_me_tab.nav_tab = NavTab::Me;
+  EXPECT_EQ(ShellInterruption::Top(compact_me_tab), InterruptionKind::None);
+  EXPECT_FALSE(ShellInterruption::DismissTop(compact_me_tab));
 
   ShellState dismiss_transient = transient_state;
   EXPECT_TRUE(ShellInterruption::DismissTop(dismiss_transient));
@@ -120,10 +114,9 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_aux_frost),
             CompactChromeFrostSurface::AuxiliarySheetChrome);
 
-  ShellState compact_account_frost = compact_base;
-  compact_account_frost.account_sheet_open = true;
-  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_account_frost),
-            CompactChromeFrostSurface::AccountSheetHeader);
+  ShellState compact_me_frost = compact_base;
+  compact_me_frost.nav_tab = NavTab::Me;
+  EXPECT_EQ(ShellInterruption::ResolveFrostSurface(compact_me_frost), CompactChromeFrostSurface::BottomNav);
 
   ShellState compact_transient_frost = compact_base;
   compact_transient_frost.transient_stack.push_back(transient_pane);
@@ -167,25 +160,63 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(no_inset.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.content_top_dp, 0.f);
   EXPECT_FLOAT_EQ(no_inset.shell_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(no_inset.content_padding_bottom_dp, 56.f);
+  EXPECT_FLOAT_EQ(no_inset.content_padding_bottom_dp, 49.f);
   EXPECT_FLOAT_EQ(no_inset.chrome_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(no_inset.sheet_bottom_dp, 56.f);
-  EXPECT_FLOAT_EQ(no_inset.chrome_horizontal_inset_dp, 12.f);
+  EXPECT_FLOAT_EQ(no_inset.sheet_bottom_dp, 49.f);
+  EXPECT_FLOAT_EQ(no_inset.chrome_horizontal_inset_dp, 0.f);
 
   const CompactChromeLayout with_inset = ShellLayout::ComputeCompactChromeLayout(config, 47, 34);
   // Body stays edge-to-edge at the top; content_top carries the status-bar inset.
   EXPECT_FLOAT_EQ(with_inset.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(with_inset.content_top_dp, 47.f);
   EXPECT_FLOAT_EQ(with_inset.shell_bottom_dp, 34.f);
-  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 56.f);
+  EXPECT_FLOAT_EQ(with_inset.content_padding_bottom_dp, 49.f);
   EXPECT_FLOAT_EQ(with_inset.chrome_bottom_dp, 0.f);
-  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 56.f);
+  EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 49.f);
 
   const CompactChromeLayout with_keyboard = ShellLayout::ComputeCompactChromeLayout(config, 47, 336);
   EXPECT_FLOAT_EQ(with_keyboard.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(with_keyboard.content_top_dp, 47.f);
   EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 336.f);
-  EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 56.f);
+  EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 49.f);
+
+  // Phone: the tab bar paints down through the home-indicator strip (document full-bleed, bar pads by the inset).
+  const CompactChromeLayout tab_bar =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::TabBar);
+  EXPECT_FLOAT_EQ(tab_bar.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar.bottom_surface_padding_dp, 34.f);
+  EXPECT_FLOAT_EQ(tab_bar.content_padding_bottom_dp, 49.f + 34.f);
+  EXPECT_FLOAT_EQ(tab_bar.sheet_bottom_dp, 49.f + 34.f);
+  EXPECT_FLOAT_EQ(tab_bar.chrome_bottom_dp, 0.f);
+
+  const CompactChromeLayout tab_bar_no_inset =
+      ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 0.f, CompactBottomSurface::TabBar);
+  EXPECT_FLOAT_EQ(tab_bar_no_inset.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar_no_inset.bottom_surface_padding_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar_no_inset.content_padding_bottom_dp, 49.f);
+
+  // Keyboard up: today's behaviour (body shrinks by the keyboard, no strip padding).
+  const CompactChromeLayout tab_bar_keyboard =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::TabBar);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.bottom_surface_padding_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.content_padding_bottom_dp, 49.f);
+
+  // Chat overlay (no tab bar): the composer pads by the inset; nothing is added to the nav padding.
+  const CompactChromeLayout composer =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Composer);
+  EXPECT_FLOAT_EQ(composer.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(composer.bottom_surface_padding_dp, 34.f);
+  EXPECT_FLOAT_EQ(composer.content_padding_bottom_dp, 49.f);
+  const CompactChromeLayout composer_keyboard =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::Composer);
+  EXPECT_FLOAT_EQ(composer_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(composer_keyboard.bottom_surface_padding_dp, 0.f);
+
+  const CompactChromeLayout page =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Page);
+  EXPECT_FLOAT_EQ(page.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(page.bottom_surface_padding_dp, 34.f);
 
   const CompactChromeLayout with_titlebar = ShellLayout::ComputeCompactChromeLayout(config, 0, 0, 36.f);
   EXPECT_FLOAT_EQ(with_titlebar.shell_top_dp, 0.f);
@@ -204,7 +235,6 @@ TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   ShellState state{};
   state.layout_mode = LayoutMode::Compact;
   state.nav_tab = NavTab::Me;
-  state.account_sheet_open = true;
   state.primary_pane_key = "settings_detail";
 
   PaneState detail_pane;
@@ -214,7 +244,6 @@ TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   const ShellChromeSnapshot snap = ProjectShellChromeSnapshot(state);
   EXPECT_EQ(snap.layout_mode, LayoutMode::Compact);
   EXPECT_EQ(snap.nav_tab, NavTab::Me);
-  EXPECT_TRUE(snap.account_sheet_open);
   EXPECT_TRUE(snap.settings_detail_transient);
   EXPECT_TRUE(snap.settings_detail_primary);
 }

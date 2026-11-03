@@ -76,22 +76,20 @@ select selectbox option {
   backdrop-filter: blur(12px);
 }
 
-.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
+.shell-bottom-chrome--frost {
   backdrop-filter: blur(12px);
 }
 
-.shell-bottom-chrome--solid .shell-nav-rail--compact .shell-nav-pill {
+.shell-bottom-chrome--solid {
   backdrop-filter: none;
 }
 
 .surface-chrome--solid,
-.shell-bottom-chrome--frost.surface-chrome--solid .shell-nav-rail--compact .shell-nav-pill,
+.shell-bottom-chrome--frost.shell-bottom-chrome--solid,
 .surface-chrome--solid.surface-chrome--frost,
-.shell-nav-rail--compact .shell-nav-pill.surface-chrome--solid,
 .shell-chat-overlay-chrome.surface-chrome--solid,
 .shell-transient-chrome.surface-chrome--solid,
 .shell-sheet-compact-chrome.surface-chrome--solid,
-.shell-account-sheet-header.surface-chrome--solid,
 .shell-composer-mount.surface-chrome--solid {
   backdrop-filter: none;
 }
@@ -332,33 +330,6 @@ select selectbox option {
   padding: 0 14dp;
   gap: 6dp;
   font-weight: bold;
-}
-
-.shell-profile-btn {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  min-width: 36dp;
-  padding: 0;
-  border: 0;
-  border-radius: 18dp;
-  cursor: pointer;
-}
-
-.shell-profile-btn svg {
-  flex-shrink: 0;
-  width: 18dp;
-  height: 18dp;
-}
-
-.badge-dot--profile {
-  position: absolute;
-  top: 0;
-  right: 0;
 }
 
 .messages {
@@ -1682,7 +1653,7 @@ select selectbox option {
   flex: 0 0 auto;
   flex-direction: row;
   width: 100%;
-  height: 56dp;
+  height: 49dp;
   box-sizing: border-box;
   background-color: transparent;
 }
@@ -1694,59 +1665,21 @@ select selectbox option {
   height: 100%;
   align-items: center;
   justify-content: flex-start;
-  gap: 4dp;
+  gap: 0;
   padding: 8dp 4dp;
   box-sizing: border-box;
 }
 
-.shell-nav-pill {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
-.shell-nav-pill--secondary {
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  justify-content: flex-start;
-}
-
+/* Phone tab bar: four equal-width tabs, no pills. */
 .shell-nav-rail--compact .shell-nav-rail-inner {
   flex-direction: row;
   justify-content: space-between;
-  align-items: center;
-  gap: 12dp;
-  height: 56dp;
+  align-items: stretch;
+  height: 49dp;
   padding: 0;
 }
 
-.shell-nav-rail--compact .shell-nav-pill {
-  flex-direction: row;
-  align-items: center;
-  height: 56dp;
-  padding: 4dp 6dp;
-  border-radius: 24dp;
-  overflow: hidden;
-  width: auto;
-  flex: 0 0 auto;
-}
-
-.shell-nav-rail--compact .shell-nav-pill--secondary {
-  flex: 0 0 auto;
-  width: auto;
-  min-height: 0;
-}
-
 .shell-nav-spacer {
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 0;
-}
-
-.shell-nav-pill--secondary > .shell-nav-spacer {
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
@@ -1775,12 +1708,22 @@ select selectbox option {
 }
 
 .shell-nav-rail--compact .shell-nav-tab {
-  height: 48dp;
-  border-radius: 20dp;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  height: 49dp;
+  border-radius: 0;
+  gap: 2dp;
 }
 
 .shell-nav-tab svg {
   flex-shrink: 0;
+}
+
+/* 24dp tab icons (§8.2): size in dp so the layout box matches the drawn icon on every density. */
+.shell-nav-rail--compact .shell-nav-tab svg {
+  width: 24dp;
+  height: 24dp;
 }
 
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
@@ -1804,6 +1747,12 @@ select selectbox option {
   line-height: 1.1;
 }
 
+/* caption-2 */
+.shell-nav-rail--compact .shell-nav-tab-label {
+  font-size: 11dp;
+  line-height: 13dp;
+}
+
 .shell-nav-page {
   flex: 1;
   min-height: 0;
@@ -1811,7 +1760,7 @@ select selectbox option {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
-  padding-bottom: 56dp;
+  padding-bottom: 49dp;
 }
 
 .shell-nav-page .shell-pane-body {
@@ -1836,6 +1785,30 @@ select selectbox option {
   height: auto;
 }
 
+/* Page push / back (DESIGN-pp-ui §7): 0.3s ease-out slide from / to the right. ShellHost adds
+   .shell-page-enter once after the page is built; the swipe gesture and BeginAnimatedDismiss set an inline
+   transform and the transition below runs it. Dragging turns the transition off so the page follows the finger. */
+@keyframes shell-page-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0%); }
+}
+
+.shell-page-enter {
+  animation: 0.3s cubic-out shell-page-in;
+}
+
+.shell-chat-overlay,
+.shell-layer-transient,
+.settings-detail-view {
+  transition: transform 0.3s cubic-out;
+}
+
+.shell-chat-overlay.shell-swipe-dragging,
+.shell-layer-transient.shell-swipe-dragging,
+.settings-detail-view.shell-swipe-dragging {
+  transition: none;
+}
+
 .shell-chat-overlay {
   position: absolute;
   top: 0;
@@ -1851,80 +1824,6 @@ select selectbox option {
 
 .shell-chat-overlay.shell-swipe-dragging,
 .shell-chat-overlay--dragging {
-}
-
-.shell-account-sheet-scrim {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Above auxiliary sheet (26/27); below dialog/overlay layers. */
-  z-index: 28;
-  focus: none;
-}
-
-.shell-account-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  /* Nearly full-height sheet: small top peek; bottom is shell floor (covers nav). */
-  top: 48dp;
-  bottom: 0;
-  z-index: 29;
-  display: flex;
-  flex-direction: column;
-  border-radius: 16dp 16dp 0 0;
-  overflow: hidden;
-  box-sizing: border-box;
-  transform: translateY(0);
-}
-
-.shell-account-sheet--dragging {
-}
-
-.shell-account-sheet-grabber {
-  flex-shrink: 0;
-  width: 36dp;
-  height: 5dp;
-  margin: 8dp auto 4dp;
-  border-radius: 3dp;
-}
-
-.shell-account-sheet-header {
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16dp 8dp;
-  box-sizing: border-box;
-}
-
-.shell-account-sheet-header .heading-2 {
-  margin: 0;
-}
-
-/* Header flow (overrides absolute overlay .shell-close-btn). */
-.shell-account-sheet-header .shell-close-btn {
-  position: relative;
-  top: auto;
-  right: auto;
-  flex-shrink: 0;
-  width: 32dp;
-  height: 32dp;
-  min-width: 32dp;
-  border-radius: 16dp;
-}
-
-.shell-account-sheet-header .shell-close-btn svg {
-  width: 14dp;
-  height: 14dp;
-}
-
-.shell-account-sheet-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 .shell-chat-overlay-chrome {
@@ -2010,8 +1909,8 @@ select selectbox option {
 .shell-bottom-chrome {
   position: absolute;
   bottom: 0;
-  left: 12dp;
-  right: 12dp;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   z-index: 15;
@@ -2975,12 +2874,6 @@ input.checkbox {
   padding: 8dp 4dp;
 }
 
-.home-header-actions {
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8dp;
-}
-
 .home-brand {
   flex: 1;
   min-width: 0;
@@ -3317,14 +3210,19 @@ input.checkbox {
   text-align: center;
 }
 
+/* tab-badge pill: 18dp high, caption-1 600, at the icon's top-right. */
 .badge-count--nav {
   position: absolute;
-  top: -4dp;
-  right: -8dp;
-  min-width: 16dp;
-  padding: 1dp 4dp;
-  font-size: 10dp;
-  line-height: 1.1;
+  top: -6dp;
+  right: -12dp;
+  min-width: 18dp;
+  height: 18dp;
+  padding: 0 5dp;
+  box-sizing: border-box;
+  border-radius: 9dp;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 18dp;
 }
 
 .badge-dot {

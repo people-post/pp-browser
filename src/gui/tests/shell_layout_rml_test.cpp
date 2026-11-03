@@ -28,6 +28,18 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
+TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Me;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "id=\"shell-nav-rail-mount\"")) << "the tab bar mounts here";
+  EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\"")) << "Me fills the page like any other tab";
+  EXPECT_FALSE(Has(rml, "account-sheet"));
+  EXPECT_FALSE(Has(rml, "close_account_sheet"));
+}
+
 TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoot) {
   // A full layout sync while a dialog is open rebuilds the root and then fills the dialog mount;
   // an inline copy in the root would survive dialog_close as a dead OK button over the whole app.

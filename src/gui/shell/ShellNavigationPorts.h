@@ -11,7 +11,6 @@ namespace pbr {
 struct ShellChromeSnapshot {
   LayoutMode layout_mode = LayoutMode::Expanded;
   NavTab nav_tab = NavTab::Home;
-  bool account_sheet_open = false;
   /** Top transient pane is `settings_detail`. */
   bool settings_detail_transient = false;
   /** Expanded Me primary pane shows settings detail. */
@@ -32,7 +31,6 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   ShellChromeSnapshot snap;
   snap.layout_mode = state.layout_mode;
   snap.nav_tab = state.nav_tab;
-  snap.account_sheet_open = state.account_sheet_open;
   snap.settings_detail_transient =
       !state.transient_stack.empty() && state.transient_stack.back().spec.key == "settings_detail";
   snap.settings_detail_primary = state.primary_pane_key == "settings_detail";
@@ -59,8 +57,6 @@ struct ShellNavigationPorts {
   std::function<bool(const std::string& id)> has_local_back;
 
   std::function<void(NavTab tab)> select_nav_tab;
-  std::function<void()> open_account_sheet;
-  std::function<void()> close_account_sheet;
   std::function<void()> clear_primary_pane;
   std::function<void(const std::string& key)> set_primary_pane;
   std::function<void(const PaneSpec& spec)> push_transient;

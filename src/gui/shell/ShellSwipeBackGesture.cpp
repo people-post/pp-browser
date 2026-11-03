@@ -7,6 +7,7 @@
 #include <ui/base/ID.h>
 
 #include <cstdio>
+#include <cstdlib>
 
 namespace pbr {
 
@@ -40,6 +41,7 @@ void ShellSwipeBackGesture::Attach(ui::Element* listen_surface, ui::Context* con
   options_ = std::move(options);
   on_dismiss_ = std::move(on_dismiss);
   surface_->AddEventListener(ui::EventId::Mousedown, this);
+  surface_->AddEventListener(ui::EventId::Click, this, true);
   attached_ = true;
   SetSurfaceOffset(0.f, false);
 }
@@ -48,7 +50,9 @@ void ShellSwipeBackGesture::Detach() {
   Abort();
   if (attached_ && surface_) {
     surface_->RemoveEventListener(ui::EventId::Mousedown, this);
+    surface_->RemoveEventListener(ui::EventId::Click, this, true);
   }
+  swallow_click_ = false;
   surface_ = nullptr;
   transform_target_ = nullptr;
   content_root_ = nullptr;
@@ -231,6 +235,15 @@ void ShellSwipeBackGesture::UpdateDrag(int x_px, int y_px, ui::Event& event) {
       return;
     }
   } else if (!dragging_) {
+    if (!from_edge_) {
+      // Swipe from anywhere on the page: a vertical or leftward start is not ours (the page scrolls /
+      // the content handles it), so let go before anything moves.
+      if ((std::abs(dy_px) > kDragDeadzonePx && std::abs(dy_px) > std::abs(dx_px)) || dx_px < -kDragDeadzonePx) {
+        tracking_ = false;
+        SetDocumentDragCapture(false);
+        return;
+      }
+    }
     if (dx_px <= kDragDeadzonePx) {
       return;
     }
@@ -271,6 +284,8 @@ void ShellSwipeBackGesture::EndDrag() {
   if (!was_dragging) {
     return;
   }
+  // A drag that began on a row must not also click it when the finger lifts.
+  swallow_click_ = true;
   const float dx_dp = PixelDeltaToDp(drag_last_x_px_ - drag_start_x_px_);
   const float width_dp = ResolveSurfaceWidthDp();
   const float threshold = width_dp * kDismissThresholdRatio;
@@ -288,7 +303,14 @@ void ShellSwipeBackGesture::ProcessEvent(ui::Event& event) {
   }
 
   switch (event.GetId()) {
+  case ui::EventId::Click:
+    if (swallow_click_) {
+      swallow_click_ = false;
+      event.StopPropagation();
+    }
+    break;
   case ui::EventId::Mousedown: {
+    swallow_click_ = false;
     ui::Element* target = event.GetTargetElement();
     if (ShouldIgnoreTarget(target)) {
       return;

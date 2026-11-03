@@ -100,34 +100,6 @@ std::string ShellLayoutRml::ExpandedBase() const {
     }
   }
   out << "</div></div>";
-  out << AccountSheet();
-  return out.str();
-}
-
-std::string ShellLayoutRml::AccountSheet() const {
-  if (!state_.account_sheet_open) {
-    return {};
-  }
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
-  const bool frost_enabled = ChromeFrostEnabled();
-  const bool solid = state_.reduce_transparency;
-  std::ostringstream out;
-  out << "<div class=\"shell-account-sheet-scrim\" data-event-click=\"close_account_sheet()\"></div>";
-  out << "<div class=\"shell-account-sheet surface-chrome";
-  if (solid) {
-    out << " surface-chrome--solid";
-  }
-  out << "\" id=\"shell-account-sheet\">";
-  out << "<div class=\"shell-account-sheet-grabber\"></div>";
-  out << "<div class=\"shell-account-sheet-header row "
-      << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost, frost_enabled, solid) << "\">";
-  out << "<h2 class=\"heading-2\">Me</h2>";
-  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">";
-  out << "<svg src=\"../icons/close.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "</div>";
-  out << "<div class=\"shell-pane-body shell-account-sheet-body\" id=\"pane-body-settings\"></div>";
-  out << "</div>";
   return out.str();
 }
 
@@ -205,7 +177,6 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  out << AccountSheet();
   out << "</div>";
   return out.str();
 }

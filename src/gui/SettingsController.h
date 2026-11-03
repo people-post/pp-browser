@@ -74,8 +74,6 @@ public:
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
   void OnMeSurfaceClosed();
   void SyncLayoutMode();
-  void OnAccountSheetOpened();
-  void OnAccountSheetClosed();
   /** Clear detail UI without touching the shell local-back stack (used by sheet dismiss). */
   void ApplyBackToListUi();
   void OnDetailDismissed();
@@ -288,7 +286,6 @@ private:
   std::vector<SectionListRow> sections_;
   ui::String selected_id_;
   ui::String selected_title_;
-  bool in_account_sheet_ = false;
   bool show_detail_ = false;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;

@@ -169,7 +169,7 @@ bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(ui::Element* target) con
     if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
       return true;
     }
-    if (node->IsClassSet("shell-overlay-chrome-mount") || node->IsClassSet("shell-account-sheet-scrim") ||
+    if (node->IsClassSet("shell-overlay-chrome-mount") ||
         node->IsClassSet("shell-sheet-scrim") || node->IsClassSet("shell-scrim")) {
       return true;
     }

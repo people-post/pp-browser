@@ -663,15 +663,6 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
-.shell-nav-rail--compact .shell-nav-pill {
-  background-color: #f9f9f9f0;
-  border-top: 1dp #3c3c434a;
-  box-shadow: 0 2dp 12dp #00000026;
-}
-
-.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
-  background-color: #f9f9f9b2;
-}
 
 .shell-nav-tab {
   background-color: transparent;
@@ -695,13 +686,10 @@ select selectbox option:hover {
   image-color: #007aff;
 }
 
-.shell-nav-rail--compact .shell-nav-tab:hover {
-  background-color: #7878801f;
-}
-
+/* Phone tab bar: selection is a colour change only, no tint. */
+.shell-nav-rail--compact .shell-nav-tab:hover,
 .shell-nav-rail--compact .shell-nav-tab--active {
-  background-color: #007aff1f;
-  color: #007aff;
+  background-color: transparent;
 }
 
 .shell-chat-overlay {
@@ -724,10 +712,15 @@ select selectbox option:hover {
 }
 
 .shell-bottom-chrome {
-  background-color: transparent;
+  background-color: #f9f9f9f0;
+  border-top: 1dp #3c3c434a;
 }
 
-.shell-drawer-scrim, .shell-sheet-scrim, .shell-account-sheet-scrim {
+.shell-bottom-chrome--frost {
+  background-color: #f9f9f9b2;
+}
+
+.shell-drawer-scrim, .shell-sheet-scrim {
   background-color: #00000066;
 }
 
@@ -756,28 +749,6 @@ select selectbox option:hover {
   background-color: #f9f9f9b2;
   border-bottom: 1dp #3c3c434a;
   border-top: 1dp #3c3c434a;
-}
-
-.shell-account-sheet {
-  background-color: #ffffff;
-}
-
-.shell-account-sheet-header {
-  background-color: #f9f9f9f0;
-  border-bottom: 1dp #3c3c434a;
-}
-
-.shell-account-sheet-header.surface-chrome--frost {
-  background-color: #f9f9f9b2;
-  border-top: 1dp #3c3c434a;
-}
-
-.shell-profile-btn {
-  background-color: #78788033;
-}
-
-.shell-account-sheet-grabber {
-  background-color: #3c3c434c;
 }
 
 .shell-toolbar {

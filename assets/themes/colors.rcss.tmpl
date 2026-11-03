@@ -668,15 +668,6 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
-.shell-nav-rail--compact .shell-nav-pill {
-  background-color: {{bg-chrome}};
-  border-top: 1dp {{separator}};
-  box-shadow: 0 2dp 12dp {{shadow}};
-}
-
-.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
-  background-color: {{bg-chrome-blur}};
-}
 
 .shell-nav-tab {
   background-color: transparent;
@@ -700,13 +691,10 @@ select selectbox option:hover {
   image-color: {{accent}};
 }
 
-.shell-nav-rail--compact .shell-nav-tab:hover {
-  background-color: {{fill-2}};
-}
-
+/* Phone tab bar: selection is a colour change only, no tint. */
+.shell-nav-rail--compact .shell-nav-tab:hover,
 .shell-nav-rail--compact .shell-nav-tab--active {
-  background-color: {{accent-tint}};
-  color: {{accent}};
+  background-color: transparent;
 }
 
 .shell-chat-overlay {
@@ -729,10 +717,15 @@ select selectbox option:hover {
 }
 
 .shell-bottom-chrome {
-  background-color: transparent;
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
 }
 
-.shell-drawer-scrim, .shell-sheet-scrim, .shell-account-sheet-scrim {
+.shell-bottom-chrome--frost {
+  background-color: {{bg-chrome-blur}};
+}
+
+.shell-drawer-scrim, .shell-sheet-scrim {
   background-color: {{scrim}};
 }
 
@@ -761,28 +754,6 @@ select selectbox option:hover {
   background-color: {{bg-chrome-blur}};
   border-bottom: 1dp {{separator}};
   border-top: 1dp {{separator}};
-}
-
-.shell-account-sheet {
-  background-color: {{bg-card}};
-}
-
-.shell-account-sheet-header {
-  background-color: {{bg-chrome}};
-  border-bottom: 1dp {{separator}};
-}
-
-.shell-account-sheet-header.surface-chrome--frost {
-  background-color: {{bg-chrome-blur}};
-  border-top: 1dp {{separator}};
-}
-
-.shell-profile-btn {
-  background-color: {{fill}};
-}
-
-.shell-account-sheet-grabber {
-  background-color: {{label-3}};
 }
 
 .shell-toolbar {

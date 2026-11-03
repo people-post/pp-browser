@@ -220,9 +220,6 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
       settings.OnDetailDismissed();
     }
   });
-
-  shell.SetOnAccountSheetOpened([&settings]() { settings.OnAccountSheetOpened(); });
-  shell.SetOnAccountSheetClosed([&settings]() { settings.OnAccountSheetClosed(); });
 }
 
 bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
@@ -933,9 +930,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
 
     const ShellNavigationPorts nav = MakeShellNavigationPorts(*shell_);
-    if (nav.close_account_sheet) {
-      nav.close_account_sheet();
-    }
     if (nav.select_nav_tab) {
       nav.select_nav_tab(NavTab::Sessions);
     }
@@ -1700,9 +1694,7 @@ void Application::WireHubCallbacks() {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
     }
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell_->State());
-    if (chrome.account_sheet_open) {
-      settings_->OnAccountSheetOpened();
-    } else if (chrome.nav_tab == NavTab::Me) {
+    if (chrome.nav_tab == NavTab::Me) {
       settings_->OnNavTabActivated();
     }
   });
@@ -1920,7 +1912,7 @@ void Application::Run() {
     AppRuntime::RunUITasks();
     const auto tasks_done = std::chrono::steady_clock::now();
 
-    if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
+    if (shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
     if (shell_->State().nav_tab == NavTab::Contacts) {

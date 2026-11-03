@@ -11,7 +11,6 @@
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
-#include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellSplitterDrag.h"
@@ -44,7 +43,6 @@ enum class DismissTarget {
   LocalBack,
   CompactChatOverlay,
   AuxiliarySheet,
-  AccountSheet,
   Transient,
   OverlayLayer,
 };
@@ -119,8 +117,6 @@ public:
   void ClearPrimaryPane();
   void OpenCompactChat();
   void CloseCompactChat();
-  void OpenAccountSheet();
-  void CloseAccountSheet();
   void PushTransient(const PaneSpec& spec);
   void PopTransient();
   int PushLayer(const PaneSpec& spec);
@@ -189,8 +185,6 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
-  void SetOnAccountSheetOpened(std::function<void()> callback);
-  void SetOnAccountSheetClosed(std::function<void()> callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -266,7 +260,6 @@ private:
   void AttachSplitterDrag();
   void AttachAuxiliarySplitterDrag(ui::ElementDocument* doc);
   void NotifySidebarChanged();
-  void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
   void ApplyLayoutModeFromContext(ui::Context* context);
@@ -287,6 +280,10 @@ private:
   void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
+  /** Compact only: the element that slides out (and in) for `target`; null when it has no page to slide. */
+  ui::Element* PageElementFor(DismissTarget target) const;
+  /** Slide the element with this id in from the right (adds the shell-page-enter class). */
+  void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool ChromeFrostEnabled() const;
@@ -320,6 +317,10 @@ private:
   int next_overlay_id_ = 1;
   float elapsed_ms_ = 0.f;
   std::optional<PendingDismiss> pending_dismiss_;
+  /** Id of a page to slide in once the next SyncLayout has built it (transient page, chat overlay). */
+  std::string page_enter_pending_id_;
+  /** A swipe-back already started the slide-out; BeginAnimatedDismiss must not restart it. */
+  bool slide_out_started_ = false;
   std::vector<LocalBackEntry> local_back_stack_;
   ui::String saved_focus_id_;
   bool sync_pending_ = false;
@@ -340,7 +341,6 @@ private:
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
-  ShellBottomSheetGesture account_sheet_gesture_;
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;
@@ -352,8 +352,6 @@ private:
   std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
-  std::function<void()> on_account_sheet_opened_;
-  std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
   ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};
   PinGateActionPorts pin_gate_actions_;

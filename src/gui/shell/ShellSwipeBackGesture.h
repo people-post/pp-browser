@@ -76,6 +76,8 @@ private:
   bool tracking_ = false;
   bool dragging_ = false;
   bool from_edge_ = false;
+  /** Set when a drag ended on this surface: the click that follows the release is dropped. */
+  bool swallow_click_ = false;
   int drag_start_x_px_ = 0;
   int drag_start_y_px_ = 0;
   int drag_last_x_px_ = 0;

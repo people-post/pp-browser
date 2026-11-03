@@ -20,7 +20,6 @@ enum class InterruptionKind {
   None,
   CompactChatOverlay,
   AuxiliarySheet,
-  AccountSheet,
   Transient,
   OverlayLayer,
   Dialog,
@@ -35,7 +34,6 @@ enum class CompactChromeFrostSurface {
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
-  AccountSheetHeader,
   TransientHeader,
 };
 
@@ -58,11 +56,19 @@ struct ShellConfig {
   float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
   /** Compact bottom nav bar height (excludes safe-area inset). */
-  float compact_nav_height_dp = 56.f;
-  /** Horizontal inset for floating compact nav pill (lg1 layout). */
-  float compact_nav_horizontal_inset_dp = 12.f;
+  float compact_nav_height_dp = 49.f;
+  /** Horizontal inset for the compact tab bar (full-width, so 0). */
+  float compact_nav_horizontal_inset_dp = 0.f;
   size_t max_toasts = 3;
   float toast_short_ms = 3000.f;
+};
+
+/** What paints along the bottom edge of the compact shell (decides who covers the home-indicator strip). */
+enum class CompactBottomSurface {
+  None,     ///< Desktop / nothing: the document body shrinks by the inset.
+  TabBar,   ///< Tab bar shown: the bar grows by the inset and paints the strip.
+  Composer, ///< Chat overlay (no tab bar): the composer mount pads by the inset and paints the strip.
+  Page,     ///< Transient page: the page pads by the inset and paints the strip.
 };
 
 /** Derived dp offsets for compact floating chrome + safe-area (lg1). */
@@ -82,7 +88,12 @@ struct CompactChromeLayout {
   /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;
-  /** Auxiliary sheet offset above the compact nav rail (account sheet uses chrome_bottom_dp). */
+  /**
+   * Home-indicator inset the bottom surface (tab bar / composer mount / transient page) pads itself by
+   * so its background reaches the screen edge. 0 while the keyboard is up or on desktop.
+   */
+  float bottom_surface_padding_dp = 0.f;
+  /** Auxiliary sheet offset above the compact nav rail. */
   float sheet_bottom_dp = 0.f;
   float chrome_horizontal_inset_dp = 0.f;
 };
@@ -324,7 +335,6 @@ struct ShellState {
   std::vector<OverlayEntry> overlay_stack;
 
   bool compact_chat_open = false;
-  bool account_sheet_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;

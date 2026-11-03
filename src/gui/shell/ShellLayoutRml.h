@@ -27,7 +27,6 @@ private:
                        int flex_width_dp = 0) const;
   std::string ExpandedBase() const;
   std::string CompactBase() const;
-  std::string AccountSheet() const;
   std::string TransientLayer() const;
   std::string Overlays() const;
   const PaneState* FindPane(const std::string& key) const;

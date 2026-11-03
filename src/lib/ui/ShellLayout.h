@@ -26,10 +26,13 @@ struct ShellLayout {
   static bool SecondaryPaneShown(const ShellState& state);
   /** Collapsed flag after the user picks `tab` in the nav rail: tabs with a secondary pane re-expand it. */
   static bool SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab);
+  /** A bottom inset at or above this is the on-screen keyboard (not the home indicator alone). */
+  static constexpr int kImeLatchMinDp = 120;
   static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
                                                         int safe_area_top_dp,
                                                         int safe_area_bottom_dp,
-                                                        float titlebar_height_dp = 0.f);
+                                                        float titlebar_height_dp = 0.f,
+                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None);
 };
 
 } // namespace pbr

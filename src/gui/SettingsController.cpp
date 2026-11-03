@@ -502,7 +502,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
-    ctor.Bind("in_account_sheet", &controller.in_account_sheet_);
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
@@ -662,7 +661,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
-  host.Dirty("settings", "in_account_sheet");
   host.Dirty("settings", "show_detail");
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
@@ -774,7 +772,7 @@ void SettingsController::FinishPaneResync() {
   // Select widgets can emit a spurious change on the frame after remount.
   AppRuntime::PostUI([this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
-    if (chrome.nav_tab != NavTab::Me && !chrome.account_sheet_open) {
+    if (chrome.nav_tab != NavTab::Me) {
       suppress_auto_save_ = false;
       UiEditSession::Instance().EndRemount();
       return;
@@ -799,7 +797,7 @@ void SettingsController::MountSelectedSettingsSection() {
     return;
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  const bool use_sheet_mount = show_detail_ || in_account_sheet_ || chrome.account_sheet_open;
+  const bool use_sheet_mount = show_detail_;
   const char* mount_id = use_sheet_mount ? "settings-section-mount-sheet" : "settings-section-mount-pane";
   ui::Element* mount = doc->GetElementById(mount_id);
   if (!mount) {
@@ -835,7 +833,7 @@ void SettingsController::OnShellLayoutSynced() {
     }
     return;
   }
-  if (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open) {
+  if (chrome.nav_tab == NavTab::Me) {
     FinishPaneResync();
   } else {
     suppress_auto_save_ = false;
@@ -851,7 +849,6 @@ void SettingsController::OnNavTabActivated() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-  in_account_sheet_ = false;
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_detail");
   }
@@ -867,36 +864,9 @@ void SettingsController::OnNavTabActivated() {
   }
 }
 
-void SettingsController::OnAccountSheetOpened() {
-  log().info << "OnAccountSheetOpened";
-  dirty_sections_.clear();
-  debounce_deadline_ms_ = 0;
-  show_detail_ = false;
-  selected_id_.clear();
-  selected_title_.clear();
-  if (shell_navigation_.clear_local_back) {
-    shell_navigation_.clear_local_back("settings_detail");
-  }
-  in_account_sheet_ = true;
-  suppress_auto_save_ = true;
-  UiEditSession::Instance().BeginRemount();
-  ReloadFromDisk();
-}
-
 void SettingsController::OnMeSurfaceClosed() {
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
-}
-
-void SettingsController::OnAccountSheetClosed() {
-  OnMeSurfaceClosed();
-  in_account_sheet_ = false;
-  show_detail_ = false;
-  selected_id_.clear();
-  selected_title_.clear();
-  if (shell_navigation_.clear_local_back) {
-    shell_navigation_.clear_local_back("settings_detail");
-  }
 }
 
 void SettingsController::SyncLayoutMode() {
@@ -911,55 +881,39 @@ void SettingsController::SyncLayoutMode() {
   const ui::String saved_title = selected_title_;
   const bool had_detail = !saved_id.empty() || show_detail_;
 
+  if (chrome.nav_tab != NavTab::Me) {
+    return;
+  }
   if (compact) {
-    if (chrome.nav_tab == NavTab::Me) {
-      if (shell_navigation_.clear_primary_pane) {
-        shell_navigation_.clear_primary_pane();
-      }
-      if (shell_navigation_.select_nav_tab) {
-        shell_navigation_.select_nav_tab(NavTab::Home);
-      }
-      selected_id_ = saved_id;
-      selected_title_ = saved_title;
-      show_detail_ = had_detail;
-      if (shell_navigation_.open_account_sheet) {
-        shell_navigation_.open_account_sheet();
-      }
-      // OpenAccountSheet resets selection; restore sheet detail state.
-      selected_id_ = saved_id;
-      selected_title_ = saved_title;
-      show_detail_ = had_detail;
-      in_account_sheet_ = true;
-      if (had_detail) {
-        if (shell_navigation_.clear_local_back) {
-          shell_navigation_.clear_local_back("settings_detail");
-        }
-        if (shell_navigation_.push_local_back) {
-          shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
-        }
-      }
-      DirtyAll();
-      return;
-    }
-  } else if (chrome.account_sheet_open) {
-    if (shell_navigation_.close_account_sheet) {
-      shell_navigation_.close_account_sheet();
+    // Me stays the selected tab; a detail open in the expanded primary pane becomes the inline detail.
+    if (shell_navigation_.clear_primary_pane) {
+      shell_navigation_.clear_primary_pane();
     }
     selected_id_ = saved_id;
     selected_title_ = saved_title;
-    show_detail_ = false;
-    in_account_sheet_ = false;
-    if (shell_navigation_.select_nav_tab) {
-      shell_navigation_.select_nav_tab(NavTab::Me);
-    }
-    // SelectNavTab activates Me and clears selection; restore for primary pane.
-    selected_id_ = saved_id;
-    selected_title_ = saved_title;
-    if (had_detail && !selected_id_.empty()) {
-      OpenSettingsDetailPane();
+    show_detail_ = had_detail;
+    if (had_detail) {
+      if (shell_navigation_.clear_local_back) {
+        shell_navigation_.clear_local_back("settings_detail");
+      }
+      if (shell_navigation_.push_local_back) {
+        shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
+      }
     }
     DirtyAll();
+    return;
   }
+  // Compact inline detail moves to the expanded primary pane.
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
+  selected_id_ = saved_id;
+  selected_title_ = saved_title;
+  show_detail_ = false;
+  if (had_detail && !selected_id_.empty()) {
+    OpenSettingsDetailPane();
+  }
+  DirtyAll();
 }
 
 void SettingsController::MarkSectionDirty(const std::string& section_id, const bool show_toast) {
@@ -1171,8 +1125,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
     security_actions_.RefreshDiagnostics();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  const bool sheet = chrome.account_sheet_open || in_account_sheet_;
-  if (sheet) {
+  if (chrome.layout_mode == LayoutMode::Compact) {
     show_detail_ = true;
     DirtyAll();
     if (context_) {
@@ -1210,8 +1163,8 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 void SettingsController::OpenSettingsDetailPane() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   compact_layout_ = chrome.layout_mode == LayoutMode::Compact;
-  // Compact Me uses the account sheet, not transient panes.
-  if (compact_layout_ || chrome.account_sheet_open) {
+  // Compact Me shows the detail inline, not in a transient pane.
+  if (compact_layout_) {
     return;
   }
 
@@ -1282,7 +1235,7 @@ void SettingsController::OnBackToList() {
     return;
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  if (in_account_sheet_ || chrome.account_sheet_open) {
+  if (chrome.layout_mode == LayoutMode::Compact) {
     ApplyBackToListUi();
     return;
   }
