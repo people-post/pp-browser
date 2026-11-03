@@ -2759,11 +2759,20 @@ def link_counters(users):
     def read(text):
         m = re.search(r"Sent (\d+) bytes (\d+) pkt \(dropped (\d+)", text)
         return (int(m.group(1)), int(m.group(3)), int(m.group(2))) if m else (0, 0, 0)
+    def snmp(text):
+        """UDP datagrams and TCP segments this user's network namespace sent (/proc/net/snmp)."""
+        rows = {}
+        lines = text.splitlines()
+        for head, values in zip(lines[::2], lines[1::2]):
+            name, _, fields = head.partition(":")
+            rows[name] = dict(zip(fields.split(), values.partition(":")[2].split()))
+        return int(rows.get("Udp", {}).get("OutDatagrams", 0)), int(rows.get("Tcp", {}).get("OutSegs", 0))
     out = {}
     for u in users:
         name = u.name.split("-")[0]
         out[(name, "up")] = read(net(u, "tc -s qdisc show dev eth0"))
         out[(name, "down")] = read(gw_net(u, "tc -s qdisc show dev %s" % gw_inner_dev(u)))
+        out[(name, "proto")] = snmp(net(u, "cat /proc/net/snmp"))
     return out
 
 
@@ -2771,7 +2780,13 @@ def link_report(before, after, seconds):
     """What went over each user's links in the window: kbit/s, packets/s and their mean size, and packets the shaper
     dropped (its queue full)."""
     report = {}
-    for key, (sent, dropped, packets) in sorted(after.items()):
+    for key, value in sorted(after.items()):
+        if key[1] == "proto":
+            udp, tcp = value
+            report["%s_sent" % key[0]] = "udp %d pkt/s tcp %d seg/s" % (
+                (udp - before[key][0]) / seconds, (tcp - before[key][1]) / seconds)
+            continue
+        sent, dropped, packets = value
         was_sent, was_dropped, was_packets = before[key]
         n = max(packets - was_packets, 1)
         report["%s_%s" % key] = "%d kbit/s %d pkt/s %d B/pkt dropped=%d" % (
