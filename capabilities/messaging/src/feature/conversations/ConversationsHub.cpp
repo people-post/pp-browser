@@ -1514,7 +1514,7 @@ void ConversationsHub::EnsureContactIconCached(const Contact& contact) {
 }
 
 bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id) {
-  if (!contact_profile_refresh_ || !AppRuntime::IsRunning()) {
+  if (!contact_profile_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
     return false;
   }
   auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs());
@@ -1554,7 +1554,8 @@ void ConversationsHub::ContinueContactProfileSweep(std::shared_ptr<const std::ve
   while (index < contact_ids->size() && !looked_up) {
     looked_up = RefreshContactProfileNow((*contact_ids)[index++]); // a fresh contact costs no lookup: next at once
   }
-  if (index >= contact_ids->size() || !AppRuntime::IsRunning()) {
+  // Quitting stops the sweep: no new lookup is queued behind the teardown.
+  if (index >= contact_ids->size() || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
     return;
   }
   AppRuntime::ScheduleCoordinatorOneShot(kSweepGap, [this, contact_ids, index]() {
