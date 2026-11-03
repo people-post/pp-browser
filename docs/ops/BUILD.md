@@ -49,7 +49,7 @@ RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-
 
 If base `third_party/` trees are missing, run `./scripts/vendor/vendor_import.sh` from the repo root.
 
-Chat/CJK fonts (**Noto Sans CJK Regular OTC** `NotoSansCJK-Regular.ttc` — shared JP/KR/SC/TC/HK faces — + **Noto Color Emoji** CBDT, with monochrome Noto Emoji as secondary fallback) ship under `assets/fonts/`. The OTC is loaded once into memory and registered with per-region `face_index` values. FreeType is built with libpng so CBDT color bitmaps load. To refresh fonts:
+Chat/CJK fonts (**Noto Sans CJK Regular OTC** `NotoSansCJK-Regular.ttc` — shared JP/KR/SC/TC/HK faces — + **Noto Color Emoji** CBDT, with monochrome Noto Emoji as secondary fallback) ship under `assets/fonts/`. The OTC is loaded once into memory and registered with per-region `face_index` values. FreeType is built with libpng so CBDT color bitmaps load. Simplified Chinese is one fallback family in three weights on every platform — the OTC's SC face (400) plus `NotoSansSC-Medium.otf` (500) and `NotoSansSC-Bold.otf` (700) — so Chinese in medium / bold text gets a heavier face (the engine picks the fallback face nearest to the text's weight). **Inter** (`Inter-{Regular,Medium,SemiBold,Bold}.ttf`, rsms/inter v4.1) is registered as family `Inter`; the default family is still `LatoLatin`. To refresh fonts:
 
 ```bash
 ./scripts/vendor/fonts_import_noto.sh

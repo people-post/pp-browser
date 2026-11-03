@@ -34,6 +34,11 @@ for old in NotoSansCJKsc-Regular.otf NotoSansCJKjp-Regular.otf NotoSansCJKkr-Reg
   fi
 done
 
+echo "==> Noto Sans SC Medium + Bold (Chinese in medium / bold text; licence: NotoSansSC-LICENSE.txt)"
+NOTO_SC_SUBSET_URL="https://github.com/notofonts/noto-cjk/raw/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/SubsetOTF/SC"
+download "${NOTO_SC_SUBSET_URL}/NotoSansSC-Medium.otf" "${FONTS}/NotoSansSC-Medium.otf"
+download "${NOTO_SC_SUBSET_URL}/NotoSansSC-Bold.otf" "${FONTS}/NotoSansSC-Bold.otf"
+
 echo "==> Noto Color Emoji (CBDT)"
 download "${NOTO_COLOR_EMOJI_URL}" "${FONTS}/NotoColorEmoji.ttf"
 if [[ ! -f "${FONTS}/NotoColorEmoji-LICENSE.txt" ]]; then

@@ -568,6 +568,14 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     StartupPhase phase("LoadFontFace:LatoLatin");
     ui::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
   }
+  {
+    // Family "Inter" in four weights (each file's own weight); RCSS opts in with font-family: Inter.
+    StartupPhase phase("LoadFontFace:Inter");
+    for (const char* file : {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf",
+                             "fonts/Inter-Bold.ttf"}) {
+      ui::LoadFontFace(AssetsPath(file));
+    }
+  }
 
   {
     StartupPhase phase("Localization::LoadFromAssets");
