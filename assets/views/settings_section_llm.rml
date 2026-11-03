@@ -43,12 +43,14 @@
             <span class="group-row-body group-row-body--field">
               <span class="settings-label group-row-text">{{i18n:settings.llm.api_key}}</span>
               <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key == ''">{{i18n:settings.llm.api_key_placeholder}}</span>
             </span>
           </label>
           <label class="settings-field group-row group-row--field" >
             <span class="group-row-body group-row-body--field">
               <span class="settings-label group-row-text">{{i18n:settings.llm.api_key_env}}</span>
               <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
+              <span class="group-field-hint" data-if="llm_api_key_env == ''">{{i18n:settings.llm.api_key_env_placeholder}}</span>
             </span>
           </label>
         </div>

@@ -5719,6 +5719,21 @@ input.checkbox {
   background-color: transparent;
 }
 
+.shell-layer-compact .cd-row--field .cd-row-body {
+  position: relative;
+  padding-bottom: 0;
+}
+
+.shell-layer-compact .cd-field {
+  margin: 0 0 10dp 0;
+  padding: 0 12dp;
+  border-radius: 10dp;
+}
+
+.shell-layer-compact .cd-row--field .group-field-hint {
+  bottom: 10dp;
+}
+
 .cd-switch {
   width: 51dp;
   height: 31dp;
@@ -6379,6 +6394,7 @@ input.checkbox {
 /* Text inputs on settings and profile pages: label above the field, both starting at the left edge. The field fills
    the row and its text and caret start at the left (a right-aligned field put the caret mid-row or at the far end). */
 .shell-layer-compact .group-row--field .group-row-body {
+  position: relative;
   display: block;
   min-height: 0;
   padding: 10dp 16dp 0 0;
@@ -6394,6 +6410,7 @@ input.checkbox {
   text-align: left;
 }
 
+/* The field is a filled rounded box (like the search field) so it reads as something to type into. */
 .shell-layer-compact .group-card .field {
   display: block;
   flex: none;
@@ -6402,13 +6419,37 @@ input.checkbox {
   height: 44dp;
   min-height: 44dp;
   max-height: 44dp;
-  margin: 0;
-  padding: 0;
+  margin: 0 0 10dp 0;
+  padding: 0 12dp;
   border: 0;
-  border-radius: 0;
+  border-radius: 10dp;
+  box-sizing: border-box;
   font-size: 17dp;
   line-height: 44dp;
   text-align: left;
+}
+
+/* The engine draws no placeholder: this hint sits over the empty field and lets taps through to it. */
+.group-field-hint {
+  display: none;
+}
+
+.shell-layer-compact .group-field-hint {
+  position: absolute;
+  left: 12dp;
+  bottom: 10dp;
+  display: block;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A row that only shows a value (nothing to tap). */
+.shell-layer-compact .group-row--static {
+  cursor: default;
 }
 
 /* Account ID row on the profile page: label over value on the left, Copy / Share / QR icon buttons on the right. */

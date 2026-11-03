@@ -227,6 +227,7 @@
     "settings.network.reachable_without_relay": "Reachable without the relay",
     "settings.network.reachable_without_relay.help": "Reachable if the relay is down. Servers see when you're online.",
     "settings.security.protection": "PIN:",
+    "settings.security.protection_title": "PIN",
     "settings.security.current_pin": "Current PIN",
     "settings.security.new_pin": "New PIN",
     "settings.security.confirm_pin": "Confirm PIN",

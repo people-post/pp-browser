@@ -1,6 +1,14 @@
       <div class="settings-section settings-section--grouped stack">
-        <div class="group-card group-card--pad">
+        <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
+        </div>
+        <div class="group-card settings-phone-only">
+          <div class="group-row group-row--static">
+            <span class="group-row-body">
+              <span class="group-row-text">{{i18n:settings.security.protection_title}}</span>
+              <span class="settings-choice-value-text">{{pin_protection_status}}</span>
+            </span>
+          </div>
         </div>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
@@ -14,18 +22,21 @@
               <span class="group-row-body group-row-body--field">
                 <span class="settings-label group-row-text">{{i18n:settings.security.current_pin}}</span>
                 <input class="field" type="password" data-value="pin_change_old" placeholder="{{i18n:settings.security.current_pin_placeholder}}"/>
+                <span class="group-field-hint" data-if="pin_change_old == ''">{{i18n:settings.security.current_pin_placeholder}}</span>
               </span>
             </label>
             <label class="settings-field group-row group-row--field">
               <span class="group-row-body group-row-body--field">
                 <span class="settings-label group-row-text">{{i18n:settings.security.new_pin}}</span>
                 <input class="field" type="password" data-value="pin_change_new" placeholder="{{i18n:settings.security.new_pin_placeholder}}"/>
+                <span class="group-field-hint" data-if="pin_change_new == ''">{{i18n:settings.security.new_pin_placeholder}}</span>
               </span>
             </label>
             <label class="settings-field group-row group-row--field">
               <span class="group-row-body group-row-body--field">
                 <span class="settings-label group-row-text">{{i18n:settings.security.confirm_pin}}</span>
                 <input class="field" type="password" data-value="pin_change_confirm" placeholder="{{i18n:settings.security.confirm_pin_placeholder}}"/>
+                <span class="group-field-hint" data-if="pin_change_confirm == ''">{{i18n:settings.security.confirm_pin_placeholder}}</span>
               </span>
             </label>
           </div>
@@ -76,6 +87,7 @@
                 <span class="group-row-body group-row-body--field">
                   <span class="settings-label group-row-text">{{i18n:settings.security.recovery.pin_label}}</span>
                   <input class="field" type="password" data-value="recovery_phrase_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
+                  <span class="group-field-hint" data-if="recovery_phrase_pin == ''">{{i18n:settings.security.recovery.pin_placeholder}}</span>
                 </span>
               </label>
             </div>

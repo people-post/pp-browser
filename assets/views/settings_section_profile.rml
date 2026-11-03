@@ -34,6 +34,7 @@
               <input class="field" type="text" data-value="profile_nickname" lang=""
                      data-event-blur="on_profile_nickname_commit()"
                      placeholder="{{i18n:settings.profile.nickname_placeholder}}"/>
+              <span class="group-field-hint" data-if="profile_nickname == ''">{{i18n:settings.profile.nickname_placeholder}}</span>
             </span>
           </label>
         </div>

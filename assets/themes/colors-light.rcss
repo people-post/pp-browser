@@ -2039,7 +2039,16 @@ select selectbox option:hover {
   color: #000000;
 }
 
-.shell-layer-compact .group-card .field {
+.shell-layer-compact .group-card .field,
+.shell-layer-compact .cd-field {
+  background-color: #f2f2f7;
+}
+
+.shell-layer-compact .group-field-hint {
+  color: #3c3c4399;
+}
+
+.shell-layer-compact .group-row--static:active {
   background-color: transparent;
 }
 

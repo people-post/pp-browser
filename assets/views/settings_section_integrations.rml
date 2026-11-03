@@ -4,6 +4,7 @@
             <span class="group-row-body group-row-body--field">
               <span class="settings-label group-row-text">{{i18n:settings.integrations.promoted_mcp}}</span>
               <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.promoted_mcp_placeholder}}"/>
+              <span class="group-field-hint" data-if="promoted_mcp_url == ''">{{i18n:settings.integrations.promoted_mcp_placeholder}}</span>
             </span>
           </label>
           <label class="settings-field group-row group-row--field">
@@ -38,6 +39,7 @@
               <span class="group-row-body group-row-body--field">
                 <span class="settings-label group-row-text">{{i18n:settings.integrations.mcp_args}}</span>
                 <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.mcp_args_placeholder}}"/>
+                <span class="group-field-hint" data-if="server.args_text == ''">{{i18n:settings.integrations.mcp_args_placeholder}}</span>
               </span>
             </label>
           </div>

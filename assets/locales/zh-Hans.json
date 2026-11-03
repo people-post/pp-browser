@@ -224,6 +224,7 @@
     "settings.network.reachable_without_relay": "不经中转服务器也能联系到我",
     "settings.network.reachable_without_relay.help": "中转失效时仍可联系；服务器会看到在线时间。",
     "settings.security.protection": "PIN 码：",
+    "settings.security.protection_title": "PIN 码",
     "settings.security.current_pin": "当前 PIN",
     "settings.security.new_pin": "新 PIN",
     "settings.security.confirm_pin": "确认 PIN",
