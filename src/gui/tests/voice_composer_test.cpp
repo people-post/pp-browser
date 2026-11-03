@@ -6,6 +6,8 @@
 #include <gtest/gtest.h>
 
 #include <deque>
+#include <filesystem>
+#include <fstream>
 
 // The microphone button's logic with a scripted microphone and fake ports: no device, no UI, no OS prompt.
 
@@ -97,6 +99,7 @@ struct Harness {
       return limits;
     };
     ports.out_dir = [this]() { return (dir.path / "voice-rec").string(); };
+    ports.keep_file = [this]() { return keep; };
     ports.thread_id = [this]() { return thread; };
     ports.send = [this](const std::string& tid, const std::string& path) { sent.emplace_back(tid, path); };
     ports.eligible = []() { return true; };
@@ -143,6 +146,7 @@ struct Harness {
   TempDir dir;
   MediaDeviceArbiter arbiter{CreateNullMediaDeviceBackend()};
   std::string thread = "A";
+  std::string keep;
   bool call_live = false;
   /** voice_finishing was true at some point (it is cleared again by the time a test looks). */
   bool saw_finishing = false;
@@ -301,6 +305,22 @@ TEST(VoiceComposer, LockingOrLeavingThrowsAwayARunningRecording) {
   EXPECT_TRUE(h.sent.empty());
   EXPECT_EQ(h.dir.FileCount(), 0u);
   EXPECT_TRUE(h.said.empty());
+}
+
+TEST(VoiceComposer, ANewRecordingDoesNotWipeAFailedOneWaitingForRetry) {
+  SKIP_WITHOUT_VOICE();
+  Harness h;
+  const auto dir = h.dir.path / "voice-rec";
+  std::filesystem::create_directories(dir);
+  const auto kept = dir / "failed.m4a";
+  const auto other = dir / "older.m4a";
+  std::ofstream(kept) << "kept";
+  std::ofstream(other) << "old";
+  h.keep = kept.string();
+  h.composer->BeginAt(0, nullptr, false);
+  ASSERT_TRUE(h.WaitTimer("0:03"));
+  EXPECT_TRUE(std::filesystem::exists(kept));
+  EXPECT_FALSE(std::filesystem::exists(other));
 }
 
 TEST(VoiceComposer, LockingAMomentAfterTheReleaseStillSendsNothingAndDeletesTheFile) {

@@ -184,7 +184,18 @@ void VoiceComposer::StartRecording() {
   config.max_seconds = max_seconds_;
   config.out_dir = ports_.out_dir();
   std::error_code ec;
-  std::filesystem::remove_all(config.out_dir, ec); // nothing from an earlier recording is left to be sent by mistake
+  // Nothing from an earlier recording is left to be sent by mistake; a failed one that waits for Retry stays.
+  const std::string keep = ports_.keep_file ? ports_.keep_file() : std::string();
+  if (keep.empty()) {
+    std::filesystem::remove_all(config.out_dir, ec);
+  } else {
+    const std::filesystem::path keep_path = std::filesystem::path(keep).lexically_normal();
+    for (const auto& entry : std::filesystem::directory_iterator(config.out_dir, ec)) {
+      if (entry.path().lexically_normal() != keep_path) {
+        std::filesystem::remove_all(entry.path(), ec);
+      }
+    }
+  }
 
   const auto alive = alive_;
   const int generation = generation_;
