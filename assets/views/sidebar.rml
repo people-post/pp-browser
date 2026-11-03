@@ -86,6 +86,30 @@
           <svg class="chat-row-mute" src="../icons/v2/bell-off.svg" width="16" height="16" data-if="session.muted && session.unread_count == 0 && !session.unread_dot"></svg>
         </div>
       </div>
+      <div class="session-swipe session-swipe--end">
+        <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
+          <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>
+          <p class="session-swipe-label" data-if="showing_archived">{{i18n:sidebar.swipe.unarchive}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
+          <svg src="../icons/v2/trash.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.delete}}</p>
+        </div>
+      </div>
+      <div class="session-swipe session-swipe--start">
+        <div class="session-swipe-btn session-swipe-btn--pin" swipe-action="pin">
+          <svg src="../icons/v2/pin.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label" data-if="!session.pinned">{{i18n:sidebar.swipe.pin}}</p>
+          <p class="session-swipe-label" data-if="session.pinned">{{i18n:sidebar.swipe.unpin}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--read" swipe-action="read">
+          <svg src="../icons/v2/check-circle.svg" width="22" height="22" data-if="session.unread_count > 0 || session.unread_dot"></svg>
+          <svg src="../icons/v2/circle-dot.svg" width="22" height="22" data-if="session.unread_count == 0 && !session.unread_dot"></svg>
+          <p class="session-swipe-label" data-if="session.unread_count > 0 || session.unread_dot">{{i18n:sidebar.swipe.read}}</p>
+          <p class="session-swipe-label" data-if="session.unread_count == 0 && !session.unread_dot">{{i18n:sidebar.swipe.unread}}</p>
+        </div>
+      </div>
     </div>
     <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
     <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>

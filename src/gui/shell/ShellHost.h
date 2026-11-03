@@ -15,6 +15,7 @@
 #include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellLargeTitleScroll.h"
 #include "gui/shell/ShellSplitterDrag.h"
+#include "gui/shell/SessionSwipeGesture.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -188,6 +189,8 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
+  /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
+  void SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -349,6 +352,8 @@ private:
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;
   ShellLargeTitleScroll large_title_scroll_;
+  SessionSwipeGesture session_swipe_;
+  SessionSwipeGesture::ActionCallback on_session_swipe_action_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;

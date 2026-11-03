@@ -3595,6 +3595,55 @@ input.checkbox {
   border-radius: 0;
 }
 
+/* Swipe actions (phone Chats list): the buttons sit just outside the row and ride along as it slides. */
+.session-swipe {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-sessions {
+  overflow-x: hidden;
+}
+
+.shell-layer-compact .sidebar-session {
+  position: relative;
+  transition: transform 0.2s cubic-out;
+}
+
+.shell-layer-compact .sidebar-session.session-swipe-dragging {
+  transition: none;
+}
+
+.shell-layer-compact .session-swipe {
+  display: flex;
+  flex-direction: row;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.shell-layer-compact .session-swipe--end {
+  left: 100%;
+}
+
+.shell-layer-compact .session-swipe--start {
+  right: 100%;
+}
+
+.shell-layer-compact .session-swipe-btn {
+  width: 74dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.shell-layer-compact .session-swipe-label {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+  text-align: center;
+}
+
 .shell-layer-compact .sidebar-session-icon,
 .shell-layer-compact .sidebar-session-flag--pin,
 .shell-layer-compact .sidebar-session-flag--muted {

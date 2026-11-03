@@ -7,6 +7,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/WorkingSetController.h"
 #include "gui/contacts/ContactsNotifyPorts.h"
+#include "gui/shell/SessionSwipeModel.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ShellTypes.h"
@@ -82,6 +83,8 @@ public:
   std::vector<ContextMenuAction> ForRequest(const ContextMenuRequest& request);
   /** A row in the chats list; `position` anchors a second step (mute durations). */
   std::vector<ContextMenuAction> SessionActions(const std::string& thread_id, ui::Vector2i position);
+  /** A swipe button on a chats-list row: runs that row's matching long-press item (nothing if the menu lacks it). */
+  void RunSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);

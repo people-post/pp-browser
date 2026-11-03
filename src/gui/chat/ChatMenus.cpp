@@ -149,6 +149,35 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   return actions;
 }
 
+void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
+  // The menu offers one of each pair (pin / unpin, ...) depending on the row's state; Delete is "leave" for a group.
+  const char* ids[2] = {nullptr, nullptr};
+  switch (action) {
+  case SessionSwipeAction::Archive:
+    ids[0] = "session_archive";
+    ids[1] = "session_unarchive";
+    break;
+  case SessionSwipeAction::Delete:
+    ids[0] = "session_delete";
+    ids[1] = "session_leave_group";
+    break;
+  case SessionSwipeAction::Pin:
+    ids[0] = "session_pin";
+    ids[1] = "session_unpin";
+    break;
+  case SessionSwipeAction::Read:
+    ids[0] = "session_mark_read";
+    ids[1] = "session_mark_unread";
+    break;
+  }
+  for (ContextMenuAction& item : SessionActions(thread_id, ui::Vector2i(0, 0))) {
+    if ((item.id == ids[0] || item.id == ids[1]) && item.run) {
+      item.run();
+      return;
+    }
+  }
+}
+
 std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thread_id, const ui::Vector2i position) {
   std::vector<ContextMenuAction> actions;
   ConversationsFacade* facade = host_.Facade();

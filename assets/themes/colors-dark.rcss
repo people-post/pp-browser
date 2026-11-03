@@ -1124,6 +1124,30 @@ select selectbox option:hover {
   background-color: #2c2c2e;
 }
 
+.session-swipe-btn--archive {
+  background-color: #8e8e93;
+}
+
+.session-swipe-btn--delete {
+  background-color: #ff453a;
+}
+
+.session-swipe-btn--pin {
+  background-color: #ff9f0a;
+}
+
+.session-swipe-btn--read {
+  background-color: #0a84ff;
+}
+
+.session-swipe-btn svg {
+  image-color: #ffffff;
+}
+
+.session-swipe-label {
+  color: #ffffff;
+}
+
 .sidebar-session-active {
   background-color: #0a84ff2e;
   border-color: #0a84ff2e;

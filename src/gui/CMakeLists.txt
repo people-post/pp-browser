@@ -67,6 +67,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellSplitterDrag.cpp
     shell/ShellLargeTitleScroll.cpp
     shell/ShellSwipeBackGesture.cpp
+    shell/SessionSwipeGesture.cpp
     BlobQuotaRecoveryFlow.cpp
     UserFeedback.cpp
   PUBLIC_LIBS

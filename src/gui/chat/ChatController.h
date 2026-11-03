@@ -136,6 +136,8 @@ public:
   void OnMeshReady();
   /** App-wired from ShellHost layout sync (see Application::WireShellPresentationEvents). */
   void OnShellLayoutSynced();
+  /** Phone Chats list swipe: runs the same item the long-press menu offers. */
+  void OnSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
   /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
   enum class ComposerEscape { NotInComposer, Handled, Idle };
   ComposerEscape OnComposerEscape();

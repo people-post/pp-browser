@@ -1054,6 +1054,10 @@ void ShellHost::SetOnLayoutSynced(std::function<void()> callback) {
   on_layout_synced_ = std::move(callback);
 }
 
+void ShellHost::SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback) {
+  on_session_swipe_action_ = std::move(callback);
+}
+
 void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
   safe_area_top_from_prefs_dp_ = std::max(0, top_dp);
   safe_area_bottom_from_prefs_dp_ = std::max(0, bottom_dp);
@@ -1585,6 +1589,7 @@ void ShellHost::SyncLayout() {
   splitter_drag_.Detach();
   aux_splitter_drag_.Detach();
   large_title_scroll_.Detach();
+  session_swipe_.Detach();
   RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
@@ -1652,6 +1657,11 @@ void ShellHost::AttachLargeTitleScroll() {
   // The attach reads the restored scroll position, so a remount that kept the page scrolled keeps it collapsed.
   SetLargeTitleCollapsed(false);
   large_title_scroll_.Attach(page, [this](bool collapsed) { SetLargeTitleCollapsed(collapsed); });
+  session_swipe_.Attach(page, context_, [this](const std::string& thread_id, SessionSwipeAction action) {
+    if (on_session_swipe_action_) {
+      on_session_swipe_action_(thread_id, action);
+    }
+  });
 }
 
 void ShellHost::AttachAuxiliarySplitterDrag(ui::ElementDocument* doc) {

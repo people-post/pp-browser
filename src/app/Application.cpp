@@ -206,6 +206,10 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnShellLayoutSynced();
   });
 
+  shell.SetOnSessionSwipeAction([&chat](const std::string& thread_id, SessionSwipeAction action) {
+    chat.OnSessionSwipeAction(thread_id, action);
+  });
+
   shell.SetOnTransientMounted([ui_perf](const std::string& key) {
     if (ui_perf && key == "ui_perf_test") {
       ui_perf->OnMounted();

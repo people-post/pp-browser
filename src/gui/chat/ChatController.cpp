@@ -2544,6 +2544,10 @@ void ChatController::PrefillDraft(const std::string& text) {
   DirtyChatChrome();
 }
 
+void ChatController::OnSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
+  menus_.RunSessionSwipeAction(thread_id, action);
+}
+
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
   scroller_.OnShellRemounted();
