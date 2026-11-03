@@ -5532,6 +5532,10 @@ input.checkbox {
 .shell-chat-overlay .chat-group-name {
   display: block;
   margin: 0 0 2dp 12dp;
+  max-width: 75%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 13dp;
   font-weight: bold;
   text-align: left;
@@ -5589,7 +5593,7 @@ input.checkbox {
 .shell-chat-overlay .prompt-composer-label {
   display: block;
   position: absolute;
-  top: 0;
+  top: 2dp;
   left: 12dp;
   height: 34dp;
   margin: 0;
