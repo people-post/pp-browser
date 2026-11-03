@@ -101,6 +101,7 @@
 #include "gui/EmojiPickerController.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/SettingsController.h"
+#include "app/StorageManagerBridge.h"
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellHost.h"
@@ -978,6 +979,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     const auto last = ReadLastUpload(store_.Snapshot().data_dir);
     return last ? last->upload_id : std::string();
   };
+  settings_commands.storage =
+      MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {

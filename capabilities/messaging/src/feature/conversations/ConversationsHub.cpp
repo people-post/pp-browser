@@ -1467,6 +1467,10 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
   on_reachability_updated_ = std::move(callback);
 }
 
+void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  on_stored_attachments_changed_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
   on_peer_icons_changed_ = std::move(callback);
 }
@@ -2443,6 +2447,13 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetOnChanged([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
+    }
+    if (on_stored_attachments_changed_) {
+      AppRuntime::PostUI([this]() {
+        if (on_stored_attachments_changed_) {
+          on_stored_attachments_changed_();
+        }
+      });
     }
   });
   if (inbox_) {

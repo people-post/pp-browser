@@ -595,6 +595,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
+    storage_manager_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
@@ -610,7 +611,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
     ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
     ctor.BindEventCallback("toggle_attachment_auto_cellular", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
-    ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
+    ctor.BindEventCallback("choose_attachment_download_policy", DataEvent<std::string>([this](const std::string& policy) { ApplyAttachmentDownloadPolicyChoice(policy); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
@@ -923,6 +924,7 @@ void SettingsController::SyncLayoutMode() {
         if (shell_navigation_.push_local_back) {
           shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
         }
+        storage_manager_.RestoreBackStack();
       }
       DirtyAll();
       return;
@@ -943,6 +945,7 @@ void SettingsController::SyncLayoutMode() {
     selected_title_ = saved_title;
     if (had_detail && !selected_id_.empty()) {
       OpenSettingsDetailPane();
+      storage_manager_.RestoreBackStack();
     }
     DirtyAll();
   }
@@ -1155,6 +1158,10 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   status_ = "";
   if (section_id == "security") {
     security_actions_.RefreshDiagnostics();
+  }
+  storage_manager_.Reset();
+  if (section_id == "storage") {
+    storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool sheet = chrome.account_sheet_open || in_account_sheet_;
@@ -1546,31 +1553,6 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   MarkSectionDirty("security");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
-  const std::string current = bindings_.attachment_download_policy.empty()
-                                  ? "smart"
-                                  : std::string(bindings_.attachment_download_policy.c_str());
-
-  static const char* kPolicyIds[] = {"smart", "always_auto", "on_demand"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kPolicyIds) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = AttachmentDownloadPolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run =
-                           [this, policy_id]() {
-                             ApplyAttachmentDownloadPolicyChoice(policy_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
-  }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 
 void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& policy) {

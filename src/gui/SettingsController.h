@@ -10,6 +10,7 @@
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsOwnDevices.h"
 #include "gui/SettingsSecurityActions.h"
+#include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -270,7 +271,6 @@ private:
   void ApplyBackendChoice(const std::string& env);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
-  void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
   void ToggleAttachmentAutoNetwork(bool cellular);
 
@@ -305,6 +305,10 @@ private:
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
+  StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
+    const ShellChromeSnapshot chrome = ChromeSnapshot();
+    return selected_id_ == "storage" && (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open);
+  }};
 
 };
 

@@ -323,6 +323,8 @@ public:
   void CancelGridThumbnails(uint64_t page_generation);
   /** The cell's thumbnail or video poster, when one exists (empty: none). A stat only. */
   std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
+  /** Called on the UI thread when an attachment arrives, goes, or gets a thumbnail. */
+  void SetOnStoredAttachmentsChanged(std::function<void()> callback);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

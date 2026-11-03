@@ -935,6 +935,10 @@ void ConversationsFacade::MessageStoreBytesAsync(std::function<void(uint64_t)> d
       });
 }
 
+void ConversationsFacade::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  hub_.SetOnStoredAttachmentsChanged(std::move(callback));
+}
+
 void ConversationsFacade::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                                const std::string& mime, const uint64_t page_generation) {
   hub_.RequestGridThumbnail(thread_id, content_hash, mime, page_generation);

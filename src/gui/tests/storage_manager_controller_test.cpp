@@ -1,0 +1,343 @@
+// Me → Storage → Manage storage pages (DEV/PLAN-storage-manager.md ②③) with fake ports: the back steps per page,
+// select mode, thumbnails only for the cells on the page, the delete confirmation and lock, and coalesced counts.
+#include "gui/StorageManagerController.h"
+
+#include "foundation/i18n/LocalizationService.h"
+
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <functional>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace {
+
+constexpr uint64_t kMiB = 1024ull * 1024ull;
+
+std::vector<uint8_t> Hash(const int n) {
+  std::vector<uint8_t> hash(32, 0);
+  hash[0] = static_cast<uint8_t>(n & 0xff);
+  hash[1] = static_cast<uint8_t>((n >> 8) & 0xff);
+  return hash;
+}
+
+pbr::StoredAttachmentItem Item(const std::string& thread, const int hash, const std::string& mime,
+                               const uint64_t bytes, const bool server = true) {
+  pbr::StoredAttachmentItem item;
+  item.thread_id = thread;
+  item.message_id = thread + "-" + std::to_string(hash);
+  item.content_hash = Hash(hash);
+  item.mime = mime;
+  item.filename = "file" + std::to_string(hash) + ".pdf";
+  item.bytes = bytes;
+  item.timestamp_ms = 1000 + hash;
+  item.has_server_copy = server;
+  return item;
+}
+
+class StorageManagerControllerTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    pbr::LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+
+    pbr::StorageManagerPorts& ports = commands_.storage;
+    ports.list_stored = [this](std::function<void(std::vector<pbr::StoredAttachmentItem>)> done) {
+      ++list_calls_;
+      done(items_);
+    };
+    ports.message_store_bytes = [](std::function<void(uint64_t)> done) { done(10 * kMiB); };
+    ports.profile_bytes = [](std::function<void(uint64_t)> done) { done(500 * kMiB); };
+    ports.releasable_bytes = [this](std::vector<pbr::StoredAttachmentRef> refs, std::function<void(uint64_t)> done) {
+      last_releasable_refs_ = std::move(refs);
+      done(releasable_);
+    };
+    ports.delete_local = [this](std::vector<pbr::StoredAttachmentRef> refs,
+                                std::function<void(pbr::StoredAttachmentDeleteResult)> done) {
+      deleted_refs_ = std::move(refs);
+      delete_done_ = std::move(done);
+    };
+    ports.chat_names = []() {
+      return std::vector<pbr::StorageChatName>{{.thread_id = "a", .name = "张三", .avatar_seed = "acct-a"},
+                                               {.thread_id = "b", .name = "Leo", .avatar_seed = "acct-b"}};
+    };
+    ports.request_thumbnail = [this](const std::string&, const std::vector<uint8_t>&, const std::string&,
+                                     const uint64_t generation) { thumbnail_requests_.push_back(generation); };
+    ports.cancel_thumbnails = [this](const uint64_t generation) { cancelled_.push_back(generation); };
+    ports.thumbnail_path = [](const std::string&, const std::vector<uint8_t>&) { return std::string(); };
+    ports.set_on_changed = [this](std::function<void()> on_changed) { on_changed_ = std::move(on_changed); };
+    ports.run_later = [this](std::chrono::milliseconds, std::function<void()> task) {
+      later_.push_back(std::move(task));
+    };
+
+    navigation_.push_local_back = [this](const std::string& id, std::function<void()> commit) {
+      ClearStep(id);
+      back_stack_.emplace_back(id, std::move(commit));
+    };
+    navigation_.clear_local_back = [this](const std::string& id) { ClearStep(id); };
+    navigation_.has_local_back = [this](const std::string& id) {
+      return std::any_of(back_stack_.begin(), back_stack_.end(), [&id](const auto& step) { return step.first == id; });
+    };
+
+    feedback_.show_confirm = [this](const std::string& title, const std::string& message,
+                                    std::function<void(bool)> on_result, const std::string& ok_label) {
+      confirm_title_ = title;
+      confirm_message_ = message;
+      confirm_ok_label_ = ok_label;
+      confirm_ = std::move(on_result);
+    };
+  }
+
+  void ClearStep(const std::string& id) {
+    back_stack_.erase(std::remove_if(back_stack_.begin(), back_stack_.end(),
+                                     [&id](const auto& step) { return step.first == id; }),
+                      back_stack_.end());
+  }
+
+  /** The phone's back (header button, swipe, system back): the shell pops the top step and runs it. */
+  bool SystemBack() {
+    if (back_stack_.empty()) {
+      return false;
+    }
+    auto step = std::move(back_stack_.back());
+    back_stack_.pop_back();
+    step.second();
+    return true;
+  }
+
+  std::vector<pbr::StoredAttachmentItem> items_;
+  int list_calls_ = 0;
+  uint64_t releasable_ = 0;
+  std::vector<pbr::StoredAttachmentRef> last_releasable_refs_;
+  std::vector<pbr::StoredAttachmentRef> deleted_refs_;
+  std::function<void(pbr::StoredAttachmentDeleteResult)> delete_done_;
+  std::vector<uint64_t> thumbnail_requests_;
+  std::vector<uint64_t> cancelled_;
+  std::function<void()> on_changed_;
+  std::vector<std::function<void()>> later_;
+  std::vector<std::pair<std::string, std::function<void()>>> back_stack_;
+  std::string confirm_title_;
+  std::string confirm_message_;
+  std::string confirm_ok_label_;
+  std::function<void(bool)> confirm_;
+  bool visible_ = true;
+
+  pbr::SettingsCommands commands_;
+  pbr::ShellNavigationPorts navigation_;
+  pbr::ShellFeedbackPorts feedback_;
+  pbr::StorageManagerController controller_{commands_, navigation_, feedback_, [this]() { return visible_; }};
+};
+
+} // namespace
+
+TEST_F(StorageManagerControllerTest, ChatsAreListedBySizeWithTheirNames) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB), Item("b", 2, "video/mp4", 30 * kMiB),
+            Item("b", 3, "application/pdf", 1 * kMiB)};
+  controller_.Enter();
+  ASSERT_EQ(controller_.Chats().size(), 2u);
+  EXPECT_EQ(std::string(controller_.Chats()[0].name.c_str()), "Leo");
+  EXPECT_EQ(std::string(controller_.Chats()[0].summary.c_str()), "视频 1 · 文件 1");
+  EXPECT_EQ(std::string(controller_.Chats()[1].name.c_str()), "张三");
+  EXPECT_EQ(std::string(controller_.Chats()[1].summary.c_str()), "图片 1");
+}
+
+TEST_F(StorageManagerControllerTest, EnteringStorageGoesBackToTheFirstPageAndDropsTheSelection) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB), Item("a", 2, "image/jpeg", 3 * kMiB)};
+  controller_.Enter();
+  EXPECT_EQ(list_calls_, 1);
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  controller_.TapCell(0);
+  ASSERT_EQ(controller_.Page(), "items");
+  ASSERT_TRUE(controller_.Selecting());
+  ASSERT_EQ(controller_.SelectedCount(), 1u);
+  ASSERT_EQ(back_stack_.size(), 3u);
+
+  controller_.Enter();
+  EXPECT_EQ(controller_.Page(), "main");
+  EXPECT_FALSE(controller_.Selecting());
+  EXPECT_EQ(controller_.SelectedCount(), 0u);
+  EXPECT_TRUE(back_stack_.empty());
+  EXPECT_EQ(list_calls_, 2) << "counted again on entering";
+}
+
+TEST_F(StorageManagerControllerTest, BackWhileSelectingLeavesSelectModeFirst) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.PickByLongPress(0);  // a long press starts selecting with that cell picked
+  ASSERT_TRUE(controller_.Selecting());
+  ASSERT_EQ(controller_.SelectedCount(), 1u);
+  EXPECT_TRUE(controller_.Cells()[0].picked);
+
+  // Phone: the system back goes one step at a time.
+  ASSERT_TRUE(SystemBack());
+  EXPECT_EQ(controller_.Page(), "items");
+  EXPECT_FALSE(controller_.Selecting());
+  EXPECT_FALSE(controller_.Cells()[0].picked);
+  ASSERT_TRUE(SystemBack());
+  EXPECT_EQ(controller_.Page(), "manage");
+  ASSERT_TRUE(SystemBack());
+  EXPECT_EQ(controller_.Page(), "main");
+  EXPECT_FALSE(SystemBack());
+
+  // Desktop: the page's own back button, the same order, and the shell's steps go with it.
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  controller_.Back();
+  EXPECT_EQ(controller_.Page(), "items");
+  EXPECT_FALSE(controller_.Selecting());
+  EXPECT_EQ(back_stack_.size(), 2u);
+  controller_.Back();
+  EXPECT_EQ(controller_.Page(), "manage");
+  controller_.Back();
+  EXPECT_EQ(controller_.Page(), "main");
+  EXPECT_TRUE(back_stack_.empty());
+}
+
+TEST_F(StorageManagerControllerTest, LayoutSwitchKeepsThePageAndPutsItsBackStepsBack) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  back_stack_.clear();  // the shell dropped its stack when the layout changed
+  controller_.RestoreBackStack();
+  EXPECT_EQ(controller_.Page(), "items");
+  ASSERT_EQ(back_stack_.size(), 3u);
+  EXPECT_EQ(back_stack_[0].first, "storage_manage");
+  EXPECT_EQ(back_stack_[2].first, "storage_select");
+}
+
+TEST_F(StorageManagerControllerTest, ThumbnailsOnlyForTheCellsOnThePage) {
+  for (int i = 0; i < 70; ++i) {
+    items_.push_back(Item("a", i, "image/jpeg", kMiB));
+  }
+  items_.push_back(Item("a", 500, "video/mp4", 8 * kMiB));
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  EXPECT_EQ(controller_.Tab(), "picture");
+  EXPECT_EQ(controller_.Cells().size(), pbr::kStoragePageSize);
+  ASSERT_EQ(thumbnail_requests_.size(), pbr::kStoragePageSize);
+  const uint64_t generation = thumbnail_requests_.front();
+
+  controller_.LoadMore();
+  EXPECT_EQ(controller_.Cells().size(), 70u);
+  EXPECT_EQ(thumbnail_requests_.size(), 70u) << "the next batch only, nothing asked twice";
+
+  controller_.SetTab("video");
+  EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), generation), cancelled_.end())
+      << "switching tab drops the old page's jobs";
+  EXPECT_EQ(controller_.Cells().size(), 1u);
+  EXPECT_TRUE(controller_.Cells()[0].video);
+  const uint64_t video_generation = thumbnail_requests_.back();
+  EXPECT_NE(video_generation, generation);
+
+  controller_.Back();
+  EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), video_generation), cancelled_.end())
+      << "leaving the page drops its jobs";
+}
+
+TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
+  items_ = {
+      Item("a", 1, "image/jpeg", 3 * kMiB, /*server=*/true),
+      Item("b", 1, "image/jpeg", 3 * kMiB, /*server=*/true),  // also held by chat b
+      Item("a", 2, "image/jpeg", 4 * kMiB, /*server=*/false), // only on this device
+  };
+  releasable_ = 4 * kMiB;
+  controller_.Enter();
+  controller_.OpenManage();
+  // "a" holds 7 MB, "b" 3 MB: a comes first.
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  controller_.TapCell(0);
+  controller_.TapCell(1);
+  EXPECT_EQ(controller_.SelectionLabel(), "已选 2 项 · 可释放 4.0 MB");
+
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  EXPECT_EQ(confirm_title_, "从这台设备删除 2 项（可释放 4.0 MB）？");
+  EXPECT_NE(confirm_message_.find("服务器上过期了就下不回来"), std::string::npos) << confirm_message_;
+  EXPECT_NE(confirm_message_.find("其中 1 项没有存在服务器上，删了就找不回来。"), std::string::npos)
+      << confirm_message_;
+  EXPECT_NE(confirm_message_.find("其中 1 项别的聊天也在用，这次不会释放空间。"), std::string::npos)
+      << confirm_message_;
+  EXPECT_EQ(confirm_ok_label_, "删除");
+  EXPECT_TRUE(deleted_refs_.empty()) << "nothing before the confirmation";
+
+  confirm_(true);
+  ASSERT_EQ(deleted_refs_.size(), 2u);
+  EXPECT_EQ(deleted_refs_[0].first, "a");
+  EXPECT_EQ(deleted_refs_[1].first, "a");
+  EXPECT_TRUE(controller_.Busy());
+  controller_.TapCell(0);  // locked: no toggle while deleting
+  EXPECT_EQ(controller_.SelectedCount(), 2u);
+
+  const int lists_before = list_calls_;
+  items_ = {Item("b", 1, "image/jpeg", 3 * kMiB)};
+  ASSERT_TRUE(delete_done_);
+  delete_done_({.deleted = 2, .freed_bytes = 4 * kMiB, .kept_shared = 1});
+  EXPECT_FALSE(controller_.Busy());
+  EXPECT_FALSE(controller_.Selecting());
+  EXPECT_EQ(list_calls_, lists_before + 1) << "rebuilt from fresh data";
+  EXPECT_TRUE(controller_.Cells().empty());
+}
+
+TEST_F(StorageManagerControllerTest, DeletingFromTheLargeListNamesEveryChat) {
+  items_ = {Item("a", 7, "video/mp4", 40 * kMiB), Item("b", 7, "video/mp4", 40 * kMiB)};
+  releasable_ = 40 * kMiB;
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenLarge();
+  ASSERT_EQ(controller_.Page(), "items");
+  EXPECT_EQ(controller_.Tab(), "video");
+  ASSERT_EQ(controller_.Cells().size(), 1u);
+  controller_.ToggleSelect();
+  controller_.TapCell(0);
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  EXPECT_EQ(confirm_message_.find("别的聊天也在用"), std::string::npos) << confirm_message_;
+  confirm_(true);
+  ASSERT_EQ(deleted_refs_.size(), 2u);
+  EXPECT_EQ(deleted_refs_[0].first, "a");
+  EXPECT_EQ(deleted_refs_[1].first, "b");
+}
+
+TEST_F(StorageManagerControllerTest, ChangesAreCountedAtMostOnceAWhileAndKeepTheSelection) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB), Item("a", 2, "image/jpeg", 2 * kMiB)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.ToggleSelect();
+  controller_.TapCell(1);
+  ASSERT_TRUE(on_changed_);
+  ASSERT_EQ(list_calls_, 1);
+
+  for (int i = 0; i < 20; ++i) {
+    on_changed_();
+  }
+  EXPECT_LE(list_calls_, 2);
+  EXPECT_LE(later_.size(), 1u) << "one pending count at most";
+  while (!later_.empty()) {
+    auto task = std::move(later_.front());
+    later_.erase(later_.begin());
+    task();
+  }
+  EXPECT_LE(list_calls_, 2);
+  EXPECT_GE(list_calls_, 2) << "the burst is counted once";
+  EXPECT_EQ(controller_.Page(), "items");
+  EXPECT_TRUE(controller_.Selecting());
+  EXPECT_EQ(controller_.SelectedCount(), 1u) << "what is still there stays selected";
+
+  // Not shown (another section, Me closed): nothing is counted.
+  visible_ = false;
+  const int before = list_calls_;
+  on_changed_();
+  EXPECT_EQ(list_calls_, before);
+}

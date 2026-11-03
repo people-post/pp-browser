@@ -10,6 +10,7 @@
 #include "lib/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
+#include "feature/settings/StorageManagerPorts.h"
 
 #include <functional>
 #include <optional>
@@ -104,6 +105,8 @@ struct SettingsCommands {
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
   std::function<std::string()> last_diagnostics_id;
+  /** Me → Storage → Manage storage. */
+  StorageManagerPorts storage;
 };
 
 } // namespace pbr
