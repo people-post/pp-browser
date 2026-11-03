@@ -8,6 +8,7 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/scan/ScanPorts.h"
+#include "lib/ui/ContextMenuHost.h"
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
@@ -49,6 +50,8 @@ public:
     ui::String id;
     ui::String title;
     ui::String subtitle;
+    /** Last 6 characters of the account id, for the phone row (never the whole id). */
+    ui::String short_id;
     ui::String trust;
     int unread_count = 0;
     ui::String unread_display;
@@ -78,6 +81,8 @@ public:
     ui::String id;
     ui::String title;
     ui::String subtitle;
+    /** Last 6 characters of the account id, for the phone detail header. */
+    ui::String short_id;
     ui::String display_name;
     ui::String nickname;
     /** Placeholder of the remark field. */
@@ -124,8 +129,11 @@ public:
   void OnFindSomeone();
   /** Contacts → Scan QR code. Successful friend scans still ask before saving. */
   void OnScanQr();
+  /** The "+" menu: add contact always; on the phone also scan and new group (when wired), then find someone. Exposed for tests. */
+  static std::vector<ContextMenuAction> AddContactMenuActions(bool compact, bool can_scan, bool can_new_group);
 
 private:
+  void OnNewGroup();
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void StartChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

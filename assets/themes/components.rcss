@@ -5170,3 +5170,300 @@ input.checkbox {
   gap: 8dp;
   flex-shrink: 0;
 }
+
+/* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
+   account id; the detail page is a centred 96dp avatar, round action button and grouped cards. Desktop keeps its layout;
+   the phone-only elements are hidden until the compact layer. */
+.contacts-phone-search,
+.contacts-row-subtitle--phone,
+.cd-phone,
+.cd-account {
+  display: none;
+}
+
+.shell-layer-compact .contacts-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .contacts-list-view .large-title {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .contacts-search,
+.shell-layer-compact .contacts-row-subtitle--desktop,
+.shell-layer-compact .contacts-trust-badge,
+.shell-layer-compact .contacts-unread {
+  display: none;
+}
+
+.shell-layer-compact .contacts-empty {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .contacts-list > .text {
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .contacts-row {
+  gap: 12dp;
+  height: 60dp;
+  min-height: 60dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+}
+
+.shell-layer-compact .contacts-row-avatar-frame {
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-layer-compact .contacts-row-avatar-image {
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-layer-compact .contacts-row-avatar-frame .avatar-letter {
+  font-size: 17dp;
+}
+
+.shell-layer-compact .contacts-row-body {
+  justify-content: center;
+  height: 60dp;
+  padding-right: 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .contacts-row-title {
+  margin-bottom: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .contacts-row-subtitle--phone {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Contact detail, phone. */
+.shell-layer-compact .contact-detail-panel {
+  display: block;
+  padding: 0 0 32dp 0;
+  overflow-y: auto;
+}
+
+.shell-layer-compact .contacts-detail-body,
+.shell-layer-compact .contacts-actions,
+.shell-layer-compact .contact-detail-panel .contacts-trust-badge,
+.shell-layer-compact .contact-detail-panel .contacts-row-subtitle--desktop {
+  display: none;
+}
+
+.shell-layer-compact .contacts-detail-header {
+  margin: 0;
+  padding: 16dp 16dp 0 16dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 8dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-frame {
+  width: 96dp;
+  height: 96dp;
+  border-radius: 48dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-image {
+  width: 96dp;
+  height: 96dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-frame .avatar-letter {
+  font-size: 40dp;
+}
+
+.shell-layer-compact .contact-detail-title-block {
+  flex: none;
+  align-items: center;
+}
+
+.shell-layer-compact .contact-detail-panel .contacts-header-title {
+  font-size: 22dp;
+  line-height: 28dp;
+}
+
+.shell-layer-compact .contact-detail-panel .contacts-row-title-line {
+  justify-content: center;
+}
+
+.shell-layer-compact .cd-account {
+  display: block;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .cd-phone {
+  display: block;
+}
+
+.cd-acts {
+  justify-content: center;
+  margin-top: 16dp;
+}
+
+.cd-act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 76dp;
+  height: 64dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 13dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.cd-act-icon {
+  width: 24dp;
+  height: 24dp;
+}
+
+.cd-act-label {
+  margin: 3dp 0 0 0;
+  font-size: 11dp;
+  line-height: 13dp;
+}
+
+.cd-card {
+  margin: 20dp 16dp 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.cd-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  height: 44dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: LatoLatin;
+}
+
+.cd-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  height: 44dp;
+  padding-right: 12dp;
+  box-sizing: border-box;
+}
+
+.cd-row:last-child .cd-row-body {
+  border-bottom-color: transparent;
+}
+
+.cd-row-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cd-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cd-row--field .cd-row-text {
+  flex: none;
+  width: 72dp;
+}
+
+.cd-field {
+  flex: 1;
+  min-width: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  text-align: right;
+  background-color: transparent;
+}
+
+.cd-switch {
+  width: 51dp;
+  height: 31dp;
+  min-width: 51dp;
+}
+
+.cd-switch .settings-switch-knob {
+  width: 27dp;
+  height: 27dp;
+}
+
+.cd-switch.settings-switch--on .settings-switch-knob {
+  transform: translateX(20dp);
+}
+
+.cd-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background-color: transparent;
+}
+
+.cd-icon {
+  width: 20dp;
+  height: 20dp;
+}
+
+.cd-chevron {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
+.cd-footnote {
+  margin: 6dp 0 0 0;
+  padding: 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}

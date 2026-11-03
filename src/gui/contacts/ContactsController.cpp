@@ -130,6 +130,12 @@ std::string PrimaryIdentityValue(const Contact& contact) {
   return {};
 }
 
+/** The last 6 characters of an id: enough to tell people apart without showing the whole id. */
+std::string LastSixChars(const std::string& id) {
+  constexpr size_t kKeep = 6;
+  return id.size() <= kKeep ? id : id.substr(id.size() - kKeep);
+}
+
 std::string ChannelLabel(const ThreadChannel channel) {
   switch (channel) {
   case ThreadChannel::E2e:
@@ -164,6 +170,10 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
       contact.server_nickname != contact.display_name) {
     row.subtitle = contact.server_nickname.c_str();
   }
+  {
+    const std::string primary = PrimaryIdentityValue(contact);
+    row.short_id = (primary.empty() ? row.subtitle.c_str() : LastSixChars(primary).c_str());
+  }
   row.trust = TrustLevelToString(contact.trust).c_str();
   if (ports.contact_icon_local_path) {
     const std::string path = ports.contact_icon_local_path(contact);
@@ -173,10 +183,8 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
+    // Colour by display name only, as the Chats list does: one person, one colour everywhere.
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, {});
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
   }
@@ -211,6 +219,10 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   } else if (!detail.peer_id.empty()) {
     detail.subtitle = ShortRelayId(detail.peer_id.c_str()).c_str();
   }
+  {
+    const std::string primary = PrimaryIdentityValue(contact);
+    detail.short_id = primary.empty() ? detail.subtitle : ui::String(LastSixChars(primary).c_str());
+  }
   detail.trust = TrustDisplayLabel(contact.trust).c_str();
   detail.trust_key = TrustLevelToString(contact.trust).c_str();
   if (ports.contact_icon_local_path) {
@@ -221,10 +233,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
+    // Colour by display name only, as the Chats list does: one person, one colour everywhere.
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, {});
     detail.avatar_letter = glyph.letter.c_str();
     detail.avatar_tone = glyph.tone;
   }
@@ -443,6 +453,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       list_handle.RegisterMember("id", &ContactListRow::id);
       list_handle.RegisterMember("title", &ContactListRow::title);
       list_handle.RegisterMember("subtitle", &ContactListRow::subtitle);
+      list_handle.RegisterMember("short_id", &ContactListRow::short_id);
       list_handle.RegisterMember("trust", &ContactListRow::trust);
       list_handle.RegisterMember("unread_count", &ContactListRow::unread_count);
       list_handle.RegisterMember("unread_display", &ContactListRow::unread_display);
@@ -473,6 +484,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("id", &ContactDetail::id);
       detail_handle.RegisterMember("title", &ContactDetail::title);
       detail_handle.RegisterMember("subtitle", &ContactDetail::subtitle);
+      detail_handle.RegisterMember("short_id", &ContactDetail::short_id);
       detail_handle.RegisterMember("display_name", &ContactDetail::display_name);
       detail_handle.RegisterMember("nickname", &ContactDetail::nickname);
       detail_handle.RegisterMember("their_nickname", &ContactDetail::their_nickname);
@@ -919,9 +931,7 @@ void ContactsController::ShowAlreadyContact(const Contact& contact) {
   NotifySurfaceChanged();
 }
 
-void ContactsController::OnAddContactMenu(ui::Event& ev) {
-  const ui::Vector2i position = MenuPositionBelowEvent(ev);
-
+std::vector<ContextMenuAction> ContactsController::AddContactMenuActions(const bool compact, const bool can_scan, const bool can_new_group) {
   std::vector<ContextMenuAction> actions;
   actions.push_back({
       "add_contact",
@@ -930,6 +940,27 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
       []() { ContactsController::Instance().OnAddContact(); },
       "../icons/contacts.svg",
   });
+  if (compact) {
+    // On the phone this menu is the one entry point for scanning and for starting a group.
+    if (can_scan) {
+      actions.push_back({
+          "scan_qr",
+          Tr("scan.title"),
+          nullptr,
+          []() { ContactsController::Instance().OnScanQr(); },
+          "../icons/v2/qr-code.svg",
+      });
+    }
+    if (can_new_group) {
+      actions.push_back({
+          "new_group",
+          Tr("contacts.new_group"),
+          nullptr,
+          []() { ContactsController::Instance().OnNewGroup(); },
+          "../icons/v2/group.svg",
+      });
+    }
+  }
   actions.push_back({
       "find_someone",
       Tr("contacts.find_someone"),
@@ -937,7 +968,20 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
       []() { ContactsController::Instance().OnFindSomeone(); },
       "../icons/sparkle.svg",
   });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  return actions;
+}
+
+void ContactsController::OnAddContactMenu(ui::Event& ev) {
+  const ui::Vector2i position = MenuPositionBelowEvent(ev);
+  ContextMenuHost::Instance().ShowActions(
+      position, AddContactMenuActions(compact_layout_, static_cast<bool>(scan_ports_.scan_qr),
+                                    static_cast<bool>(chat_ports_.open_new_group)));
+}
+
+void ContactsController::OnNewGroup() {
+  if (chat_ports_.open_new_group) {
+    chat_ports_.open_new_group();
+  }
 }
 
 void ContactsController::OnScanQr() {

@@ -1793,6 +1793,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
   chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
+  chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
   contacts_->BindChatPorts(chat_ports);
   people_picker_->BindChatPorts(std::move(chat_ports));
 

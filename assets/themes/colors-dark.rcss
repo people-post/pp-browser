@@ -1283,6 +1283,93 @@ select selectbox option:hover {
   color: #ebebf599;
 }
 
+.shell-layer-compact .contacts-row {
+  background-color: #000000;
+}
+
+.shell-layer-compact .contacts-row.contacts-row--active {
+  background-color: #000000;
+  box-shadow: none;
+}
+
+.shell-layer-compact .contacts-row:active {
+  background-color: #7878803d;
+}
+
+.shell-layer-compact .contacts-row-body {
+  border-bottom: 1dp #54545899;
+}
+
+.shell-layer-compact .contacts-row:last-of-type .contacts-row-body {
+  border-bottom-color: transparent;
+}
+
+.shell-layer-compact .contacts-row-title {
+  color: #ffffff;
+}
+
+.shell-layer-compact .contact-detail-panel {
+  background-color: #000000;
+}
+
+.cd-account,
+.contacts-row-subtitle--phone,
+.cd-footnote,
+.cd-row-value {
+  color: #ebebf599;
+}
+
+.cd-act {
+  background-color: #0a84ff2e;
+}
+
+.cd-act:active {
+  opacity: 0.6;
+}
+
+.cd-act-icon,
+.cd-icon {
+  image-color: #0a84ff;
+}
+
+.cd-act-label {
+  color: #0a84ff;
+}
+
+.cd-card {
+  background-color: #1c1c1e;
+}
+
+.cd-row {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.cd-row:active {
+  background-color: #7878803d;
+}
+
+.cd-row-body {
+  border-bottom: 1dp #54545899;
+}
+
+.cd-row-text,
+.cd-field {
+  color: #ffffff;
+}
+
+.cd-row--danger .cd-row-text {
+  color: #ff453a;
+}
+
+.cd-row-text--accent {
+  color: #0a84ff;
+}
+
+.cd-chevron {
+  image-color: #ebebf54c;
+}
+
 .sidebar-session-close:hover {
   background-color: #7878803d;
 }

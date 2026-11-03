@@ -3,13 +3,8 @@
     <div class="pane-nav-bg"></div>
     <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
     <div class="pane-nav-actions row">
-      <div class="pane-nav-btn-wrap" data-model="window">
-        <button class="pane-nav-btn" type="button" title="{{i18n:scan.title}}" data-event-click="open_scan_qr()">
-          <svg src="../icons/v2/qr-code.svg" width="24" height="24"></svg>
-        </button>
-      </div>
       <button class="pane-nav-btn" type="button" data-event-click="on_add_contact_menu()">
-        <svg src="../icons/v2/user-plus.svg" width="24" height="24"></svg>
+        <svg src="../icons/v2/plus.svg" width="24" height="24"></svg>
       </button>
     </div>
   </div>
@@ -22,6 +17,13 @@
           <svg src="../icons/plus.svg" width="14" height="14" crop-to-content="true"></svg>
         </button>
       </div>
+    </div>
+
+    <div class="chat-search contacts-phone-search">
+      <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+      <input class="chat-search-input" type="text" data-value="search_query"
+             data-event-change="on_search_changed()"/>
+      <p class="chat-search-label" data-if="search_query == ''">{{i18n:contacts.search_placeholder}}</p>
     </div>
 
     <div class="contacts-search">
@@ -56,7 +58,8 @@
             <span class="badge-count contacts-unread"
                   data-if="contact.unread_count > 0">{{contact.unread_display}}</span>
           </div>
-          <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
+          <p class="contacts-row-subtitle contacts-row-subtitle--desktop text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
+          <p class="contacts-row-subtitle contacts-row-subtitle--phone" data-if="contact.short_id != ''">{{contact.short_id}}</p>
         </div>
       </div>
 
