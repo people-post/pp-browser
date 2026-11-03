@@ -164,13 +164,15 @@ std::string FindChipThreadId(const Threads& threads, std::string_view chip_messa
 }
 
 /**
- * When a session was last active, for the list row: date and time within this year ("10/3 14:05"),
+ * When a session was last active, for the list row: the time today ("14:05"), the date earlier this year ("10/3"),
  * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
  */
 inline std::string SessionDateLabel(const std::tm& when, const std::tm& now) {
   char buf[64];
-  if (when.tm_year == now.tm_year) {
-    std::snprintf(buf, sizeof(buf), "%d/%d %02d:%02d", when.tm_mon + 1, when.tm_mday, when.tm_hour, when.tm_min);
+  if (when.tm_year == now.tm_year && when.tm_yday == now.tm_yday) {
+    std::snprintf(buf, sizeof(buf), "%02d:%02d", when.tm_hour, when.tm_min);
+  } else if (when.tm_year == now.tm_year) {
+    std::snprintf(buf, sizeof(buf), "%d/%d", when.tm_mon + 1, when.tm_mday);
   } else {
     std::snprintf(buf, sizeof(buf), "%d/%d/%d", when.tm_year + 1900, when.tm_mon + 1, when.tm_mday);
   }

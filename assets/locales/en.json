@@ -1294,6 +1294,7 @@
     "sidebar.menu.allow_mentions": "Alert on mentions",
     "sidebar.menu.ask_before_sharing_ai": "Ask before sharing with AI",
     "sidebar.mentioned": "You were mentioned",
+    "sidebar.search_placeholder": "Search",
     "sidebar.menu.mute_8h": "8 hours",
     "sidebar.menu.mute_1w": "1 week",
     "sidebar.menu.mute_always": "Always",

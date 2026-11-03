@@ -42,6 +42,9 @@ struct ChatSessionRow {
   bool muted = false;
   std::string date_label;
   bool active = false;
+  /** Letter and colour index (0..7) of the round avatar; the title decides both. */
+  std::string avatar_letter;
+  int avatar_tone = 0;
 
   bool operator==(const ChatSessionRow&) const = default;
 };

@@ -176,6 +176,7 @@ private:
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
   void OnToggleArchived();
+  void OnSessionsSearchChanged();
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
   void OnRetryGapSync();

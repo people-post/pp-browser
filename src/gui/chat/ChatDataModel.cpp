@@ -120,6 +120,8 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("muted", &SessionDisplayRow::muted);
     session_handle.RegisterMember("unread_dot", &SessionDisplayRow::unread_dot);
     session_handle.RegisterMember("mentioned", &SessionDisplayRow::mentioned);
+    session_handle.RegisterMember("avatar_letter", &SessionDisplayRow::avatar_letter);
+    session_handle.RegisterMember("avatar_tone", &SessionDisplayRow::avatar_tone);
   }
   ctor.RegisterArray<std::vector<SessionDisplayRow>>();
   ctor.Bind("sessions", &state.sessions);
@@ -127,6 +129,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
   ctor.Bind("sessions_more", &state.sessions_more);
+  ctor.Bind("sessions_query", &state.sessions_query);
   ctor.Bind("working_set_active", &state.working_set_active);
   ctor.Bind("working_set_title", &state.working_set_title);
   ctor.Bind("working_set_subtitle", &state.working_set_subtitle);

@@ -1204,6 +1204,87 @@ select selectbox option:hover {
   background-color: #ff453a;
 }
 
+.shell-layer-compact .sidebar-session {
+  background-color: #000000;
+}
+
+.shell-layer-compact .sidebar-session--pinned {
+  background-color: #2c2c2e;
+}
+
+.shell-layer-compact .sidebar-session.sidebar-session-active {
+  background-color: #000000;
+  box-shadow: none;
+}
+
+.shell-layer-compact .sidebar-session--pinned.sidebar-session-active {
+  background-color: #2c2c2e;
+}
+
+.shell-layer-compact .sidebar-session:active {
+  background-color: #7878803d;
+}
+
+.shell-layer-compact .sidebar-session-body {
+  border-bottom: 1dp #54545899;
+}
+
+.shell-layer-compact .sidebar-session:last-of-type .sidebar-session-body {
+  border-bottom-color: transparent;
+}
+
+.chat-row-avatar--group {
+  background-color: #ff9f0a;
+}
+
+.chat-row-avatar--ai {
+  background-color: #5e5ce6;
+}
+
+.chat-row-avatar-letter {
+  color: #ffffff;
+}
+
+.chat-row-avatar-icon {
+  image-color: #ffffff;
+}
+
+.chat-row-type--ai {
+  image-color: #5e5ce6;
+}
+
+.chat-row-type--private {
+  image-color: #40c8e0;
+}
+
+.chat-row-type--group {
+  image-color: #ff9f0a;
+}
+
+.chat-row-type--public {
+  image-color: #8e8e93;
+}
+
+.chat-row-mute {
+  image-color: #ebebf54c;
+}
+
+.chat-search {
+  background-color: #2c2c2e;
+}
+
+.chat-search-icon {
+  image-color: #ebebf54c;
+}
+
+.chat-search-input {
+  color: #ffffff;
+}
+
+.chat-search-label {
+  color: #ebebf599;
+}
+
 .sidebar-session-close:hover {
   background-color: #7878803d;
 }

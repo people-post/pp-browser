@@ -130,6 +130,8 @@ struct ChatShellState {
   ui::String archived_entry_label;
   /** Rows remain beyond the window the sidebar draws (the "Loading…" line). */
   bool sessions_more = false;
+  /** The search box above the list: rows are kept when their title or preview contains it. */
+  ui::String sessions_query;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

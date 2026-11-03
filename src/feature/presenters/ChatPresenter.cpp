@@ -17,6 +17,7 @@
 #include "common/Utilities.h"
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AvatarGlyph.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
@@ -262,6 +263,11 @@ void ChatPresenter::Refresh() {
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);
     row.active = thread.id == active_id;
+    {
+      const AvatarGlyph glyph = MakeAvatarGlyph(row.title, {});
+      row.avatar_letter = glyph.letter;
+      row.avatar_tone = glyph.tone;
+    }
     next.rows.push_back(std::move(row));
   }
   list_ = std::move(next);

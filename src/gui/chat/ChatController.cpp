@@ -882,6 +882,12 @@ void ChatController::AfterThreadPrefsChanged() {
   NotifySurfaceChanged();
 }
 
+void ChatController::OnSessionsSearchChanged() {
+  ApplySessionList();
+  DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "sessions_more");
+}
+
 void ChatController::OnToggleArchived() {
   session_window_.Reset();  // the other list starts at its first rows
   presenter_.ToggleArchived();
@@ -1011,6 +1017,17 @@ void ChatController::SyncShellSessions() {
   presenter_.Refresh();  // ApplySessionList copies it in
 }
 
+namespace {
+std::string LowerAscii(std::string s) {
+  for (char& c : s) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return s;
+}
+}  // namespace
+
 void ChatController::ApplySessionList() {
   const ChatListScreen& list = presenter_.List();
   shell_.sessions.clear();
@@ -1026,8 +1043,11 @@ void ChatController::ApplySessionList() {
       break;
     }
   }
-  const size_t visible = session_window_.Visible(list.rows.size());
-  shell_.sessions_more = session_window_.More(list.rows.size());
+  // A search shows every match, not just the loaded window.
+  const std::string query = LowerAscii(shell_.sessions_query.c_str());
+  const bool searching = !query.empty();
+  const size_t visible = searching ? list.rows.size() : session_window_.Visible(list.rows.size());
+  shell_.sessions_more = !searching && session_window_.More(list.rows.size());
   shell_.sessions.reserve(visible);
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
@@ -1036,6 +1056,12 @@ void ChatController::ApplySessionList() {
     // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
     row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
     row.preview = from.preview.c_str();
+    if (searching && LowerAscii(row.title.c_str()).find(query) == std::string::npos &&
+        LowerAscii(from.preview).find(query) == std::string::npos) {
+      continue;
+    }
+    row.avatar_letter = from.avatar_letter.c_str();
+    row.avatar_tone = from.avatar_tone;
     row.kind = from.kind.c_str();
     row.unread_count = from.unread_count;
     row.unread_display = FormatBadgeCount(from.unread_count).c_str();
@@ -3309,6 +3335,7 @@ bool ChatController::Setup(ui::Context* context) {
 
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
+        ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));

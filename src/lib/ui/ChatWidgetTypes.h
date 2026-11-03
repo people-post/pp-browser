@@ -107,6 +107,9 @@ struct SessionDisplayRow {
   bool unread_dot = false;
   /** An unread message here mentions us (group-chat G015): the preview line leads with "You were mentioned". */
   bool mentioned = false;
+  /** Round avatar: first letter of the title and the colour index (avatar-tone-0..7). */
+  ui::String avatar_letter;
+  int avatar_tone = 0;
 };
 
 struct TurnWidgetState {

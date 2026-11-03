@@ -3393,6 +3393,168 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 76dp rows, a 52dp round avatar, a hairline inset from 80dp.
+   The avatar, type icon, muted bell and search box only exist on the phone; desktop keeps the card rows. */
+.chat-search,
+.chat-row-avatar,
+.chat-row-type,
+.chat-row-mute {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .sidebar-sessions .large-title {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .chat-search {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  height: 36dp;
+  margin: 0 16dp 8dp 16dp;
+  padding: 0 8dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+}
+
+.chat-search-icon {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
+.chat-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 36dp;
+  margin: 0;
+  padding: 0 0 0 6dp;
+  border: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  background-color: transparent;
+}
+
+/* The input renders no placeholder: this label sits over it while it is empty and lets clicks through. */
+.chat-search-label {
+  position: absolute;
+  top: 0;
+  left: 30dp;
+  height: 36dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 36dp;
+  pointer-events: none;
+}
+
+.shell-layer-compact .sidebar-archived-entry {
+  margin: 0 16dp 4dp 16dp;
+}
+
+.shell-layer-compact .sidebar-sessions .text {
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .sidebar-session {
+  gap: 12dp;
+  height: 76dp;
+  min-height: 76dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+}
+
+.shell-layer-compact .sidebar-session-icon,
+.shell-layer-compact .sidebar-session-flag--pin,
+.shell-layer-compact .sidebar-session-flag--muted {
+  display: none;
+}
+
+.shell-layer-compact .chat-row-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.chat-row-avatar-letter {
+  margin: 0;
+  font-size: 20dp;
+  line-height: 25dp;
+  font-weight: bold;
+}
+
+.chat-row-avatar-icon {
+  width: 28dp;
+  height: 28dp;
+}
+
+.shell-layer-compact .sidebar-session-body {
+  height: 76dp;
+  padding-right: 16dp;
+  box-sizing: border-box;
+  justify-content: center;
+  gap: 2dp;
+}
+
+.shell-layer-compact .sidebar-session-line {
+  min-height: 22dp;
+}
+
+.shell-layer-compact .sidebar-session-line + .sidebar-session-line {
+  min-height: 20dp;
+}
+
+.shell-layer-compact .sidebar-session-title {
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .sidebar-session-date,
+.shell-layer-compact .sidebar-session-preview,
+.shell-layer-compact .sidebar-session-mention {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .chat-row-type,
+.shell-layer-compact .chat-row-mute {
+  display: block;
+  flex-shrink: 0;
+}
+
+.shell-layer-compact .chat-row-type {
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .chat-row-mute {
+  width: 16dp;
+  height: 16dp;
+}
+
+.shell-layer-compact .sidebar-unread {
+  min-width: 20dp;
+  height: 20dp;
+  padding: 0 6dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 20dp;
+}
+
 .message-row-peer {
   margin: 8dp 0;
   padding-right: 48dp;
