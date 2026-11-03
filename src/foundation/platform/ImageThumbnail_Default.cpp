@@ -38,6 +38,10 @@ Roe<std::vector<uint8_t>> MakeImageThumbnailJpeg(const std::vector<uint8_t>& ima
   if (!scaled) {
     return Error("Failed to scale image");
   }
+  scaled = ApplyExifOrientation(scaled, header->exif_orientation);  // a phone's portrait photo stands up
+  if (!scaled) {
+    return Error("Failed to rotate image");
+  }
   auto jpeg = EncodeJpegBytes(scaled, kThumbnailJpegQuality);
   SDL_DestroySurface(scaled);
   return jpeg;
