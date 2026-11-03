@@ -183,7 +183,8 @@ The closed callback can run while the component's own lock is held (a write that
 | `/pp/rpc/history/1.0.0` | request JSON → response JSON |
 | `/pp/blob/1.0.0` | JSON meta → ciphertext or error JSON |
 | `/pp/realtime/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
-| `/pp-mesh/datagram-relay/1.0.0` | duplex realtime + control |
+| `/pp-mesh/datagram-relay/1.0.0` | Reliable control JSON (quote / accept / attach / subscribe); media too while the participant has no data lane |
+| `/pp-mesh/media-relay-data/1.0.0` | A participant's data lane to the hop: `MediaDataFrame`s both ways, BestEffort, the oldest dropped (`MediaRelayDataChannelPolicy`) |
 | `/pp-mesh/circuit/1.0.0` | tunnel setup → forwarded L3 frames ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel)) |
 | `/pp-mesh/reach/1.0.0` | short JSON |
 
