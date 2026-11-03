@@ -649,8 +649,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {
     return facade.PlanRelayQuotaRecovery(quota_error);
   };
-  settings_commands.delete_relay_blob = [&facade](const std::string& blob_id, const BlobTier tier) {
-    return facade.DeleteRelayBlobById(blob_id, tier);
+  settings_commands.delete_relay_file = [&facade](const std::string& blob_id) {
+    return facade.DeleteRelayFileById(blob_id);
   };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };

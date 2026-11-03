@@ -284,16 +284,6 @@ std::optional<BlobPurpose> BlobPurposeFromWire(const std::string& value) {
   return std::nullopt;
 }
 
-std::optional<BlobTier> BlobTierFromWire(const std::string& value) {
-  if (value == "small") {
-    return BlobTier::Small;
-  }
-  if (value == "large") {
-    return BlobTier::Large;
-  }
-  return std::nullopt;
-}
-
 std::optional<BlobStatus> BlobStatusFromWire(const std::string& value) {
   if (value == "pending") {
     return BlobStatus::Pending;

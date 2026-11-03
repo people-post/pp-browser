@@ -298,11 +298,10 @@ public:
   /** Uploads an icon the app prepared (decoded, sized, encoded: PrepareProfileIconFromFile). */
   Roe<void> UploadProfileIcon(const PreparedProfileIcon& icon);
   Roe<void> ClearProfileIcon();
-  /** The relay blob to offer deleting for a quota error: the oldest non-icon one of the tier its text names. */
+  /** The relay files to offer deleting for a full files relay (the only quota this device can free). */
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
-  /** Delete the relay blob the person confirmed (by id). */
-  /** One id of a confirmed quota recovery, on its tier's endpoint (DeleteRelayQuotaItem). */
-  Roe<void> DeleteRelayBlobById(const std::string& blob_id, BlobTier tier);
+  /** One file of a confirmed quota recovery (`/files/delete`). */
+  Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();

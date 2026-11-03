@@ -290,7 +290,7 @@ struct MediaEngine::Impl {
   std::atomic<uint32_t> tx_audio_seq{0};
   std::atomic<uint32_t> tx_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
-  std::atomic<bool> adaptation_camera_allowed{true};
+  std::atomic<bool> adaptation_send_video{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
   std::atomic<uint8_t>& video_level;
   std::atomic<bool>& video_level_profile;
@@ -370,10 +370,19 @@ struct MediaEngine::Impl {
   int encoder_restarts = 0;
   /** Decoders dropped for not responding, per stream; a stream past the cap shows no video. Under `mutex`. */
   std::unordered_map<uint32_t, int> decoder_restarts;
-  std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  /**
+   * One remote stream's decoder. Decoding runs outside `mutex` (#474: a hung codec held it 1.5-5 s per step and
+   * stalled playout and capture); `decode_mu` keeps one decode at a time on it (two readers can deliver a stream
+   * while a path migrates). Shared: Stop or a stuck-decoder drop may take it out of the map mid-decode.
+   */
+  struct RemoteDecoder {
+    std::mutex decode_mu;
+    std::unique_ptr<IVideoCodec> codec;
+  };
+  std::unordered_map<uint32_t, std::shared_ptr<RemoteDecoder>> remote_decoders;
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
-  int video_decode_fail_logs = 0;
+  std::atomic<int> video_decode_fail_logs{0};
   /** Getter waits for `mutex` over kLockWaitWarnMs logged this session (B125: is decode holding it?). */
   std::atomic<int> lock_wait_warns{0};
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
@@ -1413,6 +1422,10 @@ struct MediaEngine::Impl {
     if (preview_rotate_cw == rotate_cw) {
       PublishLocalPreview(fitted);
     }
+    if (!adaptation_send_video.load(std::memory_order_relaxed)) {
+      need_keyframe = true; // the path cannot carry video now: nothing goes out; a keyframe starts it again
+      return;
+    }
     if (!video_codec || !video_codec->HasEncoder()) {
       return;
     }
@@ -1593,62 +1606,66 @@ struct MediaEngine::Impl {
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
 
-  void OnRemoteH264Frame(uint32_t stream_id, const std::byte* data, size_t size) {
-    if (size == 0) {
-      return;
+  /** Under `mutex`: the stream's decoder, made on its first packet; none past the limits. */
+  std::shared_ptr<RemoteDecoder> RemoteDecoderLocked(uint32_t stream_id) {
+    if (auto it = remote_decoders.find(stream_id); it != remote_decoders.end()) {
+      return it->second;
     }
-    IVideoCodec* decoder = nullptr;
-    {
-      std::lock_guard lock(mutex);
-      auto it = remote_decoders.find(stream_id);
-      if (it == remote_decoders.end()) {
-        if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
+    if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
+      return nullptr;
+    }
+    if (const auto restarts = decoder_restarts.find(stream_id);
+        restarts != decoder_restarts.end() && restarts->second > kMaxCodecRestarts) {
+      return nullptr; // its decoders kept hanging: no video from this stream this call
+    }
+    auto created = make_video_codec(VideoCodecRole::Decoder);
+    if (!created) {
+      return nullptr;
+    }
+    auto decoder = std::make_shared<RemoteDecoder>();
+    decoder->codec = std::move(created);
+    remote_decoders.emplace(stream_id, decoder);
+    return decoder;
+  }
+
+  /** Under `mutex`: whether `decoder` is still the stream's (Stop / a drop / a migration did not replace it). */
+  bool StillTheDecoderLocked(uint32_t stream_id, const std::shared_ptr<RemoteDecoder>& decoder) const {
+    auto it = remote_decoders.find(stream_id);
+    return it != remote_decoders.end() && it->second == decoder;
+  }
+
+  /** Not under `mutex` (#474): one access unit through the stream's decoder, the frame to the screen. */
+  void DecodeRemoteVideo(uint32_t stream_id, const std::shared_ptr<RemoteDecoder>& decoder, const std::byte* data,
+                         size_t size) {
+    std::lock_guard decode(decoder->decode_mu);
+    IVideoCodec& codec = *decoder->codec;
+    if (!codec.HasDecoder()) {
+      if (auto configured = codec.ConfigureDecoder(); !configured) {
+        if (codec.NotResponding()) {
+          DropStuckDecoder(stream_id, decoder);
           return;
         }
-        if (const auto restarts = decoder_restarts.find(stream_id);
-            restarts != decoder_restarts.end() && restarts->second > kMaxCodecRestarts) {
-          return; // its decoders kept hanging: no video from this stream this call
-        }
-        auto created = make_video_codec(VideoCodecRole::Decoder);
-        if (!created) {
-          return;
-        }
-        it = remote_decoders.emplace(stream_id, std::move(created)).first;
-      }
-      decoder = it->second.get();
-    }
-    if (!decoder) {
-      return;
-    }
-    if (!decoder->HasDecoder()) {
-      if (auto configured = decoder->ConfigureDecoder(); !configured) {
-        if (decoder->NotResponding()) {
-          DropStuckDecoder(stream_id);
-          return;
-        }
-        static bool logged_cfg = false;
-        if (!logged_cfg) {
-          logged_cfg = true;
+        static std::atomic<bool> logged_cfg{false};
+        if (!logged_cfg.exchange(true)) {
           SDL_Log("MediaEngine: ConfigureDecoder failed: %s", configured.error().message.c_str());
         }
         return;
       }
     }
-    auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
-    if (!decoded && decoder->NotResponding()) {
-      DropStuckDecoder(stream_id);
+    auto decoded = codec.Decode(reinterpret_cast<const uint8_t*>(data), size);
+    if (!decoded && codec.NotResponding()) {
+      DropStuckDecoder(stream_id, decoder);
       return;
     }
     if (!decoded) {
       // In the app log (SDL_Log never reaches the phone's log file), a few per call.
-      if (video_decode_fail_logs < 5) {
-        ++video_decode_fail_logs;
+      if (video_decode_fail_logs.fetch_add(1, std::memory_order_relaxed) < 5) {
         EngineLog().warning << "remote H264 decode failed stream=" << stream_id << " size=" << size << ": "
-                            << decoded.error().message << " session=" << session_id;
+                            << decoded.error().message;
       }
       NoteVideoRefreshNeeded(stream_id);
       if (decoded.error().message == kDecoderStalledError) {
-        ResetStalledDecoder(stream_id);
+        ResetStalledDecoder(stream_id, decoder);
       }
       return;
     }
@@ -1657,8 +1674,11 @@ struct MediaEngine::Impl {
       return;
     }
     {
-      // Per frame, but OnInboundPacket already holds this (recursive) lock: no extra contention.
       std::lock_guard lock(mutex);
+      // Stopped, or the stream's decoder replaced while this one decoded: the frame is not this session's to show.
+      if (!active || !StillTheDecoderLocked(stream_id, decoder)) {
+        return;
+      }
       if (auto it = decoder_resets.find(stream_id); it != decoder_resets.end()) {
         it->second.NoteFrame();
       }
@@ -1671,8 +1691,11 @@ struct MediaEngine::Impl {
    * go — and the next packet makes a new one; it asks the sender for an IDR. Past kMaxCodecRestarts
    * the stream shows no video for the rest of the call.
    */
-  void DropStuckDecoder(uint32_t stream_id) {
+  void DropStuckDecoder(uint32_t stream_id, const std::shared_ptr<RemoteDecoder>& decoder) {
     std::lock_guard lock(mutex);
+    if (!StillTheDecoderLocked(stream_id, decoder)) {
+      return; // already dropped (or replaced): counted once
+    }
     remote_decoders.erase(stream_id);
     decoder_resets.erase(stream_id);
     const int restarts = ++decoder_restarts[stream_id];
@@ -1715,30 +1738,34 @@ struct MediaEngine::Impl {
 
   /**
    * B125: a decoder that stays stalled is rebuilt — two stalls in a row, at most twice per call, ten
-   * seconds apart (it runs under the media lock). The next packet configures it again; it shows
-   * nothing until an IDR, which the stall has already asked for.
+   * seconds apart. The budget is kept under the media lock; the rebuild runs under the decoder's own
+   * (the caller holds it), not the media lock. The next packet configures it again; it shows nothing
+   * until an IDR, which the stall has already asked for.
    */
-  void ResetStalledDecoder(uint32_t stream_id) {
-    std::lock_guard lock(mutex);
-    // Looked up again under the lock: Stop / SoftMigrate may have dropped the decoder (and the
-    // budgets) since Decode returned — then there is nothing to rebuild and no budget to start.
-    auto it = remote_decoders.find(stream_id);
-    if (it == remote_decoders.end() || !it->second) {
-      return;
-    }
-    DecoderResetBudget& budget = decoder_resets[stream_id];
+  void ResetStalledDecoder(uint32_t stream_id, const std::shared_ptr<RemoteDecoder>& decoder) {
     const auto started = std::chrono::steady_clock::now();
-    const int64_t now_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count();
-    if (!budget.NoteStall(now_ms)) {
-      return;
+    int resets = 0;
+    bool exhausted = false;
+    {
+      std::lock_guard lock(mutex);
+      // Stop / SoftMigrate may have dropped the decoder (and the budgets) since Decode returned — then
+      // there is nothing to rebuild and no budget to start.
+      if (!StillTheDecoderLocked(stream_id, decoder)) {
+        return;
+      }
+      DecoderResetBudget& budget = decoder_resets[stream_id];
+      const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count();
+      if (!budget.NoteStall(now_ms)) {
+        return;
+      }
+      resets = budget.Resets();
+      exhausted = budget.Exhausted();
     }
-    it->second->ResetDecoder();
+    decoder->codec->ResetDecoder();
     const auto took_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets=" << budget.Resets()
-                        << (budget.Exhausted() ? " (no more rebuilds this call)" : "") << " took_ms=" << took_ms
-                        << " session=" << session_id;
+    EngineLog().warning << "remote H264 decoder stalled; rebuilt stream=" << stream_id << " resets=" << resets
+                        << (exhausted ? " (no more rebuilds this call)" : "") << " took_ms=" << took_ms;
   }
 
   /**
@@ -1820,7 +1847,7 @@ struct MediaEngine::Impl {
     // vendor codec is wedged): taken out under the lock, destroyed after it.
     timed_step("codecs", [&] {
       std::unique_ptr<IVideoCodec> codec;
-      std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> decoders;
+      std::unordered_map<uint32_t, std::shared_ptr<RemoteDecoder>> decoders;
       {
         std::lock_guard lock(mutex);
         codec = std::move(video_codec);
@@ -2020,35 +2047,42 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_s
 
 void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
   const std::shared_ptr<Impl> impl = Session();
-  // Must hold mutex: SoftMigrate StartDuplex TearDownAudioLocked destroys opus/SDL while the
-  // media_relay client reader can already deliver frames (guest attach dogfood crash).
-  std::lock_guard lock(impl->mutex);
-  if (!impl->active || !impl->packet_mode || !impl->spec.playback || packet.payload.empty()) {
-    return;
-  }
-  // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
-  // inbound 1:1 path with a missing peer_key. Drop so SoftMigrate cannot leave a PLC zombie.
-  if (packet.stream_id == 1u) {
-    return;
-  }
+  // Audio is taken under mutex: SoftMigrate StartDuplex TearDownAudioLocked destroys opus/SDL while
+  // the media_relay client reader can already deliver frames (guest attach dogfood crash). Video is
+  // decoded after it (#474): only its decoder is found under it.
+  std::shared_ptr<Impl::RemoteDecoder> video_decoder;
   {
-    // Log the first packet per stream_id per process (PreferLocal multi-peer RX).
-    // Cleared on SoftMigrate StartDuplex send-swap so post-migrate RX is visible again.
-    bool log_this = false;
-    {
-      std::lock_guard lg(impl->rx_log_mu);
-      log_this = impl->rx_logged_streams.insert(packet.stream_id).second;
+    std::unique_lock lock(impl->mutex);
+    if (!impl->active || !impl->packet_mode || !impl->spec.playback || packet.payload.empty()) {
+      return;
     }
-    if (log_this) {
-      log().info << "OnInboundPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
-                 << " seq=" << packet.seq << " bytes=" << packet.payload.size() << " session=" << impl->session_id;
+    // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
+    // inbound 1:1 path with a missing peer_key. Drop so SoftMigrate cannot leave a PLC zombie.
+    if (packet.stream_id == 1u) {
+      return;
+    }
+    {
+      // Log the first packet per stream_id per process (PreferLocal multi-peer RX).
+      // Cleared on SoftMigrate StartDuplex send-swap so post-migrate RX is visible again.
+      bool log_this = false;
+      {
+        std::lock_guard lg(impl->rx_log_mu);
+        log_this = impl->rx_logged_streams.insert(packet.stream_id).second;
+      }
+      if (log_this) {
+        log().info << "OnInboundPacket first stream=" << packet.stream_id << " ch=" << packet.channel_id
+                   << " seq=" << packet.seq << " bytes=" << packet.payload.size() << " session=" << impl->session_id;
+      }
+    }
+    if (mesh::IsAudioChannel(packet.channel_id)) {
+      impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
+                              packet.payload.size());
+    } else if (mesh::IsVideoChannel(packet.channel_id)) {
+      video_decoder = impl->RemoteDecoderLocked(packet.stream_id);
     }
   }
-  if (mesh::IsAudioChannel(packet.channel_id)) {
-    impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
-                            packet.payload.size());
-  } else if (mesh::IsVideoChannel(packet.channel_id)) {
-    impl->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
+  if (video_decoder) {
+    impl->DecodeRemoteVideo(packet.stream_id, video_decoder, reinterpret_cast<const std::byte*>(packet.payload.data()),
                             packet.payload.size());
   }
 }
@@ -2061,16 +2095,15 @@ bool MediaEngine::IsPacketMode() const {
 
 void MediaEngine::ApplyTargets(const MediaTargets& targets) {
   const std::shared_ptr<Impl> impl = Session();
-  impl->adaptation_camera_allowed.store(targets.camera_allowed, std::memory_order_relaxed);
+  if (impl->adaptation_send_video.exchange(targets.send_video, std::memory_order_relaxed) != targets.send_video) {
+    EngineLog().info << "video send " << (targets.send_video ? "resumed" : "paused") << " by adaptation";
+  }
   impl->adaptation_target_video_bps.store(targets.video_bps, std::memory_order_relaxed);
   const int64_t audio_bps = targets.audio_bps > 0 ? targets.audio_bps : MediaTargets::kDefaultAudioBps;
   impl->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
   // Bitrates are applied by the threads that encode, right before their next frame (encoders are
-  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan).
-  if (!targets.camera_allowed) {
-    std::lock_guard lock(impl->mutex);
-    impl->RequestCameraOffLocked();
-  }
+  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan). A paused send is the
+  // video thread's too: it keeps the camera and its preview, and skips the encode.
 }
 
 double MediaEngine::PathPressure() const {
@@ -2183,9 +2216,6 @@ Roe<void> MediaEngine::SetCameraEnabled(bool enabled, const int display_rotation
   }
   if (!impl->spec.capture) {
     return Error("camera needs a capturing session");
-  }
-  if (!impl->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
-    return Error("Camera blocked by adaptation (uplink/path)");
   }
   if (impl->skip_device_open_for_test.load(std::memory_order_relaxed)) {
     return Error("camera skipped (test)");

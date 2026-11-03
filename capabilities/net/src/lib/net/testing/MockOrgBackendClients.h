@@ -22,7 +22,6 @@ public:
                                  uint64_t byte_length, BlobPurpose purpose) override;
   Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) override;
   Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<BlobListResult> List(const std::string& relay_user_id, const std::string& status_filter = "") override;
   Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
                            const std::string& kind) override;
   Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,
@@ -37,7 +36,6 @@ public:
 
   void SetPresignError(Error error) { presign_error_ = std::move(error); }
   void ClearPresignError() { presign_error_ = std::nullopt; }
-  void SetListResult(BlobListResult result) { list_result_ = std::move(result); }
 
   // Relay files: scripted answers (each error stays until cleared), and what was asked.
   void SetFileStartError(Error error) { file_start_error_ = std::move(error); }
@@ -72,7 +70,6 @@ private:
   std::vector<std::string> retained_blob_ids_;
   std::vector<std::string> deleted_blob_ids_;
   std::optional<Error> presign_error_;
-  std::optional<BlobListResult> list_result_;
   uint64_t next_blob_id_ = 1;
   uint32_t presign_call_count_ = 0;
 

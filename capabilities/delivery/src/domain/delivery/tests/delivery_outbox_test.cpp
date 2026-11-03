@@ -156,8 +156,10 @@ TEST_F(DeliveryOutboxTest, CallControlAlsoGoesOverALiveLinkAtOnce) {
     control.relay_route = "relay:bob";
     control.critical_lane = true;
     outbox.Send(control);
-    Drain();
-    EXPECT_EQ(relay.sent.size(), 1u) << "the relay copy always goes, connected=" << connected;
+    // On the send itself, not a drain marker: the critical lane has more than one thread, so the marker can run
+    // while the send still does. The direct copy goes before the relay's.
+    ASSERT_TRUE(WaitFor([&] { return relay.SentCount() == 1u; }, std::chrono::seconds(5)))
+        << "the relay copy always goes, connected=" << connected;
     EXPECT_EQ(direct.Sent().size(), connected ? 1u : 0u) << "connected=" << connected;
   }
 }

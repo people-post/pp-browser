@@ -73,15 +73,11 @@ bool AutoDownloadBudget::TryAcquire(const std::string& sender, const uint64_t by
   return true;
 }
 
-int BlobSpaceUsedPercent(const BlobSpaceUse& use, const AttachmentLimits& limits) {
-  int percent = 0;
-  if (use.large_included_bytes > 0) {
-    percent = std::max<int>(percent, static_cast<int>(use.large_bytes * 100 / use.large_included_bytes));
+int BlobSpaceUsedPercent(const BlobSpaceUse& use) {
+  if (use.quota_bytes == 0) {
+    return 0;
   }
-  if (limits.small_max_objects > 0) {
-    percent = std::max<int>(percent, static_cast<int>(use.small_count * 100 / static_cast<uint64_t>(limits.small_max_objects)));
-  }
-  return percent;
+  return static_cast<int>(std::min<uint64_t>(use.bytes_used * 100 / use.quota_bytes, 100));
 }
 
 int BlobSpaceWarnLevel(const int used_percent, const AttachmentLimits& limits) {

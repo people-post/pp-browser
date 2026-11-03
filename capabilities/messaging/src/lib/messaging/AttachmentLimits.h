@@ -46,8 +46,6 @@ struct AttachmentLimits {
   /** Server space warnings, in percent of the space in use. */
   int warn_percent_low = 80;
   int warn_percent_high = 90;
-  /** How many small files the server keeps per person (the list answer carries no such number). */
-  int small_max_objects = 100;
 
   /** A picture larger than this many pixels is not decoded (it would exhaust memory). */
   uint64_t max_image_pixels = 64ULL * 1000ULL * 1000ULL;
@@ -114,18 +112,14 @@ private:
   std::unordered_map<std::string, std::deque<Entry>> by_sender_;
 };
 
-/** Which share of the server space is in use, and which warning that crosses. */
+/** The files relay's space (`/files/list` usage): attachments, the space that fills. */
 struct BlobSpaceUse {
-  uint64_t small_count = 0;
-  uint64_t large_bytes = 0;
-  uint64_t large_included_bytes = 0;
+  uint64_t bytes_used = 0;
+  uint64_t quota_bytes = 0;
 };
 
-/**
- * Percent of the space used: the fuller of the large tier (bytes of what the plan includes) and the
- * small tier (files of `small_max_objects`). 0 when neither denominator is known.
- */
-int BlobSpaceUsedPercent(const BlobSpaceUse& use, const AttachmentLimits& limits);
+/** Percent of the files relay's quota in use; 0 when the quota is not known. */
+int BlobSpaceUsedPercent(const BlobSpaceUse& use);
 
 /** The warning level (`warn_percent_low` / `warn_percent_high`) a usage reaches; 0 below the first. */
 int BlobSpaceWarnLevel(int used_percent, const AttachmentLimits& limits);

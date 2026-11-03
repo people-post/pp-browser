@@ -36,7 +36,7 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
-  BlobQuotaFreeSlot delete_relay_blob;
+  BlobQuotaFreeSlot delete_relay_file;
   std::function<void()> drain_pending_attachment_media;
   std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */

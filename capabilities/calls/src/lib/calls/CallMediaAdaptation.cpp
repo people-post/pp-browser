@@ -63,13 +63,13 @@ CallAdaptationDecision CallMediaAdaptation::Evaluate(const CallAdaptationInput& 
     out.reason = "audio_plus_lo_hi";
   }
 
-  out.camera_allowed = out.publish_video_lo || out.publish_video_hi;
+  out.video_fits = out.publish_video_lo || out.publish_video_hi;
   return out;
 }
 
 MediaTargets CallMediaAdaptation::ToMediaTargets(const CallAdaptationDecision& decision) {
   MediaTargets targets;
-  targets.camera_allowed = decision.camera_allowed;
+  targets.send_video = decision.video_fits;
   targets.audio_bps = decision.target_audio_bps;
   targets.video_bps = decision.target_video_lo_bps;
   return targets;
@@ -80,7 +80,7 @@ bool CallMediaAdaptation::CameraPathAllowsVideo(const double path_pressure, cons
   in.camera_user_wants = true;
   in.path_pressure = path_pressure;
   in.per_user_up_bps = per_user_up_bps;
-  return Evaluate(in).camera_allowed;
+  return Evaluate(in).video_fits;
 }
 
 const char* CallMediaAdaptation::ChannelTypeName(CallMediaRole role) {

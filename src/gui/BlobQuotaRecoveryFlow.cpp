@@ -21,19 +21,11 @@ std::string BlobQuotaRecoveryFlow::Detail::BuildQuotaConfirmMessage(const BlobQu
 }
 
 std::string BlobQuotaRecoveryFlow::Detail::UsageLine(const BlobQuotaRecoveryPlan& plan) {
-  // Used / total of the tier that is full: the files relay and the large tier count bytes, the small tier files.
-  if (plan.full_tier == BlobTier::Files && plan.file_usage.quota_bytes > 0) {
-    return Tr("blob.quota.usage_bytes", {{"used", FormatAttachmentByteSize(plan.file_usage.bytes_used)},
-                                         {"total", FormatAttachmentByteSize(plan.file_usage.quota_bytes)}});
-  }
-  const BlobUsageSummary& usage = plan.usage;
-  const bool large_full = plan.full_tier == BlobTier::Large && usage.large_included_bytes > 0;
-  return large_full
-             ? Tr("blob.quota.usage_bytes", {{"used", FormatAttachmentByteSize(usage.large_bytes)},
-                                             {"total", FormatAttachmentByteSize(usage.large_included_bytes)}})
-             : Tr("blob.quota.usage_files",
-                  {{"used", std::to_string(usage.small_count)},
-                   {"total", plan.small_max_objects > 0 ? std::to_string(plan.small_max_objects) : std::string("?")}});
+  // Used / total of the files relay, in bytes ("?" for a total it did not say).
+  return Tr("blob.quota.usage_bytes",
+            {{"used", FormatAttachmentByteSize(plan.file_usage.bytes_used)},
+             {"total", plan.file_usage.quota_bytes > 0 ? FormatAttachmentByteSize(plan.file_usage.quota_bytes)
+                                                       : std::string("?")}});
 }
 
 std::vector<std::string> BlobQuotaRecoveryFlow::Detail::IdsToDelete(const BlobQuotaRecoveryPlan& plan) {
@@ -44,9 +36,9 @@ std::vector<std::string> BlobQuotaRecoveryFlow::Detail::IdsToDelete(const BlobQu
 }
 
 Roe<void> BlobQuotaRecoveryFlow::Detail::FreeAll(const BlobQuotaFreeSlot& free_slot,
-                                                 const std::vector<std::string>& blob_ids, const BlobTier tier) {
+                                                 const std::vector<std::string>& blob_ids) {
   for (const std::string& blob_id : blob_ids) {
-    if (auto freed = free_slot(blob_id, tier); !freed) {
+    if (auto freed = free_slot(blob_id); !freed) {
       return freed;
     }
   }

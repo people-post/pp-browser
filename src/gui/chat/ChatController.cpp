@@ -1583,7 +1583,7 @@ void ChatController::OnRetryAttachmentSend() {
         DirtyChatHeader();
       },
       [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
-      [this](const std::string& blob_id, const BlobTier tier) { return facade_->DeleteRelayBlobById(blob_id, tier); });
+      [this](const std::string& blob_id) { return facade_->DeleteRelayFileById(blob_id); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path, const OutgoingPickSource source,
@@ -1687,9 +1687,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
             }
           },
           [this](const Error& quota_error) { return facade_->PlanRelayQuotaRecovery(quota_error); },
-          [this](const std::string& blob_id, const BlobTier tier) {
-            return facade_->DeleteRelayBlobById(blob_id, tier);
-          });
+          [this](const std::string& blob_id) { return facade_->DeleteRelayFileById(blob_id); });
     });
   });
 }

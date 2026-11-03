@@ -36,7 +36,6 @@ public:
                                  uint64_t byte_length, BlobPurpose purpose) override;
   Roe<void> Retain(const std::string& relay_user_id, const std::string& blob_id) override;
   Roe<void> Delete(const std::string& relay_user_id, const std::string& blob_id) override;
-  Roe<BlobListResult> List(const std::string& relay_user_id, const std::string& status_filter = "") override;
   Roe<void> SetProfileIcon(const std::string& relay_user_id, const std::string& url, const std::string& blob_id,
                            const std::string& kind) override;
   Roe<void> PutUpload(const std::string& upload_url, const std::string& content_type,

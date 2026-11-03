@@ -43,7 +43,7 @@ Roe<RelayFileUpload> UploadWithRecovery(MockBlobClient& blob, const std::string&
   if (first || !IsBlobQuotaError(first.error())) {
     return first;
   }
-  if (BlobQuotaTierOf(first.error()) != BlobTier::Files) {
+  if (!IsRelayFileQuotaError(first.error())) {
     return first.error();
   }
   auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", RelayFileQuotaNeededBytes(first.error()));
@@ -58,15 +58,14 @@ Roe<RelayFileUpload> UploadWithRecovery(MockBlobClient& blob, const std::string&
   return UploadRelayFileBytes(blob, "relay:u1", body);
 }
 
-TEST(BlobQuotaFilesTest, TheFullSpaceCodeNamesTheFilesTierAndTheSize) {
-  EXPECT_EQ(BlobQuotaTierOf(FullSpace(5000)), BlobTier::Files);
+TEST(BlobQuotaFilesTest, TheFullSpaceCodeNamesTheFilesRelayAndTheSize) {
+  EXPECT_TRUE(IsRelayFileQuotaError(FullSpace(5000)));
   EXPECT_TRUE(IsBlobQuotaError(FullSpace(5000)));
   EXPECT_EQ(RelayFileQuotaNeededBytes(FullSpace(5000)), 5000u);
   EXPECT_EQ(RelayFileErrorCode(FullSpace(5000)), "QUOTA_FILE_BYTES");
   EXPECT_EQ(RelayFileQuotaNeededBytes(Error("HTTP 429 QUOTA_FILE_BYTES: File storage quota exceeded")), 0u);
-  // The /blobs texts keep their tiers.
-  EXPECT_EQ(BlobQuotaTierOf(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429: Small file quota exceeded")),
-            BlobTier::Small);
+  // A /blobs refusal (the profile photo's own limit) is not one a recovery can free.
+  EXPECT_FALSE(IsRelayFileQuotaError(AppError::Blob(Err::Blob::QuotaExceeded, "HTTP 429: Small file quota exceeded")));
 }
 
 TEST(BlobQuotaFilesTest, AFullSpaceDeletesTheOldestUntilItFitsAndUploadsOnceMore) {
@@ -110,7 +109,6 @@ TEST(BlobQuotaFilesTest, TheOldestByCompletionGoesFirstEvenAmongFiveHundred) {
     }
   }
   EXPECT_EQ(plan->blob_ids_to_delete.front(), oldest_id);
-  EXPECT_EQ(plan->full_tier, BlobTier::Files);
   EXPECT_EQ(plan->file_usage.quota_bytes, 1000u);
 }
 
@@ -153,42 +151,6 @@ TEST(BlobQuotaFilesTest, AnEmptyListHasNothingToDelete) {
   auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", 10);
   ASSERT_FALSE(plan);
   EXPECT_EQ(plan.error().code, static_cast<int32_t>(Err::Blob::NothingToDelete));
-}
-
-// A confirmed recovery deletes each id on its plan's endpoint: a profile photo's /blobs plan on /blobs/delete, an
-// attachment's Files plan on /files/delete.
-TEST(BlobQuotaFilesTest, EachPlanDeletesOnItsTiersEndpoint) {
-  MockBlobClient blob;
-  BlobListResult blobs;
-  RelayBlobRecord old_file;
-  old_file.blob_id = "small-1";
-  old_file.status = BlobStatus::Retained;
-  old_file.tier = BlobTier::Small;
-  old_file.purpose = BlobPurpose::File;
-  old_file.created_at = Day(1);
-  blobs.blobs = {old_file};
-  blob.SetListResult(blobs);
-  auto small = PlanOldestRelayBlobDeletion(blob, "relay:u1", "", BlobTier::Small);
-  ASSERT_TRUE(small) << small.error().message;
-  ASSERT_EQ(small->full_tier, BlobTier::Small);
-  for (const std::string& id : small->blob_ids_to_delete) {
-    ASSERT_TRUE(DeleteRelayQuotaItem(blob, "relay:u1", id, small->full_tier));
-  }
-  EXPECT_EQ(blob.DeletedBlobIds(), (std::vector<std::string>{"small-1"}));
-  EXPECT_TRUE(blob.DeletedFileIds().empty());
-
-  RelayFileListResult files;
-  files.files = {Complete("file-1", 100, Day(2))};
-  files.usage.bytes_used = 1000;
-  files.usage.quota_bytes = 1000;
-  blob.SetFileListResult(files);
-  auto plan = PlanOldestRelayFileDeletion(blob, "relay:u1", 50);
-  ASSERT_TRUE(plan) << plan.error().message;
-  for (const std::string& id : plan->blob_ids_to_delete) {
-    ASSERT_TRUE(DeleteRelayQuotaItem(blob, "relay:u1", id, plan->full_tier));
-  }
-  EXPECT_EQ(blob.DeletedFileIds(), (std::vector<std::string>{"file-1"}));
-  EXPECT_EQ(blob.DeletedBlobIds().size(), 1u) << "the files plan never touched /blobs";
 }
 
 TEST(BlobQuotaFilesTest, DeleteRelayFileUsesTheFilesRelay) {

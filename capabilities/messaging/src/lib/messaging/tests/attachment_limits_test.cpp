@@ -34,7 +34,6 @@ TEST(AttachmentLimitsTest, ShippingDefaultsAreFiftyMegabytesForSendAndReceive) {
   EXPECT_EQ(limits.voice_max_seconds, 120);
   EXPECT_EQ(limits.warn_percent_low, 80);
   EXPECT_EQ(limits.warn_percent_high, 90);
-  EXPECT_EQ(limits.small_max_objects, 100);
   // 2b
   EXPECT_EQ(limits.send_max_per_minute, 10);
   EXPECT_EQ(limits.auto_download_max_count_per_minute, 10);
@@ -95,16 +94,12 @@ TEST(AutoDownloadBudgetTest, BytesPerMinuteAreCountedPerSender) {
   EXPECT_FALSE(budget.TryAcquire("bob", 1, 4, 10, 20'000'000));
 }
 
-TEST(BlobSpaceTest, PercentTakesTheFullerTierAndHasNoDenominatorGuess) {
-  AttachmentLimits limits;
-  limits.small_max_objects = 100;
-  // Small tier: files of small_max_objects.
-  EXPECT_EQ(BlobSpaceUsedPercent({.small_count = 85}, limits), 85);
-  // Large tier: bytes of what the plan includes (the response's large_included_bytes).
-  EXPECT_EQ(BlobSpaceUsedPercent({.large_bytes = 1'800, .large_included_bytes = 2'000}, limits), 90);
-  EXPECT_EQ(BlobSpaceUsedPercent({.small_count = 10, .large_bytes = 1'800, .large_included_bytes = 2'000}, limits), 90);
-  EXPECT_EQ(BlobSpaceUsedPercent({.small_count = 95, .large_bytes = 100, .large_included_bytes = 2'000}, limits), 95);
-  EXPECT_EQ(BlobSpaceUsedPercent({.large_bytes = 500}, limits), 0) << "no included size known: no percent";
+// #474: attachments live on the files relay (#465), so the warning reads its byte quota, not /blobs.
+TEST(BlobSpaceTest, PercentIsOfTheFilesRelaysQuotaAndHasNoDenominatorGuess) {
+  EXPECT_EQ(BlobSpaceUsedPercent({.bytes_used = 850, .quota_bytes = 1'000}), 85);
+  EXPECT_EQ(BlobSpaceUsedPercent({.bytes_used = 1'800, .quota_bytes = 2'000}), 90);
+  EXPECT_EQ(BlobSpaceUsedPercent({.bytes_used = 2'500, .quota_bytes = 2'000}), 100) << "over the quota reads full";
+  EXPECT_EQ(BlobSpaceUsedPercent({.bytes_used = 500}), 0) << "no quota known: no percent";
 }
 
 TEST(BlobSpaceTest, WarnLevelsAreEightyAndNinety) {
