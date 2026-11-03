@@ -2,6 +2,7 @@
 
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/delivery/E2ePublicSessionLogic.h"
+#include "lib/delivery/ControlSend.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
@@ -10,6 +11,8 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace pbr {
 
@@ -26,6 +29,11 @@ struct CallDeliveryPorts {
   std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
                               const std::optional<std::string>& key_init_b64, bool urgent)>
       send_control;
+  /**
+   * Call signaling to many peers at once (V058 2): each resolved and sealed for its pair off the calls loop, in
+   * parallel; `done` (optional, any thread) gets one result each.
+   */
+  std::function<void(std::vector<ControlSend> sends, ControlSendsDone done)> send_control_to_many;
   /**
    * A control notice to our own account's other devices (M021 d5: a call answered here stops ringing there);
    * nothing when this device is the account's only one. Unset: not told.
@@ -54,8 +62,31 @@ struct CallDeliveryPorts {
   std::function<void()> catch_up_after_call;
 
   bool IsBound() const {
-    return static_cast<bool>(send_control) && static_cast<bool>(sync_inbox_from_wake);
+    return static_cast<bool>(send_control) && static_cast<bool>(send_control_to_many) &&
+           static_cast<bool>(sync_inbox_from_wake);
   }
 };
+
+/**
+ * A send to many made of `send_control`, one send after another on the caller's thread, `done` inline: for a
+ * host without a control lane of its own (the call probe, tests).
+ */
+inline auto ControlSendsOneByOne(
+    std::function<pp::Roe<void>(const std::string& peer_identity, const ThreadMessage& control,
+                                const std::optional<std::string>& key_init_b64, bool urgent)>
+        send_control) {
+  return [send_control = std::move(send_control)](std::vector<ControlSend> sends, ControlSendsDone done) {
+    std::vector<ControlSendResult> results;
+    results.reserve(sends.size());
+    for (const ControlSend& send : sends) {
+      results.push_back(
+          ControlSendResult{.peer_identity = send.peer_identity,
+                            .queued = send_control(send.peer_identity, send.control, send.key_init_b64, send.urgent)});
+    }
+    if (done) {
+      done(std::move(results));
+    }
+  };
+}
 
 } // namespace pbr

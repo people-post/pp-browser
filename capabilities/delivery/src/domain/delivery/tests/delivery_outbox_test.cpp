@@ -10,8 +10,11 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -29,6 +32,10 @@ public:
       return Error("relay unreachable");
     }
     return {};
+  }
+  size_t SentCount() {
+    std::lock_guard lock(mu_);
+    return sent.size();
   }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
   Roe<RelayDeleteResult> AckInbox(const std::string&, const std::string&) override { return Error("unused"); }
@@ -89,6 +96,28 @@ protected:
     request.message_id = message;
     request.relay_route = "relay:bob";
     return request;
+  }
+
+  static DeliveryRequest Control(const std::string& message) {
+    DeliveryRequest request;
+    request.envelope.message_id = message;
+    request.envelope.timestamp = util::NowUnixMs();
+    request.message_id = message;
+    request.relay_route = "relay:bob";
+    request.critical_lane = true;
+    return request;
+  }
+
+  /** Until `done`, or false after `budget`: a retry's timer runs on the coordinator. */
+  static bool WaitFor(const std::function<bool()>& done, std::chrono::milliseconds budget) {
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (!done()) {
+      if (std::chrono::steady_clock::now() > deadline) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return true;
   }
 
   std::vector<DeliveryOutcome> Outcomes() {
@@ -175,6 +204,31 @@ TEST_F(DeliveryOutboxTest, CancelAndPurgeDropQueuedSends) {
   outbox->Retry();
   Drain();
   EXPECT_EQ(relay.sent.size(), 2u) << "nothing was sent again";
+}
+
+// Signaling is live: a control send the relay failed goes again within a second, not on the next
+// inbox wake; the failure shows at once and the retry's delivery after it.
+TEST_F(DeliveryOutboxTest, AFailedControlSendIsRetriedPromptlyWithoutAWake) {
+  FakeRelay relay(1);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(Control("ctl-1"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 2u; }, std::chrono::seconds(5)));
+  EXPECT_FALSE(Outcomes()[0].ok);
+  EXPECT_TRUE(Outcomes()[1].ok);
+  EXPECT_EQ(relay.SentCount(), 2u);
+  outbox->Retry();
+  Drain();
+  EXPECT_EQ(relay.SentCount(), 2u) << "nothing was left for the wake";
+}
+
+TEST_F(DeliveryOutboxTest, CancelStopsAControlRetry) {
+  FakeRelay relay(1);
+  auto outbox = MakeOutbox(relay);
+  outbox->Send(Control("ctl-1"));
+  ASSERT_TRUE(WaitFor([&] { return Outcomes().size() == 1u; }, std::chrono::seconds(2)));
+  outbox->Cancel("ctl-1");
+  std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+  EXPECT_EQ(relay.SentCount(), 1u);
 }
 
 TEST_F(DeliveryOutboxTest, APausedThreadsRetriesAreDropped) {

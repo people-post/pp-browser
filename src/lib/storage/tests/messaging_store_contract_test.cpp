@@ -99,8 +99,8 @@ protected:
 };
 
 TEST_P(MessagingStoreContractTest, MetadataAndMembersRoundTripAndNotify) {
-  std::vector<std::string> changed;
-  rosters().SetOnChanged([&](const std::string& group_id) { changed.push_back(group_id); });
+  std::vector<GroupRosterChange> changed;
+  rosters().SetOnChanged([&](const GroupRosterChange& change) { changed.push_back(change); });
   GroupMetadata metadata;
   metadata.group_id = "group:g";
   metadata.owner_identity = "account:me";
@@ -123,7 +123,13 @@ TEST_P(MessagingStoreContractTest, MetadataAndMembersRoundTripAndNotify) {
   EXPECT_TRUE(rosters().IsMember("group:g", "account:bob").value());
   ASSERT_TRUE(rosters().RemoveMember("group:g", "account:bob"));
   EXPECT_FALSE(rosters().IsMember("group:g", "account:bob").value());
-  EXPECT_EQ(changed.size(), 4u) << "metadata, two member writes, a removal";
+  ASSERT_EQ(changed.size(), 4u) << "metadata, two member writes, a removal";
+  EXPECT_EQ(changed[0].group_id, "group:g");
+  EXPECT_TRUE(changed[1].member_gone.empty()) << "a write takes no one off";
+  EXPECT_EQ(changed[3].member_gone, "account:bob") << "the removal names who is gone (a group call drops them)";
+  ASSERT_TRUE(rosters().RemoveMember("group:g", "account:bob"));
+  ASSERT_EQ(changed.size(), 5u);
+  EXPECT_TRUE(changed[4].member_gone.empty()) << "nobody was left to take off";
 }
 
 TEST_P(MessagingStoreContractTest, AStoredInviteKeepsItsFirstVersion) {
@@ -167,8 +173,12 @@ TEST_P(MessagingStoreContractTest, EndingAGroupIsOneStepAndOnlyOnce) {
   ending.roster_epoch = 9;
   ending.statement_json = "{}";
   ending.sends.push_back({"", "account:bob", "group_dissolved", "{}", "Bob"});
+  std::vector<GroupRosterChange> changed;
+  rosters().SetOnChanged([&](const GroupRosterChange& change) { changed.push_back(change); });
   auto ended = rosters().EndGroup("group:g", ending);
   ASSERT_TRUE(ended && ended->has_value());
+  ASSERT_EQ(changed.size(), 1u);
+  EXPECT_TRUE(changed[0].ended) << "a group call of it ends";
   ASSERT_EQ((*ended)->size(), 1u) << "the pending invite voided";
   EXPECT_TRUE(rosters().ListMembers("group:g").value().empty());
   EXPECT_FALSE(rosters().FindThreadIdForGroup("group:g").value().has_value()) << "no send target any more";

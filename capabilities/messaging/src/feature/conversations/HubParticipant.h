@@ -4,6 +4,7 @@
 #include "common/NetworkChange.h"
 #include "mesh/host/LocalNetworkChange.h"
 #include "common/Error.h"
+#include "lib/messaging/IGroupRosterStore.h"
 
 #include <functional>
 #include <vector>
@@ -55,6 +56,8 @@ public:
 
   /** Our public mapping moved (a NAT rebind, a network change's re-probe). */
   virtual void OnObservedAddressChanged() {}
+  /** A group's roster changed (a group call drops who is gone). On the writer's thread, maybe under the roster lock: post, do not block. */
+  virtual void OnGroupRosterChanged(const GroupRosterChange& change) {}
   /**
    * The device's network changed. Any thread. `local` is what the mesh made of it; null for the
    * baseline report (generation 0), which only classifies.

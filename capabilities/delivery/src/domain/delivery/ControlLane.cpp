@@ -10,8 +10,11 @@
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "common/Utilities.h"
+#include "common/runtime/AppRuntime.h"
 
 #include <algorithm>
+#include <memory>
+#include <mutex>
 
 namespace pbr {
 
@@ -20,6 +23,10 @@ ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsSt
     : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), direct_chat_(std::move(direct_chat)),
       outbox_(outbox) {
   redirectLogger("ControlLane");
+}
+
+ControlLane::~ControlLane() {
+  lifetime_.InvalidateAndWait();
 }
 
 uint64_t ControlLane::NextOrderKey() {
@@ -99,6 +106,42 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
                                .relay_route = peer_relay_id,
                                .critical_lane = true});
   return {};
+}
+
+void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone done, const WorkerLane lane) {
+  struct Gather {
+    std::mutex mutex;
+    std::vector<ControlSendResult> results;
+    size_t left = 0;
+    ControlSendsDone done;
+  };
+  if (sends.empty()) {
+    if (done) {
+      done({});
+    }
+    return;
+  }
+  auto gather = std::make_shared<Gather>();
+  gather->results.resize(sends.size());
+  gather->left = sends.size();
+  gather->done = std::move(done);
+  for (size_t i = 0; i < sends.size(); ++i) {
+    gather->results[i].peer_identity = sends[i].peer_identity;
+    // One worker each: a cold route's directory lookup does not hold up the other peers' copies.
+    lifetime_.Post([lane](std::function<void()> task) { AppRuntime::PostWorker(lane, std::move(task)); },
+                   [this, gather, i, send = std::move(sends[i])]() {
+                     auto queued = Send(send.peer_identity, send.control, send.key_init_b64, send.urgent);
+                     bool last = false;
+                     {
+                       std::lock_guard lock(gather->mutex);
+                       gather->results[i].queued = std::move(queued);
+                       last = --gather->left == 0;
+                     }
+                     if (last && gather->done) {
+                       gather->done(std::move(gather->results));
+                     }
+                   });
+  }
 }
 
 Roe<void> ControlLane::NotifySiblings(const ThreadMessage& notice) {

@@ -234,15 +234,27 @@ ThreadMessage DeviceListNotice() {
 } // namespace
 
 void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::string>& accounts) {
-  size_t told = 0;
+  std::vector<ControlSend> sends;
+  sends.reserve(accounts.size());
+  const ThreadMessage notice = DeviceListNotice();
   for (const std::string& account : accounts) {
-    if (auto sent = control_lane_.Send(account, DeviceListNotice()); !sent) {
-      log().info << "device list not sent to " << account << ": " << sent.error().message;
-      continue;
-    }
-    ++told;
+    sends.push_back(ControlSend{.peer_identity = account, .control = notice});
   }
-  log().info << "device list sent to " << told << " of " << accounts.size() << " contact(s)";
+  // Background: every contact, nothing live — the critical lane stays for signaling.
+  control_lane_.SendToMany(
+      std::move(sends),
+      [this](std::vector<ControlSendResult> results) {
+        size_t told = 0;
+        for (const ControlSendResult& result : results) {
+          if (result.queued) {
+            ++told;
+          } else {
+            log().info << "device list not sent to " << result.peer_identity << ": " << result.queued.error().message;
+          }
+        }
+        log().info << "device list sent to " << told << " of " << results.size() << " contact(s)";
+      },
+      WorkerLane::Background);
 }
 
 void MeshDeliveryOrchestrator::NudgeSiblings() {
@@ -921,6 +933,11 @@ Roe<ByteVector> MeshDeliveryOrchestrator::PeerKemPublicKey(const PeerSessionKey&
 Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity, const ThreadMessage& control,
                                                 const std::optional<std::string>& key_init_b64, const bool urgent) {
   return control_lane_.Send(peer_identity, control, key_init_b64, urgent);
+}
+
+void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,
+                                                 const WorkerLane lane) {
+  control_lane_.SendToMany(std::move(sends), std::move(done), lane);
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {

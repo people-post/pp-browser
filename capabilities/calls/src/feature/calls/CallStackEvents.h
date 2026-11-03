@@ -61,6 +61,11 @@ struct MeshPeerIdLearned {
   std::string account_identity;
   std::string peer_id;
 };
+/** V058 3: `identity` left its group (`nullopt`: the group ended); its call drops them. */
+struct GroupMembersGone {
+  std::string group_id;
+  std::optional<std::string> identity;
+};
 /** A command from the UI edge (`CallUiBackend`); `calls` is null without a session manager. */
 struct SessionsCommand {
   std::function<void(CallSessionManager* calls)> run;
@@ -78,7 +83,7 @@ using CallStackEvent =
     std::variant<calls_event::LocalNetworkChanged, calls_event::ObservedAddressChanged,
                  calls_event::MobilityOverrideChanged, calls_event::MobilityWake, calls_event::CallControlReceived,
                  calls_event::RelayChosen, calls_event::SignalingPunchRequested, calls_event::MeshPeerIdLearned,
-                 calls_event::SessionsCommand, calls_event::ForSessions>;
+                 calls_event::GroupMembersGone, calls_event::SessionsCommand, calls_event::ForSessions>;
 
 /** For logs: the event's name. */
 const char* CallStackEventName(const CallStackEvent& event);

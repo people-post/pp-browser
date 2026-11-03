@@ -67,6 +67,10 @@ void CallStack::OnObservedAddressChanged() {
   loop_.Enqueue(calls_event::ObservedAddressChanged{});
 }
 
+void CallStack::OnGroupMembersGone(const std::string& group_id, std::optional<std::string> identity) {
+  loop_.Enqueue(calls_event::GroupMembersGone{group_id, std::move(identity)});
+}
+
 void CallStack::ReloadMobilityOverride() {
   loop_.Enqueue(calls_event::MobilityOverrideChanged{});
 }
@@ -107,6 +111,10 @@ void CallStack::Dispatch(CallStackEvent& event) {
         } else if constexpr (std::is_same_v<E, calls_event::MeshPeerIdLearned>) {
           if (call_sessions_) {
             call_device_->NoteMeshPeerIdForRelay(e.account_identity, e.peer_id);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::GroupMembersGone>) {
+          if (call_sessions_) {
+            call_device_->Workflow().OnGroupMembersGone(e.group_id, e.identity);
           }
         } else if constexpr (std::is_same_v<E, calls_event::SessionsCommand>) {
           e.run(call_sessions_.get());

@@ -320,6 +320,14 @@ One PR per phase; compose tests + call lab scenarios each time.
   - [x] cn6b — The hop's media data plane (frame sink / send, the call's key ring, publisher streams) as its own object. Done: `CallHopMediaChannel`, shared with the relay's I/O threads (the sink / send capture it, not the path); `CallHopPath` 2846 → 2762 lines
 - [x] cn7 — Compose tests through events; fewer `*ForTest` hooks; the group split race. Done: the race was the 1:1 path stuck Reconnecting on the link its call rode, which then refused the third join's hop and ejected the joiner — fixed with its gtest (`AReconnectOntoTheLinkTheCallRidesIsConnected`; lab group_call_three 10/10 and every run since); the resume test sends the 1:1 path's real `PeerReconnected` report instead of a hook; the unused `SeatForTest` / `DirectPathForTest` are gone. Left as they are: the timing knobs (`Set*MsForTest`: tests shorten real timeouts) and `LiveCallsForTest`, which one compose suite uses to admit calls whose rows it seeds directly — driving those through `StartCall` is a rewrite of that suite, not a cleanup
 
+## cl — Call control on a live lane (V058)
+
+[V058](DECISIONS.md#v058--call-control-is-live-on-the-control-lane-group-calls-ride-the-groups-roster).
+
+- [x] cl1 — Prompt retries for a failed control-lane send: `ControlRetryAfter` (lib/delivery), `DeliveryOutbox` retries on a coordinator timer bound to its lifetime; `Cancel` stops one
+- [x] cl2 — One multi-recipient control send in delivery; an invite to many does not stop at the first failure. Done: `ControlLane::SendToMany` (`ControlSend` / `ControlSendResult`, lib/delivery), one critical worker per recipient, the results in order once the last is queued or refused; calls' `send_control_to_many` port and `CallControlClient::SendToEach` (the joined / ringing fan-outs, `SendToEveryoneOffered`), a message per peer as before; `InviteAll` best-effort; the group roster check and the device-list notice to contacts use it too. Hosts without a control lane (the call probe, tests) bind `ControlSendsOneByOne`
+- [x] cl3 — Group roster events from messaging; calls subscribes and drops `DropWhoLeftTheGroup`'s one-second poll. Done: the roster store's change says who it took off or that the group ended (`GroupRosterChange`, from `RemoveMember` / `EndGroup`); the hub hands it to its participants (`HubParticipant::OnGroupRosterChanged`); calls enqueues `GroupMembersGone` and the workflow drops them from the group's live and ringing calls. The compose tests raise the event instead of waiting out the poll
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

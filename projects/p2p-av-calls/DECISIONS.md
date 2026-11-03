@@ -1380,3 +1380,28 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Consequence:** Phased (PHASES § cn), one commit per step, compose tests and the call lab each time.
 
+## V058 — Call control is live on the control lane; group calls ride the group's roster
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02). Work: [PHASES § cl](PHASES.md#cl--call-control-on-a-live-lane-v058).
+
+**Context:** Call control was meant to reuse messaging, live instead of stored. It does: it rides the control lane ([P2P_MESSAGING § The control lane](../../docs/architecture/P2P_MESSAGING.md#the-control-lane)) — E2E per pair, unsequenced, never stored, relay first plus a copy over a live link. Three things fell short of "live" or of "reuse":
+
+- A relay send that failed was retried only on the next inbox wake, and a quiet inbox may not wake for a long time.
+- A group call fans its control out by hand. Calls loop over members in four places (`FanOutToJoined`, its ringing variant, `InviteAll`, which stops at the first failure, and `SendToEveryoneOffered`), and group membership has its own `FanOutPairwise`.
+- A group call learns who left its group by reading the roster every second (`DropWhoLeftTheGroup`), not from the group's own events.
+
+**Decision:**
+1. **Prompt retries, no wire change.** A failed control-lane relay send goes again on a short backoff (1 s, doubling to 16 s) while it is fresh (two minutes), not on the next inbox wake (`ControlRetryAfter`, `DeliveryOutbox`).
+2. **One multi-recipient control send in delivery** (`ControlLane::SendToMany`). It resolves each recipient (its route, maybe a directory lookup; the pair's session, maybe opened) and seals its copy on the critical workers, in parallel, and gives one result per recipient. Today each of those ran serially on the caller's thread, which for calls is the calls loop. The users:
+   - **Calls' fire-and-forget fan-outs** (roster, attach, ended, join requests): `CallControlClient::SendToEach`.
+   - **Group membership's roster check**, and the device-list notice to contacts.
+   - **Not group membership's member events.** They ride the stored, ordered chat stream (G016's pending sends depend on it), not the control lane.
+   - **Not invites.** They stay synchronous on the calls loop, because an accept must find its invite recorded. They become best-effort: whoever can be invited rings, and a start fails only when nobody could be (it used to stop at the first failure, after earlier invitees had rung).
+3. **Group roster changes are events.** Messaging publishes them (a member left or was removed, the group dissolved). Calls subscribes and drops the one-second poll.
+4. **Acks are deferred.** A control ack could only say "queued". The call family's apply is asynchronous (queued on the calls loop), so the ack cannot say "applied". The family that must know its peer has a message, media keys, already resends it (#381), and that resend also covers a key the peer cannot open yet. Latency is the relay's delivery time, which an ack does not shorten. What an ack would catch, a message the relay took that was lost before it was applied, is rare. Revisit if the lab shows such losses.
+5. **Send-once group control is a design note, not work.** One copy for the group would need one of three things: a group key (groups have none: [group-chat](../group-chat/DESIGN.md) is pairwise, N ciphertexts per message), relay fan-out (the relay does not know groups), or the hop carrying control. Each is a wire and trust change. At ≤ 50 members (G014), parallel pairwise copies (2) are enough.
+
+**Rationale:** Control already reuses messaging. What it lacked was the "live" part (1) and a group-shaped edge onto it (2, 3), and none of that needs a wire change. Acks and a group key would cost a protocol for problems the call family already covers or that the size limit keeps small.
+
+**Consequence:** Phased (PHASES § cl), one commit per step.

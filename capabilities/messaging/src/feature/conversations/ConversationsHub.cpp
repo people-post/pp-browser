@@ -918,10 +918,13 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   InstallOrgBackendClients(settings);
 
   // The account locker keeps every group (G013): republish it on any roster change.
-  group_roster_->SetOnChanged([this](const std::string& group_id) {
+  group_roster_->SetOnChanged([this](const GroupRosterChange& change) {
     PublishAccountLockerSoon();
     if (mesh_messaging_) {
-      mesh_messaging_->DecideHeldMentions(group_id);  // G015: a check that settled decides its held mentions
+      mesh_messaging_->DecideHeldMentions(change.group_id); // G015: a check that settled decides its held mentions
+    }
+    for (HubParticipant* participant : Participants()) {
+      participant->OnGroupRosterChanged(change);
     }
   });
   for (HubParticipant* participant : Participants()) {

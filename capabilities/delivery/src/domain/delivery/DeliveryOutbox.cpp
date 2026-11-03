@@ -17,6 +17,21 @@ DeliveryOutbox::DeliveryOutbox(std::function<IDirectMessageClient*()> direct_cha
   redirectLogger("DeliveryOutbox");
 }
 
+DeliveryOutbox::~DeliveryOutbox() {
+  std::vector<uint64_t> timers;
+  {
+    std::lock_guard lock(mutex_);
+    for (const auto& entry : control_retries_) {
+      timers.push_back(entry.second.timer_id);
+    }
+    control_retries_.clear();
+  }
+  for (const uint64_t timer : timers) {
+    AppRuntime::CancelCoordinatorTimer(timer);
+  }
+  lifetime_.InvalidateAndWait();
+}
+
 void DeliveryOutbox::Report(DeliveryOutcome outcome) {
   if (on_outcome_) {
     on_outcome_(outcome);
@@ -58,14 +73,25 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
         return;
       }
       if (auto sent = relay->Send(request.envelope); !sent) {
-        const bool again = OutboxRetryAgain(1, sent.error());
-        log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
-                      << " err=" << sent.error().message << (again ? " (queued for retry)" : " (refused: not retried)");
-        if (again) {
-          Enqueue(Pending{.envelope = request.envelope, .message_id = request.message_id,
-                          .thread_id = request.thread_id, .attempt_count = 1, .amp_peer_key = request.amp_peer_key,
-                          .group_member = request.group_member, .copy_device = request.copy_device});
+        Pending pending{.envelope = request.envelope,
+                        .message_id = request.message_id,
+                        .thread_id = request.thread_id,
+                        .attempt_count = 1,
+                        .amp_peer_key = request.amp_peer_key,
+                        .group_member = request.group_member,
+                        .copy_device = request.copy_device};
+        const bool control_lane = request.thread_id.empty();
+        bool again = false;
+        if (control_lane) {
+          again = RetryControlLater(std::move(pending), sent.error());
+        } else if ((again = OutboxRetryAgain(1, sent.error()))) {
+          Enqueue(std::move(pending));
         }
+        log().warning << "relay send failed message_id=" << request.message_id << " peer=" << *request.relay_route
+                      << " err=" << sent.error().message
+                      << (!again         ? " (not retried)"
+                          : control_lane ? " (retrying shortly)"
+                                         : " (queued for retry)");
         outcome.failure = SendFailureFromRelay(sent.error());
         outcome.detail = sent.error().message;
         Report(std::move(outcome));
@@ -124,9 +150,80 @@ void DeliveryOutbox::Send(DeliveryRequest request) {
   }
 }
 
-void DeliveryOutbox::Cancel(const std::string& message_id) {
+bool DeliveryOutbox::RetryControlLater(Pending item, const Error& failure) {
+  const auto delay = ControlRetryAfter(item.attempt_count, util::NowUnixMs() - item.envelope.timestamp, failure);
+  if (!delay) {
+    return false;
+  }
+  uint64_t seq = 0;
+  {
+    std::lock_guard lock(mutex_);
+    seq = ++next_control_retry_;
+  }
+  const std::string message_id = item.message_id;
+  const uint64_t timer =
+      AppRuntime::ScheduleCoordinatorOneShot(*delay, lifetime_.Bind([this, seq, item = std::move(item)]() mutable {
+        {
+          std::lock_guard lock(mutex_);
+          if (control_retries_.erase(seq) == 0) {
+            return; // Cancelled as it fired.
+          }
+        }
+        AppRuntime::PostWorkerCritical(
+            lifetime_.Bind([this, item = std::move(item)]() mutable { RetryControlNow(std::move(item)); }));
+      }));
+  // Recorded after scheduling (the timer's lock is not taken under ours); the delay is a second at least.
   std::lock_guard lock(mutex_);
-  std::erase_if(queue_, [&](const Pending& pending) { return pending.message_id == message_id; });
+  control_retries_[seq] = ControlRetry{.timer_id = timer, .message_id = message_id};
+  return true;
+}
+
+void DeliveryOutbox::RetryControlNow(Pending item) {
+  IRelayClient* relay = relay_;
+  if (!relay) {
+    Enqueue(std::move(item));
+    return;
+  }
+  auto sent = relay->Send(item.envelope);
+  DeliveryOutcome outcome{.thread_id = item.thread_id,
+                          .message_id = item.message_id,
+                          .group_member = item.group_member,
+                          .copy_device = item.copy_device};
+  if (sent) {
+    log().info << "control retry delivered message_id=" << item.message_id << " attempt=" << item.attempt_count + 1;
+    outcome.ok = true;
+    outcome.transport = MessageTransport::Relay;
+    Report(std::move(outcome));
+    return;
+  }
+  item.attempt_count += 1;
+  const int attempts = item.attempt_count;
+  if (RetryControlLater(std::move(item), sent.error())) {
+    return;
+  }
+  log().warning << "control retry gave up message_id=" << outcome.message_id << " attempts=" << attempts
+                << " err=" << sent.error().message;
+  outcome.failure = SendFailureFromRelay(sent.error());
+  outcome.detail = sent.error().message;
+  Report(std::move(outcome));
+}
+
+void DeliveryOutbox::Cancel(const std::string& message_id) {
+  std::vector<uint64_t> timers;
+  {
+    std::lock_guard lock(mutex_);
+    std::erase_if(queue_, [&](const Pending& pending) { return pending.message_id == message_id; });
+    std::erase_if(control_retries_, [&](const auto& entry) {
+      if (entry.second.message_id != message_id) {
+        return false;
+      }
+      timers.push_back(entry.second.timer_id);
+      return true;
+    });
+  }
+  for (const uint64_t timer : timers) {
+    AppRuntime::CancelCoordinatorTimer(timer);
+  }
 }
 
 void DeliveryOutbox::PurgeThread(const std::string& thread_id) {

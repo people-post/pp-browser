@@ -10,11 +10,12 @@
 namespace pbr {
 
 /**
- * Shared N× pairwise DM fan-out (a call's roster / hop notices, group membership); the targets are the caller's.
- * Pure iteration policy — callers own send/crypto/IO.
+ * N× pairwise DM fan-out on the caller's thread (group membership's events in the chat stream); the targets are
+ * the caller's. Pure iteration policy — callers own send/crypto/IO. Control-lane signaling to many goes through
+ * ControlLane::SendToMany instead (sealed per pair, off the caller's thread).
  */
 enum class PairwiseFanoutMode {
-  /** One peer failure does not block the rest (e.g. a call's hop notice). */
+  /** One peer failure does not block the rest (e.g. a roster statement to every member). */
   BestEffort = 0,
   /** Stop on first send failure (group membership events). */
   FailFast = 1,

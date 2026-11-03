@@ -204,6 +204,7 @@ protected:
       }
       return {};
     };
+    deps.delivery.send_control_to_many = ControlSendsOneByOne(deps.delivery.send_control);
     deps.delivery.send_to_thread = [this](const std::string& thread_id, const std::string& text,
                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
       ThreadMessage msg;

@@ -247,6 +247,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
     return {};
   };
+  deps.delivery.send_control_to_many = ControlSendsOneByOne(deps.delivery.send_control);
   deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;

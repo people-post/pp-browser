@@ -140,13 +140,13 @@ Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
   return {};
 }
 
-void SqliteGroupRosterStore::SetOnChanged(std::function<void(const std::string& group_id)> on_changed) {
+void SqliteGroupRosterStore::SetOnChanged(std::function<void(const GroupRosterChange& change)> on_changed) {
   on_changed_ = std::move(on_changed);
 }
 
-void SqliteGroupRosterStore::NotifyChanged(const std::string& group_id) const {
+void SqliteGroupRosterStore::NotifyChanged(GroupRosterChange change) const {
   if (on_changed_) {
-    on_changed_(group_id);
+    on_changed_(change);
   }
 }
 
@@ -199,7 +199,7 @@ Roe<void> SqliteGroupRosterStore::UpsertMetadata(const GroupMetadata& metadata) 
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-  NotifyChanged(metadata.group_id);
+  NotifyChanged({.group_id = metadata.group_id});
   return {};
 }
 
@@ -299,7 +299,7 @@ Roe<void> SqliteGroupRosterStore::UpsertMember(const std::string& group_id, cons
   }
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id});
   return {};
 }
 
@@ -318,9 +318,10 @@ Roe<void> SqliteGroupRosterStore::RemoveMember(const std::string& group_id, cons
   sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 2, member_identity.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_step(stmt);
+  const bool removed = sqlite3_changes(db) > 0;
   sqlite3_finalize(stmt);
   sqlite3_close(db);
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id, .member_gone = removed ? member_identity : std::string{}});
   return {};
 }
 
@@ -688,7 +689,7 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> SqliteGroupRosterStore::EndG
     return fail("commit");
   }
   sqlite3_close(db);
-  NotifyChanged(group_id);
+  NotifyChanged({.group_id = group_id, .ended = true});
   return std::optional<std::vector<PendingGroupInvite>>(std::move(*voided));
 }
 

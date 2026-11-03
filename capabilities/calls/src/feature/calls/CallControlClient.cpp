@@ -5,7 +5,6 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "lib/calls/ICallMediaKeyStore.h"
-#include "lib/delivery/PairwiseFanoutLogic.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "foundation/crypto/CryptoUtil.h"
 
@@ -126,6 +125,58 @@ Roe<void> CallControlClient::SendSummary(const std::string& thread_id, const Cal
   return {};
 }
 
+void CallControlClient::SendToEach(const std::vector<std::string>& peers, const CallControlType type,
+                                   const std::string& detail_json, const std::string& display) {
+  if (peers.empty()) {
+    return;
+  }
+  if (!delivery_.send_control_to_many) {
+    log().warning << "send to each: call delivery not bound type=" << CallControlTypeToWire(type);
+    return;
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    log().warning << "send to each: " << local.error().message;
+    return;
+  }
+  // A message per peer: each copy has its own id (the outbox's retries and the receiver's dedupe go by it).
+  std::vector<ControlSend> sends;
+  sends.reserve(peers.size());
+  for (const std::string& peer : peers) {
+    auto control = CallControlCodec::BuildSystemMessage("", type, display, detail_json, *local);
+    if (!control) {
+      log().warning << "send to " << peer << ": " << control.error().message;
+      continue;
+    }
+    sends.push_back(ControlSend{
+        .peer_identity = peer, .control = std::move(*control), .urgent = type == CallControlType::CallInvite});
+  }
+  {
+    // A key init rides this send and is spent: the session keeps sending its opener until the peer confirms it.
+    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
+    for (ControlSend& send : sends) {
+      if (auto it = pending_key_init_.find(send.peer_identity); it != pending_key_init_.end()) {
+        send.key_init_b64 = std::move(it->second);
+        pending_key_init_.erase(it);
+      }
+    }
+  }
+  // Reported on a worker, maybe after this client is gone: it logs and touches nothing of ours.
+  delivery_.send_control_to_many(std::move(sends), [type](std::vector<ControlSendResult> results) {
+    auto logger = logging::getLogger("CallControlClient");
+    size_t queued = 0;
+    for (const ControlSendResult& result : results) {
+      if (result.queued) {
+        ++queued;
+      } else {
+        logger.warning << "send to " << result.peer_identity << " failed type=" << CallControlTypeToWire(type)
+                       << " err=" << result.queued.error().message;
+      }
+    }
+    logger.info << "sent to each queued=" << queued << "/" << results.size() << " type=" << CallControlTypeToWire(type);
+  });
+}
+
 Roe<void> CallControlClient::FanOutToJoined(const std::string& call_id, const CallControlType type,
                                              const std::string& detail_json, const std::string& display,
                                              const std::string& skip_identity) {
@@ -133,20 +184,8 @@ Roe<void> CallControlClient::FanOutToJoined(const std::string& call_id, const Ca
   if (!participants) {
     return participants.error();
   }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, false);
   // Best-effort: one peer failure must not block CallSfuAttach / roster to the rest.
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendDirect(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoined send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
-  if (result.succeeded > 0) {
-    log().info << "FanOutToJoined queued n=" << result.succeeded << " type=" << CallControlTypeToWire(type);
-  }
+  SendToEach(SelectCallFanoutIdentities(*participants, skip_identity, true, false), type, detail_json, display);
   return {};
 }
 
@@ -157,16 +196,7 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
   if (!participants) {
     return participants.error();
   }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, true);
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendDirect(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoinedAndRinging send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
+  SendToEach(SelectCallFanoutIdentities(*participants, skip_identity, true, true), type, detail_json, display);
   return {};
 }
 
