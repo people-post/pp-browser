@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "lib/calls/CallScreen.h"
+#include "lib/media/IMediaView.h"
 #include "feature/calls/CallFunctionalPorts.h"
 
 #include <functional>
@@ -118,6 +119,8 @@ public:
   /** Phones: front / rear camera while it is on. */
   void FlipCamera();
   void ToggleSpeaker();
+  /** The camera did not come on (or went off): tell the user in plain words; the detail is logged only. */
+  void ReportCameraFailure(const CameraFailure& failure);
 
 private:
   void RequestStart(const std::string& thread_id, bool video, const std::vector<std::string>& invitees,

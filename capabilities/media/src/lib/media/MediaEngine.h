@@ -164,7 +164,7 @@ public:
    */
   bool CameraWaitingForDevice() const override;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
-  std::optional<std::string> TakeCameraFailure() override;
+  std::optional<CameraFailure> TakeCameraFailure() override;
   /**
    * True when a fresh remote decoded frame is available (not stalled / cleared).
    * Call RefreshRemoteVideoHealth() from the UI tick before reading.

@@ -757,6 +757,22 @@ void CallPresenter::FlipCamera() {
   Refresh();
 }
 
+void CallPresenter::ReportCameraFailure(const CameraFailure& failure) {
+  const char* key = "call.error.camera_failed";
+  switch (failure.kind) {
+    case CameraFailure::Kind::Busy:
+      key = "call.error.camera_busy";
+      break;
+    case CameraFailure::Kind::NotResponding:
+      key = "call.error.camera_not_responding";
+      break;
+    case CameraFailure::Kind::Failed:
+      break;
+  }
+  log().info << "camera failure shown as " << key << " raw=" << failure.detail;
+  Fail(key);
+}
+
 void CallPresenter::ToggleSpeaker() {
   // Any time a call is on screen — ringing out, connecting, in the call — not only once media runs: the
   // session routes it now if call audio is up (ringback or media), else when media takes the session.

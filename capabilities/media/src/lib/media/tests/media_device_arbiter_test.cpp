@@ -694,13 +694,14 @@ TEST_F(EngineDeviceLeaseTest, FailedCameraOpenFlipsBackAndIsReportedOnce) {
   MediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartDuplex("call:1", NoopSend()));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
-  std::optional<std::string> failure;
+  std::optional<CameraFailure> failure;
   for (int i = 0; i < 200 && !failure; ++i) {
     failure = engine.TakeCameraFailure();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ASSERT_TRUE(failure);
-  EXPECT_EQ(*failure, "No camera: none attached");
+  EXPECT_EQ(failure->kind, CameraFailure::Kind::Failed);
+  EXPECT_EQ(failure->detail, "No camera: none attached");
   EXPECT_FALSE(engine.IsCameraEnabled());
   EXPECT_FALSE(engine.TakeCameraFailure()) << "reported once";
   engine.Stop();
@@ -761,12 +762,13 @@ TEST_F(EngineDeviceLeaseTest, AFailedReopenAfterAFlipGoesBackToTheFrontCamera) {
   ASSERT_TRUE(engine.FlipCamera());
   ASSERT_TRUE(WaitUntil([&] { return camera_opens() == 2; }));
   EXPECT_EQ(backend_->last_prefer_front.load(), 0) << "the rear camera was asked for";
-  std::optional<std::string> failure;
+  std::optional<CameraFailure> failure;
   for (int i = 0; i < 200 && !failure; ++i) {
     failure = engine.TakeCameraFailure();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   ASSERT_TRUE(failure);
+  EXPECT_EQ(failure->kind, CameraFailure::Kind::Failed);
   EXPECT_FALSE(engine.IsCameraEnabled());
 
   backend_->camera_present = true;
@@ -958,7 +960,7 @@ TEST_F(EngineDeviceLeaseTest, ABusyCameraComesOnByItselfWhenItIsFree) {
   EXPECT_TRUE(engine.IsCameraEnabled()) << "still wanted";
   const auto failure = engine.TakeCameraFailure();
   ASSERT_TRUE(failure);
-  EXPECT_NE(failure->find("busy"), std::string::npos) << *failure;
+  EXPECT_EQ(failure->kind, CameraFailure::Kind::Busy) << failure->detail;
   scanner->reset();
   EXPECT_TRUE(
       WaitUntil([&] { return arbiter_->Holders(MediaDeviceKind::Camera) == std::vector<std::string>{"call:1"}; }));
@@ -1070,7 +1072,7 @@ TEST_F(EngineDeviceLeaseTest, AnEncoderThatKeepsHangingGivesTheCameraUp) {
   EXPECT_EQ(control->made.load(), 4) << "the first encoder and three replacements";
   const auto failure = engine->TakeCameraFailure();
   ASSERT_TRUE(failure);
-  EXPECT_NE(failure->find("restart the app"), std::string::npos) << *failure;
+  EXPECT_EQ(failure->kind, CameraFailure::Kind::NotResponding) << failure->detail;
   EXPECT_FALSE(engine->CameraWaitingForDevice());
   EXPECT_TRUE(WaitHolders(MediaDeviceKind::Camera, 0)) << "the camera is let go";
   control->release = true;
@@ -1085,12 +1087,13 @@ TEST_F(StuckDeviceTest, ACameraStuckTooLongIsGivenUpWithARestartHint) {
   ASSERT_TRUE(engine.StartDuplex("call:b", [](const MediaEngine::MediaPacket&) {}));
   ASSERT_TRUE(engine.SetCameraEnabled(true));
   ASSERT_TRUE(WaitUntil([&] { return !engine.IsCameraEnabled(); })) << "given up";
-  std::optional<std::string> failure;
-  std::string last;
+  std::optional<CameraFailure> failure;
+  std::optional<CameraFailure> last;
   while ((failure = engine.TakeCameraFailure())) {
-    last = *failure;
+    last = failure;
   }
-  EXPECT_NE(last.find("restart the app"), std::string::npos) << last;
+  ASSERT_TRUE(last);
+  EXPECT_EQ(last->kind, CameraFailure::Kind::NotResponding) << last->detail;
   EXPECT_FALSE(engine.CameraWaitingForDevice());
   engine.Stop();
   backend_->camera_close_gate.release.store(true);
