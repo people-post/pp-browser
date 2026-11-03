@@ -53,7 +53,8 @@ public:
   static constexpr int64_t kDefaultAudioBps = 32'000;
   /** Comfortable encode target when path is healthy (the engine's default before a quote). */
   static constexpr int64_t kComfortAudioBps = MediaTargets::kDefaultAudioBps;
-  static constexpr int64_t kDefaultVideoLoBps = 400'000;
+  /** The engine's call profile (VideoLevelProfile level 1): fits a ~600 kbit/s phone uplink with audio. */
+  static constexpr int64_t kDefaultVideoLoBps = 250'000;
   static constexpr int64_t kDefaultVideoHiBps = 1'200'000;
   static constexpr int64_t kMinVideoLoBps = 120'000;
 

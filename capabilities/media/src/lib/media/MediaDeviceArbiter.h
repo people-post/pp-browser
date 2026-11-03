@@ -288,8 +288,13 @@ public:
   MediaDeviceArbiter(const MediaDeviceArbiter&) = delete;
   MediaDeviceArbiter& operator=(const MediaDeviceArbiter&) = delete;
 
-  /** Process default (SDL backend, default policy). */
+  /** Process default (SDL backend, or the one SetDefaultBackendFactory makes; default policy). */
   static MediaDeviceArbiter& Default();
+  /**
+   * The process default's backend from `make` instead of SDL's (the lab's SyntheticVideo camera). Before the first
+   * Default(); false once it exists.
+   */
+  static bool SetDefaultBackendFactory(std::function<std::unique_ptr<IMediaDeviceBackend>()> make);
   /** `Default().Shutdown(budget)` when the default was ever created (product quit, before SDL_Quit). */
   static bool ShutdownDefault(std::chrono::milliseconds budget);
 

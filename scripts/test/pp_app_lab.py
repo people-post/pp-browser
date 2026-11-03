@@ -81,6 +81,8 @@ class User:
             argv += ["--restore-phrase-file", restore_phrase_file]
         if saved_copy_file:
             argv += ["--restore-saved-copy", saved_copy_file]
+        if self.lab.synthetic_video:
+            argv += ["--synthetic-video"]
         if self.container:
             # The probe's pid is kept so a crash kills it, not only the `docker exec` beside it.
             script = 'echo $$ > "$0"; exec /probes/%s "$@"' % os.path.basename(self.lab.probe)
@@ -318,6 +320,8 @@ class Lab:
         self.relay_container = args.relay_container
         self.hop_container = args.hop_container
         self.hop_status = args.hop_status
+        # Video scenarios set it before their users start: the probes take SyntheticVideo's camera and codec.
+        self.synthetic_video = False
         self.users = []
 
     def config_for(self, data_dir, directory=True, reachable=False):
@@ -1097,6 +1101,13 @@ def change_address(u):
 # netem jitter does) and not 6 % independent loss each way, which no call app survives.
 PHONE_ROAD = {"delay": 60, "jitter": 40, "loss": 3, "up": 600, "down": 2000}
 PHONE_WEAK = {"delay": 150, "jitter": 20, "loss": 2, "loss_corr": 25, "up": 256, "down": 1000, "limit": 200}
+# One of PHONE_ROAD's troubles at a time, for the video measurements (video_*_{lossy,jittery,narrow}): loss alone
+# on a wide link, reordering jitter alone, and its thin upload alone.
+PHONE_LOSSY = {"delay": 60, "loss": 3, "up": 4000, "down": 8000}
+PHONE_JITTERY = {"delay": 60, "jitter": 40, "loss": 0, "up": 4000, "down": 8000}
+PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
+# None of them: what a call puts on the wire when nothing holds it back.
+PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
 
 
 def gw_net(u, script):
@@ -2710,6 +2721,156 @@ def scenario_group_restored_owner_takes_newer_roster(lab):
 # Phone networks (--nat, a NAT per user). Dogfood: four in a call, a phone on the highway heard two
 # of three, the others saw three of four; that phone and the one it could not hear both retried to
 # get connected, and had not added each other both ways.
+# --- video: how frames travel (SyntheticVideo: real frame sizes, no camera or GPU in the lab) -----------
+
+WATCH_VIDEO_S = 45
+
+
+def wait_sees_video(u, senders, timeout=60):
+    """`u` receives video from `senders` others (that many streams have frames)."""
+    deadline = time.time() + timeout
+    while True:
+        rows = u.state().get("video_arrivals", [])
+        if len([r for r in rows if r["frames"] > 0]) >= senders:
+            return
+        if time.time() > deadline:
+            raise ProbeError("%s: sees video from %d of %d (%s)" % (u.name, len(rows), senders, rows))
+        time.sleep(1.0)
+
+
+def video_snapshot(users):
+    """Now: each receiver's view of each sender's video {(receiver, sender): row} (VideoArrivalStats counters),
+    each one's video frames sent {"tx", name: n} and audio frames received {"audio", name: n}."""
+    snap = {}
+    for u in users:
+        state = u.state()
+        name = u.name.split("-")[0]
+        snap[("tx", name)] = state.get("tx_video_frames", 0)
+        snap[("audio", name)] = state.get("rx_audio_frames", 0)
+        for row in state.get("video_arrivals", []):
+            sender = next((o.name.split("-")[0] for o in users if stream_id(o.account) == row["stream_id"]), "peer")
+            snap[(name, sender)] = row
+    return snap
+
+
+def link_counters(users):
+    """Each user's shaped links now: {(name, "up"|"down"): (bytes sent, packets dropped, packets sent)} (tc's root
+    qdisc)."""
+    def read(text):
+        m = re.search(r"Sent (\d+) bytes (\d+) pkt \(dropped (\d+)", text)
+        return (int(m.group(1)), int(m.group(3)), int(m.group(2))) if m else (0, 0, 0)
+    out = {}
+    for u in users:
+        name = u.name.split("-")[0]
+        out[(name, "up")] = read(net(u, "tc -s qdisc show dev eth0"))
+        out[(name, "down")] = read(gw_net(u, "tc -s qdisc show dev %s" % gw_inner_dev(u)))
+    return out
+
+
+def link_report(before, after, seconds):
+    """What went over each user's links in the window: kbit/s, packets/s and their mean size, and packets the shaper
+    dropped (its queue full)."""
+    report = {}
+    for key, (sent, dropped, packets) in sorted(after.items()):
+        was_sent, was_dropped, was_packets = before[key]
+        n = max(packets - was_packets, 1)
+        report["%s_%s" % key] = "%d kbit/s %d pkt/s %d B/pkt dropped=%d" % (
+            (sent - was_sent) * 8 / 1000 / seconds, n / seconds, (sent - was_sent) / n, dropped - was_dropped)
+    return report
+
+
+def video_report(before, after, seconds):
+    """How each one's frames reached each other one between two snapshots (before decoding): a 20 fps sender
+    spaces them ~50 ms; a reliable lane stalls on a loss, then lets frames go together (bunched). The counters are
+    the window's; the gap percentiles and the max are the whole call's."""
+    report = {}
+    for kind in ("tx", "audio"):
+        rates = {key[1]: round((n - before.get(key, 0)) / seconds, 1) for key, n in after.items() if key[0] == kind}
+        report["video_sent_fps" if kind == "tx" else "audio_rx_fps"] = rates
+    for key, row in sorted((k, v) for k, v in after.items() if k[0] not in ("tx", "audio")):
+        was = before.get(key, {})
+        frames = row["frames"] - was.get("frames", 0)
+        bunched = row["bunched"] - was.get("bunched", 0)
+        report["%s<-%s" % key] = "fps=%.1f stalls=%d bunched=%d%% lost=%d gap_max=%d (call p50=%d p95=%d)" % (
+            frames / seconds, row["stalls"] - was.get("stalls", 0), round(100 * bunched / max(frames, 1)),
+            row["lost"] - was.get("lost", 0), row["gap_max_ms"], row["gap_p50_ms"], row["gap_p95_ms"])
+    return report
+
+
+def video_call(users, thread, road=None):
+    """users[0] calls with video on `thread`; the others answer with video; once everyone sees every other one,
+    the call runs WATCH_VIDEO_S (with `road`, a PHONE_* profile, on everyone's links from then: set up on clean
+    links, as a call that is up when the road gets rough). Returns how the frames arrived then, and leaves."""
+    caller, answerers = users[0], users[1:]
+    call_id = caller.cmd("call", thread=thread, video=True)["call_id"]
+    for u in answerers:
+        u.wait_surface("ringing", 60, call_id=call_id)
+    for u in answerers:
+        u.cmd("accept")
+    for u in users:
+        u.wait_surface("in_call", 90, call_id=call_id)
+    for u in users:
+        wait_sees_video(u, len(users) - 1)
+    extra = {}
+    if road:
+        with Road(users, road) as r:
+            before, links_before, started = video_snapshot(users), link_counters(users), time.time()
+            time.sleep(WATCH_VIDEO_S)
+            after, links_after, seconds = video_snapshot(users), link_counters(users), time.time() - started
+        extra["road_seed"] = r.seed
+        extra["links"] = link_report(links_before, links_after, seconds)
+    else:
+        before, started = video_snapshot(users), time.time()
+        time.sleep(WATCH_VIDEO_S)
+        after, seconds = video_snapshot(users), time.time() - started
+    report = video_report(before, after, seconds)
+    report.update(extra)
+    leave_all(users)
+    return report
+
+
+def scenario_group_video_three(lab):
+    """Alice calls the group with video; Bob and Carol answer with video (over the hop). Everyone sees both others;
+    reports how each one's frames arrived (a clean network: the baseline)."""
+    lab.synthetic_video = True
+    users, threads = open_group(lab, 3)
+    return video_call(users, threads[users[0].name])
+
+
+def scenario_group_video_on_the_road(lab):
+    """The video dogfood: a group video call of three over the hop, then everyone's link turns into a phone's on
+    the road (PHONE_ROAD: lossy, jittery; no handovers). Reports how each one's frames arrived on it."""
+    lab.synthetic_video = True
+    users, threads = open_group(lab, 3)
+    return video_call(users, threads[users[0].name], road=PHONE_ROAD)
+
+
+def scenario_video_on_the_road(lab):
+    """The same for a 1:1 video call (its own direct media lane, not the hop): the comparison."""
+    lab.synthetic_video = True
+    a, a_thread, b, _ = open_pair(lab)
+    return video_call([a, b], a_thread, road=PHONE_ROAD)
+
+
+def video_measurement(group, profile):
+    """A scenario: a group video call of three (or a 1:1 one) set up on clean links, then everyone's link turns
+    into `profile`; reports how frames arrived on it. Opt-in (run with --only): measurements, not checks."""
+    def run(lab):
+        lab.synthetic_video = True
+        if group:
+            users, threads = open_group(lab, 3)
+            return video_call(users, threads[users[0].name], road=profile)
+        a, a_thread, b, _ = open_pair(lab)
+        return video_call([a, b], a_thread, road=profile)
+    return run
+
+
+VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile))
+                      for kind in ("group", "pair")
+                      for name, profile in (("lossy", PHONE_LOSSY), ("jittery", PHONE_JITTERY),
+                                            ("narrow", PHONE_NARROW), ("wide", PHONE_WIDE))]
+
+
 def scenario_group_call_on_the_road(lab):
     """The dogfood call: Carol (a phone on the highway) and Bob (also on the road) hand over every
     10-25 s on lossy, jittery links; Bob added Carol, Carol never added Bob. Alice (owner) calls;
@@ -2828,10 +2989,14 @@ SCENARIOS = [
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
     ("group_call_on_the_road", scenario_group_call_on_the_road),
     ("group_call_weak_upload", scenario_group_call_weak_upload),
+    ("group_video_three", scenario_group_video_three),
+    ("group_video_on_the_road", scenario_group_video_on_the_road),
+    ("video_on_the_road", scenario_video_on_the_road),
+    *VIDEO_MEASUREMENTS,
 ]
 
 # Scenarios run only when named (--only).
-OPT_IN = set()
+OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS}
 
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
@@ -2839,8 +3004,8 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 # Scenarios that change a user's network: they need a container per user (--nat).
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
-             "group_call_weak_upload",
-             "bystander_is_no_relay"}
+             "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
+             "bystander_is_no_relay"} | {name for name, _ in VIDEO_MEASUREMENTS}
 
 
 def main():

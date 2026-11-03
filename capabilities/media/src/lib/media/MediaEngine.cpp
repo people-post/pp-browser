@@ -9,6 +9,7 @@
 #include "lib/media/CaptureStarvePolicy.h"
 #include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/GuardedVideoCodec.h"
+#include "lib/media/VideoArrivalStats.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -56,7 +57,9 @@ constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
-constexpr int kVideoFps = 20;
+// Calls' video sends at 15 fps (with VideoLevelProfile's 250 kbit/s at level 1): with audio and overhead it
+// fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
+constexpr int kVideoFps = 15;
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */
@@ -380,6 +383,8 @@ struct MediaEngine::Impl {
     std::unique_ptr<IVideoCodec> codec;
   };
   std::unordered_map<uint32_t, std::shared_ptr<RemoteDecoder>> remote_decoders;
+  /** Per remote video stream: how its frames reached us, before decoding (the transport's share of smoothness). */
+  std::unordered_map<uint32_t, VideoArrivalStats> video_arrivals;
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   std::atomic<int> video_decode_fail_logs{0};
@@ -1775,6 +1780,23 @@ struct MediaEngine::Impl {
    * on its own thread) and reports nothing. Never waits on a media thread or a device. Returns
    * whether anything ran (an idle session has nothing to clean up).
    */
+  /** Under `mutex`, as the session stops: one metrics line per remote video stream (Send diagnostics carries it). */
+  void EmitVideoArrivalsLocked() const {
+    for (const auto& [stream_id, stats] : video_arrivals) {
+      const VideoArrivalSummary a = stats.Summary();
+      MetricsLine("video.rx")
+          .Add("stream", static_cast<int64_t>(stream_id))
+          .Add("frames", static_cast<int64_t>(a.frames))
+          .Add("lost", static_cast<int64_t>(a.lost))
+          .Add("gap_p50_ms", a.gap_p50_ms)
+          .Add("gap_p95_ms", a.gap_p95_ms)
+          .Add("gap_max_ms", a.gap_max_ms)
+          .Add("stalls", static_cast<int64_t>(a.stalls))
+          .Add("bunched", static_cast<int64_t>(a.bunched))
+          .Emit();
+    }
+  }
+
   bool BeginRetire() {
     audio_session_seen = SessionGeneration();
     retired.store(true, std::memory_order_release);
@@ -1783,6 +1805,7 @@ struct MediaEngine::Impl {
         active || packet_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
     if (running) {
       EngineLog().info << "media stop begin session=" << session_id;
+      EmitVideoArrivalsLocked();
     }
     active = false;
     muted.store(false, std::memory_order_relaxed);
@@ -2080,6 +2103,9 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
       impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
                               packet.payload.size());
     } else if (mesh::IsVideoChannel(packet.channel_id)) {
+      impl->video_arrivals[packet.stream_id].Note(packet.seq, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                  std::chrono::steady_clock::now().time_since_epoch())
+                                                                  .count());
       video_decoder = impl->RemoteDecoderLocked(packet.stream_id);
     }
   }
@@ -2152,6 +2178,9 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.stream_count = impl->audio_tracks.size();
     h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
+    for (const auto& [id, stats] : impl->video_arrivals) {
+      h.video_arrivals.push_back(VideoStreamArrival{.stream_id = id, .arrival = stats.Summary()});
+    }
     h.streams.reserve(impl->audio_tracks.size());
     for (const auto& [id, track] : impl->audio_tracks) {
       if (!track) {

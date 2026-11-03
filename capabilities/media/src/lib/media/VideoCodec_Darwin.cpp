@@ -360,7 +360,7 @@ Roe<void> VideoToolboxVideoCodec::ConfigureEncoder(int width, int height, int fp
   VTSessionSetProperty(session, kVTCompressionPropertyKey_MaxFrameDelayCount, max_delay_number);
   CFRelease(max_delay_number);
 
-  const int32_t max_keyframe_interval = fps * 2;
+  const int32_t max_keyframe_interval = fps * kKeyframeIntervalSeconds;
   CFNumberRef max_keyframe_number =
       CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt32Type, &max_keyframe_interval);
   VTSessionSetProperty(session, kVTCompressionPropertyKey_MaxKeyFrameInterval, max_keyframe_number);
