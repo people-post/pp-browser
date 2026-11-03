@@ -113,9 +113,12 @@ void SessionSwipeGesture::SetRowOffset(ui::Element* row, float dx_dp, bool anima
   }
   row->SetClass(kDraggingClass, !animate);
   row->SetClass(kShownClass, dx_dp != 0.f);
+  // `left` on the relatively positioned row, not a transform: the engine hit-tests a transformed row's children at
+  // their untransformed place, clipped by the list, so the revealed buttons never got a tap (it fell through to the
+  // list, and the row sliding back under the finger took the click and opened the chat).
   char buffer[48];
-  std::snprintf(buffer, sizeof(buffer), "translateX(%.1fdp)", dx_dp);
-  row->SetProperty("transform", buffer);
+  std::snprintf(buffer, sizeof(buffer), "%.1fdp", dx_dp);
+  row->SetProperty("left", buffer);
 }
 
 void SessionSwipeGesture::CloseRow(ui::ObserverPtr<ui::Element>& row) {

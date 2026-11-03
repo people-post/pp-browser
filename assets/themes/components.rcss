@@ -3696,9 +3696,10 @@ input.checkbox {
   overflow-x: hidden;
 }
 
+/* Moved with `left` (SessionSwipeGesture), so its buttons are hit where they are drawn. */
 .shell-layer-compact .sidebar-session {
   position: relative;
-  transition: transform 0.2s cubic-out;
+  transition: left 0.2s cubic-out;
 }
 
 .shell-layer-compact .sidebar-session.session-swipe-dragging {
