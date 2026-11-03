@@ -42,18 +42,15 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 | Contacts | Contact list | Contact detail |
 | Me | Settings list + profile card | Section detail (`settings_detail.rml`) |
 
-**Me / account settings** use a **layout-adaptive** presentation:
+**Me / account settings** is a normal tab in both layouts. There is no account sheet.
 
 | Layout | Entry | Presentation |
 |--------|--------|----------------|
 | **Expanded** | Nav rail Me tab (`select_nav_tab('me')`) | Secondary list → primary section detail (same pattern as Contacts) |
-| **Compact** | Home header profile button (`open_account_sheet`) | Existing **account bottom sheet** over the current tab. List→detail stays inside the sheet with local back / swipe dismiss. |
+| **Compact** | Fourth tab in the bottom tab bar | Me tab with the same list → detail; settings detail opens inline in the Me pane (local back, slides in from the right, swipe back from anywhere) |
 
-Resizing between compact and expanded migrates Me between sheet and tab when appropriate (`SettingsController::SyncLayoutMode`). Tab switch still clears an open account sheet via `ClearTabContext()`.
-
-**Scan QR code** is a direct action beside Me: the compact Home header shows the scan icon
-next to the profile button, and the expanded rail shows Scan immediately above the Me tab.
-It opens a transient scan surface without switching tabs; [SCANNING.md](SCANNING.md) owns
+**Scan QR code** is a direct action on the expanded rail: Scan sits immediately above the Me tab.
+It is desktop-rail only for now; compact does not offer it. It opens a transient scan surface without switching tabs; [SCANNING.md](SCANNING.md) owns
 the decoded-contact behavior.
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
@@ -77,12 +74,11 @@ Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 1. Dialog (alert/confirm)
 2. Overlay layer (`push_layer`)
 3. Transient stack
-4. Account bottom sheet (Me / settings)
-5. Auxiliary sheet (compact)
-6. Compact chat overlay (compact)
-7. Base panes
+4. Auxiliary sheet (compact)
+5. Compact chat overlay (compact)
+6. Base panes
 
-Compact z-index must match this order so sheets are not painted under the chat overlay: chat `25`, auxiliary scrim/sheet `26`/`27`, account scrim/sheet `28`/`29`, transient `30` (see `assets/themes/components.rcss`).
+Compact z-index must match this order so sheets are not painted under the chat overlay: chat `25`, auxiliary scrim/sheet `26`/`27`, transient `30` (see `assets/themes/components.rcss`).
 
 Escape (priority 110) calls `ShellHost::HandleDismiss()` before app quit (priority 100). Toasts and banners are informational and not in the dismiss stack.
 
@@ -93,7 +89,6 @@ Choose the lightest primitive that fits the user task:
 | Style | API | Use when | Examples |
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
-| **Account sheet** | `OpenAccountSheet` / `close_account_sheet` | Compact Me: profile and preferences without switching `nav_tab` | Me settings list/detail inside sheet |
 | **Bottom chrome** | `SetBottomChrome` / `ClearBottomChrome` | IME-replacement bottom panel: remount-only, no scrim, latched IME height | Mobile/compact emoji **Insert** |
 | **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji **React** / expanded Insert overlay |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
@@ -110,7 +105,7 @@ Bottom chrome mounts into `#shell-emoji-keyboard-mount` (sibling of `#shell-root
 
 | Need | API |
 |------|-----|
-| Nav / badges / sheet / auxiliary bindings | `DirtyNavChrome()` |
+| Nav / badges / auxiliary bindings | `DirtyNavChrome()` |
 | Banner / toast / dialog bindings | `DirtyFeedback()` |
 | PIN gate / unlock_in_progress / startup cover | `DirtyPinGate()` |
 | Activity / statusbar / titlebar / fonts | `DirtyStatusChrome()` |
@@ -164,11 +159,9 @@ Escape, chrome back buttons, and swipe gestures share `ShellHost::RequestDismiss
 |-------|----------------|
 | Escape / system back | Top of local-back stack, else `ShellInterruption::Top` |
 | `transient_back` / compact chat back | Forced transient / chat overlay |
-| Horizontal edge swipe | Same as back for that surface (`ShellSwipeBackGesture`) |
-| Vertical sheet swipe | Forced `AccountSheet` (still works over settings detail) |
-| Account sheet × | `CloseAccountSheet()` (clears nested local back) |
+| Horizontal swipe | Same as back for that surface (`ShellSwipeBackGesture`): from anywhere on transient pages and settings detail; edge-only (28dp) in the chat overlay |
 
-Nested list→detail inside a sheet (Me settings) uses `PushLocalBack("settings_detail", commit)` so Escape/swipe-back pop detail before dismissing the sheet. Swipe-back and sheet dismiss may both arm; [`ShellGestureAxisLock`](../../src/lib/ui/ShellGestureAxis.h) commits the dominant axis after the deadzone (edge horizontal → back; vertical from anywhere at scroll top → dismiss sheet).
+The horizontal swipe-back gesture is decided by [`ShellGestureAxisLock`](../../src/lib/ui/ShellGestureAxis.h), which commits the dominant axis after the deadzone.
 
 ## RML / data model
 
@@ -176,10 +169,8 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav rail tab (`home`, `sessions`, `contacts`, or `me` on expanded); clears tab context. On compact, `me` still opens the account sheet if invoked. |
-| `open_account_sheet()` | Open Me / settings bottom sheet (compact Home profile button) |
-| `open_scan_qr()` | Open the transient scanner from the Home header or expanded rail |
-| `close_account_sheet()` | Dismiss account bottom sheet |
+| `select_nav_tab(tab)` | Switch nav tab (`home`, `sessions`, `contacts`, or `me`); clears tab context. Compact bottom bar shows all four tabs. |
+| `open_scan_qr()` | Open the transient scanner from the expanded rail (desktop only for now) |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |
 | `open_auxiliary()` | Open preview when available |
@@ -191,7 +182,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 Desktop expanded status bar binds `statusbar_visible`, cluster fields (`statusbar_brief_*`, `statusbar_direct_*`, `statusbar_help_visible`, `statusbar_inbound_*`, `statusbar_label*`), and `statusbar_activity` (no click callbacks — display-only). Product work: [network-status-chrome](../../projects/network-status-chrome/).
 
-Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). On expanded, the Me attention dot is on the Me nav-rail tab; on compact, it is on the Home profile button. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
+Nav rail badges bind to `window.nav_badges` (`sessions_unread`, `contacts_unread`, `me_attention`). `sessions_unread` is aggregate chat unread; `contacts_unread` is reserved for future contacts-tab queues (not chat unread — currently always 0). `me_attention` is a non-count dot for Me setup nudges (today: desktop Node outbound-only/blocked reachability until the user acks **Got it — use relay** in Me → Network, or inbound becomes reachable). The Me attention dot is on the Me nav tab. The Network settings row mirrors the same attention via `section.attention`. Refreshed by `BadgeAggregator` on messaging / reachability events.
 
 Pane bodies live in `assets/views/*.rml` and mount into `#pane-body-{key}`. The nav rail mounts from `assets/views/nav_rail.rml`.
 
@@ -202,7 +193,6 @@ Home is a dedicated primary pane (`home.rml`), not the chat panel:
 | Region | Content |
 |--------|---------|
 | Top left | Brand wordmark (`app.name`) + tagline |
-| Top right (compact) | Profile button → account sheet |
 | Optical center | Composer mounted into `#home-composer-mount` |
 | Below composer | Soft suggestion chips (`send_suggestion`: find someone, headlines, articles, get started, capabilities) |
 
@@ -280,16 +270,19 @@ Data comes from `MessagingShellPorts::statusbar_cluster` (facts, polled in `Shel
 
 The top `.shell-activity-strip` (3dp progress pulse) remains for compact/mobile when `activity_visible`; it is hidden while the status bar is showing (`activity_visible && !statusbar_visible`) so busy state is not duplicated.
 
-## Compact floating chrome
+## Compact chrome
 
 When `layout_mode == compact`:
 
-- **Bottom nav** floats above content (`position: absolute`; 12dp horizontal inset). Content panes use `padding-bottom` equal to nav height (56dp) plus safe-area bottom so the last row is not hidden.
+- **Tab bar** is full width along the bottom: 49dp plus the bottom safe area, four equal tabs (Home, Chats = `sessions`, Contacts, Me).
+- **Bottom surfaces** paint down through the home-indicator strip. `ShellLayout::ComputeCompactChromeLayout` takes a `CompactBottomSurface` (`None` / `TabBar` / `Composer` / `Page`). Without a keyboard the document is full-bleed and the surface pads itself by the inset. With a keyboard-sized inset (>= `kImeLatchMinDp`) the previous behaviour applies.
+- **Pushed pages** (transient) slide in from the right (0.3s, class `shell-page-enter`) and slide out on back.
+- **Root pages** (Chats, Contacts, Me) have a 44dp nav bar and a 52dp large title that collapses on scroll. Shell field `large_title_collapsed` is set by `ShellLargeTitleScroll`: one Scroll listener on `#shell-nav-page` that reacts to `.root-scroll` targets and reports only when the 52dp threshold is crossed.
 - **Safe area** — top is edge-to-edge (body background under the status bar); `#shell-root` / chrome use `content_top_dp`. Bottom still insets the shell document. Values come from SDL safe-area insets and `machine.json` `safe_area` prefs (`ShellHost::RefreshSafeAreaInsets`).
 - **Materials** — default opaque `.surface-chrome`; one bar may add `.surface-chrome--frost` (see [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials)). Reduce transparency (Me → Appearance) applies `.surface-chrome--solid` and disables frost.
 - **Interruption order** unchanged — only presentation differs; chat overlay hides bottom nav while open.
 
-Expanded layout keeps flat productivity chrome (no floating nav, no frost tier).
+Expanded layout keeps flat productivity chrome (no frost tier).
 
 ## Batches
 
