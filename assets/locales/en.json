@@ -99,6 +99,8 @@
     "compat.update_available.message": "A newer version of PP is available.",
     "support.entry.title": "PP Support",
     "support.entry.subtitle": "Get help from the PP team",
+    "settings.help.draft": "About {title}: ",
+    "settings.help.button": "Help",
     "support.unavailable": "PP Support is not available right now.",
     "settings.theme.label": "Theme",
     "settings.theme.system": "System",

@@ -608,6 +608,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
     ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
+    ctor.BindEventCallback("open_settings_help", DataEvent<>([this]() { OnOpenSettingsHelp(); }));
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -1647,6 +1648,19 @@ void SettingsController::OnOpenSupportChat() {
     return;
   }
   if (auto opened = commands_.open_support_chat({}); !opened) {
+    ReportFailure(opened.error());
+  }
+}
+
+void SettingsController::OnOpenSettingsHelp() {
+  if (!commands_.open_support_chat) {
+    ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+    return;
+  }
+  // The question about the current page is prefilled in the composer; the user sends it.
+  if (auto opened = commands_.open_support_chat(
+          Tr("settings.help.draft", {{"title", selected_title_.c_str()}}));
+      !opened) {
     ReportFailure(opened.error());
   }
 }

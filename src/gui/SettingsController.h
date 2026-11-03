@@ -260,6 +260,7 @@ private:
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
   void OnOpenSupportChat();
+  void OnOpenSettingsHelp();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChooseTheme(ui::Event& ev);

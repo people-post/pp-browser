@@ -1989,8 +1989,18 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
-.shell-layer-compact .settings-back-v2 {
+.shell-layer-compact .settings-back-v2,
+.shell-layer-compact .settings-help-icon {
   image-color: #0a84ff;
+}
+
+.shell-layer-compact .settings-help-btn,
+.shell-layer-compact .group-id-btn {
+  background-color: transparent;
+}
+
+.shell-layer-compact .group-id-label {
+  color: #ebebf599;
 }
 
 .shell-layer-compact .settings-header-title,

@@ -37,14 +37,37 @@
             </span>
           </label>
         </div>
+        <div class="group-card settings-phone-only">
+          <div class="group-row group-id-row">
+            <span class="group-row-body">
+              <span class="group-id-text" data-if="profile_relay_id != ''">
+                <span class="group-id-label">{{i18n:settings.profile.relay_id_label}}</span>
+                <span class="group-id-value">{{profile_relay_id}}</span>
+              </span>
+              <span class="group-id-text" data-if="profile_relay_id == ''">
+                <span class="group-id-value">{{i18n:settings.profile.relay_id_none}}</span>
+              </span>
+              <button class="group-id-btn" type="button" data-event-click="copy_profile_id()">
+                <svg class="cd-icon" src="../icons/v2/copy.svg" width="22" height="22"></svg>
+              </button>
+              <button class="group-id-btn" type="button" data-event-click="share_profile()">
+                <svg class="cd-icon" src="../icons/v2/share.svg" width="22" height="22"></svg>
+              </button>
+              <button class="group-id-btn" type="button" data-if="profile_qr_svg_rml != ''"
+                      data-event-click="toggle_profile_qr()">
+                <svg class="cd-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
+              </button>
+            </span>
+          </div>
+        </div>
         <div class="group-card group-card--pad">
         <p class="text muted me-profile-meta group-note" data-if="advanced && profile_peer_id != ''">
           {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>
         </p>
-        <p class="text muted me-profile-meta group-note" data-if="profile_relay_id != ''">
+        <p class="text muted me-profile-meta group-note settings-desktop-only" data-if="profile_relay_id != ''">
           {{i18n:settings.profile.relay_id_label}} <span>{{profile_relay_id}}</span>
         </p>
-        <p class="text muted me-profile-meta group-note" data-if="profile_relay_id == ''">
+        <p class="text muted me-profile-meta group-note settings-desktop-only" data-if="profile_relay_id == ''">
           {{i18n:settings.profile.relay_id_none}}
         </p>
         <p class="text muted me-profile-meta group-note">
@@ -105,15 +128,15 @@
         </div>
         <p class="text muted settings-help group-foot" data-if="stay_connected_available">{{i18n:settings.stay_connected.help}}</p>
         <div class="me-profile-actions row">
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
+          <button class="btn btn-secondary btn-icon settings-desktop-only" type="button" data-event-click="copy_profile_id()">
             <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
             {{i18n:contacts.copy_id}}
           </button>
-          <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
+          <button class="btn btn-secondary btn-icon settings-desktop-only" type="button" data-event-click="share_profile()">
             <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
             {{i18n:common.share}}
           </button>
-          <button class="btn btn-secondary" type="button" data-if="profile_qr_svg_rml != ''"
+          <button class="btn btn-secondary settings-desktop-only" type="button" data-if="profile_qr_svg_rml != ''"
                   data-class-btn-active="profile_show_qr"
                   data-event-click="toggle_profile_qr()">{{i18n:settings.profile.show_qr}}</button>
           <button class="btn btn-primary" type="button" data-if="profile_show_register"

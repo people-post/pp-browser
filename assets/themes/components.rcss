@@ -5582,7 +5582,9 @@ input.checkbox {
 
 .shell-layer-compact .cd-account {
   display: block;
+  width: 100%;
   margin: 0;
+  text-align: center;
   font-size: 15dp;
   line-height: 20dp;
 }
@@ -5682,13 +5684,30 @@ input.checkbox {
   text-overflow: ellipsis;
 }
 
+/* Same pattern as the settings inputs: label above, field full width, text and caret from the left. */
+.cd-row--field {
+  height: auto;
+  min-height: 44dp;
+}
+
+.cd-row--field .cd-row-body {
+  display: block;
+  height: auto;
+  padding: 10dp 12dp 4dp 0;
+}
+
 .cd-row--field .cd-row-text {
+  display: block;
   flex: none;
-  width: 72dp;
+  width: auto;
+  font-size: 13dp;
+  line-height: 18dp;
 }
 
 .cd-field {
-  flex: 1;
+  display: block;
+  flex: none;
+  width: 100%;
   min-width: 0;
   height: 44dp;
   margin: 0;
@@ -5696,7 +5715,7 @@ input.checkbox {
   border: 0;
   box-sizing: border-box;
   font-size: 17dp;
-  text-align: right;
+  text-align: left;
   background-color: transparent;
 }
 
@@ -5745,6 +5764,12 @@ input.checkbox {
   padding: 0 32dp;
   font-size: 13dp;
   line-height: 18dp;
+}
+
+/* Group member page: help line sits centred under the Add contact button. */
+.cd-footnote--center {
+  margin-top: 16dp;
+  text-align: center;
 }
 
 /* ---- Phone chat window (UI refresh batch 3, DESIGN-pp-ui.md 8.4 / 8.5): the desktop keeps the rules above. ---- */
@@ -6099,7 +6124,8 @@ input.checkbox {
 }
 
 .settings-phone-only,
-.settings-back-v2 {
+.settings-back-v2,
+.settings-help-btn {
   display: none;
 }
 
@@ -6146,6 +6172,29 @@ input.checkbox {
   margin: 0;
   border-radius: 0;
   z-index: 1;
+}
+
+/* "?" in the bar's top-right corner opens PP 客服 with a question about this page. */
+.shell-layer-compact .settings-help-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.shell-layer-compact .settings-help-icon {
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-layer-compact .settings-header-title {
@@ -6232,7 +6281,7 @@ input.checkbox {
   flex-direction: row;
   align-items: center;
   width: 100%;
-  min-height: 44dp;
+  min-height: 50dp;
   margin: 0;
   padding: 0 0 0 16dp;
   border: 0;
@@ -6251,7 +6300,7 @@ input.checkbox {
 
 .shell-layer-compact .group-row-body {
   gap: 8dp;
-  min-height: 44dp;
+  min-height: 50dp;
   padding: 0 12dp 0 0;
   box-sizing: border-box;
 }
@@ -6321,27 +6370,87 @@ input.checkbox {
   margin-left: 0;
 }
 
+/* Current value on the right of a row that opens a choice: one size below the 17dp title. */
 .shell-layer-compact .group-row .settings-choice-value-text {
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+/* Text inputs on settings and profile pages: label above the field, both starting at the left edge. The field fills
+   the row and its text and caret start at the left (a right-aligned field put the caret mid-row or at the far end). */
+.shell-layer-compact .group-row--field .group-row-body {
+  display: block;
+  min-height: 0;
+  padding: 10dp 16dp 0 0;
 }
 
 .shell-layer-compact .group-row--field .group-row-text {
+  display: block;
   flex: none;
-  width: 120dp;
+  width: auto;
+  margin: 0 0 2dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: left;
 }
 
 .shell-layer-compact .group-card .field {
-  flex: 1;
+  display: block;
+  flex: none;
+  width: 100%;
   min-width: 0;
-  width: auto;
   height: 44dp;
+  min-height: 44dp;
+  max-height: 44dp;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   font-size: 17dp;
-  text-align: right;
+  line-height: 44dp;
+  text-align: left;
+}
+
+/* Account ID row on the profile page: label over value on the left, Copy / Share / QR icon buttons on the right. */
+.shell-layer-compact .group-id-row {
+  cursor: default;
+}
+
+.shell-layer-compact .group-id-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 8dp 0;
+}
+
+.shell-layer-compact .group-id-label {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .group-id-value {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-id-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  background-color: transparent;
+  cursor: pointer;
 }
 
 .shell-layer-compact .group-row .settings-switch {
@@ -6442,6 +6551,11 @@ input.checkbox {
 
 .shell-layer-compact .settings-section--grouped .btn-icon {
   display: flex;
+}
+
+/* Desktop-only buttons (the profile page's Copy / Share / QR live in the Account ID row on phones). */
+.shell-layer-compact .settings-section--grouped .btn.settings-desktop-only {
+  display: none;
 }
 
 .shell-layer-compact .settings-section--grouped .settings-action-bar {

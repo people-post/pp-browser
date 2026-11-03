@@ -36,7 +36,7 @@
           <p class="cd-act-label">{{i18n:contacts.add}}</p>
         </button>
       </div>
-      <p class="cd-footnote">{{i18n:contacts.member_not_contact}}</p>
+      <p class="cd-footnote cd-footnote--center">{{i18n:contacts.member_not_contact}}</p>
     </div>
     <div data-if="!selected.member_preview">
       <div class="cd-acts row">
