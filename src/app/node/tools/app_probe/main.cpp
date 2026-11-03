@@ -49,7 +49,8 @@
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
-//                                       per-stream rx frames)
+//                                       per-stream rx frames, video tx / rx and how each video stream's
+//                                       frames arrived: gaps, stalls, bunched, lost)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
@@ -57,6 +58,8 @@
 //
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 // --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
+// --synthetic-video: a camera and an H.264 stand-in with real frame sizes (SyntheticVideo): video calls run in a
+//   container with no camera or GPU, for measuring how video travels.
 
 #include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
@@ -70,6 +73,8 @@
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/media/IMediaView.h"
+#include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/SyntheticVideo.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -327,6 +332,23 @@ public:
         streams.push_back(ObjectValue(std::move(row)));
       }
       out.set("streams", ArrayValue(std::move(streams)));
+      out.set("tx_video_frames", static_cast<uint64_t>(health.tx_video_frames));
+      out.set("rx_video_frames", static_cast<uint64_t>(health.rx_video_frames));
+      std::vector<Value> video;
+      for (const VideoStreamArrival& stream : health.video_arrivals) {
+        const VideoArrivalSummary& a = stream.arrival;
+        Object row;
+        row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+        row.set("frames", static_cast<uint64_t>(a.frames));
+        row.set("lost", static_cast<uint64_t>(a.lost));
+        row.set("gap_p50_ms", a.gap_p50_ms);
+        row.set("gap_p95_ms", a.gap_p95_ms);
+        row.set("gap_max_ms", a.gap_max_ms);
+        row.set("stalls", static_cast<uint64_t>(a.stalls));
+        row.set("bunched", static_cast<uint64_t>(a.bunched));
+        video.push_back(ObjectValue(std::move(row)));
+      }
+      out.set("video_arrivals", ArrayValue(std::move(video)));
       std::vector<Value> joined;
       if (!last_call_id_.empty()) {
         if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {
@@ -1305,6 +1327,7 @@ int main(int argc, char** argv) {
   std::string log_file;
   std::string restore_phrase_file;
   std::string restore_saved_copy;
+  bool synthetic_video = false;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
@@ -1314,17 +1337,26 @@ int main(int argc, char** argv) {
       restore_phrase_file = argv[++i];
     } else if (std::strcmp(argv[i], "--restore-saved-copy") == 0 && i + 1 < argc) {
       restore_saved_copy = argv[++i];
+    } else if (std::strcmp(argv[i], "--synthetic-video") == 0) {
+      synthetic_video = true;
     }
   }
   if (pin.empty()) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
-                         "[--restore-saved-copy FILE]\n");
+    std::fprintf(stderr,
+                 "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
+                 "[--restore-saved-copy FILE] [--synthetic-video]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
   // real device path still runs.
   // (An SDL_AUDIO_DRIVER in the environment still wins over this hint.)
   SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  if (synthetic_video) {
+    // Before anything makes a codec or opens a device: every one from now on is the stand-in.
+    pbr::SetPlatformVideoCodecOverride([]() { return pbr::SyntheticVideo::CreateCodec(); });
+    (void)pbr::MediaDeviceArbiter::SetDefaultBackendFactory(
+        []() { return pbr::SyntheticVideo::WithCamera(pbr::CreateSdlMediaDeviceBackend()); });
+  }
 
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::logging::Level::INFO);
