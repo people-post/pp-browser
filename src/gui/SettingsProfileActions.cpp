@@ -152,7 +152,7 @@ void SettingsProfileActions::PickIcon() {
 }
 
 void SettingsProfileActions::UploadIcon(const std::string& path) {
-  if (!commands_.plan_relay_quota_recovery || !commands_.delete_relay_blob) {
+  if (!commands_.plan_relay_quota_recovery || !commands_.delete_relay_file) {
     host_.ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Profile icon upload is not available"));
     return;
   }
@@ -166,7 +166,7 @@ void SettingsProfileActions::UploadIcon(const std::string& path) {
         AfterIconChange(result, Tr("settings.profile.photo_updated"));
       },
       [this](const Error& quota_error) { return commands_.plan_relay_quota_recovery(quota_error); },
-      [this](const std::string& blob_id, const BlobTier tier) { return commands_.delete_relay_blob(blob_id, tier); });
+      [this](const std::string& blob_id) { return commands_.delete_relay_file(blob_id); });
 }
 
 void SettingsProfileActions::ClearIcon() {

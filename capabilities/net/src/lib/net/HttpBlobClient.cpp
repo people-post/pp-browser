@@ -72,47 +72,6 @@ RelayFileRecord ParseFileRecord(const Object& item) {
   return record;
 }
 
-RelayBlobRecord ParseBlobRecord(const Object& item) {
-  RelayBlobRecord record;
-  if (auto v = item.getString("blob_id")) {
-    record.blob_id = *v;
-  }
-  if (auto v = item.getString("url")) {
-    record.url = *v;
-  }
-  if (auto v = item.getString("status")) {
-    if (auto status = BlobStatusFromWire(*v)) {
-      record.status = *status;
-    }
-  }
-  if (auto v = item.getString("tier")) {
-    if (auto tier = BlobTierFromWire(*v)) {
-      record.tier = *tier;
-    }
-  }
-  if (auto v = item.getString("content_type")) {
-    record.content_type = *v;
-  }
-  if (auto v = item.getNonNegInt("byte_length")) {
-    record.byte_length = *v;
-  }
-  if (auto v = item.getString("purpose")) {
-    if (auto purpose = BlobPurposeFromWire(*v)) {
-      record.purpose = *purpose;
-    }
-  }
-  if (auto v = item.getString("created_at")) {
-    record.created_at = *v;
-  }
-  if (auto v = item.getString("retained_at")) {
-    record.retained_at = *v;
-  }
-  if (auto v = item.getString("pending_expires_at")) {
-    record.pending_expires_at = *v;
-  }
-  return record;
-}
-
 } // namespace
 
 Error ClassifyBlobFailure(const int status_code, const std::string& detail, const std::string& code) {
@@ -244,11 +203,6 @@ Roe<BlobPresignResult> HttpBlobClient::Presign(const std::string& relay_user_id,
   result.blob_id = root->getString("blob_id").value_or("");
   result.upload_url = root->getString("upload_url").value_or("");
   result.public_url = root->getString("public_url").value_or("");
-  if (auto tier = root->getString("tier")) {
-    if (auto parsed = BlobTierFromWire(*tier)) {
-      result.tier = *parsed;
-    }
-  }
   if (auto expires = root->getString("pending_expires_at")) {
     result.pending_expires_at = *expires;
   }
@@ -301,64 +255,6 @@ Roe<void> HttpBlobClient::Delete(const std::string& relay_user_id, const std::st
     return response.error();
   }
   return CheckBlobResponse(response.value());
-}
-
-Roe<BlobListResult> HttpBlobClient::List(const std::string& relay_user_id, const std::string& status_filter) {
-  if (base_url_.empty()) {
-    return Error("Blob base_url not configured");
-  }
-  const int64_t timestamp = util::NowUnixMs();
-  const auto sign_bytes = BuildBlobListSignBytes(relay_user_id, status_filter, timestamp);
-  auto signature = SignBytes(sign_bytes);
-  if (!signature) {
-    return signature.error();
-  }
-
-  Object body;
-  body.set("relay_user_id", relay_user_id);
-  body.set("timestamp", timestamp);
-  body.set("signature", *signature);
-  if (!status_filter.empty()) {
-    body.set("status", status_filter);
-  }
-  const auto response =
-      HttpClient::Post(base_url_ + "/v1/blobs/list", DumpJson(body), {{"Content-Type", "application/json"}});
-  if (!response) {
-    return response.error();
-  }
-  if (const auto ok = CheckBlobResponse(response.value()); !ok) {
-    return ok.error();
-  }
-
-  auto root = TryParseObject(response.value().body);
-  const Array* blobs = root ? root->getArray("blobs") : nullptr;
-  if (!blobs) {
-    return Error("Invalid blob list JSON");
-  }
-
-  BlobListResult result;
-  for (const Value& item_value : blobs->elements) {
-    const Object* item = asObject(item_value);
-    if (!item) {
-      continue;
-    }
-    result.blobs.push_back(ParseBlobRecord(*item));
-  }
-  if (const Object* usage = root->getObject("usage")) {
-    if (auto v = usage->getNonNegInt("small_count")) {
-      result.usage.small_count = *v;
-    }
-    if (auto v = usage->getNonNegInt("large_bytes")) {
-      result.usage.large_bytes = *v;
-    }
-    if (auto v = usage->getNonNegInt("large_included_bytes")) {
-      result.usage.large_included_bytes = *v;
-    }
-    if (auto v = usage->getNonNegInt("overage_bytes")) {
-      result.usage.overage_bytes = *v;
-    }
-  }
-  return result;
 }
 
 Roe<void> HttpBlobClient::SetProfileIcon(const std::string& relay_user_id, const std::string& url,

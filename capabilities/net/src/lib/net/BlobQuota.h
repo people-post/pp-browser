@@ -11,27 +11,26 @@
 
 namespace pbr {
 
+/**
+ * Space on the files relay (`/files`, attachments) to free: the only quota this client can run into and free.
+ * `/blobs` holds profile photos alone, under their own limit.
+ */
 struct BlobQuotaRecoveryPlan {
   /**
-   * What the dialog names. Files tier: the oldest of the files to delete, with `byte_length` the bytes they
-   * free together and `created_at` the oldest one's completion time.
+   * What the dialog names: the oldest of the files to delete, with `byte_length` the bytes they free together and
+   * `created_at` the oldest one's completion time.
    */
   RelayBlobRecord blob_to_delete;
-  /** Every id the confirmed recovery deletes (one for the `/blobs` tiers; as many as free enough for Files). */
+  /** Every id the confirmed recovery deletes: as many as free enough. */
   std::vector<std::string> blob_ids_to_delete;
-  BlobUsageSummary usage;
-  /** The Files tier's "used / total" (bytes). */
+  /** The files relay's "used / total" (bytes). */
   RelayFileUsage file_usage;
-  /** The tier that is full: the 429's tier, else the tier of `blob_to_delete`. */
-  BlobTier full_tier = BlobTier::Small;
-  /** The small tier's file limit for the "used / total" line; the list answer has none (0: not known). */
-  uint64_t small_max_objects = 0;
 };
 
 bool IsBlobQuotaError(const Error& err);
 
-/** Which tier a quota error says is full (the relay's 429 text, or the files relay's code); none when unsaid. */
-std::optional<BlobTier> BlobQuotaTierOf(const Error& err);
+/** Whether a quota error is the files relay's (`QUOTA_FILE_BYTES`): the one a recovery can free. */
+bool IsRelayFileQuotaError(const Error& err);
 
 /** The size a refused `/files/start` asked for (HttpBlobClient notes it in the detail); 0 when not there. */
 uint64_t RelayFileQuotaNeededBytes(const Error& err);
@@ -48,29 +47,7 @@ Roe<BlobQuotaRecoveryPlan> PlanOldestRelayFileDeletion(IBlobClient& blob, const 
 /** `/files/delete` of one id (an attachment's relay copy). */
 Roe<void> DeleteRelayFile(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id);
 
-/**
- * Delete one id of a recovery plan on the endpoint its tier lives on: Files → `/files/delete`, Small / Large (the
- * `/blobs` tiers of profile photos) → `/blobs/delete`.
- */
-Roe<void> DeleteRelayQuotaItem(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id,
-                               BlobTier tier);
-
-/** What a confirmed recovery calls for each id of the plan, with the plan's tier. */
-using BlobQuotaFreeSlot = std::function<Roe<void>(const std::string& blob_id, BlobTier tier)>;
-
-/**
- * Pure net helper — callers resolve relay_user_id (no IdentityStore). The oldest retained blob that frees the
- * full tier (`full_tier`; none: any tier) and is not an icon or the protected blob.
- */
-Roe<BlobQuotaRecoveryPlan> PlanOldestRelayBlobDeletion(IBlobClient& blob, const std::string& relay_user_id,
-                                                       const std::string& protected_blob_id = "",
-                                                       std::optional<BlobTier> full_tier = std::nullopt);
-
-Roe<void> DeleteRelayBlob(IBlobClient& blob, const std::string& relay_user_id, const std::string& blob_id);
-
-/** List remote blobs and delete the oldest deletable entry (R009). Local files are untouched. */
-Roe<void> FreeOldestRelayBlobSlot(IBlobClient& blob, const std::string& relay_user_id,
-                                  const std::string& protected_blob_id = "",
-                                  std::optional<BlobTier> full_tier = std::nullopt);
+/** What a confirmed recovery calls for each id of the plan. */
+using BlobQuotaFreeSlot = std::function<Roe<void>(const std::string& blob_id)>;
 
 } // namespace pbr

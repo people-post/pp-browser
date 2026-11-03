@@ -77,7 +77,6 @@ const std::vector<Key>& AttachmentKeys() {
       {"errors.blob.rate_limited", {}},
       {"errors.blob.quota_exceeded", {}},
       {"blob.quota.message", {"{usage}", "{detail}"}},
-      {"blob.quota.usage_files", {"{used}", "{total}"}},
       {"blob.quota.usage_bytes", {"{used}", "{total}"}},
   };
   return keys;

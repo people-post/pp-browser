@@ -1873,13 +1873,6 @@ Error AttachmentTooLargeError(const uint64_t max_bytes) {
       .WithUser(Localized("chat.attachment.too_large", {{"limit", FormatAttachmentLimit(max_bytes)}}));
 }
 
-std::string ProtectedRelayBlobId(const std::string& profile_dir) {
-  if (auto meta = LoadProfileIconCacheMeta(profile_dir); meta) {
-    return meta->blob_id;
-  }
-  return {};
-}
-
 } // namespace
 
 Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error& quota_error) {
@@ -1899,16 +1892,12 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery(const Error&
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  if (BlobQuotaTierOf(quota_error) == BlobTier::Files) {
-    // An attachment found the files relay full: free the oldest sent files until this one fits.
-    return PlanOldestRelayFileDeletion(*blob_, identity->relay_user_id, AttachmentQuotaNeededBytes(quota_error));
+  if (!IsRelayFileQuotaError(quota_error)) {
+    // `/blobs` holds the profile photo alone, under its own limit: nothing there for this device to free.
+    return quota_error;
   }
-  auto plan = PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_),
-                                          BlobQuotaTierOf(quota_error));
-  if (plan) {
-    plan->small_max_objects = static_cast<uint64_t>(CurrentAttachmentLimits().small_max_objects);
-  }
-  return plan;
+  // An attachment found the files relay full: free the oldest sent files until this one fits.
+  return PlanOldestRelayFileDeletion(*blob_, identity->relay_user_id, AttachmentQuotaNeededBytes(quota_error));
 }
 
 Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
@@ -1967,7 +1956,7 @@ void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
   }
 }
 
-Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id, const BlobTier tier) {
+Roe<void> ConversationsHub::DeleteRelayFileById(const std::string& blob_id) {
   if (!IsInitialized()) {
     return Error("Messaging hub not initialized");
   }
@@ -1984,7 +1973,7 @@ Roe<void> ConversationsHub::DeleteRelayBlobById(const std::string& blob_id, cons
   if (!identity->registered || identity->relay_user_id.empty()) {
     return Error("Register on the network before using relay blob storage");
   }
-  return DeleteRelayQuotaItem(*blob_, identity->relay_user_id, blob_id, tier);
+  return DeleteRelayFile(*blob_, identity->relay_user_id, blob_id);
 }
 
 AttachmentLimits ConversationsHub::CurrentAttachmentLimits() const { return DefaultAttachmentLimits(); }
@@ -2002,15 +1991,14 @@ void ConversationsHub::CheckBlobSpace(const bool after_quota_error) {
   if (!identity || !identity->registered || identity->relay_user_id.empty()) {
     return;
   }
-  auto listed = blob_->List(identity->relay_user_id);
+  // Attachments live on the files relay (#465): its byte quota is the space that fills.
+  auto listed = blob_->FileList(identity->relay_user_id, "");
   if (!listed) {
     return;
   }
   const AttachmentLimits limits = CurrentAttachmentLimits();
-  const int percent = BlobSpaceUsedPercent(BlobSpaceUse{.small_count = listed->usage.small_count,
-                                                        .large_bytes = listed->usage.large_bytes,
-                                                        .large_included_bytes = listed->usage.large_included_bytes},
-                                           limits);
+  const int percent = BlobSpaceUsedPercent(
+      BlobSpaceUse{.bytes_used = listed->usage.bytes_used, .quota_bytes = listed->usage.quota_bytes});
   if (blob_space_monitor_.NextWarning(percent, limits) == 0) {
     return;
   }
