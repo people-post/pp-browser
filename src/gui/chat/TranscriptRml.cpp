@@ -593,8 +593,8 @@ bool AddBubbleTail(std::string& content, bool ours) {
     return false;
   }
   const char* host = ours ? " bubble-tail-host bubble-tail-host--out" : " bubble-tail-host bubble-tail-host--in";
-  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" width=\"10\" height=\"12\"></svg>"
-                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"10\" height=\"12\"></svg>";
+  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" width=\"16\" height=\"20\"></svg>"
+                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"16\" height=\"20\"></svg>";
   content.insert(tag_end + 1, tail);
   content.insert(content.find('"', at + std::string("<div class=\"").size()), host);
   return true;

@@ -5802,19 +5802,20 @@ input.checkbox {
   border-bottom-right-radius: 4dp;
 }
 
+/* 16x20dp: the inner half overlaps the bubble's squared corner, the outer 8dp is the visible hook. */
 .shell-chat-overlay .bubble-tail {
   position: absolute;
   bottom: 0;
-  width: 10dp;
-  height: 12dp;
+  width: 16dp;
+  height: 20dp;
 }
 
 .shell-chat-overlay .bubble-tail-in {
-  left: -5dp;
+  left: -8dp;
 }
 
 .shell-chat-overlay .bubble-tail-out {
-  right: -5dp;
+  right: -8dp;
 }
 
 /* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. */
