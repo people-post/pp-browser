@@ -25,7 +25,9 @@ int EventMouseY(const ui::Event& event) {
 }
 
 bool ParseAction(const ui::String& name, SessionSwipeAction& out) {
-  if (name == "archive") {
+  if (name == "more") {
+    out = SessionSwipeAction::More;
+  } else if (name == "archive") {
     out = SessionSwipeAction::Archive;
   } else if (name == "delete") {
     out = SessionSwipeAction::Delete;
@@ -224,15 +226,6 @@ void SessionSwipeGesture::ProcessEvent(ui::Event& event) {
       SetRowOffset(active_row_.get(), model_.RestOffsetDp(out.side), true);
       open_row_ = active_row_;
       break;
-    case SessionSwipeOutcome::Kind::RunFirst: {
-      const std::string thread_id =
-          active_row_ ? std::string(active_row_->GetAttribute("session-id", ui::String()).c_str()) : std::string();
-      CloseRow(active_row_);
-      open_row_ = nullptr;
-      // First action on each side: Archive (End) / Pin (Start). Delete asks its usual question afterwards.
-      Run(thread_id, out.side == SwipeSide::End ? SessionSwipeAction::Archive : SessionSwipeAction::Pin);
-      break;
-    }
     case SessionSwipeOutcome::Kind::Close:
       CloseRow(active_row_);
       open_row_ = nullptr;

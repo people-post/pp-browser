@@ -1128,8 +1128,12 @@ select selectbox option:hover {
   background-color: #f2f2f7;
 }
 
-.session-swipe-btn--archive {
+.session-swipe-btn--more {
   background-color: #8e8e93;
+}
+
+.session-swipe-btn--archive {
+  background-color: #007aff;
 }
 
 .session-swipe-btn--delete {

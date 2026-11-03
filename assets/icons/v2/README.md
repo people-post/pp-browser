@@ -57,6 +57,7 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | circle-dot | phone context menus (chat row Mark as unread) | drawn | - |
 | eraser | phone context menus (chat row Clear history) | drawn | - |
 | log-out | phone context menus (chat row Leave group) | drawn | - |
+| more | phone Chats list swipe action (More) | drawn | - |
 | pin | phone context menus (chat row Pin / Unpin) | drawn | `pin.svg` |
 | reply | phone context menus (message Reply) | drawn | - |
 | share | phone context menus (shared item Share) | drawn | `share.svg` |

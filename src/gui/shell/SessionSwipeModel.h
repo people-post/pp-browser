@@ -9,22 +9,20 @@
 namespace pbr {
 
 /** What a swipe button does; ChatMenus maps each onto the long-press menu item it mirrors. */
-enum class SessionSwipeAction { Archive, Delete, Pin, Read };
+enum class SessionSwipeAction { More, Archive, Delete, Pin, Read };
 
 /** Which side of the row the buttons sit on: End = row slid left (buttons on the right), Start = slid right. */
 enum class SwipeSide { None, Start, End };
 
 struct SessionSwipeConfig {
   float button_dp = 74.f;
-  int end_buttons = 2;
+  int end_buttons = 3;
   int start_buttons = 2;
-  /** A release past this share of the row width runs the side's first action. */
-  float full_ratio = 0.6f;
   int deadzone_px = 8;
 };
 
 struct SessionSwipeOutcome {
-  enum class Kind { None, Close, Open, RunFirst };
+  enum class Kind { None, Close, Open };
   Kind kind = Kind::None;
   SwipeSide side = SwipeSide::None;
   /** The click that follows this release belongs to the gesture, not to the row. */
@@ -32,7 +30,7 @@ struct SessionSwipeOutcome {
 };
 
 /**
- * The swipe-row decisions without any DOM: axis lock, row offset, open / close / full-swipe outcome and
+ * The swipe-row decisions without any DOM: axis lock, row offset, open / close outcome (a drag only reveals the buttons) and
  * "only one row open". Positions are pixels; `dpr` converts them to dp. UI thread.
  */
 class SessionSwipeModel {
@@ -94,8 +92,8 @@ public:
       dragging_ = true;
     }
     const float ratio = dpr > 0.f ? dpr : 1.f;
-    const float min_dp = config_.end_buttons > 0 ? -row_width_dp_ : 0.f;
-    const float max_dp = config_.start_buttons > 0 ? row_width_dp_ : 0.f;
+    const float min_dp = -OpenWidthDp(SwipeSide::End);
+    const float max_dp = OpenWidthDp(SwipeSide::Start);
     offset_dp_ = std::clamp(base_dp_ + static_cast<float>(dx) / ratio, min_dp, max_dp);
     return {true, offset_dp_};
   }
@@ -120,10 +118,7 @@ public:
     const SwipeSide side = offset_dp_ < 0.f ? SwipeSide::End : offset_dp_ > 0.f ? SwipeSide::Start : SwipeSide::None;
     const float mag = std::fabs(offset_dp_);
     out.side = side;
-    if (side != SwipeSide::None && mag >= row_width_dp_ * config_.full_ratio) {
-      out.kind = SessionSwipeOutcome::Kind::RunFirst;
-      Clear();
-    } else if (side != SwipeSide::None && mag >= OpenWidthDp(side) * 0.5f) {
+    if (side != SwipeSide::None && mag >= OpenWidthDp(side) * 0.5f) {
       out.kind = SessionSwipeOutcome::Kind::Open;
       open_row_ = row_;
       open_side_ = side;

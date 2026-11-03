@@ -153,6 +153,10 @@ void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const Sessio
   // The menu offers one of each pair (pin / unpin, ...) depending on the row's state; Delete is "leave" for a group.
   const char* ids[2] = {nullptr, nullptr};
   switch (action) {
+  case SessionSwipeAction::More:
+    // The long-press menu itself (a bottom action sheet on phones).
+    ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)));
+    return;
   case SessionSwipeAction::Archive:
     ids[0] = "session_archive";
     ids[1] = "session_unarchive";

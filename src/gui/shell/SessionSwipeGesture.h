@@ -21,7 +21,7 @@ namespace pbr {
 /**
  * Phone Chats list: iOS-style swipe actions on a row. One set of listeners on the nav page serves every row
  * under `#sidebar-sessions` (rows are rebuilt by the data model, so nothing is bound per row). Left swipe reveals
- * Archive / Delete, right swipe Pin / Read; the buttons live inside each row (sidebar.rml). The decisions are in
+ * More / Archive / Delete, right swipe Pin / Read; the buttons live inside each row (sidebar.rml). The decisions are in
  * SessionSwipeModel. UI thread; elements are held only as observers.
  */
 class SessionSwipeGesture : public ui::EventListener {

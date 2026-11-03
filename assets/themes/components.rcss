@@ -3631,6 +3631,7 @@ input.checkbox {
 
 .shell-layer-compact .session-swipe-btn {
   width: 74dp;
+  min-height: 44dp;
   display: flex;
   flex-direction: column;
   align-items: center;

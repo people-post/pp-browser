@@ -87,6 +87,10 @@
         </div>
       </div>
       <div class="session-swipe session-swipe--end">
+        <div class="session-swipe-btn session-swipe-btn--more" swipe-action="more">
+          <svg src="../icons/v2/more.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.more}}</p>
+        </div>
         <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
           <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
           <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>

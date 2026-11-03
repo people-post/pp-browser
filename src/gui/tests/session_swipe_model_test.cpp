@@ -41,7 +41,7 @@ TEST(SessionSwipeModelTest, LeftPastThresholdOpensEnd) {
   EXPECT_EQ(out.kind, Kind::Open);
   EXPECT_EQ(out.side, SwipeSide::End);
   EXPECT_EQ(model.OpenRow(), "a");
-  EXPECT_FLOAT_EQ(model.RestOffsetDp(SwipeSide::End), -148.f);
+  EXPECT_FLOAT_EQ(model.RestOffsetDp(SwipeSide::End), -222.f);
 }
 
 TEST(SessionSwipeModelTest, RightPastThresholdOpensStart) {
@@ -52,15 +52,21 @@ TEST(SessionSwipeModelTest, RightPastThresholdOpensStart) {
   EXPECT_FLOAT_EQ(model.RestOffsetDp(SwipeSide::Start), 148.f);
 }
 
-TEST(SessionSwipeModelTest, FullSwipeRunsFirstActionOfThatSide) {
+TEST(SessionSwipeModelTest, NoDragLengthRunsAnAction) {
   SessionSwipeModel model;
-  SessionSwipeOutcome out = Drag(model, "a", -260, 0);
-  EXPECT_EQ(out.kind, Kind::RunFirst);
-  EXPECT_EQ(out.side, SwipeSide::End);
-  EXPECT_TRUE(model.OpenRow().empty());
-  out = Drag(model, "a", 260, 0);
-  EXPECT_EQ(out.kind, Kind::RunFirst);
-  EXPECT_EQ(out.side, SwipeSide::Start);
+  for (const int dx : {-130, -260, -380, -900, 130, 260, 380, 900}) {
+    const SessionSwipeOutcome out = Drag(model, "a", dx, 0);
+    EXPECT_EQ(out.kind, Kind::Open) << "a long drag only reveals the buttons (dx " << dx << ")";
+    EXPECT_EQ(model.OpenRow(), "a");
+    model.CloseOpen();
+  }
+}
+
+TEST(SessionSwipeModelTest, EndSideHoldsMoreArchiveDelete) {
+  SessionSwipeModel model;
+  EXPECT_FLOAT_EQ(model.OpenWidthDp(SwipeSide::End), 3 * 74.f);
+  EXPECT_FLOAT_EQ(model.OpenWidthDp(SwipeSide::Start), 2 * 74.f);
+  EXPECT_FLOAT_EQ(model.RestOffsetDp(SwipeSide::End), -222.f);
 }
 
 TEST(SessionSwipeModelTest, OffsetFollowsTheFingerAndIsClamped) {
@@ -68,7 +74,7 @@ TEST(SessionSwipeModelTest, OffsetFollowsTheFingerAndIsClamped) {
   model.Press("a", 100, 100, kRowWidthDp);
   model.Update(90, 100, 1.f);
   EXPECT_FLOAT_EQ(model.Update(40, 100, 1.f).offset_dp, -60.f);
-  EXPECT_FLOAT_EQ(model.Update(-900, 100, 1.f).offset_dp, -kRowWidthDp);
+  EXPECT_FLOAT_EQ(model.Update(-900, 100, 1.f).offset_dp, -222.f) << "never slides past the buttons";
 }
 
 TEST(SessionSwipeModelTest, OpeningAnotherRowClosesTheFirst) {
