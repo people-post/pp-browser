@@ -907,7 +907,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     // Camera opens asynchronously (media device thread): report the miss. A camera that only waits
     // for the device (busy, or not responding yet) stays on and comes on by itself (L016); any
     // other miss withdraws the video flag the roster already advertised.
-    UserFeedback::Fail(*failure);
+    presenter_.ReportCameraFailure(*failure);
     if (auto* failed_backend = Backend();
         !media.CameraWaitingForDevice() && failed_backend && failed_backend->Available()) {
       failed_backend->SetLocalVideoEnabled(false);

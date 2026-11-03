@@ -547,6 +547,11 @@ bool CameraDeviceLease::PermissionPending() const {
   return state_->endpoint && state_->endpoint->PermissionPending();
 }
 
+bool CameraDeviceLease::PermissionDenied() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint && state_->endpoint->PermissionDenied();
+}
+
 std::optional<VideoFrameRgba> CameraDeviceLease::NextFrame() {
   std::lock_guard lock(state_->io_mu);
   return state_->endpoint ? state_->endpoint->NextFrame() : std::nullopt;

@@ -86,6 +86,7 @@ class IPeerSessionStore;
 class ProfileSecretsEngine;
 class AccountKeyResolver;
 class ContactCardExchange;
+class ContactProfileRefresh;
 class PeerCards;
 
 /**
@@ -342,6 +343,13 @@ public:
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
   void EnsureContactIconCached(const Contact& contact);
+  /**
+   * B142: when the contact's last directory answer is older than ContactProfileRefresh::kStaleMs, looks it up
+   * on a background worker and takes its new nickname and photo. Cheap and silent when fresh. Any thread.
+   */
+  void RefreshContactProfileIfStale(const std::string& contact_id);
+  /** The same for every contact, one lookup at a time, at most one every half second; fresh ones cost nothing. */
+  void RefreshStaleContactProfiles();
   void SetOnPeerIconsChanged(std::function<void()> callback);
   /** Rotates the Brief LLM key at the service `llm_base_url` names (the app's: its preset and deployment). */
   Roe<void> RotateBriefLlmKey(const std::string& llm_base_url);
@@ -500,6 +508,9 @@ private:
   void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
+  /** Blocking (a worker): refreshes one contact; true when a directory lookup was made. */
+  bool RefreshContactProfileNow(const std::string& contact_id);
+  void ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids, size_t index);
 
   void SyncLanMdnsAdvertisement();
   void OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer);
@@ -562,6 +573,7 @@ private:
   Roe<void> KeepLinkedAccountCard(const std::string& card_json);
   /** Contacts passed hand to hand (contact cards). */
   std::unique_ptr<ContactCardExchange> contact_cards_;
+  std::unique_ptr<ContactProfileRefresh> contact_profile_refresh_;
   std::unique_ptr<InboxController> inbox_;
   std::unique_ptr<AttachmentSuppressionStore> attachment_suppressions_;
   std::unique_ptr<AttachmentFetchWorkflow> attachment_downloads_;

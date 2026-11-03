@@ -685,6 +685,73 @@ TEST_F(AgentSessionPayloadTurnTest, ArticlesChipWithoutTheToolSaysSoAndAsksNoMod
   EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
 }
 
+// --- Stop on a turn that does not stream, then a new question: the stopped turn's late result is dropped ---
+
+TEST_F(AgentSessionBriefStreamTest, AStoppedTurnsLateResultNeverLandsInTheNextTurn) {
+  // Each feed call blocks until its turn's release; it answers with that turn's own link.
+  struct Gate {
+    std::atomic<bool> started{false};
+    std::atomic<bool> release{false};
+    std::atomic<bool> returned{false};
+  };
+  auto one = std::make_shared<Gate>();
+  auto two = std::make_shared<Gate>();
+  session_ = std::make_unique<AgentSession>();
+  session_->SetToolRegistrationHook([one, two](ToolRegistry& registry) {
+    registry.Register(MakeTool(ToolDefinition{"blog_articles", "articles", Object{}}, ToolMeta{},
+                               [one, two](const Object& args) -> Roe<std::string> {
+                                 const std::string which = args.getString("brf_domain").value_or("");
+                                 Gate& gate = which == "one" ? *one : *two;
+                                 gate.started = true;
+                                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+                                 while (!gate.release && std::chrono::steady_clock::now() < deadline) {
+                                   std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                                 }
+                                 gate.returned = true;
+                                 return R"({"articles":[{"id":")" + which + R"(","title":"T","content":"Body )" +
+                                        which + R"(","link_to":"https://)" + which +
+                                        R"(.example/a","created_at":1759000000}]})";
+                               }));
+  });
+  session_->Configure(MakeConfig("brief"));
+  session_->WaitForConfigureIdle();
+  ASSERT_TRUE(session_->IsConfigured());
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  const auto wait_for = [](const std::atomic<bool>& flag) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!flag && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return flag.load();
+  };
+
+  ASSERT_EQ(session_->SubmitToThread("t1", "first", std::string(R"({"tool":"blog_articles","brf_domain":"one"})")),
+            SubmitOutcome::Started);
+  ASSERT_TRUE(wait_for(one->started));
+  session_->Cancel(); // Stop: the session is free at once, the first feed call still runs
+  ASSERT_EQ(session_->SubmitToThread("t1", "second", std::string(R"({"tool":"blog_articles","brf_domain":"two"})")),
+            SubmitOutcome::Started);
+  ASSERT_TRUE(wait_for(two->started));
+
+  one->release = true; // the stopped turn's result arrives while the new turn runs
+  ASSERT_TRUE(wait_for(one->returned));
+  std::this_thread::sleep_for(std::chrono::milliseconds(200)); // let the stopped turn's step run to its end
+  EXPECT_TRUE(session_->IsBusy()) << "the stopped turn ended the new one";
+  two->release = true;
+  const auto events = WaitForTurn();
+
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_NE(ready[0].text.find("two.example"), std::string::npos);
+  EXPECT_EQ(ready[0].text.find("one.example"), std::string::npos);
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  for (const ThreadMessage& message : store.messages) {
+    EXPECT_EQ(message.text.find("one.example"), std::string::npos) << "the stopped turn's result was stored";
+  }
+  session_.reset(); // before `store`
+}
+
 // --- The promoted MCP server was unreachable when the session was configured (the phone's network not up yet
 // at launch): a feed turn re-lists its tools for a bounded time instead of failing at once.
 

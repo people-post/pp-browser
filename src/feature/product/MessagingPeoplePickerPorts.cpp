@@ -18,6 +18,7 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
     }
     return std::nullopt;
   };
+  ports.is_local_owner = [&hub](const std::string& group_id) { return hub.Groups().IsLocalOwner(group_id); };
   ports.find_contact_by_identity = [&hub](const std::string& identity_value, const mesh::ContactIdKind kind) {
     return hub.Contacts().FindByIdentity(identity_value, kind);
   };

@@ -79,7 +79,7 @@ ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
 void ChatTranscriptScroller::UpdateJumpToLatestLabel() {
   if (unread_while_scrolled_ > 0) {
     view_.jump_to_latest_label =
-        (std::to_string(unread_while_scrolled_) + " new · Latest").c_str();
+        Tr("chat.new_while_scrolled", {{"count", std::to_string(unread_while_scrolled_)}}).c_str();
   } else {
     view_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
   }

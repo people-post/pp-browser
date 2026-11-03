@@ -11,6 +11,21 @@
 
 namespace pbr {
 
+/** Why the camera did not come on (or went off); the screen words it from `kind`. */
+struct CameraFailure {
+  enum class Kind {
+    /** Held by another holder or not responding yet: it comes on by itself once free. */
+    Busy,
+    /** The camera or the video encoder stopped responding: only an app restart brings it back. */
+    NotResponding,
+    /** The open failed (no camera, the OS or the driver refused). */
+    Failed,
+  };
+  Kind kind = Kind::Failed;
+  /** The engine's / OS's own words, for the log only. */
+  std::string detail;
+};
+
 /**
  * The media engine as the screen sees it: what plays and how it is doing (levels, video frames,
  * health, the path's pressure), and the knobs that only touch this device's own capture and display
@@ -51,7 +66,7 @@ public:
   /** The camera was asked for but is held by someone else or not responding; it opens once free. */
   virtual bool CameraWaitingForDevice() const = 0;
   /** Why the last camera request did not open, once. */
-  virtual std::optional<std::string> TakeCameraFailure() = 0;
+  virtual std::optional<CameraFailure> TakeCameraFailure() = 0;
   /** Phones: switch front / rear while the camera is on (error when it is off). */
   virtual Roe<void> FlipCamera() = 0;
   /** The display turned while the camera is on: later frames rotate to match. */

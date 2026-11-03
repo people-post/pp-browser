@@ -859,5 +859,37 @@ TEST_F(AgentTurnBusyTest, AnotherChatsStreamIsRenderedOnlyWhenShown) {
   EXPECT_EQ(chat_links_.count("streaming-e2"), 1u);
 }
 
+// --- errors -----------------------------------------------------------------------------------
+
+TEST_F(AgentTurnBusyTest, AnErrorWritesIntoHomeOnlyForHomesOwnTurn) {
+  std::vector<std::string> written; // Home entries the error text was written into
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.complete_assistant_message = [&written](const std::string& entry_id, const std::string&) {
+    written.push_back(entry_id);
+  };
+  ports.set_assistant_display_plain = [](const std::string&, const std::string&) {};
+  controller_.BindPorts(std::move(ports));
+  Open("A");
+
+  AgentEvent error;
+  error.type = AgentEventType::Error;
+  error.message = "model unavailable";
+  error.thread_id = "X";
+  error.entry_id = "question-in-x";
+  controller_.HandleAgentEvent(error);
+  EXPECT_TRUE(written.empty()) << "chat X's error must not touch Home";
+
+  error.thread_id.clear();
+  error.entry_id.clear();
+  controller_.HandleAgentEvent(error);
+  EXPECT_TRUE(written.empty()) << "an error outside any turn must not touch Home";
+
+  error.entry_id = "home-question";
+  controller_.HandleAgentEvent(error);
+  ASSERT_EQ(written.size(), 1u);
+  EXPECT_EQ(written[0], "home-question") << "Home's own turn: written into that turn's entry";
+}
+
 } // namespace
 } // namespace pbr

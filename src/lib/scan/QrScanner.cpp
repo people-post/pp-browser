@@ -245,7 +245,9 @@ struct QrScanner::State {
       }
     }
     if (!acquired) {
-      Publish(epoch, Update{{}, {}, acquired.error().message}, true);
+      // Someone else holds the camera (a call), or it is not responding / absent.
+      const bool busy = !devices.Holders(MediaDeviceKind::Camera).empty();
+      Publish(epoch, Update{{}, {}, acquired.error().message, busy ? ErrorKind::CameraBusy : ErrorKind::Other}, true);
       return;
     }
     auto lease = std::move(*acquired);
@@ -262,7 +264,9 @@ struct QrScanner::State {
     while (Current(epoch)) {
       const auto capture_started = std::chrono::steady_clock::now();
       if (auto error = lease->CaptureError(); !error.empty()) {
-        Publish(epoch, Update{{}, {}, std::move(error)}, true);
+        // Only an OS refusal sends the user to Settings; "no camera behind the lease" is not one.
+        const ErrorKind kind = lease->PermissionDenied() ? ErrorKind::PermissionDenied : ErrorKind::Other;
+        Publish(epoch, Update{{}, {}, std::move(error), kind}, true);
         return;
       }
       const auto zoom_state = processor.DecodeDue(capture_started) ? lease->ZoomState() : CameraZoomState{};
@@ -285,7 +289,9 @@ struct QrScanner::State {
         // starts once the user has answered.
         last_frame = std::chrono::steady_clock::now();
       } else if (std::chrono::steady_clock::now() - last_frame > no_frame_timeout) {
-        Publish(epoch, Update{{}, {}, "Camera produced no frames; check camera permission and availability"}, true);
+        Publish(epoch,
+                Update{{}, {}, "Camera produced no frames; check camera permission and availability", ErrorKind::Other},
+                true);
         return;
       }
       std::unique_lock lock(mutex);

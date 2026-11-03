@@ -85,6 +85,9 @@ MessagingContactsPorts MakeMessagingContactsPorts(ConversationsHub& hub) {
   ports.refresh_contact_card = [&hub](const Contact& contact, std::function<void(bool)> done) {
     hub.ContactCards().RefreshIfMissing(contact, std::move(done));
   };
+  ports.refresh_contact_profile = [&hub](const std::string& contact_id) {
+    hub.RefreshContactProfileIfStale(contact_id);
+  };
   return ports;
 }
 

@@ -854,20 +854,15 @@ void AgentTurnController::SendChatAction(const std::string& entry_id, int action
   std::optional<TranscriptChatAction> resolved = working_set_.LookupChatAction(entry_id, action_index);
   if (!resolved) {
     const std::string thread_id = host_.ActiveThreadId();
-    auto messages = host_.Facade()->GetMessagesPage(thread_id, std::nullopt, 10000);
-    if (messages) {
-      for (const ThreadMessage& message : *messages) {
-        if (message.id != entry_id) {
-          continue;
-        }
-        if (action_index >= static_cast<int>(message.chat_actions.size())) {
-          log().warning << "Chat action index out of range: entry=" << entry_id << " index=" << action_index
-                        << " size=" << message.chat_actions.size();
-          return;
-        }
-        resolved = message.chat_actions[static_cast<size_t>(action_index)];
-        break;
+    auto found = host_.Facade()->GetMessage(thread_id, entry_id);
+    if (found && found->has_value()) {
+      const ThreadMessage& message = **found;
+      if (action_index >= static_cast<int>(message.chat_actions.size())) {
+        log().warning << "Chat action index out of range: entry=" << entry_id << " index=" << action_index
+                      << " size=" << message.chat_actions.size();
+        return;
       }
+      resolved = message.chat_actions[static_cast<size_t>(action_index)];
     }
   }
 
@@ -1012,16 +1007,13 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     }
     if (host_.MessagingIsReady()) {
       const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
-      auto messages = host_.Facade()->GetMessagesPage(active_thread, std::nullopt, 10000);
-      if (messages) {
-        for (ThreadMessage& message : *messages) {
-          if (message.id == entry_id) {
-            message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
-                                  R"( selectable="text"><p class="error">)" + StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
-            (void)host_.Facade()->UpdateMessage(message);
-            break;
-          }
-        }
+      auto found = host_.Facade()->GetMessage(active_thread, entry_id);
+      if (found && found->has_value()) {
+        ThreadMessage message = **found;
+        message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
+                              R"( selectable="text"><p class="error">)" +
+                              StructuredTextParser::EscapeText(parsed.error) + "</p></div>";
+        (void)host_.Facade()->UpdateMessage(message);
       }
     }
   } else {
@@ -1045,15 +1037,8 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
     bool message_exists = false;
     if (host_.MessagingIsReady() && !action_entry_id.empty()) {
-      auto messages = host_.Facade()->GetMessagesPage(active_thread, std::nullopt, 10000);
-      if (messages) {
-        for (const ThreadMessage& message : *messages) {
-          if (message.id == action_entry_id) {
-            message_exists = true;
-            break;
-          }
-        }
-      }
+      auto found = host_.Facade()->GetMessage(active_thread, action_entry_id);
+      message_exists = found && found->has_value();
     }
     if (host_.MessagingIsReady() && !message_exists) {
       action_entry_id = util::GenerateUuid();
@@ -1082,22 +1067,18 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     const bool shared = shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull;
     if (host_.MessagingIsReady() && !shared) {
       if (message_exists) {
-        auto messages = host_.Facade()->GetMessagesPage(active_thread, std::nullopt, 10000);
-        if (messages) {
-          for (ThreadMessage& message : *messages) {
-            if (message.id == action_entry_id) {
-              if (markdown) {
-                // The session stored the raw answer; the details link must be in the stored text too,
-                // or the link table cannot be rebuilt from it after a restart.
-                message.text = StructuredTextParser::StorableText(answer_text);
-              }
-              message.content_rml = assistant_open + hydrated + "</div>";
-              message.chat_actions = chat_actions;
-              message.working_set_json = working_set_json;
-              (void)host_.Facade()->UpdateMessage(message);
-              break;
-            }
+        auto found = host_.Facade()->GetMessage(active_thread, action_entry_id);
+        if (found && found->has_value()) {
+          ThreadMessage message = **found;
+          if (markdown) {
+            // The session stored the raw answer; the details link must be in the stored text too,
+            // or the link table cannot be rebuilt from it after a restart.
+            message.text = StructuredTextParser::StorableText(answer_text);
           }
+          message.content_rml = assistant_open + hydrated + "</div>";
+          message.chat_actions = chat_actions;
+          message.working_set_json = working_set_json;
+          (void)host_.Facade()->UpdateMessage(message);
         }
       } else {
         ThreadMessage ai_message;
@@ -1229,13 +1210,12 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     log().error << "Agent session error: " << event.message;
     // A partial answer was already persisted via AssistantReady; the error toast is separate.
     UserFeedback::NeedsSetup(error_message);
-    if (AgentReady() && agent_ports_.has_conversation_entries && agent_ports_.has_conversation_entries() &&
-        agent_ports_.last_conversation_entry_id && agent_ports_.complete_assistant_message &&
+    // Only the Home session's own turn (no thread, its entry named) writes into the Home conversation: an error of
+    // another chat, or one outside any turn, must not replace a Home answer (it would go to brief_AI as history).
+    if (AgentReady() && event.thread_id.empty() && !event.entry_id.empty() && agent_ports_.complete_assistant_message &&
         agent_ports_.set_assistant_display_plain) {
-      if (auto entry_id = agent_ports_.last_conversation_entry_id()) {
-        agent_ports_.complete_assistant_message(*entry_id, error_message);
-        agent_ports_.set_assistant_display_plain(*entry_id, error_message);
-      }
+      agent_ports_.complete_assistant_message(event.entry_id, error_message);
+      agent_ports_.set_assistant_display_plain(event.entry_id, error_message);
       host_.SyncDisplayFromThread();
       DirtyChatTurns();
     }

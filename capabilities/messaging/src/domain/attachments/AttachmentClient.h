@@ -40,7 +40,8 @@ struct ChatAttachmentUploadOptions {
   ByteVector dek;
   /** (bytes sent, bytes in all) of the server upload; false cancels. */
   std::function<bool(uint64_t done, uint64_t total)> progress;
-  /** Called once the ciphertext is staged, before any network: the record to resume from. */
+  /** Called once the ciphertext is staged, before any network: the record to resume from. The plaintext passed in
+   *  may be freed from here: the upload streams from the staged file and does not read it again. */
   std::function<void(const OutgoingAttachmentRecord&)> on_staged;
 };
 

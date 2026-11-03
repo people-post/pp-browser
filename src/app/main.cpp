@@ -3,6 +3,7 @@
 #include "app/CrashReportUpload.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
@@ -159,17 +160,22 @@ int main(int argc, char** argv) {
   }
   pbr::StartupMark("after_session_store");
 
-  pbr::MaybeUploadPendingCrashReport(app.Store().Snapshot().data_dir,
-                                     app.Store().Snapshot().profile_data_dir,
-                                     app.Store().Snapshot().profile_prefs.crash_reports_enabled,
-                                     app.Store().Snapshot().config.relay.base_url);
-
   if (![&] {
         pbr::StartupPhase phase("Application::Initialize");
         return app.Initialize(pbr::kProductName);
       }()) {
     root.error << pbr::kProductName << ": failed to initialize." << pbr::InitFailureHint();
     return 1;
+  }
+  // The upload is a blocking HTTP POST (up to 30 s): off the main thread, so a bad network after a crash
+  // cannot hold the window back. The pending dump is cleared only after the worker's upload succeeds.
+  {
+    const auto& snapshot = app.Store().Snapshot();
+    pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
+                                           enabled = snapshot.profile_prefs.crash_reports_enabled,
+                                           base_url = snapshot.config.relay.base_url]() {
+      pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+    });
   }
   pbr::StartupMark("enter_Application::Run");
   app.Run();

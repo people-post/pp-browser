@@ -61,7 +61,7 @@ constexpr int kVideoFps = 20;
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */
 constexpr auto kMicHandoverWait = std::chrono::milliseconds(1500);
-/** Shown once when the camera is busy or stuck; the video comes on by itself afterwards. */
+/** CameraFailure details (the log's words; the screen words the failure from its kind). */
 constexpr const char* kCameraBusyMessage = "Camera is busy — video turns on when it's free";
 constexpr const char* kCameraStuckMessage = "Camera isn't responding — restart the app to use it";
 /** A hardware codec that stops responding is replaced this many times per camera request / stream. */
@@ -403,7 +403,7 @@ struct MediaEngine::Impl {
   std::atomic<bool> camera_waiting{false};
   /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
   std::mutex camera_failure_mu;
-  std::string camera_failure;
+  std::optional<CameraFailure> camera_failure;
 
   std::thread capture_thread;
   std::thread video_thread;
@@ -579,9 +579,9 @@ struct MediaEngine::Impl {
     local_video_frame.seq = ++local_video_seq;
   }
 
-  void NoteCameraFailure(const std::string& error) {
+  void NoteCameraFailure(const CameraFailure::Kind kind, const std::string& detail) {
     std::lock_guard lock(camera_failure_mu);
-    camera_failure = error;
+    camera_failure = CameraFailure{.kind = kind, .detail = detail};
   }
 
   void ClearAudioTracksLocked() {
@@ -604,20 +604,6 @@ struct MediaEngine::Impl {
       (void)lease->WithVoiceProcessing([&](IVoiceProcessing& vp) { underruns = vp.PlayoutUnderruns(); });
     }
     return underruns;
-  }
-
-  void TearDownAudioLocked(const bool release_session = true) {
-    // Caller must not hold mutex across JoinCaptureThread — capture may call packet_send /
-    // OnInboundPacket which need the same mutex (deadlock + SDL double-free on quit).
-    ReleaseAudioLocked();
-    if (video_codec) {
-      video_codec->ResetEncoder();
-      video_codec->ResetDecoder();
-    }
-    ClearVideoFrames();
-    if (release_session) {
-      ReleaseAudioSession();
-    }
   }
 
   /** The audio half: device leases, the Opus encoder, remote tracks, counters. Not the OS session. */
@@ -1332,7 +1318,7 @@ struct MediaEngine::Impl {
       }
       if (!camera_waiting.exchange(true, std::memory_order_acq_rel)) {
         EngineLog().info << "camera waiting for the device: " << lease.error().message;
-        NoteCameraFailure(kCameraBusyMessage);
+        NoteCameraFailure(CameraFailure::Kind::Busy, kCameraBusyMessage);
       }
       return nullptr;
     }
@@ -1340,7 +1326,7 @@ struct MediaEngine::Impl {
     if (!lease) {
       camera_enabled.store(false, std::memory_order_relaxed);
       camera_prefer_front.store(true, std::memory_order_relaxed);  // a failed facing is not asked for again
-      NoteCameraFailure(lease.error().message);
+      NoteCameraFailure(CameraFailure::Kind::Failed, lease.error().message);
       SDL_Log("MediaEngine: camera: %s", lease.error().message.c_str());
       return nullptr;
     }
@@ -1728,7 +1714,7 @@ struct MediaEngine::Impl {
     EngineLog().warning << "camera given up: " << message;
     camera_enabled.store(false, std::memory_order_relaxed);
     camera_waiting.store(false, std::memory_order_relaxed);
-    NoteCameraFailure(message);
+    NoteCameraFailure(CameraFailure::Kind::NotResponding, message);
   }
 
   /** A camera that waits for its device gives up once that device has been stuck device_give_up_after. */
@@ -2000,7 +1986,7 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
   {
     std::lock_guard lock(impl->mutex);
     if (auto codecs = impl->EnsureOpusCodecs(); !codecs) {
-      impl->TearDownAudioLocked();
+      impl->ReleaseAudioLocked();
       return codecs.error();
     }
     impl->packet_mode = true;
@@ -2047,9 +2033,9 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_s
 
 void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
   const std::shared_ptr<Impl> impl = Session();
-  // Audio is taken under mutex: SoftMigrate StartDuplex TearDownAudioLocked destroys opus/SDL while
-  // the media_relay client reader can already deliver frames (guest attach dogfood crash). Video is
-  // decoded after it (#474): only its decoder is found under it.
+  // Audio is taken under mutex: ReleaseAudioLocked (stop, a failed Start) destroys the remote tracks'
+  // Opus decoders while the media_relay client reader can already deliver frames (guest attach
+  // dogfood crash). Video is decoded after it (#474): only its decoder is found under it.
   std::shared_ptr<Impl::RemoteDecoder> video_decoder;
   {
     std::unique_lock lock(impl->mutex);
@@ -2278,13 +2264,10 @@ void MediaEngine::UpdateCameraDisplayRotation(const int display_rotation_deg) {
   impl->camera_display_rotation.store(display_rotation_deg, std::memory_order_relaxed);
 }
 
-std::optional<std::string> MediaEngine::TakeCameraFailure() {
+std::optional<CameraFailure> MediaEngine::TakeCameraFailure() {
   const std::shared_ptr<Impl> impl = Session();
   std::lock_guard lock(impl->camera_failure_mu);
-  if (impl->camera_failure.empty()) {
-    return std::nullopt;
-  }
-  return std::exchange(impl->camera_failure, std::string());
+  return std::exchange(impl->camera_failure, std::nullopt);
 }
 
 bool MediaEngine::IsCameraEnabled() const {

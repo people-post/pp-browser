@@ -155,4 +155,58 @@ TEST_F(AgentSessionBusyTest, ASecondSendWhileBusyIsRefusedAndKeepsTheFirstTurnsT
   EXPECT_EQ(Requests().size(), 1u);
 }
 
+// A turn resets its state before it releases "busy": a send taken the instant IsBusy() turns false keeps its own
+// chat (the rest of the old turn's end must not wipe it). The hook sends at exactly that instant.
+TEST_F(AgentSessionBusyTest, ASendTakenTheInstantATurnEndsKeepsItsChat) {
+  StartWithStore();
+  Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  std::atomic<bool> sent{false};
+  AgentSession::SetTurnReleasedHookForTests([this, &sent] {
+    if (!sent.exchange(true)) {
+      EXPECT_EQ(session_->SubmitToThread("thread-2", "second"), SubmitOutcome::Started);
+    }
+  });
+  session_->SubmitToThread("thread-1", "first");
+  (void)WaitForTurn();
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while ((!sent || session_->IsBusy()) && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  AgentSession::SetTurnReleasedHookForTests(nullptr);
+  ASSERT_TRUE(sent);
+  ASSERT_FALSE(session_->IsBusy());
+
+  std::vector<std::string> second_turn; // sender of each message stored for thread-2
+  for (const ThreadMessage& message : store_.messages) {
+    EXPECT_FALSE(message.thread_id.empty()) << "a message lost its chat: " << message.text;
+    if (message.thread_id == "thread-2") {
+      second_turn.push_back(message.sender_contact_id);
+    }
+  }
+  EXPECT_EQ(second_turn, (std::vector<std::string>{kLocalSelfContactId, kAiAssistantContactId}));
+}
+
+// An error names the chat of its turn, so the UI writes it there only (never into Home's last answer).
+TEST_F(AgentSessionBusyTest, AnErrorNamesTheChatOfItsTurn) {
+  StartWithStore();
+  Script({Meta(), ErrorEvent("model unavailable", true)}, BriefAiOutcome::Error);
+  session_->SubmitToThread("thread-x", "q");
+  const auto errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].thread_id, "thread-x");
+  ASSERT_FALSE(store_.messages.empty());
+  EXPECT_EQ(errors[0].entry_id, store_.messages.front().id) << "the turn's question";
+}
+
+TEST_F(AgentSessionBusyTest, AHomeErrorNamesNoChatAndItsOwnEntry) {
+  Start();
+  Script({Meta(), ErrorEvent("model unavailable", true)}, BriefAiOutcome::Error);
+  session_->Submit("q");
+  const auto errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_TRUE(errors[0].thread_id.empty());
+  ASSERT_FALSE(session_->conversation().Entries().empty());
+  EXPECT_EQ(errors[0].entry_id, session_->conversation().Entries().back().id);
+}
+
 } // namespace

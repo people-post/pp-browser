@@ -39,6 +39,23 @@ Roe<void> WriteBytes(const std::string& path, const uint8_t* data, const size_t 
   return {};
 }
 
+// Written beside the target and renamed over it: a crash leaves the old record, never a torn one.
+Roe<void> WriteBytesAtomic(const std::string& path, const uint8_t* data, const size_t size) {
+  const std::string tmp = path + ".tmp";
+  if (auto written = WriteBytes(tmp, data, size); !written) {
+    std::error_code ignore;
+    std::filesystem::remove(tmp, ignore);
+    return written;
+  }
+  std::error_code ec;
+  std::filesystem::rename(tmp, path, ec);
+  if (ec) {
+    std::filesystem::remove(tmp, ec);
+    return Error("Could not write the outgoing attachment");
+  }
+  return {};
+}
+
 } // namespace
 
 OutgoingAttachmentStore::OutgoingAttachmentStore(std::string profile_dir, std::string profile_id)
@@ -73,7 +90,7 @@ Roe<void> OutgoingAttachmentStore::Update(const OutgoingAttachmentRecord& record
   if (!sealed) {
     return sealed.error();
   }
-  return WriteBytes(RecordPath(record.id), sealed->data(), sealed->size());
+  return WriteBytesAtomic(RecordPath(record.id), sealed->data(), sealed->size());
 }
 
 Roe<void> OutgoingAttachmentStore::Begin(const OutgoingAttachmentRecord& record,

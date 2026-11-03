@@ -29,6 +29,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/peers/AccountKeyResolver.h"
 #include "feature/conversations/ContactCardExchange.h"
+#include "feature/conversations/ContactProfileRefresh.h"
 #include "lib/messaging/ContactLocator.h"
 #include "lib/delivery/PeerRequestAuth.h"
 #include "lib/people/PeerCards.h"
@@ -1010,6 +1011,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   account_keys_ = std::make_unique<AccountKeyResolver>(signing_key_store_, kem_key_store_, *peer_cards_, directory_);
   account_keys_->LoadKeptCards();
   contact_cards_ = std::make_unique<ContactCardExchange>(*contacts_, *account_keys_);
+  contact_profile_refresh_ = std::make_unique<ContactProfileRefresh>(*contacts_, directory_);
   contact_cards_->SetCardFetcher([this](const std::string& peer_id, const std::string& account_id,
                                         std::function<void(Roe<PeerCardRecord>)> done) {
     // On the hub's thread, with the address book as it is now: a contact just added (a scanned QR code) is
@@ -1336,6 +1338,7 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
     ResumeGroupRosterChecks();
     AnnounceRestoredDevice();
   });
+  RefreshStaleContactProfiles();
   return {};
 }
 
@@ -1508,6 +1511,56 @@ void ConversationsHub::EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hi
 
 void ConversationsHub::EnsureContactIconCached(const Contact& contact) {
   ScheduleContactIconFetch(contact);
+}
+
+bool ConversationsHub::RefreshContactProfileNow(const std::string& contact_id) {
+  if (!contact_profile_refresh_ || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  auto refreshed = contact_profile_refresh_->RefreshIfStale(contact_id, util::NowUnixMs());
+  if (refreshed.updated) {
+    EnsureContactIconCached(*refreshed.updated); // fetches the new photo and tells the screens when it is there
+  }
+  return refreshed.looked_up;
+}
+
+void ConversationsHub::RefreshContactProfileIfStale(const std::string& contact_id) {
+  if (!contact_profile_refresh_ || !HasDirectory() || !AppRuntime::IsRunning() ||
+      !contact_profile_refresh_->NeedsRefresh(contact_id, util::NowUnixMs())) {
+    return;
+  }
+  AppRuntime::PostWorkerBackground([this, contact_id]() { RefreshContactProfileNow(contact_id); });
+}
+
+void ConversationsHub::RefreshStaleContactProfiles() {
+  if (!contacts_ || !contact_profile_refresh_ || !HasDirectory() || !AppRuntime::IsRunning()) {
+    return;
+  }
+  auto listed = contacts_->List();
+  if (!listed || listed->empty()) {
+    return;
+  }
+  auto ids = std::make_shared<std::vector<std::string>>();
+  for (const Contact& contact : *listed) {
+    ids->push_back(contact.id);
+  }
+  AppRuntime::PostWorkerBackground([this, ids]() { ContinueContactProfileSweep(ids, 0); });
+}
+
+void ConversationsHub::ContinueContactProfileSweep(std::shared_ptr<const std::vector<std::string>> contact_ids,
+                                                   size_t index) {
+  constexpr auto kSweepGap = std::chrono::milliseconds(500);
+  bool looked_up = false;
+  while (index < contact_ids->size() && !looked_up) {
+    looked_up = RefreshContactProfileNow((*contact_ids)[index++]); // a fresh contact costs no lookup: next at once
+  }
+  // Quitting stops the sweep: no new lookup is queued behind the teardown.
+  if (index >= contact_ids->size() || !AppRuntime::IsRunning() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  AppRuntime::ScheduleCoordinatorOneShot(kSweepGap, [this, contact_ids, index]() {
+    AppRuntime::PostWorkerBackground([this, contact_ids, index]() { ContinueContactProfileSweep(contact_ids, index); });
+  });
 }
 
 void ConversationsHub::ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit) {
@@ -2075,7 +2128,8 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   job->dek = Attachments().CopyDek();
   job->started_ms = util::NowUnixMs();
   job->bytes = attachment.bytes.size();
-  // The bytes outlive the upload: the sent copy in the content store is made from them afterwards.
+  // The bytes live until the ciphertext is staged on disk (below): the upload streams from that file, and the
+  // sent copy in the content store is then rebuilt from it, so a large file is not held twice while it uploads.
   job->plaintext = std::make_shared<const ByteVector>(std::move(attachment.bytes));
 
   ChatAttachmentUploadOptions upload_opts;
@@ -2088,7 +2142,10 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   if (!job->dek.empty() && !profile_id_.empty()) {
     upload_opts.outgoing = store.get(); // staged: a failed send can be resumed without the original file
     upload_opts.dek = job->dek;
-    upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) { job->record_id = record.id; };
+    upload_opts.on_staged = [job](const OutgoingAttachmentRecord& record) {
+      job->record_id = record.id;
+      job->plaintext.reset();
+    };
   }
 
   auto run = [this, job, finish, name = attachment.filename, mime = attachment.mime,
@@ -2930,6 +2987,7 @@ void ConversationsHub::Shutdown() {
   }
   thread_mentions_.reset();
   contact_cards_.reset();
+  contact_profile_refresh_.reset();
   account_keys_.reset();
   peer_cards_.reset();
   peer_card_rows_.reset();

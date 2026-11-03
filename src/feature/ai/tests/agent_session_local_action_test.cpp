@@ -789,6 +789,31 @@ TEST_F(AgentSessionLocalActionTest, AllowAlwaysClosesTheCardAndStopLeavesAWaitin
   EXPECT_EQ(ClosedOf(WaitForTurn(), next).approval_outcome, ApprovalOutcome::AllowOnce);
 }
 
+// "Always allow" saves the profile prefs, whose listeners touch the UI: the save runs on the UI thread (the one
+// draining AppRuntime's UI mailbox, here the test's), never on the turn's worker.
+TEST_F(AgentSessionLocalActionTest, AllowAlwaysSavesOnTheUiThread) {
+  StartLocal();
+  std::mutex saves_mu;
+  std::vector<std::thread::id> save_threads;
+  std::vector<ToolPermissionsPrefs> saved;
+  session_->SetToolPermissionsSaver([&](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+    std::lock_guard lock(saves_mu);
+    save_threads.push_back(std::this_thread::get_id());
+    saved.push_back(permissions);
+    return {};
+  });
+  session_->SubmitToThread("t1", "关掉通知");
+  const std::string approval = ApprovalId(Ready(WaitForTurn()).text);
+  ASSERT_TRUE(session_->ResumeToolPermission(approval, "allow_always"));
+  (void)WaitForTurn();
+
+  std::lock_guard lock(saves_mu);
+  ASSERT_EQ(save_threads.size(), 1u);
+  EXPECT_EQ(save_threads[0], std::this_thread::get_id());
+  ASSERT_EQ(saved[0].by_tool.count("set_notifications"), 1u);
+  EXPECT_EQ(saved[0].by_tool.at("set_notifications").decision, "allow");
+}
+
 } // namespace
 
 // --- PP Support: asked on the device, opened only after OK ---

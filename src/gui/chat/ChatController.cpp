@@ -353,6 +353,7 @@ ChatController::ChatController()
                          .string()
                    : std::string();
   };
+  voice_ports.keep_file = [this]() { return failed_voice_path_; };
   voice_ports.thread_id = [this]() { return ActiveThreadId(); };
   voice_ports.send = [this](const std::string& thread_id, const std::string& path) {
     if (chat_.attachment_uploading || chat_.attachment_preparing) {

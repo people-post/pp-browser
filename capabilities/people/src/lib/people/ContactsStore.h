@@ -37,6 +37,12 @@ public:
   Roe<Contact> AddFromDirectoryHit(const mesh::DirectoryHit& hit);
   /** Refresh remote snapshot from a directory hit; preserves local annotations. */
   Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
+  /**
+   * Profile refresh from a directory hit of the SAME account: only `remote.nickname` (when the hit's is not
+   * empty), `remote.icon` and `remote.fetched_at` change; ids, keys and endpoints never do. A hit for another
+   * account (or without one) is refused and nothing is written.
+   */
+  Roe<Contact> ApplyProfileRefresh(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
   Roe<Contact> AddEmpty();
   void Flush();
   /**
@@ -53,6 +59,8 @@ private:
   Roe<bool> RemoveUnnotified(const std::string& contact_id);
   Roe<Contact> AddFromDirectoryHitUnnotified(const mesh::DirectoryHit& hit);
   Roe<Contact> ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
+                                             int64_t fetched_at_ms);
+  Roe<Contact> ApplyProfileRefreshUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                              int64_t fetched_at_ms);
   Roe<Contact> AddEmptyUnnotified();
   Roe<void> BlockAccountIfPresentUnnotified(const std::string& account_id);

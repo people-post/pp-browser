@@ -39,14 +39,6 @@ AgentUiPorts MakeAgentUiPorts(AgentSessions& agent) {
   ports.any_busy = [&agent]() { return agent.AnyBusy(); };
   ports.poll_events = [&agent](std::vector<AgentEvent>& out) { agent.PollEvents(out); };
   ports.wait_for_configure_idle = [&agent]() { agent.WaitForConfigureIdle(); };
-  ports.has_conversation_entries = [&agent]() { return !agent.Home().conversation().Entries().empty(); };
-  ports.last_conversation_entry_id = [&agent]() -> std::optional<std::string> {
-    const auto& entries = agent.Home().conversation().Entries();
-    if (entries.empty()) {
-      return std::nullopt;
-    }
-    return entries.back().id;
-  };
   ports.complete_assistant_message = [&agent](const std::string& entry_id, const std::string& message) {
     (void)agent.Home().CompleteAssistantMessage(entry_id, message);
   };

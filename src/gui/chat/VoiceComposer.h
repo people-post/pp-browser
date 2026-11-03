@@ -34,6 +34,8 @@ struct VoiceComposerPorts {
   std::function<AttachmentLimits()> limits;
   /** Where the temporary recording goes (`.../blobs_view/voice-rec`). */
   std::function<std::string()> out_dir;
+  /** A failed recording that waits for Retry (a file inside `out_dir`): a new recording does not wipe it. Optional. */
+  std::function<std::string()> keep_file;
   /** The chat that is open now. Read once, when a recording starts: that chat gets the message, whatever is open later. */
   std::function<std::string()> thread_id;
   /** A finished recording to send to `thread_id` as an attachment. The owner deletes the file when it is done with it. */

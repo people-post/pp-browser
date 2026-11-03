@@ -196,7 +196,16 @@ void ConversationsFacade::SetActiveCallQuery(std::function<bool(const Thread& th
   active_call_query_ = std::move(query);
 }
 
-Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
+Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) {
+  auto opened = hub_.Inbox().OpenThread(thread_id);
+  if (opened && opened->kind == ThreadKind::Direct) {
+    // B142: opening a chat is when a changed photo or name should show; stale ones are looked up in the background.
+    for (const std::string& contact_id : opened->participant_contact_ids) {
+      hub_.RefreshContactProfileIfStale(contact_id);
+    }
+  }
+  return opened;
+}
 
 Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
   auto closed = hub_.Inbox().CloseThread(thread_id);

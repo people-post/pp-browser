@@ -743,6 +743,9 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
     return;
   }
   MaybeRefreshContactCard(contact_id);
+  if (contacts_ports_.refresh_contact_profile) {
+    contacts_ports_.refresh_contact_profile(contact_id); // a changed photo or name shows up; silent when fresh
+  }
 
   OpenContactDetailPane();
   DirtyAll();

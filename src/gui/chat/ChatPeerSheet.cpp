@@ -151,11 +151,10 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
         host_.ShowPrompt(Tr("chat.group.rename_for_me"), Tr("chat.group.rename_for_me_prompt"),
                          current_local.empty() ? shared_default : current_local,
                          [this, thread_id](bool ok, std::string value) {
-                           ConversationsFacade* facade = host_.Facade();
-                           if (!ok || !facade) {
+                           if (!ok) {
                              return;
                            }
-                           if (auto saved = facade->SetThreadLocalTitle(thread_id, value); !saved) {
+                           if (auto saved = presenter_.SetThreadLocalTitle(thread_id, value); !saved) {
                              UserFeedback::Fail(saved.error().message);
                            }
                            host_.NotifySurfaceChanged();
@@ -187,8 +186,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
         [this, group_id, shared_default]() {
           host_.ShowPrompt(Tr("chat.group.rename_for_everyone"), Tr("chat.group.rename_for_everyone_prompt"),
                            shared_default, [this, group_id](bool ok, std::string value) {
-                             ConversationsFacade* facade = host_.Facade();
-                             if (!ok || !facade) {
+                             if (!ok) {
                                return;
                              }
                              if (value.empty()) {
@@ -196,10 +194,8 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
                                host_.NotifySurfaceChanged();
                                return;
                              }
-                             if (auto renamed = facade->RenameGroupShared(group_id, value); !renamed) {
+                             if (auto renamed = presenter_.RenameGroupShared(group_id, value); !renamed) {
                                UserFeedback::Fail(renamed.error().message);
-                             } else {
-                               facade->NotifyThreadChanged();
                              }
                              host_.NotifySurfaceChanged();
                            });
@@ -215,14 +211,11 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
             host_.ShowConfirm(Tr("chat.group.remove_member_title"),
                               Tr("chat.group.remove_member_confirm", {{"name", name}}),
                               [this, group_id, identity](bool ok) {
-                                ConversationsFacade* facade = host_.Facade();
-                                if (!ok || !facade) {
+                                if (!ok) {
                                   return;
                                 }
-                                if (auto removed = facade->RemoveMemberByIdentity(group_id, identity); !removed) {
+                                if (auto removed = presenter_.RemoveGroupMember(group_id, identity); !removed) {
                                   UserFeedback::Fail(removed.error().message);
-                                } else {
-                                  facade->NotifyThreadChanged();
                                 }
                                 host_.NotifySurfaceChanged();
                               });

@@ -59,6 +59,22 @@ namespace {
 
 constexpr int kMaxIterations = 8;
 
+/**
+ * The turn a step running on this thread belongs to, set by PostTurnTask while the step runs: `owner` is the
+ * session's state, `generation` its turn_generation when the step was posted. No owner outside a step.
+ */
+struct TurnStep {
+  const void* owner = nullptr;
+  uint64_t generation = 0;
+};
+thread_local TurnStep tl_turn_step;
+
+/** AgentSession::SetTurnReleasedHookForTests. */
+std::function<void()>& TurnReleasedHook() {
+  static std::function<void()> hook;
+  return hook;
+}
+
 /** The buttons the on-device flow renders may run these tools; edit_remark is the UI's (MessageRouter). */
 bool IsDirectActionTool(const std::string& tool) {
   return tool == "open_conversation" || tool == "start_conversation" || tool == "search_people";
@@ -221,6 +237,15 @@ ToolMeta AgentSession::MetaForTool(const std::shared_ptr<Impl>& state, const std
   return {};
 }
 
+bool AgentSession::StaleStep(const std::shared_ptr<Impl>& state, const char* where) {
+  if (tl_turn_step.owner != state.get() ||
+      tl_turn_step.generation == state->turn_generation.load(std::memory_order_acquire)) {
+    return false;
+  }
+  state->Log().info << "Step of a stopped turn dropped (" << where << "): a newer turn runs";
+  return true;
+}
+
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
   AppRuntime::PostUI([shared = state->shared, event = std::move(event)]() mutable {
     std::lock_guard lock(shared->event_mutex);
@@ -275,8 +300,16 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable,
                              const std::string& error_kind) {
-  PushEvent(state, AgentEvent{
-                       .type = AgentEventType::Error, .message = message, .retryable = retryable, .error_kind = error_kind});
+  if (StaleStep(state, "error")) {
+    return; // the chat and entry below are the newer turn's
+  }
+  // The turn's chat and entry (empty outside a turn): the UI writes the error into that chat only.
+  PushEvent(state, AgentEvent{.type = AgentEventType::Error,
+                              .message = message,
+                              .entry_id = state->pending_entry_id,
+                              .thread_id = state->pending_thread_id,
+                              .retryable = retryable,
+                              .error_kind = error_kind});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {
@@ -285,6 +318,9 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "end")) {
+    return; // the state, and "busy", belong to the newer turn
+  }
   const std::string ended_thread = state->pending_thread_id; // cleared below; the UI matches its "ended" to the turn
   state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
@@ -304,7 +340,6 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
       state->handoff_turn = false;
     }
   }
-  state->busy = false;
   state->iterations = 0;
   state->turn_scratch.clear();
   state->people_list_blocks.reset();
@@ -316,6 +351,11 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->pending_thread_id.clear();
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
+  // Released last: a send taken the instant it is free sets up its own turn, which nothing above may wipe.
+  state->busy = false;
+  if (TurnReleasedHook()) {
+    TurnReleasedHook()();
+  }
   PushLoading(state, false, ended_thread);
 }
 
@@ -489,11 +529,6 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
         ToolPermissionPolicy::SetToolDecision(state->tool_permissions, tool.name, "allow");
       }
     }
-    if (state->tool_permissions_saver) {
-      if (auto saved = state->tool_permissions_saver(state->tool_permissions); !saved) {
-        state->Log().warning << "Failed to persist tool permissions: " << saved.error().message;
-      }
-    }
   }
 
   std::unordered_set<std::string> session_grants;
@@ -506,12 +541,26 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
                            : decision_label);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
-    PushToolActivity(state, tool_name, status);
+    if (!StaleStep(state, "activity")) { // a stopped turn's tools must not report into the newer turn's chat
+      PushToolActivity(state, tool_name, status);
+    }
   };
 
   TurnExecutionOptions options;
   options.start_index = park.next_tool_index;
   options.permissions = state->tool_permissions;
+  if (decision == "allow_always" && state->tool_permissions_saver) {
+    // The saver writes the profile prefs and runs their listeners (which set every session's permissions again):
+    // UI-thread work, never a turn thread's. Posted after this turn took its copy of the permissions above.
+    AppRuntime::PostUI([weak = std::weak_ptr<Impl>(state), saver = state->tool_permissions_saver,
+                        permissions = state->tool_permissions] {
+      if (auto saved = saver(permissions); !saved) {
+        if (const std::shared_ptr<Impl> alive = weak.lock()) {
+          alive->Log().warning << "Failed to persist tool permissions: " << saved.error().message;
+        }
+      }
+    });
+  }
   options.cancel = &state->cancelled;
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
@@ -520,6 +569,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   options.session_grants = std::move(session_grants);
 
   TurnExecutionResult execution = TurnExecutor::Execute(park.plan, state->tools, on_activity, options);
+  if (StaleStep(state, "tools")) {
+    return; // before the reset below: the parked approval may be the newer turn's by now
+  }
   {
     std::lock_guard lock(state->park_mutex);
     state->parked_approval.reset();
@@ -630,6 +682,9 @@ void AgentSession::RecordParkedCardEntry(const std::shared_ptr<Impl>& state, con
 
 void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                          const std::string& finish_reason, const bool from_model) {
+  if (StaleStep(state, "answer")) {
+    return; // never written into the newer turn's entry or thread
+  }
   if (state->turn_mode == AgentTurnMode::Conversation) {
     state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, assistant_raw);
     if (state->local_turn) {
@@ -707,6 +762,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   state->turn_scratch.push_back(std::move(assistant_message));
 
   PostTurnTask(state, [state, tool_calls]() {
+    if (AgentSession::StaleStep(state, "refinement")) {
+      return;
+    }
     if (state->cancelled) {
       AgentSession::FinishTurn(state);
       return;
@@ -732,6 +790,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
       }
 
       auto result = state->tools.Execute(call.name, call.arguments, &state->cancelled);
+      if (AgentSession::StaleStep(state, "refinement tools")) {
+        return; // stopped and replaced while the tool ran: the scratch and trace are the newer turn's
+      }
       AgentSession::PushToolActivity(state, call.name, result ? "done" : "error");
       state->turn_trace.tools_executed.push_back(call.name);
 
@@ -761,6 +822,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
 
 void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
                                            const ChatCompletionResponse& response) {
+  if (StaleStep(state, "synthesis")) {
+    return; // the model answered after the turn was stopped and replaced
+  }
   if (state->cancelled) {
     FinishTurn(state);
     return;
@@ -800,6 +864,9 @@ void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
 }
 
 void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "synthesis")) {
+    return;
+  }
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
     return;
@@ -1006,6 +1073,9 @@ void AgentSession::RunBriefPayloadTurn(const std::shared_ptr<Impl>& state) {
     }
     return;
   }
+  if (StaleStep(state, "plan")) {
+    return;
+  }
   if (state->pending_user_payload) {
     if (const auto doc = TryParseObject(*state->pending_user_payload);
         doc && doc->getString("type").value_or("") == "local_action") {
@@ -1053,6 +1123,9 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
     }
     return;
   }
+  if (StaleStep(state, "plan")) {
+    return; // the planner answered after the turn was stopped and replaced
+  }
   if (!plan) {
     PushError(state, plan.error());
     FinishTurn(state);
@@ -1075,7 +1148,9 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   PopulateTurnTraceFromPlan(state);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
-    AgentSession::PushToolActivity(state, tool_name, status);
+    if (!AgentSession::StaleStep(state, "activity")) { // a stopped turn's tools must not report into the newer turn
+      AgentSession::PushToolActivity(state, tool_name, status);
+    }
   };
 
   TurnExecutionOptions options;
@@ -1101,7 +1176,13 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
       }
     }
   }
-  TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity, options);
+  // The tools run on this turn's own copy of the plan: a Stop frees the session at once, and the next turn
+  // replaces state->turn_plan while these tools may still be running.
+  const TurnPlan running_plan = state->turn_plan;
+  TurnExecutionResult execution = TurnExecutor::Execute(running_plan, state->tools, on_activity, options);
+  if (StaleStep(state, "tools")) {
+    return; // the tools returned after the turn was stopped and replaced
+  }
   if (!execution.ok) {
     if (state->turn_plan.local) {
       // A tool failure is part of the answer, worded by the template; the detail only goes to the log.
@@ -1672,6 +1753,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
 }
 
 void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "start")) {
+    return; // posted for a turn that was stopped and replaced before it began
+  }
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
     return;
@@ -2191,6 +2275,10 @@ bool AgentSession::CanClose() const {
   return impl_->local_ask_expires_ms.load() <= util::NowUnixMs();
 }
 
+void AgentSession::SetTurnReleasedHookForTests(std::function<void()> hook) {
+  TurnReleasedHook() = std::move(hook);
+}
+
 bool AgentSession::IsConfigured() const {
   return impl_->configured;
 }
@@ -2214,6 +2302,15 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
 }
 
 void AgentSession::PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task) {
+  // The step belongs to the turn current when it is posted; StaleStep tells it apart from a newer one.
+  task = [owner = static_cast<const void*>(state.get()),
+          generation = state->turn_generation.load(std::memory_order_acquire), inner = std::move(task)] {
+    struct Scope {
+      TurnStep outer;
+      ~Scope() { tl_turn_step = outer; }
+    } scope{std::exchange(tl_turn_step, TurnStep{owner, generation})};
+    inner();
+  };
   if (!state->shared->own_threads) {
     AppRuntime::PostWorkerNormal(std::move(task));
     return;

@@ -64,6 +64,7 @@ struct AgentEvent {
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
   /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
   bool from_model = true;
+  /** Error: `thread_id` / `entry_id` name the turn it ended (Home's turn: no thread); both empty outside a turn. */
   bool retryable = false;             // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;
@@ -122,6 +123,7 @@ public:
   void Configure(const AppConfig& config);
   void SetToolRegistrationHook(ToolRegistrationHook hook);
   void SetToolPermissions(ToolPermissionsPrefs permissions);
+  /** "Always allow" on a permission card saves through `saver` on the UI thread (posted there). */
   void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
@@ -191,6 +193,9 @@ public:
 
   bool IsConfigured() const;
   const Conversation& conversation() const;
+
+  /** Tests: runs on the turn's thread the instant a turn releases "busy" (nullptr: none). */
+  static void SetTurnReleasedHookForTests(std::function<void()> hook);
 
   bool CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
@@ -286,6 +291,12 @@ private:
   static ApprovalResumeError ValidateParkedResume(const std::optional<ParkedApproval>& park,
                                                   const std::string& approval_id, bool busy);
 
+  /**
+   * The step running on this thread belongs to a turn that was stopped (Cancel) and replaced by a newer Submit:
+   * it must not touch the session's turn state, which is the newer turn's now. Logged with `where`. Outside a
+   * turn step (UI thread, configure): false.
+   */
+  static bool StaleStep(const std::shared_ptr<Impl>& state, const char* where);
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   /** `thread_id`: the turn's thread (an ended turn passes it explicitly: pending_thread_id is cleared by then). */
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading, const std::string& thread_id = {});

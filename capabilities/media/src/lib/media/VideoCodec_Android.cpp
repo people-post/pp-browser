@@ -1,7 +1,6 @@
 #include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/VideoCodecOs.h"
-#include "lib/media/VideoCodecUnavailable.h"
 #include "lib/media/VideoYuv.h"
 
 #if defined(__ANDROID__)
@@ -434,11 +433,25 @@ int PickEncoderColorFormat() {
   return 21; // COLOR_FormatYUV420SemiPlanar
 }
 
+/** Whether this phone has an H.264 encoder: probed once per process (a decoder never needs one). */
+bool H264EncoderPresent() {
+  static const bool present = [] {
+    AMediaCodec* probe = AMediaCodec_createEncoderByType("video/avc");
+    if (!probe) {
+      return false;
+    }
+    AMediaCodec_delete(probe);
+    return true;
+  }();
+  return present;
+}
+
 class AndroidVideoCodec final : public IVideoCodec {
 public:
   ~AndroidVideoCodec() override { ResetEncoder(); ResetDecoder(); }
 
   std::string BackendName() const override { return "mediacodec"; }
+  bool EncoderSupported() const override { return H264EncoderPresent(); }
   bool HasEncoder() const override { return encoder_ != nullptr; }
   bool HasDecoder() const override { return decoder_configured_; }
 
@@ -1077,12 +1090,9 @@ void AndroidVideoCodec::ResetDecoder() {
 
 } // namespace
 
+// One class for both roles: a phone without an H.264 encoder still decodes (EncoderSupported says
+// false, so no camera button; ConfigureEncoder fails there).
 std::unique_ptr<IVideoCodec> CreateOsVideoCodec() {
-  AMediaCodec* probe = AMediaCodec_createEncoderByType("video/avc");
-  if (!probe) {
-    return MakeUnavailableVideoCodec("MediaCodec H264 encode unavailable on this device");
-  }
-  AMediaCodec_delete(probe);
   return std::make_unique<AndroidVideoCodec>();
 }
 
