@@ -1,30 +1,46 @@
-      <div class="settings-section stack">
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.integrations.promoted_mcp}}</span>
-          <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.promoted_mcp_placeholder}}"/>
-        </label>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.integrations.search}}</span>
-          <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
-        </label>
-        <p class="text muted">{{i18n:settings.integrations.mcp_help}}</p>
+      <div class="settings-section settings-section--grouped stack">
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.integrations.promoted_mcp}}</span>
+              <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.promoted_mcp_placeholder}}"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.integrations.search}}</span>
+              <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
+            </span>
+          </label>
+        </div>
+        <p class="text muted group-foot">{{i18n:settings.integrations.mcp_help}}</p>
         <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
-          <label class="settings-field">
-            <span class="settings-label">{{i18n:settings.integrations.server_id}}</span>
-            <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
-          </label>
-          <label class="settings-field">
-            <span class="settings-label">{{i18n:settings.integrations.server_url}}</span>
-            <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
-          </label>
-          <label class="settings-field">
-            <span class="settings-label">{{i18n:settings.integrations.mcp_command}}</span>
-            <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
-          </label>
-          <label class="settings-field">
-            <span class="settings-label">{{i18n:settings.integrations.mcp_args}}</span>
-            <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.mcp_args_placeholder}}"/>
-          </label>
+          <div class="group-card">
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.server_id}}</span>
+                <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.server_url}}</span>
+                <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.mcp_command}}</span>
+                <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
+              </span>
+            </label>
+            <label class="settings-field group-row group-row--field">
+              <span class="group-row-body group-row-body--field">
+                <span class="settings-label group-row-text">{{i18n:settings.integrations.mcp_args}}</span>
+                <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.mcp_args_placeholder}}"/>
+              </span>
+            </label>
+          </div>
           <div class="settings-actions row">
             <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">{{i18n:common.remove}}</button>
           </div>
@@ -37,4 +53,3 @@
                   data-event-click="reset_section('integrations')">{{i18n:common.reset_defaults}}</button>
         </div>
       </div>
-

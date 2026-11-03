@@ -5620,3 +5620,412 @@ input.checkbox {
   width: 20dp;
   height: 20dp;
 }
+
+/* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
+   contact-detail cards above. The plain group-* classes are inert on desktop; everything visual is scoped to
+   .shell-layer-compact. */
+.group-row-body {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 12dp;
+}
+
+.group-row-body--field {
+  display: block;
+}
+
+.settings-phone-only,
+.settings-back-v2 {
+  display: none;
+}
+
+.shell-layer-compact .settings-phone-only {
+  display: block;
+}
+
+.shell-layer-compact .settings-desktop-only,
+.shell-layer-compact .settings-back-old {
+  display: none;
+}
+
+.shell-layer-compact .settings-back-v2 {
+  display: block;
+}
+
+.shell-layer-compact .settings-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .settings-list-view {
+  padding-bottom: 32dp;
+}
+
+.shell-layer-compact .settings-list-view .large-title {
+  padding: 0 16dp;
+}
+
+/* Pushed detail page: 44dp bar, plain accent back arrow, centred title. */
+.shell-layer-compact .settings-detail-header {
+  position: relative;
+  display: block;
+  height: 44dp;
+  margin: 0;
+}
+
+.shell-layer-compact .settings-back-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  border-radius: 0;
+  z-index: 1;
+}
+
+.shell-layer-compact .settings-header-title {
+  position: absolute;
+  top: 0;
+  left: 96dp;
+  right: 96dp;
+  height: 44dp;
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .settings-detail-body {
+  gap: 0;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .settings-section {
+  margin-top: 0;
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .settings-section--grouped {
+  padding: 0;
+}
+
+.shell-layer-compact .group-card {
+  margin: 20dp 16dp 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .group-card--top {
+  margin-top: 8dp;
+}
+
+.shell-layer-compact .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .group-card--pad {
+  padding: 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .group-card-title {
+  margin: 0 0 4dp 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .group-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .group-head {
+  margin: 20dp 32dp 6dp 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .group-foot {
+  margin: 6dp 32dp 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .group-title {
+  margin: 20dp 16dp 0 16dp;
+  font-size: 22dp;
+  line-height: 28dp;
+  text-align: center;
+}
+
+.shell-layer-compact .group-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+  gap: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: LatoLatin;
+}
+
+/* Each row sits 1dp up so its top separator overlaps the row above; the card clips the first one. */
+.shell-layer-compact .group-card .group-row {
+  margin-top: -1dp;
+}
+
+.shell-layer-compact .group-row-body {
+  gap: 8dp;
+  min-height: 44dp;
+  padding: 0 12dp 0 0;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .group-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 29dp;
+  height: 29dp;
+  margin-right: 12dp;
+  border-radius: 6dp;
+}
+
+.shell-layer-compact .group-icon svg {
+  width: 18dp;
+  height: 18dp;
+}
+
+.shell-layer-compact .group-row-label {
+  flex: 1;
+  min-width: 0;
+  padding: 10dp 0 10dp 0;
+}
+
+.shell-layer-compact .group-row-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-row-label .group-row-text {
+  display: block;
+}
+
+.shell-layer-compact .group-row-sub {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-chevron,
+.shell-layer-compact .group-row .settings-row-chevron {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+  margin-left: 0;
+}
+
+.shell-layer-compact .group-row .settings-choice-value-text {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .group-row--field .group-row-text {
+  flex: none;
+  width: 120dp;
+}
+
+.shell-layer-compact .group-card .field {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  text-align: right;
+}
+
+.shell-layer-compact .group-row .settings-switch {
+  width: 51dp;
+  height: 31dp;
+  min-width: 51dp;
+}
+
+.shell-layer-compact .group-row .settings-switch-knob {
+  width: 27dp;
+  height: 27dp;
+}
+
+.shell-layer-compact .group-row .settings-switch--on .settings-switch-knob {
+  transform: translateX(20dp);
+}
+
+/* Me profile card. */
+.shell-layer-compact .me-card-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-right: 8dp;
+}
+
+.shell-layer-compact .me-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  margin: 0;
+  padding: 12dp;
+  border: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .me-card-avatar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60dp;
+  height: 60dp;
+  border-radius: 30dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .me-card-avatar .avatar-letter {
+  font-size: 24dp;
+}
+
+.shell-layer-compact .me-card-avatar-image {
+  width: 60dp;
+  height: 60dp;
+}
+
+.shell-layer-compact .me-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .me-card-name {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .me-card-meta {
+  margin: 1dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Buttons on settings pages (DESIGN-pp-ui 8.10): 50dp pill, full width. Inside a card they shrink to 36dp pills. */
+.shell-layer-compact .settings-section--grouped .btn {
+  display: block;
+  width: auto;
+  height: 50dp;
+  min-height: 50dp;
+  margin: 16dp 16dp 0 16dp;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-section--grouped .btn-icon {
+  display: flex;
+}
+
+.shell-layer-compact .settings-section--grouped .settings-action-bar {
+  width: auto;
+}
+
+.shell-layer-compact .settings-section--grouped .settings-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-layer-compact .settings-section--grouped .me-profile-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-layer-compact .settings-section--grouped .group-actions {
+  display: flex;
+  flex-direction: row;
+  margin: 16dp 16dp 0 16dp;
+  gap: 8dp;
+}
+
+.shell-layer-compact .settings-section--grouped .group-card .btn,
+.shell-layer-compact .settings-section--grouped .group-actions .btn {
+  flex: 1;
+  height: 36dp;
+  min-height: 36dp;
+  margin: 8dp 8dp 0 0;
+  font-size: 15dp;
+  line-height: 36dp;
+}
+
+.shell-layer-compact .settings-section--grouped .group-actions .btn {
+  margin: 0;
+}
+
+.shell-layer-compact .me-profile-avatar-row {
+  margin-bottom: 0;
+}
+
+.shell-layer-compact .settings-device-actions {
+  gap: 0;
+}
+
+.shell-layer-compact .settings-device-title {
+  gap: 8dp;
+}

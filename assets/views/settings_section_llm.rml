@@ -1,45 +1,60 @@
-      <div class="settings-section stack">
-        <p class="text" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
+      <div class="settings-section settings-section--grouped stack">
+        <p class="text group-foot group-foot--lead" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
         <div class="stack" data-if="advanced">
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.llm.preset}}</span>
-          <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
-            <option value="brief">{{i18n:settings.llm.preset_brief}}</option>
-            <option value="cloud">{{i18n:settings.llm.preset_cloud}}</option>
-            <option value="ollama">{{i18n:settings.llm.preset_ollama}}</option>
-            <option value="custom">{{i18n:settings.llm.preset_custom}}</option>
-          </select>
-        </label>
-        <p class="text muted">{{i18n:settings.llm.preset_help}}</p>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.llm.base_url}}</span>
-          <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
-        </label>
-        <label class="settings-field">
-          <span class="settings-label">{{i18n:settings.llm.model}}</span>
-          <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
-        </label>
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.preset}}</span>
+              <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
+                <option value="brief">{{i18n:settings.llm.preset_brief}}</option>
+                <option value="cloud">{{i18n:settings.llm.preset_cloud}}</option>
+                <option value="ollama">{{i18n:settings.llm.preset_ollama}}</option>
+                <option value="custom">{{i18n:settings.llm.preset_custom}}</option>
+              </select>
+            </span>
+          </label>
+        </div>
+        <p class="text muted group-foot">{{i18n:settings.llm.preset_help}}</p>
+        <div class="group-card">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.base_url}}</span>
+              <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.model}}</span>
+              <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
+            </span>
+          </label>
+        </div>
         <div class="settings-field stack" data-if="llm_preset == 'brief'">
-          <span class="settings-label">{{i18n:settings.llm.brief_key}}</span>
-          <p class="text muted" data-if="brief_llm_key_masked != ''">
+          <span class="settings-label group-head">{{i18n:settings.llm.brief_key}}</span>
+          <p class="text muted group-foot" data-if="brief_llm_key_masked != ''">
             <span>{{brief_llm_key_masked}}</span> {{i18n:settings.llm.brief_key_rotate_hint}}
           </p>
-          <p class="text muted" data-if="brief_llm_key_masked == ''">
+          <p class="text muted group-foot" data-if="brief_llm_key_masked == ''">
             {{i18n:settings.llm.brief_key_auto}}
           </p>
         </div>
-        <label class="settings-field" data-if="llm_preset != 'brief'">
-          <span class="settings-label">{{i18n:settings.llm.api_key}}</span>
-          <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
-        </label>
-        <label class="settings-field" data-if="llm_preset != 'brief'">
-          <span class="settings-label">{{i18n:settings.llm.api_key_env}}</span>
-          <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
-        </label>
+        <div class="group-card" data-if="llm_preset != 'brief'">
+          <label class="settings-field group-row group-row--field" >
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key}}</span>
+              <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
+            </span>
+          </label>
+          <label class="settings-field group-row group-row--field" >
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.llm.api_key_env}}</span>
+              <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
+            </span>
+          </label>
+        </div>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
         </div>
         </div>
       </div>
-

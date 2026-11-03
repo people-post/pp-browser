@@ -1,27 +1,35 @@
-      <div class="settings-section stack">
-        <button class="settings-toggle-row settings-choice-row row" type="button" data-if="show_backend_switch"
-                data-event-click="on_choose_backend()">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.backend}}</span>
-          <span class="settings-choice-value row">
-            <span class="settings-choice-value-text">{{backend_label}}</span>
-            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-          </span>
-        </button>
-        <p class="text muted settings-help" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
-        <p class="text settings-help" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
-
-        <div class="settings-toggle-row row" data-if="advanced && show_node_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.help_network}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="node_enabled == 'on'"
-                  data-event-click="toggle_node_enabled()">
-            <div class="settings-switch-knob"></div>
+      <div class="settings-section settings-section--grouped stack">
+        <div class="group-card" data-if="show_backend_switch">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_backend()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.backend}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{backend_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="advanced && show_node_toggle">{{i18n:settings.network.help_network_hint}}</p>
+        <p class="text muted settings-help group-foot" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
+        <p class="text settings-help group-foot" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
 
-        <div class="settings-subcard stack" data-if="show_connection_card">
-          <p class="settings-label">{{i18n:settings.network.connection.title}}</p>
+        <div class="group-card" data-if="advanced && show_node_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.help_network}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="node_enabled == 'on'"
+                      data-event-click="toggle_node_enabled()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="advanced && show_node_toggle">{{i18n:settings.network.help_network_hint}}</p>
+
+        <div class="settings-subcard stack group-card group-card--pad" data-if="show_connection_card">
+          <p class="settings-label group-card-title">{{i18n:settings.network.connection.title}}</p>
           <p class="text"><span class="settings-chip">{{reachability_status_label}}</span></p>
           <p class="text muted">{{reachability_summary}}</p>
           <div class="settings-actions row">
@@ -57,94 +65,136 @@
           </div>
         </div>
 
-        <div class="settings-toggle-row row" data-if="advanced && show_circuit_relay_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.circuit_relay}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="circuit_relay_enabled == 'on'"
-                  data-event-click="toggle_circuit_relay()">
-            <div class="settings-switch-knob"></div>
+        <div class="group-card" data-if="advanced && show_circuit_relay_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.circuit_relay}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="circuit_relay_enabled == 'on'"
+                      data-event-click="toggle_circuit_relay()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="advanced && show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
+
+        <div class="group-card" data-if="advanced && show_media_relay_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.media_relay}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="media_relay_enabled == 'on'"
+                      data-event-click="toggle_media_relay()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="advanced && show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
+
+        <div class="group-card" data-if="advanced && show_dht_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.dht}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="dht_enabled == 'on'"
+                      data-event-click="toggle_dht()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="advanced && show_dht_toggle">{{i18n:settings.network.dht_hint}}</p>
+
+        <div class="group-card" data-if="advanced && show_prefer_contacts_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.prefer_contacts}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"
+                      data-event-click="toggle_prefer_contacts()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="advanced && show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
+
+        <div class="group-card">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_direct_connections()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.direct_connections}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{direct_connections_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
           </button>
         </div>
-        <p class="text muted settings-help" data-if="advanced && show_circuit_relay_toggle">{{i18n:settings.network.circuit_relay_hint}}</p>
+        <p class="text muted settings-help group-foot">{{i18n:settings.network.direct_connections.help}}</p>
 
-        <div class="settings-toggle-row row" data-if="advanced && show_media_relay_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.media_relay}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="media_relay_enabled == 'on'"
-                  data-event-click="toggle_media_relay()">
-            <div class="settings-switch-knob"></div>
-          </button>
+        <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.trusted_relays}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="trusted_relays_only == 'on'"
+                      data-event-click="toggle_trusted_relays()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
         </div>
-        <p class="text muted settings-help" data-if="advanced && show_media_relay_toggle">{{i18n:settings.network.media_relay_hint}}</p>
+        <p class="text muted settings-help group-foot">{{i18n:settings.network.trusted_relays.help}}</p>
 
-        <div class="settings-toggle-row row" data-if="advanced && show_dht_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.dht}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="dht_enabled == 'on'"
-                  data-event-click="toggle_dht()">
-            <div class="settings-switch-knob"></div>
-          </button>
+        <div class="group-card" data-if="show_node_toggle">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.network.reachable_without_relay}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="reachable_without_relay == 'on'"
+                      data-event-click="toggle_reachable_without_relay()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
         </div>
-        <p class="text muted settings-help" data-if="advanced && show_dht_toggle">{{i18n:settings.network.dht_hint}}</p>
-
-        <div class="settings-toggle-row row" data-if="advanced && show_prefer_contacts_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.prefer_contacts}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="prefer_contacts_for_routing == 'on'"
-                  data-event-click="toggle_prefer_contacts()">
-            <div class="settings-switch-knob"></div>
-          </button>
-        </div>
-        <p class="text muted settings-help" data-if="advanced && show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
-
-        <button class="settings-toggle-row settings-choice-row row" type="button"
-                data-event-click="on_choose_direct_connections()">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.direct_connections}}</span>
-          <span class="settings-choice-value row">
-            <span class="settings-choice-value-text">{{direct_connections_label}}</span>
-            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
-          </span>
-        </button>
-        <p class="text muted settings-help">{{i18n:settings.network.direct_connections.help}}</p>
-
-        <div class="settings-toggle-row row">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.trusted_relays}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="trusted_relays_only == 'on'"
-                  data-event-click="toggle_trusted_relays()">
-            <div class="settings-switch-knob"></div>
-          </button>
-        </div>
-        <p class="text muted settings-help">{{i18n:settings.network.trusted_relays.help}}</p>
-
-        <div class="settings-toggle-row row" data-if="show_node_toggle">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.network.reachable_without_relay}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="reachable_without_relay == 'on'"
-                  data-event-click="toggle_reachable_without_relay()">
-            <div class="settings-switch-knob"></div>
-          </button>
-        </div>
-        <p class="text muted settings-help" data-if="show_node_toggle">{{i18n:settings.network.reachable_without_relay.help}}</p>
+        <p class="text muted settings-help group-foot" data-if="show_node_toggle">{{i18n:settings.network.reachable_without_relay.help}}</p>
 
         <div class="stack" data-if="advanced">
-        <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
+        <div class="group-card group-card--pad" data-if="show_node_toggle && node_enabled == 'on'">
+        <label class="settings-field">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
           <p class="text muted">{{amp_listen_multiaddr}}</p>
         </label>
-        <p class="text muted settings-help" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
-        <label class="settings-field" data-if="backend_is_custom">
-          <span class="settings-label">{{i18n:settings.network.relay}}</span>
-          <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
-        </label>
-        <label class="settings-field" data-if="backend_is_custom">
-          <span class="settings-label">{{i18n:settings.network.directory}}</span>
-          <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
-        </label>
-        <label class="settings-field" data-if="backend_is_custom">
-          <span class="settings-label">{{i18n:settings.network.registration}}</span>
-          <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
-        </label>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
+        <div class="group-card" data-if="backend_is_custom">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.relay}}</span>
+              <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+        </div>
+        <div class="group-card" data-if="backend_is_custom">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.directory}}</span>
+              <input class="field" type="text" data-value="directory_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+        </div>
+        <div class="group-card" data-if="backend_is_custom">
+          <label class="settings-field group-row group-row--field">
+            <span class="group-row-body group-row-body--field">
+              <span class="settings-label group-row-text">{{i18n:settings.network.registration}}</span>
+              <input class="field" type="text" data-value="registration_base_url" data-event-change="on_network_field_changed()"/>
+            </span>
+          </label>
+        </div>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('network')">{{i18n:common.reset_defaults}}</button>

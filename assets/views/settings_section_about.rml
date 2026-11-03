@@ -1,15 +1,27 @@
-      <div class="settings-section stack">
-        <p class="heading-2">{{app_name}}</p>
-        <p class="text muted">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
-        <div class="settings-toggle-row row">
-          <span class="settings-label settings-toggle-label">{{i18n:settings.about.advanced.label}}</span>
-          <button class="settings-switch" type="button"
-                  data-class-settings-switch--on="show_advanced_settings == 'on'"
-                  data-event-click="toggle_show_advanced_settings()">
-            <div class="settings-switch-knob"></div>
-          </button>
+      <div class="settings-section settings-section--grouped stack">
+        <p class="heading-2 group-title">{{app_name}}</p>
+        <div class="group-card settings-phone-only">
+          <div class="group-row">
+            <span class="group-row-body">
+              <span class="group-row-text">{{i18n:settings.about.version}}</span>
+              <span class="group-row-value">{{app_version}}</span>
+            </span>
+          </div>
         </div>
-        <p class="text muted settings-help">{{i18n:settings.about.advanced.help}}</p>
+        <p class="text muted group-foot settings-desktop-only">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
+        <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.about.advanced.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="show_advanced_settings == 'on'"
+                      data-event-click="toggle_show_advanced_settings()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.about.advanced.help}}</p>
         <button class="btn btn-secondary settings-action-bar" type="button" data-if="dev_tools_available"
                 data-event-click="open_ui_perf_test()">{{i18n:dev.perf.row}}</button>
       </div>

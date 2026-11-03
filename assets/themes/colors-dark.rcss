@@ -1863,4 +1863,106 @@ select selectbox option:hover {
 .shell-chat-overlay .prompt-voice-toggle-btn .prompt-icon-v2 {
   image-color: #0a84ff;
 }
+
+/* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
+.shell-layer-compact .settings-panel,
+.shell-layer-compact .settings-detail-view {
+  background-color: #000000;
+}
+
+.shell-layer-compact .settings-back-btn,
+.shell-layer-compact .settings-back-btn:hover,
+.shell-layer-compact .settings-back-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-back-v2 {
+  image-color: #0a84ff;
+}
+
+.shell-layer-compact .settings-header-title,
+.shell-layer-compact .me-card-name,
+.shell-layer-compact .group-card-title,
+.shell-layer-compact .group-title {
+  color: #ffffff;
+}
+
+.shell-layer-compact .group-card {
+  background-color: #1c1c1e;
+}
+
+.shell-layer-compact .group-row,
+.shell-layer-compact .me-card-main {
+  background-color: transparent;
+  color: #ffffff;
+}
+
+.shell-layer-compact .group-row:active {
+  background-color: #7878803d;
+}
+
+/* Separator above each row but the first (see the 1dp overlap in components.rcss). */
+.shell-layer-compact .group-row-body {
+  border-top: 1dp #54545899;
+}
+
+.shell-layer-compact .group-row-text,
+.shell-layer-compact .group-card .field,
+.shell-layer-compact .group-note {
+  color: #ffffff;
+}
+
+.shell-layer-compact .group-card .field {
+  background-color: transparent;
+}
+
+.shell-layer-compact .settings-label.group-row-text {
+  color: #ffffff;
+}
+
+.shell-layer-compact .group-row-sub,
+.shell-layer-compact .group-row-value,
+.shell-layer-compact .group-row .settings-choice-value-text,
+.shell-layer-compact .group-head,
+.shell-layer-compact .group-foot,
+.shell-layer-compact .me-card-meta,
+.shell-layer-compact .group-card .muted {
+  color: #ebebf599;
+}
+
+.shell-layer-compact .group-chevron {
+  image-color: #ebebf54c;
+}
+
+.shell-layer-compact .group-icon svg {
+  image-color: #ffffff;
+}
+
+.shell-layer-compact .group-icon--accent { background-color: #007aff; }
+.shell-layer-compact .group-icon--success { background-color: #34c759; }
+.shell-layer-compact .group-icon--orange { background-color: #ff9500; }
+.shell-layer-compact .group-icon--purple { background-color: #af52de; }
+.shell-layer-compact .group-icon--teal { background-color: #30b0c7; }
+.shell-layer-compact .group-icon--indigo { background-color: #5856d6; }
+.shell-layer-compact .group-icon--gray { background-color: #8e8e93; }
+
+.shell-layer-compact .me-card-avatar .avatar-letter {
+  color: #ffffff;
+}
+
+/* Buttons: primary = accent pill, everything else = accent-tint pill (DESIGN 8.10). */
+.shell-layer-compact .settings-section--grouped .btn,
+.shell-layer-compact .settings-section--grouped .btn-secondary {
+  background-color: #0a84ff2e;
+  color: #0a84ff;
+}
+
+.shell-layer-compact .settings-section--grouped .btn-primary {
+  background-color: #0a84ff;
+  color: #ffffff;
+}
+
+.shell-layer-compact .settings-section--grouped .btn:active {
+  opacity: 0.6;
+}
 }
