@@ -1,316 +1,316 @@
 /* Template for colors-light.rcss and colors-dark.rcss (see scripts/ui/gen_theme_colors.py).
-   Each tNNN placeholder in double braces is replaced by that token's value for the theme
+   Each token placeholder in double braces is replaced by that token's value for the theme
    being generated. A line holding only an only-light or only-dark marker comment opens a
    section kept for that theme alone; a line holding only the end marker closes it. */
 @media (theme: {{theme}}) {
 body {
-  color: {{t001}};
-  background-color: {{t002}};
+  color: {{label}};
+  background-color: {{bg}};
 }
 
 /* Monochrome icons are white sources; tint with image-color (does not inherit). */
 svg {
-  image-color: {{t003}};
+  image-color: {{label}};
 }
 
 selection {
-  background-color: {{t004}};
+  background-color: {{accent-tint}};
 }
 
 .bubble-user selection {
-  background-color: {{t005}};
+  background-color: {{quote-bg-out}};
 }
 
 .bubble-assistant selection {
-  background-color: {{t004}};
+  background-color: {{accent-tint}};
 }
 
 .prompt-composer-input selection {
-  background-color: {{t004}};
+  background-color: {{accent-tint}};
 }
 
 .shell-dialog-prompt {
-  background-color: {{t006}};
-  border-color: {{t007}};
+  background-color: {{bg-card-2}};
+  border-color: {{separator}};
 }
 
 .shell-dialog-prompt:focus {
-  border-color: {{t008}};
+  border-color: {{accent}};
 }
 
 .prompt-composer-input scrollbarvertical sliderbar {
-  background-color: {{t009}};
+  background-color: {{x-scrollbar}};
 }
 
 .chat-form-field selection {
-  background-color: {{t004}};
+  background-color: {{accent-tint}};
 }
 
 .text {
-  color: {{t010}};
+  color: {{label}};
 }
 
 .heading-1 {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .heading-2 {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .heading-3 {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .btn-primary, .prompt-send-btn, .prompt-stop-btn, .sidebar-new-chat, .contacts-find-btn, .chat-suggestion-primary {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
 .btn-primary:hover, .btn-primary:focus, .prompt-send-btn:hover, .prompt-stop-btn:hover, .sidebar-new-chat:hover, .contacts-find-btn:hover, .chat-suggestion-primary:hover {
-  background-color: {{t013}};
+  background-color: {{accent}};
 }
 
 .btn-primary svg, .prompt-send-btn svg, .prompt-stop-btn svg, .sidebar-new-chat svg, .contacts-find-btn svg, .contacts-action-secure svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .prompt-voice-toggle-btn svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .prompt-voice-toggle-btn:hover svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .prompt-voice-bar {
-  background-color: {{t016}};
-  color: {{t017}};
+  background-color: {{fill-2}};
+  color: {{label}};
 }
 
 .prompt-voice-bar:hover {
-  background-color: {{t018}};
+  background-color: {{fill-2}};
 }
 
 .prompt-voice-bar--active, .prompt-voice-bar--active:hover {
-  background-color: {{t019}};
-  color: {{t012}};
+  background-color: {{danger}};
+  color: {{label-on-accent}};
 }
 
 .prompt-emoji-btn svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .prompt-emoji-btn:hover svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .prompt-attach-btn svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .prompt-attach-btn:hover svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .prompt-capture-btn svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .prompt-capture-btn:hover svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .prompt-attachment-chip-remove svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .prompt-attachment-chip-remove:hover svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .btn-secondary, .chat-suggestion {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .btn-secondary:hover, .btn-secondary:focus, .chat-suggestion:hover {
-  background-color: {{t021}};
+  background-color: {{accent-tint}};
 }
 
 .btn-danger {
-  background-color: {{t022}};
-  color: {{t012}};
+  background-color: {{danger}};
+  color: {{label-on-accent}};
 }
 
 .btn-danger:hover, .btn-danger:focus {
-  background-color: {{t023}};
+  background-color: {{danger}};
 }
 
 .btn-danger-soft {
-  background-color: {{t024}};
-  color: {{t025}};
-  border: 1dp {{t026}};
+  background-color: {{fill-2}};
+  color: {{danger}};
+  border: 1dp {{separator}};
 }
 
 .btn-danger-soft:hover, .btn-danger-soft:focus {
-  background-color: {{t027}};
-  color: {{t028}};
-  border: 1dp {{t029}};
+  background-color: {{fill}};
+  color: {{danger}};
+  border: 1dp {{danger}};
 }
 
 .btn-danger svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .btn-danger-soft svg {
-  image-color: {{t025}};
+  image-color: {{danger}};
 }
 
 .btn-danger-soft:hover svg, .btn-danger-soft:focus svg {
-  image-color: {{t028}};
+  image-color: {{danger}};
 }
 
 .btn-ghost {
   background-color: transparent;
-  color: {{t030}};
+  color: {{label}};
 }
 
 .btn-ghost:hover, .btn-ghost:focus {
-  background-color: {{t016}};
-  color: {{t001}};
+  background-color: {{fill-2}};
+  color: {{label}};
 }
 
 .field {
-  background-color: {{t031}};
-  color: {{t001}};
-  border: 1dp {{t021}};
+  background-color: {{bg-card-2}};
+  color: {{label}};
+  border: 1dp {{separator}};
 }
 
 select selectbox {
-  background-color: {{t031}};
-  border: 1dp {{t021}};
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
 }
 
 select selectbox option:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .card {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .error {
-  color: {{t033}};
+  color: {{danger}};
 }
 
 /* "This message was deleted": a shade lighter than .muted (two classes, so it wins over .muted). */
 .bubble-deleted .bubble-deleted-text {
-  color: {{t034}};
+  color: {{label-3}};
 }
 
 .muted {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .bubble-user {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
 }
 
 /* Call rows: ours like our bubbles, theirs like theirs. Icons are white sources tinted with image-color. */
 .message-row-user .chat-call-row {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{bubble-out}};
+  color: {{label-on-accent}};
 }
 
 .message-row-user .chat-call-row svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .message-row-user .chat-call-row.muted {
-  background-color: {{t035}};
+  background-color: {{x-bubble-out-muted}};
 }
 
 .message-row-peer .chat-call-row {
-  background-color: {{t016}};
+  background-color: {{bubble-in}};
 }
 
 .message-row-peer .chat-call-row svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .bubble-text {
-  color: {{t012}};
+  color: {{label-on-accent}};
 }
 
 .bubble-assistant {
-  background-color: {{t016}};
-  border: 1dp {{t018}};
+  background-color: {{bubble-in}};
+  border: 1dp {{separator}};
 }
 
 .bubble-assistant h1, .bubble-assistant h2, .bubble-assistant h3 {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .bubble-assistant p, .bubble-assistant li {
-  color: {{t010}};
+  color: {{label}};
 }
 
 .prompt-composer-pill {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
-  box-shadow: 0 2dp 8dp {{t036}};
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+  box-shadow: 0 2dp 8dp {{shadow}};
 }
 
 .chat-link {
-  color: {{t037}};
+  color: {{link}};
 }
 
 .chat-mention {
-  color: {{t038}};
-  background-color: {{t039}};
+  color: {{mention}};
+  background-color: {{accent-tint}};
 }
 
 /* In our own (blue) bubble the text stays white; only the chip shows. */
 .bubble-user .chat-mention {
-  color: {{t012}};
-  background-color: {{t040}};
+  color: {{label-on-accent}};
+  background-color: {{quote-bg-out}};
 }
 
 /* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
 .message-row-mentions-me {
-  background-color: {{t041}};
-  border-left: 3dp {{t042}};
+  background-color: {{mention-row}};
+  border-left: 3dp {{warn}};
 }
 
 /* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
 .search-mark {
-  background-color: {{t043}};
+  background-color: {{mention-row}};
 }
 
 .search-mark-current {
-  background-color: {{t044}};
+  background-color: {{warn}};
 }
 
 /* @only light */
 /* In our own (blue) bubble the text is white: dark on the mark, so it stays readable. */
 .bubble-user .search-mark {
-  color: {{t045}};
+  color: {{label}};
 }
 /* @end */
 
 .chat-search-cancel {
-  color: {{t001}};
+  color: {{label}};
 }
 
 .chat-search-count {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .chat-search-step svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 /* On the tinted row the text sits on the tint: no bubble of its own. */
@@ -320,346 +320,346 @@ select selectbox option:hover {
 }
 
 .chat-inline-link {
-  color: {{t037}};
+  color: {{link}};
 }
 
 .inline-code {
-  background-color: {{t046}};
+  background-color: {{fill-2}};
 }
 
 .code-block {
-  background-color: {{t047}};
-  color: {{t001}};
+  background-color: {{bg-card-2}};
+  color: {{label}};
 }
 
 .chat-jump-latest {
-  background-color: {{t017}};
-  color: {{t048}};
+  background-color: {{bg-card}};
+  color: {{accent}};
 }
 
 .chat-jump-latest:hover {
-  background-color: {{t049}};
+  background-color: {{bg-card-2}};
 }
 
 .chat-form {
-  border: 1dp {{t021}};
-  background-color: {{t031}};
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
 }
 
 .chat-form-label {
-  color: {{t010}};
+  color: {{label}};
 }
 
 .chat-form-field {
-  background-color: {{t006}};
-  color: {{t001}};
-  border: 1dp {{t021}};
+  background-color: {{bg-card-2}};
+  color: {{label}};
+  border: 1dp {{separator}};
 }
 
 .chat-form-submit {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
 .chat-form-submit:hover {
-  background-color: {{t050}};
+  background-color: {{accent}};
 }
 
 .chat-card {
-  border: 1dp {{t021}};
-  background-color: {{t031}};
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
 }
 
 .chat-card-highlight {
-  border-color: {{t008}};
-  background-color: {{t051}};
+  border-color: {{accent}};
+  background-color: {{accent-tint}};
 }
 
 .chat-table th, .chat-table td {
-  border: 1dp {{t021}};
+  border: 1dp {{separator}};
 }
 
 .chat-key-value-label {
-  color: {{t052}};
+  color: {{label-2}};
 }
 
 .chat-callout {
-  background-color: {{t053}};
+  background-color: {{accent-tint}};
 }
 
 .chat-callout-warning {
-  background-color: {{t054}};
+  background-color: {{mention-row}};
 }
 
 .chat-quote {
-  border-left: 3dp {{t021}};
+  border-left: 3dp {{quote-bar}};
 }
 
 .chat-long-list-scroll {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .chat-long-list-item {
-  border-bottom: 1dp {{t032}};
+  border-bottom: 1dp {{separator}};
 }
 
 .chat-calendar {
-  border: 1dp {{t021}};
-  background-color: {{t031}};
+  border: 1dp {{separator}};
+  background-color: {{bg-card}};
 }
 
 .calendar-nav {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
 .calendar-nav:hover {
-  background-color: {{t050}};
+  background-color: {{accent}};
 }
 
 .calendar-weekdays {
-  color: {{t052}};
+  color: {{label-2}};
 }
 
 .calendar-day {
-  background-color: {{t008}};
-  color: {{t012}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
 .calendar-day:hover {
-  background-color: {{t050}};
+  background-color: {{accent}};
 }
 
 .calendar-day-muted {
-  color: {{t055}};
+  color: {{label-3}};
 }
 
 .shell-body--framed {
-  border-color: {{t021}};
+  border-color: {{separator}};
 }
 
 .shell-titlebar {
-  background-color: {{t002}};
-  border-bottom-color: {{t032}};
+  background-color: {{bg-chrome}};
+  border-bottom-color: {{separator}};
 }
 
 .shell-titlebar-title {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .shell-titlebar-btn {
-  background-color: {{t056}};
+  background-color: transparent;
 }
 
 .shell-titlebar-btn:hover {
-  background-color: {{t032}};
+  background-color: {{fill-2}};
 }
 
 .shell-titlebar-btn svg {
-  image-color: {{t015}};
+  image-color: {{label}};
 }
 
 .shell-titlebar-btn--close:hover {
-  background-color: {{t022}};
+  background-color: {{danger}};
 }
 
 .shell-titlebar-btn--close:hover svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-titlebar-btn--traffic, .shell-titlebar-btn--traffic:hover {
-  background-color: {{t056}};
+  background-color: transparent;
 }
 
 .shell-titlebar-btn--traffic-close .shell-titlebar-traffic-dot {
-  background-color: {{t057}};
+  background-color: {{danger}};
 }
 
 .shell-titlebar-btn--traffic-close:hover .shell-titlebar-traffic-dot {
-  background-color: {{t058}};
+  background-color: {{danger}};
 }
 
 .shell-titlebar-btn--traffic-minimize .shell-titlebar-traffic-dot {
-  background-color: {{t059}};
+  background-color: {{warn}};
 }
 
 .shell-titlebar-btn--traffic-minimize:hover .shell-titlebar-traffic-dot {
-  background-color: {{t060}};
+  background-color: {{warn}};
 }
 
 .shell-titlebar-btn--traffic-zoom .shell-titlebar-traffic-dot {
-  background-color: {{t061}};
+  background-color: {{success}};
 }
 
 .shell-titlebar-btn--traffic-zoom:hover .shell-titlebar-traffic-dot {
-  background-color: {{t062}};
+  background-color: {{success}};
 }
 
 .shell-titlebar-btn--traffic svg {
-  image-color: {{t063}};
+  image-color: {{x-traffic-glyph}};
 }
 
 /* White on the green zoom dot (the close and minimize dots keep the dark macOS glyphs). */
 .shell-titlebar-btn--traffic-zoom svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-banner {
-  background-color: {{t064}};
-  border-bottom: 1dp {{t065}};
-  color: {{t066}};
+  background-color: {{mention-row}};
+  border-bottom: 1dp {{separator}};
+  color: {{label}};
 }
 
 .shell-banner-text {
-  color: {{t066}};
+  color: {{label}};
 }
 
 .shell-banner-dismiss {
-  background-color: {{t067}};
-  color: {{t066}};
+  background-color: {{fill-2}};
+  color: {{label}};
 }
 
 .shell-toast {
-  background-color: {{t068}};
-  color: {{t012}};
-  box-shadow: 0 2dp 8dp {{t069}};
+  background-color: {{x-toast-bg}};
+  color: {{label-on-accent}};
+  box-shadow: 0 2dp 8dp {{shadow}};
 }
 
 .shell-toast-text {
-  color: {{t012}};
+  color: {{label-on-accent}};
 }
 
 .shell-activity-strip {
-  background-color: {{t008}};
+  background-color: {{accent}};
 }
 
 .shell-statusbar {
-  background-color: {{t070}};
-  border-top-color: {{t032}};
+  background-color: {{bg-chrome}};
+  border-top-color: {{separator}};
 }
 
 .shell-statusbar-cluster:hover {
-  background-color: {{t071}};
+  background-color: {{fill-2}};
 }
 
 .shell-statusbar-divider {
-  background-color: {{t072}};
+  background-color: {{separator}};
 }
 
 .shell-statusbar-brief--ok svg {
-  image-color: {{t073}};
+  image-color: {{success}};
 }
 
 .shell-statusbar-brief--failed svg {
-  image-color: {{t074}};
+  image-color: {{danger}};
 }
 
 .shell-statusbar-brief--unknown svg {
-  image-color: {{t075}};
+  image-color: {{gray}};
 }
 
 .shell-statusbar-direct--ok svg {
-  image-color: {{t073}};
+  image-color: {{success}};
 }
 
 .shell-statusbar-direct--off svg {
-  image-color: {{t076}};
+  image-color: {{warn}};
 }
 
 .shell-statusbar-direct--error svg {
-  image-color: {{t074}};
+  image-color: {{danger}};
 }
 
 .shell-statusbar-direct--checking svg {
-  image-color: {{t075}};
+  image-color: {{gray}};
 }
 
 .shell-statusbar-inbound--ok svg {
-  image-color: {{t073}};
+  image-color: {{success}};
 }
 
 .shell-statusbar-inbound--off svg {
-  image-color: {{t076}};
+  image-color: {{warn}};
 }
 
 .shell-call-quality-bar {
-  background-color: {{t077}};
+  background-color: {{fill}};
 }
 
 .shell-call-quality-bar--on {
-  background-color: {{t014}};
+  background-color: {{gray}};
 }
 
 .shell-call-quality--ok .shell-call-quality-bar--on {
-  background-color: {{t014}};
+  background-color: {{gray}};
 }
 
 .shell-call-quality--warn .shell-call-quality-bar--on {
-  background-color: {{t078}};
+  background-color: {{warn}};
 }
 
 .shell-call-quality--error .shell-call-quality-bar {
-  background-color: {{t026}};
+  background-color: {{fill}};
 }
 
 .shell-call-quality--error .shell-call-quality-bar--on {
-  background-color: {{t033}};
+  background-color: {{danger}};
 }
 
 .shell-call-quality--warn .shell-call-quality-label, .shell-call-quality-hint {
-  color: {{t079}};
+  color: {{warn}};
 }
 
 .shell-call-quality--error .shell-call-quality-label {
-  color: {{t033}};
+  color: {{danger}};
 }
 
 .shell-call-debug-subtitle {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-statusbar-help svg {
-  image-color: {{t080}};
+  image-color: {{secure}};
 }
 
 .shell-statusbar-label--warn {
-  color: {{t081}};
+  color: {{warn}};
 }
 
 .shell-statusbar-label--error {
-  color: {{t074}};
+  color: {{danger}};
 }
 
 .shell-statusbar-popover {
-  background-color: {{t031}};
-  border-color: {{t032}};
-  box-shadow: 0 8dp 24dp {{t082}};
+  background-color: {{bg-card}};
+  border-color: {{separator}};
+  box-shadow: 0 8dp 24dp {{shadow}};
 }
 
 .shell-statusbar-popover-scrim {
-  background-color: {{t083}};
+  background-color: {{x-hit-scrim}};
 }
 
 .shell-pane {
-  background-color: {{t002}};
+  background-color: {{bg}};
 }
 
 .shell-pane-secondary {
-  border-right: 1dp {{t032}};
+  border-right: 1dp {{separator}};
 }
 
 .shell-splitter:hover, .shell-splitter--active {
-  background-color: {{t072}};
+  background-color: {{separator}};
 }
 
 .shell-splitter--active {
-  background-color: {{t084}};
+  background-color: {{label-3}};
 }
 
 .shell-nav-rail {
-  background-color: {{t070}};
-  border-right: 1dp {{t032}};
+  background-color: {{bg-chrome}};
+  border-right: 1dp {{separator}};
 }
 
 .shell-nav-rail--compact {
@@ -669,63 +669,63 @@ select selectbox option:hover {
 }
 
 .shell-nav-rail--compact .shell-nav-pill {
-  background-color: {{t085}};
-  border-top: 1dp {{t086}};
-  box-shadow: 0 2dp 12dp {{t087}};
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
+  box-shadow: 0 2dp 12dp {{shadow}};
 }
 
 .shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
-  background-color: {{t088}};
+  background-color: {{bg-chrome-blur}};
 }
 
 .shell-nav-tab {
   background-color: transparent;
-  color: {{t014}};
+  color: {{gray}};
 }
 
 .shell-nav-tab svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .shell-nav-tab:hover {
-  background-color: {{t089}};
+  background-color: {{fill-2}};
 }
 
 .shell-nav-tab--active {
-  background-color: {{t090}};
-  color: {{t091}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .shell-nav-tab--active svg {
-  image-color: {{t091}};
+  image-color: {{accent}};
 }
 
 .shell-nav-rail--compact .shell-nav-tab:hover {
-  background-color: {{t092}};
+  background-color: {{fill-2}};
 }
 
 .shell-nav-rail--compact .shell-nav-tab--active {
-  background-color: {{t090}};
-  color: {{t091}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .shell-chat-overlay {
-  background-color: {{t002}};
+  background-color: {{chat-bg}};
 }
 
 .shell-chat-overlay-chrome {
-  background-color: {{t085}};
-  border-bottom: 1dp {{t093}};
-  border-top: 1dp {{t094}};
-  box-shadow: 0 2dp 12dp {{t087}};
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
+  box-shadow: 0 2dp 12dp {{shadow}};
 }
 
 .shell-chat-overlay-chrome.surface-chrome--frost {
-  background-color: {{t088}};
+  background-color: {{bg-chrome-blur}};
 }
 
 .shell-pane-auxiliary {
-  border-left: 1dp {{t032}};
+  border-left: 1dp {{separator}};
 }
 
 .shell-bottom-chrome {
@@ -733,734 +733,734 @@ select selectbox option:hover {
 }
 
 .shell-drawer-scrim, .shell-sheet-scrim, .shell-account-sheet-scrim {
-  background-color: {{t095}};
+  background-color: {{scrim}};
 }
 
 .shell-drawer {
-  background-color: {{t002}};
-  box-shadow: 2dp 0 12dp {{t069}};
+  background-color: {{bg-card}};
+  box-shadow: 2dp 0 12dp {{shadow}};
 }
 
 .shell-sheet {
-  background-color: {{t002}};
-  box-shadow: -2dp 0 12dp {{t069}};
+  background-color: {{bg-card}};
+  box-shadow: -2dp 0 12dp {{shadow}};
 }
 
 .shell-sheet-compact {
-  background-color: {{t031}};
-  border-left: 1dp {{t032}};
-  box-shadow: -2dp 0 8dp {{t082}};
+  background-color: {{bg-card}};
+  border-left: 1dp {{separator}};
+  box-shadow: -2dp 0 8dp {{shadow}};
 }
 
 .shell-sheet-compact-chrome {
-  background-color: {{t085}};
-  border-bottom: 1dp {{t093}};
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
 }
 
 .shell-sheet-compact-chrome.surface-chrome--frost {
-  background-color: {{t088}};
-  border-bottom: 1dp {{t093}};
-  border-top: 1dp {{t094}};
+  background-color: {{bg-chrome-blur}};
+  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
 }
 
 .shell-account-sheet {
-  background-color: {{t031}};
+  background-color: {{bg-card}};
 }
 
 .shell-account-sheet-header {
-  background-color: {{t085}};
-  border-bottom: 1dp {{t093}};
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
 }
 
 .shell-account-sheet-header.surface-chrome--frost {
-  background-color: {{t088}};
-  border-top: 1dp {{t094}};
+  background-color: {{bg-chrome-blur}};
+  border-top: 1dp {{separator}};
 }
 
 .shell-profile-btn {
-  background-color: {{t032}};
+  background-color: {{fill}};
 }
 
 .shell-account-sheet-grabber {
-  background-color: {{t021}};
+  background-color: {{label-3}};
 }
 
 .shell-toolbar {
-  background-color: {{t031}};
-  border-top: 1dp {{t032}};
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
 }
 
 .shell-toolbar-title {
-  color: {{t015}};
+  color: {{label}};
 }
 
 .shell-transient-chrome {
-  background-color: {{t085}};
-  border-bottom: 1dp {{t093}};
-  border-top: 1dp {{t094}};
-  box-shadow: 0 2dp 12dp {{t087}};
+  background-color: {{bg-chrome}};
+  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
+  box-shadow: 0 2dp 12dp {{shadow}};
 }
 
 .shell-transient-chrome.surface-chrome--frost {
-  background-color: {{t088}};
+  background-color: {{bg-chrome-blur}};
 }
 
 .shell-composer-mount.surface-chrome {
-  background-color: {{t085}};
-  border-top: 1dp {{t032}};
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
 }
 
 .shell-composer-mount.surface-chrome .prompt-composer-pill {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
   box-shadow: none;
 }
 
 /* Floating Chrome utilities (compact shell; theme-only). */
 .surface-chrome {
-  background-color: {{t085}};
-  border-top: 1dp {{t094}};
+  background-color: {{bg-chrome}};
+  border-top: 1dp {{separator}};
 }
 
 .surface-chrome--frost {
-  background-color: {{t088}};
+  background-color: {{bg-chrome-blur}};
 }
 
 .surface-chrome--solid {
-  background-color: {{t085}};
+  background-color: {{bg-chrome}};
 }
 
 .shell-back-btn {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-layer-transient {
-  background-color: {{t002}};
+  background-color: {{bg}};
 }
 
 .shell-scrim {
-  background-color: {{t096}};
+  background-color: {{scrim}};
 }
 
 .shell-startup-cover {
-  background-color: {{t002}};
+  background-color: {{bg}};
 }
 
 .shell-startup-cover-name {
-  color: {{t097}};
+  color: {{label}};
 }
 
 .shell-frame {
-  background-color: {{t031}};
+  background-color: {{bg-card}};
 }
 
 .shell-close-btn {
-  background-color: {{t020}};
-  color: {{t098}};
+  background-color: {{fill}};
+  color: {{label-2}};
 }
 
 .shell-close-btn:hover, .shell-close-btn:focus {
-  background-color: {{t021}};
+  background-color: {{fill-2}};
 }
 
 .shell-close-btn svg {
-  image-color: {{t098}};
+  image-color: {{label-2}};
 }
 
 .shell-dialog {
-  background-color: {{t031}};
+  background-color: {{bg-card}};
 }
 
 .shell-dialog-message {
-  color: {{t015}};
+  color: {{label}};
 }
 
 .shell-call-meter-label {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-call-meter-hint {
-  color: {{t015}};
+  color: {{label-2}};
 }
 
 .shell-call-meter-seg {
-  background-color: {{t032}};
+  background-color: {{fill}};
 }
 
 .shell-call-meter-seg--on {
-  background-color: {{t008}};
+  background-color: {{accent}};
 }
 
 .shell-call-bar {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .shell-call-bar-title {
-  color: {{t097}};
+  color: {{label}};
 }
 
 .shell-call-bar-subtitle {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-call-bar-hint {
-  color: {{t079}};
+  color: {{warn}};
 }
 
 .shell-call-mute {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-mute svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-mute--on {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-mute--on svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-camera {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-camera svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-camera--on {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-camera--on svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-flip {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-flip svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-speaker {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-speaker svg {
-  image-color: {{t075}};
+  image-color: {{gray}};
 }
 
 .shell-call-speaker--on {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-speaker--on svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-leave {
-  background-color: {{t027}};
-  color: {{t028}};
+  background-color: {{danger}};
+  color: {{label-on-accent}};
 }
 
 .shell-call-leave svg {
-  image-color: {{t028}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-call-expand {
-  background-color: {{t020}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .shell-call-expand svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-minimized-chip {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .shell-call-minimized-title {
-  color: {{t097}};
+  color: {{label}};
 }
 
 .shell-call-minimized-subtitle {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-call-immersive {
-  background-color: {{t099}};
+  background-color: {{bg-grouped}};
 }
 
 .shell-call-immersive-grabber {
-  background-color: {{t021}};
+  background-color: {{label-3}};
 }
 
 .shell-call-peer-card {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .shell-call-peer-avatar {
-  background-color: {{t032}};
+  background-color: {{fill}};
 }
 
 .avatar-tone-0 {
-  background-color: {{t100}};
+  background-color: {{avatar-0}};
 }
 
 .avatar-tone-1 {
-  background-color: {{t101}};
+  background-color: {{avatar-1}};
 }
 
 .avatar-tone-2 {
-  background-color: {{t102}};
+  background-color: {{avatar-2}};
 }
 
 .avatar-tone-3 {
-  background-color: {{t103}};
+  background-color: {{avatar-3}};
 }
 
 .avatar-tone-4 {
-  background-color: {{t104}};
+  background-color: {{avatar-4}};
 }
 
 .avatar-tone-5 {
-  background-color: {{t105}};
+  background-color: {{avatar-5}};
 }
 
 .avatar-tone-6 {
-  background-color: {{t106}};
+  background-color: {{avatar-6}};
 }
 
 .avatar-tone-7 {
-  background-color: {{t107}};
+  background-color: {{avatar-7}};
 }
 
 .shell-call-peer-name {
-  color: {{t097}};
+  color: {{label}};
 }
 
 .shell-call-retry {
-  background-color: {{t108}};
-  color: {{t109}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .shell-call-retry svg {
-  image-color: {{t109}};
+  image-color: {{accent}};
 }
 
 .shell-call-stage {
-  background-color: {{t110}};
+  background-color: {{x-video-stage}};
 }
 
 .shell-call-remote {
-  background-color: {{t111}};
+  background-color: {{x-video-remote}};
 }
 
 .shell-call-remote-placeholder {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-call-pip {
-  background-color: {{t032}};
-  border: 1dp {{t075}};
+  background-color: {{fill}};
+  border: 1dp {{separator}};
 }
 
 .shell-call-ring-eyebrow {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .shell-call-ring {
-  border-color: {{t112}};
+  border-color: {{accent-tint}};
 }
 
 .shell-call-ring--pulse {
-  border-color: {{t113}};
+  border-color: {{accent}};
 }
 
 .shell-call-ring-action-label {
-  color: {{t114}};
+  color: {{label-2}};
 }
 
 .shell-call-ring-decline {
-  background-color: {{t022}};
+  background-color: {{danger}};
 }
 
 .shell-call-ring-decline svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-call-ring-voice {
-  background-color: {{t020}};
+  background-color: {{fill}};
 }
 
 .shell-call-ring-voice svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 .shell-call-accept {
-  background-color: {{t115}};
+  background-color: {{success}};
 }
 
 .shell-call-accept svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .shell-call-accept--pulse {
-  background-color: {{t116}};
-  box-shadow: 0 0 0 4dp {{t117}}, 0 4dp 14dp {{t118}};
+  background-color: {{success}};
+  box-shadow: 0 0 0 4dp {{x-accept-pulse-ring}}, 0 4dp 14dp {{shadow}};
 }
 
 .chat-empty {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .sidebar-header-title {
-  color: {{t015}};
+  color: {{label}};
 }
 
 .sidebar-session {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 /* Before the active rules so the open thread keeps its highlight. */
 .sidebar-session--pinned {
-  background-color: {{t119}};
+  background-color: {{bg-card-2}};
 }
 
 .sidebar-session-active {
-  background-color: {{t120}};
-  border-color: {{t121}};
-  box-shadow: inset 3dp 0 0 {{t113}};
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
+  box-shadow: inset 3dp 0 0 {{accent}};
 }
 
 .sidebar-session--ai.sidebar-session-active {
-  box-shadow: inset 3dp 0 0 {{t113}};
+  box-shadow: inset 3dp 0 0 {{mention}};
 }
 
 .sidebar-session--private.sidebar-session-active {
-  background-color: {{t122}};
-  border-color: {{t123}};
-  box-shadow: inset 3dp 0 0 {{t124}};
+  background-color: {{secure-tint}};
+  border-color: {{secure-tint}};
+  box-shadow: inset 3dp 0 0 {{secure}};
 }
 
 .sidebar-session--public.sidebar-session-active {
-  background-color: {{t016}};
-  border-color: {{t021}};
-  box-shadow: inset 3dp 0 0 {{t014}};
+  background-color: {{fill-2}};
+  border-color: {{separator}};
+  box-shadow: inset 3dp 0 0 {{gray}};
 }
 
 .sidebar-session--group.sidebar-session-active {
-  background-color: {{t125}};
-  border-color: {{t065}};
-  box-shadow: inset 3dp 0 0 {{t078}};
+  background-color: {{accent-tint}};
+  border-color: {{separator}};
+  box-shadow: inset 3dp 0 0 {{warn}};
 }
 
 .sidebar-session-date {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .sidebar-session-title {
-  color: {{t010}};
+  color: {{label}};
 }
 
 .sidebar-session-preview {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .sidebar-session-icon {
-  background-color: {{t016}};
+  background-color: {{bg-card-2}};
 }
 
 .sidebar-session-flag, .sidebar-archived-entry svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .sidebar-archived-label {
-  color: {{t030}};
+  color: {{label-2}};
 }
 
 .sidebar-archived-entry:hover {
-  background-color: {{t126}};
+  background-color: {{fill-2}};
 }
 
 .sidebar-session-mention {
-  color: {{t113}};
+  color: {{mention}};
 }
 
 .sidebar-unread-dot {
-  background-color: {{t127}};
+  background-color: {{unread}};
 }
 
 .sidebar-unread {
-  background-color: {{t127}};
-  color: {{t012}};
+  background-color: {{unread}};
+  color: {{label-on-accent}};
 }
 
 .badge-count {
-  background-color: {{t127}};
-  color: {{t012}};
+  background-color: {{tab-badge}};
+  color: {{label-on-accent}};
 }
 
 .badge-dot {
-  background-color: {{t127}};
+  background-color: {{tab-badge}};
 }
 
 .sidebar-session-close:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .bubble-peer {
-  background-color: {{t016}};
-  border: 1dp {{t018}};
+  background-color: {{bubble-in}};
+  border: 1dp {{separator}};
 }
 
 .working-set-long-list .chat-long-list-item {
-  border-bottom: 1dp {{t032}};
+  border-bottom: 1dp {{separator}};
 }
 
 .chat-working-set-chip {
-  border: 1dp {{t021}};
-  background-color: {{t016}};
-  color: {{t128}};
+  border: 1dp {{separator}};
+  background-color: {{bg-card-2}};
+  color: {{label}};
 }
 
 .chat-working-set-chip:hover {
-  background-color: {{t018}};
+  background-color: {{fill-2}};
 }
 
 .chat-working-set-chip-disabled, .chat-working-set-chip-disabled:hover {
-  background-color: {{t126}};
-  color: {{t075}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card-2}};
+  color: {{label-3}};
+  border: 1dp {{separator}};
   cursor: default;
   opacity: 0.85;
 }
 
 .settings-section-title {
-  color: {{t015}};
+  color: {{label-2}};
 }
 
 .settings-label {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .settings-toggle-label {
-  color: {{t001}};
+  color: {{label}};
 }
 
 .settings-switch {
-  background-color: {{t021}};
+  background-color: {{gray}};
 }
 
 .settings-switch--on {
-  background-color: {{t008}};
+  background-color: {{success}};
 }
 
 .settings-switch-knob {
-  background-color: {{t012}};
-  box-shadow: 0 1dp 3dp {{t069}};
+  background-color: {{label-on-accent}};
+  box-shadow: 0 1dp 3dp {{shadow}};
 }
 
 .settings-choice-value-text {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .settings-danger-zone {
-  border-top: 1dp {{t032}};
+  border-top: 1dp {{separator}};
 }
 
 .settings-device-badge {
-  background-color: {{t120}};
-  color: {{t129}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .me-profile-card {
-  background-color: {{t130}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .me-identity-name {
-  color: {{t097}};
+  color: {{label}};
 }
 
 .me-identity-action {
-  color: {{t015}};
+  color: {{accent}};
 }
 
 .settings-row {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
-  color: {{t001}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
+  color: {{label}};
 }
 
 .settings-row:hover, .settings-row:focus {
-  background-color: {{t131}};
+  background-color: {{fill-2}};
 }
 
 .settings-back-btn:hover, .settings-back-btn:focus {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .settings-choice-row:hover, .settings-choice-row:focus {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .settings-row--active {
-  background-color: {{t120}};
-  border-color: {{t121}};
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
 }
 
 .settings-row-title {
-  color: {{t011}};
+  color: {{label}};
 }
 
 .settings-row-chevron {
-  image-color: {{t075}};
+  image-color: {{label-3}};
 }
 
 .contacts-row, .contacts-thread-row {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .contacts-row--active {
-  background-color: {{t120}};
-  border-color: {{t121}};
-  box-shadow: inset 3dp 0 0 {{t113}};
+  background-color: {{accent-tint}};
+  border-color: {{accent-tint}};
+  box-shadow: inset 3dp 0 0 {{accent}};
 }
 
 .contacts-row-title {
-  color: {{t010}};
+  color: {{label}};
 }
 
 .contact-profile-card {
-  background-color: {{t130}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .contacts-trust-badge--friendly {
-  background-color: {{t122}};
-  color: {{t132}};
+  background-color: {{secure-tint}};
+  color: {{secure}};
 }
 
 .contacts-trust-badge--blocked {
-  background-color: {{t024}};
-  color: {{t025}};
+  background-color: {{fill-2}};
+  color: {{danger}};
 }
 
 .contacts-back-btn:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .contacts-action-secure {
-  background-color: {{t101}};
-  color: {{t012}};
+  background-color: {{secure}};
+  color: {{label-on-accent}};
 }
 
 .contacts-action-secure:hover {
-  background-color: {{t133}};
+  background-color: {{secure}};
 }
 
 .people-picker-row:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .people-picker-row--selected {
-  background-color: {{t120}};
+  background-color: {{accent-tint}};
 }
 
 .people-picker-check {
-  border-color: {{t072}};
-  background-color: {{t006}};
+  border-color: {{separator}};
+  background-color: {{bg-card}};
 }
 
 .people-picker-row--selected .people-picker-check {
-  border-color: {{t113}};
-  background-color: {{t008}};
-  color: {{t012}};
+  border-color: {{accent}};
+  background-color: {{accent}};
+  color: {{label-on-accent}};
 }
 
 .people-picker-check-mark {
-  color: {{t012}};
+  color: {{label-on-accent}};
 }
 
 .people-picker-member-chip {
-  background-color: {{t134}};
-  color: {{t135}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
 }
 
 .emoji-picker-section-label {
-  background-color: {{t031}};
+  background-color: {{bg-card}};
 }
 
 .emoji-picker-section-label-text {
-  color: {{t014}};
+  color: {{label-2}};
 }
 
 .emoji-picker-rail-tab--active {
-  background-color: {{t032}};
+  background-color: {{fill-2}};
 }
 
 .contacts-trust-btn--active {
-  background-color: {{t120}};
-  color: {{t038}};
-  border: 1dp {{t121}};
+  background-color: {{accent-tint}};
+  color: {{accent}};
+  border: 1dp {{accent-tint}};
 }
 
 .contacts-trust-btn--active.contacts-trust-btn {
-  box-shadow: inset 0 0 0 1dp {{t113}};
+  box-shadow: inset 0 0 0 1dp {{accent}};
 }
 
 .sidebar-footer {
-  border-top: 1dp {{t032}};
+  border-top: 1dp {{separator}};
 }
 
 .chat-shell--e2e .chat-header {
-  background-color: {{t122}};
-  border-left: 3dp {{t124}};
+  background-color: {{secure-tint}};
+  border-left: 3dp {{secure}};
   padding-left: 10dp;
   border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--ai .chat-header {
-  border-left: 3dp {{t008}};
+  border-left: 3dp {{mention}};
   padding-left: 10dp;
   border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--public .chat-header {
-  border-left: 3dp {{t021}};
+  border-left: 3dp {{gray}};
   padding-left: 10dp;
   border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--group .chat-header {
-  border-left: 3dp {{t042}};
+  border-left: 3dp {{warn}};
   padding-left: 10dp;
   border-radius: 0 6dp 6dp 0;
 }
 
 .prompt-composer--e2e .prompt-composer-pill {
-  border-color: {{t123}};
+  border-color: {{secure-tint}};
 }
 
 .prompt-composer--disabled {
@@ -1468,83 +1468,83 @@ select selectbox option:hover {
 }
 
 .chat-secure-badge {
-  color: {{t124}};
+  color: {{secure}};
 }
 
 .chat-shell--ai .chat-header-type-icon svg {
-  image-color: {{t113}};
+  image-color: {{mention}};
 }
 
 .chat-shell--private .chat-header-type-icon svg, .chat-shell--e2e .chat-header-type-icon svg {
-  image-color: {{t124}};
+  image-color: {{secure}};
 }
 
 .chat-shell--public .chat-header-type-icon svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .chat-shell--group .chat-header-type-icon svg {
-  image-color: {{t079}};
+  image-color: {{warn}};
 }
 
 .chat-peer-path--direct svg {
-  image-color: {{t073}};
+  image-color: {{success}};
 }
 
 .chat-peer-path--hop svg {
-  image-color: {{t076}};
+  image-color: {{warn}};
 }
 
 .chat-peer-path--relay svg {
-  image-color: {{t014}};
+  image-color: {{gray}};
 }
 
 .chat-peer-path--connecting svg {
-  image-color: {{t075}};
+  image-color: {{gray}};
 }
 
 .chat-peer-path--degraded svg {
-  image-color: {{t076}};
+  image-color: {{warn}};
 }
 
 .chat-peer-path--failed svg {
-  image-color: {{t074}};
+  image-color: {{danger}};
 }
 
 .chat-peer-path--ready svg {
-  image-color: {{t075}};
+  image-color: {{gray}};
 }
 
 .chat-header-call-btn, .chat-header-more-btn {
-  background-color: {{t032}};
-  color: {{t001}};
+  background-color: {{fill}};
+  color: {{label}};
 }
 
 .chat-header-call-btn:hover, .chat-header-more-btn:hover {
-  background-color: {{t021}};
+  background-color: {{fill-2}};
 }
 
 .chat-header-call-btn--join {
-  background-color: {{t115}};
-  color: {{t012}};
+  background-color: {{success}};
+  color: {{label-on-accent}};
 }
 
 .chat-header-call-btn--join:hover {
-  background-color: {{t136}};
+  background-color: {{success}};
 }
 
 .chat-header-call-btn svg, .chat-header-more-btn svg {
-  image-color: {{t001}};
+  image-color: {{label}};
 }
 
 /* After the plain call button's rule (same specificity): white on the green join button. */
 .chat-header-call-btn--join svg {
-  image-color: {{t012}};
+  image-color: {{label-on-accent}};
 }
 
 .context-menu-panel {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 /* Float menus (right-click / long-press): invisible hit target only — no dim.
@@ -1554,41 +1554,41 @@ select selectbox option:hover {
 }
 
 .context-menu-layer--sheet .context-menu-scrim {
-  background-color: {{t096}};
+  background-color: {{scrim}};
 }
 
 .context-menu-sheet-list {
-  background-color: {{t031}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  border: 1dp {{separator}};
 }
 
 .context-menu-sheet-cancel {
-  background-color: {{t031}};
-  color: {{t113}};
-  border: 1dp {{t032}};
+  background-color: {{bg-card}};
+  color: {{accent}};
+  border: 1dp {{separator}};
 }
 
 .context-menu-sheet-cancel:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .context-menu-item {
-  color: {{t001}};
+  color: {{label}};
 }
 
 .context-menu-item:hover {
-  background-color: {{t016}};
+  background-color: {{fill-2}};
 }
 
 .context-menu-item--danger {
-  color: {{t033}};
+  color: {{danger}};
 }
 
 .context-menu-item--danger:hover {
-  background-color: {{t024}};
+  background-color: {{fill-2}};
 }
 
 .context-menu-item--danger svg {
-  image-color: {{t033}};
+  image-color: {{danger}};
 }
 }
