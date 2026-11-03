@@ -510,7 +510,7 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 | `attach` | client → relay | `session_token`, `call_id`, `auth` |
 | `subscribe`, `unsubscribe`, `detach` | client → relay | stream / channel selection |
 
-**Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
+**Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). They travel on the participant's **data lane** (`/pp-mesh/media-relay-data/1.0.0`, opened by the client on the same link once attached; BestEffort, the oldest dropped). The relay binds the lane to the participant by the link's peer and fans out on it. A loss costs one frame, never a stall, and there are no acknowledgements. Without a lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) the control channel carries them, and the relay still accepts them there. `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
 
 **Call-media** (`/pp/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
 
