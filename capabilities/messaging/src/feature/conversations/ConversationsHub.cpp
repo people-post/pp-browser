@@ -2420,6 +2420,17 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetDownloadPolicy(EffectiveAttachmentDownloadPolicy(
       policy_.attachment_download_policy, policy_.attachment_auto_on_wifi, policy_.attachment_auto_on_cellular));
   FeedAttachmentNetwork();
+  if (host_.mobile && attachment_network_.load() == AutoDownloadNetwork::Unknown) {
+    // No network report yet (none may ever come without a mesh): after a while count it as the mobile network,
+    // the careful side, so large files show "Download" instead of waiting queued for good.
+    AppRuntime::ScheduleCoordinatorOneShot(std::chrono::seconds(15), [this]() {
+      AutoDownloadNetwork unknown = AutoDownloadNetwork::Unknown;
+      if (!shutdown_requested_.load(std::memory_order_acquire) &&
+          attachment_network_.compare_exchange_strong(unknown, AutoDownloadNetwork::Mobile)) {
+        AppRuntime::PostUI([this]() { FeedAttachmentNetwork(); });
+      }
+    });
+  }
   attachment_downloads_->SetOnChanged([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
