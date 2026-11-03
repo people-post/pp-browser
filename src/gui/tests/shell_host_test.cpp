@@ -213,6 +213,16 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(composer_keyboard.shell_bottom_dp, 336.f);
   EXPECT_FLOAT_EQ(composer_keyboard.bottom_surface_padding_dp, 0.f);
 
+  // Phone toast pill: just above the tab bar / composer / keyboard; none on desktop.
+  EXPECT_FLOAT_EQ(with_inset.toast_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar.toast_bottom_dp, 34.f + 49.f + 12.f);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 49.f + 12.f);  // the body already ends at the keyboard
+  EXPECT_FLOAT_EQ(composer.toast_bottom_dp, 34.f + 52.f + 12.f);
+  EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 52.f + 12.f);
+  EXPECT_FLOAT_EQ(
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Page).toast_bottom_dp,
+      34.f + 12.f);
+
   const CompactChromeLayout page =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Page);
   EXPECT_FLOAT_EQ(page.shell_bottom_dp, 0.f);

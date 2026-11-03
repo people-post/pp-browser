@@ -1209,8 +1209,17 @@ void ShellHost::ApplySafeAreaLayout() {
   // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
   set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
-  // Absolute toast stack is positioned from the chrome top edge (ignores padding).
-  set_dp(doc->GetElementById("shell-toast-stack"), "top", 8.f + layout.content_top_dp);
+  if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
+    if (bottom_surface != CompactBottomSurface::None) {
+      // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).
+      toasts->SetProperty("top", "auto");
+      set_dp(toasts, "bottom", layout.toast_bottom_dp);
+    } else {
+      // Absolute toast stack is positioned from the chrome top edge (ignores padding).
+      toasts->RemoveProperty("bottom");
+      set_dp(toasts, "top", 8.f + layout.content_top_dp);
+    }
+  }
 
   if (state_.titlebar_visible) {
     DesktopWindowChrome::SetLayout(config_.titlebar_height_dp, config_.titlebar_controls_width_dp,

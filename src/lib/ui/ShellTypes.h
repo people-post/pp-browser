@@ -96,6 +96,11 @@ struct CompactChromeLayout {
   /** Auxiliary sheet offset above the compact nav rail. */
   float sheet_bottom_dp = 0.f;
   float chrome_horizontal_inset_dp = 0.f;
+  /**
+   * Phone toast: distance of the toast stack from the bottom of the document body, so the pill sits just
+   * above the tab bar / composer (and so above the keyboard). 0 when there is no bottom surface (desktop).
+   */
+  float toast_bottom_dp = 0.f;
 };
 
 struct PaneSpec {

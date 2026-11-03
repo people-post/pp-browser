@@ -1480,6 +1480,42 @@ select selectbox option {
   margin-bottom: 0;
 }
 
+/* Phone toast (Kenneth 2026-11-04: the dark slab top right looked stuck on): a centred pill near the bottom,
+   above the tab bar / composer. The chrome box fills the body (it lets taps through) so ShellHost can set the
+   stack's `bottom` (CompactChromeLayout::toast_bottom_dp); the pills let taps through too. */
+.shell-body--compact .shell-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.shell-body--compact .shell-toast-stack {
+  left: 0;
+  right: 0;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+}
+
+.shell-body--compact .shell-chrome .shell-toast {
+  display: inline-block;
+  max-width: 80%;
+  border-width: 1dp;
+  padding: 10dp 18dp;
+  margin: 6dp 0 0 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.shell-body--compact .shell-toast-text {
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
 .shell-activity-strip {
   height: 3dp;
   opacity: 0.85;

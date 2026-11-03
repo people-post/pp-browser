@@ -110,6 +110,16 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   layout.chrome_bottom_dp = 0.f;
   layout.sheet_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;
+  if (bottom_surface != CompactBottomSurface::None) {
+    // The bar the toast must clear: tab bar, or the composer's one-line height (DESIGN-pp-ui 8.5); a pushed
+    // page has none. Below it the home-indicator strip (with a keyboard up the body already ends above it).
+    constexpr float kComposerMinHeightDp = 52.f;
+    constexpr float kToastGapDp = 12.f;
+    const float bar = bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
+                      : bottom_surface == CompactBottomSurface::Composer ? kComposerMinHeightDp
+                                                                         : 0.f;
+    layout.toast_bottom_dp = layout.bottom_surface_padding_dp + bar + kToastGapDp;
+  }
   return layout;
 }
 

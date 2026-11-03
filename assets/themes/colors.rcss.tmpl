@@ -535,6 +535,24 @@ select selectbox option:hover {
   color: {{label-on-accent}};
 }
 
+/* No shadow (DESIGN-pp-ui §6; a shadow here also drew a grey block on the simulator): a hairline keeps the white
+   pill apart from a white page. */
+.shell-body--compact .shell-toast {
+  background-color: {{bg-card}};
+  border-color: {{separator}};
+  box-shadow: none;
+}
+
+.shell-body--compact .shell-toast-text {
+  color: {{label}};
+}
+
+/* @only dark */
+.shell-body--compact .shell-toast {
+  background-color: {{bg-card-2}};
+}
+/* @end */
+
 .shell-activity-strip {
   background-color: {{accent}};
 }
