@@ -58,4 +58,12 @@ struct ThreadCpuDelta {
 std::vector<ThreadCpuDelta> TopThreadCpuDeltas(const std::vector<ThreadCpuSample>& now,
                                                std::unordered_map<uint32_t, double>& previous, std::size_t top_n);
 
+/**
+ * The same with each thread's own name (only `[A-Za-z0-9._-]`, at most 32 characters; unnamed threads keep
+ * their "t<id>"), for the developer log only — never a shareable line, which takes no free text.
+ */
+std::vector<ThreadCpuDelta> TopThreadCpuDeltasByOwnName(const std::vector<ThreadCpuSample>& now,
+                                                        std::unordered_map<uint32_t, double>& previous,
+                                                        std::size_t top_n);
+
 } // namespace pbr

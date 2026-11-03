@@ -159,6 +159,8 @@ private:
   int64_t perf_sample_ms_ = 0;
   double perf_proc_cpu_s_ = -1.0;
   std::unordered_map<uint32_t, double> perf_thread_cpu_;
+  /** The same per own thread name, for the developer log (perf.threads.raw). */
+  std::unordered_map<uint32_t, double> perf_thread_cpu_raw_;
   /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */
   std::string peer_video_log_key_;
   /** When this video call started waiting for the peer's first frame (0: not yet). */

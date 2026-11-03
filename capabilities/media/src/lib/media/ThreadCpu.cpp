@@ -14,9 +14,25 @@ std::string_view CanonicalThreadName(const std::string_view name) {
   return "other";
 }
 
-std::vector<ThreadCpuDelta> TopThreadCpuDeltas(const std::vector<ThreadCpuSample>& now,
-                                               std::unordered_map<uint32_t, double>& previous,
-                                               const std::size_t top_n) {
+namespace {
+
+std::string OwnThreadName(const std::string_view name) {
+  std::string out;
+  for (const char c : name) {
+    if (out.size() >= 32) {
+      break;
+    }
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' ||
+                    c == '_' || c == '-';
+    out.push_back(ok ? c : '_');
+  }
+  return out.empty() ? std::string("unnamed") : out;
+}
+
+template <typename NameOf>
+std::vector<ThreadCpuDelta> TopDeltas(const std::vector<ThreadCpuSample>& now,
+                                      std::unordered_map<uint32_t, double>& previous, const std::size_t top_n,
+                                      NameOf name_of) {
   const bool have_baseline = !previous.empty();
   std::map<std::string, double> by_name;
   std::unordered_map<uint32_t, double> next;
@@ -29,7 +45,7 @@ std::vector<ThreadCpuDelta> TopThreadCpuDeltas(const std::vector<ThreadCpuSample
     const auto it = previous.find(t.id);
     const double delta_s = it == previous.end() ? t.cpu_s : t.cpu_s - it->second;
     if (delta_s > 0.0) {
-      by_name[std::string(CanonicalThreadName(t.name))] += delta_s * 1000.0;
+      by_name[name_of(t.name)] += delta_s * 1000.0;
     }
   }
   previous = std::move(next);
@@ -44,6 +60,21 @@ std::vector<ThreadCpuDelta> TopThreadCpuDeltas(const std::vector<ThreadCpuSample
     out.resize(top_n);
   }
   return out;
+}
+
+} // namespace
+
+std::vector<ThreadCpuDelta> TopThreadCpuDeltas(const std::vector<ThreadCpuSample>& now,
+                                               std::unordered_map<uint32_t, double>& previous,
+                                               const std::size_t top_n) {
+  return TopDeltas(now, previous, top_n,
+                   [](const std::string& name) { return std::string(CanonicalThreadName(name)); });
+}
+
+std::vector<ThreadCpuDelta> TopThreadCpuDeltasByOwnName(const std::vector<ThreadCpuSample>& now,
+                                                        std::unordered_map<uint32_t, double>& previous,
+                                                        const std::size_t top_n) {
+  return TopDeltas(now, previous, top_n, [](const std::string& name) { return OwnThreadName(name); });
 }
 
 } // namespace pbr

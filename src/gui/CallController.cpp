@@ -46,6 +46,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -293,7 +294,9 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
     return;
   }
   const DeviceVitals vitals = ReadDeviceVitals();
-  const auto top = TopThreadCpuDeltas(ReadThreadCpu(), perf_thread_cpu_, 8);
+  const std::vector<ThreadCpuSample> threads = ReadThreadCpu();
+  const auto top = TopThreadCpuDeltas(threads, perf_thread_cpu_, 8);
+  const auto top_raw = TopThreadCpuDeltasByOwnName(threads, perf_thread_cpu_raw_, 12);
   const double prev_proc_cpu_s = perf_proc_cpu_s_;
   const int64_t prev_sample_ms = perf_sample_ms_;
   perf_proc_cpu_s_ = vitals.cpu_s;
@@ -319,6 +322,14 @@ void CallController::EmitPerfThreads(const int64_t now_ms) {
     line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
   }
   line.Emit();
+  // Every thread by its own name (network, worker pools, system queues) — the developer log only, which is
+  // never uploaded; the shareable line above folds unknown names into "other".
+  std::ostringstream raw;
+  raw << "perf.threads.raw interval_ms=" << (now_ms - prev_sample_ms) << " threads=" << threads.size();
+  for (const ThreadCpuDelta& t : top_raw) {
+    raw << ' ' << t.name << '=' << static_cast<int64_t>(t.ms + 0.5);
+  }
+  log().info << raw.str();
 }
 
 void CallController::EmitMetrics(const std::vector<ShareableLine>& lines) {
