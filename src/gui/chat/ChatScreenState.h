@@ -17,6 +17,8 @@ struct ChatScreenState {
   ui::String status;
   ui::String thread_title;
   ui::String thread_subtitle;
+  /** Phone header: groups only, the member count ("12 members"); empty for direct and AI chats. */
+  ui::String thread_phone_subtitle;
   ui::String peer_link_status;
   ui::String peer_link_banner;
   bool show_peer_link = false;

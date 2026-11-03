@@ -23,6 +23,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("use_messages_layout", &state.use_messages_layout);
   ctor.Bind("thread_title", &state.thread_title);
   ctor.Bind("thread_subtitle", &state.thread_subtitle);
+  ctor.Bind("thread_phone_subtitle", &state.thread_phone_subtitle);
   ctor.Bind("peer_link_status", &state.peer_link_status);
   ctor.Bind("peer_link_banner", &state.peer_link_banner);
   ctor.Bind("show_peer_link", &state.show_peer_link);
@@ -163,6 +164,7 @@ void DirtyChatTurns() {
 void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_title");
   DataModelHost::Instance().Dirty("chat", "thread_subtitle");
+  DataModelHost::Instance().Dirty("chat", "thread_phone_subtitle");
   DataModelHost::Instance().Dirty("chat", "peer_link_status");
   DataModelHost::Instance().Dirty("chat", "peer_link_banner");
   DataModelHost::Instance().Dirty("chat", "show_peer_link");

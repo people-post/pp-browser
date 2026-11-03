@@ -95,6 +95,7 @@ bool ChatThreadChrome::ShowAttachWithoutThread() const {
 void ChatThreadChrome::ResetPanelState() {
   view_.thread_title = "";
   view_.thread_subtitle = "";
+  view_.thread_phone_subtitle = "";
   view_.peer_link_status = "";
   view_.peer_link_banner = "";
   view_.show_peer_link = false;
@@ -345,6 +346,8 @@ void ChatThreadChrome::Update() {
         view_.status = Tr("call.error.payment_unavailable").c_str();
       }
     }
+    // The phone header shows no second line, except a group's member count; the full subtitle stays for the desktop.
+    view_.thread_phone_subtitle = "";
     if (thread->kind == ThreadKind::Ai) {
       view_.thread_subtitle = Tr("chat.ai_thread.subtitle").c_str();
       view_.draft_placeholder = Tr("chat.ai_thread.placeholder").c_str();
@@ -379,6 +382,10 @@ void ChatThreadChrome::Update() {
         if (facade_) {
           if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
             roster_label += " · " + Tr("chat.subtitle.members", {{"count", std::to_string(roster->size())}});
+            view_.thread_phone_subtitle =
+                (roster->size() == 1 ? Tr("chat.subtitle.members_short_one")
+                                     : Tr("chat.subtitle.members_short_many", {{"count", std::to_string(roster->size())}}))
+                    .c_str();
           }
         }
         if (facade_ && facade_->IsOwnerUnreachable(*thread->group_id)) {
@@ -399,6 +406,7 @@ void ChatThreadChrome::Update() {
   } else {
     view_.thread_title = "";
     view_.thread_subtitle = "";
+    view_.thread_phone_subtitle = "";
     view_.show_peer_sheet = false;
     view_.peer_link_status = "";
     view_.peer_link_banner = "";

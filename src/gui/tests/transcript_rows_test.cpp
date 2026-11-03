@@ -1,3 +1,4 @@
+#include "lib/people/AvatarGlyph.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/delivery/ReactionTypes.h"
@@ -244,10 +245,34 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   EXPECT_EQ(std::string(rows[2].group_name.c_str()), "Bob");
   EXPECT_EQ(std::string(rows[3].group_name.c_str()), "Bob");
   EXPECT_TRUE(rows[4].group_name.empty()) << "our own bubbles carry no name";
+  // The avatar column: on every received row, the avatar only beside the first bubble of a run; none on our own.
+  for (size_t i = 0; i < 4; ++i) {
+    EXPECT_TRUE(rows[i].group_column) << i;
+  }
+  EXPECT_FALSE(rows[4].group_column);
+  EXPECT_TRUE(rows[0].group_avatar);
+  EXPECT_EQ(std::string(rows[0].group_avatar_letter.c_str()), "A");
+  EXPECT_FALSE(rows[1].group_avatar);
+  EXPECT_TRUE(rows[2].group_avatar);
+  EXPECT_FALSE(rows[4].group_avatar);
+  // One person, one colour: the same glyph the Contacts list builds from the name alone.
+  EXPECT_EQ(rows[0].group_name_tone, MakeAvatarGlyph("Alice", {}).tone);
+  // The name sits inside the bubble, on the first bubble of a run only.
+  const std::string first = rows[0].content_rml.c_str();
+  const size_t bubble_at = first.find("class=\"bubble bubble-assistant");
+  const size_t name_at = first.find("chat-group-name");
+  ASSERT_NE(bubble_at, std::string::npos);
+  ASSERT_NE(name_at, std::string::npos);
+  EXPECT_GT(name_at, bubble_at);
+  EXPECT_TRUE(rows[0].group_name_in_bubble);
+  EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("chat-group-name"), std::string::npos);
   // A direct chat (no roster) never shows names above bubbles.
   const auto direct = RenderTranscript(entries, NamedFacts());
   for (const MessageDisplayRow& row : direct) {
     EXPECT_TRUE(row.group_name.empty());
+    EXPECT_FALSE(row.group_column);
+    EXPECT_FALSE(row.group_avatar);
+    EXPECT_EQ(std::string(row.content_rml.c_str()).find("chat-group-name"), std::string::npos);
   }
   EXPECT_TRUE(direct[0].run_start);
   EXPECT_FALSE(direct[1].run_start);

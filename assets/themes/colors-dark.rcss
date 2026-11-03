@@ -1717,7 +1717,8 @@ select selectbox option:hover {
   color: #ffffff;
 }
 
-.shell-chat-overlay .chat-header-subtitle {
+.shell-chat-overlay .chat-header-subtitle,
+.shell-chat-overlay .chat-header-phone-subtitle {
   color: #ebebf599;
 }
 

@@ -656,11 +656,29 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.run_start = !continues_run;
     run_sender = plain ? message.sender_contact_id : std::string();
     run_start_ms = message.timestamp;
-    if (group_thread && plain && row.run_start && message.sender_contact_id != kLocalSelfContactId &&
+    if (group_thread && plain && message.sender_contact_id != kLocalSelfContactId &&
         message.sender_contact_id != kAiAssistantContactId && facts.sender_label) {
-      const std::string name = facts.sender_label(message.sender_contact_id);
-      row.group_name = name.c_str();
-      row.group_name_tone = MakeAvatarGlyph(name, message.sender_contact_id).tone;
+      // Every received row keeps the avatar column; only the first bubble of a run shows the avatar and the name.
+      row.group_column = true;
+      if (row.run_start) {
+        const std::string name = facts.sender_label(message.sender_contact_id);
+        // Same glyph input as the Contacts list and the chat list (name only), so one person has one colour.
+        const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
+        row.group_name = name.c_str();
+        row.group_name_tone = glyph.tone;
+        row.group_avatar = true;
+        row.group_avatar_letter = glyph.letter.c_str();
+        // The name goes at the top of the bubble; rows without a bubble (cards, calls) keep it as a line above.
+        static const std::string kBubbleOpen = "<div class=\"bubble bubble-assistant";
+        const size_t bubble_at = content.find(kBubbleOpen);
+        const size_t bubble_end = bubble_at == std::string::npos ? bubble_at : content.find('>', bubble_at);
+        if (bubble_end != std::string::npos) {
+          content.insert(bubble_end + 1, "<div class=\"chat-group-name chat-group-name--" + std::to_string(glyph.tone) +
+                                             "\">" + StructuredTextParser::EscapeText(name) + "</div>");
+          row.content_rml = content.c_str();
+          row.group_name_in_bubble = true;
+        }
+      }
     }
     row.has_content = true;
     rows.push_back(std::move(row));

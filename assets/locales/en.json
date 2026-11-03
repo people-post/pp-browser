@@ -1009,6 +1009,8 @@
     "chat.subtitle.group_e2e": "Group · E2E",
     "chat.subtitle.group": "Group chat",
     "chat.subtitle.members": "{count} members",
+    "chat.subtitle.members_short_one": "1 member",
+    "chat.subtitle.members_short_many": "{count} members",
     "chat.subtitle.dissolved": "Dissolved",
     "chat.subtitle.owner_unreachable": "Owner unreachable",
     "chat.subtitle.shared": "Shared: {title}",

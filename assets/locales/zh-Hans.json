@@ -961,6 +961,8 @@
     "chat.subtitle.group_e2e": "群组 · 端到端加密",
     "chat.subtitle.group": "群聊",
     "chat.subtitle.members": "{count} 位成员",
+    "chat.subtitle.members_short_one": "1 人",
+    "chat.subtitle.members_short_many": "{count} 人",
     "chat.subtitle.dissolved": "已解散",
     "chat.subtitle.owner_unreachable": "群主失联",
     "chat.subtitle.shared": "共享名称：{title}",

@@ -300,6 +300,7 @@ ChatController::ChatController()
                  .status = chat_.status,
                  .thread_title = chat_.thread_title,
                  .thread_subtitle = chat_.thread_subtitle,
+                 .thread_phone_subtitle = chat_.thread_phone_subtitle,
                  .peer_link_status = chat_.peer_link_status,
                  .peer_link_banner = chat_.peer_link_banner,
                  .show_peer_link = chat_.show_peer_link,

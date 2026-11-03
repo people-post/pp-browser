@@ -90,6 +90,10 @@ void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
     message_handle.RegisterMember("run_start", &MessageDisplayRow::run_start);
     message_handle.RegisterMember("group_name", &MessageDisplayRow::group_name);
     message_handle.RegisterMember("group_name_tone", &MessageDisplayRow::group_name_tone);
+    message_handle.RegisterMember("group_name_in_bubble", &MessageDisplayRow::group_name_in_bubble);
+    message_handle.RegisterMember("group_column", &MessageDisplayRow::group_column);
+    message_handle.RegisterMember("group_avatar", &MessageDisplayRow::group_avatar);
+    message_handle.RegisterMember("group_avatar_letter", &MessageDisplayRow::group_avatar_letter);
     message_handle.RegisterMember("has_content", &MessageDisplayRow::has_content);
     message_handle.RegisterMember("has_form", &MessageDisplayRow::has_form);
     message_handle.RegisterMember("form", &MessageDisplayRow::form);

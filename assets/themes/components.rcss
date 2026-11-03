@@ -2046,10 +2046,19 @@ select selectbox option {
   text-overflow: ellipsis;
 }
 
+/* Phones: no encryption / link-path line; a group shows only its member count. */
 .shell-chat-overlay .chat-header-meta-row {
-  flex-wrap: nowrap;
-  margin-top: 0;
+  display: none;
+}
+
+.shell-chat-overlay .chat-header-phone-subtitle {
+  display: block;
+  margin: 0;
+  font-size: 12dp;
+  line-height: 15dp;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shell-chat-overlay .chat-header-subtitle {
@@ -2079,7 +2088,8 @@ select selectbox option {
   border-radius: 16dp;
 }
 
-.chat-header-avatar {
+.chat-header-avatar,
+.chat-header-phone-subtitle {
   display: none;
 }
 
@@ -5476,6 +5486,7 @@ input.checkbox {
 
 .chat-date-strip,
 .chat-group-name,
+.chat-row-avatar-col,
 .bubble-time,
 .prompt-composer-label,
 .prompt-icon-v2 {
@@ -5491,7 +5502,7 @@ input.checkbox {
   padding-right: 16dp;
 }
 
-/* Rows: 2dp inside a run, 8dp between runs; bubbles take 75% of the width, so the desktop's side gutters go. */
+/* Rows: 2dp inside a run, 8dp between runs; bubbles take at most 72% of the width (a clear gap on the opposite side), so the desktop's side gutters go. */
 .shell-chat-overlay .message-row {
   margin: 2dp 0 0 0;
 }
@@ -5533,7 +5544,7 @@ input.checkbox {
 .shell-chat-overlay .chat-group-name {
   display: block;
   margin: 0 0 2dp 12dp;
-  max-width: 75%;
+  max-width: 72%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5542,6 +5553,46 @@ input.checkbox {
   text-align: left;
 }
 
+/* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). */
+.shell-chat-overlay .bubble .chat-group-name {
+  margin: 0 0 2dp 0;
+  max-width: none;
+}
+
+/* Group chats: a 32dp avatar column + 8dp gap on every received row, so all received bubbles share one left edge. */
+.shell-chat-overlay .chat-row-body--group {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.shell-chat-overlay .chat-row-avatar-col {
+  display: block;
+  flex-shrink: 0;
+  width: 32dp;
+  margin-right: 8dp;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar .chat-row-avatar-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-chat-overlay .chat-row-body--group .chat-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+
 .shell-chat-overlay .bubble {
   padding: 8dp 12dp;
   border-radius: 18dp;
@@ -5549,7 +5600,7 @@ input.checkbox {
 
 .shell-chat-overlay .bubble-user,
 .shell-chat-overlay .bubble-assistant {
-  max-width: 75%;
+  max-width: 72%;
 }
 
 .shell-chat-overlay .bubble-assistant {
