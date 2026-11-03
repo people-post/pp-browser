@@ -12,7 +12,7 @@ TEST(CallMediaAdaptationTest, AudioAlwaysPreferredOverVideo) {
   const auto d = CallMediaAdaptation::Evaluate(in);
   EXPECT_TRUE(d.publish_audio);
   EXPECT_FALSE(d.publish_video_lo);
-  EXPECT_FALSE(d.camera_allowed);
+  EXPECT_FALSE(d.video_fits);
 }
 
 TEST(CallMediaAdaptationTest, VideoLoWhenBudgetAllows) {
@@ -22,7 +22,7 @@ TEST(CallMediaAdaptationTest, VideoLoWhenBudgetAllows) {
   const auto d = CallMediaAdaptation::Evaluate(in);
   EXPECT_TRUE(d.publish_audio);
   EXPECT_TRUE(d.publish_video_lo);
-  EXPECT_TRUE(d.camera_allowed);
+  EXPECT_TRUE(d.video_fits);
   EXPECT_FALSE(d.publish_video_hi);
   EXPECT_GT(d.target_video_lo_bps, 0);
 }

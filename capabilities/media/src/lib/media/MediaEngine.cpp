@@ -290,7 +290,7 @@ struct MediaEngine::Impl {
   std::atomic<uint32_t> tx_audio_seq{0};
   std::atomic<uint32_t> tx_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
-  std::atomic<bool> adaptation_camera_allowed{true};
+  std::atomic<bool> adaptation_send_video{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
   std::atomic<uint8_t>& video_level;
   std::atomic<bool>& video_level_profile;
@@ -1413,6 +1413,10 @@ struct MediaEngine::Impl {
     if (preview_rotate_cw == rotate_cw) {
       PublishLocalPreview(fitted);
     }
+    if (!adaptation_send_video.load(std::memory_order_relaxed)) {
+      need_keyframe = true; // the path cannot carry video now: nothing goes out; a keyframe starts it again
+      return;
+    }
     if (!video_codec || !video_codec->HasEncoder()) {
       return;
     }
@@ -2061,16 +2065,15 @@ bool MediaEngine::IsPacketMode() const {
 
 void MediaEngine::ApplyTargets(const MediaTargets& targets) {
   const std::shared_ptr<Impl> impl = Session();
-  impl->adaptation_camera_allowed.store(targets.camera_allowed, std::memory_order_relaxed);
+  if (impl->adaptation_send_video.exchange(targets.send_video, std::memory_order_relaxed) != targets.send_video) {
+    EngineLog().info << "video send " << (targets.send_video ? "resumed" : "paused") << " by adaptation";
+  }
   impl->adaptation_target_video_bps.store(targets.video_bps, std::memory_order_relaxed);
   const int64_t audio_bps = targets.audio_bps > 0 ? targets.audio_bps : MediaTargets::kDefaultAudioBps;
   impl->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
   // Bitrates are applied by the threads that encode, right before their next frame (encoders are
-  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan).
-  if (!targets.camera_allowed) {
-    std::lock_guard lock(impl->mutex);
-    impl->RequestCameraOffLocked();
-  }
+  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan). A paused send is the
+  // video thread's too: it keeps the camera and its preview, and skips the encode.
 }
 
 double MediaEngine::PathPressure() const {
@@ -2183,9 +2186,6 @@ Roe<void> MediaEngine::SetCameraEnabled(bool enabled, const int display_rotation
   }
   if (!impl->spec.capture) {
     return Error("camera needs a capturing session");
-  }
-  if (!impl->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
-    return Error("Camera blocked by adaptation (uplink/path)");
   }
   if (impl->skip_device_open_for_test.load(std::memory_order_relaxed)) {
     return Error("camera skipped (test)");

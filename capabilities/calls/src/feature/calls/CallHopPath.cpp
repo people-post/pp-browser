@@ -364,6 +364,7 @@ uint32_t CallHopPath::PublisherStreamIdForLocal() const {
 }
 
 void CallHopPath::RefreshAdaptation(const std::string& call_id) {
+  // The user's switch: adaptation never turns the camera off (it pauses the video send), so this reads it as set.
   RefreshAdaptation(call_id, engine_->IsCameraEnabled());
 }
 
@@ -2320,11 +2321,8 @@ Roe<void> CallHopPath::CompleteHopAttach(const HopAttach& at, int64_t a_up_bps) 
 
 void CallHopPath::ApplyQuoteAdaptation(int64_t a_up_bps) {
   sfu_.last_quote_a_up_bps = a_up_bps;
-  CallAdaptationInput in;
-  in.per_user_up_bps = a_up_bps;
-  in.camera_user_wants = engine_->IsCameraEnabled();
-  in.path_pressure = engine_->PathPressure();
-  engine_->ApplyTargets(CallMediaAdaptation::ToMediaTargets(CallMediaAdaptation::Evaluate(in)));
+  // One input for every adaptation (#474): the call's video permission, the mute and the relay's pressure too.
+  RefreshAdaptation(call_id_);
 }
 
 Roe<void> CallHopPath::AbortHopAttach() {

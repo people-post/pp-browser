@@ -32,8 +32,11 @@ struct CallAdaptationDecision {
   bool publish_audio = true;
   bool publish_video_lo = false;
   bool publish_video_hi = false;
-  /** Camera hardware may stay on only when publish_video_lo || publish_video_hi. */
-  bool camera_allowed = false;
+  /**
+   * The path carries video now (publish_video_lo || publish_video_hi): video goes out, and the screen offers the
+   * camera. False pauses the video send only — the camera and the user's switch stay as they are (#474).
+   */
+  bool video_fits = false;
   int64_t target_audio_bps = 32'000;
   int64_t target_video_lo_bps = 0;
   int64_t target_video_hi_bps = 0;
