@@ -28,9 +28,10 @@ public:
     if (!encoder_) {
       return Error("synthetic encoder not configured");
     }
-    const bool keyframe = force_keyframe || frame_ % static_cast<uint64_t>(fps_ * 2) == 0;
+    const bool keyframe = force_keyframe || frame_ % static_cast<uint64_t>(fps_ * kKeyframeIntervalSeconds) == 0;
     const size_t bytes =
-        keyframe ? SyntheticVideo::kKeyframeBytes : static_cast<size_t>(std::max<int64_t>(200, target_bps_ / fps_ / 8));
+        keyframe ? static_cast<size_t>(static_cast<double>(target_bps_) / 8.0 * SyntheticVideo::kKeyframeSeconds)
+                 : static_cast<size_t>(std::max<int64_t>(200, target_bps_ / fps_ / 8));
     EncodedAccessUnit unit;
     unit.keyframe = keyframe;
     unit.annex_b.resize(bytes);

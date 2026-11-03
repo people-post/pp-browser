@@ -28,6 +28,12 @@ struct EncodedAccessUnit {
   bool keyframe = false;
 };
 
+/**
+ * Seconds between the encoder's own keyframes. A keyframe is several P-frames' worth of bytes, so fewer of them fit
+ * a thin uplink; a receiver that misses one asks for the next at once (NoteVideoRefreshNeeded), not on this cadence.
+ */
+inline constexpr int kKeyframeIntervalSeconds = 3;
+
 /** Decoded RGBA8 (non-premultiplied); caller may premultiply for GL. */
 struct VideoFrameRgba {
   int width = 0;

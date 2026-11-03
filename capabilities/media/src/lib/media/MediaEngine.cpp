@@ -57,7 +57,9 @@ constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
-constexpr int kVideoFps = 20;
+// Calls' video sends at 15 fps (with VideoLevelProfile's 250 kbit/s at level 1): with audio and overhead it
+// fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
+constexpr int kVideoFps = 15;
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */

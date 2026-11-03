@@ -1106,6 +1106,8 @@ PHONE_WEAK = {"delay": 150, "jitter": 20, "loss": 2, "loss_corr": 25, "up": 256,
 PHONE_LOSSY = {"delay": 60, "loss": 3, "up": 4000, "down": 8000}
 PHONE_JITTERY = {"delay": 60, "jitter": 40, "loss": 0, "up": 4000, "down": 8000}
 PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
+# None of them: what a call puts on the wire when nothing holds it back.
+PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
 
 
 def gw_net(u, script):
@@ -2751,6 +2753,32 @@ def video_snapshot(users):
     return snap
 
 
+def link_counters(users):
+    """Each user's shaped links now: {(name, "up"|"down"): (bytes sent, packets dropped, packets sent)} (tc's root
+    qdisc)."""
+    def read(text):
+        m = re.search(r"Sent (\d+) bytes (\d+) pkt \(dropped (\d+)", text)
+        return (int(m.group(1)), int(m.group(3)), int(m.group(2))) if m else (0, 0, 0)
+    out = {}
+    for u in users:
+        name = u.name.split("-")[0]
+        out[(name, "up")] = read(net(u, "tc -s qdisc show dev eth0"))
+        out[(name, "down")] = read(gw_net(u, "tc -s qdisc show dev %s" % gw_inner_dev(u)))
+    return out
+
+
+def link_report(before, after, seconds):
+    """What went over each user's links in the window: kbit/s, packets/s and their mean size, and packets the shaper
+    dropped (its queue full)."""
+    report = {}
+    for key, (sent, dropped, packets) in sorted(after.items()):
+        was_sent, was_dropped, was_packets = before[key]
+        n = max(packets - was_packets, 1)
+        report["%s_%s" % key] = "%d kbit/s %d pkt/s %d B/pkt dropped=%d" % (
+            (sent - was_sent) * 8 / 1000 / seconds, n / seconds, (sent - was_sent) / n, dropped - was_dropped)
+    return report
+
+
 def video_report(before, after, seconds):
     """How each one's frames reached each other one between two snapshots (before decoding): a 20 fps sender
     spaces them ~50 ms; a reliable lane stalls on a loss, then lets frames go together (bunched). The counters are
@@ -2786,10 +2814,11 @@ def video_call(users, thread, road=None):
     extra = {}
     if road:
         with Road(users, road) as r:
-            before, started = video_snapshot(users), time.time()
+            before, links_before, started = video_snapshot(users), link_counters(users), time.time()
             time.sleep(WATCH_VIDEO_S)
-            after, seconds = video_snapshot(users), time.time() - started
+            after, links_after, seconds = video_snapshot(users), link_counters(users), time.time() - started
         extra["road_seed"] = r.seed
+        extra["links"] = link_report(links_before, links_after, seconds)
     else:
         before, started = video_snapshot(users), time.time()
         time.sleep(WATCH_VIDEO_S)
@@ -2839,7 +2868,7 @@ def video_measurement(group, profile):
 VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile))
                       for kind in ("group", "pair")
                       for name, profile in (("lossy", PHONE_LOSSY), ("jittery", PHONE_JITTERY),
-                                            ("narrow", PHONE_NARROW))]
+                                            ("narrow", PHONE_NARROW), ("wide", PHONE_WIDE))]
 
 
 def scenario_group_call_on_the_road(lab):

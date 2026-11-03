@@ -531,7 +531,7 @@ Roe<void> AndroidVideoCodec::ConfigureEncoder(int width, int height, int fps) {
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, height);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, EstimateBitrateBps(width, height, fps));
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_FRAME_RATE, fps);
-  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL, 2);
+  AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_I_FRAME_INTERVAL, kKeyframeIntervalSeconds);
   AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, enc_color_format_);
   // Constrained-Baseline-friendly profile for Win/macOS/Linux HW decoders (V017).
   // AMEDIAFORMAT_KEY_PROFILE / LEVEL exist from API 28; string keys are identical.
