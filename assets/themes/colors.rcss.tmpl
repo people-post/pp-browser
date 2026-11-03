@@ -1,0 +1,1594 @@
+/* Template for colors-light.rcss and colors-dark.rcss (see scripts/ui/gen_theme_colors.py).
+   Each tNNN placeholder in double braces is replaced by that token's value for the theme
+   being generated. A line holding only an only-light or only-dark marker comment opens a
+   section kept for that theme alone; a line holding only the end marker closes it. */
+@media (theme: {{theme}}) {
+body {
+  color: {{t001}};
+  background-color: {{t002}};
+}
+
+/* Monochrome icons are white sources; tint with image-color (does not inherit). */
+svg {
+  image-color: {{t003}};
+}
+
+selection {
+  background-color: {{t004}};
+}
+
+.bubble-user selection {
+  background-color: {{t005}};
+}
+
+.bubble-assistant selection {
+  background-color: {{t004}};
+}
+
+.prompt-composer-input selection {
+  background-color: {{t004}};
+}
+
+.shell-dialog-prompt {
+  background-color: {{t006}};
+  border-color: {{t007}};
+}
+
+.shell-dialog-prompt:focus {
+  border-color: {{t008}};
+}
+
+.prompt-composer-input scrollbarvertical sliderbar {
+  background-color: {{t009}};
+}
+
+.chat-form-field selection {
+  background-color: {{t004}};
+}
+
+.text {
+  color: {{t010}};
+}
+
+.heading-1 {
+  color: {{t011}};
+}
+
+.heading-2 {
+  color: {{t011}};
+}
+
+.heading-3 {
+  color: {{t011}};
+}
+
+.btn-primary, .prompt-send-btn, .prompt-stop-btn, .sidebar-new-chat, .contacts-find-btn, .chat-suggestion-primary {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.btn-primary:hover, .btn-primary:focus, .prompt-send-btn:hover, .prompt-stop-btn:hover, .sidebar-new-chat:hover, .contacts-find-btn:hover, .chat-suggestion-primary:hover {
+  background-color: {{t013}};
+}
+
+.btn-primary svg, .prompt-send-btn svg, .prompt-stop-btn svg, .sidebar-new-chat svg, .contacts-find-btn svg, .contacts-action-secure svg {
+  image-color: {{t012}};
+}
+
+.prompt-voice-toggle-btn svg {
+  image-color: {{t014}};
+}
+
+.prompt-voice-toggle-btn:hover svg {
+  image-color: {{t015}};
+}
+
+.prompt-voice-bar {
+  background-color: {{t016}};
+  color: {{t017}};
+}
+
+.prompt-voice-bar:hover {
+  background-color: {{t018}};
+}
+
+.prompt-voice-bar--active, .prompt-voice-bar--active:hover {
+  background-color: {{t019}};
+  color: {{t012}};
+}
+
+.prompt-emoji-btn svg {
+  image-color: {{t014}};
+}
+
+.prompt-emoji-btn:hover svg {
+  image-color: {{t015}};
+}
+
+.prompt-attach-btn svg {
+  image-color: {{t014}};
+}
+
+.prompt-attach-btn:hover svg {
+  image-color: {{t015}};
+}
+
+.prompt-capture-btn svg {
+  image-color: {{t014}};
+}
+
+.prompt-capture-btn:hover svg {
+  image-color: {{t015}};
+}
+
+.prompt-attachment-chip-remove svg {
+  image-color: {{t014}};
+}
+
+.prompt-attachment-chip-remove:hover svg {
+  image-color: {{t015}};
+}
+
+.btn-secondary, .chat-suggestion {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.btn-secondary:hover, .btn-secondary:focus, .chat-suggestion:hover {
+  background-color: {{t021}};
+}
+
+.btn-danger {
+  background-color: {{t022}};
+  color: {{t012}};
+}
+
+.btn-danger:hover, .btn-danger:focus {
+  background-color: {{t023}};
+}
+
+.btn-danger-soft {
+  background-color: {{t024}};
+  color: {{t025}};
+  border: 1dp {{t026}};
+}
+
+.btn-danger-soft:hover, .btn-danger-soft:focus {
+  background-color: {{t027}};
+  color: {{t028}};
+  border: 1dp {{t029}};
+}
+
+.btn-danger svg {
+  image-color: {{t012}};
+}
+
+.btn-danger-soft svg {
+  image-color: {{t025}};
+}
+
+.btn-danger-soft:hover svg, .btn-danger-soft:focus svg {
+  image-color: {{t028}};
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: {{t030}};
+}
+
+.btn-ghost:hover, .btn-ghost:focus {
+  background-color: {{t016}};
+  color: {{t001}};
+}
+
+.field {
+  background-color: {{t031}};
+  color: {{t001}};
+  border: 1dp {{t021}};
+}
+
+select selectbox {
+  background-color: {{t031}};
+  border: 1dp {{t021}};
+}
+
+select selectbox option:hover {
+  background-color: {{t016}};
+}
+
+.card {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.error {
+  color: {{t033}};
+}
+
+/* "This message was deleted": a shade lighter than .muted (two classes, so it wins over .muted). */
+.bubble-deleted .bubble-deleted-text {
+  color: {{t034}};
+}
+
+.muted {
+  color: {{t014}};
+}
+
+.bubble-user {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+/* Call rows: ours like our bubbles, theirs like theirs. Icons are white sources tinted with image-color. */
+.message-row-user .chat-call-row {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.message-row-user .chat-call-row svg {
+  image-color: {{t012}};
+}
+
+.message-row-user .chat-call-row.muted {
+  background-color: {{t035}};
+}
+
+.message-row-peer .chat-call-row {
+  background-color: {{t016}};
+}
+
+.message-row-peer .chat-call-row svg {
+  image-color: {{t015}};
+}
+
+.bubble-text {
+  color: {{t012}};
+}
+
+.bubble-assistant {
+  background-color: {{t016}};
+  border: 1dp {{t018}};
+}
+
+.bubble-assistant h1, .bubble-assistant h2, .bubble-assistant h3 {
+  color: {{t011}};
+}
+
+.bubble-assistant p, .bubble-assistant li {
+  color: {{t010}};
+}
+
+.prompt-composer-pill {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+  box-shadow: 0 2dp 8dp {{t036}};
+}
+
+.chat-link {
+  color: {{t037}};
+}
+
+.chat-mention {
+  color: {{t038}};
+  background-color: {{t039}};
+}
+
+/* In our own (blue) bubble the text stays white; only the chip shows. */
+.bubble-user .chat-mention {
+  color: {{t012}};
+  background-color: {{t040}};
+}
+
+/* A peer's message that mentions this account: the whole row is tinted, with a bar on its left. */
+.message-row-mentions-me {
+  background-color: {{t041}};
+  border-left: 3dp {{t042}};
+}
+
+/* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
+.search-mark {
+  background-color: {{t043}};
+}
+
+.search-mark-current {
+  background-color: {{t044}};
+}
+
+/* @only light */
+/* In our own (blue) bubble the text is white: dark on the mark, so it stays readable. */
+.bubble-user .search-mark {
+  color: {{t045}};
+}
+/* @end */
+
+.chat-search-cancel {
+  color: {{t001}};
+}
+
+.chat-search-count {
+  color: {{t014}};
+}
+
+.chat-search-step svg {
+  image-color: {{t014}};
+}
+
+/* On the tinted row the text sits on the tint: no bubble of its own. */
+.message-row-mentions-me .bubble-assistant {
+  background-color: transparent;
+  border-width: 0;
+}
+
+.chat-inline-link {
+  color: {{t037}};
+}
+
+.inline-code {
+  background-color: {{t046}};
+}
+
+.code-block {
+  background-color: {{t047}};
+  color: {{t001}};
+}
+
+.chat-jump-latest {
+  background-color: {{t017}};
+  color: {{t048}};
+}
+
+.chat-jump-latest:hover {
+  background-color: {{t049}};
+}
+
+.chat-form {
+  border: 1dp {{t021}};
+  background-color: {{t031}};
+}
+
+.chat-form-label {
+  color: {{t010}};
+}
+
+.chat-form-field {
+  background-color: {{t006}};
+  color: {{t001}};
+  border: 1dp {{t021}};
+}
+
+.chat-form-submit {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.chat-form-submit:hover {
+  background-color: {{t050}};
+}
+
+.chat-card {
+  border: 1dp {{t021}};
+  background-color: {{t031}};
+}
+
+.chat-card-highlight {
+  border-color: {{t008}};
+  background-color: {{t051}};
+}
+
+.chat-table th, .chat-table td {
+  border: 1dp {{t021}};
+}
+
+.chat-key-value-label {
+  color: {{t052}};
+}
+
+.chat-callout {
+  background-color: {{t053}};
+}
+
+.chat-callout-warning {
+  background-color: {{t054}};
+}
+
+.chat-quote {
+  border-left: 3dp {{t021}};
+}
+
+.chat-long-list-scroll {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.chat-long-list-item {
+  border-bottom: 1dp {{t032}};
+}
+
+.chat-calendar {
+  border: 1dp {{t021}};
+  background-color: {{t031}};
+}
+
+.calendar-nav {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.calendar-nav:hover {
+  background-color: {{t050}};
+}
+
+.calendar-weekdays {
+  color: {{t052}};
+}
+
+.calendar-day {
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.calendar-day:hover {
+  background-color: {{t050}};
+}
+
+.calendar-day-muted {
+  color: {{t055}};
+}
+
+.shell-body--framed {
+  border-color: {{t021}};
+}
+
+.shell-titlebar {
+  background-color: {{t002}};
+  border-bottom-color: {{t032}};
+}
+
+.shell-titlebar-title {
+  color: {{t011}};
+}
+
+.shell-titlebar-btn {
+  background-color: {{t056}};
+}
+
+.shell-titlebar-btn:hover {
+  background-color: {{t032}};
+}
+
+.shell-titlebar-btn svg {
+  image-color: {{t015}};
+}
+
+.shell-titlebar-btn--close:hover {
+  background-color: {{t022}};
+}
+
+.shell-titlebar-btn--close:hover svg {
+  image-color: {{t012}};
+}
+
+.shell-titlebar-btn--traffic, .shell-titlebar-btn--traffic:hover {
+  background-color: {{t056}};
+}
+
+.shell-titlebar-btn--traffic-close .shell-titlebar-traffic-dot {
+  background-color: {{t057}};
+}
+
+.shell-titlebar-btn--traffic-close:hover .shell-titlebar-traffic-dot {
+  background-color: {{t058}};
+}
+
+.shell-titlebar-btn--traffic-minimize .shell-titlebar-traffic-dot {
+  background-color: {{t059}};
+}
+
+.shell-titlebar-btn--traffic-minimize:hover .shell-titlebar-traffic-dot {
+  background-color: {{t060}};
+}
+
+.shell-titlebar-btn--traffic-zoom .shell-titlebar-traffic-dot {
+  background-color: {{t061}};
+}
+
+.shell-titlebar-btn--traffic-zoom:hover .shell-titlebar-traffic-dot {
+  background-color: {{t062}};
+}
+
+.shell-titlebar-btn--traffic svg {
+  image-color: {{t063}};
+}
+
+/* White on the green zoom dot (the close and minimize dots keep the dark macOS glyphs). */
+.shell-titlebar-btn--traffic-zoom svg {
+  image-color: {{t012}};
+}
+
+.shell-banner {
+  background-color: {{t064}};
+  border-bottom: 1dp {{t065}};
+  color: {{t066}};
+}
+
+.shell-banner-text {
+  color: {{t066}};
+}
+
+.shell-banner-dismiss {
+  background-color: {{t067}};
+  color: {{t066}};
+}
+
+.shell-toast {
+  background-color: {{t068}};
+  color: {{t012}};
+  box-shadow: 0 2dp 8dp {{t069}};
+}
+
+.shell-toast-text {
+  color: {{t012}};
+}
+
+.shell-activity-strip {
+  background-color: {{t008}};
+}
+
+.shell-statusbar {
+  background-color: {{t070}};
+  border-top-color: {{t032}};
+}
+
+.shell-statusbar-cluster:hover {
+  background-color: {{t071}};
+}
+
+.shell-statusbar-divider {
+  background-color: {{t072}};
+}
+
+.shell-statusbar-brief--ok svg {
+  image-color: {{t073}};
+}
+
+.shell-statusbar-brief--failed svg {
+  image-color: {{t074}};
+}
+
+.shell-statusbar-brief--unknown svg {
+  image-color: {{t075}};
+}
+
+.shell-statusbar-direct--ok svg {
+  image-color: {{t073}};
+}
+
+.shell-statusbar-direct--off svg {
+  image-color: {{t076}};
+}
+
+.shell-statusbar-direct--error svg {
+  image-color: {{t074}};
+}
+
+.shell-statusbar-direct--checking svg {
+  image-color: {{t075}};
+}
+
+.shell-statusbar-inbound--ok svg {
+  image-color: {{t073}};
+}
+
+.shell-statusbar-inbound--off svg {
+  image-color: {{t076}};
+}
+
+.shell-call-quality-bar {
+  background-color: {{t077}};
+}
+
+.shell-call-quality-bar--on {
+  background-color: {{t014}};
+}
+
+.shell-call-quality--ok .shell-call-quality-bar--on {
+  background-color: {{t014}};
+}
+
+.shell-call-quality--warn .shell-call-quality-bar--on {
+  background-color: {{t078}};
+}
+
+.shell-call-quality--error .shell-call-quality-bar {
+  background-color: {{t026}};
+}
+
+.shell-call-quality--error .shell-call-quality-bar--on {
+  background-color: {{t033}};
+}
+
+.shell-call-quality--warn .shell-call-quality-label, .shell-call-quality-hint {
+  color: {{t079}};
+}
+
+.shell-call-quality--error .shell-call-quality-label {
+  color: {{t033}};
+}
+
+.shell-call-debug-subtitle {
+  color: {{t014}};
+}
+
+.shell-statusbar-help svg {
+  image-color: {{t080}};
+}
+
+.shell-statusbar-label--warn {
+  color: {{t081}};
+}
+
+.shell-statusbar-label--error {
+  color: {{t074}};
+}
+
+.shell-statusbar-popover {
+  background-color: {{t031}};
+  border-color: {{t032}};
+  box-shadow: 0 8dp 24dp {{t082}};
+}
+
+.shell-statusbar-popover-scrim {
+  background-color: {{t083}};
+}
+
+.shell-pane {
+  background-color: {{t002}};
+}
+
+.shell-pane-secondary {
+  border-right: 1dp {{t032}};
+}
+
+.shell-splitter:hover, .shell-splitter--active {
+  background-color: {{t072}};
+}
+
+.shell-splitter--active {
+  background-color: {{t084}};
+}
+
+.shell-nav-rail {
+  background-color: {{t070}};
+  border-right: 1dp {{t032}};
+}
+
+.shell-nav-rail--compact {
+  border-right: 0;
+  border-top: 0;
+  background-color: transparent;
+}
+
+.shell-nav-rail--compact .shell-nav-pill {
+  background-color: {{t085}};
+  border-top: 1dp {{t086}};
+  box-shadow: 0 2dp 12dp {{t087}};
+}
+
+.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
+  background-color: {{t088}};
+}
+
+.shell-nav-tab {
+  background-color: transparent;
+  color: {{t014}};
+}
+
+.shell-nav-tab svg {
+  image-color: {{t014}};
+}
+
+.shell-nav-tab:hover {
+  background-color: {{t089}};
+}
+
+.shell-nav-tab--active {
+  background-color: {{t090}};
+  color: {{t091}};
+}
+
+.shell-nav-tab--active svg {
+  image-color: {{t091}};
+}
+
+.shell-nav-rail--compact .shell-nav-tab:hover {
+  background-color: {{t092}};
+}
+
+.shell-nav-rail--compact .shell-nav-tab--active {
+  background-color: {{t090}};
+  color: {{t091}};
+}
+
+.shell-chat-overlay {
+  background-color: {{t002}};
+}
+
+.shell-chat-overlay-chrome {
+  background-color: {{t085}};
+  border-bottom: 1dp {{t093}};
+  border-top: 1dp {{t094}};
+  box-shadow: 0 2dp 12dp {{t087}};
+}
+
+.shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: {{t088}};
+}
+
+.shell-pane-auxiliary {
+  border-left: 1dp {{t032}};
+}
+
+.shell-bottom-chrome {
+  background-color: transparent;
+}
+
+.shell-drawer-scrim, .shell-sheet-scrim, .shell-account-sheet-scrim {
+  background-color: {{t095}};
+}
+
+.shell-drawer {
+  background-color: {{t002}};
+  box-shadow: 2dp 0 12dp {{t069}};
+}
+
+.shell-sheet {
+  background-color: {{t002}};
+  box-shadow: -2dp 0 12dp {{t069}};
+}
+
+.shell-sheet-compact {
+  background-color: {{t031}};
+  border-left: 1dp {{t032}};
+  box-shadow: -2dp 0 8dp {{t082}};
+}
+
+.shell-sheet-compact-chrome {
+  background-color: {{t085}};
+  border-bottom: 1dp {{t093}};
+}
+
+.shell-sheet-compact-chrome.surface-chrome--frost {
+  background-color: {{t088}};
+  border-bottom: 1dp {{t093}};
+  border-top: 1dp {{t094}};
+}
+
+.shell-account-sheet {
+  background-color: {{t031}};
+}
+
+.shell-account-sheet-header {
+  background-color: {{t085}};
+  border-bottom: 1dp {{t093}};
+}
+
+.shell-account-sheet-header.surface-chrome--frost {
+  background-color: {{t088}};
+  border-top: 1dp {{t094}};
+}
+
+.shell-profile-btn {
+  background-color: {{t032}};
+}
+
+.shell-account-sheet-grabber {
+  background-color: {{t021}};
+}
+
+.shell-toolbar {
+  background-color: {{t031}};
+  border-top: 1dp {{t032}};
+}
+
+.shell-toolbar-title {
+  color: {{t015}};
+}
+
+.shell-transient-chrome {
+  background-color: {{t085}};
+  border-bottom: 1dp {{t093}};
+  border-top: 1dp {{t094}};
+  box-shadow: 0 2dp 12dp {{t087}};
+}
+
+.shell-transient-chrome.surface-chrome--frost {
+  background-color: {{t088}};
+}
+
+.shell-composer-mount.surface-chrome {
+  background-color: {{t085}};
+  border-top: 1dp {{t032}};
+}
+
+.shell-composer-mount.surface-chrome .prompt-composer-pill {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+  box-shadow: none;
+}
+
+/* Floating Chrome utilities (compact shell; theme-only). */
+.surface-chrome {
+  background-color: {{t085}};
+  border-top: 1dp {{t094}};
+}
+
+.surface-chrome--frost {
+  background-color: {{t088}};
+}
+
+.surface-chrome--solid {
+  background-color: {{t085}};
+}
+
+.shell-back-btn {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-layer-transient {
+  background-color: {{t002}};
+}
+
+.shell-scrim {
+  background-color: {{t096}};
+}
+
+.shell-startup-cover {
+  background-color: {{t002}};
+}
+
+.shell-startup-cover-name {
+  color: {{t097}};
+}
+
+.shell-frame {
+  background-color: {{t031}};
+}
+
+.shell-close-btn {
+  background-color: {{t020}};
+  color: {{t098}};
+}
+
+.shell-close-btn:hover, .shell-close-btn:focus {
+  background-color: {{t021}};
+}
+
+.shell-close-btn svg {
+  image-color: {{t098}};
+}
+
+.shell-dialog {
+  background-color: {{t031}};
+}
+
+.shell-dialog-message {
+  color: {{t015}};
+}
+
+.shell-call-meter-label {
+  color: {{t014}};
+}
+
+.shell-call-meter-hint {
+  color: {{t015}};
+}
+
+.shell-call-meter-seg {
+  background-color: {{t032}};
+}
+
+.shell-call-meter-seg--on {
+  background-color: {{t008}};
+}
+
+.shell-call-bar {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.shell-call-bar-title {
+  color: {{t097}};
+}
+
+.shell-call-bar-subtitle {
+  color: {{t014}};
+}
+
+.shell-call-bar-hint {
+  color: {{t079}};
+}
+
+.shell-call-mute {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-mute svg {
+  image-color: {{t001}};
+}
+
+.shell-call-mute--on {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-mute--on svg {
+  image-color: {{t001}};
+}
+
+.shell-call-camera {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-camera svg {
+  image-color: {{t001}};
+}
+
+.shell-call-camera--on {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-camera--on svg {
+  image-color: {{t001}};
+}
+
+.shell-call-flip {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-flip svg {
+  image-color: {{t001}};
+}
+
+.shell-call-speaker {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-speaker svg {
+  image-color: {{t075}};
+}
+
+.shell-call-speaker--on {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-speaker--on svg {
+  image-color: {{t001}};
+}
+
+.shell-call-leave {
+  background-color: {{t027}};
+  color: {{t028}};
+}
+
+.shell-call-leave svg {
+  image-color: {{t028}};
+}
+
+.shell-call-expand {
+  background-color: {{t020}};
+  color: {{t001}};
+}
+
+.shell-call-expand svg {
+  image-color: {{t001}};
+}
+
+.shell-call-minimized-chip {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.shell-call-minimized-title {
+  color: {{t097}};
+}
+
+.shell-call-minimized-subtitle {
+  color: {{t014}};
+}
+
+.shell-call-immersive {
+  background-color: {{t099}};
+}
+
+.shell-call-immersive-grabber {
+  background-color: {{t021}};
+}
+
+.shell-call-peer-card {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.shell-call-peer-avatar {
+  background-color: {{t032}};
+}
+
+.avatar-tone-0 {
+  background-color: {{t100}};
+}
+
+.avatar-tone-1 {
+  background-color: {{t101}};
+}
+
+.avatar-tone-2 {
+  background-color: {{t102}};
+}
+
+.avatar-tone-3 {
+  background-color: {{t103}};
+}
+
+.avatar-tone-4 {
+  background-color: {{t104}};
+}
+
+.avatar-tone-5 {
+  background-color: {{t105}};
+}
+
+.avatar-tone-6 {
+  background-color: {{t106}};
+}
+
+.avatar-tone-7 {
+  background-color: {{t107}};
+}
+
+.shell-call-peer-name {
+  color: {{t097}};
+}
+
+.shell-call-retry {
+  background-color: {{t108}};
+  color: {{t109}};
+}
+
+.shell-call-retry svg {
+  image-color: {{t109}};
+}
+
+.shell-call-stage {
+  background-color: {{t110}};
+}
+
+.shell-call-remote {
+  background-color: {{t111}};
+}
+
+.shell-call-remote-placeholder {
+  color: {{t014}};
+}
+
+.shell-call-pip {
+  background-color: {{t032}};
+  border: 1dp {{t075}};
+}
+
+.shell-call-ring-eyebrow {
+  color: {{t014}};
+}
+
+.shell-call-ring {
+  border-color: {{t112}};
+}
+
+.shell-call-ring--pulse {
+  border-color: {{t113}};
+}
+
+.shell-call-ring-action-label {
+  color: {{t114}};
+}
+
+.shell-call-ring-decline {
+  background-color: {{t022}};
+}
+
+.shell-call-ring-decline svg {
+  image-color: {{t012}};
+}
+
+.shell-call-ring-voice {
+  background-color: {{t020}};
+}
+
+.shell-call-ring-voice svg {
+  image-color: {{t001}};
+}
+
+.shell-call-accept {
+  background-color: {{t115}};
+}
+
+.shell-call-accept svg {
+  image-color: {{t012}};
+}
+
+.shell-call-accept--pulse {
+  background-color: {{t116}};
+  box-shadow: 0 0 0 4dp {{t117}}, 0 4dp 14dp {{t118}};
+}
+
+.chat-empty {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.sidebar-header-title {
+  color: {{t015}};
+}
+
+.sidebar-session {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+/* Before the active rules so the open thread keeps its highlight. */
+.sidebar-session--pinned {
+  background-color: {{t119}};
+}
+
+.sidebar-session-active {
+  background-color: {{t120}};
+  border-color: {{t121}};
+  box-shadow: inset 3dp 0 0 {{t113}};
+}
+
+.sidebar-session--ai.sidebar-session-active {
+  box-shadow: inset 3dp 0 0 {{t113}};
+}
+
+.sidebar-session--private.sidebar-session-active {
+  background-color: {{t122}};
+  border-color: {{t123}};
+  box-shadow: inset 3dp 0 0 {{t124}};
+}
+
+.sidebar-session--public.sidebar-session-active {
+  background-color: {{t016}};
+  border-color: {{t021}};
+  box-shadow: inset 3dp 0 0 {{t014}};
+}
+
+.sidebar-session--group.sidebar-session-active {
+  background-color: {{t125}};
+  border-color: {{t065}};
+  box-shadow: inset 3dp 0 0 {{t078}};
+}
+
+.sidebar-session-date {
+  color: {{t014}};
+}
+
+.sidebar-session-title {
+  color: {{t010}};
+}
+
+.sidebar-session-preview {
+  color: {{t014}};
+}
+
+.sidebar-session-icon {
+  background-color: {{t016}};
+}
+
+.sidebar-session-flag, .sidebar-archived-entry svg {
+  image-color: {{t014}};
+}
+
+.sidebar-archived-label {
+  color: {{t030}};
+}
+
+.sidebar-archived-entry:hover {
+  background-color: {{t126}};
+}
+
+.sidebar-session-mention {
+  color: {{t113}};
+}
+
+.sidebar-unread-dot {
+  background-color: {{t127}};
+}
+
+.sidebar-unread {
+  background-color: {{t127}};
+  color: {{t012}};
+}
+
+.badge-count {
+  background-color: {{t127}};
+  color: {{t012}};
+}
+
+.badge-dot {
+  background-color: {{t127}};
+}
+
+.sidebar-session-close:hover {
+  background-color: {{t016}};
+}
+
+.bubble-peer {
+  background-color: {{t016}};
+  border: 1dp {{t018}};
+}
+
+.working-set-long-list .chat-long-list-item {
+  border-bottom: 1dp {{t032}};
+}
+
+.chat-working-set-chip {
+  border: 1dp {{t021}};
+  background-color: {{t016}};
+  color: {{t128}};
+}
+
+.chat-working-set-chip:hover {
+  background-color: {{t018}};
+}
+
+.chat-working-set-chip-disabled, .chat-working-set-chip-disabled:hover {
+  background-color: {{t126}};
+  color: {{t075}};
+  border: 1dp {{t032}};
+  cursor: default;
+  opacity: 0.85;
+}
+
+.settings-section-title {
+  color: {{t015}};
+}
+
+.settings-label {
+  color: {{t014}};
+}
+
+.settings-toggle-label {
+  color: {{t001}};
+}
+
+.settings-switch {
+  background-color: {{t021}};
+}
+
+.settings-switch--on {
+  background-color: {{t008}};
+}
+
+.settings-switch-knob {
+  background-color: {{t012}};
+  box-shadow: 0 1dp 3dp {{t069}};
+}
+
+.settings-choice-value-text {
+  color: {{t014}};
+}
+
+.settings-danger-zone {
+  border-top: 1dp {{t032}};
+}
+
+.settings-device-badge {
+  background-color: {{t120}};
+  color: {{t129}};
+}
+
+.me-profile-card {
+  background-color: {{t130}};
+  border: 1dp {{t032}};
+}
+
+.me-identity-name {
+  color: {{t097}};
+}
+
+.me-identity-action {
+  color: {{t015}};
+}
+
+.settings-row {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+  color: {{t001}};
+}
+
+.settings-row:hover, .settings-row:focus {
+  background-color: {{t131}};
+}
+
+.settings-back-btn:hover, .settings-back-btn:focus {
+  background-color: {{t016}};
+}
+
+.settings-choice-row:hover, .settings-choice-row:focus {
+  background-color: {{t016}};
+}
+
+.settings-row--active {
+  background-color: {{t120}};
+  border-color: {{t121}};
+}
+
+.settings-row-title {
+  color: {{t011}};
+}
+
+.settings-row-chevron {
+  image-color: {{t075}};
+}
+
+.contacts-row, .contacts-thread-row {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.contacts-row--active {
+  background-color: {{t120}};
+  border-color: {{t121}};
+  box-shadow: inset 3dp 0 0 {{t113}};
+}
+
+.contacts-row-title {
+  color: {{t010}};
+}
+
+.contact-profile-card {
+  background-color: {{t130}};
+  border: 1dp {{t032}};
+}
+
+.contacts-trust-badge--friendly {
+  background-color: {{t122}};
+  color: {{t132}};
+}
+
+.contacts-trust-badge--blocked {
+  background-color: {{t024}};
+  color: {{t025}};
+}
+
+.contacts-back-btn:hover {
+  background-color: {{t016}};
+}
+
+.contacts-action-secure {
+  background-color: {{t101}};
+  color: {{t012}};
+}
+
+.contacts-action-secure:hover {
+  background-color: {{t133}};
+}
+
+.people-picker-row:hover {
+  background-color: {{t016}};
+}
+
+.people-picker-row--selected {
+  background-color: {{t120}};
+}
+
+.people-picker-check {
+  border-color: {{t072}};
+  background-color: {{t006}};
+}
+
+.people-picker-row--selected .people-picker-check {
+  border-color: {{t113}};
+  background-color: {{t008}};
+  color: {{t012}};
+}
+
+.people-picker-check-mark {
+  color: {{t012}};
+}
+
+.people-picker-member-chip {
+  background-color: {{t134}};
+  color: {{t135}};
+}
+
+.emoji-picker-section-label {
+  background-color: {{t031}};
+}
+
+.emoji-picker-section-label-text {
+  color: {{t014}};
+}
+
+.emoji-picker-rail-tab--active {
+  background-color: {{t032}};
+}
+
+.contacts-trust-btn--active {
+  background-color: {{t120}};
+  color: {{t038}};
+  border: 1dp {{t121}};
+}
+
+.contacts-trust-btn--active.contacts-trust-btn {
+  box-shadow: inset 0 0 0 1dp {{t113}};
+}
+
+.sidebar-footer {
+  border-top: 1dp {{t032}};
+}
+
+.chat-shell--e2e .chat-header {
+  background-color: {{t122}};
+  border-left: 3dp {{t124}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--ai .chat-header {
+  border-left: 3dp {{t008}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--public .chat-header {
+  border-left: 3dp {{t021}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.chat-shell--group .chat-header {
+  border-left: 3dp {{t042}};
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
+}
+
+.prompt-composer--e2e .prompt-composer-pill {
+  border-color: {{t123}};
+}
+
+.prompt-composer--disabled {
+  opacity: 0.55;
+}
+
+.chat-secure-badge {
+  color: {{t124}};
+}
+
+.chat-shell--ai .chat-header-type-icon svg {
+  image-color: {{t113}};
+}
+
+.chat-shell--private .chat-header-type-icon svg, .chat-shell--e2e .chat-header-type-icon svg {
+  image-color: {{t124}};
+}
+
+.chat-shell--public .chat-header-type-icon svg {
+  image-color: {{t014}};
+}
+
+.chat-shell--group .chat-header-type-icon svg {
+  image-color: {{t079}};
+}
+
+.chat-peer-path--direct svg {
+  image-color: {{t073}};
+}
+
+.chat-peer-path--hop svg {
+  image-color: {{t076}};
+}
+
+.chat-peer-path--relay svg {
+  image-color: {{t014}};
+}
+
+.chat-peer-path--connecting svg {
+  image-color: {{t075}};
+}
+
+.chat-peer-path--degraded svg {
+  image-color: {{t076}};
+}
+
+.chat-peer-path--failed svg {
+  image-color: {{t074}};
+}
+
+.chat-peer-path--ready svg {
+  image-color: {{t075}};
+}
+
+.chat-header-call-btn, .chat-header-more-btn {
+  background-color: {{t032}};
+  color: {{t001}};
+}
+
+.chat-header-call-btn:hover, .chat-header-more-btn:hover {
+  background-color: {{t021}};
+}
+
+.chat-header-call-btn--join {
+  background-color: {{t115}};
+  color: {{t012}};
+}
+
+.chat-header-call-btn--join:hover {
+  background-color: {{t136}};
+}
+
+.chat-header-call-btn svg, .chat-header-more-btn svg {
+  image-color: {{t001}};
+}
+
+/* After the plain call button's rule (same specificity): white on the green join button. */
+.chat-header-call-btn--join svg {
+  image-color: {{t012}};
+}
+
+.context-menu-panel {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+/* Float menus (right-click / long-press): invisible hit target only — no dim.
+   Compact action sheets keep a light scrim below. */
+.context-menu-scrim {
+  background-color: transparent;
+}
+
+.context-menu-layer--sheet .context-menu-scrim {
+  background-color: {{t096}};
+}
+
+.context-menu-sheet-list {
+  background-color: {{t031}};
+  border: 1dp {{t032}};
+}
+
+.context-menu-sheet-cancel {
+  background-color: {{t031}};
+  color: {{t113}};
+  border: 1dp {{t032}};
+}
+
+.context-menu-sheet-cancel:hover {
+  background-color: {{t016}};
+}
+
+.context-menu-item {
+  color: {{t001}};
+}
+
+.context-menu-item:hover {
+  background-color: {{t016}};
+}
+
+.context-menu-item--danger {
+  color: {{t033}};
+}
+
+.context-menu-item--danger:hover {
+  background-color: {{t024}};
+}
+
+.context-menu-item--danger svg {
+  image-color: {{t033}};
+}
+}
