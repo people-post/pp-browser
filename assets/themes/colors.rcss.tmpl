@@ -872,6 +872,22 @@ select selectbox option:hover {
   background-color: {{bg-card}};
 }
 
+/* Checkboxes (B38): the colours were lost when this file became a template (they sat outside the theme block). */
+input.checkbox {
+  border-color: {{gray}};
+  background-color: transparent;
+}
+
+input.checkbox:hover,
+input.checkbox:focus {
+  border-color: {{accent}};
+}
+
+input.checkbox:checked {
+  border-color: {{accent}};
+  background-color: {{accent}};
+}
+
 .shell-dialog-message {
   color: {{label}};
 }

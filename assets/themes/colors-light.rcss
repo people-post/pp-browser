@@ -867,6 +867,22 @@ select selectbox option:hover {
   background-color: #ffffff;
 }
 
+/* Checkboxes (B38): the colours were lost when this file became a template (they sat outside the theme block). */
+input.checkbox {
+  border-color: #8e8e93;
+  background-color: transparent;
+}
+
+input.checkbox:hover,
+input.checkbox:focus {
+  border-color: #007aff;
+}
+
+input.checkbox:checked {
+  border-color: #007aff;
+  background-color: #007aff;
+}
+
 .shell-dialog-message {
   color: #000000;
 }

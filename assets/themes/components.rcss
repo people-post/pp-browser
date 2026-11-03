@@ -3131,6 +3131,34 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* Phone checkboxes (DESIGN-pp-ui §8): an iOS circle, outlined when off, accent-filled with a white tick when on.
+   The row around it (a label) is at least 44dp tall so the whole row is the tap target. */
+.shell-body--compact input.checkbox {
+  width: 24dp;
+  height: 24dp;
+  border-width: 2dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.shell-body--compact input.checkbox:checked {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+.shell-body--compact .shell-dialog-checkbox,
+.shell-body--compact .people-picker-video-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 44dp;
+  margin-top: 8dp;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
 .shell-dialog-actions {
   justify-content: flex-end;
   gap: 8dp;

@@ -56,6 +56,7 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | archive | phone context menus (chat row Archive / Unarchive) | drawn | `archive.svg` |
 | block | phone context menus (chat row Block / Unblock) | drawn | - |
 | check-circle | phone context menus (chat row Mark as read) | drawn | - |
+| check | phone checkboxes, the white tick inside a checked circle | drawn | - |
 | circle-dot | phone context menus (chat row Mark as unread) | drawn | - |
 | eraser | phone context menus (chat row Clear history) | drawn | - |
 | log-out | phone context menus (chat row Leave group) | drawn | - |
