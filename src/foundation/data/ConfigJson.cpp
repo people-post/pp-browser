@@ -761,6 +761,8 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("group_invite_policy", prefs.group_invite_policy);
   object.set("call_invite_policy", prefs.call_invite_policy);
   object.set("attachment_download_policy", prefs.attachment_download_policy);
+  object.set("attachment_auto_on_wifi", prefs.attachment_auto_on_wifi);
+  object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("reduce_transparency", prefs.reduce_transparency);
@@ -827,6 +829,12 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;
   } else {
+    prefs.attachment_download_policy = "smart";
+  }
+  prefs.attachment_auto_on_wifi = object.getIf<bool>("attachment_auto_on_wifi").value_or(true);
+  prefs.attachment_auto_on_cellular = object.getIf<bool>("attachment_auto_on_cellular").value_or(false);
+  if (prefs.attachment_download_policy == "always_auto" && !prefs.attachment_auto_on_wifi &&
+      !prefs.attachment_auto_on_cellular) {
     prefs.attachment_download_policy = "smart";
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);

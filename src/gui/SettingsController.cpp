@@ -291,6 +291,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.call_invite_policy_label = bindings_.call_invite_policy_label.c_str();
   ui_state_.attachment_download_policy = bindings_.attachment_download_policy.c_str();
   ui_state_.attachment_download_policy_label = bindings_.attachment_download_policy_label.c_str();
+  ui_state_.attachment_auto_on_wifi = bindings_.attachment_auto_on_wifi.c_str();
+  ui_state_.attachment_auto_on_cellular = bindings_.attachment_auto_on_cellular.c_str();
   ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
   ui_state_.tool_permissions_has_saved = bindings_.tool_permissions_has_saved;
 
@@ -380,6 +382,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.attachment_cache_size_label = ui_state_.attachment_cache_size_label.c_str();
   bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
   bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
+  bindings_.attachment_auto_on_wifi = ui_state_.attachment_auto_on_wifi.c_str();
+  bindings_.attachment_auto_on_cellular = ui_state_.attachment_auto_on_cellular.c_str();
+  bindings_.attachment_auto_toggles_visible = AttachmentAutoTogglesVisible(ui_state_, Platform::Detect());
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
   bindings_.pin_protection_is_default = ui_state_.pin_protection_is_default;
   bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
@@ -569,6 +574,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("attachment_cache_size_label", &controller.bindings_.attachment_cache_size_label);
     ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
     ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
+    ctor.Bind("attachment_auto_on_wifi", &controller.bindings_.attachment_auto_on_wifi);
+    ctor.Bind("attachment_auto_on_cellular", &controller.bindings_.attachment_auto_on_cellular);
+    ctor.Bind("attachment_auto_toggles_visible", &controller.bindings_.attachment_auto_toggles_visible);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
     ctor.Bind("pin_protection_is_default", &controller.bindings_.pin_protection_is_default);
     ctor.Bind("pin_protection_not_setup", &controller.bindings_.pin_protection_not_setup);
@@ -600,6 +608,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
     ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
+    ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
+    ctor.BindEventCallback("toggle_attachment_auto_cellular", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
     ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
     ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
     ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
@@ -715,6 +725,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "attachment_cache_size_label");
   host.Dirty("settings", "attachment_download_policy");
   host.Dirty("settings", "attachment_download_policy_label");
+  host.Dirty("settings", "attachment_auto_on_wifi");
+  host.Dirty("settings", "attachment_auto_on_cellular");
+  host.Dirty("settings", "attachment_auto_toggles_visible");
   host.Dirty("settings", "pin_protection_status");
   host.Dirty("settings", "pin_protection_is_default");
   host.Dirty("settings", "pin_protection_not_setup");
@@ -1566,9 +1579,21 @@ void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& 
   if (suppress_auto_save_) {
     return;
   }
-  bindings_.attachment_download_policy = policy.c_str();
-  bindings_.attachment_download_policy_label = AttachmentDownloadPolicyDisplayLabel(policy).c_str();
   PullBindingsToUiState();
+  ChooseAttachmentDownloadPolicy(ui_state_, policy);
+  PushUiStateToBindings();
+  MarkSectionDirty("storage");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::ToggleAttachmentAutoNetwork(const bool cellular) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  PullBindingsToUiState();
+  pbr::ToggleAttachmentAutoNetwork(ui_state_, cellular);
+  PushUiStateToBindings();
   MarkSectionDirty("storage");
   FlushPending();
   DirtyAll();

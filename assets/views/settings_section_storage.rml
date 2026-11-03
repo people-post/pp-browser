@@ -9,6 +9,22 @@
             <span class="settings-choice-value-text">{{attachment_download_policy_label}}</span>
           </button>
         </div>
+        <div class="settings-toggle-row row" data-if="attachment_auto_toggles_visible">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_wifi}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="attachment_auto_on_wifi == 'on'"
+                  data-event-click="toggle_attachment_auto_wifi()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <div class="settings-toggle-row row" data-if="attachment_auto_toggles_visible">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.storage.attachment_policy.on_cellular}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="attachment_auto_on_cellular == 'on'"
+                  data-event-click="toggle_attachment_auto_cellular()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
         <p class="text muted">{{i18n:settings.storage.attachment_policy.help}}</p>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"

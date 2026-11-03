@@ -168,6 +168,10 @@ private:
     ui::String attachment_cache_size_label;
     ui::String attachment_download_policy = "smart";
     ui::String attachment_download_policy_label;
+    ui::String attachment_auto_on_wifi = "on";
+    ui::String attachment_auto_on_cellular = "off";
+    /** Phone and "everything" chosen: the Wi-Fi / mobile-network ticks show. */
+    bool attachment_auto_toggles_visible = false;
     ui::String pin_protection_status;
     bool pin_protection_is_default = false;
     bool pin_protection_not_setup = false;
@@ -268,6 +272,7 @@ private:
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
+  void ToggleAttachmentAutoNetwork(bool cellular);
   void OnDrainPendingAttachmentMedia();
   void OnClearDownloadedAttachments();
   void PerformClearDownloadedAttachments();

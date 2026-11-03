@@ -177,6 +177,9 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `sidebar_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 240; shell clamps to 200–480 dp. Expanded-layout secondary pane width |
 | `sidebar_collapsed` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Expanded-layout secondary pane collapsed |
 | `auxiliary_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 320; shell clamps to 280–640 dp. Expanded-layout auxiliary pane width |
+| `attachment_download_policy` | `preferences.json` | string `smart` (default) \| `always_auto` \| `on_demand`; `always_auto` with both network booleans false reads back as `smart` |
+| `attachment_auto_on_wifi` | `preferences.json` | boolean, optional; default true. With `always_auto`: download everything on Wi-Fi |
+| `attachment_auto_on_cellular` | `preferences.json` | boolean, optional; default false. With `always_auto`: download everything on the mobile network (phones only) |
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 
 `tool_permissions` shape:

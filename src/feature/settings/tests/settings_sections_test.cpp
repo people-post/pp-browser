@@ -107,3 +107,48 @@ TEST(SettingsSectionsTest, AdvancedSettingsSwitchAndAdvancedOnlySections) {
   bootstrap.profile_prefs.show_advanced_settings = true;
   EXPECT_TRUE(about.IsPersisted(state, bootstrap));
 }
+
+// Me → Storage → Auto-download: three choices; "everything" has a Wi-Fi and a mobile-network tick on phones only,
+// and unticking the last one falls back to the default choice.
+TEST(SettingsSectionsTest, AutoDownloadChoicesTicksAndFallback) {
+  LoadLocales();
+  pbr::BootstrapResult bootstrap;
+  pbr::SettingsUiState state;
+  pbr::StorageSettingsSection section;
+  section.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.attachment_download_policy, "smart");
+  EXPECT_EQ(state.attachment_download_policy_label, "Up to 4 MB (default)");
+  EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
+
+  pbr::ChooseAttachmentDownloadPolicy(state, "on_demand");
+  EXPECT_EQ(state.attachment_download_policy_label, "Nothing (saves data)");
+  EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::Android));
+
+  pbr::ChooseAttachmentDownloadPolicy(state, "always_auto");
+  EXPECT_EQ(state.attachment_auto_on_wifi, "on");
+  EXPECT_EQ(state.attachment_auto_on_cellular, "off");
+  EXPECT_TRUE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
+  EXPECT_TRUE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::Android));
+  EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::Desktop));
+
+  EXPECT_FALSE(section.IsPersisted(state, bootstrap));
+  pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/true);
+  EXPECT_EQ(state.attachment_download_policy, "always_auto");
+  EXPECT_EQ(state.attachment_auto_on_cellular, "on");
+  pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/false);
+  EXPECT_EQ(state.attachment_download_policy, "always_auto") << "one tick is still on";
+  EXPECT_EQ(state.attachment_auto_on_wifi, "off");
+  pbr::ToggleAttachmentAutoNetwork(state, /*cellular=*/true);
+  EXPECT_EQ(state.attachment_download_policy, "smart") << "the last tick off returns to the default";
+  EXPECT_EQ(state.attachment_download_policy_label, "Up to 4 MB (default)");
+  EXPECT_FALSE(pbr::AttachmentAutoTogglesVisible(state, pbr::PlatformKind::IOS));
+  EXPECT_TRUE(section.IsPersisted(state, bootstrap));
+
+  bootstrap.profile_prefs.attachment_download_policy = "always_auto";
+  bootstrap.profile_prefs.attachment_auto_on_wifi = false;
+  bootstrap.profile_prefs.attachment_auto_on_cellular = true;
+  section.SyncFromSession(bootstrap, state);
+  EXPECT_EQ(state.attachment_auto_on_wifi, "off");
+  EXPECT_EQ(state.attachment_auto_on_cellular, "on");
+  EXPECT_TRUE(section.IsPersisted(state, bootstrap));
+}

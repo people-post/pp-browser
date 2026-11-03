@@ -63,12 +63,21 @@ TEST(HubSettingsProjectionTest, ProjectsPolicyAndNotificationPrefs) {
       pbr::ProjectNotifications(prefs);
   EXPECT_FALSE(notifications.show_notifications);
 
+  EXPECT_TRUE(policy.attachment_auto_on_wifi);
+  EXPECT_FALSE(policy.attachment_auto_on_cellular);
+
   pbr::ProfilePreferences other = prefs;
   other.appearance = "light";
   EXPECT_EQ(pbr::ProjectPolicy(other), policy);
   EXPECT_EQ(pbr::ProjectNotifications(other), notifications);
 
   other.group_invite_policy = "nobody";
+  EXPECT_NE(pbr::ProjectPolicy(other), policy);
+  other.group_invite_policy = "everyone";
+  other.attachment_auto_on_cellular = true;
+  EXPECT_NE(pbr::ProjectPolicy(other), policy);
+  other.attachment_auto_on_cellular = false;
+  other.attachment_auto_on_wifi = false;
   EXPECT_NE(pbr::ProjectPolicy(other), policy);
   other.show_notifications = true;
   EXPECT_NE(pbr::ProjectNotifications(other), notifications);
