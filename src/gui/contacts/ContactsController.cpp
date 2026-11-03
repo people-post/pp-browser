@@ -942,7 +942,7 @@ std::vector<ContextMenuAction> ContactsController::AddContactMenuActions(const b
       Tr("contacts.add"),
       nullptr,
       []() { ContactsController::Instance().OnAddContact(); },
-      "../icons/contacts.svg",
+      "../icons/v2/user-plus.svg",
   });
   if (compact) {
     // On the phone this menu is the one entry point for scanning and for starting a group.
@@ -970,7 +970,7 @@ std::vector<ContextMenuAction> ContactsController::AddContactMenuActions(const b
       Tr("contacts.find_someone"),
       nullptr,
       []() { ContactsController::Instance().OnFindSomeone(); },
-      "../icons/sparkle.svg",
+      "../icons/v2/search.svg",
   });
   return actions;
 }
@@ -1160,7 +1160,7 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
                        },
                        "../icons/contacts.svg"});
   }
-  actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}});
+  actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}, "../icons/v2/close.svg"});
   ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions));
 }
 

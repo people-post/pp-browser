@@ -34,7 +34,8 @@
            data-class-avatar-tone-5="!thread_is_ai && !thread_is_group && thread_avatar_tone == 5"
            data-class-avatar-tone-6="!thread_is_ai && !thread_is_group && thread_avatar_tone == 6"
            data-class-avatar-tone-7="!thread_is_ai && !thread_is_group && thread_avatar_tone == 7">
-        <p class="chat-row-avatar-letter" data-if="!thread_is_ai && !thread_is_group">{{thread_avatar_letter}}</p>
+        <img class="avatar-photo" data-if="!thread_is_ai && !thread_is_group && thread_has_icon" data-attr-src="thread_icon_src"/>
+        <p class="chat-row-avatar-letter" data-if="!thread_is_ai && !thread_is_group && !thread_has_icon">{{thread_avatar_letter}}</p>
         <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="20" height="20" data-if="thread_is_ai"></svg>
         <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="20" height="20" data-if="thread_is_group"></svg>
       </div>
@@ -168,7 +169,8 @@
                data-class-avatar-tone-5="row.group_name_tone == 5"
                data-class-avatar-tone-6="row.group_name_tone == 6"
                data-class-avatar-tone-7="row.group_name_tone == 7">
-            <p class="chat-row-avatar-letter">{{row.group_avatar_letter}}</p>
+            <img class="avatar-photo" data-if="row.group_has_icon" data-attr-src="row.group_avatar_src"/>
+            <p class="chat-row-avatar-letter" data-if="!row.group_has_icon">{{row.group_avatar_letter}}</p>
           </div>
         </div>
         <div class="chat-row-content">

@@ -55,6 +55,8 @@ struct VoiceBubbleState {
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
+  /** Local file of a sender's cached profile photo; empty: none cached, the letter avatar shows. */
+  std::function<std::string(const std::string& contact_id)> sender_icon;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;

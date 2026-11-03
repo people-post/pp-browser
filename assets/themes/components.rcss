@@ -2025,6 +2025,12 @@ select selectbox option {
   width: 36dp;
   height: 36dp;
   border-radius: 18dp;
+  overflow: hidden;
+}
+
+.shell-chat-overlay .chat-header-avatar .avatar-photo {
+  width: 36dp;
+  height: 36dp;
 }
 
 .shell-chat-overlay .chat-header-avatar .chat-row-avatar-letter {
@@ -3603,6 +3609,13 @@ input.checkbox {
   width: 48dp;
   height: 48dp;
   border-radius: 24dp;
+  overflow: hidden;
+}
+
+/* A cached profile photo replaces the letter: the round frame clips it. */
+.shell-layer-compact .chat-row-avatar .avatar-photo {
+  width: 48dp;
+  height: 48dp;
 }
 
 .chat-row-avatar-letter {
@@ -4973,6 +4986,12 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Phone action sheet: 20dp leading icon (the svg itself is emitted at 20dp). */
+.context-menu-layer--sheet .context-menu-item-icon {
+  width: 20dp;
+  height: 20dp;
+}
+
 .context-menu-item-label {
   flex: 1;
   min-width: 0;
@@ -5585,6 +5604,12 @@ input.checkbox {
   width: 32dp;
   height: 32dp;
   border-radius: 16dp;
+  overflow: hidden;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar .avatar-photo {
+  width: 32dp;
+  height: 32dp;
 }
 
 .shell-chat-overlay .chat-row-avatar-col-avatar .chat-row-avatar-letter {

@@ -44,6 +44,8 @@ public:
     bool& thread_is_group;
     ui::String& thread_avatar_letter;
     int& thread_avatar_tone;
+    ui::String& thread_icon_src;
+    bool& thread_has_icon;
     bool& compose_disabled;
     bool& show_attach_button;
     bool& show_thread_actions;

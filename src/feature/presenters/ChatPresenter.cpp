@@ -271,6 +271,9 @@ void ChatPresenter::Refresh() {
       row.avatar_letter = glyph.letter;
       row.avatar_tone = glyph.tone;
     }
+    if (thread.kind == ThreadKind::Direct && label.contact_id) {
+      row.icon_path = facade_->ContactIconPath(*label.contact_id);
+    }
     next.rows.push_back(std::move(row));
   }
   list_ = std::move(next);

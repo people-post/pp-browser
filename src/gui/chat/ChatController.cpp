@@ -320,6 +320,8 @@ ChatController::ChatController()
                  .thread_is_group = chat_.thread_is_group,
                  .thread_avatar_letter = chat_.thread_avatar_letter,
                  .thread_avatar_tone = chat_.thread_avatar_tone,
+                 .thread_icon_src = chat_.thread_icon_src,
+                 .thread_has_icon = chat_.thread_has_icon,
                  .compose_disabled = chat_.compose_disabled,
                  .show_attach_button = chat_.show_attach_button,
                  .show_thread_actions = chat_.show_thread_actions,
@@ -1031,15 +1033,19 @@ std::string LowerAscii(std::string s) {
   return s;
 }
 
+}  // namespace
+
 // One chats-list row as the RML binds it. Both texts are bound as text ({{session.title}}), so names and message text
 // need no escaping here.
-SessionDisplayRow ToDisplayRow(const ChatSessionRow& from) {
+SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   SessionDisplayRow row;
   row.id = from.id.c_str();
   row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
   row.preview = from.preview.c_str();
   row.avatar_letter = from.avatar_letter.c_str();
   row.avatar_tone = from.avatar_tone;
+  row.has_icon = !from.icon_path.empty();
+  row.icon_src = from.icon_path.c_str();
   row.kind = from.kind.c_str();
   row.unread_count = from.unread_count;
   row.unread_display = FormatBadgeCount(from.unread_count).c_str();
@@ -1051,7 +1057,6 @@ SessionDisplayRow ToDisplayRow(const ChatSessionRow& from) {
   row.mentioned = from.mentioned;
   return row;
 }
-}  // namespace
 
 void ChatController::ApplySessionList() {
   const ChatListScreen& list = presenter_.List();
@@ -1076,7 +1081,7 @@ void ChatController::ApplySessionList() {
   shell_.sessions.reserve(visible);
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
-    SessionRow row = ToDisplayRow(from);
+    SessionRow row = ToSessionDisplayRow(from);
     if (searching && LowerAscii(row.title.c_str()).find(query) == std::string::npos &&
         LowerAscii(from.preview).find(query) == std::string::npos) {
       continue;
@@ -1098,7 +1103,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
   const HomeTodaySummary summary = SummarizeHomeToday(list.rows);
   shell_.home_unread.clear();
   for (const ChatSessionRow& from : summary.unread) {
-    shell_.home_unread.push_back(ToDisplayRow(from));
+    shell_.home_unread.push_back(ToSessionDisplayRow(from));
   }
   shell_.home_all_label = Tr("home.all_count", {{"count", std::to_string(summary.unread_total)}}).c_str();
   shell_.home_new_contacts = summary.new_contacts;

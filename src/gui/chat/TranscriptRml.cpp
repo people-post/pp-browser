@@ -668,6 +668,11 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
         row.group_name_tone = glyph.tone;
         row.group_avatar = true;
         row.group_avatar_letter = glyph.letter.c_str();
+        if (facts.sender_icon) {
+          const std::string icon_path = facts.sender_icon(message.sender_contact_id);
+          row.group_has_icon = !icon_path.empty();
+          row.group_avatar_src = icon_path.c_str();
+        }
         // The name goes at the top of the bubble; rows without a bubble (cards, calls) keep it as a line above.
         static const std::string kBubbleOpen = "<div class=\"bubble bubble-assistant";
         const size_t bubble_at = content.find(kBubbleOpen);

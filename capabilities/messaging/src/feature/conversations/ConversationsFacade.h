@@ -130,6 +130,11 @@ public:
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
+  /**
+   * Local file of a saved contact's cached profile photo, empty when none is cached yet (the letter avatar shows).
+   * Starts the photo fetch when the contact has one that is not cached, like the Contacts list does.
+   */
+  std::string ContactIconPath(const std::string& contact_id);
   /** The thread's transcript (D031 window); the GUI draws it with TranscriptFactsFor(). */
   std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                              std::optional<int64_t> newest_inclusive = std::nullopt);

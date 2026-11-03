@@ -115,6 +115,8 @@ void ChatThreadChrome::ResetPanelState() {
   view_.thread_is_group = false;
   view_.thread_avatar_letter = "";
   view_.thread_avatar_tone = 0;
+  view_.thread_icon_src = "";
+  view_.thread_has_icon = false;
   view_.compose_disabled = false;
   view_.show_attach_button = ShowAttachWithoutThread();
   view_.show_thread_actions = false;
@@ -238,6 +240,14 @@ void ChatThreadChrome::Update() {
     const AvatarGlyph glyph = MakeAvatarGlyph(view_.thread_title.c_str(), {});
     view_.thread_avatar_letter = glyph.letter.c_str();
     view_.thread_avatar_tone = glyph.tone;
+    // The person's own photo when it is cached here, else the letter.
+    view_.thread_icon_src = "";
+    view_.thread_has_icon = false;
+    if (thread->kind == ThreadKind::Direct && label.contact_id) {
+      const std::string icon_path = facade_->ContactIconPath(*label.contact_id);
+      view_.thread_icon_src = icon_path.c_str();
+      view_.thread_has_icon = !icon_path.empty();
+    }
     view_.thread_encrypted = thread->encrypted;
     const ui::String visual_kind = SessionVisualKind(*thread);
     view_.thread_is_ai = visual_kind == "ai";
@@ -427,6 +437,8 @@ void ChatThreadChrome::Update() {
     view_.thread_is_group = false;
   view_.thread_avatar_letter = "";
   view_.thread_avatar_tone = 0;
+  view_.thread_icon_src = "";
+  view_.thread_has_icon = false;
     view_.compose_disabled = false;
     view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;

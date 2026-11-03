@@ -56,6 +56,42 @@ inline bool SessionMenuItemIsDestructive(const SessionMenuItem item) {
          item == SessionMenuItem::LeaveGroup;
 }
 
+/** Leading icon of an item (asset-relative SVG under assets/icons/v2/); every item has one. */
+inline const char* SessionMenuIcon(const SessionMenuItem item) {
+  switch (item) {
+  case SessionMenuItem::MarkUnread:
+    return "../icons/v2/circle-dot.svg";
+  case SessionMenuItem::MarkRead:
+    return "../icons/v2/check-circle.svg";
+  case SessionMenuItem::Pin:
+  case SessionMenuItem::Unpin:
+    return "../icons/v2/pin.svg";
+  case SessionMenuItem::Mute:
+  case SessionMenuItem::MuteMentions:
+    return "../icons/v2/bell-off.svg";
+  case SessionMenuItem::Unmute:
+  case SessionMenuItem::AllowMentions:
+    return "../icons/v2/bell.svg";
+  case SessionMenuItem::AskBeforeSharingAi:
+    return "../icons/v2/shield.svg";
+  case SessionMenuItem::Archive:
+  case SessionMenuItem::Unarchive:
+    return "../icons/v2/archive.svg";
+  case SessionMenuItem::ViewContact:
+    return "../icons/v2/user.svg";
+  case SessionMenuItem::Block:
+  case SessionMenuItem::Unblock:
+    return "../icons/v2/block.svg";
+  case SessionMenuItem::ClearChat:
+    return "../icons/v2/eraser.svg";
+  case SessionMenuItem::Delete:
+    return "../icons/v2/trash.svg";
+  case SessionMenuItem::LeaveGroup:
+    return "../icons/v2/log-out.svg";
+  }
+  return "";
+}
+
 /**
  * The items for one row, in display order. Items that make no sense for the row are left out rather
  * than disabled; destructive ones come last.

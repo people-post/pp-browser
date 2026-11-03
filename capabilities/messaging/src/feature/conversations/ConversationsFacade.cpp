@@ -284,6 +284,20 @@ PeerDisplayLabel ConversationsFacade::ResolveThreadLabel(const Thread& thread) {
   return hub_.Inbox().ResolveThreadLabel(thread);
 }
 
+std::string ConversationsFacade::ContactIconPath(const std::string& contact_id) {
+  if (contact_id.empty()) {
+    return {};
+  }
+  auto contact = hub_.Contacts().Get(contact_id);
+  if (!contact || !*contact) {
+    return {};
+  }
+  if ((*contact)->remote.icon && !(*contact)->remote.icon->url.empty()) {
+    hub_.EnsureContactIconCached(**contact);
+  }
+  return hub_.ContactIconLocalPath(**contact);
+}
+
 std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::string& thread_id,
                                                             const std::optional<int64_t> oldest_inclusive,
                                                             const std::optional<int64_t> newest_inclusive) {

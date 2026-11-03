@@ -94,6 +94,8 @@ void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
     message_handle.RegisterMember("group_column", &MessageDisplayRow::group_column);
     message_handle.RegisterMember("group_avatar", &MessageDisplayRow::group_avatar);
     message_handle.RegisterMember("group_avatar_letter", &MessageDisplayRow::group_avatar_letter);
+    message_handle.RegisterMember("group_avatar_src", &MessageDisplayRow::group_avatar_src);
+    message_handle.RegisterMember("group_has_icon", &MessageDisplayRow::group_has_icon);
     message_handle.RegisterMember("has_content", &MessageDisplayRow::has_content);
     message_handle.RegisterMember("has_form", &MessageDisplayRow::has_form);
     message_handle.RegisterMember("form", &MessageDisplayRow::form);

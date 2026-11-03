@@ -338,5 +338,23 @@ TEST(TranscriptRmlTest, UnsupportedAndEmptyCardsUseLocalizedText) {
   LocalizationService::Instance().SetPreferredLanguage("en");
 }
 
+TEST(TranscriptRmlTest, TheGroupAvatarColumnShowsTheSendersPhotoWhenItIsCachedAndTheLetterWhenNot) {
+  using namespace phone_rows;
+  MentionRoster roster;
+  roster.local_account = "account:me";
+  TranscriptFacts facts = NamedFacts();
+  facts.sender_icon = [](const std::string& id) {
+    return id == "account:a" ? std::string("/profiles/x/icons/a.jpg") : std::string();
+  };
+  const auto rows = RenderTranscript({TextRow("1", "account:a", kNoon), TextRow("2", "account:b", kNoon + kMinute)},
+                                     facts, roster);
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_TRUE(rows[0].group_has_icon);
+  EXPECT_EQ(std::string(rows[0].group_avatar_src.c_str()), "/profiles/x/icons/a.jpg");
+  EXPECT_FALSE(rows[1].group_has_icon) << "no cached photo: the letter avatar stays";
+  EXPECT_TRUE(rows[1].group_avatar_src.empty());
+  EXPECT_EQ(std::string(rows[1].group_avatar_letter.c_str()), "B");
+}
+
 } // namespace
 } // namespace pbr

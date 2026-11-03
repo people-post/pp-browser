@@ -69,6 +69,9 @@ namespace pbr {
 
 class InputCoordinator;
 
+/** One chats-list row as the RML binds it (letter avatar, or the person's photo when `icon_path` is set). */
+SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from);
+
 class ChatController : public Module, private AgentTurnHost, private ChatMenusHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;

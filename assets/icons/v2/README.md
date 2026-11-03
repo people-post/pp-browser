@@ -51,3 +51,13 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | user | 03-home-edit | drawn | - |
 | user-plus | 04-contacts, 04-contacts-add, 05-WideContacts, WideContacts | drawn | - |
 | video | 01-chat, 04-contact-detail, 05-WideChats, 05-WideContacts (+11 more); §8.12 | drawn | `video.svg` |
+| archive | phone context menus (chat row Archive / Unarchive) | drawn | `archive.svg` |
+| block | phone context menus (chat row Block / Unblock) | drawn | - |
+| check-circle | phone context menus (chat row Mark as read) | drawn | - |
+| circle-dot | phone context menus (chat row Mark as unread) | drawn | - |
+| eraser | phone context menus (chat row Clear history) | drawn | - |
+| log-out | phone context menus (chat row Leave group) | drawn | - |
+| pin | phone context menus (chat row Pin / Unpin) | drawn | `pin.svg` |
+| reply | phone context menus (message Reply) | drawn | - |
+| share | phone context menus (shared item Share) | drawn | `share.svg` |
+| trash | phone context menus (Delete) | drawn | `trash.svg` |

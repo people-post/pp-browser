@@ -43,6 +43,8 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("thread_is_group", &state.thread_is_group);
   ctor.Bind("thread_avatar_letter", &state.thread_avatar_letter);
   ctor.Bind("thread_avatar_tone", &state.thread_avatar_tone);
+  ctor.Bind("thread_icon_src", &state.thread_icon_src);
+  ctor.Bind("thread_has_icon", &state.thread_has_icon);
   ctor.Bind("compose_disabled", &state.compose_disabled);
   ctor.Bind("composer_input_disabled", &state.composer_input_disabled);
   ctor.Bind("show_attach_button", &state.show_attach_button);
@@ -125,6 +127,8 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("mentioned", &SessionDisplayRow::mentioned);
     session_handle.RegisterMember("avatar_letter", &SessionDisplayRow::avatar_letter);
     session_handle.RegisterMember("avatar_tone", &SessionDisplayRow::avatar_tone);
+    session_handle.RegisterMember("has_icon", &SessionDisplayRow::has_icon);
+    session_handle.RegisterMember("icon_src", &SessionDisplayRow::icon_src);
   }
   ctor.RegisterArray<std::vector<SessionDisplayRow>>();
   ctor.Bind("sessions", &state.sessions);
@@ -184,6 +188,8 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_is_group");
   DataModelHost::Instance().Dirty("chat", "thread_avatar_letter");
   DataModelHost::Instance().Dirty("chat", "thread_avatar_tone");
+  DataModelHost::Instance().Dirty("chat", "thread_icon_src");
+  DataModelHost::Instance().Dirty("chat", "thread_has_icon");
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
   DataModelHost::Instance().Dirty("chat", "show_attach_button");

@@ -164,7 +164,7 @@ void PasteIntoEditor(ui::Element* editor) {
 enum class ActionFilter { All, Quick, List };
 
 void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions,
-                         const ActionFilter filter = ActionFilter::All) {
+                         const ActionFilter filter = ActionFilter::All, const int icon_dp = 16) {
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
     const bool enabled = !action.enabled || action.enabled();
@@ -181,7 +181,7 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
     out << "\" type=\"button\" data-item-index=\"" << i << "\">";
     if (!action.icon.empty()) {
       out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
-          << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
+          << "\" width=\"" << icon_dp << "\" height=\"" << icon_dp << "\" crop-to-content=\"true\"></svg></div>";
     }
     // Labels carry names people typed (share targets, group members).
     out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
@@ -563,7 +563,7 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (presentation == Presentation::ActionSheet) {
     out << "<div class=\"context-menu-sheet\" id=\"context-menu-panel\">";
     out << "<div class=\"context-menu-sheet-list\" id=\"context-menu-sheet-list\">";
-    AppendActionButtons(out, actions);
+    AppendActionButtons(out, actions, ActionFilter::All, 20);
     out << "</div>";
     out << "<button class=\"context-menu-sheet-cancel\" type=\"button\" id=\"context-menu-cancel\">"
         << Tr("common.cancel") << "</button>";

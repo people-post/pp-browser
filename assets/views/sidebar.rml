@@ -50,7 +50,8 @@
            data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 5"
            data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 6"
            data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 7">
-        <p class="chat-row-avatar-letter" data-if="session.kind != 'ai' && session.kind != 'group'">{{session.avatar_letter}}</p>
+        <img class="avatar-photo" data-if="session.kind != 'ai' && session.kind != 'group' && session.has_icon" data-attr-src="session.icon_src"/>
+        <p class="chat-row-avatar-letter" data-if="session.kind != 'ai' && session.kind != 'group' && !session.has_icon">{{session.avatar_letter}}</p>
         <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="28" height="28" data-if="session.kind == 'ai'"></svg>
         <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="28" height="28" data-if="session.kind == 'group'"></svg>
       </div>

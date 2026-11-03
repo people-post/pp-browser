@@ -47,6 +47,8 @@ struct ChatSessionRow {
   /** Letter and colour index (0..7) of the round avatar; the title decides both. */
   std::string avatar_letter;
   int avatar_tone = 0;
+  /** Local file of the person's cached profile photo (direct chats with a saved contact); empty: show the letter. */
+  std::string icon_path;
 
   bool operator==(const ChatSessionRow&) const = default;
 };

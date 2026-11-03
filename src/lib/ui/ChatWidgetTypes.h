@@ -93,6 +93,9 @@ struct MessageDisplayRow {
   /** Phone, group chats: the column shows the avatar (first bubble of a run only); `group_avatar_letter` is its letter. */
   bool group_avatar = false;
   ui::String group_avatar_letter;
+  /** The sender's own cached profile photo (local file) in the avatar column; empty: the letter shows. */
+  ui::String group_avatar_src;
+  bool group_has_icon = false;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
   /** `ThreadMessage::ai_image_json` of an AI question that carried an image — not bound to RML. */
@@ -125,6 +128,9 @@ struct SessionDisplayRow {
   /** Round avatar: first letter of the title and the colour index (avatar-tone-0..7). */
   ui::String avatar_letter;
   int avatar_tone = 0;
+  /** The person's own profile photo (local file) when cached; else the letter shows. */
+  bool has_icon = false;
+  ui::String icon_src;
 };
 
 struct TurnWidgetState {

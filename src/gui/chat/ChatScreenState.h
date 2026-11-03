@@ -39,6 +39,9 @@ struct ChatScreenState {
   /** Phone chat title bar: the avatar of the chat list row (first letter of the title, colour index 0..7). */
   ui::String thread_avatar_letter;
   int thread_avatar_tone = 0;
+  /** The person's own cached profile photo (local file), when there is one; else the letter avatar shows. */
+  ui::String thread_icon_src;
+  bool thread_has_icon = false;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
   bool show_attach_button = false;

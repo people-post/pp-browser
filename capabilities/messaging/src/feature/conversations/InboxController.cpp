@@ -1,4 +1,5 @@
 #include "feature/conversations/InboxController.h"
+#include "lib/people/ProfileIconCache.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "common/runtime/AppRuntime.h"
 
@@ -638,6 +639,14 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 TranscriptFacts InboxController::Facts() const {
   TranscriptFacts facts;
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
+  facts.sender_icon = [this](const std::string& contact_id) -> std::string {
+    auto contact = contacts_.Get(contact_id);
+    if (!contact || !*contact) {
+      return {};
+    }
+    const std::string key = ProfileIconCacheKeyForContact(**contact);
+    return key.empty() ? std::string() : ProfileIconLocalPath(profile_data_dir_, key);
+  };
   facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
   facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
   return facts;
