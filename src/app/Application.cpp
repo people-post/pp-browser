@@ -6,6 +6,7 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 #include "app/DiagnosticsUpload.h"
+#include "feature/product/DemoDataSeeder.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -1679,9 +1680,33 @@ bool Application::MountPresenters(ui::Context* context) {
   return true;
 }
 
+namespace {
+
+/** UI demo app only: fixed fake data, written once per process before any controller reads the stores. */
+bool SeedUiDemoDataOnce(ConversationsHub& messaging) {
+  static DemoDataSeeder seeder;
+  auto log = logging::getLogger("Application");
+  auto deps = MakeDemoSeedDeps(messaging);
+  if (!deps) {
+    log.error << "Demo data not written: " << deps.error().message;
+    return false;
+  }
+  auto seeded = seeder.SeedOnce(*deps);
+  if (!seeded) {
+    log.error << "Demo data not written: " << seeded.error().message;
+    return false;
+  }
+  return *seeded;
+}
+
+} // namespace
+
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
-  messaging.SetOnMessagingReady([this]() {
+  const auto on_ready = [this]() {
+    if (kUiDemoBuild) {
+      SeedUiDemoDataOnce(Conversations());  // first and synchronous: chat_ and contacts_ read the rows right after
+    }
     // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
     AppRuntime::PostWorkerNormal([this]() {
       if (auto removed = RemoveRetiredKeychainBackup(OsSecureBlobStore()); !removed) {
@@ -1697,7 +1722,21 @@ void Application::WireHubCallbacks() {
     if (chrome.nav_tab == NavTab::Me) {
       settings_->OnNavTabActivated();
     }
-  });
+  };
+  messaging.SetOnMessagingReady(on_ready);
+  // The demo app unlocks at bootstrap, before this callback exists, so its ready event was already missed. The
+  // controllers are not mounted yet and read the stores when they are: seeding now is early enough.
+  if (kUiDemoBuild && messaging.IsMessagingReady() && SeedUiDemoDataOnce(messaging)) {
+    // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.
+    chat_->OnMessagingReady();
+    contacts_->Refresh();
+    if (messaging_facade_) {
+      messaging_facade_->NotifyThreadChanged();
+    }
+    if (badges_) {
+      badges_->Refresh();
+    }
+  }
   messaging.SetOnMeshReady([this]() {
     chat_->OnMeshReady();
     contacts_->Refresh();

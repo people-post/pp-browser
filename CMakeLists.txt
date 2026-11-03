@@ -98,6 +98,7 @@ endif()
 
 include(ProductBranding)
 include(Platform)
+include(UiDemo)
 include(PpBrowserWarnings)
 include(PpBrowserCapability)
 include(PpCppCommon)

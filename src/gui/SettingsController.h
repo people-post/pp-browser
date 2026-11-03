@@ -123,6 +123,8 @@ private:
     ui::String backend_label;
     bool backend_restart_pending = false;
     bool backend_is_custom = false;
+    /** Hidden in the UI demo app (BackendSwitchVisible). */
+    bool show_backend_switch = true;
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";

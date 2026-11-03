@@ -18,6 +18,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/product/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
@@ -176,10 +177,12 @@ int main(int argc, char** argv) {
   // cannot hold the window back. The pending dump is cleared only after the worker's upload succeeds.
   {
     const auto& snapshot = app.Store().Snapshot();
-    pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
-                                           enabled = snapshot.profile_prefs.crash_reports_enabled,
-                                           base_url = snapshot.config.relay.base_url]() {
-      pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+    pbr::RunIfUploadAllowed(pbr::kUiDemoBuild, [&snapshot] {
+      pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
+                                             enabled = snapshot.profile_prefs.crash_reports_enabled,
+                                             base_url = snapshot.config.relay.base_url]() {
+        pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+      });
     });
   }
   pbr::StartupMark("enter_Application::Run");

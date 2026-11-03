@@ -3,6 +3,13 @@
 set(PP_BROWSER_IOS_BUNDLE_ID "dev.pp-browser.ios" CACHE STRING "iOS CFBundleIdentifier")
 set(PP_BROWSER_IOS_BUNDLE_NAME "${PP_BROWSER_PRODUCT_NAME}" CACHE STRING
   "iOS CFBundleDisplayName / bundle folder (kProductBundleName)")
+if(PP_BROWSER_UI_DEMO)
+  # Separate app next to the real one on the same simulator: own bundle id, own data container.
+  # Plain variables (not cache): they shadow the cached values only while the option is ON, so turning it OFF in the
+  # same build dir restores the stock id and name.
+  set(PP_BROWSER_IOS_BUNDLE_ID "dev.pp-browser.ios.uidemo")
+  set(PP_BROWSER_IOS_BUNDLE_NAME "PPDemo")
+endif()
 # Prefer the value set before project() in the top-level CMakeLists (required for Ninja).
 if(NOT PP_BROWSER_IOS_DEPLOYMENT_TARGET)
   set(PP_BROWSER_IOS_DEPLOYMENT_TARGET "15.0" CACHE STRING
@@ -30,6 +37,21 @@ function(pp_browser_configure_ios_app target)
   set(_ios_info_plist "${CMAKE_SOURCE_DIR}/packaging/ios/Info.plist")
   if(NOT EXISTS "${_ios_info_plist}")
     message(FATAL_ERROR "Missing iOS Info.plist: ${_ios_info_plist}")
+  endif()
+
+  if(PP_BROWSER_UI_DEMO)
+    # The plist hard-codes the real app's id and names: write the demo's copy into the build dir.
+    file(READ "${_ios_info_plist}" _ios_plist_text)
+    string(REPLACE "<string>dev.pp-browser.ios</string>" "<string>${PP_BROWSER_IOS_BUNDLE_ID}</string>"
+      _ios_plist_text "${_ios_plist_text}")
+    string(REPLACE "<key>CFBundleDisplayName</key>\n  <string>PP</string>"
+      "<key>CFBundleDisplayName</key>\n  <string>PP Demo</string>" _ios_plist_text "${_ios_plist_text}")
+    string(REPLACE "<key>CFBundleExecutable</key>\n  <string>PP</string>"
+      "<key>CFBundleExecutable</key>\n  <string>${PP_BROWSER_IOS_BUNDLE_NAME}</string>" _ios_plist_text "${_ios_plist_text}")
+    string(REPLACE "<key>CFBundleName</key>\n  <string>PP</string>"
+      "<key>CFBundleName</key>\n  <string>PP Demo</string>" _ios_plist_text "${_ios_plist_text}")
+    set(_ios_info_plist "${CMAKE_BINARY_DIR}/Info-uidemo.plist")
+    file(WRITE "${_ios_info_plist}" "${_ios_plist_text}")
   endif()
 
   set_target_properties(${target} PROPERTIES
@@ -63,6 +85,12 @@ function(pp_browser_configure_ios_app target)
     COMMENT "Staging iOS bundle assets"
     VERBATIM
   )
+  if(NOT PP_BROWSER_UI_DEMO)
+    # assets/demo (fake chat pictures) ships only in the UI demo app.
+    add_custom_command(TARGET pp_browser_ios_assets POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_ios_assets_dir}/assets/demo"
+      VERBATIM)
+  endif()
   add_dependencies(${target} pp_browser_ios_assets)
 
   add_custom_command(TARGET ${target} POST_BUILD
@@ -84,7 +112,13 @@ function(pp_browser_configure_ios_app target)
   endforeach()
 
   install(TARGETS ${target} BUNDLE DESTINATION .)
+  if(PP_BROWSER_UI_DEMO)
+    set(_ios_install_exclude)
+  else()
+    set(_ios_install_exclude PATTERN "demo" EXCLUDE)
+  endif()
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/assets/"
     DESTINATION "${PP_BROWSER_IOS_BUNDLE_NAME}.app/assets"
-    USE_SOURCE_PERMISSIONS)
+    USE_SOURCE_PERMISSIONS
+    ${_ios_install_exclude})
 endfunction()

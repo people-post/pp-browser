@@ -15,4 +15,16 @@ inline constexpr bool kDevToolsBuild = true;
 inline constexpr bool kDevToolsBuild = false;
 #endif
 
+/**
+ * True only in the UI demo app (-DPP_BROWSER_UI_DEMO=ON, iOS simulator / Android; cmake/UiDemo.cmake): a separate
+ * developer-only app with fixed fake data and no backend address. Every demo decision lives in an always-compiled
+ * function that takes a bool (ResolveBriefOrigin, UploadAllowed, ApplyUiDemoConfig, DemoDataSeeder); this constant only
+ * decides what the call sites pass, so the normal build's tests cover the demo behaviour.
+ */
+#if defined(PP_BROWSER_UI_DEMO)
+inline constexpr bool kUiDemoBuild = true;
+#else
+inline constexpr bool kUiDemoBuild = false;
+#endif
+
 } // namespace pbr

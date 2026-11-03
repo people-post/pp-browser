@@ -531,6 +531,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("dht_enabled", &controller.bindings_.dht_enabled);
     ctor.Bind("show_dht_toggle", &controller.bindings_.show_dht_toggle);
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
+    controller.bindings_.show_backend_switch = BackendSwitchVisible(kUiDemoBuild);
+    ctor.Bind("show_backend_switch", &controller.bindings_.show_backend_switch);
     ctor.Bind("backend_label", &controller.bindings_.backend_label);
     ctor.Bind("backend_restart_pending", &controller.bindings_.backend_restart_pending);
     ctor.Bind("backend_is_custom", &controller.bindings_.backend_is_custom);

@@ -1,5 +1,5 @@
       <div class="settings-section stack">
-        <button class="settings-toggle-row settings-choice-row row" type="button"
+        <button class="settings-toggle-row settings-choice-row row" type="button" data-if="show_backend_switch"
                 data-event-click="on_choose_backend()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.backend}}</span>
           <span class="settings-choice-value row">
@@ -7,8 +7,8 @@
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
-        <p class="text muted settings-help">{{i18n:settings.network.backend.help}}</p>
-        <p class="text settings-help" data-if="backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
+        <p class="text muted settings-help" data-if="show_backend_switch">{{i18n:settings.network.backend.help}}</p>
+        <p class="text settings-help" data-if="show_backend_switch && backend_restart_pending">{{i18n:settings.network.backend.restart}}</p>
 
         <div class="settings-toggle-row row" data-if="advanced && show_node_toggle">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.help_network}}</span>

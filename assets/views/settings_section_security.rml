@@ -6,7 +6,7 @@
         <p class="text muted" data-if="pin_protection_not_setup">
           {{i18n:settings.security.not_setup_hint}}
         </p>
-        <div data-if="security_can_change_pin" class="stack">
+        <div data-if="show_change_pin && security_can_change_pin" class="stack">
           <label class="settings-field">
             <span class="settings-label">{{i18n:settings.security.current_pin}}</span>
             <input class="field" type="password" data-value="pin_change_old" placeholder="{{i18n:settings.security.current_pin_placeholder}}"/>
@@ -24,7 +24,7 @@
             <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
           </div>
         </div>
-        <p class="text muted" data-if="!security_can_change_pin && !pin_protection_not_setup">
+        <p class="text muted" data-if="show_change_pin && !security_can_change_pin && !pin_protection_not_setup">
           {{i18n:settings.security.unlock_to_change}}
         </p>
         <div class="stack settings-actions">
@@ -122,7 +122,7 @@
           </button>
         </div>
         <p class="text muted settings-help">{{i18n:settings.security.crash_reports.help}}</p>
-        <div class="settings-toggle-row row">
+        <div class="settings-toggle-row row" data-if="show_diagnostics_send">
           <button class="btn" type="button" data-attrif-disabled="diagnostics_sending"
                   data-event-click="send_diagnostics()">
             {{diagnostics_send_label}}
@@ -130,7 +130,7 @@
           <button class="btn" type="button" data-help-key="troubleshooting/send-diagnostics"
                   data-event-click="open_diagnostics_help()">?</button>
         </div>
-        <p class="text muted settings-help">{{i18n:settings.security.diagnostics.help}}</p>
+        <p class="text muted settings-help" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
         <button class="btn" type="button" data-if="diagnostics_last_id != ''"
                 data-event-click="copy_diagnostics_id()">
           {{diagnostics_last_label}}

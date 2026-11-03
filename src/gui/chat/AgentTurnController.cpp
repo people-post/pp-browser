@@ -56,6 +56,7 @@
 #include "foundation/error/AppError.h"
 #include "lib/net/BriefGuestLlmClient.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 
 namespace pbr {
 
@@ -1236,7 +1237,9 @@ void AgentTurnController::RefreshLlmSetupBanner() {
   const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
   if (!use_llm_) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
+    if (MockReplyBannerVisible(kUiDemoBuild)) {
+      UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
+    }
     return;
   }
   if (ResolvePreset(config) == "brief") {

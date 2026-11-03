@@ -2,6 +2,7 @@
 
 #include "foundation/data/Config.h"
 #include "foundation/data/ConfigJson.h"
+#include "foundation/data/UiDemoConfig.h"
 #include "foundation/data/UserPreferences.h"
 
 #include <filesystem>
@@ -23,7 +24,7 @@ BootstrapResult& SessionStore::Mutable() {
 }
 
 AppConfig SessionStore::DefaultConfig() const {
-  return Config::DefaultAppConfig();
+  return Config::DefaultAppConfig(ui_demo_);
 }
 
 ProfilePreferences SessionStore::DefaultProfilePrefs() const {
@@ -61,7 +62,7 @@ Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
     return saved.error();
   }
 
-  auto reloaded = Config::LoadFromFile(path);
+  auto reloaded = Config::LoadFromFile(path, ui_demo_);
   if (!reloaded) {
     return reloaded.error();
   }
@@ -102,6 +103,9 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
     return reloaded.error();
   }
 
+  if (ui_demo_) {
+    ApplyUiDemoProfilePrefs(*reloaded);
+  }
   const ProfilePreferences previous = bootstrap_.profile_prefs;
   bootstrap_.profile_prefs = std::move(*reloaded);
   DiffAndNotifyProfilePrefs(previous, bootstrap_.profile_prefs);
@@ -111,7 +115,7 @@ Roe<void> SessionStore::SaveProfilePrefs(const ProfilePreferences& prefs) {
 Roe<void> SessionStore::ReloadConfig() {
   // Match Config::Load / bootstrap: missing config is not an error — use defaults.
   if (bootstrap_.config_path.empty() || !std::filesystem::exists(bootstrap_.config_path)) {
-    AppConfig defaults = Config::DefaultAppConfig();
+    AppConfig defaults = Config::DefaultAppConfig(ui_demo_);
     const bool changed = ConfigToObject(bootstrap_.config, Config::kConfigVersion) !=
                          ConfigToObject(defaults, Config::kConfigVersion);
     bootstrap_.config = std::move(defaults);
@@ -121,7 +125,7 @@ Roe<void> SessionStore::ReloadConfig() {
     return {};
   }
 
-  auto reloaded = Config::LoadFromFile(bootstrap_.config_path);
+  auto reloaded = Config::LoadFromFile(bootstrap_.config_path, ui_demo_);
   if (!reloaded) {
     return reloaded.error();
   }
@@ -145,6 +149,9 @@ Roe<void> SessionStore::ReloadProfilePrefs() {
     return reloaded.error();
   }
 
+  if (ui_demo_) {
+    ApplyUiDemoProfilePrefs(*reloaded);
+  }
   const ProfilePreferences previous = bootstrap_.profile_prefs;
   bootstrap_.profile_prefs = std::move(*reloaded);
   DiffAndNotifyProfilePrefs(previous, bootstrap_.profile_prefs);

@@ -1,0 +1,72 @@
+#pragma once
+
+#include "common/Error.h"
+#include "common/thread/IThreadStore.h"
+#include "foundation/crypto/CryptoTypes.h"
+#include "lib/content/CasStore.h"
+#include "lib/messaging/IGroupRosterStore.h"
+#include "lib/people/ContactsStore.h"
+
+#include <cstdint>
+#include <functional>
+#include <string>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+
+class ConversationsHub;
+
+/**
+ * Fixed fake data for the UI demo app (kUiDemoBuild, DEV/PLAN-ui-demo-data.md): 12 contacts, 10 direct chats, 2 groups
+ * and one AI chat, so every screen can be compared with the design with long names, long messages, unread counts,
+ * a quote reply and two pictures on show. Always compiled and covered by the normal build's tests; only the app's
+ * ready callback calls it, and only when kUiDemoBuild.
+ *
+ * Fixed ids and upserts: each start puts back the same data. Nothing is ever written as Pending (no outbox row); the
+ * contacts carry no relay user id, peer id or address, and the direct chats no peer identity, so a send is refused
+ * before it is stored.
+ */
+
+/** Today 00:00 local time, in unix ms, for the day `now_ms` falls on. */
+int64_t LocalMidnightMs(int64_t now_ms);
+
+struct DemoSeedDeps {
+  IThreadStore& threads;
+  ContactsStore& contacts;
+  IGroupRosterStore& groups;
+  CasStore& content;
+  /** The profile directory (the pictures' views live under its threads/ folder). */
+  std::string profile_dir;
+  /** The attachment key of the unlocked profile (AttachmentFetchWorkflow::CopyDek). */
+  ByteVector attachment_dek;
+  uint64_t max_receive_bytes = 0;
+  /** A non-empty relay user id means a real account: the seeder then writes nothing. */
+  std::string own_relay_user_id;
+  /** Every message time is a fixed offset from this (today 00:00 local). */
+  int64_t today_midnight_ms = 0;
+  /** `remote.fetched_at` of the contacts. */
+  int64_t now_ms = 0;
+  /** Reads a bundled asset ("demo/demo_landscape.png"); ReadDemoAsset in the app. */
+  std::function<Roe<ByteVector>(const std::string& relative)> read_asset;
+};
+
+/** Reads `relative` through IAssetLocator (the app bundle on iOS, the APK on Android). */
+Roe<ByteVector> ReadDemoAsset(const std::string& relative);
+
+class DemoDataSeeder {
+public:
+  /**
+   * Seeds once per process: later calls (the ready callback fires again after a re-unlock) write nothing and return
+   * false. Returns true when it wrote the data; false when it skipped (already seeded, or the account is real).
+   * An error leaves the once flag unset.
+   */
+  Roe<bool> SeedOnce(const DemoSeedDeps& deps);
+
+private:
+  bool done_ = false;
+};
+
+/** The deps of the running app, read from the hub's stores (call on the UI thread once messaging is ready). */
+Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub);
+
+} // namespace pbr

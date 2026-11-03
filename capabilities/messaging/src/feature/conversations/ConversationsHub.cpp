@@ -3278,12 +3278,75 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
   return *peer_labels_;
 }
 
+namespace {
+
+// Registration() / Blob() hand out references, but a build with no backend address creates neither client (the UI
+// demo app, or a custom backend left blank). These stand in so a call reports an error instead of dereferencing null.
+class UnconfiguredRegistrationClient final : public IRegistrationClient {
+public:
+  Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
+                                                 const std::string&, const std::string&,
+                                                 const std::vector<std::string>&,
+                                                 const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
+                                             const std::string&, int64_t, const std::string&, const std::string&,
+                                             const std::string&, const std::string&,
+                                             const std::vector<std::string>&, int64_t,
+                                             const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t,
+                                         const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
+    return Unavailable();
+  }
+
+private:
+  static Error Unavailable() { return Error("registration not configured"); }
+};
+
+class UnconfiguredBlobClient final : public IBlobClient {
+public:
+  Roe<BlobPresignResult> Presign(const std::string&, const std::string&, uint64_t, BlobPurpose) override {
+    return Unavailable();
+  }
+  Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&,
+                           const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
+  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override {
+    return Unavailable();
+  }
+  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
+
+private:
+  static Error Unavailable() { return Error("blob service not configured"); }
+};
+
+} // namespace
+
 IRegistrationClient& ConversationsHub::Registration() {
-  return *registration_;
+  static UnconfiguredRegistrationClient unconfigured;
+  return registration_ ? *registration_ : unconfigured;
 }
 
 IBlobClient& ConversationsHub::Blob() {
-  return *blob_;
+  static UnconfiguredBlobClient unconfigured;
+  return blob_ ? *blob_ : unconfigured;
 }
 
 IPushDeviceClient* ConversationsHub::PushDevices() {

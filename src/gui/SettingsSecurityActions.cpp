@@ -5,7 +5,9 @@
 #include "gui/DiagnosticsFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
@@ -41,6 +43,10 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
   ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { ResetChats(); }));
+  show_change_pin_ = ChangePinVisible(kUiDemoBuild);
+  ctor.Bind("show_change_pin", &show_change_pin_);
+  show_diagnostics_send_ = UploadAllowed(kUiDemoBuild);
+  ctor.Bind("show_diagnostics_send", &show_diagnostics_send_);
   ctor.Bind("diagnostics_sending", &diagnostics_sending_);
   ctor.Bind("diagnostics_send_label", &diagnostics_send_label_);
   ctor.Bind("diagnostics_last_id", &diagnostics_last_id_);

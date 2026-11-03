@@ -317,3 +317,12 @@ Build **PP.app** for the iOS Simulator or device with CMake + Xcode. Signing pla
 Device builds and code signing: [IOS_BUILD.md](IOS_BUILD.md). Manual TestFlight upload from Actions: [ios-testflight.yml](../../.github/workflows/ios-testflight.yml) (`workflow_dispatch`).
 
 The first clean iOS build can take 15–30 minutes (libp2p + RmlUi + BoringSSL). Assets from [`assets/`](../../assets/) are copied into `PP.app/assets/` automatically.
+
+### UI demo app (iOS simulator and Android, developer only)
+
+A separate app with fixed fake data (12 contacts, 10 direct chats, 2 groups, 1 AI chat, two pictures), no backend address and no mesh, for comparing screens with the design. It does not send, receive, call or register. Never for TestFlight, store or release builds. Plan: `DEV/PLAN-ui-demo-data.md`.
+
+- CMake: `-DPP_BROWSER_UI_DEMO=ON -DPP_BROWSER_DEV_TOOLS=ON`, no `PP_API_URL_PROD` / `PP_API_URL_QA`. CMake refuses a desktop or iOS-device build, and a build with a backend address ([`cmake/UiDemo.cmake`](../../cmake/UiDemo.cmake)). `scripts/check/check_ui_demo_refused.sh` checks that on the host before you push.
+- iOS simulator: bundle id `dev.pp-browser.ios.uidemo`, name "PP Demo"; it lives next to the real app with its own data. The fixed unlock PIN is `123456`.
+- Android: `cd android && PP_BROWSER_DEV_TOOLS=1 ./gradlew assembleRelease -PppBrowserUiDemo=true -PppBrowserAbiFilters=arm64-v8a` (application id suffix `.uidemo`; `PP_API_URL_*` are not passed). `assets/demo/` is packed only in this build.
+- The pictures are made by `python3 scripts/ui/gen_demo_images.py` into [`assets/demo/`](../../assets/demo/).

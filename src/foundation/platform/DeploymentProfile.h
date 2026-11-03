@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <string_view>
 
@@ -21,6 +22,26 @@ const char* BackendEnvName(BackendEnv env);
  * disables the backend features.
  */
 std::string BriefOrigin();
+/**
+ * The rule behind BriefOrigin(), with its inputs passed in. The UI demo app (`ui_demo`) has no backend: always "".
+ * Otherwise `env_origin` (PP_BROWSER_ORIGIN, may be null) wins over the compiled origin of `backend`.
+ */
+std::string ResolveBriefOrigin(bool ui_demo, const char* env_origin, BackendEnv backend);
+/**
+ * The rule behind DiagnosticsUploadUrl(): "" in the UI demo app; else `env_url` (PP_BROWSER_DIAGNOSTICS_URL, may be
+ * null) when set, else `origin` + /api/support/diagnostics ("" when origin is empty).
+ */
+std::string ResolveDiagnosticsUploadUrl(bool ui_demo, const char* env_url, const std::string& origin);
+/** False in the UI demo app: nothing may leave the device (diagnostics, crash reports). */
+inline bool UploadAllowed(bool ui_demo) { return !ui_demo; }
+/** The "simulated replies, no LLM configured" banner: hidden in the UI demo app (it has no backend by design). */
+inline bool MockReplyBannerVisible(bool ui_demo) { return !ui_demo; }
+/** Runs `sender` only when UploadAllowed(ui_demo); returns whether it ran. */
+bool RunIfUploadAllowed(bool ui_demo, const std::function<void()>& sender);
+/** The Me -> Network prod / qa / custom switch: hidden in the UI demo app (its profile key stays `prod`). */
+inline bool BackendSwitchVisible(bool ui_demo) { return !ui_demo; }
+/** Me -> Security "change PIN": hidden in the UI demo app, whose bootstrap PIN is fixed (a change would lock it out). */
+inline bool ChangePinVisible(bool ui_demo) { return !ui_demo; }
 /** The compile-time prod origin ("" unless configured). */
 const char* CompiledDefaultOrigin();
 /** The compile-time QA origin ("" unless configured); empty hides the QA option. */
@@ -42,6 +63,8 @@ bool OriginEnvOverrideActive();
 std::string BriefLlmBaseUrl();
 /** Dev override for the brief_AI stream endpoint (PP_BROWSER_BRIEF_STREAM_URL); empty = derive from the LLM base URL. */
 std::string BriefStreamUrlOverride();
+/** The rule behind BriefStreamUrlOverride(), inputs passed in: always "" in the UI demo app (no backend, no redirect). */
+std::string ResolveBriefStreamUrlOverride(bool ui_demo, const char* env_url);
 /**
  * Where "Send diagnostics" posts: BriefOrigin() + /api/support/diagnostics. PP_BROWSER_DIAGNOSTICS_URL (a full
  * URL) replaces it for local development against DEV/tools/fake_diagnostics.py only; it is not remote config.
