@@ -5,6 +5,7 @@
 #include "common/PbrCompat.h"
 
 #include <filesystem>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -90,6 +91,22 @@ bool TryOpenEnvLogFile() {
 #if defined(__APPLE__) && TARGET_OS_IPHONE
 FILE* g_log_file = nullptr;
 
+/** A debug log from earlier launches above this size moves to `pp-browser-debug.1.log` (one kept). */
+constexpr std::uintmax_t kIosLogRotateBytes = 2 * 1024 * 1024;
+
+void RotateIosLogIfLarge(const std::string& path) {
+  std::error_code ec;
+  const std::uintmax_t size = std::filesystem::file_size(path, ec);
+  if (ec || size <= kIosLogRotateBytes) {
+    return;
+  }
+  const std::string rotated = path.substr(0, path.size() - 4) + ".1.log"; // path ends in ".log"
+  std::filesystem::rename(path, rotated, ec);
+  if (ec) {
+    std::filesystem::remove(path, ec);
+  }
+}
+
 void EnsureIosLogFile() {
   if (g_log_file) {
     return;
@@ -97,6 +114,7 @@ void EnsureIosLogFile() {
   if (char* pref = SDL_GetPrefPath("dev.pp-browser", "pp-browser")) {
     const std::string path = std::string(pref) + "pp-browser-debug.log";
     SDL_free(pref);
+    RotateIosLogIfLarge(path);
     g_log_file = std::fopen(path.c_str(), "a");
     if (g_log_file) {
       MakeOwnerOnly(path);
