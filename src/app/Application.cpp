@@ -222,6 +222,9 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
     }
+    if (key == "new_chat") {
+      contacts.OnNewChatDismissed();
+    }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }
@@ -1534,6 +1537,7 @@ bool Application::MountPresenters(ui::Context* context) {
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
+  contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
   chat_->BindContactsNotify(std::move(contacts_notify));
 
   PeoplePickerNotifyPorts chat_people_picker_notify;
@@ -1799,6 +1803,7 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
   chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
   chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
+  chat_ports.new_ai_chat = [this]() { chat_->StartNewAiChat(); };
   contacts_->BindChatPorts(chat_ports);
   people_picker_->BindChatPorts(std::move(chat_ports));
 

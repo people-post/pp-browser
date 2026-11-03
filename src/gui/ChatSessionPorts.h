@@ -15,6 +15,8 @@ struct ChatSessionPorts {
   std::function<void()> on_find_someone;
   /** Contacts "+" menu, "New group": opens the people picker (one pick = chat, two or more = group). */
   std::function<void()> open_new_group;
+  /** Phone "New chat" page, "AI chat": a new chat with the AI (what the desktop "+" menu's first item does). */
+  std::function<void()> new_ai_chat;
 };
 
 } // namespace pbr

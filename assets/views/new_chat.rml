@@ -1,0 +1,80 @@
+<div class="nc-page" data-model="contacts">
+  <div class="nc-scroll">
+    <p class="large-title nc-title">{{i18n:new_chat.title}}</p>
+    <div class="chat-search nc-search">
+      <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+      <input class="chat-search-input" type="text" data-value="nc_query"
+             data-event-change="new_chat_search_changed()"/>
+      <p class="chat-search-label" data-if="nc_query == ''">{{i18n:sidebar.search_placeholder}}</p>
+    </div>
+
+    <div class="nc-actions" data-if="nc_query == ''">
+      <div class="nc-action" data-event-click="new_chat_action('ai')">
+        <div class="nc-action-icon nc-action-icon--ai">
+          <svg src="../icons/v2/sparkle-fill.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:new_chat.ai}}</p>
+      </div>
+      <div class="nc-action" data-event-click="new_chat_action('group')">
+        <div class="nc-action-icon nc-action-icon--group">
+          <svg src="../icons/v2/group.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:new_chat.group}}</p>
+      </div>
+      <div class="nc-action" data-event-click="new_chat_action('add')">
+        <div class="nc-action-icon nc-action-icon--add">
+          <svg src="../icons/v2/user-plus.svg" width="20" height="20"></svg>
+        </div>
+        <p class="nc-action-label">{{i18n:new_chat.add}}</p>
+      </div>
+    </div>
+
+    <div data-if="nc_frequent.size > 0">
+      <p class="nc-section-header">{{i18n:new_chat.frequent}}</p>
+      <div class="nc-group">
+        <div data-for="contact : nc_frequent" class="contacts-row"
+             data-event-click="new_chat_pick(contact.id)">
+          <div class="contacts-row-avatar-frame"
+               data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
+               data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
+               data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
+               data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
+               data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
+               data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
+               data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
+               data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
+            <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
+            <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
+          </div>
+          <div class="contacts-row-body">
+            <p class="contacts-row-title">{{contact.title}}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-for="section : nc_sections">
+      <p class="nc-section-header">{{section.letter}}</p>
+      <div class="nc-group">
+        <div data-for="contact : section.rows" class="contacts-row"
+             data-event-click="new_chat_pick(contact.id)">
+          <div class="contacts-row-avatar-frame"
+               data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
+               data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
+               data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
+               data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
+               data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
+               data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
+               data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
+               data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
+            <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
+            <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
+          </div>
+          <div class="contacts-row-body">
+            <p class="contacts-row-title">{{contact.title}}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

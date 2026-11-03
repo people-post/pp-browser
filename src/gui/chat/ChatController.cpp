@@ -3379,8 +3379,14 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
-        ctor.BindEventCallback("open_new_session_menu", DataEventAt(
-            [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
+        ctor.BindEventCallback("open_new_session_menu", DataEventAt([this](ui::Event& ev) {
+          // The phone goes straight to a full-screen page; the desktop keeps its small menu.
+          if (ChromeSnapshot().layout_mode == LayoutMode::Compact && contacts_notify_.open_new_chat) {
+            contacts_notify_.open_new_chat();
+            return;
+          }
+          menus_.OpenNewSession(ev);
+        }));
         ctor.BindEventCallback("select_thread", DataEvent<std::string>(
             [this](const std::string& thread_id) { OnSelectThread(thread_id); }));
         BindSharedEvents(ctor);
@@ -3422,6 +3428,8 @@ bool ChatController::Setup(ui::Context* context) {
                                        .provides_composer = true});
   shell_setup_.register_pane(
       {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
+  shell_setup_.register_pane(
+      {.key = "new_chat", .rml_path = "views/new_chat.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
       {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(

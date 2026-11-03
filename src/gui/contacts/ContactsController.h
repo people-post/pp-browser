@@ -61,6 +61,12 @@ public:
     int avatar_tone = 0;
   };
 
+  /** One lettered group of the phone "New chat" page. */
+  struct NewChatSectionRow {
+    ui::String letter;
+    std::vector<ContactListRow> rows;
+  };
+
   struct ContactIdentityRow {
     ui::String label;
     ui::String value;
@@ -120,6 +126,11 @@ public:
   void OnSelectContact(const std::string& contact_id);
   void OnDetailDismissed();
 
+  /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
+  void OpenNewChatPage();
+  /** The New chat page left the screen (back, swipe, or a row was chosen). */
+  void OnNewChatDismissed();
+
   /** Contacts → find people; also the first-run wizard's "Find friends". */
   /**
    * An invite link the OS opened the app with (a scanned QR code, a tapped link): once unlocked, asks
@@ -149,9 +160,19 @@ private:
   static void OpenThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnContactFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void NewChatPickCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void NewChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void NewChatSearchCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SyncRemoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void SyncFromStore();
+  /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
+  void SyncNewChat();
+  void DirtyNewChat();
+  /** Pops the New chat page when it is the page on top. */
+  void CloseNewChatPage();
+  void OnNewChatPick(const std::string& contact_id);
+  void OnNewChatAction(const std::string& action);
   void LoadSelectedDetail(const std::string& contact_id);
   void OpenContactDetailPane();
   /** The selected contact cannot be messaged yet: ask for its account's card again (#409). */
@@ -190,6 +211,10 @@ private:
   void NavigateToChatSession();
 
   std::vector<ContactListRow> contacts_;
+  std::vector<ContactListRow> new_chat_frequent_;
+  std::vector<NewChatSectionRow> new_chat_sections_;
+  ui::String new_chat_query_;
+  bool new_chat_open_ = false;
   ui::String search_query_;
   bool compact_layout_ = false;
   bool advanced_ = false;

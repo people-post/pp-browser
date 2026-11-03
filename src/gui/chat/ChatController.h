@@ -128,6 +128,8 @@ public:
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
+  /** A new chat with the AI (the phone "New chat" page's first row). */
+  void StartNewAiChat() { OnNewChat(); }
   void OnSelectThread(const std::string& thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();

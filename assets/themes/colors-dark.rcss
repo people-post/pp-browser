@@ -1336,6 +1336,43 @@ select selectbox option:hover {
   background-color: #000000;
 }
 
+.nc-page {
+  background-color: #000000;
+}
+
+.nc-action {
+  background-color: #000000;
+}
+
+.nc-action:active {
+  background-color: #7878803d;
+}
+
+.nc-action-icon--ai {
+  background-color: #5e5ce6;
+}
+
+.nc-action-icon--group {
+  background-color: #ff9f0a;
+}
+
+.nc-action-icon--add {
+  background-color: #0a84ff;
+}
+
+.nc-action-icon svg {
+  image-color: #ffffff;
+}
+
+.nc-action-label {
+  color: #ffffff;
+}
+
+.nc-section-header {
+  color: #ebebf599;
+  background-color: #000000;
+}
+
 .cd-account,
 .contacts-row-subtitle--phone,
 .cd-footnote,

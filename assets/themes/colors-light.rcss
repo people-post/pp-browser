@@ -1340,6 +1340,43 @@ select selectbox option:hover {
   background-color: #f2f2f7;
 }
 
+.nc-page {
+  background-color: #ffffff;
+}
+
+.nc-action {
+  background-color: #ffffff;
+}
+
+.nc-action:active {
+  background-color: #7878801f;
+}
+
+.nc-action-icon--ai {
+  background-color: #5856d6;
+}
+
+.nc-action-icon--group {
+  background-color: #ff9500;
+}
+
+.nc-action-icon--add {
+  background-color: #007aff;
+}
+
+.nc-action-icon svg {
+  image-color: #ffffff;
+}
+
+.nc-action-label {
+  color: #000000;
+}
+
+.nc-section-header {
+  color: #3c3c4399;
+  background-color: #f2f2f7;
+}
+
 .cd-account,
 .contacts-row-subtitle--phone,
 .cd-footnote,

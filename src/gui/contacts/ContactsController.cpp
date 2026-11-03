@@ -34,6 +34,7 @@
 #include "gui/shell/DataModelHost.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "lib/ui/UiEditSession.h"
+#include "lib/ui/NewChatList.h"
 #include "gui/UserFeedback.h"
 
 #include "lib/ui/ShellTypes.h"
@@ -482,6 +483,11 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     }
     // Arrays must be registered before they are used as struct members.
     ctor.RegisterArray<std::vector<ContactListRow>>();
+    if (auto section_handle = ctor.RegisterStruct<NewChatSectionRow>()) {
+      section_handle.RegisterMember("letter", &NewChatSectionRow::letter);
+      section_handle.RegisterMember("rows", &NewChatSectionRow::rows);
+    }
+    ctor.RegisterArray<std::vector<NewChatSectionRow>>();
     ctor.RegisterArray<std::vector<ContactIdentityRow>>();
     ctor.RegisterArray<std::vector<ContactThreadRow>>();
     if (auto detail_handle = ctor.RegisterStruct<ContactDetail>()) {
@@ -513,6 +519,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     }
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
+    ctor.Bind("nc_frequent", &controller.new_chat_frequent_);
+    ctor.Bind("nc_sections", &controller.new_chat_sections_);
+    ctor.Bind("nc_query", &controller.new_chat_query_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("advanced", &controller.advanced_);
     ctor.Bind("selected", &controller.selected_);
@@ -532,6 +541,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
     ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
+    ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
+    ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
+    ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
   });
 
   return registered;
@@ -618,6 +630,10 @@ void ContactsController::SyncFromStore() {
 void ContactsController::Refresh() {
   FlushPending();
   SyncFromStore();
+  if (new_chat_open_) {
+    SyncNewChat();
+    DirtyNewChat();
+  }
   if (!selected_.id.empty()) {
     LoadSelectedDetail(selected_.id.c_str());
   }
@@ -827,6 +843,134 @@ void ContactsController::OnDetailDismissed() {
   debounce_deadline_ms_ = 0;
   DirtyAll();
   NotifySurfaceChanged();
+}
+
+void ContactsController::NewChatPickCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  Instance().OnNewChatPick(std::string(args[0].Get<ui::String>().c_str()));
+}
+
+void ContactsController::NewChatActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  Instance().OnNewChatAction(std::string(args[0].Get<ui::String>().c_str()));
+}
+
+void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.SyncNewChat();
+  controller.DirtyNewChat();
+}
+
+void ContactsController::OpenNewChatPage() {
+  if (new_chat_open_ || !shell_navigation_.push_transient) {
+    return;
+  }
+  new_chat_query_ = "";
+  SyncNewChat();
+  new_chat_open_ = true;
+  DataModelHost::Instance().Dirty("contacts", "nc_query");
+  DirtyNewChat();
+  PaneSpec spec;
+  spec.key = "new_chat";
+  shell_navigation_.push_transient(spec);
+}
+
+void ContactsController::OnNewChatDismissed() {
+  new_chat_open_ = false;
+}
+
+void ContactsController::CloseNewChatPage() {
+  if (new_chat_open_ && shell_navigation_.pop_transient) {
+    shell_navigation_.pop_transient(); // OnNewChatDismissed follows from the shell
+  }
+  new_chat_open_ = false;
+}
+
+void ContactsController::DirtyNewChat() {
+  auto& host = DataModelHost::Instance();
+  host.Dirty("contacts", "nc_frequent");
+  host.Dirty("contacts", "nc_sections");
+}
+
+void ContactsController::SyncNewChat() {
+  new_chat_frequent_.clear();
+  new_chat_sections_.clear();
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
+    return;
+  }
+  auto stored = contacts_ports_.list_contacts();
+  if (!stored) {
+    return;
+  }
+  std::vector<NewChatContact> input;
+  std::vector<ContactListRow> rows;
+  for (const Contact& contact : *stored) {
+    ContactListRow row = ToContactListRow(contact, contacts_ports_);
+    input.push_back({contact.id, row.title.c_str(), contact.trust == TrustLevel::Blocked});
+    rows.push_back(std::move(row));
+  }
+  std::vector<NewChatDirectChat> chats;
+  if (contacts_ports_.list_threads) {
+    if (auto threads = contacts_ports_.list_threads()) {
+      for (const Thread& thread : *threads) {
+        if (thread.kind != ThreadKind::Direct || !thread.listed) {
+          continue;
+        }
+        for (const std::string& contact_id : thread.participant_contact_ids) {
+          chats.push_back({contact_id, thread.updated_at});
+        }
+      }
+    }
+  }
+  const NewChatList list = BuildNewChatList(input, chats, util::Trim(new_chat_query_.c_str()));
+  for (const size_t i : list.frequent) {
+    new_chat_frequent_.push_back(rows[i]);
+  }
+  for (const NewChatSection& section : list.sections) {
+    NewChatSectionRow out;
+    out.letter = section.letter.c_str();
+    for (const size_t i : section.contacts) {
+      out.rows.push_back(rows[i]);
+    }
+    new_chat_sections_.push_back(std::move(out));
+  }
+}
+
+// A contact chosen on the New chat page opens (or creates) the same chat the contact page's "Message" does.
+void ContactsController::OnNewChatPick(const std::string& contact_id) {
+  LoadSelectedDetail(contact_id);
+  if (selected_.id.empty()) {
+    return;
+  }
+  if (!selected_.can_message) {
+    ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
+    selected_ = {};
+    return;
+  }
+  CloseNewChatPage();
+  OnStartChat();
+  selected_ = {};
+  DirtyAll();
+}
+
+void ContactsController::OnNewChatAction(const std::string& action) {
+  CloseNewChatPage();
+  if (action == "ai") {
+    if (chat_ports_.new_ai_chat) {
+      chat_ports_.new_ai_chat();
+    }
+  } else if (action == "group") {
+    OnNewGroup();
+  } else if (action == "add") {
+    OnAddContact();
+  }
 }
 
 void ContactsController::OnBackToList() {

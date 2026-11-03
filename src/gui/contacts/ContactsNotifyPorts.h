@@ -12,6 +12,8 @@ namespace pbr {
 struct ContactsNotifyPorts {
   std::function<void()> refresh;
   std::function<void(const std::string& contact_id)> select_contact;
+  /** Phone Chats "compose": pushes the full-screen New chat page. */
+  std::function<void()> open_new_chat;
 };
 
 } // namespace pbr
