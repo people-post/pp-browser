@@ -4033,6 +4033,11 @@ input.checkbox {
   max-width: 160dp;
 }
 
+/* A value that names a whole rule ("4 MB 以下自动（默认）") instead of one word. */
+.settings-choice-value-text--wide {
+  max-width: 240dp;
+}
+
 .settings-help {
   font-size: 12dp;
   margin-top: 0;
