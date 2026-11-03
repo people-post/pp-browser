@@ -123,5 +123,22 @@ TEST(VoiceBubbleRender, TimeLineAndFill) {
   EXPECT_EQ(VoiceBubbleFillPercent(paused), 54);
 }
 
+// A large picture whose thumbnail is ready (the view carries the thumbnail path, on_demand set) is drawn as an inline
+// image, not a file card.
+TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.on_demand = true;
+    view.local_path = "/tmp/thumb.poster.jpg";
+    view.inline_image_ok = true;
+    return view;
+  };
+  const std::string rml = Render(Attachment("m9", "big.jpg", "image/jpeg", 6u * 1024 * 1024), facts);
+  EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

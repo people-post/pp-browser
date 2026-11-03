@@ -131,6 +131,12 @@ public:
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
+  /**
+   * Best-effort low-res thumbnail of a stored image above kMaxDirectAttachmentBytes (the chat shows it in place of a
+   * file card; a tap opens the original). Decrypts once into a temporary file: call on a worker, not under a lock.
+   */
+  void MaybeBuildImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
+
   DownloadState StateFor(const std::string& thread_id, const ChatAttachmentFields& fields) const;
   /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
   int ProgressPercent(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;

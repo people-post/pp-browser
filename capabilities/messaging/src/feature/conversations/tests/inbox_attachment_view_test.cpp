@@ -122,5 +122,29 @@ TEST_F(InboxAttachmentViewTest, ALargeFileHasNoViewUntilItIsOpened) {
   EXPECT_FALSE(small.on_demand);
 }
 
+// A large picture whose thumbnail was made shows the thumbnail inline; `on_demand` stays so a tap opens the original.
+TEST_F(InboxAttachmentViewTest, ALargePictureWithAThumbnailShowsItInlineAndStaysOnDemand) {
+  const uint64_t large = kMaxDirectAttachmentBytes + 1;
+  const auto without = ViewOf(6, PngHeader(10, 10), large, /*write_view=*/false);
+  EXPECT_TRUE(without.local_path.empty()) << "no thumbnail yet: a file card";
+
+  const std::vector<uint8_t> hash(32, 6);
+  const std::string thumb = AttachmentPosterPath(data_dir_.string(), "t1", hash);
+  {
+    const auto head = PngHeader(480, 360);
+    std::ofstream out(thumb, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(head.data()), static_cast<std::streamsize>(head.size()));
+  }
+  const auto with = ViewOf(6, PngHeader(10, 10), large, /*write_view=*/false);
+  EXPECT_EQ(with.local_path, thumb);
+  EXPECT_TRUE(with.inline_image_ok);
+  EXPECT_TRUE(with.on_demand);
+
+  // Up to the direct size nothing changes: a small picture is shown from its own view, never a thumbnail.
+  const auto small = ViewOf(7, PngHeader(10, 10), 1000, /*write_view=*/true);
+  EXPECT_FALSE(small.on_demand);
+  EXPECT_EQ(small.local_path.find(".poster.jpg"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

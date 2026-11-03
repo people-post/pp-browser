@@ -80,6 +80,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     desktop/LocalNotifier_Win32.cpp
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
+    ImageThumbnail_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
@@ -102,6 +103,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
     NetworkMonitor_Darwin.mm
+    ImageThumbnail_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
@@ -121,6 +123,7 @@ else()
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
+    ImageThumbnail_Default.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
@@ -325,9 +328,10 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   target_link_libraries(pp_foundation_platform PRIVATE mfplat mfreadwrite mfuuid iphlpapi ws2_32)
 endif()
 
-# NetworkMonitor_Darwin: NWPathMonitor (macOS and iOS).
+# NetworkMonitor_Darwin: NWPathMonitor (macOS and iOS). ImageThumbnail_Darwin: ImageIO downsampled decode.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
-  target_link_libraries(pp_foundation_platform PUBLIC "-framework Network")
+  target_link_libraries(pp_foundation_platform PUBLIC "-framework Network" "-framework ImageIO"
+                        "-framework CoreGraphics" "-framework CoreFoundation")
 endif()
 
 # Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.

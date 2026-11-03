@@ -670,6 +670,7 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
                                            job.fields.filename, bytes);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
+          MaybeBuildImageThumbnail(job.thread_id, job.fields);
           // Cancelled while writing (message deleted): take back what was just written.
           bool cancelled_meanwhile = false;
           {
@@ -991,6 +992,21 @@ void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id, con
   }
   (void)EnsureAttachmentPosterFromContent(profile_dir_, *content, thread_id, fields.content_hash, fields.mime,
                                           fields.filename, dek_copy, fields.byte_length, Limits().max_receive_bytes);
+}
+
+void AttachmentFetchWorkflow::MaybeBuildImageThumbnail(const std::string& thread_id,
+                                                       const ChatAttachmentFields& fields) {
+  if (!IsAttachmentImageMime(fields.mime) || fields.byte_length <= kMaxDirectAttachmentBytes || profile_dir_.empty() ||
+      thread_id.empty()) {
+    return; // a small image is shown from its own view
+  }
+  const ByteVector dek_copy = CopyDek();
+  const std::shared_ptr<CasStore> content = Content();
+  if (dek_copy.empty() || !content) {
+    return;
+  }
+  (void)EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content, thread_id, fields.content_hash, fields.mime,
+                                                  fields.filename, dek_copy);
 }
 
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,

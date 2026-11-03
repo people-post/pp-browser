@@ -174,6 +174,74 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());
 }
 
+TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsStoredAtThePosterPathAndTheTempPlaintextIsGone) {
+  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+  ByteVector big(5 * 1024 * 1024, 0x5a);
+  auto hash = AttachmentContentHash(big);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x31);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
+
+  std::string seen_path;
+  size_t seen_size = 0;
+  int seen_dimension = 0;
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::string& path, int max_dimension)
+                                                     -> Roe<std::vector<uint8_t>> {
+    seen_path = path;
+    seen_dimension = max_dimension;
+    std::error_code ec;
+    seen_size = static_cast<size_t>(std::filesystem::file_size(path, ec)); // the plaintext is there while it runs
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
+  auto thumb = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
+                                                         "pic.png", dek);
+  ASSERT_TRUE(thumb) << thumb.error().message;
+  EXPECT_EQ(*thumb, AttachmentPosterPath(profile_dir_, thread_id_, *hash));
+  EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  EXPECT_EQ(seen_size, big.size());
+  EXPECT_EQ(seen_dimension, 480);
+  std::error_code ec;
+  EXPECT_FALSE(std::filesystem::exists(seen_path, ec)) << "the temporary plaintext is deleted at once";
+  EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "image/png", "pic.png").empty())
+      << "no plaintext view is left behind";
+  size_t files = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(AttachmentViewRoot(profile_dir_, thread_id_))) {
+    (void)entry;
+    ++files;
+  }
+  EXPECT_EQ(files, 1u) << "only the thumbnail";
+  (void)kLimit;
+
+  // The view cache's wipe takes it too ("clear downloaded", lock).
+  ASSERT_TRUE(WipeThreadAttachmentBlobs(profile_dir_, thread_id_));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+}
+
+TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailFailsCleanlyWithoutAHookOrWhenTheHookFails) {
+  ByteVector big(5 * 1024 * 1024, 0x6b);
+  auto hash = AttachmentContentHash(big);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x32);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
+
+  SetAttachmentPlatform({});
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
+                                                         "pic.png", dek));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+
+  std::string seen_path;
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::string& path, int) -> Roe<std::vector<uint8_t>> {
+    seen_path = path;
+    return Error("too many pixels");
+  }});
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png",
+                                                         "pic.png", dek));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  std::error_code ec;
+  EXPECT_FALSE(seen_path.empty());
+  EXPECT_FALSE(std::filesystem::exists(seen_path, ec)) << "the temporary plaintext is deleted on failure too";
+}
+
 TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {
   // A malicious peer can send any filename; the on-disk extension must come only from the
   // mime whitelist, never from that filename (otherwise "image/png" + "x.exe" would save an

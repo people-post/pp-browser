@@ -57,6 +57,16 @@ Roe<std::string> EnsureAttachmentPosterFromContent(const std::string& profile_di
       max_receive_bytes);
 }
 
+Roe<std::string> EnsureAttachmentImageThumbnailFromContent(const std::string& profile_dir, const CasStore& content,
+                                                           const std::string& thread_id,
+                                                           const std::vector<uint8_t>& content_hash,
+                                                           const std::string& mime, const std::string& filename,
+                                                           const ByteVector& dek) {
+  // Straight from the store, not through the plaintext memory cache: a large picture is not worth keeping there.
+  return EnsureAttachmentImageThumbnail(profile_dir, thread_id, content_hash, mime, filename,
+                                        [&]() { return LoadPrivateContent(content, content_hash, dek); });
+}
+
 Roe<void> CopyAttachmentPlaintext(const std::string& profile_dir, CasStore& content,
                                   const std::string& thread_id, const ChatAttachmentFields& fields,
                                   const ByteVector& plaintext, const ByteVector& dek,

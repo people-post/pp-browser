@@ -2357,6 +2357,7 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
       }
     }
     Attachments().MaybeBuildPoster(job->thread_id, *fields);
+    Attachments().MaybeBuildImageThumbnail(job->thread_id, *fields); // a large picture we sent
     if (attachment_downloads_) {
       attachment_downloads_->EnqueueFromMessage(job->thread_id, sent);
     }
