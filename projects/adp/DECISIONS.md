@@ -221,7 +221,16 @@
 **Date:** 2026-11-03  
 **Status:** Accepted for step 1 and H1, built; H2 and H3 proposed. Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
 - **Step 1, 40 ms Opus packets:** [CALLS.md § Audio packets](../../docs/architecture/CALLS.md). Measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user: group, one stream up 130 → 88 kbit/s (60 → 35 pkt/s); group, two streams down 189 → 105 kbit/s; 1:1 through a circuit, up 165 → 112 and down 120 → 67 kbit/s each way.
-- **H1, amp wire v2 (pp-cpp-amp v4.0.0):** [ADP.md](../../docs/contracts/ADP.md), [AMP-SESSION.md § Sealing packets](../../docs/contracts/AMP-SESSION.md#sealing-packets), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md). Amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3). Built as decided below, with these changes: the association id stays dialer-chosen (item 4), the key-phase bit is not built, and fragments now fill each link's budget (§ Sizes).
+- **H1, amp wire v2 (pp-cpp-amp v4.0.0):** [ADP.md](../../docs/contracts/ADP.md), [AMP-SESSION.md § Sealing packets](../../docs/contracts/AMP-SESSION.md#sealing-packets), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md). Amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3). Built as decided below, with these changes: the association id stays dialer-chosen (item 4), the key-phase bit is not built, and fragments now fill each link's budget (§ Sizes). Measured in the lab against step 1 (2026-11-03), per user, received video the same (15.1 fps, none lost, no stalls):
+
+  | Scenario | Up | Down |
+  |---|---|---|
+  | `voice_group_wide` | 88 → 75 kbit/s (312 → 265 B/pkt) | 105 → 79 kbit/s |
+  | `voice_pair_wide` (circuit) | 112 → 90 kbit/s | 67 → 45 kbit/s |
+  | `video_group_wide` | 492 → 434 kbit/s, 94 → 75 pkt/s | 853 → 746 kbit/s |
+  | `video_pair_wide` (circuit) | 536 → 413 kbit/s, 124 → 74 pkt/s | 494 → 371 kbit/s |
+
+  The 1:1 video gain is the largest: its frames were fragmented twice before.
 - **H3** amends [A024](#a024--amp-call-media-over-circuit--nested-session) once built.
 
 **Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
