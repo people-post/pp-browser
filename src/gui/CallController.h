@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include "gui/CallAudioFaultToastGate.h"
 #include "gui/CallMetricsTracker.h"
 #include "gui/UiLatencyProbe.h"
@@ -152,6 +154,11 @@ private:
   int64_t last_link_sample_ms_ = 0;
   DeviceVitals vitals_;
   int64_t vitals_read_ms_ = 0;
+  /** perf.threads: once every 10 s while a call is tracked (where the CPU goes). */
+  void EmitPerfThreads(int64_t now_ms);
+  int64_t perf_sample_ms_ = 0;
+  double perf_proc_cpu_s_ = -1.0;
+  std::unordered_map<uint32_t, double> perf_thread_cpu_;
   /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */
   std::string peer_video_log_key_;
   /** When this video call started waiting for the peer's first frame (0: not yet). */

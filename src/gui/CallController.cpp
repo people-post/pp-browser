@@ -7,6 +7,8 @@
 #include "lib/media/IMediaView.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/DeviceVitals.h"
+#include "lib/media/ThreadCpu.h"
+#include "gui/UiFrameStats.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
@@ -262,6 +264,10 @@ void CallController::Tick() {
     const bool call_live = ring_.active || !presenter_.ActiveCallId().empty() ||
                            (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
     EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
+    EmitPerfThreads(now);
+  } else {
+    perf_sample_ms_ = 0;
+    perf_thread_cpu_.clear();
   }
   // UI-stuck probe only while a call is tracked (a thread posting a ping every 500 ms).
   if (metrics_.Tracking() && !ui_probe_.Running()) {
@@ -279,6 +285,40 @@ const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
     vitals_read_ms_ = now_ms;
   }
   return vitals_;
+}
+
+void CallController::EmitPerfThreads(const int64_t now_ms) {
+  constexpr int64_t kPerfIntervalMs = 10000;
+  if (perf_sample_ms_ != 0 && now_ms - perf_sample_ms_ < kPerfIntervalMs) {
+    return;
+  }
+  const DeviceVitals vitals = ReadDeviceVitals();
+  const auto top = TopThreadCpuDeltas(ReadThreadCpu(), perf_thread_cpu_, 8);
+  const double prev_proc_cpu_s = perf_proc_cpu_s_;
+  const int64_t prev_sample_ms = perf_sample_ms_;
+  perf_proc_cpu_s_ = vitals.cpu_s;
+  perf_sample_ms_ = now_ms;
+  const UiFrameTotals frames = UiFrameStats::TakeAndReset();
+  if (prev_sample_ms == 0) {
+    return; // the first sample only sets the baseline
+  }
+  static constexpr ShareWord kKeys[] = {"t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"};
+  static constexpr ShareWord kMsKeys[] = {"t1_ms", "t2_ms", "t3_ms", "t4_ms", "t5_ms", "t6_ms", "t7_ms", "t8_ms"};
+  MetricsLine line("perf.threads");
+  line.Add("interval_ms", now_ms - prev_sample_ms)
+      .Add("proc_cpu_ms", (vitals.cpu_s >= 0 && prev_proc_cpu_s >= 0) ? (vitals.cpu_s - prev_proc_cpu_s) * 1000.0 : -1.0)
+      .Add("thermal", vitals.thermal)
+      .Add("battery", vitals.battery_pct)
+      .Add("charging", vitals.charging)
+      .Add("video_on", in_call_.camera_on)
+      .Add("remote_video", in_call_.remote_video)
+      .Add("frames", frames.frames)
+      .Add("layout_ms", static_cast<double>(frames.layout_us) / 1000.0)
+      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0);
+  for (size_t i = 0; i < top.size(); ++i) {
+    line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
+  }
+  line.Emit();
 }
 
 void CallController::EmitMetrics(const std::vector<ShareableLine>& lines) {

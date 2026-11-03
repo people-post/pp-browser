@@ -73,6 +73,7 @@
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
+#include "gui/UiFrameStats.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
@@ -2012,6 +2013,9 @@ void Application::Run() {
       // the swap is left out). The first presented
       // frame is not counted, and at most one line a second is written, carrying how many were skipped.
       const auto frame_done = std::chrono::steady_clock::now();
+      UiFrameStats::AddFrame(
+          std::chrono::duration_cast<std::chrono::microseconds>(layout_done - tasks_done).count(),
+          std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {

@@ -1,4 +1,5 @@
 #include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/MediaThreadName.h"
 
 #include "common/Diag.h"
 #include "common/Logger.h"
@@ -145,7 +146,10 @@ struct MediaDeviceLane {
   bool stuck_reported = false;
 
   void Start() {
-    thread = std::thread([this]() { Run(); });
+    thread = std::thread([this]() {
+      SetMediaThreadName("pp.devices");
+      Run();
+    });
     thread_id = thread.get_id();
   }
 
