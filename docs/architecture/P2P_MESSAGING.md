@@ -303,8 +303,9 @@ ordered chat stream:
   next inbox wake. No acks: a family that must know its peer has a message resends it itself (a
   call's media keys).
 - **To many** (`ControlLane::SendToMany`): each recipient resolved (route, maybe a directory lookup;
-  the pair's session, maybe opened) and sealed for its pair on the critical workers, in parallel, never
-  on the caller's thread; one result per recipient. There is no group copy: a group's signaling is
+  the pair's session, maybe opened) and sealed for its pair on the workers, in parallel, never on the
+  caller's thread; one result per recipient. Live signaling (a call's) resolves on the critical lane;
+  what can wait (a group's roster check, the device list to every contact) on a lower one. There is no group copy: a group's signaling is
   pairwise like its chat (no group key; the relay does not know groups).
 - **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
   that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;

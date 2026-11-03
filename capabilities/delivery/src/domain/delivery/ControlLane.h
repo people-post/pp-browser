@@ -3,6 +3,7 @@
 #include "domain/peers/OwnCards.h"
 #include "lib/delivery/ControlSend.h"
 #include "common/Lifetime.h"
+#include "common/WorkerPool.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/ThreadTypes.h"
@@ -48,10 +49,11 @@ public:
 
   /**
    * Each of `sends` to its peer, as Send — resolved (route, maybe a directory lookup; the pair's session, maybe
-   * opened) and sealed on the critical workers, in parallel, never on the caller's thread. `done` (optional) gets
-   * one result per send, in their order, on a worker, once the last is queued or refused.
+   * opened) and sealed on `lane`'s workers, in parallel, never on the caller's thread. `done` (optional) gets one
+   * result per send, in their order, on a worker, once the last is queued or refused. Live signaling takes the
+   * critical lane; a notice to many that can wait takes a lower one, not to crowd it.
    */
-  void SendToMany(std::vector<ControlSend> sends, ControlSendsDone done = {});
+  void SendToMany(std::vector<ControlSend> sends, ControlSendsDone done = {}, WorkerLane lane = WorkerLane::Critical);
 
   /**
    * Tell this account's other devices (through its own mailbox, M022) our account card — the device list —

@@ -108,7 +108,7 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   return {};
 }
 
-void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone done) {
+void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone done, const WorkerLane lane) {
   struct Gather {
     std::mutex mutex;
     std::vector<ControlSendResult> results;
@@ -128,7 +128,7 @@ void ControlLane::SendToMany(std::vector<ControlSend> sends, ControlSendsDone do
   for (size_t i = 0; i < sends.size(); ++i) {
     gather->results[i].peer_identity = sends[i].peer_identity;
     // One worker each: a cold route's directory lookup does not hold up the other peers' copies.
-    lifetime_.Post([](std::function<void()> task) { AppRuntime::PostWorkerCritical(std::move(task)); },
+    lifetime_.Post([lane](std::function<void()> task) { AppRuntime::PostWorker(lane, std::move(task)); },
                    [this, gather, i, send = std::move(sends[i])]() {
                      auto queued = Send(send.peer_identity, send.control, send.key_init_b64, send.urgent);
                      bool last = false;

@@ -1537,7 +1537,7 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id)
   log().info << "Roster check group=" << group_id << " request_id=" << check->request.request_id
              << " asking=" << check->ask.size();
   const std::string detail = group_roster_sync_codec::EncodeRequest(check->request);
-  // To everyone asked at once (V058 2): each copy sealed for its pair, off this thread.
+  // To everyone asked at once (V058 2): each copy sealed for its pair, off this thread (not live: the normal lane).
   std::vector<ControlSend> sends;
   for (const std::string& identity : check->ask) {
     auto control = GroupMembershipCodec::BuildSystemMessage(
@@ -1547,7 +1547,8 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id)
     }
   }
   mesh_messaging_.SendControlToMany(
-      std::move(sends), [this, alive = alive_, group_id](std::vector<ControlSendResult> results) {
+      std::move(sends),
+      [this, alive = alive_, group_id](std::vector<ControlSendResult> results) {
         if (!alive->load()) {
           return;
         }
@@ -1557,7 +1558,8 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id)
                        << " err=" << result.queued.error().message;
           }
         }
-      });
+      },
+      WorkerLane::Normal);
   return {};
 }
 

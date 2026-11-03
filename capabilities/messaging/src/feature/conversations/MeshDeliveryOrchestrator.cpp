@@ -240,17 +240,21 @@ void MeshDeliveryOrchestrator::NotifyContactsOfDevices(const std::vector<std::st
   for (const std::string& account : accounts) {
     sends.push_back(ControlSend{.peer_identity = account, .control = notice});
   }
-  control_lane_.SendToMany(std::move(sends), [this](std::vector<ControlSendResult> results) {
-    size_t told = 0;
-    for (const ControlSendResult& result : results) {
-      if (result.queued) {
-        ++told;
-      } else {
-        log().info << "device list not sent to " << result.peer_identity << ": " << result.queued.error().message;
-      }
-    }
-    log().info << "device list sent to " << told << " of " << results.size() << " contact(s)";
-  });
+  // Background: every contact, nothing live — the critical lane stays for signaling.
+  control_lane_.SendToMany(
+      std::move(sends),
+      [this](std::vector<ControlSendResult> results) {
+        size_t told = 0;
+        for (const ControlSendResult& result : results) {
+          if (result.queued) {
+            ++told;
+          } else {
+            log().info << "device list not sent to " << result.peer_identity << ": " << result.queued.error().message;
+          }
+        }
+        log().info << "device list sent to " << told << " of " << results.size() << " contact(s)";
+      },
+      WorkerLane::Background);
 }
 
 void MeshDeliveryOrchestrator::NudgeSiblings() {
@@ -931,8 +935,9 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
   return control_lane_.Send(peer_identity, control, key_init_b64, urgent);
 }
 
-void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done) {
-  control_lane_.SendToMany(std::move(sends), std::move(done));
+void MeshDeliveryOrchestrator::SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done,
+                                                 const WorkerLane lane) {
+  control_lane_.SendToMany(std::move(sends), std::move(done), lane);
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
