@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -42,6 +43,13 @@ public:
                               IChatBlobPeerClient* peer_client);
   void SetSuppressionStore(AttachmentSuppressionStore* suppression);
   void SetDownloadPolicy(AttachmentDownloadPolicy policy);
+  /**
+   * Whether the current network is one "download everything" (AlwaysAuto) applies on; called once the network
+   * is known and on every change of it or of the ticks. Until the first call, AlwaysAuto files above the Smart
+   * size stay queued, not judged. Files held back only because the network did not allow them are queued again
+   * (through the automatic limits) when it does.
+   */
+  void SetAutoAllowedOnNetwork(bool allowed);
   void SetBacklogDrainActive(bool active);
   /** Where downloads above the direct size run (null: on the drain's own worker, as small ones do). */
   void SetTransferLane(LargeTransferLane* lane) { lane_ = lane; }
@@ -123,8 +131,7 @@ public:
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields, bool after_open = false);
 
-  DownloadState StateFor(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
-                         uint64_t byte_length) const;
+  DownloadState StateFor(const std::string& thread_id, const ChatAttachmentFields& fields) const;
   /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
   int ProgressPercent(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
   /** Test hook / UI: record a download's percent (notifies the transcript when it changes). */
@@ -139,11 +146,37 @@ private:
     std::string message_id;
     std::string sender;
     ChatAttachmentFields fields;
+    /** Asked for by a tap: started whatever the policy, the network and the limits. */
+    bool forced = false;
+    /** Its start depends on the network allowing "download everything": judged again right before it starts. */
+    bool network_dependent = false;
+    /** The automatic limits were charged for it (given back when it does not start after all). */
+    bool charged = false;
+  };
+
+  /** Whether an attachment starts by itself now (the one rule for queueing and for StateFor). */
+  enum class AutoVerdict {
+    Yes,
+    /** Above the Smart size: only because the network allows "download everything". */
+    YesOnThisNetwork,
+    /** Above the Smart size and the network does not allow it: comes when it does. */
+    NotOnThisNetwork,
+    /** Above the Smart size and no network known yet: waits in the queue, not judged. */
+    NetworkUnknown,
+    No,
   };
 
   std::string JobKey(const Job& job) const;
   std::string JobKey(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
-  bool ShouldAutoDownload(const Job& job) const;
+  AutoVerdict AutoVerdictLocked(const ChatAttachmentFields& fields) const;
+  AutoVerdict AutoVerdictFor(const ChatAttachmentFields& fields) const;
+  bool JobQueuedLocked(const std::string& key) const;
+  /** Gives back what the automatic limits recorded for a job that did not start after all. */
+  void RefundBudget(const Job& job);
+  /** A queued job does not start after all (the network or the policy changed): it becomes a Download row. */
+  void HoldBackLocked(Job job, AutoVerdict verdict);
+  /** Starts the drain when jobs are queued and none runs (queued jobs may have become startable). */
+  void KickDrain();
   void EnqueueJob(Job job, bool force);
   void DrainQueue();
   void RunJobAsync(Job job, std::function<void()> on_done);
@@ -153,7 +186,8 @@ private:
   void CancelJobsLocked(const std::function<bool(const std::string& key)>& matches);
   void MarkPending(const std::string& key);
   void NotifyChanged();
-  bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length);
+  /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
+  bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
   ByteVector CopyDekUnlocked() const;
   std::shared_ptr<CasStore> Content() const;
   void ContinueDrainOnWorker();
@@ -166,7 +200,9 @@ private:
   IdentityStore* identity_ = nullptr;
   IChatBlobPeerClient* peer_client_ = nullptr;
   AttachmentSuppressionStore* suppression_ = nullptr;
-  AttachmentDownloadPolicy policy_ = AttachmentDownloadPolicy::Smart;
+  AttachmentDownloadPolicy policy_ = AttachmentDownloadPolicy::Smart; // under mutex_
+  /** Under mutex_. Whether the network allows "download everything"; none: not known yet. */
+  std::optional<bool> network_allows_all_auto_;
   bool backlog_drain_ = false;
   ChangedCallback on_changed_;
   mutable std::mutex mutex_;
@@ -176,6 +212,8 @@ private:
   std::unordered_set<std::string> pending_;
   /** Held back by the automatic-download limits: stays a "Download" row until the person taps it. */
   std::unordered_set<std::string> throttled_;
+  /** Held back only because the current network does not allow it (also in pending_): queued when it does. */
+  std::unordered_map<std::string, Job> waiting_for_network_;
   std::unordered_map<std::string, int> progress_;
   LargeTransferLane* lane_ = nullptr;
   bool allow_local_cdn_for_test_ = false;

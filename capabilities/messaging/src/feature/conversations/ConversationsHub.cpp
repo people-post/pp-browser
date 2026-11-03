@@ -371,6 +371,12 @@ void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
   for (HubParticipant* participant : Participants()) {
     participant->OnLocalNetworkChanged(change, local ? &*local : nullptr);
   }
+  // Offline or an unknown link keeps the last known kind of network.
+  if (const AutoDownloadNetwork network = AutoDownloadNetworkOf(change.current, host_.mobile);
+      network != AutoDownloadNetwork::Unknown) {
+    attachment_network_.store(network);
+    AppRuntime::PostUI([this]() { FeedAttachmentNetwork(); }); // where the policy is applied
+  }
 }
 
 void ConversationsHub::PublishNodeAdvertisedAddrs() {
@@ -2381,6 +2387,20 @@ AttachmentFetchWorkflow& ConversationsHub::Attachments() {
   return *attachment_downloads_;
 }
 
+void ConversationsHub::FeedAttachmentNetwork() {
+  if (!attachment_downloads_) {
+    return;
+  }
+  // A desktop is always on Wi-Fi; a phone waits for its first network report (until then large files stay queued).
+  const AutoDownloadNetwork network =
+      host_.mobile ? attachment_network_.load() : AutoDownloadNetworkOf(NetworkState{}, /*mobile_host=*/false);
+  if (network == AutoDownloadNetwork::Unknown) {
+    return;
+  }
+  attachment_downloads_->SetAutoAllowedOnNetwork(
+      AutoDownloadAllowedOn(network, policy_.attachment_auto_on_wifi, policy_.attachment_auto_on_cellular));
+}
+
 void ConversationsHub::WireAttachmentDownloads() {
   if (!attachment_suppressions_) {
     attachment_suppressions_ = std::make_unique<AttachmentSuppressionStore>(data_dir_);
@@ -2397,7 +2417,9 @@ void ConversationsHub::WireAttachmentDownloads() {
   attachment_downloads_->SetFetchDependencies(&Store(), contacts_.get(), identity_.get(),
                                                   mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr);
   attachment_downloads_->SetSuppressionStore(attachment_suppressions_.get());
-  attachment_downloads_->SetDownloadPolicy(policy_.attachment_download_policy);
+  attachment_downloads_->SetDownloadPolicy(EffectiveAttachmentDownloadPolicy(
+      policy_.attachment_download_policy, policy_.attachment_auto_on_wifi, policy_.attachment_auto_on_cellular));
+  FeedAttachmentNetwork();
   attachment_downloads_->SetOnChanged([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
@@ -2839,7 +2861,9 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
     group_membership_->SetInboundPolicy(prefs.group_invite_policy);
   }
   if (attachment_downloads_) {
-    attachment_downloads_->SetDownloadPolicy(prefs.attachment_download_policy);
+    attachment_downloads_->SetDownloadPolicy(EffectiveAttachmentDownloadPolicy(
+        prefs.attachment_download_policy, prefs.attachment_auto_on_wifi, prefs.attachment_auto_on_cellular));
+    FeedAttachmentNetwork();
   }
   NotifyPolicyPrefs(prefs);
 }

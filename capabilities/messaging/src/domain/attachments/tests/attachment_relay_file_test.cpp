@@ -415,7 +415,7 @@ protected:
     return message;
   }
   AttachmentFetchWorkflow::DownloadState State(const ChatAttachmentFields& fields) const {
-    return workflow_.StateFor("t1", fields.content_hash, fields.byte_length);
+    return workflow_.StateFor("t1", fields);
   }
 
   std::string cipher_;
@@ -482,7 +482,7 @@ TEST_F(AttachmentDownloadSuppressionTest, AFailedDownloadIsNotFetchedAgainUntilT
   message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
   message.timestamp = 1;
   ASSERT_TRUE(threads_.AppendMessage(message));
-  const auto state = [&] { return workflow_.StateFor("t1", fields.content_hash, fields.byte_length); };
+  const auto state = [&] { return workflow_.StateFor("t1", fields); };
 
   workflow_.EnqueueFromMessage("t1", message, /*force=*/true);
   ASSERT_TRUE(WaitFor([&] { return state() == AttachmentFetchWorkflow::DownloadState::Failed; }));

@@ -1,6 +1,7 @@
 #include "lib/messaging/AttachmentLimits.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace pbr {
 
@@ -71,6 +72,21 @@ bool AutoDownloadBudget::TryAcquire(const std::string& sender, const uint64_t by
   }
   entries.push_back(Entry{.at_ms = now_ms, .bytes = bytes});
   return true;
+}
+
+void AutoDownloadBudget::Refund(const std::string& sender, const uint64_t bytes) {
+  std::lock_guard lock(mutex_);
+  const auto found = by_sender_.find(sender);
+  if (found == by_sender_.end()) {
+    return;
+  }
+  auto& entries = found->second;
+  for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+    if (it->bytes == bytes) {
+      entries.erase(std::next(it).base());
+      return;
+    }
+  }
 }
 
 int BlobSpaceUsedPercent(const BlobSpaceUse& use) {
