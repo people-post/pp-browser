@@ -6158,6 +6158,11 @@ input.checkbox {
   overflow: hidden;
 }
 
+/* The card clips the last row's separator: each row hangs 1dp below the card (rows are transparent on the card). */
+.shell-layer-compact .home-card .sidebar-session {
+  margin-bottom: -1dp;
+}
+
 .shell-layer-compact .home-friend-row {
   flex-direction: row;
   align-items: center;

@@ -88,7 +88,28 @@ def load_exempt():
     return ex
 
 
+def rules_outside_theme_block():
+    """A rule after the template's closing `}` of `@media (theme: ...)` lands in both generated files unconditionally;
+    the dark file loads last, so its colours win in light mode too (2026-11-03: the phone Home page was dark in light
+    mode). Returns (file, line) of every top-level rule outside the media block."""
+    out = []
+    for name in ("colors-light.rcss", "colors-dark.rcss"):
+        path = ROOT / "assets" / "themes" / name
+        depth = 0
+        for no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if depth == 0 and "{" in line and not line.lstrip().startswith("@media"):
+                out.append((name, no))
+            depth += line.count("{") - line.count("}")
+    return out
+
+
 def main():
+    stray = rules_outside_theme_block()
+    if stray:
+        for name, no in stray:
+            print(f"error: assets/themes/{name}:{no}: rule outside the @media (theme: ...) block; "
+                  "move it above the template's last closing brace", file=sys.stderr)
+        return 1
     c = found()
     if "--print-exemptions" in sys.argv:
         print("# path<TAB>literal<TAB>count -- existing hard-coded colours; do not add new ones.")

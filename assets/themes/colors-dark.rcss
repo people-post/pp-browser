@@ -1969,7 +1969,6 @@ select selectbox option:hover {
 .shell-layer-compact .settings-section--grouped .btn:active {
   opacity: 0.6;
 }
-}
 
 /* Phone Today page (DESIGN-pp-ui 8.16); geometry in components.rcss. */
 .shell-layer-compact .home-panel {
@@ -1993,7 +1992,7 @@ select selectbox option:hover {
 }
 
 .shell-layer-compact .home-card .sidebar-session {
-  background-color: #1c1c1e;
+  background-color: transparent;
 }
 
 .shell-layer-compact .home-card .sidebar-session:active {
@@ -2003,4 +2002,5 @@ select selectbox option:hover {
 .shell-layer-compact .home-landing {
   background-color: #1c1c1ef0;
   border-top: 1dp #54545899;
+}
 }
