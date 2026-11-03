@@ -59,6 +59,16 @@ namespace {
 
 constexpr int kMaxIterations = 8;
 
+/**
+ * The turn a step running on this thread belongs to, set by PostTurnTask while the step runs: `owner` is the
+ * session's state, `generation` its turn_generation when the step was posted. No owner outside a step.
+ */
+struct TurnStep {
+  const void* owner = nullptr;
+  uint64_t generation = 0;
+};
+thread_local TurnStep tl_turn_step;
+
 /** AgentSession::SetTurnReleasedHookForTests. */
 std::function<void()>& TurnReleasedHook() {
   static std::function<void()> hook;
@@ -227,6 +237,15 @@ ToolMeta AgentSession::MetaForTool(const std::shared_ptr<Impl>& state, const std
   return {};
 }
 
+bool AgentSession::StaleStep(const std::shared_ptr<Impl>& state, const char* where) {
+  if (tl_turn_step.owner != state.get() ||
+      tl_turn_step.generation == state->turn_generation.load(std::memory_order_acquire)) {
+    return false;
+  }
+  state->Log().info << "Step of a stopped turn dropped (" << where << "): a newer turn runs";
+  return true;
+}
+
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
   AppRuntime::PostUI([shared = state->shared, event = std::move(event)]() mutable {
     std::lock_guard lock(shared->event_mutex);
@@ -281,6 +300,9 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable,
                              const std::string& error_kind) {
+  if (StaleStep(state, "error")) {
+    return; // the chat and entry below are the newer turn's
+  }
   // The turn's chat and entry (empty outside a turn): the UI writes the error into that chat only.
   PushEvent(state, AgentEvent{.type = AgentEventType::Error,
                               .message = message,
@@ -296,6 +318,9 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "end")) {
+    return; // the state, and "busy", belong to the newer turn
+  }
   const std::string ended_thread = state->pending_thread_id; // cleared below; the UI matches its "ended" to the turn
   state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
@@ -546,6 +571,9 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
     std::lock_guard lock(state->park_mutex);
     state->parked_approval.reset();
   }
+  if (StaleStep(state, "tools")) {
+    return;
+  }
 
   if (!execution.ok) {
     if (state->turn_plan.local) {
@@ -652,6 +680,9 @@ void AgentSession::RecordParkedCardEntry(const std::shared_ptr<Impl>& state, con
 
 void AgentSession::FinishAssistantOutput(const std::shared_ptr<Impl>& state, const std::string& assistant_raw,
                                          const std::string& finish_reason, const bool from_model) {
+  if (StaleStep(state, "answer")) {
+    return; // never written into the newer turn's entry or thread
+  }
   if (state->turn_mode == AgentTurnMode::Conversation) {
     state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, assistant_raw);
     if (state->local_turn) {
@@ -729,6 +760,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
   state->turn_scratch.push_back(std::move(assistant_message));
 
   PostTurnTask(state, [state, tool_calls]() {
+    if (AgentSession::StaleStep(state, "refinement")) {
+      return;
+    }
     if (state->cancelled) {
       AgentSession::FinishTurn(state);
       return;
@@ -783,6 +817,9 @@ void AgentSession::DispatchRefinementToolCalls(const std::shared_ptr<Impl>& stat
 
 void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
                                            const ChatCompletionResponse& response) {
+  if (StaleStep(state, "synthesis")) {
+    return; // the model answered after the turn was stopped and replaced
+  }
   if (state->cancelled) {
     FinishTurn(state);
     return;
@@ -822,6 +859,9 @@ void AgentSession::HandleSynthesisResponse(const std::shared_ptr<Impl>& state,
 }
 
 void AgentSession::RunSynthesisStep(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "synthesis")) {
+    return;
+  }
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
     return;
@@ -1028,6 +1068,9 @@ void AgentSession::RunBriefPayloadTurn(const std::shared_ptr<Impl>& state) {
     }
     return;
   }
+  if (StaleStep(state, "plan")) {
+    return;
+  }
   if (state->pending_user_payload) {
     if (const auto doc = TryParseObject(*state->pending_user_payload);
         doc && doc->getString("type").value_or("") == "local_action") {
@@ -1074,6 +1117,9 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
       FinishTurn(state);
     }
     return;
+  }
+  if (StaleStep(state, "plan")) {
+    return; // the planner answered after the turn was stopped and replaced
   }
   if (!plan) {
     PushError(state, plan.error());
@@ -1124,6 +1170,9 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
     }
   }
   TurnExecutionResult execution = TurnExecutor::Execute(state->turn_plan, state->tools, on_activity, options);
+  if (StaleStep(state, "tools")) {
+    return; // the tools returned after the turn was stopped and replaced
+  }
   if (!execution.ok) {
     if (state->turn_plan.local) {
       // A tool failure is part of the answer, worded by the template; the detail only goes to the log.
@@ -1694,6 +1743,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
 }
 
 void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
+  if (StaleStep(state, "start")) {
+    return; // posted for a turn that was stopped and replaced before it began
+  }
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
     return;
@@ -2240,6 +2292,15 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
 }
 
 void AgentSession::PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task) {
+  // The step belongs to the turn current when it is posted; StaleStep tells it apart from a newer one.
+  task = [owner = static_cast<const void*>(state.get()),
+          generation = state->turn_generation.load(std::memory_order_acquire), inner = std::move(task)] {
+    struct Scope {
+      TurnStep outer;
+      ~Scope() { tl_turn_step = outer; }
+    } scope{std::exchange(tl_turn_step, TurnStep{owner, generation})};
+    inner();
+  };
   if (!state->shared->own_threads) {
     AppRuntime::PostWorkerNormal(std::move(task));
     return;

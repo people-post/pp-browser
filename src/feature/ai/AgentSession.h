@@ -291,6 +291,12 @@ private:
   static ApprovalResumeError ValidateParkedResume(const std::optional<ParkedApproval>& park,
                                                   const std::string& approval_id, bool busy);
 
+  /**
+   * The step running on this thread belongs to a turn that was stopped (Cancel) and replaced by a newer Submit:
+   * it must not touch the session's turn state, which is the newer turn's now. Logged with `where`. Outside a
+   * turn step (UI thread, configure): false.
+   */
+  static bool StaleStep(const std::shared_ptr<Impl>& state, const char* where);
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   /** `thread_id`: the turn's thread (an ended turn passes it explicitly: pending_thread_id is cleared by then). */
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading, const std::string& thread_id = {});
