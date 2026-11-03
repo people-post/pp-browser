@@ -191,11 +191,14 @@ std::string ShellLayoutRml::TransientLayer() const {
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-transient\" id=\"shell-transient-layer\" data-model=\"window\">";
+  // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
+  const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
+  out << "<div class=\"shell-layer shell-layer-transient" << compact
+      << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome "
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
-         "<svg src=\"../icons/back.svg\"></svg>"
+         "<svg src=\"../icons/v2/back.svg\"></svg>"
          "</button>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");

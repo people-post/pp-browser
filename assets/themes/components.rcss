@@ -1970,7 +1970,8 @@ select selectbox option {
   box-sizing: border-box;
 }
 
-.shell-chat-overlay-chrome .shell-back-btn {
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn {
   width: 44dp;
   height: 44dp;
   min-width: 44dp;
@@ -5378,8 +5379,10 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-.cd-row:last-child .cd-row-body {
-  border-bottom-color: transparent;
+/* Each row sits 1dp up so its top separator overlaps the row above; the card clips the first one, whichever
+   rows data-if has hidden. */
+.cd-card .cd-row {
+  margin-top: -1dp;
 }
 
 .cd-row-text {

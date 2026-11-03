@@ -1,5 +1,7 @@
 #include <stdexcept>
 #include "gui/contacts/ContactsController.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "common/ContactLimits.h"
 
 #include "lib/messaging/ContactLocator.h"
@@ -314,8 +316,10 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
   if (ports.snapshot && ports.snapshot().messaging_ready && ports.is_contact_reachable) {
     detail.can_message = ports.is_contact_reachable(contact);
     if (!detail.can_message) {
-      detail.message_hint =
-          Tr("contacts.hint.not_dialable").c_str();
+      // The offline demo app reaches nobody by design; the hint would sit on every contact.
+      if (PeerLinkStatusVisible(kUiDemoBuild)) {
+        detail.message_hint = Tr("contacts.hint.not_dialable").c_str();
+      }
       return;
     }
     if (contact.multiaddrs.empty()) {

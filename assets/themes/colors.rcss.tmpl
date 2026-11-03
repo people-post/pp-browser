@@ -1358,8 +1358,9 @@ select selectbox option:hover {
   background-color: {{fill-2}};
 }
 
+/* Separator above each row but the first: a row hidden by data-if at the end of a card leaves no stray line. */
 .cd-row-body {
-  border-bottom: 1dp {{separator}};
+  border-top: 1dp {{separator}};
 }
 
 .cd-row-text,
@@ -1729,11 +1730,13 @@ select selectbox option:hover {
   color: {{label-2}};
 }
 
-.shell-chat-overlay-chrome .shell-back-btn {
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn {
   background-color: transparent;
 }
 
-.shell-chat-overlay-chrome .shell-back-btn svg {
+.shell-chat-overlay-chrome .shell-back-btn svg,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn svg {
   image-color: {{accent}};
 }
 

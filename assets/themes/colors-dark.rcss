@@ -1349,8 +1349,9 @@ select selectbox option:hover {
   background-color: #7878803d;
 }
 
+/* Separator above each row but the first: a row hidden by data-if at the end of a card leaves no stray line. */
 .cd-row-body {
-  border-bottom: 1dp #54545899;
+  border-top: 1dp #54545899;
 }
 
 .cd-row-text,
@@ -1720,11 +1721,13 @@ select selectbox option:hover {
   color: #ebebf599;
 }
 
-.shell-chat-overlay-chrome .shell-back-btn {
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn {
   background-color: transparent;
 }
 
-.shell-chat-overlay-chrome .shell-back-btn svg {
+.shell-chat-overlay-chrome .shell-back-btn svg,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn svg {
   image-color: #0a84ff;
 }
 
