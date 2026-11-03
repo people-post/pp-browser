@@ -49,6 +49,15 @@ constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 /** Bytes of one 20 ms mono s16 frame on the speaker. */
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+/**
+ * One sent Opus packet holds 40 ms (two 20 ms device frames): half the packets of 20 ms, and with them half the
+ * per-packet headers — 41 kbit/s less on the wire per stream to the hop, for 20 ms more delay (A029). Playout
+ * still runs in 20 ms slots and takes any packet length a peer sends (its Opus TOC says).
+ */
+constexpr int kPacketMs = 40;
+constexpr int kPacketSamples = kSampleRate * kPacketMs / 1000;
+/** The longest Opus packet (120 ms): room for one decoded packet. */
+constexpr int kMaxPacketSamples = kSampleRate * 120 / 1000;
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
 constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
 /** +6 dB on the voice-processing (VPIO) path: the OS attenuates call output there by design and
@@ -346,6 +355,10 @@ struct MediaEngine::Impl {
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
     AudioJitterBuffer jitter;
+    /** Decoded samples not yet played: a 40 ms packet plays over two 20 ms slots. */
+    std::vector<int16_t> decoded;
+    /** The last packet's length (samples): what a lost packet is concealed as. */
+    int packet_samples = kFrameSamples;
     uint64_t rx_frames = 0;
     int64_t last_rx_ms = 0;
     float peak_level = 0.f;
@@ -678,18 +691,37 @@ struct MediaEngine::Impl {
   }
 
   /**
-   * One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. When the
-   * buffer is over its adaptive target, a first-pass decoded Packet that turns out to be silence is
-   * dropped and a second frame is popped/decoded to catch up by one slot without an audible gap
-   * (adaptive jitter §2).
+   * One 20 ms playout slot for one track into `mix`: from the samples a packet left (a 40 ms packet plays over two
+   * slots), else from the next packet popped and decoded (DecodeNextPacketLocked).
    */
   void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
     if (!track.decoder) {
       return;
     }
-    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
-    const auto plc = [&]() {
-      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+    if (track.decoded.size() < static_cast<size_t>(kFrameSamples)) {
+      DecodeNextPacketLocked(track);
+    }
+    const size_t n = std::min(track.decoded.size(), static_cast<size_t>(kFrameSamples));
+    if (n == 0) {
+      return;
+    }
+    std::vector<int16_t> pcm(track.decoded.begin(), track.decoded.begin() + static_cast<std::ptrdiff_t>(n));
+    track.decoded.erase(track.decoded.begin(), track.decoded.begin() + static_cast<std::ptrdiff_t>(n));
+    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), static_cast<int>(n)));
+    MixPcmSat(mix, pcm);
+    any = true;
+  }
+
+  /**
+   * Appends one packet's audio to `track.decoded`: Packet decoded / FEC-on-Gap / PLC-on-Gap at the lost packet's
+   * length / PLC-on-Empty for one slot. When the buffer is over its adaptive target, a first-pass decoded Packet
+   * that turns out to be silence is dropped and the next one popped/decoded to catch up without an audible gap
+   * (adaptive jitter §2).
+   */
+  void DecodeNextPacketLocked(RemoteAudioTrack& track) {
+    std::vector<int16_t> pcm(static_cast<size_t>(kMaxPacketSamples), 0);
+    const auto plc = [&](int samples) {
+      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), samples, 0);
       if (n > 0) {
         plc_frames_total.fetch_add(1, std::memory_order_relaxed);
       }
@@ -703,46 +735,47 @@ struct MediaEngine::Impl {
       switch (pop.kind) {
       case AudioPlayoutPop::Kind::Packet:
         decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                              kFrameSamples, 0);
+                              kMaxPacketSamples, 0);
+        if (decoded > 0) {
+          track.packet_samples = decoded;
+        }
         break;
       case AudioPlayoutPop::Kind::Gap:
-        // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
-        // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+        // The next packet's in-band FEC (LBRR) only covers the packet right before it; earlier
+        // missing packets of a wider hole are PLC. PLC also if the FEC decode fails. Either is
+        // asked for exactly the lost packet's length, as libopus requires.
         if (pop.fec_usable) {
           decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                                kFrameSamples, 1);
+                                track.packet_samples, 1);
         }
         if (decoded > 0) {
           // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
           // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
           fec_frames_total.fetch_add(1, std::memory_order_relaxed);
         } else {
-          decoded = plc();
+          decoded = plc(track.packet_samples);
         }
         break;
       case AudioPlayoutPop::Kind::Empty:
         // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
         // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+        // One slot of PLC: the next slot asks the buffer again.
         if (track.jitter.underruns() > underruns_before) {
           playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-          decoded = plc();
+          decoded = plc(kFrameSamples);
         }
         break;
       }
       if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
           IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
         track.jitter.NoteSilenceDrop();
-        continue; // catch up: pop and decode the next frame instead of playing this silent one
+        continue; // catch up: pop and decode the next packet instead of playing this silent one
       }
       break;
     }
-    if (decoded <= 0) {
-      return;
+    if (decoded > 0) {
+      track.decoded.insert(track.decoded.end(), pcm.begin(), pcm.begin() + decoded);
     }
-    pcm.resize(static_cast<size_t>(decoded));
-    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), decoded));
-    MixPcmSat(mix, pcm);
-    any = true;
   }
 
   /**
@@ -1077,9 +1110,9 @@ struct MediaEngine::Impl {
         return;
       }
 
-      std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
+      std::vector<int16_t> pcm(static_cast<size_t>(kPacketSamples));
       std::vector<int16_t> pending;
-      pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
+      pending.reserve(static_cast<size_t>(kPacketSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       int64_t last_capture_pcm_ms = util::NowUnixMs();
       // Opus encoders are not thread-safe: bitrate changes (ApplyTargets, any thread) are
@@ -1175,7 +1208,7 @@ struct MediaEngine::Impl {
               vpio_starve_reopens = 0;
             }
           }
-          if (pending.size() < static_cast<size_t>(kFrameSamples)) {
+          if (pending.size() < static_cast<size_t>(kPacketSamples)) {
             const int64_t now = util::NowUnixMs();
             // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
             // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen (voice
@@ -1213,8 +1246,8 @@ struct MediaEngine::Impl {
               continue;
             }
           } else {
-            std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
-            pending.erase(pending.begin(), pending.begin() + kFrameSamples);
+            std::copy_n(pending.begin(), kPacketSamples, pcm.begin());
+            pending.erase(pending.begin(), pending.begin() + kPacketSamples);
             if (muted.load(std::memory_order_relaxed)) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
@@ -1229,7 +1262,7 @@ struct MediaEngine::Impl {
                 }
               }
 #endif
-              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kPacketSamples));
             }
           }
         } else {
@@ -1262,7 +1295,7 @@ struct MediaEngine::Impl {
         }
         capture_stage.Set(MediaThreadStage::Encode);
         const int encoded =
-            opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
+            opus_encode(enc, pcm.data(), kPacketSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
           continue;
         }
@@ -1282,10 +1315,10 @@ struct MediaEngine::Impl {
           } catch (...) {
           }
         }
-        // Pace silence / starved-capture TX to one Opus frame per period.
+        // Pace silence / starved-capture TX to one Opus packet per its length.
         if (paced_silence_frame) {
           capture_stage.Set(MediaThreadStage::Sleep);
-          std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+          std::this_thread::sleep_for(std::chrono::milliseconds(kPacketMs));
         }
       }
       capture_stage.Set(MediaThreadStage::Exiting);
@@ -1607,6 +1640,11 @@ struct MediaEngine::Impl {
     AudioPacket packet;
     packet.seq = seq;
     packet.recv_ms = recv_mono_ms;
+    if (const int samples = opus_packet_get_nb_samples(reinterpret_cast<const unsigned char*>(data),
+                                                       static_cast<opus_int32>(size), kSampleRate);
+        samples > 0) {
+      packet.duration_ms = samples * 1000 / kSampleRate;
+    }
     packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -2192,10 +2230,10 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       s.last_rx_ms = track->last_rx_ms;
       s.peak_level = track->peak_level;
       h.streams.push_back(s);
-      h.jitter_target_ms = std::max(h.jitter_target_ms,
-                                     static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
-      h.jitter_depth_ms = std::max(h.jitter_depth_ms,
-                                    static_cast<int64_t>(track->jitter.size()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_target_ms =
+          std::max(h.jitter_target_ms, static_cast<int64_t>(track->jitter.TargetFrames()) * track->jitter.PacketMs());
+      h.jitter_depth_ms =
+          std::max(h.jitter_depth_ms, static_cast<int64_t>(track->jitter.size()) * track->jitter.PacketMs());
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
     }

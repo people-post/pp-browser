@@ -606,6 +606,68 @@ TEST(AudioJitterBufferTest, PressureStaysLowAtElevatedTargetWhenHeldNearTarget) 
   EXPECT_LT(buf.Pressure(0), 0.75);
 }
 
+// A029: a publisher sending 40 ms packets gets the same delays, counted in its packets.
+AudioPacket Pkt40(uint32_t seq, int64_t recv_ms = 0) {
+  AudioPacket p = PktAt(seq, recv_ms);
+  p.duration_ms = 40;
+  return p;
+}
+
+TEST(AudioJitterBuffer40MsTest, PrimesAtEightyMsInTwoPackets) {
+  AudioJitterBuffer buf;
+  buf.Push(Pkt40(1));
+  EXPECT_EQ(buf.PopForPlayout().kind, AudioPlayoutPop::Kind::Empty);
+  buf.Push(Pkt40(2));
+  EXPECT_EQ(buf.PacketMs(), 40);
+  EXPECT_EQ(buf.TargetFrames(), 2u); // 60 ms rounds up to two 40 ms packets
+  const auto pop = buf.PopForPlayout();
+  ASSERT_EQ(pop.kind, AudioPlayoutPop::Kind::Packet);
+  EXPECT_EQ(pop.seq, 1u);
+}
+
+TEST(AudioJitterBuffer40MsTest, HardCapIsStillEightHundredMs) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 30; ++s)
+    buf.Push(Pkt40(s));
+  EXPECT_EQ(buf.size(), 20u);
+  EXPECT_EQ(buf.speech_drops(), 10u);
+}
+
+TEST(AudioJitterBuffer40MsTest, PeriodicStallsRaiseTargetInMs) {
+  AudioJitterBuffer buf;
+  // Every 2 s the network stalls 300 ms, then the backlog arrives at once (StallExtra, in 40 ms packets).
+  const auto extra = [](uint32_t i) {
+    const uint32_t phase = i % 50;
+    return phase < 8 ? static_cast<int64_t>(8 - phase) * 40 : int64_t{0};
+  };
+  for (uint32_t i = 0; i < 500; ++i) {
+    buf.Push(Pkt40(i + 1, 1000 + static_cast<int64_t>(i) * 40 + extra(i)));
+  }
+  EXPECT_GE(buf.TargetFrames() * 40, 280u);
+  EXPECT_LE(buf.TargetFrames() * 40, 400u);
+}
+
+TEST(AudioJitterBuffer40MsTest, AnotherPacketLengthStartsOver) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 4; ++s)
+    buf.Push(Pkt(s)); // 20 ms (duration unset)
+  EXPECT_EQ(buf.PacketMs(), 20);
+  buf.Push(Pkt40(1)); // the peer restarted on a 40 ms build
+  EXPECT_EQ(buf.PacketMs(), 40);
+  EXPECT_EQ(buf.size(), 1u);
+}
+
+TEST(AudioJitterBuffer40MsTest, PressureSignalsAtTwoHundredMs) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 6; ++s) // 2 target + 4 (140 ms rounded up) = 6 packets
+    buf.Push(Pkt40(s));
+  EXPECT_GE(buf.Pressure(0), 1.0);
+  AudioJitterBuffer buf2;
+  for (uint32_t s = 1; s <= 4; ++s)
+    buf2.Push(Pkt40(s));
+  EXPECT_EQ(buf2.Pressure(0), 0.0);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};

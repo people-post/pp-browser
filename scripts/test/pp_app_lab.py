@@ -2812,20 +2812,23 @@ def video_report(before, after, seconds):
     return report
 
 
-def video_call(users, thread, road=None):
+def video_call(users, thread, road=None, video=True):
     """users[0] calls with video on `thread`; the others answer with video; once everyone sees every other one,
     the call runs WATCH_VIDEO_S (with `road`, a PHONE_* profile, on everyone's links from then: set up on clean
     links, as a call that is up when the road gets rough). Returns how the frames arrived then, and leaves."""
     caller, answerers = users[0], users[1:]
-    call_id = caller.cmd("call", thread=thread, video=True)["call_id"]
+    call_id = caller.cmd("call", thread=thread, video=video)["call_id"]
     for u in answerers:
         u.wait_surface("ringing", 60, call_id=call_id)
     for u in answerers:
-        u.cmd("accept")
+        u.cmd("accept" if video else "accept_voice")
     for u in users:
         u.wait_surface("in_call", 90, call_id=call_id)
     for u in users:
-        wait_sees_video(u, len(users) - 1)
+        if video:
+            wait_sees_video(u, len(users) - 1)
+        else:
+            assert_hears(u, len(users) - 1, timeout=60)
     extra = {}
     if road:
         with Road(users, road) as r:
@@ -2867,6 +2870,18 @@ def scenario_video_on_the_road(lab):
     return video_call([a, b], a_thread, road=PHONE_ROAD)
 
 
+def voice_measurement(group, profile):
+    """A voice call (no camera) on `profile`, set up as video_measurement's: what audio alone puts on the wire —
+    each packet a 20 ms Opus frame, so the mean packet size less the frame is the stack's per-packet overhead."""
+    def run(lab):
+        if group:
+            users, threads = open_group(lab, 3)
+            return video_call(users, threads[users[0].name], road=profile, video=False)
+        a, a_thread, b, _ = open_pair(lab)
+        return video_call([a, b], a_thread, road=profile, video=False)
+    return run
+
+
 def video_measurement(group, profile):
     """A scenario: a group video call of three (or a 1:1 one) set up on clean links, then everyone's link turns
     into `profile`; reports how frames arrived on it. Opt-in (run with --only): measurements, not checks."""
@@ -2883,7 +2898,8 @@ def video_measurement(group, profile):
 VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "group", profile))
                       for kind in ("group", "pair")
                       for name, profile in (("lossy", PHONE_LOSSY), ("jittery", PHONE_JITTERY),
-                                            ("narrow", PHONE_NARROW), ("wide", PHONE_WIDE))]
+                                            ("narrow", PHONE_NARROW), ("wide", PHONE_WIDE))] + [
+    ("voice_%s_wide" % kind, voice_measurement(kind == "group", PHONE_WIDE)) for kind in ("group", "pair")]
 
 
 def scenario_group_call_on_the_road(lab):
