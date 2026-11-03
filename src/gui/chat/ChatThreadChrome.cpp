@@ -5,6 +5,8 @@
 #include "gui/chat/PeerLinkText.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
@@ -171,7 +173,7 @@ void ChatThreadChrome::UpdatePeerLink() {
     return;
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
-  const PeerLinkText link_text = PeerLinkTextFor(link);
+  const PeerLinkText link_text = PeerLinkStatusVisible(kUiDemoBuild) ? PeerLinkTextFor(link) : PeerLinkText{};
   LogPeerLinkDetail(link.detail);
   view_.show_peer_link = link_text.status_key != nullptr || in_call;
   if (in_call) {

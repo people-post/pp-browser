@@ -49,6 +49,11 @@ TEST(UiDemoGatesTest, DemoHidesTheMockReplyBanner) {
   EXPECT_TRUE(MockReplyBannerVisible(false));
 }
 
+TEST(UiDemoGatesTest, DemoHidesThePeerLinkStatus) {
+  EXPECT_FALSE(PeerLinkStatusVisible(true));
+  EXPECT_TRUE(PeerLinkStatusVisible(false));
+}
+
 TEST(UiDemoGatesTest, DemoUploadsNothing) {
   EXPECT_FALSE(UploadAllowed(true));
   EXPECT_TRUE(UploadAllowed(false));

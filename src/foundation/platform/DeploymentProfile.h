@@ -36,6 +36,9 @@ std::string ResolveDiagnosticsUploadUrl(bool ui_demo, const char* env_url, const
 inline bool UploadAllowed(bool ui_demo) { return !ui_demo; }
 /** The "simulated replies, no LLM configured" banner: hidden in the UI demo app (it has no backend by design). */
 inline bool MockReplyBannerVisible(bool ui_demo) { return !ui_demo; }
+/** A direct chat's link line and "can't reach" banner: hidden in the UI demo app (offline by design, so every chat
+ *  would say "can't connect" and no screen would match the mockups). */
+inline bool PeerLinkStatusVisible(bool ui_demo) { return !ui_demo; }
 /** Runs `sender` only when UploadAllowed(ui_demo); returns whether it ran. */
 bool RunIfUploadAllowed(bool ui_demo, const std::function<void()>& sender);
 /** The Me -> Network prod / qa / custom switch: hidden in the UI demo app (its profile key stays `prod`). */
