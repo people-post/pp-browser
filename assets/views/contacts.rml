@@ -1,5 +1,15 @@
 <div class="contacts-panel" data-model="contacts">
-  <div class="contacts-list-view">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
+    <div class="pane-nav-actions row">
+      <button class="pane-nav-btn" type="button" data-event-click="on_add_contact_menu()">
+        <svg src="../icons/v2/user-plus.svg" width="24" height="24"></svg>
+      </button>
+    </div>
+  </div>
+  <div class="contacts-list-view root-scroll">
+    <p class="large-title">{{i18n:nav.contacts}}</p>
     <div class="contacts-header row">
       <p class="contacts-header-title">{{i18n:contacts.title}}</p>
       <div class="contacts-header-actions row">

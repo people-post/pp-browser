@@ -13,6 +13,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "lib/ui/ShellGestureAxis.h"
+#include "gui/shell/ShellLargeTitleScroll.h"
 #include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
@@ -112,6 +113,8 @@ public:
   void CloseAuxiliary();
   void ToggleAuxiliary();
   void SelectNavTab(NavTab tab);
+  /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
+  void SetLargeTitleCollapsed(bool collapsed);
   void ClearTabContext();
   void SetPrimaryPane(const std::string& key);
   void ClearPrimaryPane();
@@ -258,6 +261,7 @@ private:
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
   void AttachSplitterDrag();
+  void AttachLargeTitleScroll();
   void AttachAuxiliarySplitterDrag(ui::ElementDocument* doc);
   void NotifySidebarChanged();
   void DetachCallChromeGesture();
@@ -344,6 +348,7 @@ private:
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;
+  ShellLargeTitleScroll large_title_scroll_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;

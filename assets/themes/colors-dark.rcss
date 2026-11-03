@@ -707,6 +707,19 @@ select selectbox option:hover {
   border-left: 1dp #54545899;
 }
 
+.pane-nav-bg {
+  background-color: #1c1c1ef0;
+  border-bottom: 1dp #54545899;
+}
+
+.pane-nav-btn svg {
+  image-color: #0a84ff;
+}
+
+.large-title, .pane-nav-title {
+  color: #ffffff;
+}
+
 .shell-bottom-chrome {
   background-color: #1c1c1ef0;
   border-top: 1dp #54545899;

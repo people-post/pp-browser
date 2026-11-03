@@ -116,7 +116,8 @@ std::string ShellLayoutRml::CompactBase() const {
     if (home_inline) {
       out << " shell-nav-page--home";
     }
-    out << "\" id=\"shell-nav-page\">";
+    // Root pages (Chats / Contacts / Me): the nav bar's small title and separator follow the scroll.
+    out << "\" id=\"shell-nav-page\" data-class-large-title-collapsed=\"large_title_collapsed\">";
     if (const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab)) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {

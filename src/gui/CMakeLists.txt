@@ -65,6 +65,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellPinGatePorts.cpp
     shell/ShellSetupPorts.cpp
     shell/ShellSplitterDrag.cpp
+    shell/ShellLargeTitleScroll.cpp
     shell/ShellSwipeBackGesture.cpp
     BlobQuotaRecoveryFlow.cpp
     UserFeedback.cpp

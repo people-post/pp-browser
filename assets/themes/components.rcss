@@ -1773,6 +1773,130 @@ select selectbox option {
   height: auto;
 }
 
+/* Root-page nav bar + large title (DESIGN-pp-ui 4.1 / 8.1). Phone layout only: on desktop the panes keep their own
+   headers and these parts stay hidden. The nav bar floats over the scroller (padding-top clears it), its background
+   and bottom separator fade in once the large title has scrolled away (.large-title-collapsed on the nav page). */
+.pane-nav,
+.large-title {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-header,
+.shell-layer-compact .settings-header,
+.shell-layer-compact .contacts-header {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-panel,
+.shell-layer-compact .contacts-panel,
+.shell-layer-compact .settings-panel {
+  position: relative;
+  padding-top: 0;
+}
+
+.shell-layer-compact .pane-nav {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44dp;
+  z-index: 3;
+}
+
+.pane-nav-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44dp;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav-bg {
+  opacity: 1;
+}
+
+.pane-nav-title {
+  position: absolute;
+  top: 0;
+  left: 96dp;
+  right: 96dp;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav-title {
+  opacity: 1;
+}
+
+.pane-nav-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 44dp;
+  align-items: center;
+}
+
+.pane-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.pane-nav-btn svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-compact .large-title {
+  display: block;
+  flex-shrink: 0;
+  height: 52dp;
+  margin: 0;
+  padding: 0 4dp;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
+}
+
+/* The whole page scrolls (large title, search, rows), not just its list. */
+.shell-layer-compact .sidebar-sessions,
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  overflow-y: auto;
+  padding-top: 44dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  display: block;
+}
+
+.shell-layer-compact .contacts-list,
+.shell-layer-compact .settings-list {
+  flex: none;
+  overflow-y: visible;
+}
+
 .shell-pane-home {
   flex: 1;
   min-height: 0;

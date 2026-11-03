@@ -116,6 +116,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
+    ctor.Bind("large_title_collapsed", &host.state_.large_title_collapsed);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
@@ -406,6 +407,8 @@ void ShellHost::SelectNavTab(NavTab tab) {
   const bool tab_changed = state_.nav_tab != tab;
   if (tab_changed) {
     ClearTabContext();
+    // The new root page opens at its top, large title showing.
+    SetLargeTitleCollapsed(false);
   }
   state_.nav_tab = tab;
   ShellLayout::SyncNavTabString(state_);
@@ -413,6 +416,14 @@ void ShellHost::SelectNavTab(NavTab tab) {
     on_nav_tab_changed_(tab);
   }
   RequestSyncLayout();
+}
+
+void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
+  if (state_.large_title_collapsed == collapsed) {
+    return;
+  }
+  state_.large_title_collapsed = collapsed;
+  DataModelHost::Instance().Dirty("window", "large_title_collapsed");
 }
 
 void ShellHost::OpenCompactChat() {
@@ -773,6 +784,7 @@ void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
   DataModelHost::Instance().Dirty("window", "sidebar_collapsed");
+  DataModelHost::Instance().Dirty("window", "large_title_collapsed");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
 }
@@ -1571,10 +1583,12 @@ void ShellHost::SyncLayout() {
   const LayoutMode mode = state_.layout_mode;
   splitter_drag_.Detach();
   aux_splitter_drag_.Detach();
+  large_title_scroll_.Detach();
   RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
   AttachSplitterDrag();
+  AttachLargeTitleScroll();
   remount_call_chrome_pending_ = false;
   remount_dialog_chrome_pending_ = false;
   remount_pin_gate_chrome_pending_ = false;
@@ -1621,6 +1635,22 @@ void ShellHost::AttachSplitterDrag() {
                           state_.sidebar_width_dp = width_dp;
                           NotifySidebarChanged();
                         });
+}
+
+void ShellHost::AttachLargeTitleScroll() {
+  if (!context_ || context_->GetNumDocuments() == 0 || state_.layout_mode != LayoutMode::Compact) {
+    SetLargeTitleCollapsed(false);
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  ui::Element* page = doc ? doc->GetElementById("shell-nav-page") : nullptr;
+  if (!page) {
+    SetLargeTitleCollapsed(false);
+    return;
+  }
+  // The attach reads the restored scroll position, so a remount that kept the page scrolled keeps it collapsed.
+  SetLargeTitleCollapsed(false);
+  large_title_scroll_.Attach(page, [this](bool collapsed) { SetLargeTitleCollapsed(collapsed); });
 }
 
 void ShellHost::AttachAuxiliarySplitterDrag(ui::ElementDocument* doc) {

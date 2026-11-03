@@ -40,6 +40,14 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
   EXPECT_FALSE(Has(rml, "close_account_sheet"));
 }
 
+TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Contacts;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "id=\"shell-nav-page\" data-class-large-title-collapsed=\"large_title_collapsed\""));
+}
+
 TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoot) {
   // A full layout sync while a dialog is open rebuilds the root and then fills the dialog mount;
   // an inline copy in the root would survive dialog_close as a dead OK button over the whole app.

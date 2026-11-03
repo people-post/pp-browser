@@ -1,4 +1,13 @@
 <div class="sidebar-panel" data-model="shell">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
+    <div class="pane-nav-actions row">
+      <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
+        <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
+      </button>
+    </div>
+  </div>
   <div class="sidebar-header row">
     <p class="sidebar-header-title">{{i18n:nav.sessions}}</p>
     <div class="sidebar-header-actions row">
@@ -7,7 +16,8 @@
       </button>
     </div>
   </div>
-  <div id="sidebar-sessions" class="sidebar-sessions" data-event-scroll="sessions_scroll()">
+  <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
+    <p class="large-title">{{i18n:nav.sessions}}</p>
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived"></svg>

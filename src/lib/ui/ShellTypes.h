@@ -342,6 +342,8 @@ struct ShellState {
   /** Expanded layout only: secondary pane width (dp, clamped by ShellLayout) and user collapse. */
   int sidebar_width_dp = 240;
   bool sidebar_collapsed = false;
+  /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
+  bool large_title_collapsed = false;
   /** Expanded layout only: auxiliary pane width (dp, clamped by ShellLayout). */
   int auxiliary_width_dp = 320;
 
