@@ -5,6 +5,7 @@
 
 #include <ui/base/Types.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -138,6 +139,10 @@ private:
   int pending_jump_frames_ = 0;
   int pending_jump_stable_frames_ = 0;
   float pending_jump_last_top_ = -1.f;
+  /** The row a jump landed on, tinted (message-row-jump-target) until `flash_until_` so the eye finds it. */
+  std::string flash_id_;
+  std::chrono::steady_clock::time_point flash_until_{};
+  void ClearJumpFlash();
   ConversationsFacade* facade_ = nullptr;
   RowBuilder rows_;
   RowDecorator decorator_;

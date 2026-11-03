@@ -152,6 +152,9 @@ void ChatTranscriptScroller::ApplyPolicy() {
     last_messages_scroll_height_ = el->GetScrollHeight();
   }
 
+  if (!flash_id_.empty() && std::chrono::steady_clock::now() >= flash_until_) {
+    ClearJumpFlash();
+  }
   if (ApplyPendingJump(el)) {
     return;
   }
@@ -413,6 +416,13 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
   if (!row) {
     return true; // not mounted yet (a remount is coming)
   }
+  if (flash_id_ != pending_jump_id_) {
+    // Where the jump landed is tinted for a moment (a quote's original, a search hit, a mention).
+    ClearJumpFlash();
+    row->SetClass("message-row-jump-target", true);
+    flash_id_ = pending_jump_id_;
+  }
+  flash_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
   suppress_scroll_handler_ = true;
   row->ScrollIntoView(true);
   suppress_scroll_handler_ = false;
@@ -425,6 +435,18 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
     pending_jump_id_.clear();
   }
   return true;
+}
+
+void ChatTranscriptScroller::ClearJumpFlash() {
+  if (flash_id_.empty()) {
+    return;
+  }
+  if (context_ && context_->GetNumDocuments() > 0) {
+    if (ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + flash_id_ + "\"]").c_str())) {
+      row->SetClass("message-row-jump-target", false);
+    }
+  }
+  flash_id_.clear();
 }
 
 void ChatTranscriptScroller::OnShellRemounted() {

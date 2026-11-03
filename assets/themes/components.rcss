@@ -3381,6 +3381,12 @@ input.checkbox {
   padding-left: 48dp;
 }
 
+/* The row a jump landed on (a tapped quote's original, a search hit): tinted for a moment. */
+.message-row-jump-target {
+  background-color: rgba(255, 196, 0, 0.22);
+  border-radius: 8dp;
+}
+
 /* A peer's message that mentions this account (group-chat G015): the row is tinted (colors-*.rcss). */
 .message-row-mentions-me {
   padding: 4dp 8dp;
