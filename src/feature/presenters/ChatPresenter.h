@@ -144,6 +144,9 @@ bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::str
  *
  * UI thread.
  */
+/** What the user sees when a group action fails: a localized line, never the engine's English text. */
+std::string GroupActionFailureText(const Error& error);
+
 class ChatPresenter : public Module {
 public:
   struct Callbacks {
@@ -223,6 +226,13 @@ public:
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
+  /**
+   * The peer sheet's group actions. A failure's message is already the localized text to show (the engine's
+   * own wording goes to the log only).
+   */
+  Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
+  Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
+  Roe<void> RemoveGroupMember(const std::string& group_id, const std::string& member_identity);
 
   // --- a message's buttons (the open chat) ------------------------------------------------------
 

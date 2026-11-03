@@ -681,6 +681,8 @@
     "chat.group.rename_for_everyone": "Rename for everyone",
     "chat.group.rename_for_everyone_prompt": "Shared group name for all members",
     "chat.group.title_required": "Title required",
+    "chat.group.err.owner_only": "Only the group owner can do this.",
+    "chat.group.err.generic": "Couldn't update the group. Please try again.",
     "chat.group.remove_unreachable": "Remove unreachable: {name}",
     "chat.group.remove_member_title": "Remove member",
     "chat.group.remove_member_confirm": "Remove {name} from this group? Others will be notified.",

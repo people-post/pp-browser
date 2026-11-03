@@ -648,6 +648,8 @@
     "chat.group.rename_for_everyone": "为所有人重命名",
     "chat.group.rename_for_everyone_prompt": "所有成员共用的群组名称",
     "chat.group.title_required": "请输入名称",
+    "chat.group.err.owner_only": "只有群主可以这样做。",
+    "chat.group.err.generic": "暂时无法更新群。请稍后再试。",
     "chat.group.remove_unreachable": "移除失联成员：{name}",
     "chat.group.remove_member_title": "移除成员",
     "chat.group.remove_member_confirm": "要将 {name} 移出此群组吗？其他成员会收到通知。",

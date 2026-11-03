@@ -15,6 +15,7 @@
 #include "feature/presenters/SessionListText.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "common/Utilities.h"
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
 
@@ -443,6 +444,54 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
     sheet.unreachable_members.emplace_back(identity, name.empty() ? identity : name);
   }
   return sheet;
+}
+
+std::string GroupActionFailureText(const Error& error) {
+  if (error.message == group_roster_sync::kGroupDissolvedError) {
+    return Tr(group_roster_sync::kGroupDissolvedError);
+  }
+  if (error.message == "Group title required") {
+    return Tr("chat.group.title_required");
+  }
+  if (error.message.rfind("Only the group owner", 0) == 0) {
+    return Tr("chat.group.err.owner_only");
+  }
+  return Tr("chat.group.err.generic");
+}
+
+Roe<void> ChatPresenter::SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto saved = facade_->SetThreadLocalTitle(thread_id, local_title); !saved) {
+    log().warning << "SetThreadLocalTitle failed: " << saved.error().message;
+    return Error(GroupActionFailureText(saved.error()));
+  }
+  return {};
+}
+
+Roe<void> ChatPresenter::RenameGroupShared(const std::string& group_id, const std::string& title) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto renamed = facade_->RenameGroupShared(group_id, title); !renamed) {
+    log().warning << "RenameGroupShared failed: " << renamed.error().message;
+    return Error(GroupActionFailureText(renamed.error()));
+  }
+  facade_->NotifyThreadChanged();
+  return {};
+}
+
+Roe<void> ChatPresenter::RemoveGroupMember(const std::string& group_id, const std::string& member_identity) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto removed = facade_->RemoveMemberByIdentity(group_id, member_identity); !removed) {
+    log().warning << "RemoveMemberByIdentity failed: " << removed.error().message;
+    return Error(GroupActionFailureText(removed.error()));
+  }
+  facade_->NotifyThreadChanged();
+  return {};
 }
 
 Roe<std::string> ChatPresenter::AddContactFromCard(const std::string& message_id) {
