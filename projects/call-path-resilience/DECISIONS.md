@@ -85,7 +85,7 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 ## K008 — Liveness cadence and failover timing
 
 **Date:** 2026-09-24  
-**Status:** Accepted (design) — standby interval to be confirmed by device measurement  
+**Status:** Accepted (design) — standby interval to be confirmed by device measurement. Standby (and every call path) hot since pp-cpp-amp v3.5.0 / pp-cpp-mesh v3.1.5: the call's control channel asks for the hot tier while open, so it composes with chat's warm mark on a shared link ([AMP-CHANNEL.md § Standby](../../docs/contracts/AMP-CHANNEL.md), amp `docs/KEEPALIVE.md`). Before it, nothing marked a direct standby and it died 5 s after it came up.  
 **Decision:**
 - **Active path:** kept alive by media plus a control-channel heartbeat (~500 ms); no extra keepalive tier needed.
 - **Standby path and relay outer links:** hot keepalive every **10–15 s** (pick after measuring standby battery cost on one Android + one iOS device); keepalive burst on network change / suspicion.
