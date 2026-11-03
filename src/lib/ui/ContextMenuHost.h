@@ -2,6 +2,7 @@
 
 #include <ui/dom/Event.h>
 #include <ui/dom/EventListener.h>
+#include <ui/base/ObserverPtr.h>
 #include <ui/base/Types.h>
 #include <ui/base/Vector2.h>
 
@@ -118,7 +119,9 @@ private:
   std::optional<ContextMenuRequest> reopen_request_;
   std::function<ui::Element*(ui::Element*)> anchor_resolver_;
   /// Focused element when the menu opened; restored on outside / Escape / Cancel dismiss.
-  ui::Element* focus_restore_ = nullptr;
+  // Observer, not a raw pointer: the focused element can be destroyed (pane remount)
+  // while the menu is open, and Dismiss() must not focus a freed element.
+  ui::ObserverPtr<ui::Element> focus_restore_;
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;

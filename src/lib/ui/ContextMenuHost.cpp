@@ -625,7 +625,9 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   if (menu_context_) {
     ui::Element* focus = menu_context_->GetFocusElement();
     menu_editor_ = FindTextEditor(focus ? focus : menu_target_);
-    focus_restore_ = focus ? focus : menu_editor_;
+    if (ui::Element* restore = focus ? focus : menu_editor_) {
+      focus_restore_ = restore->GetObserverPtr();
+    }
     menu_anchor_ = anchor_resolver_ ? anchor_resolver_(menu_target_) : nullptr;
     if (menu_anchor_) {
       // The press was on an item, whatever field happens to hold the focus.
@@ -690,7 +692,10 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   menu_target_ = nullptr;
   menu_editor_ = nullptr;
   menu_anchor_ = nullptr;
-  focus_restore_ = menu_context_ ? menu_context_->GetFocusElement() : nullptr;
+  focus_restore_ = nullptr;
+  if (ui::Element* focus = menu_context_ ? menu_context_->GetFocusElement() : nullptr) {
+    focus_restore_ = focus->GetObserverPtr();
+  }
   copy_snapshot_.clear();
   active_actions_ = std::move(actions);
 
@@ -721,7 +726,8 @@ void ContextMenuHost::Dismiss() {
   const std::function<void()> dismissed = std::exchange(on_dismissed_, nullptr);
   const bool restore_focus = restore_focus_on_dismiss_;
   restore_focus_on_dismiss_ = false;
-  ui::Element* restore = restore_focus ? focus_restore_ : nullptr;
+  ui::ObserverPtr<ui::Element> restore =
+      restore_focus ? std::move(focus_restore_) : ui::ObserverPtr<ui::Element>();
   focus_restore_ = nullptr;
   // Capture and clear before RemoveEventListener: DetachEvent invokes OnDetach, which
   // would otherwise null layer_ mid-function and crash the second RemoveEventListener.
@@ -743,8 +749,10 @@ void ContextMenuHost::Dismiss() {
   menu_editor_ = nullptr;
   menu_anchor_ = nullptr;
   copy_snapshot_.clear();
-  if (restore) {
-    restore->Focus();
+  // Resolved only now: removing the layer above can destroy it, and so can a
+  // remount that happened while the menu was open.
+  if (ui::Element* element = restore.get()) {
+    element->Focus();
   }
   if (dismissed) {
     dismissed();
