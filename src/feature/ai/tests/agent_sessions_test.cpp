@@ -617,8 +617,10 @@ TEST_F(AgentSessionsTest, SoftAliveCapEvictsIdleNotRunning) {
 // events reach the UI in that order.
 TEST_F(AgentSessionsTest, SecondThreadsLocalActionIsFullAtCapOneThenRunsInOrder) {
   Make(1);
+  gate_tools_ = true; // "a" holds inside its tool: a fast runner could otherwise finish it before "b" is asked
   EXPECT_EQ(sessions_->SubmitLocalAction("ta", "find a", "search_people", Query("a")), SubmitOutcome::Started);
   EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Full);
+  both_requested_ = true;
   WaitEnded("ta");
   EXPECT_EQ(sessions_->SubmitLocalAction("tb", "find b", "search_people", Query("b")), SubmitOutcome::Started);
   WaitEnded("tb");
