@@ -897,6 +897,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   content_ = std::make_shared<CasStore>(data_dir_, profile_id_, open_content_index_(data_dir_));
   at_rest_ = std::move(opened_stores->at_rest);
   profile_db_path_ = std::move(opened_stores->profile_db_path);
+  message_store_bytes_ = std::move(opened_stores->message_store_bytes);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   // Contacts decide who may learn our address: republish on every change (any thread → UI).
   contacts_->SetOnChanged([this]() {
@@ -2370,11 +2371,15 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
     }
   };
 
+  // Me → Storage may be deleting the same bytes: wait for it, then hold them until the message and the sent copy
+  // are written, so a delete scanning meanwhile keeps them.
+  Attachments().AcquireBytesForSend(job->thread_id, fields->content_hash);
   auto sent = job->kind == ThreadKind::Group ? MeshMessaging().SendGroupMessage(job->thread_id, display, opts)
                                              : MeshMessaging().SendUserMessage(job->thread_id, display, opts);
   if (sent) {
     keep_sent_copy(*sent);
   }
+  Attachments().ReleaseBytesForSend(fields->content_hash);
   EmitAttachmentTransferMetric("send", job->bytes, elapsed(), static_cast<bool>(sent));
   finish(std::move(sent));
 }
@@ -2474,22 +2479,55 @@ void ConversationsHub::RequestAttachmentDownload(const std::string& thread_id, c
   Attachments().RequestDownload(thread_id, message_id, Store());
 }
 
-void ConversationsHub::DrainPendingAttachmentMedia() {
+std::vector<StoredAttachmentItem> ConversationsHub::ListStoredAttachments() {
+  if (!IsInitialized()) {
+    return {};
+  }
+  return Attachments().ListStoredAttachments(Store());
+}
+
+uint64_t ConversationsHub::ReleasableAttachmentBytes(const std::vector<StoredAttachmentRef>& items) {
+  if (!IsInitialized()) {
+    return 0;
+  }
+  return Attachments().ReleasableBytes(Store(), items);
+}
+
+void ConversationsHub::DeleteLocalAttachments(std::vector<StoredAttachmentRef> items,
+                                              std::function<void(StoredAttachmentDeleteResult)> done) {
+  if (!IsInitialized()) {
+    if (done) {
+      done(StoredAttachmentDeleteResult{});
+    }
+    return;
+  }
+  Attachments().DeleteLocalAttachments(Store(), std::move(items), std::move(done));
+}
+
+uint64_t ConversationsHub::MessageStoreBytes() const {
+  return message_store_bytes_ ? message_store_bytes_() : 0;
+}
+
+void ConversationsHub::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                            const std::string& mime, const uint64_t page_generation) {
   if (!IsInitialized()) {
     return;
   }
-  Attachments().DrainPendingMediaBacklog(Store());
+  Attachments().RequestGridThumbnail(thread_id, content_hash, mime, page_generation);
 }
 
-Roe<void> ConversationsHub::ClearDownloadedAttachments() {
+void ConversationsHub::CancelGridThumbnails(const uint64_t page_generation) {
+  if (attachment_downloads_) {
+    attachment_downloads_->CancelGridThumbnails(page_generation);
+  }
+}
+
+std::string ConversationsHub::GridThumbnailPath(const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash) {
   if (!IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    return {};
   }
-  auto cleared = Attachments().ClearAllDownloadedMedia(Store());
-  if (cleared && mesh_messaging_) {
-    mesh_messaging_->NotifyMessagesChanged();
-  }
-  return cleared;
+  return Attachments().GridThumbnailPath(thread_id, content_hash);
 }
 
 Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,

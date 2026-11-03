@@ -6,6 +6,7 @@
 #include "foundation/crypto/IDekConsumer.h"
 #include "lib/messaging/AttachmentDownloadPolicy.h"
 #include "domain/attachments/LargeTransferLane.h"
+#include "domain/attachments/StoredAttachments.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
@@ -16,6 +17,8 @@
 
 #include "common/Error.h"
 
+#include <condition_variable>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -88,15 +91,54 @@ public:
 
   /** Queue attachment messages not cached yet (respects policy unless backlog drain). */
   void EnsureThreadQueued(const std::string& thread_id, IThreadStore& store);
-  void DrainPendingMediaBacklog(IThreadStore& store);
 
   /** Before clear-history: tombstone hashes and drop pending queue entries for the thread. */
   Roe<void> PrepareThreadHistoryClear(const std::string& thread_id, IThreadStore& store);
 
-  /** Me → Storage: tombstone + wipe all thread attachment caches; messages stay (R020). */
-  Roe<void> ClearAllDownloadedMedia(IThreadStore& store);
+  /**
+   * Me → Storage → Manage storage: every chat's attachments and AI images whose bytes this device holds, one per
+   * (chat, hash), except those deleted from that chat (suppressed). Every message of every chat is read, in pages;
+   * nothing is decrypted. `bytes` is the stored object's size on disk. Blocking: call on a worker.
+   */
+  std::vector<StoredAttachmentItem> ListStoredAttachments(IThreadStore& store);
+  /**
+   * The bytes deleting these (chat, hash) items would free: the stored size of each hash (counted once) that no
+   * other message (of any chat, AI images included, a chat's suppressed items not counted) and no send in flight
+   * still uses. Blocking: call on a worker.
+   */
+  uint64_t ReleasableBytes(IThreadStore& store, const std::vector<StoredAttachmentRef>& items);
+  /**
+   * Deletes these items from this device, in one go on the calling worker: (1) their hashes are marked as being
+   * deleted (downloads asked for meanwhile wait, sends of them wait in AcquireBytesForSend), their downloads and
+   * not-started thumbnails are cancelled, and thumbnails being made are waited for; (2) every chat's messages and
+   * the sends in flight are scanned for other uses; (3) each item is suppressed in its chat (on disk: not
+   * downloaded again by itself, a tap brings it back) and its views go; the bytes of a hash nothing else uses are
+   * deleted; (4) the mark is cleared, what waited goes on, the change is notified and `done` is called (on this
+   * thread) with the counts. One delete at a time.
+   */
+  void DeleteLocalAttachments(IThreadStore& store, std::vector<StoredAttachmentRef> items,
+                              std::function<void(StoredAttachmentDeleteResult)> done);
+  /**
+   * A send of these bytes into `thread_id` (stored and its message written next): waits while the hash is being
+   * deleted, then counts it as in use until ReleaseBytesForSend, so a delete keeps the bytes. A send into a chat
+   * the item was deleted from shows it again (its suppression there is cleared).
+   */
+  void AcquireBytesForSend(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
+  void ReleaseBytesForSend(const std::vector<uint8_t>& content_hash);
 
-  /** Materialize plaintext view path for RmlUi / OS open while unlocked. */
+  /**
+   * A thumbnail for a cell of the storage grid: an image of any size, decrypted into memory on a background worker
+   * and made by the platform's thumbnail hook (the chat's large-image thumbnail, same file). At most two at once;
+   * a video without a poster is not decrypted (nothing is made). Notifies the change when one is made. Returns at
+   * once. `page_generation` names the page that asked: CancelGridThumbnails drops its jobs not started yet.
+   */
+  void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                            const std::string& mime, uint64_t page_generation);
+  void CancelGridThumbnails(uint64_t page_generation);
+  /** The cell's thumbnail or video poster when one exists (empty: none). */
+  std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+
+  /** Materialize plaintext view path for RmlUi / OS open while unlocked (none for an item deleted from the chat). */
   Roe<std::string> EnsureLocalViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                        const std::string& mime, const std::string& filename);
 
@@ -144,6 +186,7 @@ public:
    */
   void RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
 
+  /** An item deleted from this chat (suppressed) is never Ready here, even while another chat keeps its bytes. */
   DownloadState StateFor(const std::string& thread_id, const ChatAttachmentFields& fields) const;
   /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
   int ProgressPercent(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
@@ -202,6 +245,17 @@ private:
   /** `all_auto_pace`: "download everything" on an allowed network (the wider per-minute byte limit). */
   bool AdmitByBudget(AutoDownloadBudget& budget, const std::string& sender, uint64_t byte_length, bool all_auto_pace);
   ByteVector CopyDekUnlocked() const;
+  struct GridThumbnailJob {
+    std::string thread_id;
+    std::vector<uint8_t> content_hash;
+    std::string mime;
+    uint64_t generation = 0;
+  };
+  void RunGridThumbnails();
+  /** Hex of the hashes in `targets` that something other than `items` uses (messages, sends in flight). */
+  std::unordered_set<std::string> HashesUsedElsewhere(IThreadStore& store, const std::unordered_set<std::string>& items,
+                                                      const std::unordered_set<std::string>& targets);
+  bool SuppressedIn(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
   std::shared_ptr<CasStore> Content() const;
   void ContinueDrainOnWorker();
 
@@ -244,6 +298,28 @@ private:
   int64_t scanned_at_ms_ = 0;
   uint64_t started_since_scan_bytes_ = 0;
   bool draining_ = false;
+  /** Under mutex_: hex of the hashes a DeleteLocalAttachments is deleting. */
+  std::unordered_set<std::string> deleting_;
+  /** Under mutex_: downloads asked for while their hash was being deleted, run once it is done. */
+  std::vector<std::pair<Job, bool>> deferred_jobs_;
+  struct DeferredRequest {
+    std::string thread_id;
+    std::string message_id;
+    IThreadStore* store = nullptr;
+  };
+  std::vector<DeferredRequest> deferred_requests_;
+  /** Under mutex_: hex → sends in flight using those bytes (AcquireBytesForSend). */
+  std::unordered_map<std::string, int> bytes_in_use_;
+  /** Under mutex_: hex → thumbnails being made from those bytes (a delete waits for them). */
+  std::unordered_map<std::string, int> thumbnails_in_progress_;
+  /** Signalled when a delete ends or a thumbnail is done. */
+  std::condition_variable delete_cv_;
+  /** One delete at a time. */
+  std::mutex delete_serial_;
+  /** Under mutex_: the storage grid's thumbnail jobs not started yet, the workers running them, and failures. */
+  std::deque<GridThumbnailJob> grid_queue_;
+  size_t grid_running_ = 0;
+  std::unordered_set<std::string> grid_failed_;
 };
 
 } // namespace pbr

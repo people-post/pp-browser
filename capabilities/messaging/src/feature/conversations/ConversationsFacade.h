@@ -6,6 +6,7 @@
 #include "lib/delivery/TextSpans.h"
 #include "lib/messaging/AtAiParser.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
+#include "domain/attachments/StoredAttachments.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
@@ -305,8 +306,23 @@ public:
   Roe<BlobQuotaRecoveryPlan> PlanRelayQuotaRecovery(const Error& quota_error);
   Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
-  void DrainPendingAttachmentMedia();
-  Roe<void> ClearDownloadedAttachments();
+  /**
+   * Me → Storage → Manage storage. Each runs on a worker and calls `done` on the UI thread: the attachments this
+   * device holds, one per (chat, hash); the bytes deleting `items` would free; the delete itself (see
+   * AttachmentFetchWorkflow::DeleteLocalAttachments); the bytes the message databases take.
+   */
+  void ListStoredAttachmentsAsync(std::function<void(std::vector<StoredAttachmentItem>)> done);
+  void ReleasableAttachmentBytesAsync(std::vector<StoredAttachmentRef> items, std::function<void(uint64_t)> done);
+  void DeleteLocalAttachmentsAsync(std::vector<StoredAttachmentRef> items,
+                                   std::function<void(StoredAttachmentDeleteResult)> done);
+  void MessageStoreBytesAsync(std::function<void(uint64_t)> done);
+  /** A storage-grid cell's thumbnail, made on a background worker (returns at once; the change notifies). */
+  void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                            const std::string& mime, uint64_t page_generation);
+  /** The page `page_generation` is left: its thumbnails not started yet are dropped. */
+  void CancelGridThumbnails(uint64_t page_generation);
+  /** The cell's thumbnail or video poster, when one exists (empty: none). A stat only. */
+  std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,

@@ -6,12 +6,24 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
+#include "foundation/crypto/AttachmentContentHash.h"
+
+#include <filesystem>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
 bool AttachmentBlobExists(const CasStore& content, const std::vector<uint8_t>& content_hash) {
   return PrivateContentExists(content, content_hash);
+}
+
+uint64_t AttachmentLocalBytes(const CasStore& content, const std::vector<uint8_t>& content_hash) {
+  if (content_hash.size() != kAttachmentContentHashSize) {
+    return 0;
+  }
+  std::error_code ec;
+  const auto size = std::filesystem::file_size(content.BlockPath(CasRealm::Private, ByteVector(content_hash)), ec);
+  return ec ? 0 : static_cast<uint64_t>(size);
 }
 
 Roe<std::string> SaveAttachmentPlaintext(CasStore& content, const std::vector<uint8_t>& content_hash,
