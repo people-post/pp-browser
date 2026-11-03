@@ -275,8 +275,13 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable,
                              const std::string& error_kind) {
-  PushEvent(state, AgentEvent{
-                       .type = AgentEventType::Error, .message = message, .retryable = retryable, .error_kind = error_kind});
+  // The turn's chat and entry (empty outside a turn): the UI writes the error into that chat only.
+  PushEvent(state, AgentEvent{.type = AgentEventType::Error,
+                              .message = message,
+                              .entry_id = state->pending_entry_id,
+                              .thread_id = state->pending_thread_id,
+                              .retryable = retryable,
+                              .error_kind = error_kind});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {

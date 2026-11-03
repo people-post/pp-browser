@@ -64,6 +64,7 @@ struct AgentEvent {
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
   /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
   bool from_model = true;
+  /** Error: `thread_id` / `entry_id` name the turn it ended (Home's turn: no thread); both empty outside a turn. */
   bool retryable = false;             // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;

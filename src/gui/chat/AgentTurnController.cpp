@@ -1229,13 +1229,12 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     log().error << "Agent session error: " << event.message;
     // A partial answer was already persisted via AssistantReady; the error toast is separate.
     UserFeedback::NeedsSetup(error_message);
-    if (AgentReady() && agent_ports_.has_conversation_entries && agent_ports_.has_conversation_entries() &&
-        agent_ports_.last_conversation_entry_id && agent_ports_.complete_assistant_message &&
+    // Only the Home session's own turn (no thread, its entry named) writes into the Home conversation: an error of
+    // another chat, or one outside any turn, must not replace a Home answer (it would go to brief_AI as history).
+    if (AgentReady() && event.thread_id.empty() && !event.entry_id.empty() && agent_ports_.complete_assistant_message &&
         agent_ports_.set_assistant_display_plain) {
-      if (auto entry_id = agent_ports_.last_conversation_entry_id()) {
-        agent_ports_.complete_assistant_message(*entry_id, error_message);
-        agent_ports_.set_assistant_display_plain(*entry_id, error_message);
-      }
+      agent_ports_.complete_assistant_message(event.entry_id, error_message);
+      agent_ports_.set_assistant_display_plain(event.entry_id, error_message);
       host_.SyncDisplayFromThread();
       DirtyChatTurns();
     }

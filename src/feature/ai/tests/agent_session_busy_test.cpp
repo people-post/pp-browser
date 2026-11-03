@@ -155,4 +155,27 @@ TEST_F(AgentSessionBusyTest, ASecondSendWhileBusyIsRefusedAndKeepsTheFirstTurnsT
   EXPECT_EQ(Requests().size(), 1u);
 }
 
+// An error names the chat of its turn, so the UI writes it there only (never into Home's last answer).
+TEST_F(AgentSessionBusyTest, AnErrorNamesTheChatOfItsTurn) {
+  StartWithStore();
+  Script({Meta(), ErrorEvent("model unavailable", true)}, BriefAiOutcome::Error);
+  session_->SubmitToThread("thread-x", "q");
+  const auto errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].thread_id, "thread-x");
+  ASSERT_FALSE(store_.messages.empty());
+  EXPECT_EQ(errors[0].entry_id, store_.messages.front().id) << "the turn's question";
+}
+
+TEST_F(AgentSessionBusyTest, AHomeErrorNamesNoChatAndItsOwnEntry) {
+  Start();
+  Script({Meta(), ErrorEvent("model unavailable", true)}, BriefAiOutcome::Error);
+  session_->Submit("q");
+  const auto errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_TRUE(errors[0].thread_id.empty());
+  ASSERT_FALSE(session_->conversation().Entries().empty());
+  EXPECT_EQ(errors[0].entry_id, session_->conversation().Entries().back().id);
+}
+
 } // namespace

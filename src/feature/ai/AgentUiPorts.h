@@ -61,8 +61,6 @@ struct AgentUiPorts {
   std::function<bool()> any_busy;
   std::function<void(std::vector<AgentEvent>& out)> poll_events;
   std::function<void()> wait_for_configure_idle;
-  std::function<bool()> has_conversation_entries;
-  std::function<std::optional<std::string>()> last_conversation_entry_id;
   std::function<void(const std::string& entry_id, const std::string& message)> complete_assistant_message;
   std::function<void(const std::string& entry_id, const std::string& message)> set_assistant_display_plain;
 };
