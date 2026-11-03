@@ -67,6 +67,8 @@ int main(int argc, char** argv) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--ui-perf-test") == 0) {
       pbr::UiPerfTestController::RequestOpenAtStartup(); // developer builds only: open Settings -> About -> Engine test page
+    } else if (std::strcmp(argv[i], "--ui-perf-test-stress") == 0) {
+      pbr::UiPerfTestController::RequestOpenAtStartup(true); // same page, starting on the 2000-row stress list
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
       startup_timing = true;
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {

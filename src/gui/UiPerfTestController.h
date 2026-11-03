@@ -38,7 +38,7 @@ public:
   ~UiPerfTestController() override = default;
 
   /** `--ui-perf-test`: open the page once the first frame is up (desktop). */
-  static void RequestOpenAtStartup();
+  static void RequestOpenAtStartup(bool stress = false);
   static bool OpenAtStartupRequested();
 
   void BindShellNavigation(ShellNavigationPorts ports);

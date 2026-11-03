@@ -23,6 +23,7 @@ namespace pbr {
 namespace {
 
 std::atomic<bool> g_open_at_startup{false};
+std::atomic<bool> g_stress_at_startup{false};
 
 /** Gaps above this are the app being backgrounded / suspended, not a slow frame. With the animation on
  * (or while scrolling) frames are continuous, so every shorter gap is a real frame time. */
@@ -34,8 +35,9 @@ UiPerfTestController::UiPerfTestController() {
   redirectLogger("Ui.PerfTest");
 }
 
-void UiPerfTestController::RequestOpenAtStartup() {
+void UiPerfTestController::RequestOpenAtStartup(bool stress) {
   g_open_at_startup.store(true);
+  g_stress_at_startup.store(stress);
 }
 
 bool UiPerfTestController::OpenAtStartupRequested() {
@@ -92,7 +94,7 @@ void UiPerfTestController::Open() {
   if (open_ || !kDevToolsBuild || !shell_navigation_.push_transient) {
     return;
   }
-  stress_ = false;
+  stress_ = g_stress_at_startup.exchange(false);
   BuildRows();
   bars_translucent_ = true;
   anim_on_ = true;
