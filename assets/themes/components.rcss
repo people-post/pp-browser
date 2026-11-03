@@ -3718,6 +3718,13 @@ input.checkbox {
   max-width: 320dp;
 }
 
+/* Own pictures, files and voice notes sit on the right like own text bubbles: the cards are blocks, which
+   the row's text-align does not move. */
+.message-row-user .chat-attachment-card,
+.message-row-user .chat-voice-card {
+  margin-left: auto;
+}
+
 /* A voice message: play / pause, a progress line, the length. */
 .chat-voice-card {
   display: flex;
@@ -3780,6 +3787,7 @@ input.checkbox {
 
 .chat-attachment-image {
   display: block;
+  cursor: pointer;
   max-width: 100%;
   max-height: 240dp;
   border-radius: 8dp;

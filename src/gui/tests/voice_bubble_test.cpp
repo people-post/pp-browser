@@ -67,6 +67,13 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
   EXPECT_NE(row.find("voice-4200.ogg"), std::string::npos); // the file row names the file
 }
 
+// Kenneth 2026-11-03: a blurry picture in the chat could not be enlarged — tapping it did nothing.
+TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
+  const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
+  EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('p1')\""), std::string::npos) << rml;
+}
+
 TEST(VoiceBubbleRender, NothingToPlayUntilItHasBeenDownloaded) {
   const auto pending = Facts(true, AttachmentFetchWorkflow::DownloadState::Pending);
   EXPECT_FALSE(IsBubble(Render(Attachment("m", "voice-4200.ogg", "audio/ogg", 25000), pending)));
