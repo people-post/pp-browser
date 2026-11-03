@@ -98,7 +98,6 @@ endif()
 
 include(ProductBranding)
 include(Platform)
-include(UiDemo)
 include(PpBrowserWarnings)
 include(PpBrowserCapability)
 include(PpCppCommon)
@@ -140,8 +139,10 @@ option(PP_BROWSER_PACKAGED_BUILD "Build for installable/packaged release (runtim
 # Developer builds: shows Settings -> About -> Engine test (src/foundation/product/DevTools.h).
 # Never set for packaged / release-channel builds.
 option(PP_BROWSER_DEV_TOOLS "Developer-only pages (engine test); off for release builds" OFF)
-if(PP_BROWSER_DEV_TOOLS OR PP_BROWSER_DEV_PIN)
+if(PP_BROWSER_DEV_TOOLS OR NOT "${PP_BROWSER_DEV_PIN}" STREQUAL "")
   add_compile_definitions(PP_BROWSER_DEV_TOOLS=1)
 endif()
+
+include(UiDemo) # after PP_BROWSER_DEV_TOOLS and the PP_API_URL_* settings it checks
 
 add_subdirectory(src)

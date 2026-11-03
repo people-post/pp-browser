@@ -1701,11 +1701,26 @@ bool SeedUiDemoDataOnce(ConversationsHub& messaging) {
 
 } // namespace
 
+void Application::SeedAndRefreshUiDemo() {
+  if (!SeedUiDemoDataOnce(Conversations())) {
+    return;  // already seeded, or failed (logged as an error by the seeder wrapper)
+  }
+  // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.
+  chat_->OnMessagingReady();
+  contacts_->Refresh();
+  if (messaging_facade_) {
+    messaging_facade_->NotifyThreadChanged();
+  }
+  if (badges_) {
+    badges_->Refresh();
+  }
+}
+
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   const auto on_ready = [this]() {
     if (kUiDemoBuild) {
-      SeedUiDemoDataOnce(Conversations());  // first and synchronous: chat_ and contacts_ read the rows right after
+      SeedAndRefreshUiDemo();  // first and synchronous: chat_ and contacts_ read the rows right after
     }
     // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
     AppRuntime::PostWorkerNormal([this]() {
@@ -1726,16 +1741,8 @@ void Application::WireHubCallbacks() {
   messaging.SetOnMessagingReady(on_ready);
   // The demo app unlocks at bootstrap, before this callback exists, so its ready event was already missed. The
   // controllers are not mounted yet and read the stores when they are: seeding now is early enough.
-  if (kUiDemoBuild && messaging.IsMessagingReady() && SeedUiDemoDataOnce(messaging)) {
-    // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.
-    chat_->OnMessagingReady();
-    contacts_->Refresh();
-    if (messaging_facade_) {
-      messaging_facade_->NotifyThreadChanged();
-    }
-    if (badges_) {
-      badges_->Refresh();
-    }
+  if (kUiDemoBuild && messaging.IsMessagingReady()) {
+    SeedAndRefreshUiDemo();
   }
   messaging.SetOnMeshReady([this]() {
     chat_->OnMeshReady();

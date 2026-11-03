@@ -286,6 +286,7 @@ void ShellSwipeBackGesture::EndDrag() {
   }
   // A drag that began on a row must not also click it when the finger lifts.
   swallow_click_ = true;
+  swallow_click_since_ = std::chrono::steady_clock::now();
   const float dx_dp = PixelDeltaToDp(drag_last_x_px_ - drag_start_x_px_);
   const float width_dp = ResolveSurfaceWidthDp();
   const float threshold = width_dp * kDismissThresholdRatio;
@@ -305,8 +306,12 @@ void ShellSwipeBackGesture::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
   case ui::EventId::Click:
     if (swallow_click_) {
+      // Only the click of the same pointer sequence; a later keyboard / programmatic click goes through.
+      const bool same_sequence = std::chrono::steady_clock::now() - swallow_click_since_ < std::chrono::milliseconds(300);
       swallow_click_ = false;
-      event.StopPropagation();
+      if (same_sequence) {
+        event.StopPropagation();
+      }
     }
     break;
   case ui::EventId::Mousedown: {

@@ -90,6 +90,8 @@ private:
   void WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap);
   /** The hub's event callbacks; its Shutdown clears them, so a reset sets them again. */
   void WireHubCallbacks();
+  /** UI demo app: write the fixed sample data once, then refresh lists and badges. */
+  void SeedAndRefreshUiDemo();
   /**
    * Stop messaging behind the teardown quiesce, as quit does, but the process lives on. With
    * `with_secrets`, the profile secrets stop too (a profile reset re-creates them).

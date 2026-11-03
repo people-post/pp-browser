@@ -1383,6 +1383,7 @@ void ShellHost::AttachSwipeBackGesture() {
   const auto slide_out = [this](DismissTarget target) {
     slide_out_started_ = true; // the released swipe's transition is the slide-out
     RequestDismiss(DismissStyle::Animated, target);
+    slide_out_started_ = false; // BeginAnimatedDismiss consumed it; an early return must not leave it set
   };
 
   if (HasLocalBack("settings_detail")) {

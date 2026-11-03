@@ -6,6 +6,7 @@
 #include <ui/dom/EventListener.h>
 #include <ui/base/Types.h>
 
+#include <chrono>
 #include <functional>
 #include <string>
 #include <vector>
@@ -78,6 +79,7 @@ private:
   bool from_edge_ = false;
   /** Set when a drag ended on this surface: the click that follows the release is dropped. */
   bool swallow_click_ = false;
+  std::chrono::steady_clock::time_point swallow_click_since_{};
   int drag_start_x_px_ = 0;
   int drag_start_y_px_ = 0;
   int drag_last_x_px_ = 0;
