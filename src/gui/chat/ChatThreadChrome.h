@@ -41,6 +41,8 @@ public:
     bool& thread_is_private;
     bool& thread_is_public;
     bool& thread_is_group;
+    ui::String& thread_avatar_letter;
+    int& thread_avatar_tone;
     bool& compose_disabled;
     bool& show_attach_button;
     bool& show_thread_actions;

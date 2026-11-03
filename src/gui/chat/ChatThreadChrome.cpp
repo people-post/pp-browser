@@ -10,6 +10,7 @@
 #include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
+#include "lib/people/AvatarGlyph.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <ui/Core.h>
@@ -111,6 +112,8 @@ void ChatThreadChrome::ResetPanelState() {
   view_.thread_is_private = false;
   view_.thread_is_public = false;
   view_.thread_is_group = false;
+  view_.thread_avatar_letter = "";
+  view_.thread_avatar_tone = 0;
   view_.compose_disabled = false;
   view_.show_attach_button = ShowAttachWithoutThread();
   view_.show_thread_actions = false;
@@ -230,6 +233,10 @@ void ChatThreadChrome::Update() {
     if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
       view_.thread_title = Tr("chat.new_chat").c_str();
     }
+    // Same glyph as the chat list row (ChatPresenter): letter and tone come from the title alone.
+    const AvatarGlyph glyph = MakeAvatarGlyph(view_.thread_title.c_str(), {});
+    view_.thread_avatar_letter = glyph.letter.c_str();
+    view_.thread_avatar_tone = glyph.tone;
     view_.thread_encrypted = thread->encrypted;
     const ui::String visual_kind = SessionVisualKind(*thread);
     view_.thread_is_ai = visual_kind == "ai";
@@ -410,6 +417,8 @@ void ChatThreadChrome::Update() {
     view_.thread_is_private = false;
     view_.thread_is_public = false;
     view_.thread_is_group = false;
+  view_.thread_avatar_letter = "";
+  view_.thread_avatar_tone = 0;
     view_.compose_disabled = false;
     view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;

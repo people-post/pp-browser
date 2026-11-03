@@ -40,6 +40,24 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
   EXPECT_FALSE(Has(rml, "close_account_sheet"));
 }
 
+TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  const size_t chrome = rml.find("shell-chat-overlay-chrome");
+  ASSERT_NE(chrome, std::string::npos);
+  EXPECT_EQ(rml.find("shell-chat-overlay-chrome", chrome + 1), std::string::npos) << "exactly one bar";
+  const size_t back = rml.find("compact_chat_back()", chrome);
+  const size_t body = rml.find("id=\"pane-body-chat\"");
+  ASSERT_NE(back, std::string::npos);
+  ASSERT_NE(body, std::string::npos);
+  EXPECT_LT(back, body) << "the back button is in the bar above the chat pane";
+  EXPECT_TRUE(Has(rml, "icons/v2/back.svg"));
+  // The title, avatar and menu are the chat pane's header row, lifted onto this bar by the theme; the shell
+  // root must not draw a second one.
+  EXPECT_FALSE(Has(rml, "chat-header"));
+}
+
 TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;

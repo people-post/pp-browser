@@ -709,8 +709,6 @@ select selectbox option:hover {
 .shell-chat-overlay-chrome {
   background-color: {{bg-chrome}};
   border-bottom: 1dp {{separator}};
-  border-top: 1dp {{separator}};
-  box-shadow: 0 2dp 12dp {{shadow}};
 }
 
 .shell-chat-overlay-chrome.surface-chrome--frost {
@@ -1610,6 +1608,45 @@ select selectbox option:hover {
 /* After the plain call button's rule (same specificity): white on the green join button. */
 .chat-header-call-btn--join svg {
   image-color: {{label-on-accent}};
+}
+
+/* Phone chat nav bar: the header row sits on the bar's material; no type bar, tint or round buttons. */
+.shell-chat-overlay .chat-panel .chat-header {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .chat-header-call-btn,
+.shell-chat-overlay .chat-header-more-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .chat-header-call-btn svg,
+.shell-chat-overlay .chat-header-more-btn svg {
+  image-color: {{accent}};
+}
+
+.shell-chat-overlay .chat-header-call-btn--join {
+  background-color: {{success}};
+}
+
+.shell-chat-overlay .chat-header-call-btn--join svg {
+  image-color: {{label-on-accent}};
+}
+
+.shell-chat-overlay .chat-header-title {
+  color: {{label}};
+}
+
+.shell-chat-overlay .chat-header-subtitle {
+  color: {{label-2}};
+}
+
+.shell-chat-overlay-chrome .shell-back-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay-chrome .shell-back-btn svg {
+  image-color: {{accent}};
 }
 
 .context-menu-panel {

@@ -40,6 +40,8 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("thread_is_private", &state.thread_is_private);
   ctor.Bind("thread_is_public", &state.thread_is_public);
   ctor.Bind("thread_is_group", &state.thread_is_group);
+  ctor.Bind("thread_avatar_letter", &state.thread_avatar_letter);
+  ctor.Bind("thread_avatar_tone", &state.thread_avatar_tone);
   ctor.Bind("compose_disabled", &state.compose_disabled);
   ctor.Bind("composer_input_disabled", &state.composer_input_disabled);
   ctor.Bind("show_attach_button", &state.show_attach_button);
@@ -173,6 +175,8 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "thread_is_private");
   DataModelHost::Instance().Dirty("chat", "thread_is_public");
   DataModelHost::Instance().Dirty("chat", "thread_is_group");
+  DataModelHost::Instance().Dirty("chat", "thread_avatar_letter");
+  DataModelHost::Instance().Dirty("chat", "thread_avatar_tone");
   DataModelHost::Instance().Dirty("chat", "compose_disabled");
   DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
   DataModelHost::Instance().Dirty("chat", "show_attach_button");

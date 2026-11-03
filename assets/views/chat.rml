@@ -22,6 +22,23 @@
       <button class="chat-search-cancel" type="button" data-event-click="close_search()">{{i18n:chat.search.cancel}}</button>
     </div>
     <div class="chat-header-main" data-if="!search_open">
+      <!-- Phones only (hidden on desktop): the avatar of the chat list row, in the nav bar. -->
+      <div class="chat-header-avatar"
+           data-class-chat-row-avatar--ai="thread_is_ai"
+           data-class-chat-row-avatar--group="thread_is_group"
+           data-class-avatar-tone-0="!thread_is_ai && !thread_is_group && thread_avatar_tone == 0"
+           data-class-avatar-tone-1="!thread_is_ai && !thread_is_group && thread_avatar_tone == 1"
+           data-class-avatar-tone-2="!thread_is_ai && !thread_is_group && thread_avatar_tone == 2"
+           data-class-avatar-tone-3="!thread_is_ai && !thread_is_group && thread_avatar_tone == 3"
+           data-class-avatar-tone-4="!thread_is_ai && !thread_is_group && thread_avatar_tone == 4"
+           data-class-avatar-tone-5="!thread_is_ai && !thread_is_group && thread_avatar_tone == 5"
+           data-class-avatar-tone-6="!thread_is_ai && !thread_is_group && thread_avatar_tone == 6"
+           data-class-avatar-tone-7="!thread_is_ai && !thread_is_group && thread_avatar_tone == 7">
+        <p class="chat-row-avatar-letter" data-if="!thread_is_ai && !thread_is_group">{{thread_avatar_letter}}</p>
+        <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="20" height="20" data-if="thread_is_ai"></svg>
+        <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="20" height="20" data-if="thread_is_group"></svg>
+      </div>
+      <div class="chat-header-text">
       <div class="chat-header-title-row">
         <div class="chat-header-type-icon" data-if="thread_is_ai">
           <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
@@ -61,6 +78,7 @@
           <p class="text-xs chat-peer-link">{{peer_link_status}}</p>
         </div>
         <p class="text-xs muted chat-header-subtitle" data-event-click="open_group_members()">{{thread_subtitle}}</p>
+      </div>
       </div>
     </div>
     <div class="chat-header-actions row" data-if="!search_open">

@@ -34,6 +34,9 @@ struct ChatScreenState {
   bool thread_is_private = false;
   bool thread_is_public = false;
   bool thread_is_group = false;
+  /** Phone chat title bar: the avatar of the chat list row (first letter of the title, colour index 0..7). */
+  ui::String thread_avatar_letter;
+  int thread_avatar_tone = 0;
   bool compose_disabled = false;
   bool composer_input_disabled = false;
   bool show_attach_button = false;

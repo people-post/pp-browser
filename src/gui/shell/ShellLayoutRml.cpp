@@ -135,7 +135,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
     out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
-    out << "<svg src=\"../icons/back.svg\"></svg>";
+    out << "<svg src=\"../icons/v2/back.svg\"></svg>";
     out << "</button>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";

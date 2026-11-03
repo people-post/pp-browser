@@ -316,6 +316,8 @@ ChatController::ChatController()
                  .thread_is_private = chat_.thread_is_private,
                  .thread_is_public = chat_.thread_is_public,
                  .thread_is_group = chat_.thread_is_group,
+                 .thread_avatar_letter = chat_.thread_avatar_letter,
+                 .thread_avatar_tone = chat_.thread_avatar_tone,
                  .compose_disabled = chat_.compose_disabled,
                  .show_attach_button = chat_.show_attach_button,
                  .show_thread_actions = chat_.show_thread_actions,
