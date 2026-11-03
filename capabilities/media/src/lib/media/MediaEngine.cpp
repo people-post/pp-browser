@@ -606,20 +606,6 @@ struct MediaEngine::Impl {
     return underruns;
   }
 
-  void TearDownAudioLocked(const bool release_session = true) {
-    // Caller must not hold mutex across JoinCaptureThread — capture may call packet_send /
-    // OnInboundPacket which need the same mutex (deadlock + SDL double-free on quit).
-    ReleaseAudioLocked();
-    if (video_codec) {
-      video_codec->ResetEncoder();
-      video_codec->ResetDecoder();
-    }
-    ClearVideoFrames();
-    if (release_session) {
-      ReleaseAudioSession();
-    }
-  }
-
   /** The audio half: device leases, the Opus encoder, remote tracks, counters. Not the OS session. */
   void ReleaseAudioLocked() {
     capture_running = false;
@@ -2000,7 +1986,7 @@ Roe<void> MediaEngine::Start(const std::string& session_id, const SessionSpec sp
   {
     std::lock_guard lock(impl->mutex);
     if (auto codecs = impl->EnsureOpusCodecs(); !codecs) {
-      impl->TearDownAudioLocked();
+      impl->ReleaseAudioLocked();
       return codecs.error();
     }
     impl->packet_mode = true;
@@ -2047,9 +2033,9 @@ void MediaEngine::SwapSend(Impl& impl, std::shared_ptr<PacketSendFn> abandoned_s
 
 void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
   const std::shared_ptr<Impl> impl = Session();
-  // Audio is taken under mutex: SoftMigrate StartDuplex TearDownAudioLocked destroys opus/SDL while
-  // the media_relay client reader can already deliver frames (guest attach dogfood crash). Video is
-  // decoded after it (#474): only its decoder is found under it.
+  // Audio is taken under mutex: ReleaseAudioLocked (stop, a failed Start) destroys the remote tracks'
+  // Opus decoders while the media_relay client reader can already deliver frames (guest attach
+  // dogfood crash). Video is decoded after it (#474): only its decoder is found under it.
   std::shared_ptr<Impl::RemoteDecoder> video_decoder;
   {
     std::unique_lock lock(impl->mutex);
