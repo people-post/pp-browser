@@ -20,6 +20,8 @@ struct CameraFailure {
     NotResponding,
     /** The open failed (no camera, the OS or the driver refused). */
     Failed,
+    /** The OS has refused this app the camera (iOS never asks twice): it is turned on in Settings. */
+    PermissionDenied,
   };
   Kind kind = Kind::Failed;
   /** The engine's / OS's own words, for the log only. */

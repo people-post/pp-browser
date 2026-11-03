@@ -169,6 +169,21 @@ bool RotateRgba90Ccw(const VideoFrameRgba& in, VideoFrameRgba& out) {
   return true;
 }
 
+void MirrorRgbaInPlace(VideoFrameRgba& frame) {
+  if (frame.width <= 1 || frame.height <= 0 ||
+      frame.rgba.size() < static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 4) {
+    return;
+  }
+  const size_t row_bytes = static_cast<size_t>(frame.width) * 4;
+  for (int y = 0; y < frame.height; ++y) {
+    uint8_t* left = frame.rgba.data() + static_cast<size_t>(y) * row_bytes;
+    uint8_t* right = left + row_bytes - 4;
+    for (; left < right; left += 4, right -= 4) {
+      std::swap_ranges(left, left + 4, right);
+    }
+  }
+}
+
 bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFrameRgba& out) {
   out_w = out_w > 0 ? (out_w & ~1) : 0;
   out_h = out_h > 0 ? (out_h & ~1) : 0;

@@ -1019,6 +1019,7 @@
     "call.error.camera_busy": "摄像头正在被占用，空出来后视频会自动打开。",
     "call.error.camera_not_responding": "摄像头没有响应，重启应用后才能使用。",
     "call.error.camera_failed": "摄像头打不开。",
+    "call.error.camera_denied": "没有摄像头权限。请在系统设置里允许 PP 使用摄像头，然后重新打开视频。",
     "call.title.voice": "语音通话",
     "call.title.video": "视频通话",
     "call.title.group_voice": "群组语音通话",

@@ -766,6 +766,9 @@ void CallPresenter::ReportCameraFailure(const CameraFailure& failure) {
     case CameraFailure::Kind::NotResponding:
       key = "call.error.camera_not_responding";
       break;
+    case CameraFailure::Kind::PermissionDenied:
+      key = "call.error.camera_denied";
+      break;
     case CameraFailure::Kind::Failed:
       break;
   }

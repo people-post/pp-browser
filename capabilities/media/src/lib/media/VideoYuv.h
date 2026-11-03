@@ -24,6 +24,9 @@ bool RotateRgba90Cw(const VideoFrameRgba& in, VideoFrameRgba& out);
 /** Rotate RGBA 90° counter-clockwise (out size = HxW). */
 bool RotateRgba90Ccw(const VideoFrameRgba& in, VideoFrameRgba& out);
 
+/** Flip RGBA left-to-right in place (a mirror image). */
+void MirrorRgbaInPlace(VideoFrameRgba& frame);
+
 /** Center-crop + nearest-neighbor scale to even out_w×out_h (cover). */
 bool ScaleCenterCropRgba(const VideoFrameRgba& in, int out_w, int out_h, VideoFrameRgba& out);
 

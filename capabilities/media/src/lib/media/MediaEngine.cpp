@@ -466,8 +466,11 @@ struct MediaEngine::Impl {
     }
   }
 
-  void PublishLocalPreview(const VideoFrameRgba& frame) {
+  void PublishLocalPreview(const VideoFrameRgba& frame, bool mirror) {
     VideoFrameRgba copy = frame;
+    if (mirror) {
+      MirrorRgbaInPlace(copy);
+    }
     PremultiplyRgbaInPlace(copy.rgba);
     std::lock_guard lock(video_frame_mutex);
     local_video_frame.width = copy.width;
@@ -1379,7 +1382,8 @@ struct MediaEngine::Impl {
     return frame;
   }
 
-  /** Video thread only: orient + crop → preview; encode → send on channel 1. */
+  /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
+   *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
   void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
@@ -1395,7 +1399,7 @@ struct MediaEngine::Impl {
       VideoFrameRgba preview_fitted;
       if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width,
                               geometry.encode_height, preview_fitted)) {
-        PublishLocalPreview(preview_fitted);
+        PublishLocalPreview(preview_fitted, geometry.mirror_preview);
       }
     }
     const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
@@ -1406,7 +1410,7 @@ struct MediaEngine::Impl {
       return;
     }
     if (preview_rotate_cw == rotate_cw) {
-      PublishLocalPreview(fitted);
+      PublishLocalPreview(fitted, geometry.mirror_preview);
     }
     if (!adaptation_send_video.load(std::memory_order_relaxed)) {
       need_keyframe = true; // the path cannot carry video now: nothing goes out; a keyframe starts it again
@@ -1545,6 +1549,15 @@ struct MediaEngine::Impl {
       video_stage.Set(MediaThreadStage::WaitFrame);
       auto frame = camera->NextFrame();
       if (!frame) {
+        if (camera->PermissionDenied()) {
+          // No frame will ever come: say so, with where to allow it, instead of a camera that is
+          // "on" and black (B147, a phone that never showed the prompt again). The next turn of the
+          // loop closes the lease like the person turning video off.
+          EngineLog().info << "camera permission denied by the OS";
+          camera_enabled.store(false, std::memory_order_relaxed);
+          NoteCameraFailure(CameraFailure::Kind::PermissionDenied, "camera permission denied");
+          continue;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
       }
