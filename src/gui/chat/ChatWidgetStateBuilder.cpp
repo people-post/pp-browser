@@ -88,6 +88,7 @@ void RegisterChatWidgetDataTypes(ui::DataModelConstructor& ctor) {
     message_handle.RegisterMember("time_label", &MessageDisplayRow::time_label);
     message_handle.RegisterMember("date_label", &MessageDisplayRow::date_label);
     message_handle.RegisterMember("run_start", &MessageDisplayRow::run_start);
+    message_handle.RegisterMember("run_end", &MessageDisplayRow::run_end);
     message_handle.RegisterMember("group_name", &MessageDisplayRow::group_name);
     message_handle.RegisterMember("group_name_tone", &MessageDisplayRow::group_name_tone);
     message_handle.RegisterMember("group_name_in_bubble", &MessageDisplayRow::group_name_in_bubble);

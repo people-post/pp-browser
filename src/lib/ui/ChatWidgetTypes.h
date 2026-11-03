@@ -82,6 +82,8 @@ struct MessageDisplayRow {
   ui::String date_label;
   /** Phone: this row starts a run (a different sender, a gap over 5 minutes, a day change, or a non-message row before). */
   bool run_start = true;
+  /** Phone: the last bubble of a run (carries the bubble tail and, in groups, the avatar). */
+  bool run_end = false;
   /** Phone, group chats: a peer's name above the first bubble of their run, in their avatar colour; else empty. */
   ui::String group_name;
   /** Index of the avatar colour (0 .. kAvatarToneCount-1) for `group_name` (same input as the Contacts list: name only). */
@@ -90,7 +92,7 @@ struct MessageDisplayRow {
   bool group_name_in_bubble = false;
   /** Phone, group chats: every received message row keeps a 32dp avatar column on the left. */
   bool group_column = false;
-  /** Phone, group chats: the column shows the avatar (first bubble of a run only); `group_avatar_letter` is its letter. */
+  /** Phone, group chats: the column shows the avatar (last bubble of a run only); `group_avatar_letter` is its letter. */
   bool group_avatar = false;
   ui::String group_avatar_letter;
   /** The sender's own cached profile photo (local file) in the avatar column; empty: the letter shows. */

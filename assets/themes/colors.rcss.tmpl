@@ -707,12 +707,16 @@ select selectbox option:hover {
 }
 
 .shell-chat-overlay-chrome {
-  background-color: {{bg-chrome}};
-  border-bottom: 1dp {{separator}};
+  background-color: {{bg-card-2}};
 }
 
 .shell-chat-overlay-chrome.surface-chrome--frost {
-  background-color: {{bg-chrome-blur}};
+  background-color: {{bg-card-2}};
+}
+
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome {
+  background-color: {{bg-card-2}};
+  border-width: 0;
 }
 
 .shell-pane-auxiliary {
@@ -1905,6 +1909,14 @@ select selectbox option:hover {
 }
 
 .shell-chat-overlay .message-row-user .chat-voice-play svg {
+  image-color: {{bubble-out}};
+}
+
+.shell-chat-overlay .bubble-tail-in {
+  image-color: {{bubble-in}};
+}
+
+.shell-chat-overlay .bubble-tail-out {
   image-color: {{bubble-out}};
 }
 

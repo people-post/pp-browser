@@ -51,6 +51,20 @@ std::string MessageDateLabel(const int64_t message_ms, const int64_t now_ms) {
   if (SameDay(msg, yesterday)) {
     return Tr("chat.date.yesterday");
   }
+  // 2-6 days ago: the weekday name.
+  std::tm msg_noon = msg;
+  std::tm now_noon = now;
+  for (std::tm* t : {&msg_noon, &now_noon}) {
+    t->tm_hour = 12;
+    t->tm_min = 0;
+    t->tm_sec = 0;
+    t->tm_isdst = -1;
+  }
+  const std::time_t msg_s = std::mktime(&msg_noon);
+  const long days = static_cast<long>((std::mktime(&now_noon) - msg_s + 43200) / 86400);
+  if (days >= 2 && days <= 6) {
+    return Tr("home.weekday." + std::to_string(msg_noon.tm_wday));
+  }
   const std::map<std::string, std::string> args{{"month", Tr("chat.time.month." + std::to_string(msg.tm_mon + 1))},
                                                 {"day", std::to_string(msg.tm_mday)},
                                                 {"year", std::to_string(msg.tm_year + 1900)}};

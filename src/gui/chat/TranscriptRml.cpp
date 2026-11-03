@@ -578,6 +578,28 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
   return row;
 }
 
+// The last bubble of a run gets a speech-bubble tail: a small element at the bubble's bottom corner (received: left,
+// sent: right) plus classes that square that corner. Bubbles without a background (deleted) get none.
+bool AddBubbleTail(std::string& content, bool ours) {
+  size_t at = std::string::npos;
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card chat-attachment-card", "<div class=\"chat-card chat-voice-card"}) {
+    const size_t found = content.find(opener);
+    if (found != std::string::npos && found < at) {
+      at = found;
+    }
+  }
+  const size_t tag_end = at == std::string::npos ? at : content.find('>', at);
+  if (tag_end == std::string::npos || content.substr(at, tag_end - at).find("bubble-deleted") != std::string::npos) {
+    return false;
+  }
+  const char* host = ours ? " bubble-tail-host bubble-tail-host--out" : " bubble-tail-host bubble-tail-host--in";
+  const char* tail = ours ? "<svg class=\"bubble-tail bubble-tail-out\" src=\"../icons/v2/bubble-tail-right.svg\" width=\"10\" height=\"12\"></svg>"
+                          : "<svg class=\"bubble-tail bubble-tail-in\" src=\"../icons/v2/bubble-tail-left.svg\" width=\"10\" height=\"12\"></svg>";
+  content.insert(tag_end + 1, tail);
+  content.insert(content.find('"', at + std::string("<div class=\"").size()), host);
+  return true;
+}
+
 } // namespace
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
@@ -604,10 +626,12 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
   const int64_t now_ms = util::NowUnixMs();
   int64_t prev_ms = 0;
   std::string run_sender; // empty: no run open
+  std::vector<bool> plain_rows; // parallel to `rows`: a plain message (the only kind that has runs)
   int64_t run_start_ms = 0; // time of the previous message of the open run
   for (const TranscriptRow& entry : entries) {
     if (entry.orphan_annotation) {
       rows.push_back(OrphanAnnotationRow(entry, facts));
+      plain_rows.push_back(false);
       continue;
     }
     const ThreadMessage& message = entry.message;
@@ -658,21 +682,21 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     run_start_ms = message.timestamp;
     if (group_thread && plain && message.sender_contact_id != kLocalSelfContactId &&
         message.sender_contact_id != kAiAssistantContactId && facts.sender_label) {
-      // Every received row keeps the avatar column; only the first bubble of a run shows the avatar and the name.
+      // Every received row keeps the avatar column; the avatar sits beside the last bubble of a run (set below),
+      // the name inside the first.
       row.group_column = true;
+      const std::string name = facts.sender_label(message.sender_contact_id);
+      // Same glyph input as the Contacts list and the chat list (name only), so one person has one colour.
+      const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
+      row.group_name_tone = glyph.tone;
+      row.group_avatar_letter = glyph.letter.c_str();
+      if (facts.sender_icon) {
+        const std::string icon_path = facts.sender_icon(message.sender_contact_id);
+        row.group_has_icon = !icon_path.empty();
+        row.group_avatar_src = icon_path.c_str();
+      }
       if (row.run_start) {
-        const std::string name = facts.sender_label(message.sender_contact_id);
-        // Same glyph input as the Contacts list and the chat list (name only), so one person has one colour.
-        const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
         row.group_name = name.c_str();
-        row.group_name_tone = glyph.tone;
-        row.group_avatar = true;
-        row.group_avatar_letter = glyph.letter.c_str();
-        if (facts.sender_icon) {
-          const std::string icon_path = facts.sender_icon(message.sender_contact_id);
-          row.group_has_icon = !icon_path.empty();
-          row.group_avatar_src = icon_path.c_str();
-        }
         // The name goes at the top of the bubble; rows without a bubble (cards, calls) keep it as a line above.
         static const std::string kBubbleOpen = "<div class=\"bubble bubble-assistant";
         const size_t bubble_at = content.find(kBubbleOpen);
@@ -687,6 +711,20 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     }
     row.has_content = true;
     rows.push_back(std::move(row));
+    plain_rows.push_back(plain);
+  }
+  // The last bubble of a run carries the tail (and, in groups, the avatar).
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (!plain_rows[i] || (i + 1 < rows.size() && !rows[i + 1].run_start)) {
+      continue;
+    }
+    MessageDisplayRow& row = rows[i];
+    row.run_end = true;
+    row.group_avatar = row.group_column;
+    std::string content = row.content_rml.c_str();
+    if (AddBubbleTail(content, std::string(row.row_class.c_str()) == "message-row-user")) {
+      row.content_rml = content.c_str();
+    }
   }
   return rows;
 }

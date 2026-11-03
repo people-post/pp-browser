@@ -38,10 +38,31 @@ TEST(SessionListTextTest, LongMessageIsCutOnACharacterBoundary) {
   EXPECT_EQ(AiThreadTitleFromMessage("abcdefghijklmnopqrstuvwx"), "abcdefghijklmnopqrstuvwx");
 }
 
+namespace {
+struct LabelsEnglish : ::testing::Test {
+  void SetUp() override {
+    ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    pbr::LocalizationService::Instance().SetPreferredLanguage("en");
+  }
+  void TearDown() override { pbr::LocalizationService::Instance().SetPreferredLanguage("en"); }
+};
+} // namespace
+
+TEST_F(LabelsEnglish, WhatsAppStyleDays) {
+  const std::tm now = Day(2026, 10, 29, 301, 18, 30); // a Thursday
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 28, 300, 23, 59), now), "Yesterday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 27, 299, 8, 0), now), "Tuesday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 23, 295, 8, 0), now), "Friday");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 22, 294, 8, 0), now), "10/22"); // 7 days ago: the date
+  pbr::LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 28, 300, 23, 59), now), "昨天");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 27, 299, 8, 0), now), "星期二");
+}
+
 TEST(SessionListTextTest, DateLabelShowsTimeTodayDateThisYearAndFullDateBefore) {
   const std::tm now = Day(2026, 10, 3, 275, 18, 30);
   EXPECT_EQ(SessionDateLabel(Day(2026, 10, 3, 275, 9, 5), now), "09:05");
-  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 2, 274, 23, 59), now), "10/2");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 9, 2, 244, 23, 59), now), "9/2");
   EXPECT_EQ(SessionDateLabel(Day(2026, 1, 15, 14), now), "1/15");
   EXPECT_EQ(SessionDateLabel(Day(2025, 12, 31, 364), now), "2025/12/31");
 }

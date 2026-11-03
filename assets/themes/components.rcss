@@ -5647,8 +5647,8 @@ input.checkbox {
 }
 
 .shell-chat-overlay .messages {
-  padding-left: 16dp;
-  padding-right: 16dp;
+  padding-left: 8dp;
+  padding-right: 8dp;
 }
 
 /* Rows: 2dp inside a run, 8dp between runs; bubbles take at most 72% of the width (a clear gap on the opposite side), so the desktop's side gutters go. */
@@ -5684,7 +5684,8 @@ input.checkbox {
 .shell-chat-overlay .chat-system-line p {
   display: inline-block;
   margin: 0;
-  padding: 3dp 10dp;
+  padding: 4dp 10dp;
+  max-width: 80%;
   border-radius: 999dp;
   font-size: 13dp;
   line-height: 18dp;
@@ -5719,7 +5720,8 @@ input.checkbox {
   display: block;
   flex-shrink: 0;
   width: 32dp;
-  margin-right: 8dp;
+  margin-right: 6dp;
+  align-self: flex-end;
 }
 
 .shell-chat-overlay .chat-row-avatar-col-avatar {
@@ -5784,6 +5786,35 @@ input.checkbox {
 .shell-chat-overlay .chat-attachment-card {
   padding: 8dp 12dp;
   border-radius: 18dp;
+}
+
+/* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
+   left, sent: right); that corner is squared off so the tail grows out of it. Tint: colors-*.rcss. */
+.shell-chat-overlay .bubble-tail-host {
+  position: relative;
+}
+
+.shell-chat-overlay .bubble-tail-host--in {
+  border-bottom-left-radius: 4dp;
+}
+
+.shell-chat-overlay .bubble-tail-host--out {
+  border-bottom-right-radius: 4dp;
+}
+
+.shell-chat-overlay .bubble-tail {
+  position: absolute;
+  bottom: 0;
+  width: 10dp;
+  height: 12dp;
+}
+
+.shell-chat-overlay .bubble-tail-in {
+  left: -5dp;
+}
+
+.shell-chat-overlay .bubble-tail-out {
+  right: -5dp;
 }
 
 /* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. */

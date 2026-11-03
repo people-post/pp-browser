@@ -245,16 +245,25 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   EXPECT_EQ(std::string(rows[2].group_name.c_str()), "Bob");
   EXPECT_EQ(std::string(rows[3].group_name.c_str()), "Bob");
   EXPECT_TRUE(rows[4].group_name.empty()) << "our own bubbles carry no name";
-  // The avatar column: on every received row, the avatar only beside the first bubble of a run; none on our own.
+  // The avatar column: on every received row, the avatar only beside the LAST bubble of a run; none on our own.
   for (size_t i = 0; i < 4; ++i) {
     EXPECT_TRUE(rows[i].group_column) << i;
   }
   EXPECT_FALSE(rows[4].group_column);
-  EXPECT_TRUE(rows[0].group_avatar);
-  EXPECT_EQ(std::string(rows[0].group_avatar_letter.c_str()), "A");
-  EXPECT_FALSE(rows[1].group_avatar);
-  EXPECT_TRUE(rows[2].group_avatar);
+  EXPECT_FALSE(rows[0].group_avatar);
+  EXPECT_TRUE(rows[1].group_avatar);
+  EXPECT_EQ(std::string(rows[1].group_avatar_letter.c_str()), "A");
+  EXPECT_TRUE(rows[2].group_avatar) << "Bob's first run is one bubble: first and last";
+  EXPECT_TRUE(rows[3].group_avatar);
   EXPECT_FALSE(rows[4].group_avatar);
+  // run_end only on the last bubble of a run, and only that bubble carries the tail element.
+  const bool expect_end[5] = {false, true, true, true, true};
+  for (size_t i = 0; i < 5; ++i) {
+    EXPECT_EQ(rows[i].run_end, expect_end[i]) << i;
+    EXPECT_EQ(std::string(rows[i].content_rml.c_str()).find("bubble-tail ") != std::string::npos, expect_end[i]) << i;
+  }
+  EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("bubble-tail-in"), std::string::npos);
+  EXPECT_NE(std::string(rows[4].content_rml.c_str()).find("bubble-tail-out"), std::string::npos);
   // One person, one colour: the same glyph the Contacts list builds from the name alone.
   EXPECT_EQ(rows[0].group_name_tone, MakeAvatarGlyph("Alice", {}).tone);
   // The name sits inside the bubble, on the first bubble of a run only.

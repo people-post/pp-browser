@@ -11,6 +11,8 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | back | 01-chat, 04-contact-detail, 05-WideChats, 05-WideContacts (+18 more); §8.1 | drawn | `back.svg` |
 | bell | 07-Me | drawn | - |
 | bell-off | 02-chatlist, 05-WideChats, 06-GroupInfo, 06-GroupLeave (+1 more); §8.3 | drawn | `bell-off.svg` |
+| bubble-tail-left | phone chat window, tail of the last received bubble of a run | drawn | - |
+| bubble-tail-right | phone chat window, tail of the last sent bubble of a run | drawn | - |
 | camera | 03-home, 05-Wide, 07-SetPrivacyHelp; §8.5 | drawn | `camera.svg` |
 | camera-flip | 06-CallGroupVideo, 06-CallVideo; §8.12 | drawn | `camera-flip.svg` |
 | chevron-down | 06-CallGroupVideo, 06-CallGroupVoice, 06-CallVideo, 06-CallVoice | drawn | `chevron-down.svg` |
