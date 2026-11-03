@@ -112,6 +112,10 @@ public:
     ui::String icon_src;
     ui::String avatar_letter = "?";
     int avatar_tone = 0;
+    /** A group member who is not a contact (opened from a group chat): only name, photo, Account ID and Add. */
+    bool member_preview = false;
+    /** That member's account id (what Add contact looks up). */
+    ui::String member_account;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -124,6 +128,8 @@ public:
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
+  /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
+  void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
   void OnDetailDismissed();
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
@@ -149,6 +155,7 @@ private:
   static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void StartChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SecureMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void AddMemberContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void AddContactMenuCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void FindSomeoneCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -235,6 +242,9 @@ private:
 
 /** Detail form for a contact (title, remark, their nickname, ...). Exposed for tests. */
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
+/** The page of a group member who is not a contact: name (else "Unnamed"), photo, last six of the account id. */
+ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
+                                                      const std::string& icon_src);
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 

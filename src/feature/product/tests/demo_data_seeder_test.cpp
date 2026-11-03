@@ -153,7 +153,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
       break;
     }
     for (const ThreadMessage& m : *messages) {
-      if (m.content_type == ChatContentType::Attachment) {
+      if (m.content_type == ChatContentType::Attachment && t.kind == ThreadKind::Direct) {
         pictures.push_back(m);
       }
     }
@@ -166,7 +166,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
   auto roster1 = groups_->ListMembers("demo-group-1");
   auto roster2 = groups_->ListMembers("demo-group-2");
   ASSERT_TRUE(roster1 && roster2);
-  EXPECT_EQ(roster1->size(), 4u);
+  EXPECT_EQ(roster1->size(), 5u);  // the user, three contacts and one member who is not a contact
   EXPECT_EQ(roster2->size(), 12u);
   auto metadata = groups_->LoadMetadata("demo-group-1");
   ASSERT_TRUE(metadata && metadata->has_value());
@@ -186,6 +186,33 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
     hashes.insert(fields->content_hash);
   }
   EXPECT_EQ(hashes.size(), 2u);
+}
+
+TEST_F(DemoDataSeederTest, FirstGroupShowsReactionsPicturesAFileAVideoAndANonContact) {
+  DemoDataSeeder seeder;
+  ASSERT_TRUE(seeder.SeedOnce(Deps()));
+  auto messages = threads_->GetMessages("demo-thread-group-1");
+  ASSERT_TRUE(messages);
+  std::set<std::string> mimes;
+  size_t reactions = 0;
+  bool stranger = false;
+  for (const ThreadMessage& m : *messages) {
+    if (m.content_type == ChatContentType::Annotation) {
+      ++reactions;
+      ASSERT_TRUE(m.target_message_id.has_value()) << m.id;
+      EXPECT_EQ(m.target_message_id->rfind("demo-msg-g1-", 0), 0u) << m.id;
+    }
+    if (m.content_type == ChatContentType::Attachment) {
+      auto fields = ChatPayloadCodec::DecodeAttachmentJson(m.payload_json);
+      ASSERT_TRUE(fields) << fields.error().message;
+      EXPECT_TRUE(AttachmentBlobExists(*content_, fields->content_hash)) << m.id;
+      mimes.insert(fields->mime);
+    }
+    stranger = stranger || m.sender_contact_id == "demo-acct-guest-01";
+  }
+  EXPECT_GE(reactions, 5u);
+  EXPECT_EQ(mimes, (std::set<std::string>{"image/png", "application/pdf", "video/mp4"}));
+  EXPECT_TRUE(stranger);
 }
 
 TEST_F(DemoDataSeederTest, NoMessageIsInTheFutureAndTheOrderIsKept) {

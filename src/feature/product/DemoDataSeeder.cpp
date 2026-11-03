@@ -9,6 +9,7 @@
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/os/OsTime.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/QuoteReply.h"
 
 #include <array>
@@ -38,7 +39,9 @@ struct At {
 };
 
 enum class Who { Them, Me };
-enum class Pic { None, Landscape, Portrait };
+/** An attachment line: a picture, or (group chat only) a file card / a video card carrying the landscape picture's
+ *  bytes under another type, so the cards can be looked at without more bundled assets. */
+enum class Pic { None, Landscape, Portrait, File, Video };
 
 struct Line {
   Who who;
@@ -49,6 +52,15 @@ struct Line {
   int member = 0;
   /** Quote reply: the text it replies to (composed with ComposeQuoteReply). */
   const char* quote = nullptr;
+  /** Group chats only: the sender is this account id, a member who is not a contact (`member` is then unused). */
+  const char* stranger = nullptr;
+};
+
+/** A reaction on a group line: `line` is 1-based into the group's lines; `member` 1-based, 0 = the user. */
+struct DemoReaction {
+  int line;
+  int member;
+  const char* emoji;
 };
 
 struct DemoContact {
@@ -156,6 +168,9 @@ struct DemoGroup {
   std::vector<int> members;  // indexes into kContacts (the user is a member too)
   int unread;
   std::vector<Line> lines;  // `member` is 1-based into `members`
+  std::vector<DemoReaction> reactions;
+  /** Members who are not contacts: account ids (the senders of `stranger` lines). */
+  std::vector<std::string> strangers;
 };
 
 const std::vector<DemoGroup>& Groups() {
@@ -171,7 +186,17 @@ const std::vector<DemoGroup>& Groups() {
            {Who::Me, "我也去，早上八点集合", {4, 20, 9}},
            {Who::Them, "八点太早了吧……九点行不行", {4, 20, 12}, Pic::None, 3},
            {Who::Them, "Fine by me, 9 it is.", {4, 20, 15}, Pic::None, 2},
-       }},
+           {Who::Them, "上周的照片终于整理好了", {1, 19, 2}, Pic::None, 1},
+           {Who::Them, "山顶.png", {1, 19, 3}, Pic::Portrait, 1},
+           {Who::Them, "云海.png", {1, 19, 4}, Pic::Landscape, 1},
+           {Who::Them, "Amazing view 😍", {1, 19, 10}, Pic::None, 2},
+           {Who::Me, "路线图和装备清单.pdf", {1, 19, 20}, Pic::File},
+           {Who::Them, "下山.mp4", {1, 19, 30}, Pic::Video, 3},
+           {Who::Them, "我是小明的同事，也想一起去，可以吗？", {0, 8, 5}, Pic::None, 0, nullptr, "demo-acct-guest-01"},
+           {Who::Me, "欢迎！周六九点见", {0, 8, 7}},
+       },
+       {{7, 0, "😍"}, {7, 3, "😍"}, {6, 2, "👍"}, {9, 1, "🙏"}, {12, 2, "👍"}, {12, 3, "👍"}, {12, 1, "🎉"}, {13, 1, "❤️"}, {10, 2, "👍"}},
+       {"demo-acct-guest-01"}},
       {"demo-thread-group-2",
        "demo-group-2",
        "Project Sync 项目讨论",
@@ -185,7 +210,9 @@ const std::vector<DemoGroup>& Groups() {
            {Who::Them, "同意，我来排一下时间", {0, 9, 30}, Pic::None, 10},
            {Who::Them, "Meeting moved to 3pm, same link.", {0, 9, 45}, Pic::None, 7},
            {Who::Them, "大家今天辛苦了", {0, 9, 50}, Pic::None, 4},
-       }},
+       },
+       {},
+       {}},
   };
   return groups;
 }
@@ -277,6 +304,51 @@ int64_t TimeOf(const DemoSeedDeps& deps, const At at) {
   return result;
 }
 
+/** The attachment fields of a picture / file / video line (a file or video: the landscape bytes, its own name). */
+ChatAttachmentFields FieldsOf(const Line& line, const Picture& landscape, const Picture& portrait) {
+  if (line.pic == Pic::Portrait) {
+    return portrait.fields;
+  }
+  ChatAttachmentFields fields = landscape.fields;
+  if (line.pic == Pic::File || line.pic == Pic::Video) {
+    fields.mime = line.pic == Pic::File ? "application/pdf" : "video/mp4";
+    fields.filename = line.text;
+  }
+  return fields;
+}
+
+/** The reactions of a group: annotation rows after its lines, each on its target line's message. */
+Roe<void> PutReactions(const DemoSeedDeps& deps, const std::string& thread_id, const std::string& id_prefix,
+                       const std::vector<Line>& lines, const std::vector<DemoReaction>& reactions,
+                       const std::vector<std::string>& sender_of_member) {
+  int order = static_cast<int>(lines.size());
+  for (const DemoReaction& reaction : reactions) {
+    ++order;
+    const std::string target = id_prefix + "-" + std::to_string(reaction.line);
+    ThreadMessage message;
+    message.id = id_prefix + "-r" + std::to_string(order);
+    message.thread_id = thread_id;
+    message.display_order = order;
+    message.timestamp = TimeOf(deps, lines.back().at);  // after the last line: times keep the display order
+    message.transport = MessageTransport::Relay;
+    message.delivery = MessageDelivery::Relayed;
+    message.content_type = ChatContentType::Annotation;
+    message.target_message_id = target;
+    message.text = reaction.emoji;
+    message.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, target, reaction.emoji);
+    if (reaction.member == 0) {
+      message.sender_contact_id = kLocalSelfContactId;
+      message.relay_visible = false;
+    } else {
+      message.sender_contact_id = sender_of_member.at(static_cast<size_t>(reaction.member - 1));
+    }
+    if (auto put = deps.threads.UpsertMessage(message); !put) {
+      return put.error();
+    }
+  }
+  return {};
+}
+
 Roe<void> PutMessages(const DemoSeedDeps& deps, const std::string& thread_id, const std::string& id_prefix,
                       const std::vector<Line>& lines, const std::vector<std::string>& sender_of_member,
                       const Picture& landscape, const Picture& portrait) {
@@ -295,14 +367,14 @@ Roe<void> PutMessages(const DemoSeedDeps& deps, const std::string& thread_id, co
       message.sender_contact_id = kLocalSelfContactId;
       message.relay_visible = false;
     } else {
-      message.sender_contact_id = line.member > 0 ? sender_of_member.at(static_cast<size_t>(line.member - 1))
-                                                  : sender_of_member.at(0);
+      message.sender_contact_id = line.stranger != nullptr ? std::string(line.stranger)
+                                  : line.member > 0      ? sender_of_member.at(static_cast<size_t>(line.member - 1))
+                                                         : sender_of_member.at(0);
     }
     if (line.pic != Pic::None) {
-      const Picture& picture = line.pic == Pic::Landscape ? landscape : portrait;
       message.content_type = ChatContentType::Attachment;
       message.text = line.text;
-      message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(picture.fields);
+      message.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(FieldsOf(line, landscape, portrait));
     } else if (line.quote != nullptr) {
       message.text = ComposeQuoteReply(line.text, line.quote);
     } else {
@@ -463,13 +535,33 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
         return put.error();
       }
     }
+    for (const std::string& account : group.strangers) {
+      if (auto put = deps.groups.UpsertMember(group.group_id, {account, account, MemberRole::Member, joined}); !put) {
+        return put.error();
+      }
+    }
     if (auto put = deps.groups.UpsertGroupTarget(group.group_id, group.thread_id, 1, 1); !put) {
       return put.error();
     }
-    if (auto put = PutMessages(deps, group.thread_id, "demo-msg-g" + std::to_string(group_no), group.lines,
-                               member_contacts, *landscape, *portrait);
+    const std::string prefix = "demo-msg-g" + std::to_string(group_no);
+    if (auto put = PutMessages(deps, group.thread_id, prefix, group.lines, member_contacts, *landscape, *portrait);
         !put) {
       return put.error();
+    }
+    if (auto put = PutReactions(deps, group.thread_id, prefix, group.lines, group.reactions, member_contacts); !put) {
+      return put.error();
+    }
+    for (const Line& line : group.lines) {
+      if (line.pic == Pic::None) {
+        continue;
+      }
+      const Picture& picture = line.pic == Pic::Portrait ? *portrait : *landscape;
+      if (auto copied = CopyAttachmentPlaintext(deps.profile_dir, deps.content, group.thread_id,
+                                                FieldsOf(line, *landscape, *portrait), picture.bytes,
+                                                deps.attachment_dek, deps.max_receive_bytes);
+          !copied) {
+        return copied.error();
+      }
     }
     if (auto put = deps.threads.UpsertThread(thread); !put) {
       return put.error();

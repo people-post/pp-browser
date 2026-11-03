@@ -431,6 +431,7 @@
     "onboarding.later": "稍后再说",
     "contacts.title": "联系人",
     "contacts.add": "添加联系人",
+    "contacts.member_not_contact": "群成员，还不是你的联系人。",
     "contacts.new_group": "建群",
     "new_chat.title": "新聊天",
     "new_chat.ai": "AI 聊天",

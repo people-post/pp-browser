@@ -301,8 +301,11 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   const AttachmentFetchWorkflow::DownloadState state = view.state;
   const std::string& local_path = view.local_path;
 
-  std::string html = "<div class=\"chat-card chat-attachment-card\">";
   const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
+  const bool inline_image = ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok;
+  // A picture card is a thin frame around the picture on phones (its own modifier); files and videos are compact cards.
+  std::string html = inline_image ? "<div class=\"chat-card chat-attachment-card chat-attachment-card--image\">"
+                                  : "<div class=\"chat-card chat-attachment-card\">";
   // A voice message (audio/ogg named voice-<ms>.ogg, at most 1 MB declared) is a bubble; any other audio is a file row.
   // Only the declared values decide here: the file itself is not looked at until the person taps play.
   const VoiceBubbleView voice =
@@ -313,7 +316,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
+  if (inline_image) {
     // A tap opens the full picture in the system viewer (zoomable): the bubble shows it at most 240 dp high.
     html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) +
             "\" data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" +
@@ -543,24 +546,50 @@ std::string MessageRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 }
 
 
-std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions) {
+// Reaction chips. `overlay`: the row sits inside the bubble / card, drawn as small pills over its bottom edge
+// (position: absolute, so the row's height is the bubble's and avatar, tail and bubble bottom line up). Otherwise
+// (no bubble or card to hang it on) it follows the content as a line of its own, which marks where the body ends.
+// Each chip is a 32dp-tall button whose pill is drawn smaller inside it.
+std::string ReactionsRml(const std::string& target_id, const std::vector<TranscriptReaction>& reactions, const bool overlay) {
   std::ostringstream rml;
   // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
-  rml << "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">";
+  rml << (overlay ? "<div class=\"chat-reaction-row chat-reaction-row--overlay\">"
+                  : "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">");
   for (const TranscriptReaction& chip : reactions) {
     rml << "<button class=\"chat-reaction-chip";
     if (chip.mine) {
       rml << " chat-reaction-chip--mine";
     }
     rml << "\" type=\"button\" data-event-click=\"toggle_reaction('" << JsArgInAttribute(target_id) << "', '"
-        << JsArgInAttribute(chip.emoji) << "')\">" << StructuredTextParser::EscapeText(chip.emoji);
+        << JsArgInAttribute(chip.emoji) << "')\"><span class=\"chat-reaction-pill\">"
+        << StructuredTextParser::EscapeText(chip.emoji);
     if (chip.count > 1) {
-      rml << " " << chip.count;
+      rml << "<span class=\"chat-reaction-count\">" << chip.count << "</span>";
     }
-    rml << "</button>";
+    rml << "</span></button>";
   }
   rml << "</div>";
   return rml.str();
+}
+
+// Puts the reaction row inside the first bubble or card of `content` (marked chat-reaction-host, the row's
+// positioning box); false when there is none, and `content` is unchanged.
+bool AddReactionsToHost(std::string& content, const std::string& target_id,
+                        const std::vector<TranscriptReaction>& reactions) {
+  size_t at = std::string::npos;
+  for (const char* opener : {"<div class=\"bubble ", "<div class=\"chat-card"}) {
+    const size_t found = content.find(opener);
+    if (found != std::string::npos && found < at) {
+      at = found;
+    }
+  }
+  const size_t tag_end = at == std::string::npos ? at : content.find('>', at);
+  if (tag_end == std::string::npos) {
+    return false;
+  }
+  content.insert(tag_end + 1, ReactionsRml(target_id, reactions, true));
+  content.insert(content.find('"', at + std::string("<div class=\"").size()), " chat-reaction-host");
+  return true;
 }
 
 MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const TranscriptFacts& facts) {
@@ -647,8 +676,8 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       content = "<div class=\"chat-quote chat-quote--asked\"><p class=\"chat-quote-text\">" +
                 StructuredTextParser::EscapeText(OneLine(*entry.asked_question)) + "</p></div>" + content;
     }
-    if (!entry.reactions.empty()) {
-      content += ReactionsRml(message.id, entry.reactions);
+    if (!entry.reactions.empty() && !AddReactionsToHost(content, message.id, entry.reactions)) {
+      content += ReactionsRml(message.id, entry.reactions, false);
     }
     for (const std::string& badge : entry.annotation_badges) {
       content += "<span class=\"chat-annotation-badge\" title=\"" + StructuredTextParser::EscapeText(badge) + "\">" +
@@ -665,6 +694,7 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
     row.row_class = call_row ? (call_row->ours ? "message-row-user" : "message-row-peer")
                              : RowClass(message.sender_contact_id).c_str();
     row.mentions_me = mentions_me;
+    row.has_reactions = !entry.reactions.empty();
     if (!entry.control) {
       row.time_label = MessageTimeLabel(message.timestamp, now_ms).c_str();
     }
@@ -703,8 +733,10 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
         const size_t bubble_at = content.find(kBubbleOpen);
         const size_t bubble_end = bubble_at == std::string::npos ? bubble_at : content.find('>', bubble_at);
         if (bubble_end != std::string::npos) {
+          // A tap on the name opens the member's page (ChatController::OpenGroupSender).
           content.insert(bubble_end + 1, "<div class=\"chat-group-name chat-group-name--" + std::to_string(glyph.tone) +
-                                             "\">" + StructuredTextParser::EscapeText(name) + "</div>");
+                                             "\" data-event-click=\"open_sender('" + JsArgInAttribute(message.id) +
+                                             "')\">" + StructuredTextParser::EscapeText(name) + "</div>");
           row.content_rml = content.c_str();
           row.group_name_in_bubble = true;
         }

@@ -78,6 +78,8 @@
     </div>
   </div>
   <div class="home-landing">
+    <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
+    <div class="home-dock-fade"></div>
     <div class="home-landing-inner stack">
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">

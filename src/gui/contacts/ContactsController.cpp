@@ -345,6 +345,23 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
 
 } // namespace
 
+ContactsController::ContactDetail MemberPreviewDetail(const std::string& account_id, const std::string& name,
+                                                      const std::string& icon_src) {
+  ContactsController::ContactDetail detail;
+  const std::string title = name.empty() ? Tr("people_picker.unnamed") : name;
+  detail.title = title.c_str();
+  detail.short_id = LastSixChars(account_id).c_str();
+  detail.has_icon = !icon_src.empty();
+  detail.icon_src = icon_src.c_str();
+  // Same colour input as everywhere else (the name only), so the avatar matches the one in the chat.
+  const AvatarGlyph glyph = MakeAvatarGlyph(title, {});
+  detail.avatar_letter = glyph.letter.c_str();
+  detail.avatar_tone = glyph.tone;
+  detail.member_preview = true;
+  detail.member_account = account_id.c_str();
+  return detail;
+}
+
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail) {
   Contact contact = existing;
   // Only local annotations are editable from the detail form.
@@ -516,6 +533,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("avatar_tone", &ContactDetail::avatar_tone);
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
+      detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
     }
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
@@ -529,6 +547,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
     ctor.BindEventCallback("start_chat", &ContactsController::StartChatCallback);
     ctor.BindEventCallback("secure_message", &ContactsController::SecureMessageCallback);
+    ctor.BindEventCallback("add_member_contact", &ContactsController::AddMemberContactCallback);
     ctor.BindEventCallback("on_add_contact_menu", &ContactsController::AddContactMenuCallback);
     ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
@@ -678,6 +697,16 @@ void ContactsController::SecureMessageCallback(ui::DataModelHandle /*model*/, ui
   Instance().OnSecureMessage();
 }
 
+void ContactsController::AddMemberContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                  const ui::VariantList& /*args*/) {
+  // The usual add-by-Account-ID path (directory lookup, keys from it, never from the group); once added, the page
+  // turns into the contact's own (AddContactFromHit selects it).
+  ContactsController& controller = Instance();
+  if (controller.selected_.member_preview) {
+    controller.AddContactByQuery(controller.selected_.member_account.c_str());
+  }
+}
+
 void ContactsController::AddContactMenuCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                               const ui::VariantList& /*args*/) {
   Instance().OnAddContactMenu(ev);
@@ -779,6 +808,18 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
     contacts_ports_.refresh_contact_profile(contact_id); // a changed photo or name shows up; silent when fresh
   }
 
+  OpenContactDetailPane();
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OnShowMember(const std::string& account_id, const std::string& name,
+                                      const std::string& icon_src) {
+  if (account_id.empty()) {
+    return;
+  }
+  FlushPending();
+  selected_ = MemberPreviewDetail(account_id, name, icon_src);
   OpenContactDetailPane();
   DirtyAll();
   NotifySurfaceChanged();

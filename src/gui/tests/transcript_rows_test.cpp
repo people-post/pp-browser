@@ -158,7 +158,60 @@ TEST(TranscriptRmlTest, ClickArgumentsStayInsideTheirAttribute) {
   EXPECT_EQ(rml.find("<x>"), std::string::npos) << rml;
   EXPECT_NE(rml.find("toggle_reaction('m\\'&quot;&lt;x&gt;', '&quot;&gt;&lt;b&gt;')"), std::string::npos) << rml;
   EXPECT_NE(rml.find("send_chat_action('m\\'&quot;&lt;x&gt;', 0)"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("&quot;&gt;&lt;b&gt; 2</button>"), std::string::npos) << "count shown, text escaped";
+  EXPECT_NE(rml.find("&quot;&gt;&lt;b&gt;<span class=\"chat-reaction-count\">2</span>"), std::string::npos)
+      << "count shown, text escaped";
+}
+
+// Kenneth 2026-11-03: the reaction chips sat under the bubble in the same row, so the avatar (bottom of the row) and the
+// tail (bottom of the bubble) no longer lined up. The chips now hang inside the bubble, over its bottom edge.
+TEST(TranscriptRmlTest, ReactionsHangInsideTheBubbleAndFlagTheRow) {
+  TranscriptRow row;
+  row.message.id = "m1";
+  row.message.thread_id = "t";
+  row.message.sender_contact_id = "account:peer";
+  row.message.content_type = ChatContentType::Text;
+  row.message.text = "hi";
+  row.message.timestamp = 1;
+  row.reactions.push_back(TranscriptReaction{"\xF0\x9F\x91\x8D", 1, true});
+  row.reactions.push_back(TranscriptReaction{"\xF0\x9F\x8E\x89", 3, false});
+  TranscriptRow plain = row;
+  plain.message.id = "m2";
+  plain.message.timestamp = 2;
+  plain.reactions.clear();
+  const auto rows = RenderTranscript({row, plain}, TranscriptFacts{});
+  ASSERT_EQ(rows.size(), 2u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_TRUE(rows[0].has_reactions);
+  EXPECT_FALSE(rows[1].has_reactions);
+  EXPECT_EQ(std::string(rows[0].row_class.c_str()), "message-row-peer") << "row_class is compared as a whole elsewhere";
+  // Inside the bubble (its positioning box), before the bubble closes; not after it.
+  const size_t bubble_at = rml.find("<div class=\"bubble bubble-assistant chat-reaction-host");
+  const size_t chips_at = rml.find("chat-reaction-row chat-reaction-row--overlay");
+  ASSERT_NE(bubble_at, std::string::npos) << rml;
+  ASSERT_NE(chips_at, std::string::npos) << rml;
+  EXPECT_GT(chips_at, bubble_at);
+  EXPECT_EQ(rml.find("menu-anchor-end"), std::string::npos) << "the row's own bottom is the body's end now";
+  EXPECT_NE(rml.find("chat-reaction-chip chat-reaction-chip--mine"), std::string::npos);
+  EXPECT_NE(rml.find("toggle_reaction('m1', '\xF0\x9F\x8E\x89')"), std::string::npos) << "a tap still toggles";
+  EXPECT_NE(rml.find("<span class=\"chat-reaction-count\">3</span>"), std::string::npos);
+  EXPECT_EQ(rml.find("<span class=\"chat-reaction-count\">1</span>"), std::string::npos) << "no count for one";
+}
+
+TEST(TranscriptRmlTest, ReactionsWithoutABubbleFollowTheLine) {
+  TranscriptRow row;
+  row.message.id = "s1";
+  row.message.thread_id = "t";
+  row.message.sender_contact_id = "account:peer";
+  row.message.content_type = ChatContentType::System;
+  row.message.text = "Alice joined";
+  row.message.timestamp = 1;
+  row.reactions.push_back(TranscriptReaction{"\xF0\x9F\x91\x8D", 1, false});
+  const auto rows = RenderTranscript({row}, TranscriptFacts{});
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_EQ(rml.find("chat-reaction-row--overlay"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("<div class=\"chat-reaction-row\" menu-anchor-end=\"\">"), std::string::npos) << rml;
+  EXPECT_GT(rml.find("chat-reaction-row"), rml.find("chat-system-line"));
 }
 
 TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip) {
@@ -274,6 +327,10 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   ASSERT_NE(name_at, std::string::npos);
   EXPECT_GT(name_at, bubble_at);
   EXPECT_TRUE(rows[0].group_name_in_bubble);
+  // Kenneth 2026-11-03: a tap on a member's name opens their page.
+  EXPECT_NE(first.find("data-event-click=\"open_sender('" + std::string(rows[0].message_id.c_str()) + "')\""),
+            std::string::npos)
+      << first;
   EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("chat-group-name"), std::string::npos);
   // A direct chat (no roster) never shows names above bubbles.
   const auto direct = RenderTranscript(entries, NamedFacts());

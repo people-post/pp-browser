@@ -249,6 +249,8 @@ private:
   void OpenAttachment(const std::string& message_id);
   /** A tap on a picture: full-screen preview with a spinner now, the viewer when the file is ready. */
   void OpenPicture(const std::string& message_id, const std::string& local_path);
+  /** Group chats: a tap on a member's avatar or name opens their page over the chat (contact or not). */
+  void OpenGroupSender(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState() override;

@@ -1537,6 +1537,10 @@ bool Application::MountPresenters(ui::Context* context) {
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
+  contacts_notify.show_member = [this](const std::string& account_id, const std::string& name,
+                                      const std::string& icon_src) {
+    contacts_->OnShowMember(account_id, name, icon_src);
+  };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
   chat_->BindContactsNotify(std::move(contacts_notify));
 

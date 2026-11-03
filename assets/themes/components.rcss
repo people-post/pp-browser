@@ -3277,6 +3277,55 @@ input.checkbox {
   background-color: rgba(64, 128, 255, 0.18);
 }
 
+/* Reactions hung on a bubble or card (WhatsApp style): small pills over its bottom edge, inset from its start side.
+   Absolute, so the row's height stays the bubble's (avatar, tail and bubble bottom line up); the row keeps the room
+   below (message-row-has-reactions). Each chip is a 32dp hit box; the 24dp pill is drawn inside it. Tint: colors-*. */
+.chat-reaction-host {
+  position: relative;
+}
+
+.chat-reaction-row--overlay {
+  position: absolute;
+  left: 10dp;
+  bottom: -16dp;
+  z-index: 1;
+  margin: 0;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.chat-reaction-row--overlay .chat-reaction-chip {
+  height: 32dp;
+  min-height: 32dp;
+  margin: 0 2dp 0 0;
+  padding: 4dp 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
+.chat-reaction-row--overlay .chat-reaction-pill {
+  display: inline-block;
+  height: 24dp;
+  padding: 1dp 7dp;
+  border-width: 2dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
+.chat-reaction-count {
+  margin-left: 3dp;
+  font-size: 12dp;
+}
+
+.message-row-has-reactions {
+  padding-bottom: 14dp;
+}
+
 .chat-system-line {
   text-align: center;
   margin: 8dp 0;
@@ -5694,6 +5743,30 @@ input.checkbox {
   padding-right: 8dp;
 }
 
+/* The transcript runs close to the screen edges (avatars 8dp, own bubbles 10dp so their tail ends 2dp short of the
+   edge): the panel's 12dp side padding is cancelled under it (offsets on the absolute scroller; a negative right
+   margin on the flex item is not applied by the engine). */
+.shell-chat-overlay .chat-messages-wrap .messages {
+  left: -12dp;
+  right: -12dp;
+  padding-right: 10dp;
+}
+
+/* The engine reserves 16dp for an (undrawn) scrollbar; on the phone the transcript scrolls by touch, so own bubbles
+   keep only the 8dp margin on the right. */
+.shell-chat-overlay .messages scrollbarvertical {
+  width: 0dp;
+}
+
+/* A video card is a plain block on phones (a flex column would take the card's full 240dp). */
+.shell-chat-overlay .chat-attachment-video {
+  display: block;
+}
+
+.shell-chat-overlay .chat-attachment-video-badge {
+  padding: 0;
+}
+
 /* Rows: 2dp inside a run, 8dp between runs; bubbles take at most 72% of the width (a clear gap on the opposite side), so the desktop's side gutters go. */
 .shell-chat-overlay .message-row {
   margin: 2dp 0 0 0;
@@ -5746,9 +5819,11 @@ input.checkbox {
   text-align: left;
 }
 
-/* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). */
+/* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). A tap opens their page: the
+   name's hit box is 44dp tall and spans the bubble (padding out into the bubble's own, cancelled by margins). */
 .shell-chat-overlay .bubble .chat-group-name {
-  margin: 0 0 2dp 0;
+  margin: -14dp -12dp -11dp -12dp;
+  padding: 14dp 12dp 13dp 12dp;
   max-width: none;
 }
 
@@ -5765,6 +5840,13 @@ input.checkbox {
   width: 32dp;
   margin-right: 6dp;
   align-self: flex-end;
+}
+
+/* The avatar's 44dp hit box: 6dp out on each side and 12dp above, cancelled by margins (the column stays 32dp). */
+.shell-chat-overlay .chat-row-avatar-hit {
+  display: block;
+  margin: -12dp -6dp 0 -6dp;
+  padding: 12dp 6dp 0 6dp;
 }
 
 .shell-chat-overlay .chat-row-avatar-col-avatar {
@@ -5825,10 +5907,73 @@ input.checkbox {
   border-radius: 6dp;
 }
 
-/* Pictures, files and voice notes take the bubble colours and corners. */
+/* Pictures, files and voice notes take the bubble colours and corners. Files and videos are compact cards (at most
+   240dp, small display text, a 44dp-tall plain "Open" row); a picture card is a 3dp frame around the picture, which
+   keeps its own shape inside a 220 x 260dp box (the engine keeps the ratio under max-width / max-height). */
 .shell-chat-overlay .chat-attachment-card {
-  padding: 8dp 12dp;
+  display: inline-block;
+  min-width: 160dp;
+  max-width: 240dp;
+  padding: 8dp 12dp 0 12dp;
+  border-width: 0;
   border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-chat-overlay .chat-attachment-card .heading-3,
+.shell-chat-overlay .chat-attachment-card .text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-chat-overlay .chat-attachment-card .muted {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.shell-chat-overlay .chat-attachment-video-poster {
+  max-width: 216dp;
+}
+
+.shell-chat-overlay .chat-attachment-card .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+/* 12dp corners: the engine does not round the picture itself, so a tighter frame corner keeps its square corner inside. */
+.shell-chat-overlay .chat-attachment-card--image {
+  min-width: 0;
+  max-width: none;
+  padding: 3dp;
+  border-radius: 12dp;
+}
+
+/* Inline, so the card's shrink-to-fit width counts it (a block picture counted as 0 and spilled out of its frame);
+   the engine keeps its ratio under max-width / max-height. */
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 220dp;
+  max-height: 260dp;
+  margin: 0;
+  border-radius: 9dp;
+}
+
+/* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook
+   outside the card still shows. */
+.shell-chat-overlay .chat-attachment-card--image .bubble-tail {
+  z-index: -1;
 }
 
 /* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
@@ -6419,10 +6564,32 @@ input.checkbox {
 
 /* The ask-AI block is pinned above the tab bar and does not scroll with the widgets. */
 .shell-layer-compact .home-landing {
+  position: relative;
   flex: none;
   display: block;
   padding: 8dp 0;
   box-sizing: border-box;
+}
+
+/* The widgets fade into the dock over 20dp (no divider line); touches pass through. Gradient: colors-*.rcss. */
+.home-dock-fade {
+  display: none;
+}
+
+.shell-layer-compact .home-dock-fade {
+  display: block;
+  position: absolute;
+  top: -20dp;
+  left: 0;
+  right: 0;
+  height: 20dp;
+  pointer-events: none;
+}
+
+/* Home: dock and tab bar are one opaque area (colors-*.rcss), so the bar's blur has nothing to do. */
+.shell-bottom-chrome--home,
+.shell-bottom-chrome--home.shell-bottom-chrome--frost {
+  backdrop-filter: none;
 }
 
 .shell-layer-compact .home-landing-inner {

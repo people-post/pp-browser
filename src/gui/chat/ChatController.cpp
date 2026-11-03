@@ -1794,6 +1794,38 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
 }
 
 
+void ChatController::OpenGroupSender(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  auto message = facade_->GetMessage(facade_->ActiveThreadId(), message_id);
+  if (!message || !*message) {
+    return;
+  }
+  // The sender is a contact id, or the account id of someone who is not a contact (as PeerDisplayResolver reads it);
+  // our own and the assistant's rows have no avatar or name to tap.
+  const std::string sender = (*message)->sender_contact_id;
+  if (sender.empty() || sender == kLocalSelfContactId || sender == kAiAssistantContactId) {
+    return;
+  }
+  auto contact = facade_->GetContact(sender);
+  if (!contact || !*contact) {
+    contact = facade_->FindContactByIdentity(sender, mesh::ContactIdKind::Account);
+  }
+  if (contact && *contact) {
+    if (contacts_notify_.select_contact) {
+      contacts_notify_.select_contact((*contact)->id);
+    }
+    return;
+  }
+  if (contacts_notify_.show_member) {
+    // Not a contact: the same page in its member state (name, photo, Account ID, Add contact).
+    const TranscriptFacts facts = facade_->TranscriptFactsFor();
+    contacts_notify_.show_member(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
+                                 facts.sender_icon ? facts.sender_icon(sender) : std::string());
+  }
+}
+
 void ChatController::OpenPicture(const std::string& message_id, const std::string& local_path) {
   if (!messaging_ready_ || !facade_ || message_id.empty() || opening_message_ids_.count(message_id) != 0) {
     return;
@@ -3378,6 +3410,8 @@ bool ChatController::Setup(ui::Context* context) {
             contacts_notify_.select_contact(*contact);
           }
         }));
+        ctor.BindEventCallback("open_sender", DataEvent<std::string>(
+            [this](const std::string& message_id) { OpenGroupSender(message_id); }));
         ctor.BindEventCallback("open_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { OpenAttachment(message_id); }));
         ctor.BindEventCallback("open_picture", DataEvent<std::string, std::string>(

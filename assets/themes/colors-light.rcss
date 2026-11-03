@@ -1916,6 +1916,29 @@ select selectbox option:hover {
   image-color: #2e8dff;
 }
 
+.chat-reaction-row--overlay .chat-reaction-pill {
+  border-color: #ffffff;
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.shell-chat-overlay .chat-reaction-row--overlay .chat-reaction-pill {
+  border-color: #ededed;
+}
+
+.chat-reaction-row--overlay .chat-reaction-chip--mine .chat-reaction-pill {
+  background-color: #f2f2f7;
+}
+
+.shell-chat-overlay .chat-attachment-card .chat-suggestion {
+  background-color: transparent;
+  color: #007aff;
+}
+
+.shell-chat-overlay .message-row-user .chat-attachment-card .chat-suggestion {
+  color: #ffffff;
+}
+
 .shell-chat-overlay .bubble-tail-in {
   image-color: #ffffff;
 }
@@ -2089,8 +2112,19 @@ select selectbox option:hover {
   background-color: #7878801f;
 }
 
+/* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets
+   fade into it instead (Apple's widget pages). Other tabs keep the bar as it is. */
 .shell-layer-compact .home-landing {
-  background-color: #f9f9f9f0;
-  border-top: 1dp #3c3c434a;
+  background-color: #ffffff;
+}
+
+.shell-layer-compact .home-dock-fade {
+  decorator: linear-gradient(to bottom, #ffffff00, #ffffff);
+}
+
+.shell-bottom-chrome--home,
+.shell-bottom-chrome--home.shell-bottom-chrome--frost {
+  background-color: #ffffff;
+  border-top-width: 0;
 }
 }

@@ -74,6 +74,20 @@ TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
   EXPECT_NE(rml.find("data-event-click=\"open_picture('p1','"), std::string::npos) << rml;
 }
 
+// Kenneth 2026-11-03: picture bubbles had one fixed size (a portrait picture filled two thirds, the rest was empty). The
+// picture card carries its own modifier, so on phones it shrinks to the picture's shape; a file card does not.
+TEST(VoiceBubbleRender, APictureCardIsMarkedAndKeepsItsTailAndReactions) {
+  TranscriptRow picture = Attachment("p2", "photo.png", "image/png", 50000);
+  picture.reactions.push_back(TranscriptReaction{"\xF0\x9F\x91\x8D", 1, false});
+  const std::string rml = Render(picture, Facts(true));
+  EXPECT_EQ(rml.rfind("<div class=\"chat-card chat-attachment-card chat-attachment-card--image", 0), 0u) << rml;
+  EXPECT_NE(rml.find("bubble-tail-in"), std::string::npos) << "the last bubble of a run keeps its tail";
+  EXPECT_NE(rml.find("chat-reaction-row--overlay"), std::string::npos) << rml;
+  const std::string file = Render(Attachment("f1", "notes.pdf", "application/pdf", 50000), Facts(true));
+  EXPECT_EQ(file.find("chat-attachment-card--image"), std::string::npos) << file;
+  EXPECT_NE(file.find("chat-attachment-card"), std::string::npos) << file;
+}
+
 TEST(VoiceBubbleRender, NothingToPlayUntilItHasBeenDownloaded) {
   const auto pending = Facts(true, AttachmentFetchWorkflow::DownloadState::Pending);
   EXPECT_FALSE(IsBubble(Render(Attachment("m", "voice-4200.ogg", "audio/ogg", 25000), pending)));

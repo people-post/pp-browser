@@ -71,6 +71,8 @@ struct MessageDisplayRow {
   ui::String row_class;
   /** A peer's message mentions this account (group-chat G015): the whole row is tinted. */
   bool mentions_me = false;
+  /** The message has reaction chips: drawn over its bubble's bottom edge, so the row keeps room below for them. */
+  bool has_reactions = false;
   /** Search inside the chat: the row contains the query, and the row the search is on (its matches are marked). */
   bool search_hit = false;
   bool search_current = false;

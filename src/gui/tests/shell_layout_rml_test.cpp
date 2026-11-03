@@ -40,6 +40,18 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
   EXPECT_FALSE(Has(rml, "close_account_sheet"));
 }
 
+// Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
+TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Home;
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome--home"));
+  for (const NavTab tab : {NavTab::Sessions, NavTab::Contacts, NavTab::Me}) {
+    state.nav_tab = tab;
+    EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome--home"));
+  }
+}
+
 TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;

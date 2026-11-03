@@ -452,6 +452,7 @@
     "onboarding.later": "Later",
     "contacts.title": "Contacts",
     "contacts.add": "Add contact",
+    "contacts.member_not_contact": "In this group, not in your contacts.",
     "contacts.new_group": "New group",
     "new_chat.title": "New chat",
     "new_chat.ai": "AI chat",

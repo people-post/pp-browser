@@ -57,5 +57,21 @@ TEST_F(ContactsPhoneTest, DetailShowsOnlyTheLastSixCharactersAndColoursByName) {
   EXPECT_EQ(std::string(detail.avatar_letter.c_str()), MakeAvatarGlyph(detail.title.c_str(), {}).letter);
 }
 
+// Kenneth 2026-11-03: a tap on a group member who is not a contact opens their page in its member state.
+TEST_F(ContactsPhoneTest, AMemberWhoIsNotAContactGetsAMemberPage) {
+  const ContactsController::ContactDetail detail =
+      MemberPreviewDetail("account:0123456789abcdef", "Grace", "/tmp/grace.png");
+  EXPECT_TRUE(detail.member_preview);
+  EXPECT_TRUE(detail.id.empty()) << "not a contact: no contact id, so nothing edits or removes a contact";
+  EXPECT_EQ(std::string(detail.member_account.c_str()), "account:0123456789abcdef");
+  EXPECT_EQ(std::string(detail.title.c_str()), "Grace");
+  EXPECT_EQ(std::string(detail.short_id.c_str()), "abcdef");
+  EXPECT_TRUE(detail.has_icon);
+  EXPECT_FALSE(detail.can_message);
+  EXPECT_EQ(detail.avatar_tone, MakeAvatarGlyph("Grace", {}).tone);
+  EXPECT_FALSE(MemberPreviewDetail("account:x", "", "").title.empty()) << "an unnamed member still has a title";
+  EXPECT_FALSE(MemberPreviewDetail("account:x", "", "").has_icon);
+}
+
 } // namespace
 } // namespace pbr

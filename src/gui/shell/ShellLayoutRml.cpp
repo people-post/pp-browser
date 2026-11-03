@@ -173,6 +173,10 @@ std::string ShellLayoutRml::CompactBase() const {
     if (solid) {
       out << " shell-bottom-chrome--solid";
     }
+    if (state_.nav_tab == NavTab::Home) {
+      // Home: the tab bar takes the ask-AI dock's colour, one bottom area with no line or seam between them.
+      out << " shell-bottom-chrome--home";
+    }
     out << "\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
