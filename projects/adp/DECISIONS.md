@@ -239,12 +239,28 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
 **Decision (proposed):**
 
 *H1: Amp's packet (every Amp packet, chat included; about −59 B):*
-1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge. In the clear: version / type, a connection id, the packet number, the channel id, the channel seq, and the frame type. Fragment fields only on fragments. Everything after the header is sealed with the whole header as AAD.
+1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge.
+   - In the clear: only the type / flags byte, the connection id and the packet number. The receiver needs nothing more before it opens a packet, because the nonce comes from the packet number.
+   - Sealed, with the clear header as AAD: the frame type, the channel id and channel seq, and fragment fields on fragments only.
+   - A path observer sees less than today, when the L2 envelope shows the channel id and seq. The channel fields belong to the frame, not the packet, so one packet can later carry several frames (a small audio frame with an ack).
 2. **The L2 nonce is derived, not sent:** from the direction, the key epoch, the packet space and the association's packet number. Not from the channel seq: channel ids can be reused within a session, and a reused one restarts at 0. L1 counts best-effort and reliable packets separately (`tx_seq_be_`, `tx_seq_rel_`), so the space is in the nonce.
 3. **No HMAC on sealed packets.** The AEAD tag over the payload, with the header as AAD, authenticates both; the HMAC stays on packets without AEAD (handshake, keepalive). This amends A002.
 4. **An 8 B connection id**, chosen by the receiver at the handshake (was the 16 B association id), and **no L1 length field** (UDP has it).
 5. **A 4 B packet number, sent whole.** At its end the association fails as it does today (`SeqWrap`), and the link redials: a new handshake, new keys, numbers from 1.
 6. **The datagram, not the payload, has the size limit: 1 232 B of UDP payload.** That fits the smallest MTU IPv6 promises (1 280 B, less 40 for IPv6 and 8 for UDP). The bytes H1 saves go to payload.
+
+*How H1 is built:*
+- **L1 seals through an interface and never holds keys.** The nonce needs L1's packet number, so the seal happens where L1 numbers a packet. The session hands L1 a sealer after the handshake, and L1 calls it with the clear header, the packet number and the payload. L1's own tests pass a sealer that does not encrypt, so L1 stays testable without the crypto. QUIC's packet protection is split the same way.
+- **The nested session has an inner layout.** A 1:1 call through a circuit runs a Session inside a channel of the outer one ([A024](#a024--amp-call-media-over-circuit--nested-session)), with no L1 of its own.
+  - Its packets carry the inner packet number, the sealed frame fields and the tag, and no connection id: the outer channel already says which session they belong to.
+  - The inner session keeps its own counter, under the same rules as L1's (item 5, the nonce rules below).
+- **The type byte may carry a key-phase bit.** It would tell the receiver which key a packet uses during a rekey's grace window, instead of trying the old key when the new one fails, as `Session::Open` does today. Optional while no product path rekeys.
+
+*What H1 costs:*
+- Any change to the packet is a major amp version, shipped together with mesh, pp-node and the apps. One layer can no longer change its wire on its own.
+- The sealing, the replay windows, how resends are stored and the handshake framing all move, across amp's three layers. That is why the tests below come before the wire.
+- Packet captures can no longer tell channels apart. Debugging relies on amp's logs and the `MetricsLine` counters.
+- A junk flood costs the receiver what it does today: one tag check per packet, now the AEAD's instead of the HMAC's.
 
 *H2: one media frame for both call paths, and broadcast (about −30–36 B per media packet):*
 7. **One media header:** stream id (u32), channel (u8), flags (mark, keyframe) and seq (u32), once. It replaces the E2E header and `MediaDataFrame`, and drops the 1:1 path's 8 B length prefix (L3 already frames a message).
@@ -272,7 +288,7 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
   - the replay windows stay as they are.
 
 **Tests (before any wire ships):**
-- uniqueness across audio and video, both packet spaces, a simulated engine restart under one epoch, two senders with one stream id, rekeys, and reused channel ids;
+- uniqueness across audio and video, both packet spaces, the nested session's inner counter, a simulated engine restart under one epoch, two senders with one stream id, rekeys, and reused channel ids;
 - fixed known-answer vectors for both layers;
 - the lab's per-packet report (`video_*`, `voice_*`) before and after each phase.
 
