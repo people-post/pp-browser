@@ -65,7 +65,8 @@
           <span class="cd-row-body">
             <span class="cd-row-text">{{i18n:contacts.display_name}}</span>
             <input class="cd-field" type="text" data-value="selected.display_name"
-                   data-event-change="on_contact_field_changed()" data-attr-placeholder="selected.name_placeholder"/>
+                   data-event-change="on_contact_field_changed()" data-event-blur="on_contact_field_left()"
+                   data-attr-placeholder="selected.name_placeholder"/>
             <span class="group-field-hint" data-if="selected.display_name == ''">{{selected.name_placeholder}}</span>
           </span>
         </label>

@@ -635,6 +635,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
+    ctor.BindEventCallback("on_contact_field_left", DataEvent<>([this]() { OnContactFieldLeft(); }));
     ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
     ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
     ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
@@ -1389,11 +1390,18 @@ void ContactsController::Tick() {
 }
 
 void ContactsController::FlushPending() {
-  if (!contact_dirty_) {
-    return;
+  if (contact_dirty_) {
+    debounce_deadline_ms_ = 0;
+    (void)FlushSelectedContact();
   }
-  debounce_deadline_ms_ = 0;
-  (void)FlushSelectedContact();
+  // Leaving the page (closed, another person, back) also ends the edit.
+  if (const std::string notice = remark_notice_.Take(); !notice.empty()) {
+    ShowToast(Tr(notice));
+  }
+}
+
+void ContactsController::OnContactFieldLeft() {
+  FlushPending();
 }
 
 bool ContactsController::FlushSelectedContact() {
@@ -1413,10 +1421,13 @@ bool ContactsController::FlushSelectedContact() {
   }
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
+  const bool remark_changed = updated.local.display_name != (*existing)->local.display_name;
   if (!contacts_ports_.upsert_contact(updated)) {
-    UserFeedback::Fail(Tr("contacts.err.save"));
+    remark_notice_.OnSaved(remark_changed, false);
+    UserFeedback::Fail(Tr(remark_changed ? "contacts.remark.save_failed" : "contacts.err.save"));
     return false;
   }
+  remark_notice_.OnSaved(remark_changed, true);
 
   if (contacts_ports_.register_contact_direct_endpoints) {
     contacts_ports_.register_contact_direct_endpoints(updated);

@@ -20,6 +20,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -30,6 +32,26 @@ class Context;
 namespace pbr {
 
 struct Contact;
+
+/**
+ * The pill after the remark auto-saved (Kenneth 2026-11-04: "保存成功……保存不成功，都给他个提示"): once per edit, not
+ * per keystroke. A save that changed the remark is announced when the field is left or the page goes (Take); a failed
+ * one at once, by the caller.
+ */
+class RemarkSaveNotice {
+public:
+  /** A save of the contact page ended; `remark_changed`: it changed the stored remark. */
+  void OnSaved(bool remark_changed, bool ok) {
+    if (remark_changed) {
+      saved_ = ok;
+    }
+  }
+  /** The field was left or the page goes: the key of the pill to show now ("" for none); only once per edit. */
+  std::string Take() { return std::exchange(saved_, false) ? "contacts.remark.saved" : std::string(); }
+
+private:
+  bool saved_ = false;
+};
 
 class ContactsController : public Module {
 public:
@@ -301,6 +323,8 @@ private:
   void OnOpenThread(const std::string& thread_id);
   void OnSearchChanged();
   void OnContactFieldChanged();
+  /** The remark field lost focus: save now and say so once (RemarkSaveNotice). */
+  void OnContactFieldLeft();
   void OnSyncRemote();
   bool FlushSelectedContact();
   void UpdateMessagingEligibility(const Contact& contact);
@@ -331,6 +355,7 @@ private:
   int new_chat_layer_id_ = -1;
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
+  RemarkSaveNotice remark_notice_;
   /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */
   std::string detail_under_sheet_;
   ui::String search_query_;

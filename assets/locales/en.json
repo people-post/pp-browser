@@ -483,6 +483,8 @@
     "contacts.display_name": "Remark",
     "contacts.remark.placeholder": "Add a remark; only you can see it",
     "contacts.remark.their_nickname": "Their nickname: {nickname}",
+    "contacts.remark.saved": "Note saved",
+    "contacts.remark.save_failed": "Couldn't save the note. Try again.",
     "contacts.directory": "Account",
     "contacts.nickname_label": "Nickname:",
     "contacts.relay_id_label": "Account ID:",

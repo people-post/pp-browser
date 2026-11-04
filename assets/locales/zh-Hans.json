@@ -472,6 +472,8 @@
     "contacts.display_name": "备注",
     "contacts.remark.placeholder": "添加备注，只有你自己看得到",
     "contacts.remark.their_nickname": "对方昵称：{nickname}",
+    "contacts.remark.saved": "备注已保存",
+    "contacts.remark.save_failed": "备注没保存上，请再试一次",
     "contacts.directory": "账号信息",
     "contacts.nickname_label": "昵称：",
     "contacts.relay_id_label": "账号 ID：",
