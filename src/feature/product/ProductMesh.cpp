@@ -1,5 +1,7 @@
 #include "feature/product/ProductMesh.h"
 
+#include "foundation/product/AppVersion.h"
+
 #include "domain/node/NodeMeshServices.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
@@ -72,6 +74,9 @@ mesh::MeshNodeHit NodeHitFromDirectoryRow(const mesh::MeshDirectoryNode& row) {
   hit.capabilities.media_relay = row.media_relay;
   hit.capabilities.dht = row.dht;
   hit.capabilities.ledger_gateway = row.ledger_gateway;
+  hit.amp_wire = row.amp_wire;
+  hit.node_version = row.node_version;
+  hit.features = row.features;
   mesh::DirectoryEndpoint ep;
   ep.peer_id = row.peer_id;
   ep.multiaddrs = row.multiaddrs;
@@ -177,11 +182,15 @@ void ProductMesh::ConfigureDirectory(const QueryInputs& inputs, const bool node_
   if (!node_role) {
     return;
   }
+  // A node tells its peers what it runs (N032); a client keeps its version to itself.
+  if (mesh_->Amp()) {
+    mesh_->Amp()->Links().SetAdvertisedNodeInfo(AppVersionString(), {});
+  }
   // The twin lists this node, then the nodes the directory knows.
   mesh_->AmpDirectory()->SetNodesProvider(
       [mesh = mesh_.get(), identity = inputs.identity, directory_nodes = inputs.directory_nodes, mesh_cfg]() {
         std::vector<mesh::MeshNodeHit> nodes;
-        nodes.push_back(BuildLocalMeshNodeHit(*identity, *mesh, mesh_cfg));
+        nodes.push_back(BuildLocalMeshNodeHit(*identity, *mesh, mesh_cfg, AppVersionString()));
         if (directory_nodes) {
           for (const mesh::MeshDirectoryNode& row : directory_nodes()) {
             if (!row.peer_id.empty()) {

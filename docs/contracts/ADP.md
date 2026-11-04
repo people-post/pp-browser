@@ -39,6 +39,18 @@ The first byte is the version (high nibble, `2`) and the type (low nibble). The 
 
 33 B around the payload. Plain data is the handshake, under the well-known pre-session key; after the handshake the HMAC key is `K_assoc`. Once the session has keys, plain data is refused, except that a duplicate of the handshake's reliable packets is acked so its sender stops resending. Control packets have no replay window; a timestamp newer than any seen is their freshness.
 
+**Version negotiation** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), pp-cpp-amp v4.1.0): the first-byte high nibble `0xF` is reserved for it in every wire version and is never a wire version. A node that takes dials answers a datagram of a version it does not speak with:
+
+| Field | Size |
+|-------|------|
+| marker | 1 (`0xF0`) |
+| echo | 16 (the first 16 B of the datagram it answers, zero padded) |
+| count | 1 |
+| versions | count × 1 (the wire versions it speaks) |
+
+- **Bounded:** at most 16 replies a second per endpoint, never larger than the datagram answered, and a negotiation datagram is never answered.
+- **Who takes it:** only a dialer still handshaking whose association id the echo names (the same place in every layout). It is unauthenticated, so it only means "stop dialing": the dial fails at once as `VersionMismatch` (link event reason `version-mismatch`) instead of timing out, and the mesh's reach record holds that peer down for its longest retry (30 min). A reply that lists our own version is ignored; an established association ignores it.
+
 **Sizes:** a datagram is at most **1232 B**, IPv6's smallest MTU (1280) less the IPv6 and UDP headers, so it crosses any path whole. A sealed packet carries up to 1203 B, an HMAC packet up to 1199 B (`kMaxPayload`).
 
 **Numbers:** best-effort and reliable packets are numbered apart (two spaces), so the space is part of the nonce. A resend goes as it first went (plain or sealed) under its own number, resealed under the current key: the same bytes unless a rekey came between. A number space that runs out (2³²) fails the association; the link redials with new keys.

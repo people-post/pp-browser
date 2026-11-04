@@ -80,17 +80,17 @@ Call invite age uses `server_time - created_at` when both are present (caller cr
 | HTTP | Purpose |
 |------|---------|
 | `GET /v1/search?q=` | Search **people** only (`entity_kind` person / missing). Matches nickname, `relay:`, Account ID. Hits include `endpoints[]`, keys, optional `entity_kind`. **Excludes** `mesh_node` ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)) |
-| `GET /v1/mesh/nodes` | List non-expired **`mesh_node`** infra listings: `account_id`, `relay_user_id`, `nickname`, `endpoints[]`, `capabilities` (`circuit_relay` / `media_relay`), `expires_at`, keys |
+| `GET /v1/mesh/nodes` | List non-expired **`mesh_node`** infra listings: `account_id`, `relay_user_id`, `nickname`, `endpoints[]`, `capabilities` (`circuit_relay` / `media_relay`), `expires_at`, keys; and, when the node registered them, what it runs: `amp_wire`, `node_version`, `features[]` (N032, below) |
 | `GET /v1/users/by-account/:account_id` | Lookup by Account ID (any kind): keys, `relay_user_id`, `signature_alg`, nickname, expires_at, **`endpoints[]`**, optional `entity_kind` / `capabilities` |
 | `GET /v1/users/:relay_user_id` | **Route** lookup by `relay:` id (same fields; **`account_id` required** when bound) |
 | `POST /v1/profile/nickname` | Update nickname (`relay-profile-v1` sign bytes + signature) |
 | `POST /v1/register/start` | Start registration (`public_key`, `kem_public_key_b64`, optional `nickname`, `peer_id`, `multiaddrs`, optional `entity_kind` / `capabilities`) |
-| `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes; echoes **`account_id`** |
+| `POST /v1/register/finish` | Finish/renew (`entity_kind` default `person`; `mesh_node` for pp-node). Upserts `endpoints[]` by Peer ID; persists capabilities for mesh nodes, and the node's `amp_wire` (int), `node_version` (string) and `features` (string[]) when sent (N032); echoes **`account_id`** |
 | `POST /v1/register/revoke` | Remove this account's registration and its push devices (profile reset / delete account, #328). Body `{ relay_user_id, timestamp, signature }`; signature over `pp-browser:relay-revoke-v1\0`, `u8 1`, `relay_user_id` (len-prefixed UTF-8), `i64 timestamp`, by the account key. Best effort on the client: a failure does not block the local reset |
 
 **Directory providers:** Brief HTTP is the default (`directory.base_url`). Clients should treat directory as pluggable (N027); bootstrap peers remain L0 cold-start / emergency dial, not the long-term sole mesh-service discovery path.
 
-Peer protocol / app-version capability is **not** a directory concern. Peers discover mismatch via messaging / libp2p (soft-skip, protocol ids); the relay stays format-blind for that.
+**What a mesh node runs** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)): pp-node registers `amp_wire`, `node_version` and `features` at the top level of `register/finish`, and the directory lists them on its `/v1/mesh/nodes` row, verbatim. They are the node's own claims: a client drops a row whose `amp_wire` is not its own before dialing (`WithoutOtherWireVersions` in the directory cache), and never ranks a node higher for them. A row without them (a node or directory before N032) is dialed as before. A person's registration carries none of them. Between peers, a wire mismatch shows as amp's version negotiation ([ADP.md](ADP.md)); other app-version differences stay out of the directory and show over messaging (soft-skip, protocol ids).
 
 ## HTTP relay blobs (profile photos)
 

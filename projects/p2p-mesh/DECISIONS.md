@@ -528,7 +528,7 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 ## N032 — Node versions: claims only exclude, verification promotes
 
 **Date:** 2026-11-04  
-**Status:** Accepted (design), not started. Until built, [SERVICE_ENDPOINTS § Directory and profile](../../docs/contracts/SERVICE_ENDPOINTS.md#directory-and-profile) stands: no version in the directory.  
+**Status:** Accepted; items 1, 2 and 4 built (pp-cpp-amp v4.1.0, pp-cpp-mesh v5.1.1): [SERVICE_ENDPOINTS § Directory and profile](../../docs/contracts/SERVICE_ENDPOINTS.md#directory-and-profile), [ADP.md § Wire v2](../../docs/contracts/ADP.md#wire-v2-little-endian) (version negotiation), [AMP-CHANNEL.md § Channel 0](../../docs/contracts/AMP-CHANNEL.md#channel-0--capability-plane). The directory lists the claims once www stores them. Item 3 (versioned address tokens) waits for the next wire break. Items 5–8 (verification promotes, contradiction costs, operator diversity, local reputation) not started.  
 **Amends:** N027 (a `mesh_node` row carries its wire and node versions); N031 (the signed node record carries them too).  
 **Cross-link:** [A029](../adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) (wire v2 is the first break with nodes of both versions live).
 
