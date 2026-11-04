@@ -58,6 +58,8 @@ struct CallScreen {
   bool charge_enabled = false;
   /** Answering: answered with video (the camera comes on once connected). */
   bool answered_video = false;
+  /** Ringing / Answering: a group's call (the phone ring shows the group, and who started it). */
+  bool ring_group = false;
 
   // InCall
   std::string call_id;
@@ -67,6 +69,8 @@ struct CallScreen {
   std::vector<Member> members;
   /** The 1:1 peer. */
   std::string peer_identity;
+  /** This device's chat the call belongs to (the group's, or the DM): local only; the phone page names the group. */
+  std::string thread_id;
   bool muted = false;
   bool show_speaker = false;
   bool speaker_on = false;

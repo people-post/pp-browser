@@ -2821,4 +2821,220 @@ input.checkbox:checked {
   background-color: {{x-bar}};
   border-top-width: 0;
 }
+
+/* Phone call pages (ShellCallChromeRml): always dark, whatever the theme; the sheet over them follows the theme. */
+.call-phone {
+  background-color: {{x-call-bg}};
+  color: {{x-call-ink}};
+}
+
+.call-phone svg {
+  image-color: {{x-call-ink}};
+}
+
+.call-phone-sealed-text,
+.call-phone-status,
+.call-phone-sub,
+.call-phone-who-status,
+.call-phone-pair-name,
+.call-phone-tile-note,
+.call-phone-hint,
+.call-phone-tip,
+.call-phone-remote-note,
+.call-phone-step--done .call-phone-step-text {
+  color: {{x-call-ink-2}};
+}
+
+.call-phone-sealed svg {
+  image-color: {{x-call-ink-2}};
+}
+
+.call-phone-remote {
+  background-color: {{x-call-bg}};
+}
+
+.call-phone-video-dim {
+  background-color: {{x-call-dim}};
+}
+
+.call-phone-video-top {
+  background-color: {{x-call-video-top}};
+}
+
+.call-phone-notice {
+  background-color: {{x-call-notice}};
+}
+
+.call-phone-notice--warn {
+  background-color: {{x-call-notice-warn}};
+}
+
+.call-phone-notice-icon {
+  background-color: {{x-call-chip}};
+}
+
+.call-phone-signal {
+  background-color: {{x-call-chip}};
+}
+
+.call-phone-signal-bar {
+  background-color: {{x-call-ink-dim}};
+}
+
+.call-phone-signal-dot,
+.call-phone-signal-line,
+.call-phone-signal-bar--on {
+  background-color: {{x-call-secure}};
+}
+
+.call-phone-signal--sheet {
+  background-color: {{fill-2}};
+}
+
+.call-phone-signal--sheet .call-phone-signal-bar {
+  background-color: {{fill}};
+}
+
+.call-phone-signal--sheet .call-phone-signal-dot,
+.call-phone-signal--sheet .call-phone-signal-line,
+.call-phone-signal--sheet .call-phone-signal-bar--on {
+  background-color: {{secure}};
+}
+
+.call-phone-signal--fair .call-phone-signal-dot,
+.call-phone-signal--fair .call-phone-signal-line,
+.call-phone-signal--fair .call-phone-signal-bar--on {
+  background-color: {{x-call-warn}};
+}
+
+.call-phone-signal--fair .call-phone-signal-word {
+  color: {{x-call-warn}};
+}
+
+.call-phone-signal--poor .call-phone-signal-dot,
+.call-phone-signal--poor .call-phone-signal-line,
+.call-phone-signal--poor .call-phone-signal-bar--on {
+  background-color: {{x-call-danger}};
+}
+
+.call-phone-signal--poor .call-phone-signal-word {
+  color: {{x-call-danger}};
+}
+
+.call-phone-result {
+  background-color: {{x-call-result}};
+}
+
+.call-phone-result-check {
+  background-color: {{x-call-ok}};
+}
+
+.call-phone-pair-dot {
+  background-color: {{x-call-path-dot}};
+}
+
+.call-phone-pair-spark {
+  background-color: {{x-call-secure}};
+}
+
+.call-phone-step-text {
+  color: {{x-call-ink-3}};
+}
+
+.call-phone-step--current .call-phone-step-text {
+  color: {{x-call-ink}};
+}
+
+.call-phone-step-dot {
+  border-color: {{x-call-ink-dim}};
+}
+
+.call-phone-step--done .call-phone-step-dot {
+  background-color: {{x-call-ok}};
+}
+
+.call-phone-step--current .call-phone-step-dot {
+  border-color: transparent {{x-call-secure}} {{x-call-secure}} {{x-call-secure}};
+}
+
+.call-phone-tip-text {
+  color: {{x-call-secure}};
+}
+
+.call-phone-card {
+  background-color: {{x-call-card}};
+}
+
+.call-phone-tile {
+  background-color: {{x-call-tile}};
+}
+
+.call-phone-tile-label {
+  background-color: {{x-call-label-bg}};
+}
+
+.call-phone-controls {
+  background-color: {{x-call-bar}};
+}
+
+.call-phone-control-circle {
+  background-color: {{x-call-btn}};
+}
+
+.call-phone-control--on .call-phone-control-circle {
+  background-color: {{x-call-btn-on}};
+}
+
+.call-phone-control--on .call-phone-control-circle svg {
+  image-color: {{x-call-btn-on-ink}};
+}
+
+.call-phone-control--end .call-phone-control-circle,
+.call-phone-round--decline {
+  background-color: {{x-call-end}};
+}
+
+.call-phone-round--accept {
+  background-color: {{x-call-accept}};
+}
+
+.call-phone-pill-btn {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-phone-pill-btn--primary {
+  background-color: {{x-call-accent}};
+}
+
+.call-phone-avatar--group {
+  background-color: {{avatar-2}};
+}
+
+.call-phone-sheet-lead,
+.call-phone-event-time,
+.call-phone-kv-value {
+  color: {{label-2}};
+}
+
+.call-phone-event-text,
+.call-phone-kv-key {
+  color: {{label}};
+}
+
+.call-phone-event-dot {
+  background-color: {{success}};
+}
+
+.call-phone-event--secure .call-phone-event-dot {
+  background-color: {{secure}};
+}
+
+.call-phone-sheet-group {
+  background-color: {{bg-card-2}};
+}
+
+.call-phone-kv {
+  border-color: {{separator}};
+}
 }

@@ -10,6 +10,7 @@
 #include "lib/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
+#include "feature/presenters/CallConnectStory.h"
 #include "feature/presenters/CallPresenter.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
@@ -101,6 +102,8 @@ private:
   void Render();
   void RenderRing(const CallScreen& screen);
   void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
+  /** The in-call state from the presenter's screen (names, roster, status line, phone page fields). */
+  void FillInCallFromScreen(const CallScreen& screen);
   void ShowNotice(const CallNotice& notice);
   void SyncShellState();
   void ClearRing();
@@ -124,6 +127,16 @@ private:
   void ApplyMediaHealth(IMediaView& media, CallUiBackend* backend, bool media_reconnect);
   CallMediaHealthView BuildMediaHealthView(IMediaView& media, CallUiBackend* backend, bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
+  /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
+  void FillPhoneCallFields(const CallScreen& screen);
+  void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label);
+  /** Steps the connection story (CallConnectStory) and writes what the phone page shows; desktop is left alone. */
+  void ApplyConnectStory(const CallScreen& screen, const std::string& path_kind, CallPathQuality quality,
+                         int quality_bars, int64_t now_ms);
+  /** The "how this call got through" sheet's lines from the story's events. */
+  void FillStoryLines();
+  /** A group's name for the phone page (read once per thread). */
+  std::string GroupTitle(const std::string& thread_id);
   static std::string FormatElapsed(int64_t connected_at_ms);
   static std::string FormatMinSec(int64_t seconds);
 
@@ -191,6 +204,14 @@ private:
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;
+  /** Shell in its phone layout (ShellCallChromePorts::phone_layout), read each render. */
+  bool phone_layout_ = false;
+  CallConnectStory story_;
+  std::string story_logged_call_;
+  size_t story_events_logged_ = 0;
+  bool story_sheet_open_ = false;
+  std::string group_title_thread_;
+  std::string group_title_;
 };
 
 } // namespace pbr

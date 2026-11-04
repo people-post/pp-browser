@@ -199,6 +199,24 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_quality_hint", &host.state_.call_in_progress.quality_hint);
     ctor.Bind("call_in_progress_show_debug_subtitle", &host.state_.call_in_progress.show_debug_subtitle);
     ctor.Bind("call_in_progress_debug_subtitle", &host.state_.call_in_progress.debug_subtitle);
+    // The phone call page (ShellCallChromeRml): names and the story's steps (remounted), and the parts that dirty
+    // only themselves (CallChromeChangedVariables).
+    ctor.Bind("call_ring_phone_title", &host.state_.call_ring.phone_title);
+    ctor.Bind("call_ring_phone_subtitle", &host.state_.call_ring.phone_subtitle);
+    ctor.Bind("call_in_progress_phone_title", &host.state_.call_in_progress.phone_title);
+    ctor.Bind("call_in_progress_failed_text", &host.state_.call_in_progress.failed_text);
+    ctor.Bind("call_in_progress_story_step1", &host.state_.call_in_progress.story_step1);
+    ctor.Bind("call_in_progress_story_step2", &host.state_.call_in_progress.story_step2);
+    ctor.Bind("call_in_progress_story_step3", &host.state_.call_in_progress.story_step3);
+    ctor.Bind("call_in_progress_result_text", &host.state_.call_in_progress.result_text);
+    ctor.Bind("call_in_progress_result_fading", &host.state_.call_in_progress.result_fading);
+    ctor.Bind("call_in_progress_signal_shown", &host.state_.call_in_progress.signal_shown);
+    ctor.Bind("call_in_progress_signal_bars", &host.state_.call_in_progress.signal_bars);
+    ctor.Bind("call_in_progress_signal_tone", &host.state_.call_in_progress.signal_tone);
+    ctor.Bind("call_in_progress_signal_word", &host.state_.call_in_progress.signal_word);
+    ctor.Bind("call_in_progress_notice_text", &host.state_.call_in_progress.notice_text);
+    ctor.Bind("call_in_progress_notice_warn", &host.state_.call_in_progress.notice_warn);
+    ctor.Bind("call_in_progress_notice_fading", &host.state_.call_in_progress.notice_fading);
     if (auto roster_handle = ctor.RegisterStruct<CallRosterParticipantState>()) {
       roster_handle.RegisterMember("name", &CallRosterParticipantState::name);
       roster_handle.RegisterMember("stream_id", &CallRosterParticipantState::stream_id);
@@ -1037,9 +1055,24 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_hint");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_debug_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_debug_subtitle");
+  for (const char* name : {"call_ring_phone_title", "call_ring_phone_subtitle", "call_in_progress_phone_title",
+                           "call_in_progress_failed_text", "call_in_progress_story_step1",
+                           "call_in_progress_story_step2", "call_in_progress_story_step3",
+                           "call_in_progress_result_text", "call_in_progress_result_fading",
+                           "call_in_progress_signal_shown", "call_in_progress_signal_bars",
+                           "call_in_progress_signal_tone", "call_in_progress_signal_word",
+                           "call_in_progress_notice_text", "call_in_progress_notice_warn",
+                           "call_in_progress_notice_fading"}) {
+    DataModelHost::Instance().Dirty("window", name);
+  }
 }
 
 void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, CallChromeUpdate update) {
+  // The parts that changed, read before the copy: LevelsOnly / PartsOnly dirty exactly these (B146).
+  const std::vector<const char*> changed =
+      update == CallChromeUpdate::LevelsOnly || update == CallChromeUpdate::PartsOnly
+          ? CallChromeChangedVariables(state_.call_in_progress, snapshot.in_progress)
+          : std::vector<const char*>{};
   state_.call_ring = snapshot.ring;
   state_.call_in_progress = snapshot.in_progress;
   // Layer appear/disappear: mount into #shell-call-*-mount only (never full SyncLayout —
@@ -1048,9 +1081,10 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
     RemountCallChrome();
   } else if (update == CallChromeUpdate::DirtyOnly) {
     DirtyCallChrome();
-  } else if (update == CallChromeUpdate::LevelsOnly) {
-    // Meters only: dirtying the whole call group here re-laid the call screen every frame (B146).
-    for (const char* name : kCallLevelVariables) {
+  } else if (update == CallChromeUpdate::LevelsOnly || update == CallChromeUpdate::PartsOnly) {
+    // Meters, clock, signal, result line, pill: dirtying the whole call group here re-laid the call screen every
+    // frame (B146); each changed variable goes alone.
+    for (const char* name : changed) {
       DataModelHost::Instance().Dirty("window", name);
     }
   }
@@ -1452,6 +1486,19 @@ void ShellHost::ApplySafeAreaLayout() {
         }
       }
     }
+  }
+  // The phone call page and ring are edge to edge like the scanner: up under the status bar, down to the screen bottom;
+  // their content keeps clear of both.
+  for (const char* id : {"call-phone-page", "call-phone-ring"}) {
+    if (ui::Element* page = doc->GetElementById(id)) {
+      const float status_bar_dp = static_cast<float>(std::max(0, state_.safe_area_top_dp));
+      set_dp(page, "top", -status_bar_dp);
+      set_dp(page, "padding-top", status_bar_dp);
+      set_dp(page, "padding-bottom", strip_dp);
+    }
+  }
+  if (ui::Element* sheet = doc->GetElementById("call-story-sheet")) {
+    set_dp(sheet, "padding-bottom", strip_dp);
   }
   // Auxiliary sheet sits above the nav rail.
   set_dp(doc->GetElementById("shell-auxiliary-sheet"), "bottom", layout.sheet_bottom_dp);
@@ -1992,6 +2039,7 @@ void ShellHost::FlushRemountCallChrome() {
 
 void ShellHost::DetachCallChromeGesture() {
   call_chrome_gesture_.Detach();
+  call_story_sheet_gesture_.Detach();
 }
 
 void ShellHost::AttachCallChromeGesture() {
@@ -2027,8 +2075,12 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.immersive_chrome();
     }
   };
-  callbacks.on_expand = [this]() {
-    if (call_actions_.expand_chrome) {
+  const bool phone = state_.layout_mode == LayoutMode::Compact;
+  callbacks.on_expand = [this, phone]() {
+    // Phones have no top-bar mode: pulling the full call page down shrinks the call to its corner chip.
+    if (phone && call_actions_.minimize_chrome) {
+      call_actions_.minimize_chrome();
+    } else if (!phone && call_actions_.expand_chrome) {
       call_actions_.expand_chrome();
     }
   };
@@ -2042,8 +2094,50 @@ void ShellHost::AttachCallChromeGesture() {
       call_actions_.set_minimized_corner(corner);
     }
   };
-  call_chrome_gesture_.Attach(root, context_, state_.call_in_progress.mode, std::move(callbacks),
-                              &gesture_axis_lock_);
+  // The phone page is full screen in both open modes: it takes the full page's pull-down, never "tap outside".
+  const CallChromeMode gesture_mode = phone && state_.call_in_progress.mode == CallChromeMode::Expanded
+                                          ? CallChromeMode::Immersive
+                                          : state_.call_in_progress.mode;
+  call_chrome_gesture_.Attach(root, context_, gesture_mode, std::move(callbacks), &gesture_axis_lock_);
+  AttachCallStorySheetGesture();
+}
+
+void ShellHost::AttachCallStorySheetGesture() {
+  call_story_sheet_gesture_.Detach();
+  ui::ElementDocument* doc = context_ && context_->GetNumDocuments() > 0 ? context_->GetDocument(0) : nullptr;
+  ui::Element* sheet = doc ? doc->GetElementById("call-story-sheet") : nullptr;
+  if (!sheet) {
+    return;
+  }
+  // The phone sheet rules (DESIGN-pp-ui 8.14): opens at Large, dragged between the stops, let go low it closes.
+  ShellPageSheetGesture::Options options;
+  options.shown_detent = [this]() { return call_story_sheet_detent_; };
+  options.on_detent = [this](const SheetDetent detent) {
+    call_story_sheet_detent_ = detent;
+    ApplyCallStorySheetDetent();
+  };
+  call_story_sheet_gesture_.Attach(sheet, context_, [this]() {
+    if (call_actions_.show_call_details) {
+      call_actions_.show_call_details();  // toggles the sheet closed
+    }
+  }, std::move(options));
+  ApplyCallStorySheetDetent();
+}
+
+void ShellHost::ApplyCallStorySheetDetent() {
+  ui::ElementDocument* doc = context_ && context_->GetNumDocuments() > 0 ? context_->GetDocument(0) : nullptr;
+  ui::Element* sheet = doc ? doc->GetElementById("call-story-sheet") : nullptr;
+  if (!sheet) {
+    return;
+  }
+  const SheetDetent detent = call_story_sheet_detent_;
+  sheet->SetClass("shell-page-sheet--large", detent == SheetDetent::Large);
+  sheet->SetClass("shell-page-sheet--half", detent == SheetDetent::Half);
+  sheet->SetClass("shell-page-sheet--small", detent == SheetDetent::Small);
+  if (ui::Element* layer = sheet->GetParentNode()) {
+    layer->SetClass("shell-layer-sheet--half", detent == SheetDetent::Half);
+    layer->SetClass("shell-layer-sheet--small", detent == SheetDetent::Small);
+  }
 }
 
 void ShellHost::RemountCallChromeNow() {
@@ -2055,6 +2149,10 @@ void ShellHost::RemountCallChromeNow() {
     return;
   }
   DetachCallChromeGesture();
+  // The sheet opens at Large each time it opens (DESIGN-pp-ui 8.14); a remount while it stays open keeps its stop.
+  if (!state_.call_in_progress.story_sheet_open) {
+    call_story_sheet_detent_ = SheetDetent::Large;
+  }
   if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
     RmlMount::MountInner(ring_mount, CallRingRml(state_));
   }
@@ -2063,6 +2161,7 @@ void ShellHost::RemountCallChromeNow() {
   }
   DirtyCallChrome();
   AttachCallChromeGesture();
+  ApplySafeAreaLayout();  // the phone call page reaches under the status bar and clears the home indicator
 }
 
 void ShellHost::RemountDialogChrome() {

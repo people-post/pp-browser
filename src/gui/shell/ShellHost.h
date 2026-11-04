@@ -296,6 +296,8 @@ private:
   void NotifySidebarChanged();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
+  void AttachCallStorySheetGesture();
+  void ApplyCallStorySheetDetent();
   void ApplyLayoutModeFromContext(ui::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -388,6 +390,9 @@ private:
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
   ShellPageSheetGesture page_sheet_gesture_;
+  /** The phone call page's "how this call got through" sheet (#call-story-sheet) and the stop it stands at. */
+  ShellPageSheetGesture call_story_sheet_gesture_;
+  SheetDetent call_story_sheet_detent_ = SheetDetent::Large;
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;

@@ -63,3 +63,30 @@ x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)
 x-mascot-ink	#ffffff	#ffffff	extra: AI dot and assistant-look previews, full-colour mascot SVGs drawn untinted (image-color white)
+x-call-bg	#101214	#101214	extra: phone call page, always dark (mockups 06-Call*)
+x-call-ink	#ffffff	#ffffff	extra: phone call page text and icons
+x-call-ink-2	#ffffffb3	#ffffffb3	extra: phone call page secondary text (white 70%)
+x-call-ink-3	#ffffff73	#ffffff73	extra: phone call page steps not reached yet (white 45%)
+x-call-ink-dim	#ffffff40	#ffffff40	extra: phone call page signal bars off, step rings (white 25%)
+x-call-path-dot	#ffffff59	#ffffff59	extra: phone call page connecting line dots (white 35%)
+x-call-btn	#ffffff33	#ffffff33	extra: phone call page round buttons (white 20%)
+x-call-btn-on	#ffffff	#ffffff	extra: phone call page round button switched on
+x-call-btn-on-ink	#000000	#000000	extra: phone call page icon on a switched-on button
+x-call-btn-2	#ffffff29	#ffffff29	extra: phone call page secondary pill button (white 16%)
+x-call-chip	#ffffff24	#ffffff24	extra: phone call page signal bar and pill icon fill (white 14%)
+x-call-tile	#ffffff17	#ffffff17	extra: phone call page group tile (white 9%)
+x-call-bar	#3a3a3cd1	#3a3a3cd1	extra: phone call page button bar (82%)
+x-call-notice	#3a3a3ceb	#3a3a3ceb	extra: phone call page top pill (92%)
+x-call-notice-warn	#784800eb	#784800eb	extra: phone call page top pill, the line got worse
+x-call-label-bg	#00000073	#00000073	extra: phone call page name tag on a tile (black 45%)
+x-call-video-top	#0000004d	#0000004d	extra: phone call page shade behind the top row over video (black 30%)
+x-call-dim	#0000008c	#0000008c	extra: phone call page own camera dimmed under the step card (black 55%)
+x-call-card	#161819f7	#161819f7	extra: phone call page step card
+x-call-result	#30d1582e	#30d1582e	extra: phone call page just-connected line fill (success 18%)
+x-call-secure	#40c8e0	#40c8e0	extra: phone call page secure (dark value: the page is always dark)
+x-call-ok	#30d158	#30d158	extra: phone call page success (dark value)
+x-call-warn	#ff9f0a	#ff9f0a	extra: phone call page warn (dark value)
+x-call-danger	#ff453a	#ff453a	extra: phone call page danger (dark value)
+x-call-end	#ff3b30	#ff3b30	extra: phone call page hang-up and decline buttons
+x-call-accept	#34c759	#34c759	extra: phone call page answer buttons
+x-call-accent	#0a84ff	#0a84ff	extra: phone call page primary pill (Try again)

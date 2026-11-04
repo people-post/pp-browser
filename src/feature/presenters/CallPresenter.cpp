@@ -183,6 +183,8 @@ void CallPresenter::Refresh() {
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
     next.answered_video = auto_camera_pending_ && auto_camera_call_id_ == top.call_id;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     // The Connecting bar has the speaker button too: the choice may be made before media opens.
     next.show_speaker = AudioSession::SupportsSpeakerToggle();
     next.speaker_on = AudioSession::IsSpeakerphoneOn();
@@ -193,6 +195,8 @@ void CallPresenter::Refresh() {
     next.ring_call_id = top.call_id;
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     if (surface.active) {
       // Ringing over the call we are in: answering ends that one. Keep it as the active call.
       next.conflict = true;
@@ -225,6 +229,7 @@ void CallPresenter::Refresh() {
     ring_shown_ = false;
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
+    next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();

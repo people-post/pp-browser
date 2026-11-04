@@ -4983,6 +4983,861 @@ call-video-tile {
   line-height: 50dp;
 }
 
+/* ---- Phone call pages (DESIGN-pp-ui 8.12 + its 2026-11-04 connection story; mockups 06-Call*, 08-call-connect-story).
+   Full screen and always dark; ShellHost lifts the page under the status bar and pads it by the safe areas
+   (ApplySafeAreaLayout). The only animations are the connecting line's spark, the current step's ring and the tips,
+   and they exist only in the markup written before connect (B146: after connect the page idles). */
+.shell-layer-call-phone {
+  z-index: 45;
+}
+
+.call-phone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.call-phone-remote {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-remote-note {
+  margin: 0;
+  padding-top: 45%;
+  font-size: 15dp;
+  text-align: center;
+}
+
+.call-phone-video-dim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-video-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 160dp;
+}
+
+.call-phone-top {
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 44dp;
+  padding: 0 8dp;
+}
+
+.call-phone-top-btn,
+.call-phone-top-spacer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.call-phone-sealed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4dp;
+}
+
+.call-phone-sealed-text {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* The top pill (DESIGN-pp-ui 8.11), under the top row. */
+.call-phone-notice {
+  position: absolute;
+  top: 50dp;
+  left: 8dp;
+  right: 8dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  padding: 10dp 14dp;
+  border-radius: 16dp;
+  opacity: 1;
+  transition: opacity 0.3s cubic-out;
+}
+
+.call-phone-notice--fading {
+  opacity: 0;
+}
+
+.call-phone-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+}
+
+.call-phone-notice-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* 1:1 voice and the failure page: the person big in the middle. */
+.call-phone-hero {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 79dp 24dp 0 24dp;
+}
+
+.call-phone-hero--ring {
+  padding-top: 123dp;
+}
+
+.call-phone-avatar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.call-phone-avatar--big {
+  width: 120dp;
+  height: 120dp;
+  border-radius: 60dp;
+}
+
+.call-phone-avatar--big .avatar-letter {
+  font-size: 48dp;
+}
+
+.call-phone-avatar--pair {
+  width: 76dp;
+  height: 76dp;
+  border-radius: 38dp;
+}
+
+.call-phone-avatar--pair .avatar-letter {
+  font-size: 30dp;
+}
+
+.call-phone-avatar--tile {
+  width: 72dp;
+  height: 72dp;
+  border-radius: 36dp;
+}
+
+.call-phone-avatar--tile .avatar-letter {
+  font-size: 28dp;
+}
+
+.call-phone-name {
+  margin: 20dp 0 4dp 0;
+  font-size: 28dp;
+  line-height: 34dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.call-phone-status {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.call-phone-hint {
+  margin: 8dp 0 0 0;
+  max-width: 300dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* PP's own signal: two dots joined by a line, then four bars. */
+.call-phone-signal-slot {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.call-phone-signal {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  height: 28dp;
+  margin: 10dp 0 0 0;
+  padding: 0 10dp 0 8dp;
+  border: 0;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.call-phone-signal--compact {
+  height: 24dp;
+  margin: 0;
+  padding: 0 8dp 0 6dp;
+  border-radius: 12dp;
+}
+
+.call-phone-signal--sheet {
+  margin: 0;
+}
+
+.call-phone-signal-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 20dp;
+  height: 12dp;
+}
+
+.call-phone-signal-dot {
+  flex-shrink: 0;
+  width: 6dp;
+  height: 6dp;
+  border-radius: 3dp;
+}
+
+.call-phone-signal-line {
+  flex: 1;
+  height: 2dp;
+}
+
+.call-phone-signal-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2dp;
+  height: 14dp;
+}
+
+.call-phone-signal-bar {
+  width: 4dp;
+  border-radius: 2dp;
+}
+
+.call-phone-signal-bar--1 {
+  height: 5dp;
+}
+
+.call-phone-signal-bar--2 {
+  height: 8dp;
+}
+
+.call-phone-signal-bar--3 {
+  height: 11dp;
+}
+
+.call-phone-signal-bar--4 {
+  height: 14dp;
+}
+
+.call-phone-signal-word {
+  font-size: 13dp;
+  line-height: 18dp;
+  font-weight: bold;
+}
+
+/* "Connected directly, 0.9 s": 4 s under the name, then it fades (C++ sets --fading, this transition runs). */
+.call-phone-result {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  margin-top: 14dp;
+  padding: 8dp 14dp;
+  border-radius: 18dp;
+  opacity: 1;
+  transition: opacity 0.4s cubic-out;
+}
+
+.call-phone-result--fading {
+  opacity: 0;
+}
+
+.call-phone-result-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
+}
+
+.call-phone-result-text {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Before connect: you and them with the moving line, then the steps. */
+.call-phone-story {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 59dp 24dp 0 24dp;
+}
+
+.call-phone-story--card {
+  justify-content: center;
+  padding-top: 0;
+}
+
+.call-phone-story--group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18dp 18dp 20dp 18dp;
+  border-radius: 22dp;
+}
+
+.call-phone-pair {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 300dp;
+  height: 120dp;
+}
+
+.call-phone-pair-path {
+  position: relative;
+  flex: 1;
+  height: 12dp;
+}
+
+.call-phone-pair-dots {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 12dp;
+  padding: 0 10dp;
+}
+
+.call-phone-pair-dot {
+  width: 3dp;
+  height: 3dp;
+  border-radius: 1.5dp;
+}
+
+@keyframes call-phone-spark {
+  from { transform: translateX(0dp); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { transform: translateX(126dp); opacity: 0; }
+}
+
+.call-phone-pair-spark {
+  position: absolute;
+  top: 1dp;
+  left: 6dp;
+  width: 10dp;
+  height: 10dp;
+  border-radius: 5dp;
+  animation: 1.4s linear-in-out infinite call-phone-spark;
+}
+
+.call-phone-pair-names {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  width: 300dp;
+  margin-top: 6dp;
+}
+
+.call-phone-pair-name {
+  width: 92dp;
+  margin: 0 -8dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.call-phone-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12dp;
+  width: 300dp;
+  margin-top: 22dp;
+}
+
+.call-phone-story--group .call-phone-card {
+  width: 300dp;
+  box-sizing: border-box;
+}
+
+.call-phone-story--group .call-phone-steps {
+  width: 270dp;
+  margin-top: 0;
+}
+
+.call-phone-step {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+}
+
+.call-phone-step-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+  border-width: 2dp;
+  border-radius: 11dp;
+  box-sizing: border-box;
+}
+
+.call-phone-step--done .call-phone-step-dot {
+  border-width: 0;
+}
+
+@keyframes call-phone-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.call-phone-step--current .call-phone-step-dot {
+  animation: 1s linear-in-out infinite call-phone-spin;
+}
+
+.call-phone-step-text {
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+}
+
+.call-phone-step--current .call-phone-step-text {
+  font-weight: bold;
+}
+
+/* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
+.call-phone-tips {
+  position: relative;
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0 28dp 16dp 28dp;
+}
+
+@keyframes call-phone-tip {
+  from { opacity: 0; }
+  4% { opacity: 1; }
+  23% { opacity: 1; }
+  25% { opacity: 0; }
+  to { opacity: 0; }
+}
+
+.call-phone-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  font-size: 14dp;
+  line-height: 20dp;
+  text-align: center;
+  opacity: 0;
+  animation: 12s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--2 {
+  animation: 12s 3s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--3 {
+  animation: 12s 6s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--4 {
+  animation: 12s 9s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip-text {
+  font-weight: bold;
+}
+
+/* 1:1 video: the other person's camera fills the page; name, time and the signal top left; our camera top right. */
+.call-phone-video-body {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.call-phone-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4dp;
+  padding: 8dp 140dp 0 16dp;
+}
+
+.call-phone-who .call-phone-result {
+  margin-top: 4dp;
+}
+
+.call-phone-who-name {
+  margin: 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+}
+
+.call-phone-who-status {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-pip {
+  position: absolute;
+  top: 8dp;
+  right: 12dp;
+  width: 110dp;
+  height: 160dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+/* Group: the name, "4 people · 12:04" with the signal, then the people's tiles two by two. */
+.call-phone-head {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6dp;
+  padding: 4dp 16dp 0 16dp;
+}
+
+.call-phone-group-name {
+  margin: 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.call-phone-sub-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+}
+
+.call-phone-sub {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-group-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 16dp 12dp 16dp 12dp;
+}
+
+.call-phone-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-content: flex-start;
+  overflow-y: auto;
+}
+
+.call-phone-grid--dim {
+  opacity: 0.35;
+}
+
+.call-phone-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10dp;
+  width: 49%;
+  height: 49%;
+  margin-bottom: 2%;
+  border-radius: 18dp;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.call-phone-tile-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-tile-note {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.call-phone-tile-label {
+  position: absolute;
+  left: 8dp;
+  bottom: 8dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4dp;
+  max-width: 80%;
+  padding: 2dp 8dp;
+  border-radius: 6dp;
+}
+
+.call-phone-tile-name {
+  font-size: 13dp;
+  line-height: 18dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The bar of round buttons with their words. */
+.call-phone-controls {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  margin: 0 12dp 22dp 12dp;
+  padding: 12dp 4dp 8dp 4dp;
+  border-radius: 18dp;
+}
+
+.call-phone-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4dp;
+  width: 64dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.call-phone-control-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.call-phone-control-label {
+  font-size: 11dp;
+  line-height: 13dp;
+  white-space: nowrap;
+}
+
+/* Ring: decline / voice / video, 72dp. */
+.call-phone-answer {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 0 32dp;
+  margin-bottom: 48dp;
+}
+
+.call-phone-answer-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8dp;
+  width: 96dp;
+}
+
+.call-phone-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 36dp;
+}
+
+.call-phone-answer-label {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.call-phone-charge,
+.call-phone-failed-actions {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+  padding: 0 24dp 40dp 24dp;
+}
+
+.call-phone-pill-btn {
+  display: block;
+  width: 100%;
+  height: 50dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 25dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* "How this call got through" (DESIGN-pp-ui 8.14 sheet). */
+.call-phone-sheet-layer {
+  z-index: 8;
+}
+
+.call-phone-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4dp 4dp 16dp 4dp;
+}
+
+.call-phone-sheet-lead {
+  margin: 0 0 16dp 0;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.call-phone-timeline {
+  position: relative;
+  margin: 0 0 18dp 0;
+  padding-left: 26dp;
+}
+
+.call-phone-event {
+  position: relative;
+  margin-bottom: 14dp;
+}
+
+.call-phone-event-dot {
+  position: absolute;
+  left: -23dp;
+  top: 4dp;
+  width: 12dp;
+  height: 12dp;
+  border-radius: 6dp;
+}
+
+.call-phone-event-time {
+  margin: 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.call-phone-event-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-sheet-group {
+  border-radius: 12dp;
+  overflow: hidden;
+}
+
+.call-phone-kv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44dp;
+  padding: 0 14dp;
+  border-bottom-width: 1dp;
+}
+
+.call-phone-kv--last {
+  border-bottom-width: 0;
+}
+
+.call-phone-kv-key,
+.call-phone-kv-value {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
 .shell-call-ring-eyebrow {
   margin: 0 0 4dp 0;
   font-size: 12dp;

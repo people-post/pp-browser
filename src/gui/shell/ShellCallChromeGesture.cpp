@@ -156,6 +156,10 @@ bool ShellCallChromeGesture::ShouldIgnoreTarget(ui::Element* target) const {
     if (node->IsClassSet("btn") || node->IsClassSet("shell-close-btn")) {
       return true;
     }
+    // The phone page's "how this call got through" sheet drags itself (ShellPageSheetGesture).
+    if (node->IsClassSet("shell-page-sheet") || node->IsClassSet("call-phone-sheet-scrim")) {
+      return true;
+    }
   }
   return false;
 }

@@ -245,6 +245,25 @@ struct CallRingState {
   ui::String accept_short;
   /** Short label under the round voice-answer circle button. */
   ui::String voice_short;
+  // Phone ring page (DESIGN-pp-ui 8.12, mockups 06-CallRing / 06-CallGroupRing): the caller (or the group) big, what
+  // kind of call under it. Avatar fields are written into the markup (a change remounts).
+  ui::String phone_title;
+  ui::String phone_subtitle;
+  bool group = false;
+  bool has_avatar = false;
+  ui::String avatar_src;
+  ui::String avatar_letter = "?";
+  int avatar_tone = 0;
+};
+
+/** One line of the phone call's "how this call got through" sheet (CallConnectStory events, in words). */
+struct CallStoryLine {
+  std::string time;
+  std::string text;
+  /** Drawn in the secure colour (how it connected, the encryption, a closer way); else success green. */
+  bool secure = false;
+
+  bool operator==(const CallStoryLine&) const = default;
 };
 
 /** One row in the in-call participant roster strip. */
@@ -345,6 +364,46 @@ struct CallInProgressState {
   /** Debug-only subtitle under elapsed (`SFU · 24k · …`). */
   bool show_debug_subtitle = false;
   ui::String debug_subtitle;
+
+  // --- Phone call page (DESIGN-pp-ui 8.12 with its 2026-11-04 connection story; mockups 06-Call*, 08). Fields
+  // written into the markup remount when they change (CallChromeSync); the bound ones dirty only themselves.
+  /** The other person's name (1:1) or the group's name. */
+  ui::String phone_title;
+  bool video = false;
+  bool peer_has_avatar = false;
+  ui::String peer_avatar_src;
+  ui::String peer_avatar_letter = "?";
+  int peer_avatar_tone = 0;
+  bool self_has_avatar = false;
+  ui::String self_avatar_src;
+  ui::String self_avatar_letter = "?";
+  int self_avatar_tone = 0;
+  /** Couldn't connect / disconnected: the failure page (plain words, Try again / Close). */
+  bool phone_failed = false;
+  ui::String failed_text;
+  /** Before connect: the moving line, the steps (0: calling, 1: answered) and the rotating tips (RCSS only). */
+  bool story_active = false;
+  int story_stage = 0;
+  ui::String story_step1;
+  ui::String story_step2;
+  ui::String story_step3;
+  /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
+  ui::String result_text;
+  bool result_fading = false;
+  /** In call: PP's own signal bar, two dots joined by a line and four bars (bound; changes at most every 500 ms). */
+  bool signal_shown = false;
+  int signal_bars = 4;
+  /** 0 good (secure), 1 fair (warn + word), 2 poor (danger + word). */
+  int signal_tone = 0;
+  ui::String signal_word;
+  /** The top pill (DESIGN-pp-ui 8.11): slower line, reconnecting, closer way (bound). */
+  ui::String notice_text;
+  bool notice_warn = false;
+  bool notice_fading = false;
+  /** The "how this call got through" sheet (a tap on the signal bar). */
+  bool story_sheet_open = false;
+  std::vector<CallStoryLine> story_lines;
+  ui::String story_how;
 };
 
 struct PaneVisibility {

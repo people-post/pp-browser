@@ -2810,4 +2810,220 @@ input.checkbox:checked {
   background-color: #1a1a1c;
   border-top-width: 0;
 }
+
+/* Phone call pages (ShellCallChromeRml): always dark, whatever the theme; the sheet over them follows the theme. */
+.call-phone {
+  background-color: #101214;
+  color: #ffffff;
+}
+
+.call-phone svg {
+  image-color: #ffffff;
+}
+
+.call-phone-sealed-text,
+.call-phone-status,
+.call-phone-sub,
+.call-phone-who-status,
+.call-phone-pair-name,
+.call-phone-tile-note,
+.call-phone-hint,
+.call-phone-tip,
+.call-phone-remote-note,
+.call-phone-step--done .call-phone-step-text {
+  color: #ffffffb3;
+}
+
+.call-phone-sealed svg {
+  image-color: #ffffffb3;
+}
+
+.call-phone-remote {
+  background-color: #101214;
+}
+
+.call-phone-video-dim {
+  background-color: #0000008c;
+}
+
+.call-phone-video-top {
+  background-color: #0000004d;
+}
+
+.call-phone-notice {
+  background-color: #3a3a3ceb;
+}
+
+.call-phone-notice--warn {
+  background-color: #784800eb;
+}
+
+.call-phone-notice-icon {
+  background-color: #ffffff24;
+}
+
+.call-phone-signal {
+  background-color: #ffffff24;
+}
+
+.call-phone-signal-bar {
+  background-color: #ffffff40;
+}
+
+.call-phone-signal-dot,
+.call-phone-signal-line,
+.call-phone-signal-bar--on {
+  background-color: #40c8e0;
+}
+
+.call-phone-signal--sheet {
+  background-color: #7878803d;
+}
+
+.call-phone-signal--sheet .call-phone-signal-bar {
+  background-color: #7878805c;
+}
+
+.call-phone-signal--sheet .call-phone-signal-dot,
+.call-phone-signal--sheet .call-phone-signal-line,
+.call-phone-signal--sheet .call-phone-signal-bar--on {
+  background-color: #40c8e0;
+}
+
+.call-phone-signal--fair .call-phone-signal-dot,
+.call-phone-signal--fair .call-phone-signal-line,
+.call-phone-signal--fair .call-phone-signal-bar--on {
+  background-color: #ff9f0a;
+}
+
+.call-phone-signal--fair .call-phone-signal-word {
+  color: #ff9f0a;
+}
+
+.call-phone-signal--poor .call-phone-signal-dot,
+.call-phone-signal--poor .call-phone-signal-line,
+.call-phone-signal--poor .call-phone-signal-bar--on {
+  background-color: #ff453a;
+}
+
+.call-phone-signal--poor .call-phone-signal-word {
+  color: #ff453a;
+}
+
+.call-phone-result {
+  background-color: #30d1582e;
+}
+
+.call-phone-result-check {
+  background-color: #30d158;
+}
+
+.call-phone-pair-dot {
+  background-color: #ffffff59;
+}
+
+.call-phone-pair-spark {
+  background-color: #40c8e0;
+}
+
+.call-phone-step-text {
+  color: #ffffff73;
+}
+
+.call-phone-step--current .call-phone-step-text {
+  color: #ffffff;
+}
+
+.call-phone-step-dot {
+  border-color: #ffffff40;
+}
+
+.call-phone-step--done .call-phone-step-dot {
+  background-color: #30d158;
+}
+
+.call-phone-step--current .call-phone-step-dot {
+  border-color: transparent #40c8e0 #40c8e0 #40c8e0;
+}
+
+.call-phone-tip-text {
+  color: #40c8e0;
+}
+
+.call-phone-card {
+  background-color: #161819f7;
+}
+
+.call-phone-tile {
+  background-color: #ffffff17;
+}
+
+.call-phone-tile-label {
+  background-color: #00000073;
+}
+
+.call-phone-controls {
+  background-color: #3a3a3cd1;
+}
+
+.call-phone-control-circle {
+  background-color: #ffffff33;
+}
+
+.call-phone-control--on .call-phone-control-circle {
+  background-color: #ffffff;
+}
+
+.call-phone-control--on .call-phone-control-circle svg {
+  image-color: #000000;
+}
+
+.call-phone-control--end .call-phone-control-circle,
+.call-phone-round--decline {
+  background-color: #ff3b30;
+}
+
+.call-phone-round--accept {
+  background-color: #34c759;
+}
+
+.call-phone-pill-btn {
+  background-color: #ffffff29;
+  color: #ffffff;
+}
+
+.call-phone-pill-btn--primary {
+  background-color: #0a84ff;
+}
+
+.call-phone-avatar--group {
+  background-color: #ff9500;
+}
+
+.call-phone-sheet-lead,
+.call-phone-event-time,
+.call-phone-kv-value {
+  color: #ebebf599;
+}
+
+.call-phone-event-text,
+.call-phone-kv-key {
+  color: #ffffff;
+}
+
+.call-phone-event-dot {
+  background-color: #30d158;
+}
+
+.call-phone-event--secure .call-phone-event-dot {
+  background-color: #40c8e0;
+}
+
+.call-phone-sheet-group {
+  background-color: #2c2c2e;
+}
+
+.call-phone-kv {
+  border-color: #54545899;
+}
 }
