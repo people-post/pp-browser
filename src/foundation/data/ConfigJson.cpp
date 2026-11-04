@@ -786,6 +786,11 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("reachability_nudge_acked_status", prefs.reachability_nudge_acked_status);
   object.set("tool_permissions", ToolPermissionsToObject(prefs.tool_permissions));
   object.set("recent_emojis", makeArray(std::move(recent)));
+  std::vector<Value> hidden_widgets;
+  for (const std::string& id : prefs.home_widgets_hidden) {
+    hidden_widgets.emplace_back(id);
+  }
+  object.set("home_widgets_hidden", makeArray(std::move(hidden_widgets)));
   return object;
 }
 
@@ -908,6 +913,14 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     for (const Value& item : recent->elements) {
       if (auto emoji = asString(item)) {
         prefs.recent_emojis.push_back(*emoji);
+      }
+    }
+  }
+  prefs.home_widgets_hidden.clear();
+  if (const Array* hidden = object.getArray("home_widgets_hidden")) {
+    for (const Value& item : hidden->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_hidden.push_back(*id);
       }
     }
   }

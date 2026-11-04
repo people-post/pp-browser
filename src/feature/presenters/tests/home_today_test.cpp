@@ -66,6 +66,41 @@ TEST(HomeTodayTest, AWidgetWithNothingToShowIsHidden) {
   EXPECT_TRUE(all.brief);
 }
 
+TEST(HomeTodayTest, AWidgetTheUserRemovedIsNotShownEvenWithData) {
+  const HomeTodaySummary busy = SummarizeHomeToday({Row("friend", 2), Row("s", 1, true)});
+  HomeWidgetChoices choices;
+  choices.brief = false;
+  const HomeWidgetsShown shown = ShownHomeWidgets(busy, 3, choices);
+  EXPECT_TRUE(shown.messages);
+  EXPECT_TRUE(shown.new_contacts);
+  EXPECT_FALSE(shown.brief);
+
+  choices = {.messages = false, .new_contacts = false, .brief = true};
+  const HomeWidgetsShown only_brief = ShownHomeWidgets(busy, 3, choices);
+  EXPECT_FALSE(only_brief.messages);
+  EXPECT_FALSE(only_brief.new_contacts);
+  EXPECT_TRUE(only_brief.brief);
+}
+
+TEST(HomeTodayTest, EditHomeChoicesAreStoredAsTheIdsSwitchedOff) {
+  EXPECT_EQ(HomeWidgetChoicesFromHidden({}), HomeWidgetChoices{}) << "nothing stored: every widget on";
+  EXPECT_TRUE(HiddenHomeWidgets(HomeWidgetChoices{}).empty());
+
+  const HomeWidgetChoices no_brief = ToggleHomeWidget(HomeWidgetChoices{}, "brief");
+  EXPECT_FALSE(no_brief.brief);
+  EXPECT_TRUE(no_brief.messages);
+  EXPECT_EQ(HiddenHomeWidgets(no_brief), (std::vector<std::string>{"brief"}));
+  EXPECT_EQ(HomeWidgetChoicesFromHidden(HiddenHomeWidgets(no_brief)), no_brief) << "round trip";
+  EXPECT_TRUE(ToggleHomeWidget(no_brief, "brief").brief) << "switched back on";
+
+  const HomeWidgetChoices all_off =
+      ToggleHomeWidget(ToggleHomeWidget(no_brief, "messages"), "new_people");
+  EXPECT_EQ(HiddenHomeWidgets(all_off), (std::vector<std::string>{"messages", "new_people", "brief"}));
+  EXPECT_EQ(ToggleHomeWidget(all_off, "weather"), all_off) << "an unknown id changes nothing";
+  EXPECT_EQ(HomeWidgetChoicesFromHidden({"weather", "messages"}),
+            (HomeWidgetChoices{.messages = false, .new_contacts = true, .brief = true}));
+}
+
 TEST(HomeTodayTest, ContactsAndBlockedPeopleAreNotStrangers) {
   PeerDisplayLabel contact;
   contact.trust = PeerLabelTrust::Contact;

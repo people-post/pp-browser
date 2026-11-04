@@ -2,6 +2,12 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <p class="pane-nav-title">{{i18n:home.title}}</p>
+    <div class="pane-nav-actions row">
+      <div class="pane-nav-btn-wrap" data-model="shell">
+        <button class="pane-nav-btn pane-nav-btn--text" type="button"
+                data-event-click="home_edit_open()">{{i18n:home.edit}}</button>
+      </div>
+    </div>
   </div>
   <div class="home-header row">
     <div class="home-brand stack">

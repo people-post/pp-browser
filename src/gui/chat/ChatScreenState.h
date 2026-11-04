@@ -161,6 +161,10 @@ struct ChatShellState {
   bool home_show_messages = false;
   bool home_show_new_contacts = false;
   bool home_show_brief = false;
+  /** Edit Home's switches: the widgets the user keeps on Home. */
+  bool home_keep_messages = true;
+  bool home_keep_new_contacts = true;
+  bool home_keep_brief = true;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

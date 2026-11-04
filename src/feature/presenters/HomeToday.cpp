@@ -28,11 +28,51 @@ HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows) {
   return summary;
 }
 
-HomeWidgetsShown ShownHomeWidgets(const HomeTodaySummary& summary, const size_t brief_items) {
+HomeWidgetChoices HomeWidgetChoicesFromHidden(const std::vector<std::string>& hidden) {
+  HomeWidgetChoices choices;
+  for (const std::string& id : hidden) {
+    if (id == kHomeWidgetMessages) {
+      choices.messages = false;
+    } else if (id == kHomeWidgetNewPeople) {
+      choices.new_contacts = false;
+    } else if (id == kHomeWidgetBrief) {
+      choices.brief = false;
+    }
+  }
+  return choices;
+}
+
+std::vector<std::string> HiddenHomeWidgets(const HomeWidgetChoices& choices) {
+  std::vector<std::string> hidden;
+  if (!choices.messages) {
+    hidden.emplace_back(kHomeWidgetMessages);
+  }
+  if (!choices.new_contacts) {
+    hidden.emplace_back(kHomeWidgetNewPeople);
+  }
+  if (!choices.brief) {
+    hidden.emplace_back(kHomeWidgetBrief);
+  }
+  return hidden;
+}
+
+HomeWidgetChoices ToggleHomeWidget(HomeWidgetChoices choices, const std::string& id) {
+  if (id == kHomeWidgetMessages) {
+    choices.messages = !choices.messages;
+  } else if (id == kHomeWidgetNewPeople) {
+    choices.new_contacts = !choices.new_contacts;
+  } else if (id == kHomeWidgetBrief) {
+    choices.brief = !choices.brief;
+  }
+  return choices;
+}
+
+HomeWidgetsShown ShownHomeWidgets(const HomeTodaySummary& summary, const size_t brief_items,
+                                  const HomeWidgetChoices& choices) {
   HomeWidgetsShown shown;
-  shown.messages = !summary.unread.empty();
-  shown.new_contacts = summary.new_contacts > 0;
-  shown.brief = brief_items > 0;
+  shown.messages = choices.messages && !summary.unread.empty();
+  shown.new_contacts = choices.new_contacts && summary.new_contacts > 0;
+  shown.brief = choices.brief && brief_items > 0;
   return shown;
 }
 

@@ -41,8 +41,32 @@ bool IsStrangerChat(ThreadKind kind, const PeerDisplayLabel& label);
 /** `rows`: the main (not archived) chats list. */
 HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows);
 
-/** `brief_items`: how many headlines the Today's briefs widget would list. */
-HomeWidgetsShown ShownHomeWidgets(const HomeTodaySummary& summary, size_t brief_items);
+/** Which widgets the user keeps on Home (Edit Home; all on by default). Stored as the ids switched off. */
+struct HomeWidgetChoices {
+  bool messages = true;
+  bool new_contacts = true;
+  bool brief = true;
+
+  bool operator==(const HomeWidgetChoices&) const = default;
+};
+
+/** Widget ids in ProfilePreferences::home_widgets_hidden and in the Edit Home switches. */
+inline constexpr const char* kHomeWidgetMessages = "messages";
+inline constexpr const char* kHomeWidgetNewPeople = "new_people";
+inline constexpr const char* kHomeWidgetBrief = "brief";
+
+/** Unknown ids are ignored. */
+HomeWidgetChoices HomeWidgetChoicesFromHidden(const std::vector<std::string>& hidden);
+std::vector<std::string> HiddenHomeWidgets(const HomeWidgetChoices& choices);
+/** `id` switched the other way; an unknown id changes nothing. */
+HomeWidgetChoices ToggleHomeWidget(HomeWidgetChoices choices, const std::string& id);
+
+/**
+ * `brief_items`: how many headlines the Today's briefs widget would list. A widget shows when the user keeps it and
+ * it has something to show.
+ */
+HomeWidgetsShown ShownHomeWidgets(const HomeTodaySummary& summary, size_t brief_items,
+                                  const HomeWidgetChoices& choices = {});
 
 /** "11月3日 星期二" / "Tuesday, November 3" in the UI language. */
 std::string HomeDateLabel(const std::tm& now);

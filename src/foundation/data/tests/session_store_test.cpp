@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -61,6 +62,13 @@ TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
 
   EXPECT_TRUE(store.ReloadProfilePrefs());
   EXPECT_EQ(store.Snapshot().profile_prefs.appearance, "dark");
+
+  // Edit Home's choices are written to the profile's preferences.json and read back after a restart.
+  prefs.home_widgets_hidden = {"brief"};
+  EXPECT_TRUE(store.SaveProfilePrefs(prefs));
+  auto with_widgets = pbr::UserPreferences::LoadProfile(profile_dir);
+  ASSERT_TRUE(static_cast<bool>(with_widgets));
+  EXPECT_EQ(with_widgets->home_widgets_hidden, std::vector<std::string>{"brief"});
 
   prefs.appearance = "light";
   EXPECT_TRUE(pbr::UserPreferences::SaveProfile(profile_dir, prefs));

@@ -1,0 +1,40 @@
+<!-- Edit Home (DESIGN-pp-ui 8.16, mockup 03-home-edit): a page sheet with a switch per Home widget. The choices are
+     kept on this device only (profile preferences); a widget switched off is not drawn and not fetched. -->
+<div class="ac-page" data-model="shell">
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:home_edit.title}}</p>
+  </div>
+  <div class="ac-scroll">
+    <p class="text group-head">{{i18n:home_edit.shown}}</p>
+    <div class="group-card">
+      <div class="settings-toggle-row row group-row">
+        <span class="group-row-body">
+          <span class="settings-label settings-toggle-label group-row-text">{{i18n:home.new_messages}}</span>
+          <button class="settings-switch" type="button" data-class-settings-switch--on="home_keep_messages"
+                  data-event-click="home_widget_toggle('messages')">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </span>
+      </div>
+      <div class="settings-toggle-row row group-row">
+        <span class="group-row-body">
+          <span class="settings-label settings-toggle-label group-row-text">{{i18n:home.new_contacts}}</span>
+          <button class="settings-switch" type="button" data-class-settings-switch--on="home_keep_new_contacts"
+                  data-event-click="home_widget_toggle('new_people')">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </span>
+      </div>
+      <div class="settings-toggle-row row group-row">
+        <span class="group-row-body">
+          <span class="settings-label settings-toggle-label group-row-text">{{i18n:home.brief}}</span>
+          <button class="settings-switch" type="button" data-class-settings-switch--on="home_keep_brief"
+                  data-event-click="home_widget_toggle('brief')">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </span>
+      </div>
+    </div>
+    <p class="text muted group-foot">{{i18n:home_edit.footer}}</p>
+  </div>
+</div>

@@ -1068,6 +1068,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
+  settings_->BindOpenHomeEdit([this]() { chat_->OpenHomeEdit(); });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
   chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
@@ -1642,6 +1643,7 @@ bool Application::MountPresenters(ui::Context* context) {
       contacts_shell_bridge_->Clear();
     }
     contacts_->BindContactsPorts({});
+    settings_->BindOpenHomeEdit({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});
     chat_->BindSurfaceNotify({});

@@ -1153,10 +1153,54 @@ void ChatController::ApplyHomeWidgets() {
   for (const HomeBriefItem& item : top) {
     shell_.home_brief.push_back({.title = item.title.c_str(), .meta = HomeBriefMeta(item, now_ms).c_str()});
   }
-  const HomeWidgetsShown shown = ShownHomeWidgets(home_summary_, top.size());
+  const HomeWidgetChoices choices = HomeChoices();
+  const HomeWidgetsShown shown = ShownHomeWidgets(home_summary_, top.size(), choices);
   shell_.home_show_messages = shown.messages;
   shell_.home_show_new_contacts = shown.new_contacts;
   shell_.home_show_brief = shown.brief;
+  shell_.home_keep_messages = choices.messages;
+  shell_.home_keep_new_contacts = choices.new_contacts;
+  shell_.home_keep_brief = choices.brief;
+}
+
+HomeWidgetChoices ChatController::HomeChoices() const {
+  if (!session_store_) {
+    return {};
+  }
+  return HomeWidgetChoicesFromHidden(Store().Snapshot().profile_prefs.home_widgets_hidden);
+}
+
+void ChatController::OpenHomeEdit() {
+  if (home_edit_layer_ >= 0 || !shell_navigation_.push_layer) {
+    return;
+  }
+  ApplyHomeWidgets();
+  DirtyShell();
+  PaneSpec spec;
+  spec.key = "home_edit";
+  spec.page_sheet = true;
+  home_edit_layer_ = shell_navigation_.push_layer(spec);
+  if (home_edit_layer_ >= 0 && flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(home_edit_layer_, {}, [this]() { home_edit_layer_ = -1; });
+  }
+}
+
+void ChatController::ToggleHomeWidgetChoice(const std::string& id) {
+  if (!session_store_) {
+    return;
+  }
+  const HomeWidgetChoices next = ToggleHomeWidget(HomeChoices(), id);
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  prefs.home_widgets_hidden = HiddenHomeWidgets(next);
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Edit Home: could not save the choice: " << saved.error().message;
+    ShowToast(UserFeedback::FailFrom(saved.error()));
+    return;
+  }
+  ApplyHomeWidgets();
+  DirtyShell();
+  RefreshHomeBrief(); // switched back on: fetch when the cache is old
 }
 
 std::string ChatController::HomeBriefFeed() {
@@ -1203,7 +1247,8 @@ void ChatController::RefreshHomeBrief() {
     }
     return;
   }
-  if (!ShouldFetchHomeBrief(/*widget_on=*/true, home_brief_fetching_, home_brief_failed_ms_, home_brief_, feed,
+  // A widget the user removed is not fetched.
+  if (!ShouldFetchHomeBrief(HomeChoices().brief, home_brief_fetching_, home_brief_failed_ms_, home_brief_, feed,
                             now_ms)) {
     return;
   }
@@ -3737,6 +3782,9 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("home_open_brief", DataEvent<int>([this](const int index) { OpenHomeBrief(index); }));
         ctor.BindEventCallback("home_brief_all", DataEvent([this] { SendSuggestionAction("articles"); }));
         ctor.BindEventCallback("home_open_new_people", DataEvent([this] { OpenHomeNewPeople(); }));
+        ctor.BindEventCallback("home_edit_open", DataEvent([this] { OpenHomeEdit(); }));
+        ctor.BindEventCallback("home_widget_toggle", DataEvent<std::string>(
+            [this](const std::string& id) { ToggleHomeWidgetChoice(id); }));
         BindSharedEvents(ctor);
       })) {
     return false;

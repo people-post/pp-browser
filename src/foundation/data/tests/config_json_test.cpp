@@ -181,6 +181,22 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.show_advanced_settings);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsHomeWidgetsHiddenDefaultsEmptyAndRoundTrips) {
+  // Edit Home (DESIGN-pp-ui 8.16): the widgets switched off, device-only; absent = every widget shown.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_widgets_hidden = {"stale"};
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.home_widgets_hidden.empty());
+
+  pbr::ProfilePreferences edited;
+  edited.home_widgets_hidden = {"brief", "new_people"};
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.home_widgets_hidden, (std::vector<std::string>{"brief", "new_people"}));
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

@@ -6,6 +6,7 @@
 #include "lib/content/CasStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/ContactsStore.h"
+#include "mesh/types/DirectoryTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -49,6 +50,11 @@ struct DemoSeedDeps {
   int64_t now_ms = 0;
   /** Reads a bundled asset ("demo/demo_landscape.png"); ReadDemoAsset in the app. */
   std::function<Roe<ByteVector>(const std::string& relative)> read_asset;
+  /**
+   * Gives the non-contact who wrote first a directory name, as the directory would (the demo has none); kept in
+   * memory only. Unset: the chat shows the bare id.
+   */
+  std::function<void(const mesh::DirectoryHit&)> put_directory_hit;
 };
 
 /** Reads `relative` through IAssetLocator (the app bundle on iOS, the APK on Android). */

@@ -147,6 +147,9 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("home_show_messages", &state.home_show_messages);
   ctor.Bind("home_show_new_contacts", &state.home_show_new_contacts);
   ctor.Bind("home_show_brief", &state.home_show_brief);
+  ctor.Bind("home_keep_messages", &state.home_keep_messages);
+  ctor.Bind("home_keep_new_contacts", &state.home_keep_new_contacts);
+  ctor.Bind("home_keep_brief", &state.home_keep_brief);
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
@@ -265,6 +268,9 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "home_show_messages");
   DataModelHost::Instance().Dirty("shell", "home_show_new_contacts");
   DataModelHost::Instance().Dirty("shell", "home_show_brief");
+  DataModelHost::Instance().Dirty("shell", "home_keep_messages");
+  DataModelHost::Instance().Dirty("shell", "home_keep_new_contacts");
+  DataModelHost::Instance().Dirty("shell", "home_keep_brief");
   DataModelHost::Instance().Dirty("shell", "archived_count");
   DataModelHost::Instance().Dirty("shell", "showing_archived");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");

@@ -525,6 +525,14 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
   }
 
   {
+    if (deps.put_directory_hit) {
+      mesh::DirectoryHit hit;
+      hit.hit_id = kStrangerAccount;
+      hit.nickname = kStrangerName;
+      hit.account_id = std::string(kStrangerAccount);
+      hit.ids = {mesh::ContactId{mesh::ContactIdKind::Account, kStrangerAccount, true}};
+      deps.put_directory_hit(hit);
+    }
     Thread thread = ThreadFor(kStrangerThreadId, ThreadKind::Direct, kStrangerName, {}, StrangerLines(), 2, deps);
     thread.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
     thread.peer_identity_value = kStrangerAccount;
@@ -654,7 +662,8 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
                       identity->relay_user_id,
                       LocalMidnightMs(now_ms),
                       now_ms,
-                      ReadDemoAsset};
+                      ReadDemoAsset,
+                      [&hub](const mesh::DirectoryHit& hit) { hub.DirectoryShadows().Put(hit); }};
 }
 
 std::string DemoAskAiAnswer(const std::string& question) {

@@ -167,6 +167,10 @@ void SettingsController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
 }
 
+void SettingsController::BindOpenHomeEdit(std::function<void()> open) {
+  open_home_edit_ = std::move(open);
+}
+
 void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
   open_ui_perf_test_ = std::move(open);
 }
@@ -668,6 +672,11 @@ bool SettingsController::RegisterModel(ui::Context* context) {
         if (open_ui_perf_test_) {
           open_ui_perf_test_();
         }
+      }
+    }));
+    ctor.BindEventCallback("open_home_edit", DataEvent<>([this]() {
+      if (open_home_edit_) {
+        open_home_edit_();
       }
     }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));

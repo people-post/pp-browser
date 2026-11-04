@@ -72,6 +72,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
   void BindOpenUiPerfTest(std::function<void()> open);
+  /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
+  void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
@@ -356,6 +358,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   std::function<void()> open_ui_perf_test_;
+  std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};

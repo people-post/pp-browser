@@ -106,6 +106,11 @@ struct ProfilePreferences {
   ToolPermissionsPrefs tool_permissions;
   /** MRU emoji glyphs for the in-app picker (schema v12; cap enforced by EmojiCatalog). */
   std::vector<std::string> recent_emojis;
+  /**
+   * Phone Home widgets the user switched off in Edit Home (`messages`, `new_people`, `brief`); empty shows all.
+   * Device-only, like thread_local_prefs: never synced.
+   */
+  std::vector<std::string> home_widgets_hidden;
 };
 
 class UserPreferences {

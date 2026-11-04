@@ -25,6 +25,18 @@
           </button>
         </div>
         <p class="text muted settings-help group-foot">{{i18n:settings.language.help}}</p>
+        <!-- Phones: the Edit Home sheet Home's "Edit" opens (the desktop's Home has no widgets). -->
+        <div class="group-card settings-phone-only">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="open_home_edit()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_widgets.label}}</span>
+              <span class="settings-choice-value row">
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

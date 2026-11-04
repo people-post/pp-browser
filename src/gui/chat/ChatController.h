@@ -140,6 +140,8 @@ public:
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();
+  /** Edit Home (DESIGN-pp-ui 8.16): a sheet of switches for the Home widgets; Home's "Edit" and Me → Appearance. */
+  void OpenHomeEdit();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
   /**
@@ -224,6 +226,10 @@ private:
   void OpenHomeBrief(int index);
   /** A tap on the "New people" line: the first chat with unread messages from someone who is not a contact. */
   void OpenHomeNewPeople();
+  /** The widgets the user keeps on Home (profile preferences; device-only). */
+  HomeWidgetChoices HomeChoices() const;
+  /** An Edit Home switch: saves the choice, redraws Home, and fetches the briefs when they were switched back on. */
+  void ToggleHomeWidgetChoice(const std::string& id);
   void OnToggleArchived();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
@@ -566,6 +572,7 @@ private:
   std::string home_brief_dir_;          // the profile directory the cache was read from
   bool home_brief_fetching_ = false;
   int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
+  int home_edit_layer_ = -1;            // the Edit Home sheet while it is open
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn

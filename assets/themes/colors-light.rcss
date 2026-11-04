@@ -740,6 +740,10 @@ select selectbox option:hover {
   image-color: #007aff;
 }
 
+.pane-nav-btn--text {
+  color: #007aff;
+}
+
 .large-title, .pane-nav-title {
   color: #000000;
 }
@@ -1731,6 +1735,7 @@ input.checkbox:checked {
 /* Sheets laid out like the contact page (grouped cards on the grouped background). */
 .shell-page-sheet.shell-page-sheet--group_info,
 .shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--home_edit,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   background-color: #f2f2f7;
 }
