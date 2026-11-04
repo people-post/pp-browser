@@ -19,6 +19,7 @@
 #include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AvatarGlyph.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
@@ -44,6 +45,7 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
                                    const bool unreachable, const std::string& card_nickname) {
   GroupMemberRow row;
   row.identity = member.member_identity;
+  row.stable_id = contact ? ContactAvatarStableId(*contact) : member.member_identity;
   row.is_owner = member.role == MemberRole::Owner;
   row.unreachable = unreachable;
   if (contact) {
@@ -961,8 +963,7 @@ OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
       }
     }
   }
-  return BuildOwnerLeaveSheet(thread_id, plan, [this, &contact_of](const std::string& identity) {
-    // The name the member list shows: the contact's, else the nickname on their card.
+  const auto contact_for = [this, &contact_of](const std::string& identity) {
     std::optional<Contact> contact;
     if (auto it = contact_of.find(identity); it != contact_of.end() && !it->second.empty()) {
       if (auto loaded = facade_->GetContact(it->second); loaded && *loaded) {
@@ -974,6 +975,11 @@ OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
         contact = **found;
       }
     }
+    return contact;
+  };
+  OwnerLeaveSheet sheet = BuildOwnerLeaveSheet(thread_id, plan, [this, &contact_for](const std::string& identity) {
+    // The name the member list shows: the contact's, else the nickname on their card.
+    const std::optional<Contact> contact = contact_for(identity);
     if (contact) {
       if (std::string title = FormatContactTitle(*contact); !title.empty()) {
         return title;
@@ -981,6 +987,12 @@ OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
     }
     return facade_->KeptCardNickname(identity);
   });
+  // The same colour seed as the member list shows for the same person.
+  for (OwnerLeaveCandidate& candidate : sheet.candidates) {
+    const std::optional<Contact> contact = contact_for(candidate.identity);
+    candidate.stable_id = contact ? ContactAvatarStableId(*contact) : candidate.identity;
+  }
+  return sheet;
 }
 
 bool ChatPresenter::CanHandOverTo(const std::string& thread_id, const std::string& successor) {

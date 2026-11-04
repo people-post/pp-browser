@@ -104,7 +104,7 @@ void GroupLeaveSheet::Apply(const OwnerLeaveSheet& sheet) {
     GroupLeaveRow row;
     row.identity = candidate.identity.c_str();
     row.name = candidate.name.c_str();
-    const AvatarGlyph glyph = MakeAvatarGlyph(candidate.name, candidate.identity);
+    const AvatarGlyph glyph = MakeAvatarGlyph(candidate.name, candidate.stable_id);
     row.letter = glyph.letter.c_str();
     row.tone = glyph.tone;
     view_.rows.push_back(std::move(row));

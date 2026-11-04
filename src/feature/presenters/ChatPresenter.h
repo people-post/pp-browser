@@ -96,6 +96,8 @@ const char* CloseChatPlanKindName(CloseChatPlan::Kind kind);
 struct OwnerLeaveCandidate {
   std::string identity;
   std::string name;
+  /** Seed for the letter-avatar colour (the person's account id when they are a contact). */
+  std::string stable_id;
 
   bool operator==(const OwnerLeaveCandidate&) const = default;
 };
@@ -136,6 +138,8 @@ struct GroupMemberRow {
   std::string identity;
   /** Contact name, else the server nickname, else the short account id. */
   std::string title;
+  /** Seed for the letter-avatar colour: the contact's account id, else the member identity. */
+  std::string stable_id;
   /** The saved contact's id; empty for someone who is not a contact yet. */
   std::string contact_id;
   bool is_owner = false;

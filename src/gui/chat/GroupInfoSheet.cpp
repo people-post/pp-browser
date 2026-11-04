@@ -153,7 +153,7 @@ void GroupInfoSheet::Apply(const GroupInfoScreen& screen) {
     GroupInfoMemberRow row;
     row.identity = member.identity.c_str();
     row.title = member.title.c_str();
-    const AvatarGlyph glyph = MakeAvatarGlyph(member.title, member.identity);
+    const AvatarGlyph glyph = MakeAvatarGlyph(member.title, member.stable_id);
     row.letter = glyph.letter.c_str();
     row.tone = glyph.tone;
     row.owner = member.is_owner;
