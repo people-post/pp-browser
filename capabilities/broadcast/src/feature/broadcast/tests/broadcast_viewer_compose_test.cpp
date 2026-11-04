@@ -15,7 +15,7 @@
 #include "mesh/l4/media_relay/client/AmpMediaRelayClient.h"
 #include "mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
-#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "mesh/testing/mesh_triple_harness.h"
 #include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
@@ -211,13 +211,13 @@ protected:
 
   void PublishFrame(uint32_t seq) {
     const uint32_t stream = BroadcastPublisherStreamId(publisher_);
-    auto body = mesh::SealMediaRelayFrame(media_key_, BroadcastMediaFrameContext(kProgram, kJoin), 1, stream, seq, 0, 0, opus_);
-    ASSERT_TRUE(body);
     mesh::MediaDataFrame frame;
     frame.stream_id = stream;
     frame.channel_id = 0;
+    frame.channel_type = mesh::MediaChannelType::ReliableOrdered;
     frame.seq = seq;
-    frame.payload = std::move(*body);
+    frame.instance = 0x5eed;
+    ASSERT_TRUE(mesh::SealMediaFrame(media_key_, BroadcastMediaFrameContext(kProgram, kJoin), 1, frame, opus_));
     ASSERT_TRUE(publisher_relay_->SendFrame(frame));
   }
 

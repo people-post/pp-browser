@@ -112,8 +112,13 @@ public:
   /** Test: inbound control channels held while waiting for their hello / migrate. */
   size_t PlaceholderCountForTest() const;
 
+  /**
+   * One media frame on the call's active path (A029 H2). `instance` is the sender's (the media engine's, with the
+   * seq counters it numbers); 0 = this coordinator's own. A seq that does not move forward on its channel under the
+   * same instance and key epoch is refused (it would repeat a nonce).
+   */
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
-                      uint8_t mark = 0);
+                      uint8_t mark = 0, uint64_t instance = 0);
   Roe<void> SendAudio(CallMediaLegId id, const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0);
 
 private:
