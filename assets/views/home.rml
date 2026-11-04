@@ -1,6 +1,7 @@
 <div class="home-panel" data-model="chat">
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:home.title}}</p>
     <div class="pane-nav-actions row">
       <div class="pane-nav-btn-wrap" data-model="shell">

@@ -73,11 +73,11 @@ select selectbox option {
 }
 
 .surface-chrome--frost {
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px);
 }
 
 .shell-bottom-chrome--frost {
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px);
 }
 
 .shell-bottom-chrome--solid {
@@ -2164,6 +2164,50 @@ select selectbox option {
   opacity: 1;
 }
 
+/* Phone bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 65-67): no hairline under a top bar or over the tab bar; a
+   16dp fade from the bar colour to clear takes its place (colors-*.rcss), on every top bar, the tab bar and the
+   composer alike. With Transparency on, the bar that is on top is frosted (a see-through bar colour plus blur, only
+   on the bar itself) and the page scrolls under it; off, or under a dialog, the bars are solid. */
+.bar-fade {
+  display: none;
+}
+
+.shell-layer-compact .bar-fade {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 16dp;
+  pointer-events: none;
+}
+
+/* Above a bottom bar (the tab bar), fading down into it. */
+.shell-layer-compact .bar-fade--up {
+  top: auto;
+  bottom: 100%;
+}
+
+/* A tab page's fade shows with its bar, once the large title has scrolled away. */
+.pane-nav .bar-fade {
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav .bar-fade {
+  opacity: 1;
+}
+
+/* Frosted only while the bar shows (at rest it is clear). */
+.shell-nav-page--frost.large-title-collapsed .pane-nav-bg {
+  backdrop-filter: blur(20px);
+}
+
+/* Home's tab bar sits under its opaque dock, which has its own fade. */
+.shell-bottom-chrome--home .bar-fade {
+  display: none;
+}
+
 .pane-nav-actions {
   position: absolute;
   top: 0;
@@ -2216,12 +2260,15 @@ select selectbox option {
   font-weight: bold;
 }
 
-/* The whole page scrolls (large title, search, rows), not just its list. */
+/* The whole page scrolls (large title, search, rows), not just its list. It runs under the nav bar and the 49dp tab
+   bar (ShellHost pads the nav page by the home-indicator strip only): its padding keeps the first and last rows
+   clear of them at rest. */
 .shell-layer-compact .sidebar-sessions,
 .shell-layer-compact .contacts-list-view,
 .shell-layer-compact .settings-list-view {
   overflow-y: auto;
   padding-top: 44dp;
+  padding-bottom: 57dp;
   box-sizing: border-box;
 }
 
@@ -2321,6 +2368,7 @@ select selectbox option {
 
 .shell-chat-overlay .chat-panel {
   padding-top: 0;
+  padding-bottom: 0;
 }
 
 .shell-chat-overlay .chat-header {
@@ -2678,7 +2726,7 @@ select selectbox option {
   height: 18dp;
 }
 
-/* Phone contact page: a 48dp title bar (the pane starts 48dp down), back arrow left, centred title. */
+/* Phone contact page: a 48dp title bar over the page (which scrolls under it), back arrow left, centred title. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
   height: 48dp;
@@ -2716,6 +2764,17 @@ select selectbox option {
 .shell-layer-transient .shell-pane-transient {
   flex: 1;
   min-height: 0;
+  padding-top: 48dp;
+  box-sizing: border-box;
+}
+
+/* Phones: the pushed pages start under their bar and keep their first row clear of it at rest. */
+.shell-layer-transient.shell-layer-compact .shell-pane-transient {
+  padding-top: 0;
+}
+
+.shell-pane-transient .contact-detail-panel,
+.shell-pane-transient .blocked-page {
   padding-top: 48dp;
   box-sizing: border-box;
 }
@@ -6880,7 +6939,7 @@ input.checkbox {
   position: absolute;
   top: 44dp;
   right: 0;
-  bottom: 0;
+  bottom: 49dp;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -7648,6 +7707,27 @@ input.checkbox {
   padding-right: 10dp;
 }
 
+/* The transcript runs up under the header bar (the wrap starts 51dp down: the 44dp bar, the header row's 8dp margin
+   less the 1dp it overlaps) and ends at the composer, fading into it; its padding keeps the first and last bubbles
+   clear at rest. A banner between header and transcript covers what runs under it. */
+.shell-chat-overlay .chat-messages-wrap .messages {
+  top: -51dp;
+  padding-top: 51dp;
+  padding-bottom: 12dp;
+}
+
+.shell-chat-overlay .chat-gap-banner,
+.shell-chat-overlay .chat-call-bar {
+  position: relative;
+  z-index: 1;
+}
+
+.shell-chat-overlay .chat-composer-fade {
+  top: auto;
+  bottom: 0;
+  z-index: 1;
+}
+
 /* The engine reserves 16dp for an (undrawn) scrollbar; on the phone the transcript scrolls by touch, so own bubbles
    keep only the 8dp margin on the right. */
 .shell-chat-overlay .messages scrollbarvertical {
@@ -8155,19 +8235,28 @@ input.checkbox {
 }
 
 .shell-layer-compact .settings-list-view {
-  padding-bottom: 32dp;
+  padding-bottom: 81dp;
 }
 
 .shell-layer-compact .settings-list-view .large-title {
   padding: 0 16dp;
 }
 
-/* Pushed detail page: 44dp bar, plain accent back arrow, centred title. */
+/* Pushed detail page: 44dp bar, plain accent back arrow, centred title. The bar floats over the body, which scrolls
+   under it (and under the tab bar) from 44dp down. */
 .shell-layer-compact .settings-detail-header {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
   display: block;
   height: 44dp;
   margin: 0;
+}
+
+.shell-nav-page--frost .settings-detail-header {
+  backdrop-filter: blur(20px);
 }
 
 .shell-layer-compact .settings-back-btn {
@@ -8198,7 +8287,8 @@ input.checkbox {
 
 .shell-layer-compact .settings-detail-body {
   gap: 0;
-  padding-bottom: 32dp;
+  padding-top: 44dp;
+  padding-bottom: 81dp;
   box-sizing: border-box;
 }
 

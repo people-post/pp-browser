@@ -35,7 +35,7 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** At most one compact chrome bar uses backdrop frost per frame. */
+/** Which compact chrome is frosted: one surface at a time (BottomNav: the tab page's nav bar and its tab bar). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,

@@ -1,6 +1,7 @@
 <div class="contacts-panel" data-model="contacts">
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
     <div class="pane-nav-actions row">
       <button class="pane-nav-btn" type="button" data-event-click="on_add_contact_menu()">

@@ -1390,8 +1390,12 @@ void ShellHost::ApplySafeAreaLayout() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome.
-  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom", layout.content_padding_bottom_dp);
+  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats, Contacts and Me
+  // scroll under the 49dp tab bar (their scrollers pad themselves past it), so their page clears the home-indicator
+  // strip only; Home's dock sits above the bar.
+  const float tab_bar_dp = state_.nav_tab == NavTab::Home ? 0.f : config_.compact_nav_height_dp;
+  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom",
+         std::max(0.f, layout.content_padding_bottom_dp - tab_bar_dp));
   set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   // The bottom surface owns the home-indicator strip (padding keeps its controls above the inset).
   const float strip_dp = layout.bottom_surface_padding_dp;

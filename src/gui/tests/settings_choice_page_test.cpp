@@ -21,6 +21,13 @@ std::string ReadAsset(const std::string& relative) {
   return buffer.str();
 }
 
+std::string ReadFile(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
+}
+
 std::vector<SettingsChoicePage::Option> CallOptions() {
   return {{"everyone", "Everyone", true}, {"contacts_only", "My contacts", false}, {"nobody", "Nobody", false}};
 }
@@ -99,14 +106,23 @@ TEST(SettingsChoicePageTest, ThePushedPageHasTheRowsTheCheckTheFootAndTheHelp) {
   }
 }
 
-TEST(SettingsAppearancePageTest, HasNoReduceTransparencyRow) {
-  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.1): the opaque-bar switch made no visible difference; the page keeps
-  // theme, language and call diagnostics, and the bars stay as they were by default.
+TEST(SettingsAppearancePageTest, HasTheTransparencySwitchOnByDefault) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 67): the switch is back as "Transparency", on unless reduce_transparency
+  // is on (its default is off), with a one-line help under it.
   const std::string rml = ReadAsset("views/settings_section_appearance.rml");
   ASSERT_FALSE(rml.empty());
-  EXPECT_EQ(rml.find("reduce_transparency"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.transparency.label}}"), std::string::npos);
+  EXPECT_NE(rml.find("data-class-settings-switch--on=\"reduce_transparency != 'on'\""), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"toggle_transparency()\""), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.transparency.help}}"), std::string::npos);
   EXPECT_NE(rml.find("on_choose_theme()"), std::string::npos);
   EXPECT_NE(rml.find("toggle_call_diagnostics()"), std::string::npos);
+
+  const std::string controller = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/SettingsController.cpp");
+  EXPECT_NE(controller.find("BindEventCallback(\"toggle_transparency\""), std::string::npos);
+  const std::string settings_header = ReadFile(std::string(PP_SOURCE_DIR) + "/src/gui/SettingsController.h");
+  EXPECT_NE(settings_header.find("ui::String reduce_transparency = \"off\";"), std::string::npos)
+      << "the switch is on by default";
 }
 
 } // namespace

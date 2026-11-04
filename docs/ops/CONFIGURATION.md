@@ -124,7 +124,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Auxiliary pane (expanded layout):** `preferences.json` → `auxiliary_width_dp` (default 320, clamped 280–640). Written by `ShellHost` after a splitter drag on the pane's left edge ends; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 
-**Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque shell, no backdrop frost; no Settings row since 2026-11-04, set via the AI assistant or JSON) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
+**Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque bars, no backdrop frost; Me → Appearance → **Transparency** shows it inverted, on by default; the AI assistant's `set_reduce_transparency` sets it too) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
 **Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.
 

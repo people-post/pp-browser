@@ -56,7 +56,9 @@ x-accept-pulse-ring	#16a34a33	#22c55e33	extra: accept-button pulse ring
 x-jump-tint	#ffc40038	#ffc40038	extra: row a jump landed on (develop #482), see-through amber
 x-dock-fade	#ffffff00	#25252700	extra: Home dock fade start (the dock colour at 0%)
 x-dock	#ffffff	#252527	extra: Home ask-AI dock fill
-x-dock-bar	#f2f2f7	#1a1a1c	extra: Home tab bar fill, a shade off the dock
+x-bar	#f2f2f7	#1a1a1c	extra: phone bars (top bars, tab bar, composer), solid: Transparency off or under a dialog; Home's tab bar
+x-bar-blur	#f2f2f7b8	#1a1a1cb8	extra: phone bars frosted (72%, with blur 20): Transparency on
+x-bar-fade	#f2f2f700	#1a1a1c00	extra: the bar colour at 0%, where a bar's fade ends
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)

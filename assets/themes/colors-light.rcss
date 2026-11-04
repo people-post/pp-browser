@@ -718,13 +718,46 @@ select selectbox option:hover {
   background-color: #f2f2f7;
 }
 
-.shell-chat-overlay-chrome.surface-chrome--frost {
-  background-color: #f2f2f7;
-}
-
 .shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome {
   background-color: #f2f2f7;
   border-width: 0;
+}
+
+.shell-chat-overlay .shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: #f2f2f7b8;
+}
+
+/* Phone bars: no hairlines; a fade from the bar colour to clear under a top bar, and over the tab bar and the
+   composer. Solid bars fade from x-bar, frosted ones from x-bar-blur. */
+.bar-fade {
+  decorator: linear-gradient(to bottom, #f2f2f7, #f2f2f700);
+}
+
+.bar-fade--up {
+  decorator: linear-gradient(to bottom, #f2f2f700, #f2f2f7);
+}
+
+.shell-nav-page--frost .pane-nav .bar-fade,
+.shell-nav-page--frost .settings-detail-header .bar-fade,
+.surface-chrome--frost .bar-fade {
+  decorator: linear-gradient(to bottom, #f2f2f7b8, #f2f2f700);
+}
+
+.shell-bottom-chrome--frost .bar-fade--up {
+  decorator: linear-gradient(to bottom, #f2f2f700, #f2f2f7b8);
+}
+
+.shell-layer-compact .settings-detail-header {
+  background-color: #f2f2f7;
+}
+
+.shell-nav-page--frost .settings-detail-header {
+  background-color: #f2f2f7b8;
+}
+
+/* What runs under the chat header stays under a banner. */
+.shell-chat-overlay .chat-gap-banner {
+  background-color: #ededed;
 }
 
 .shell-pane-auxiliary {
@@ -732,8 +765,11 @@ select selectbox option:hover {
 }
 
 .pane-nav-bg {
-  background-color: #f9f9f9f0;
-  border-bottom: 1dp #3c3c434a;
+  background-color: #f2f2f7;
+}
+
+.shell-nav-page--frost .pane-nav-bg {
+  background-color: #f2f2f7b8;
 }
 
 .pane-nav-btn svg {
@@ -749,12 +785,11 @@ select selectbox option:hover {
 }
 
 .shell-bottom-chrome {
-  background-color: #f9f9f9f0;
-  border-top: 1dp #3c3c434a;
+  background-color: #f2f2f7;
 }
 
 .shell-bottom-chrome--frost {
-  background-color: #f9f9f9b2;
+  background-color: #f2f2f7b8;
 }
 
 .shell-drawer-scrim, .shell-sheet-scrim {
@@ -808,9 +843,19 @@ select selectbox option:hover {
   background-color: #f9f9f9b2;
 }
 
+.shell-layer-compact .shell-transient-chrome {
+  background-color: #f2f2f7;
+  border-width: 0;
+  box-shadow: none;
+}
+
+.shell-layer-compact .shell-transient-chrome.surface-chrome--frost {
+  background-color: #f2f2f7b8;
+}
+
 .shell-composer-mount.surface-chrome {
-  background-color: #f9f9f9f0;
-  border-top: 1dp #3c3c434a;
+  background-color: #f2f2f7;
+  border-width: 0;
 }
 
 .shell-composer-mount.surface-chrome .prompt-composer-pill {
@@ -2710,14 +2755,6 @@ input.checkbox:checked {
 .shell-bottom-chrome--home.shell-bottom-chrome--frost {
   background-color: #f2f2f7;
   border-top-width: 0;
-}
-
-/* Contact page (phone): the title bar is tinted like the chat header, no lines, no shadow. */
-.shell-layer-compact .shell-transient-chrome--titled,
-.shell-layer-compact .shell-transient-chrome--titled.surface-chrome--frost {
-  background-color: #f2f2f7;
-  border-width: 0;
-  box-shadow: none;
 }
 
 .shell-transient-title {

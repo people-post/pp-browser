@@ -37,6 +37,21 @@
             </span>
           </button>
         </div>
+        <!-- Transparency (Kenneth 2026-11-04): on, the phone's bars are frosted and the page shows through them; off,
+             they are solid (the reduce_transparency pref, which the AI assistant's set_reduce_transparency also sets). -->
+        <div class="group-card">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.transparency.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="reduce_transparency != 'on'"
+                      data-event-click="toggle_transparency()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot">{{i18n:settings.transparency.help}}</p>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

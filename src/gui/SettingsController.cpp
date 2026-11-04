@@ -666,6 +666,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
+    ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
     ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
       if constexpr (kDevToolsBuild) {
@@ -2032,6 +2033,14 @@ void SettingsController::ToggleStayConnected() {
   bindings_.stay_connected = bindings_.stay_connected == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("profile", /*show_toast=*/false);
+  DirtyAll();
+}
+
+void SettingsController::ToggleTransparency() {
+  // The switch reads "Transparency" (on by default): on is reduce_transparency off.
+  bindings_.reduce_transparency = bindings_.reduce_transparency == "on" ? "off" : "on";
+  PullBindingsToUiState();
+  MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
 }
 

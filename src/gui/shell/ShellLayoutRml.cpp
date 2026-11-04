@@ -116,7 +116,11 @@ std::string ShellLayoutRml::CompactBase() const {
     if (home_inline) {
       out << " shell-nav-page--home";
     }
-    // Root pages (Chats / Contacts / Me): the nav bar's small title and separator follow the scroll.
+    // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
+    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
+      out << " shell-nav-page--frost";
+    }
+    // Root pages (Chats / Contacts / Me): the nav bar's small title and fade follow the scroll.
     out << "\" id=\"shell-nav-page\" data-class-large-title-collapsed=\"large_title_collapsed\">";
     if (const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab)) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
@@ -137,6 +141,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
     out << "<svg src=\"../icons/v2/back.svg\"></svg>";
     out << "</button>";
+    out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
     out << "<div class=\"shell-composer-mount surface-chrome";
@@ -178,6 +183,7 @@ std::string ShellLayoutRml::CompactBase() const {
       out << " shell-bottom-chrome--home";
     }
     out << "\" id=\"shell-bottom-chrome\">";
+    out << "<div class=\"bar-fade bar-fade--up\"></div>";
     out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
@@ -199,7 +205,7 @@ std::string ShellLayoutRml::TransientLayer() const {
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
   out << "<div class=\"shell-layer shell-layer-transient" << compact
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
-  // The contact page has a titled bar on phones: tinted like the chat header, no lines. So does the blocked list.
+  // The contact page has a titled bar on phones, the colour of every phone bar, no lines. So does the blocked list.
   const bool blocked_list = compact[0] != '\0' && top.spec.key == "blocked_people";
   const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || blocked_list);
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
@@ -215,6 +221,7 @@ std::string ShellLayoutRml::TransientLayer() const {
            "<span data-if=\"selected.member_preview\">" << Tr("contacts.member_info") << "</span>"
            "<span data-if=\"!selected.member_preview\">" << Tr("contacts.info") << "</span></p>";
   }
+  out << "<div class=\"bar-fade\"></div>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");
   out << "</div>";

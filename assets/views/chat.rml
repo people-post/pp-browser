@@ -227,5 +227,7 @@
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"
           data-event-click="jump_to_latest()">{{jump_to_latest_label}}</button>
+  <!-- Phones: the transcript fades into the composer (no hairline). -->
+  <div class="bar-fade bar-fade--up chat-composer-fade"></div>
   </div>
 </div>

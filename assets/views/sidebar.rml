@@ -1,6 +1,7 @@
 <div class="sidebar-panel" data-model="shell">
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
     <div class="pane-nav-actions row">
       <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
