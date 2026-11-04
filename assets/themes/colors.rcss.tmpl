@@ -8,6 +8,11 @@ body {
   background-color: {{bg}};
 }
 
+/* The same as the body it covers: nothing changes until a bar slides under it. */
+.shell-statusbar-strip {
+  background-color: {{bg}};
+}
+
 /* Monochrome icons are white sources; tint with image-color (does not inherit). */
 svg {
   image-color: {{label}};
@@ -737,19 +742,6 @@ select selectbox option:hover {
   background-color: {{x-bar-blur}};
 }
 
-/* Collapsed (reading older history), the frosted chat bar is a thinner material; solid stays solid. */
-.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome.surface-chrome--frost {
-  background-color: {{x-bar-blur-thin}};
-}
-
-.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome.surface-chrome--frost .bar-fade {
-  decorator: linear-gradient(to bottom, {{x-bar-blur-thin}}, {{x-bar-fade}});
-}
-
-.shell-chat-overlay .chat-header-compact-title {
-  color: {{label}};
-}
-
 /* Phone bars: no hairlines; a fade from the bar colour to clear under a top bar, and over the tab bar and the
    composer. Solid bars fade from x-bar, frosted ones from x-bar-blur. */
 .bar-fade {
@@ -778,10 +770,10 @@ select selectbox option:hover {
   background-color: {{x-bar-blur}};
 }
 
-/* A pushed page with a large title: the bar itself is clear; its material child (.nav-bar-bg, faded in once the large
-   title has scrolled under the bar) is the bar colour, frosted with Transparency on, solid with it off. */
-.shell-layer-compact .nav-title-host .settings-detail-header,
-.shell-layer-transient.shell-layer-compact.nav-title-host .shell-transient-chrome {
+/* A pushed page's bar: itself clear; its material child (.nav-bar-bg, shown once content is under the bar) is the bar
+   colour, frosted with Transparency on, solid with it off. */
+.shell-layer-compact .nav-bar-host .settings-detail-header,
+.shell-layer-transient.shell-layer-compact.nav-bar-host .shell-transient-chrome {
   background-color: transparent;
 }
 
@@ -789,8 +781,8 @@ select selectbox option:hover {
   background-color: {{x-bar}};
 }
 
-.shell-nav-page--frost .nav-title-host .nav-bar-bg,
-.shell-layer-transient.nav-title-host .surface-chrome--frost .nav-bar-bg {
+.shell-nav-page--frost .nav-bar-host .nav-bar-bg,
+.shell-layer-transient.nav-bar-host .surface-chrome--frost .nav-bar-bg {
   background-color: {{x-bar-blur}};
 }
 
@@ -2805,9 +2797,5 @@ input.checkbox:checked {
 .shell-bottom-chrome--home.shell-bottom-chrome--frost {
   background-color: {{x-bar}};
   border-top-width: 0;
-}
-
-.shell-transient-title {
-  color: {{label}};
 }
 }

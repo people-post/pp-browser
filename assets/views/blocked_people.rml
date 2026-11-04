@@ -1,4 +1,4 @@
-<div class="blocked-page nav-title-scroll" data-model="contacts">
+<div class="blocked-page nav-bar-scroll" data-model="contacts">
   <p class="page-large-title">{{i18n:contacts.blocked.title}}</p>
   <p class="cd-footnote blocked-help">{{i18n:contacts.blocked.help}}</p>
   <div class="cd-card blocked-list" data-if="blocked_rows.size > 0">

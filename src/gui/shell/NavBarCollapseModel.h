@@ -3,67 +3,55 @@
 namespace pbr {
 
 /**
- * Phone collapsing bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71): the decisions without any DOM.
+ * Phone bars that hide on scroll (Kenneth 2026-11-05, PLAN-ui-refresh-impl 原话 78, 80; iOS hide-on-swipe): the chat
+ * header (direct and group) and a pushed page's bar (settings pages, the contact / member page, the blocked list)
+ * slide up out of view once the user scrolls away from the page's home position (a chat's newest message, a page's
+ * top) and slide back when they scroll back towards it or reach it. The decisions, without any DOM.
  *
- * A pushed page opens with an iOS large title in its content; the bar's small title replaces it once it scrolled
- * under the bar (the tab pages' pattern, ShellLargeTitleScroll).
- *
- * The chat header is taller at rest (avatar, name, subtitle) and shrinks to a thin bar with a centred name while the
- * user reads older history, so more of the transcript shows. It goes by the distance from the newest message (the
- * bottom of the transcript), which neither a page of older history loaded on top nor a new message while pinned
- * changes: moving that far into older history collapses it, moving back towards the newest that far, or reaching the
- * newest end, expands it again. In between it keeps its state (no flapping while the finger wobbles).
- *
- * Sizes here are the ones components.rcss gives .shell-chat-overlay-chrome and its .chat-bar-compact state.
+ * The distance is measured from home, which neither a page of older history loaded on top of a chat nor a new message
+ * while pinned changes: moving kHideDp away from where the user turned hides the bar, moving kShowDp back, or coming
+ * within kHomeEndDp of home, shows it. In between it keeps its state (no flapping while the finger wobbles).
  */
 struct NavBarCollapseModel {
-  /** The chat header's bar at rest and collapsed (components.rcss; the collapse is a transform, not a layout). */
-  static constexpr float kChatBarDp = 56.f;
-  static constexpr float kChatBarCompactDp = 44.f;
-  /** This close to the newest message the header is always expanded. */
-  static constexpr float kChatNewestEndDp = 8.f;
-  /** Scrolled this far into older history from where the user turned, the header collapses... */
-  static constexpr float kChatCollapseDp = 24.f;
-  /** ...and back this far towards the newest, it expands. */
-  static constexpr float kChatExpandDp = 32.f;
+  /** This close to home the bar always shows (and a page's bar is clear: nothing is under it yet). */
+  static constexpr float kHomeEndDp = 8.f;
+  /** Scrolled this far away from home from where the user turned, the bar hides... */
+  static constexpr float kHideDp = 24.f;
+  /** ...and back this far towards home, it shows again. */
+  static constexpr float kShowDp = 32.f;
 
-  /**
-   * Pushed pages (settings pages, the contact / member page, the blocked list): a large title at the top of the
-   * content under a slim bar; the bar's small centred title fades in once the large title's text line (28dp on a 34dp
-   * line, components.rcss .page-large-title) has scrolled under the bar. A page too short to scroll keeps it.
-   */
-  static constexpr float kPageLargeTitleLineDp = 34.f;
-  static bool PageTitleCollapsed(const float scroll_top_dp) { return scroll_top_dp >= kPageLargeTitleLineDp; }
+  /** A page's bar takes its material once content has scrolled under it; at home it is clear. */
+  static bool ContentUnderBar(const float from_home_dp) { return from_home_dp > kHomeEndDp; }
 
-  /** One open chat's header. A new chat starts expanded (it opens at its newest message). */
-  struct ChatHeader {
-    bool compact = false;
-    /** Where the current run started: the nearest point to the newest end while expanded, the furthest while compact. */
+  /** One bar. A new page or chat starts shown (it opens at home). */
+  struct Bar {
+    bool hidden = false;
+    /** Where the current run started: the nearest point to home while shown, the furthest while hidden. */
     float turn_dp = 0.f;
 
-    /** `from_newest_dp`: how far the transcript is scrolled up from its newest end. True when `compact` flipped. */
-    bool OnScroll(const float from_newest_dp) {
-      const bool was = compact;
-      if (from_newest_dp <= kChatNewestEndDp) {
-        compact = false;
-        turn_dp = from_newest_dp;
-      } else if (!compact) {
-        if (from_newest_dp < turn_dp) {
-          turn_dp = from_newest_dp;
-        } else if (from_newest_dp - turn_dp >= kChatCollapseDp) {
-          compact = true;
-          turn_dp = from_newest_dp;
+    /** `from_home_dp`: how far the content is scrolled away from home. True when `hidden` flipped. */
+    bool OnScroll(const float from_home_dp) {
+      const bool was = hidden;
+      if (from_home_dp <= kHomeEndDp) {
+        hidden = false;
+        turn_dp = from_home_dp;
+      } else if (!hidden) {
+        if (from_home_dp < turn_dp) {
+          turn_dp = from_home_dp;
+        } else if (from_home_dp - turn_dp >= kHideDp) {
+          hidden = true;
+          turn_dp = from_home_dp;
         }
-      } else if (from_newest_dp > turn_dp) {
-        turn_dp = from_newest_dp;
-      } else if (turn_dp - from_newest_dp >= kChatExpandDp) {
-        compact = false;
-        turn_dp = from_newest_dp;
+      } else if (from_home_dp > turn_dp) {
+        turn_dp = from_home_dp;
+      } else if (turn_dp - from_home_dp >= kShowDp) {
+        hidden = false;
+        turn_dp = from_home_dp;
       }
-      return compact != was;
+      return hidden != was;
     }
 
-    void Reset() { *this = ChatHeader{}; }
+    void Reset() { *this = Bar{}; }
   };
 };
 

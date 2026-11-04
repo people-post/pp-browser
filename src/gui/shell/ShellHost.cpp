@@ -1367,6 +1367,7 @@ void ShellHost::ApplySafeAreaLayout() {
   // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
   set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
+  set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).

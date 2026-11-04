@@ -3,7 +3,8 @@
      data-class-chat-shell--private="thread_is_private"
      data-class-chat-shell--public="thread_is_public"
      data-class-chat-shell--group="thread_is_group"
-     data-class-chat-shell--e2e="thread_is_private">
+     data-class-chat-shell--e2e="thread_is_private"
+     data-class-chat-panel--searching="search_open">
   <div class="chat-header">
     <!-- Search inside the chat, one row in the title row's place: box, "3 of 12", older (up) / newer (down), Cancel.
          Enter in the box steps to the next older hit. -->
@@ -83,11 +84,6 @@
       </div>
       </div>
     </div>
-    <!-- Phones: the collapsed header's centred name (the bar shrinks while the user reads older history); a tap does
-         what a tap on the full title does. -->
-    <button class="chat-header-compact-title" type="button" data-if="!search_open && show_peer_sheet"
-            data-event-click="open_peer_sheet()">{{thread_title}}</button>
-    <p class="chat-header-compact-title" data-if="!search_open && !show_peer_sheet">{{thread_title}}</p>
     <div class="chat-header-actions row" data-if="!search_open">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-class-chat-header-call-btn--join="call_joinable"

@@ -203,11 +203,11 @@ std::string ShellLayoutRml::TransientLayer() const {
   std::ostringstream out;
   // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
-  // The contact page has a titled bar on phones, the colour of every phone bar, no lines. So does the blocked list.
-  // Both open with a large title in the page; the bar's title fades in once it scrolled away (ShellNavBarScroll).
-  const bool blocked_list = compact[0] != '\0' && top.spec.key == "blocked_people";
-  const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || blocked_list);
-  out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-title-host" : "")
+  // The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
+  // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
+  const bool titled =
+      compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people");
+  out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
@@ -217,14 +217,6 @@ std::string ShellLayoutRml::TransientLayer() const {
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
          "<svg src=\"../icons/v2/back.svg\"></svg>"
          "</button>";
-  if (blocked_list) {
-    out << "<p class=\"shell-transient-title\">" << Tr("contacts.blocked.title") << "</p>";
-  } else if (titled) {
-    // The contacts model is the one the page below binds; member_preview is a group member who is not a contact.
-    out << "<p class=\"shell-transient-title\" data-model=\"contacts\">"
-           "<span data-if=\"selected.member_preview\">" << Tr("contacts.member_info") << "</span>"
-           "<span data-if=\"!selected.member_preview\">" << Tr("contacts.info") << "</span></p>";
-  }
   out << "<div class=\"bar-fade\"></div>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");

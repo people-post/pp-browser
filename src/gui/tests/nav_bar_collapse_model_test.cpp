@@ -1,6 +1,6 @@
-// Phone collapsing bars (PLAN-ui-refresh-impl 原话 71). Kenneth: "那个稍微做宽一点，现在本来是毛玻璃的嘛，做宽一点，然后
-// 向上向下滑的时候，把那毛玻璃收起来……就像苹果这种……而且这样的话会让聊天窗显示更多内容". The chat header is taller at rest
-// and collapses while the user reads older history; it comes back towards the newest messages.
+// Phone bars that hide on scroll (PLAN-ui-refresh-impl 原话 78, 80). Kenneth: "其实滚动的时候，这个这个这个顶栏应该就
+// 收回去，就不要显示了。那个聊天窗也是这样的……应该是全部收回去，就不显示了". The chat header and a pushed page's bar
+// slide away while the user scrolls away from home (a chat's newest message, a page's top) and come back towards it.
 #include "gui/shell/NavBarCollapseModel.h"
 
 #include <gtest/gtest.h>
@@ -10,94 +10,85 @@ namespace {
 
 using Model = NavBarCollapseModel;
 
-TEST(NavBarCollapseModelTest, TheChatBarIsTallerAtRest) {
-  EXPECT_GE(Model::kChatBarDp, 56.f);
-  EXPECT_LE(Model::kChatBarDp, 60.f);
-  EXPECT_GE(Model::kChatBarCompactDp, 40.f);
-  EXPECT_LE(Model::kChatBarCompactDp, 44.f);
+TEST(NavBarCollapseModelTest, ABarOpensShown) {
+  Model::Bar bar;
+  EXPECT_FALSE(bar.hidden);
+  EXPECT_FALSE(bar.OnScroll(0.f));
+  EXPECT_FALSE(bar.hidden);
 }
 
-TEST(NavBarCollapseModelTest, AChatOpensExpanded) {
-  Model::ChatHeader header;
-  EXPECT_FALSE(header.compact);
-  EXPECT_FALSE(header.OnScroll(0.f));
-  EXPECT_FALSE(header.compact);
+TEST(NavBarCollapseModelTest, ScrollingAwayFromHomePastTheThresholdHides) {
+  Model::Bar bar;
+  EXPECT_FALSE(bar.OnScroll(10.f));
+  EXPECT_FALSE(bar.OnScroll(20.f)) << "a small move keeps it";
+  EXPECT_TRUE(bar.OnScroll(Model::kHideDp)) << "24dp from home it hides";
+  EXPECT_TRUE(bar.hidden);
+  EXPECT_FALSE(bar.OnScroll(400.f)) << "further away it stays hidden";
+  EXPECT_TRUE(bar.hidden);
 }
 
-TEST(NavBarCollapseModelTest, ScrollingIntoOlderHistoryPastTheThresholdCollapses) {
-  Model::ChatHeader header;
-  EXPECT_FALSE(header.OnScroll(10.f));
-  EXPECT_FALSE(header.OnScroll(20.f)) << "a small move keeps it expanded";
-  EXPECT_TRUE(header.OnScroll(Model::kChatCollapseDp)) << "24dp from the newest end it collapses";
-  EXPECT_TRUE(header.compact);
-  EXPECT_FALSE(header.OnScroll(400.f)) << "further into history it stays collapsed";
-  EXPECT_TRUE(header.compact);
-}
-
-TEST(NavBarCollapseModelTest, ScrollingBackTowardsTheNewestPastTheThresholdExpands) {
-  Model::ChatHeader header;
-  header.OnScroll(600.f);
-  ASSERT_TRUE(header.compact);
-  EXPECT_FALSE(header.OnScroll(580.f)) << "a wobble back keeps it collapsed";
-  EXPECT_TRUE(header.compact);
-  EXPECT_TRUE(header.OnScroll(600.f - Model::kChatExpandDp)) << "32dp back towards the newest it expands";
-  EXPECT_FALSE(header.compact);
+TEST(NavBarCollapseModelTest, ScrollingBackTowardsHomePastTheThresholdShows) {
+  Model::Bar bar;
+  bar.OnScroll(600.f);
+  ASSERT_TRUE(bar.hidden);
+  EXPECT_FALSE(bar.OnScroll(580.f)) << "a wobble back keeps it hidden";
+  EXPECT_TRUE(bar.hidden);
+  EXPECT_TRUE(bar.OnScroll(600.f - Model::kShowDp)) << "32dp back towards home it shows";
+  EXPECT_FALSE(bar.hidden);
 }
 
 TEST(NavBarCollapseModelTest, TheThresholdsCountFromWhereTheUserTurned) {
-  Model::ChatHeader header;
-  header.OnScroll(600.f);
-  ASSERT_TRUE(header.compact);
-  header.OnScroll(900.f);  // further up into history
-  EXPECT_FALSE(header.OnScroll(880.f));
-  EXPECT_TRUE(header.compact) << "back 20dp from the furthest point: still collapsed";
-  EXPECT_TRUE(header.OnScroll(860.f));
-  EXPECT_FALSE(header.compact) << "back 40dp from the furthest point: expanded";
-  // Expanded in the middle of history: a turn back up into it collapses again from the nearest point.
-  header.OnScroll(800.f);
-  EXPECT_FALSE(header.compact);
-  EXPECT_FALSE(header.OnScroll(820.f));
-  EXPECT_TRUE(header.OnScroll(824.f));
-  EXPECT_TRUE(header.compact);
+  Model::Bar bar;
+  bar.OnScroll(600.f);
+  ASSERT_TRUE(bar.hidden);
+  bar.OnScroll(900.f);  // further away
+  EXPECT_FALSE(bar.OnScroll(880.f));
+  EXPECT_TRUE(bar.hidden) << "back 20dp from the furthest point: still hidden";
+  EXPECT_TRUE(bar.OnScroll(860.f));
+  EXPECT_FALSE(bar.hidden) << "back 40dp from the furthest point: shown";
+  // Shown in the middle: a turn away again hides it from the nearest point.
+  bar.OnScroll(800.f);
+  EXPECT_FALSE(bar.hidden);
+  EXPECT_FALSE(bar.OnScroll(820.f));
+  EXPECT_TRUE(bar.OnScroll(824.f));
+  EXPECT_TRUE(bar.hidden);
 }
 
-TEST(NavBarCollapseModelTest, ReachingTheNewestEndAlwaysExpands) {
-  Model::ChatHeader header;
-  header.OnScroll(30.f);
-  ASSERT_TRUE(header.compact);
-  // 22dp back is short of the expand threshold, but it lands on the newest end, which always expands.
-  EXPECT_TRUE(header.OnScroll(Model::kChatNewestEndDp));
-  EXPECT_FALSE(header.compact);
+TEST(NavBarCollapseModelTest, ReachingHomeAlwaysShows) {
+  Model::Bar bar;
+  bar.OnScroll(30.f);
+  ASSERT_TRUE(bar.hidden);
+  // 22dp back is short of the show threshold, but it lands on home, which always shows the bar.
+  EXPECT_TRUE(bar.OnScroll(Model::kHomeEndDp));
+  EXPECT_FALSE(bar.hidden);
 }
 
 TEST(NavBarCollapseModelTest, OnlyAFlipReports) {
-  Model::ChatHeader header;
+  Model::Bar bar;
   int flips = 0;
   for (float d = 0.f; d <= 1000.f; d += 3.f) {
-    flips += header.OnScroll(d) ? 1 : 0;
+    flips += bar.OnScroll(d) ? 1 : 0;
   }
-  EXPECT_EQ(flips, 1) << "one steady scroll into history flips once, not on every event";
+  EXPECT_EQ(flips, 1) << "one steady scroll away flips once, not on every event";
   for (float d = 1000.f; d >= 0.f; d -= 3.f) {
-    flips += header.OnScroll(d) ? 1 : 0;
+    flips += bar.OnScroll(d) ? 1 : 0;
   }
   EXPECT_EQ(flips, 2);
 }
 
-TEST(NavBarCollapseModelTest, APushedPageKeepsItsLargeTitleUntilItScrolledUnderTheBar) {
-  EXPECT_FALSE(Model::PageTitleCollapsed(0.f)) << "at rest (and on a page too short to scroll) the large title shows";
-  EXPECT_FALSE(Model::PageTitleCollapsed(Model::kPageLargeTitleLineDp - 1.f));
-  EXPECT_TRUE(Model::PageTitleCollapsed(Model::kPageLargeTitleLineDp)) << "its 34dp line is under the bar";
-  EXPECT_TRUE(Model::PageTitleCollapsed(500.f));
-  EXPECT_FALSE(Model::PageTitleCollapsed(10.f)) << "scrolled back, the large title returns";
+TEST(NavBarCollapseModelTest, APageBarIsClearAtHomeAndTakesItsMaterialOnceContentIsUnderIt) {
+  EXPECT_FALSE(Model::ContentUnderBar(0.f));
+  EXPECT_FALSE(Model::ContentUnderBar(Model::kHomeEndDp));
+  EXPECT_TRUE(Model::ContentUnderBar(Model::kHomeEndDp + 1.f));
 }
 
-TEST(NavBarCollapseModelTest, ResetStartsExpanded) {
-  Model::ChatHeader header;
-  header.OnScroll(500.f);
-  ASSERT_TRUE(header.compact);
-  header.Reset();
-  EXPECT_FALSE(header.compact);
-  EXPECT_FLOAT_EQ(header.turn_dp, 0.f);
+TEST(NavBarCollapseModelTest, ResetStartsShown) {
+  Model::Bar bar;
+  bar.OnScroll(500.f);
+  ASSERT_TRUE(bar.hidden);
+  bar.Reset();
+  EXPECT_FALSE(bar.hidden);
+  EXPECT_FLOAT_EQ(bar.turn_dp, 0.f);
 }
 
 } // namespace

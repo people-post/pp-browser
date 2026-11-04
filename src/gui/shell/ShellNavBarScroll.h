@@ -14,11 +14,11 @@ class Event;
 namespace pbr {
 
 /**
- * Phone collapsing bars (NavBarCollapseModel): one bubbling scroll listener on the shell document. The chat
- * transcript's scrolls collapse / expand the chat header (class `chat-bar-compact` on #shell-chat-overlay). It only
- * toggles a class when the state flips; RCSS transitions run the change (transform and opacity, no layout).
- * A pushed page's scroller marked `nav-title-scroll` sets `nav-title-collapsed` on its `nav-title-host` (the page
- * holding both its bar and the scroller) once its large title has scrolled under the bar.
+ * Phone bars that hide on scroll (NavBarCollapseModel): one bubbling scroll listener on the shell document. The chat
+ * transcript's scrolls hide / show the chat header (class `chat-bar-hidden` on #shell-chat-overlay). A pushed page's
+ * scroller marked `nav-bar-scroll` sets, on its `nav-bar-host` (the page holding both its bar and the scroller),
+ * `nav-bar-hidden` and `nav-bar-scrolled` (content under the bar: it takes its material). It only toggles a class when
+ * a state flips; RCSS transitions run the change (transform and opacity, no layout).
  */
 class ShellNavBarScroll : public ui::EventListener {
 public:
@@ -33,10 +33,16 @@ public:
 
 private:
   void OnChatScroll(ui::Element* transcript);
-  static void OnPageScroll(ui::Element* scroller);
+  void OnPageScroll(ui::Element* scroller);
+  static ui::Element* PageHost(ui::Element* scroller);
 
   ui::ObserverPtr<ui::Element> document_;
-  NavBarCollapseModel::ChatHeader chat_;
+  /** #shell-chat-overlay while a chat is open (phone). */
+  ui::ObserverPtr<ui::Element> overlay_;
+  NavBarCollapseModel::Bar chat_;
+  /** The page whose scroll ran last and its bar. */
+  ui::ObserverPtr<ui::Element> page_host_;
+  NavBarCollapseModel::Bar page_;
 };
 
 } // namespace pbr

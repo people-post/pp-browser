@@ -1428,6 +1428,23 @@ select selectbox option {
   bottom: 0;
 }
 
+/* Phones: the band under the status bar (ShellHost sets its height to the top inset), over the chat page (25) and the
+   pushed pages (30), under the AI dot (40) and everything above it: a top bar that hides on scroll slides under it. */
+.shell-statusbar-strip {
+  display: none;
+}
+
+.shell-body--compact .shell-statusbar-strip {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
 /* Sibling of #shell-root — holds the mobile/compact emoji keyboard panel. */
 .shell-emoji-keyboard-mount {
   position: absolute;
@@ -3505,81 +3522,33 @@ select selectbox option {
 }
 
 .chat-header-avatar,
-.chat-header-phone-subtitle,
-.chat-header-compact-title {
+.chat-header-phone-subtitle {
   display: none;
 }
 
-/* Phone chat header collapsing (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71; NavBarCollapseModel): 56dp at rest
-   with the 40dp avatar, the name and the subtitle; scrolled into older history it shrinks to a 44dp bar with the back
-   arrow and the name centred, so more of the transcript shows. Nothing is laid out again: the bar keeps its 56dp box
-   and slides 12dp up under the screen edge (the overlay clips it), the back arrow, the header row, a call bar and
-   banners move with it, and the avatar, name and subtitle cross-fade with the small name. The transcript runs under
-   the bar either way, so its scroll position stays where it is. ShellNavBarScroll sets .chat-bar-compact. */
-.shell-chat-overlay-chrome {
-  transition: transform 0.2s cubic-out, background-color 0.2s cubic-out;
-}
-
-.shell-chat-overlay-chrome .shell-back-btn,
+/* Phone chat header hides on scroll (Kenneth 2026-11-05, PLAN-ui-refresh-impl 原话 78, 80; NavBarCollapseModel): read
+   away from the newest messages and the whole bar (material, back arrow, header row) slides up out of view; scroll back
+   towards the newest, or reach them, and it slides back. The overlay clips at the screen's top inset, so nothing runs
+   under the clock. Nothing is laid out again: transforms only, the transcript runs under the bar either way and keeps
+   its scroll position. A call bar or a banner moves up into the bar's place. ShellNavBarScroll sets .chat-bar-hidden
+   (never while searching in the chat: the search field is in the bar). */
+.shell-chat-overlay-chrome,
 .shell-chat-overlay .chat-header,
 .shell-chat-overlay .chat-call-bar,
 .shell-chat-overlay .chat-gap-banner {
-  transition: transform 0.2s cubic-out;
+  transition: transform 0.25s cubic-out;
 }
 
-.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome,
-.shell-chat-overlay.chat-bar-compact .chat-call-bar,
-.shell-chat-overlay.chat-bar-compact .chat-gap-banner {
-  transform: translateY(-12dp);
-}
-
-/* The bar's middle moves 6dp up (28dp to 22dp from the top): the header row 6dp, the back arrow 12dp less 6dp. */
-.shell-chat-overlay.chat-bar-compact .chat-header {
-  transform: translateY(-6dp);
-}
-
-.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome .shell-back-btn {
-  transform: translateY(6dp);
-}
-
-.shell-chat-overlay .chat-header-main {
-  transition: opacity 0.2s cubic-out;
-}
-
-.shell-chat-overlay.chat-bar-compact .chat-header-main {
-  opacity: 0;
+/* Up by the 56dp bar and its 16dp fade. Hidden, it takes no taps. */
+.shell-chat-overlay.chat-bar-hidden .shell-chat-overlay-chrome,
+.shell-chat-overlay.chat-bar-hidden .chat-header {
+  transform: translateY(-72dp);
   pointer-events: none;
 }
 
-/* Centred on the screen: the header row starts 32dp in, so 64dp from its left and 96dp from its right (clear of the
-   back arrow and the call / more buttons). */
-.shell-chat-overlay .chat-header-compact-title {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 64dp;
-  right: 96dp;
-  height: 55dp;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  font-size: 15dp;
-  line-height: 55dp;
-  font-weight: bold;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s cubic-out;
-}
-
-.shell-chat-overlay.chat-bar-compact .chat-header-compact-title {
-  opacity: 1;
-  pointer-events: auto;
-  cursor: pointer;
+.shell-chat-overlay.chat-bar-hidden .chat-call-bar,
+.shell-chat-overlay.chat-bar-hidden .chat-gap-banner {
+  transform: translateY(-63dp);
 }
 
 /* Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4). A 44dp bar under the header: a dot, what
@@ -3828,27 +3797,11 @@ select selectbox option {
   height: 18dp;
 }
 
-/* Phone contact page: a 48dp title bar over the page (which scrolls under it), back arrow left, centred title. */
+/* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
   height: 48dp;
   padding: 2dp 0;
-}
-
-.shell-transient-title {
-  position: absolute;
-  margin: 0;
-  top: 0;
-  left: 52dp;
-  right: 52dp;
-  height: 48dp;
-  line-height: 48dp;
-  font-size: 17dp;
-  font-weight: bold;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  pointer-events: none;
 }
 
 .shell-layer-transient {
@@ -9402,12 +9355,12 @@ input.checkbox {
   padding-bottom: 81dp;
 }
 
-/* Pushed pages' large title (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71; NavBarCollapseModel): a settings page,
-   a pushed page over it (Change PIN, a choice page), the contact / member page and the blocked list open with a 28dp
-   title at the top of their content under a slim, clear bar (back arrow, "?"). Once it has scrolled under the bar,
-   ShellNavBarScroll sets .nav-title-collapsed on the page (.nav-title-host): the bar's material, fade and small
-   centred title fade in, like the tab pages. A page too short to scroll keeps the large title. Page sheets keep
-   their centred title row (the large title shows only on the pushed page). */
+/* Pushed pages (Kenneth 2026-11-04/05, PLAN-ui-refresh-impl 原话 71, 78, 80; NavBarCollapseModel): a settings page,
+   a pushed page over it (Change PIN, a choice page) and the blocked list open with a 28dp title at the top of their
+   content, under a slim, clear bar (back arrow, "?"); the title scrolls with the content (no small title in the bar).
+   Scrolled away from the top the bar slides up out of view, back towards the top it slides back
+   (.nav-bar-hidden on the page, .nav-bar-host); shown over content (.nav-bar-scrolled) it has its material and fade.
+   Page sheets keep their centred title row (the large title shows only on the pushed page). */
 .page-large-title {
   display: none;
 }
@@ -9429,7 +9382,7 @@ input.checkbox {
 
 /* The engine keeps 16dp for an (undrawn) scrollbar once a page overflows; pushed pages scroll by touch, so their cards
    keep their 16dp margins on both sides (the large title makes more pages long enough to scroll). */
-.shell-layer-compact .nav-title-scroll scrollbarvertical {
+.shell-layer-compact .nav-bar-scroll scrollbarvertical {
   width: 0dp;
 }
 
@@ -9443,35 +9396,36 @@ input.checkbox {
   padding-top: 48dp;
 }
 
-.shell-layer-compact .nav-title-host .settings-header-title,
-.shell-layer-compact .nav-title-host .settings-detail-header .bar-fade,
-.shell-layer-transient.nav-title-host .shell-transient-title,
-.shell-layer-transient.nav-title-host .shell-transient-chrome .bar-fade {
+/* No small title in a pushed page's bar: the large one is in the page. */
+.shell-layer-compact .nav-bar-host .settings-header-title {
+  display: none;
+}
+
+.shell-layer-compact .nav-bar-host .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome .bar-fade {
   opacity: 0;
   transition: opacity 0.2s cubic-out;
 }
 
-.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-header-title,
-.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-detail-header .bar-fade,
-.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-title,
-.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-chrome .bar-fade {
+.shell-layer-compact .nav-bar-host.nav-bar-scrolled .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-bar-host.nav-bar-scrolled .shell-transient-chrome .bar-fade {
   opacity: 1;
 }
 
-/* The bar's material is its own first child (.nav-bar-bg), like the tab pages' .pane-nav-bg: it fades in once the
-   large title has gone and is frosted only then. The engine draws no backdrop blur for a bar that carries a z-index and
+/* The bar's material is its own first child (.nav-bar-bg), like the tab pages' .pane-nav-bg: it shows once content is
+   under the bar and is frosted only then. The engine draws no backdrop blur for a bar that carries a z-index and
    children itself, so the bar stays clear and the child carries colour and blur. */
 .nav-bar-bg {
   display: none;
 }
 
-.shell-nav-page--frost .nav-title-host .settings-detail-header,
-.shell-layer-transient.nav-title-host .shell-transient-chrome.surface-chrome--frost {
+.shell-nav-page--frost .nav-bar-host .settings-detail-header,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome.surface-chrome--frost {
   backdrop-filter: none;
 }
 
-.shell-layer-compact .nav-title-host .nav-bar-bg,
-.shell-layer-compact.nav-title-host .nav-bar-bg {
+.shell-layer-compact .nav-bar-host .nav-bar-bg,
+.shell-layer-compact.nav-bar-host .nav-bar-bg {
   display: block;
   position: absolute;
   top: 0;
@@ -9482,18 +9436,39 @@ input.checkbox {
   transition: opacity 0.2s cubic-out;
 }
 
-.shell-layer-compact .nav-title-host.nav-title-collapsed .nav-bar-bg,
-.shell-layer-compact.nav-title-host.nav-title-collapsed .nav-bar-bg {
+.shell-layer-compact .nav-bar-host.nav-bar-scrolled .nav-bar-bg,
+.shell-layer-compact.nav-bar-host.nav-bar-scrolled .nav-bar-bg {
   opacity: 1;
 }
 
-.shell-nav-page--frost .nav-title-host.nav-title-collapsed .nav-bar-bg,
-.shell-layer-transient.nav-title-host.nav-title-collapsed .surface-chrome--frost .nav-bar-bg {
+.shell-nav-page--frost .nav-bar-host.nav-bar-scrolled .nav-bar-bg,
+.shell-layer-transient.nav-bar-host.nav-bar-scrolled .surface-chrome--frost .nav-bar-bg {
   backdrop-filter: blur(20px);
 }
 
+/* Hiding: the bar and its 16dp fade slide up out of view, under the page's top edge (the tab page and the pushed layer
+   clip there, under the status bar); hidden, it takes no taps. */
+.shell-layer-compact .nav-bar-host .settings-detail-header,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome {
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-hidden .settings-detail-header {
+  transform: translateY(-60dp);
+  pointer-events: none;
+}
+
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .shell-transient-chrome {
+  transform: translateY(-64dp);
+  pointer-events: none;
+}
+
+.shell-layer-transient.shell-layer-compact.nav-bar-host {
+  overflow: hidden;
+}
+
 /* Above the material (a static button would paint under the positioned child). */
-.shell-layer-transient.nav-title-host .shell-transient-chrome .shell-back-btn {
+.shell-layer-transient.nav-bar-host .shell-transient-chrome .shell-back-btn {
   position: relative;
 }
 
