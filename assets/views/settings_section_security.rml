@@ -137,7 +137,8 @@
             {{i18n:settings.security.clear_undelivered}}
           </button>
         </div>
-        <div class="group-card">
+        <!-- Phones show these two in About > Help improve PP. -->
+        <div class="group-card settings-desktop-only">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
               <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
@@ -149,8 +150,8 @@
             </span>
           </div>
         </div>
-        <p class="text muted settings-help group-foot">{{i18n:settings.security.crash_reports.help}}</p>
-        <div class="settings-toggle-row row group-actions" data-if="show_diagnostics_send">
+        <p class="text muted settings-help group-foot settings-desktop-only">{{i18n:settings.security.crash_reports.help}}</p>
+        <div class="settings-toggle-row row group-actions settings-desktop-only" data-if="show_diagnostics_send">
           <button class="btn" type="button" data-attrif-disabled="diagnostics_sending"
                   data-event-click="send_diagnostics()">
             {{diagnostics_send_label}}
@@ -158,8 +159,8 @@
           <button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics"
                   data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
         </div>
-        <p class="text muted settings-help group-foot" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
-        <button class="btn" type="button" data-if="diagnostics_last_id != ''"
+        <p class="text muted settings-help group-foot settings-desktop-only" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
+        <button class="btn settings-desktop-only" type="button" data-if="diagnostics_last_id != ''"
                 data-event-click="copy_diagnostics_id()">
           {{diagnostics_last_label}}
         </button>

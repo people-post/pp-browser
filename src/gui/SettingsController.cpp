@@ -1157,8 +1157,11 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  if (section_id == "security") {
+  // Send problem logs is on Security (desktop) and in About (phones): either page reads its label again.
+  if (section_id == "security" || section_id == "about") {
     security_actions_.RefreshDiagnostics();
+  }
+  if (section_id == "security") {
     RefreshBlockedCount();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();

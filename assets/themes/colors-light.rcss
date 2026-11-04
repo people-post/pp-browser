@@ -2351,6 +2351,11 @@ input.checkbox:checked {
   color: #000000;
 }
 
+/* A row that does something rather than opens a page (About > Send problem logs): accent text, like iOS. */
+.shell-layer-compact .settings-improve-send .group-row-text {
+  color: #007aff;
+}
+
 .shell-layer-compact .group-row-sub,
 .shell-layer-compact .group-row-value,
 .shell-layer-compact .group-row .settings-choice-value-text,

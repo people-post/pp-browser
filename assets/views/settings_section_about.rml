@@ -9,6 +9,37 @@
           </div>
         </div>
         <p class="text muted group-foot settings-desktop-only">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
+        <!-- Phones: the crash-report switch and the send-problem-logs button in one card of their own (Kenneth 2026-11-04:
+             side by side under Security they read as one feature). Desktop keeps them on the Security page. -->
+        <p class="text group-head settings-phone-only">{{i18n:settings.about.improve.title}}</p>
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="settings-q-label"><span class="group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+                <span class="group-row-sub">{{i18n:settings.security.crash_reports.help}}</span>
+              </span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="crash_reports_enabled == 'on'"
+                      data-event-click="toggle_crash_reports()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+          <button class="group-row settings-improve-send" type="button" data-if="show_diagnostics_send"
+                  data-attrif-disabled="diagnostics_sending" data-event-click="send_diagnostics()">
+            <span class="group-row-body">
+              <span class="group-row-label">
+                <span class="settings-q-label"><span class="group-row-text">{{diagnostics_send_label}}</span><button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics" data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+                <span class="group-row-sub">{{i18n:settings.security.diagnostics.help}}</span>
+              </span>
+            </span>
+          </button>
+        </div>
+        <button class="btn settings-phone-only" type="button" data-if="diagnostics_last_id != ''"
+                data-event-click="copy_diagnostics_id()">
+          {{diagnostics_last_label}}
+        </button>
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">

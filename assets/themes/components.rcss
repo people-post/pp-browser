@@ -7615,9 +7615,16 @@ input.checkbox {
   display: flex;
 }
 
-/* Desktop-only buttons (the profile page's Copy / Share / QR live in the Account ID row on phones). */
-.shell-layer-compact .settings-section--grouped .btn.settings-desktop-only {
+/* Desktop-only buttons (the profile page's Copy / Share / QR live in the Account ID row on phones; Send problem logs
+   lives in About on phones). */
+.shell-layer-compact .settings-section--grouped .btn.settings-desktop-only,
+.shell-layer-compact .settings-section--grouped .group-actions.settings-desktop-only {
   display: none;
+}
+
+/* The disabled Send problem logs row (while it sends) reads as waiting. */
+.shell-layer-compact .settings-improve-send:disabled {
+  opacity: 0.5;
 }
 
 .shell-layer-compact .settings-section--grouped .settings-action-bar {

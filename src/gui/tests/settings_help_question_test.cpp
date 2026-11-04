@@ -33,9 +33,9 @@ protected:
 
 TEST_F(SettingsHelpQuestionTest, TheQuestionNamesTheSettingInTheUiLanguage) {
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
-  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "「发送崩溃报告」是什么意思？");
+  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "「闪退时自动发送报告」是什么意思？");
   LocalizationService::Instance().SetPreferredLanguage("en");
-  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "What does “Send crash reports” do?");
+  EXPECT_EQ(SettingHelpQuestion("settings.security.crash_reports.label"), "What does “Send a report if PP crashes” do?");
 }
 
 TEST_F(SettingsHelpQuestionTest, OnlySettingsLabelsAsk) {
@@ -81,6 +81,35 @@ TEST_F(SettingsHelpQuestionTest, TheHardSettingsHaveOneBesideThem) {
   EXPECT_NE(ReadAsset("views/settings_section_security.rml").find("open_diagnostics_help()"), std::string::npos);
 }
 
+// Phones: the crash-report switch and Send problem logs sit in About, in one "Help improve PP" card, each with its
+// "?" and a line under it; desktop keeps them on the Security page (hidden there on phones).
+TEST_F(SettingsHelpQuestionTest, PhonesShowCrashReportsAndProblemLogsInAboutHelpImprovePp) {
+  const std::string about = ReadAsset("views/settings_section_about.rml");
+  const size_t card = about.find("{{i18n:settings.about.improve.title}}");
+  ASSERT_NE(card, std::string::npos);
+  // The title and the card are phone-only, and every piece follows the title.
+  EXPECT_NE(about.find("<p class=\"text group-head settings-phone-only\">{{i18n:settings.about.improve.title}}"),
+            std::string::npos);
+  EXPECT_NE(about.find("<div class=\"group-card settings-phone-only\">", card), std::string::npos);
+  for (const char* piece : {"ask_setting_help('settings.security.crash_reports.label')", "toggle_crash_reports()",
+                            "{{i18n:settings.security.crash_reports.help}}", "send_diagnostics()",
+                            "open_diagnostics_help()", "{{i18n:settings.security.diagnostics.help}}",
+                            "copy_diagnostics_id()"}) {
+    EXPECT_NE(about.find(piece, card), std::string::npos) << piece;
+  }
+  const std::string security = ReadAsset("views/settings_section_security.rml");
+  EXPECT_NE(security.find("<div class=\"group-card settings-desktop-only\">"), std::string::npos);
+  EXPECT_NE(security.find("group-actions settings-desktop-only\" data-if=\"show_diagnostics_send\""), std::string::npos);
+  EXPECT_EQ(Tr("settings.about.improve.title"), "Help improve PP");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "Send problem logs");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("settings.about.improve.title"), "帮我们改进 PP");
+  EXPECT_EQ(Tr("settings.security.crash_reports.label"), "闪退时自动发送报告");
+  EXPECT_EQ(Tr("settings.security.crash_reports.help"), "只在闪退时发送，不含聊天内容。");
+  EXPECT_EQ(Tr("settings.security.diagnostics.send"), "把问题记录发给我们");
+  EXPECT_EQ(Tr("settings.security.diagnostics.help"), "遇到问题、客服请你发时用。");
+}
+
 TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t button = css.find(".settings-q-btn {");
@@ -110,7 +139,7 @@ TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
   settings.BindCommands(commands);
   settings.OnAskSettingHelp("settings.security.crash_reports.label");
   ASSERT_EQ(to_ai.size(), 1u);
-  EXPECT_EQ(to_ai[0], "「发送崩溃报告」是什么意思？");
+  EXPECT_EQ(to_ai[0], "「闪退时自动发送报告」是什么意思？");
   EXPECT_TRUE(to_support.empty());
 }
 
@@ -127,7 +156,7 @@ TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
   settings.BindCommands(commands);
   settings.OnAskSettingHelp("settings.security.crash_reports.label");
   ASSERT_EQ(to_support.size(), 1u);
-  EXPECT_EQ(to_support[0], "What does “Send crash reports” do?");
+  EXPECT_EQ(to_support[0], "What does “Send a report if PP crashes” do?");
 }
 
 } // namespace
