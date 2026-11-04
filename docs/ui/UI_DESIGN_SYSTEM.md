@@ -235,7 +235,7 @@ Compact layout (`<768dp`) uses **Floating Chrome**: inset floating nav pills, op
 
 Frost target is chosen in C++ from the interruption stack (`ShellInterruption::ResolveFrostSurface`). Modals (dialog, overlay, pin gate) never use frost.
 
-**Preference:** Me → Appearance → **Reduce transparency** (`ProfilePreferences.reduce_transparency`) forces opaque chrome. **Frost tier** defaults on (`compact_chrome_frost`); disable via profile JSON for dogfood.
+**Preference:** `ProfilePreferences.reduce_transparency` forces opaque chrome (no Settings row since 2026-11-04: it made little visible difference; the AI assistant's `set_reduce_transparency` and profile JSON still set it). **Frost tier** defaults on (`compact_chrome_frost`); disable via profile JSON for dogfood.
 
 Token values live in `colors-light.rcss` / `colors-dark.rcss` (`chrome-fill`, `chrome-fill-frost`, `chrome-border-highlight`). Do not use these utilities in AI-generated RML.
 

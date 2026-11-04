@@ -99,5 +99,15 @@ TEST(SettingsChoicePageTest, ThePushedPageHasTheRowsTheCheckTheFootAndTheHelp) {
   }
 }
 
+TEST(SettingsAppearancePageTest, HasNoReduceTransparencyRow) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.1): the opaque-bar switch made no visible difference; the page keeps
+  // theme, language and call diagnostics, and the bars stay as they were by default.
+  const std::string rml = ReadAsset("views/settings_section_appearance.rml");
+  ASSERT_FALSE(rml.empty());
+  EXPECT_EQ(rml.find("reduce_transparency"), std::string::npos);
+  EXPECT_NE(rml.find("on_choose_theme()"), std::string::npos);
+  EXPECT_NE(rml.find("toggle_call_diagnostics()"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

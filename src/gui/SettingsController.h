@@ -223,7 +223,6 @@ private:
   void ToggleShowNotifications();
   void ToggleShowNotificationPreview();
   void ToggleStayConnected();
-  void ToggleReduceTransparency();
   void ToggleCallDiagnostics();
   void ToggleShowAdvancedSettings();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
