@@ -150,7 +150,10 @@
 2. Curated public / paid regulation later  
 3. **L3.5** multi-hop when single-hop cannot reach B  
 4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/test/pp_node_dht_smoke.sh`)
-5. **N032** node versions — versions and features in the directory row and channel 0, a version negotiation packet (pp-cpp-amp) before the next wire break, client rules (claims only exclude, verification promotes, operator diversity, local reputation): [N032](DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), not started
+5. **N032** node versions ([N032](DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)):
+   - **built:** version negotiation (a dial to another wire version fails at once and the reach record holds it 30 min; amp v4.1.0, mesh v5.1.0); channel 0's extension (pp-node and desktop nodes send their version); `amp_wire` / `node_version` / `features` in the registration and directory row, parsed by both directories, kept in the cold-start cache, rows of another wire version dropped there (mesh v5.1.1)
+   - **needs www:** `register/finish` storing the three fields and `/v1/mesh/nodes` listing them; until then rows say nothing and nodes are dialed as before
+   - **next:** items 5–8 — verification promotes (`RemoteCapabilityExtension` read after a link), a contradicted claim demotes the node and its operator, one relay per operator plus an anchor per set, local reputation
 
 ## Follow-ups
 

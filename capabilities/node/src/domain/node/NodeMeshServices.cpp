@@ -1,5 +1,6 @@
 #include "domain/node/NodeMeshServices.h"
 
+#include "amp/L1/Types.h"
 #include "mesh/types/RelayScope.h"
 #include "mesh/types/MediaChannel.h"
 #include "mesh/dht/DhtTypes.h"
@@ -112,9 +113,12 @@ void ConfigureNodeAmpDirectory(
   mesh.RefreshAmpDirectoryHosting(node_role);
 }
 
-mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config) {
+mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config,
+                                        const std::string& node_version) {
   mesh::MeshNodeHit hit;
   hit.entity_kind = "mesh_node";
+  hit.amp_wire = pp::adp::kWireVersion;
+  hit.node_version = node_version;
   if (auto loaded = identity.Get()) {
     hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
     if (!loaded->account_id.empty()) {
@@ -179,16 +183,19 @@ void ApplyOrgSeedAdmission(mesh::MeshHost& mesh) {
   }
 }
 
-void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config,
-                          const bool node_role) {
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, const bool node_role,
+                          const std::string& node_version) {
   if (!mesh.Amp()) {
     return;
+  }
+  if (node_role) {
+    mesh.Amp()->Links().SetAdvertisedNodeInfo(node_version, {});
   }
   RegisterSeedEndpoints(mesh, config.bootstrap_peers);
   ConfigureNodeAmpDht(mesh, identity, config, node_role, CollectNodeQueryPeerKeys(config.bootstrap_peers));
   ConfigureNodeAmpDirectory(mesh, node_role, CollectNodeQueryPeerKeys(config.bootstrap_peers));
   if (node_role && mesh.AmpDirectory()) {
-    mesh.AmpDirectory()->SetNodesSnapshot({BuildLocalMeshNodeHit(identity, mesh, config)});
+    mesh.AmpDirectory()->SetNodesSnapshot({BuildLocalMeshNodeHit(identity, mesh, config, node_version)});
   }
   ApplyOrgSeedAdmission(mesh);
 }
