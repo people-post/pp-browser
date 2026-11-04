@@ -1,5 +1,6 @@
 #include "lib/people/ContactIdentity.h"
 #include "common/MeshAlias.h"
+#include "lib/people/AvatarGlyph.h"
 
 namespace pbr {
 
@@ -19,6 +20,12 @@ std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind ki
     }
   }
   return {};
+}
+
+std::string ContactAvatarStableId(const Contact& contact) {
+  return AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
+                        PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
+                        PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
 }
 
 std::optional<std::string> ContactAccountId(const Contact& contact) {

@@ -60,6 +60,8 @@ struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
   /** Local file of a sender's cached profile photo; empty: none cached, the letter avatar shows. */
   std::function<std::string(const std::string& contact_id)> sender_icon;
+  /** The id a sender's letter-avatar colour is seeded with (the person's account id when known). */
+  std::function<std::string(const std::string& contact_id)> sender_stable_id;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;

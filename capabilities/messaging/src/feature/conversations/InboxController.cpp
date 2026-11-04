@@ -642,6 +642,7 @@ std::vector<TranscriptRow> InboxController::BuildTranscript(
 TranscriptFacts InboxController::Facts() const {
   TranscriptFacts facts;
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
+  facts.sender_stable_id = [this](const std::string& contact_id) { return labels_.ResolveSender(contact_id).stable_id; };
   facts.sender_icon = [this](const std::string& contact_id) -> std::string {
     // A contact id, or the account / relay id of a group member who is not a contact.
     if (auto contact = contacts_.Get(contact_id); contact && *contact) {

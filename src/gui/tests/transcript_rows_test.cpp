@@ -261,6 +261,7 @@ TranscriptRow TextRow(const std::string& id, const std::string& sender, const in
 TranscriptFacts NamedFacts() {
   TranscriptFacts facts;
   facts.sender_label = [](const std::string& id) { return id == "account:a" ? std::string("Alice") : std::string("Bob"); };
+  facts.sender_stable_id = [](const std::string& id) { return id; };
   return facts;
 }
 } // namespace phone_rows
@@ -317,8 +318,8 @@ TEST(TranscriptRmlTest, ASenderNameShowsOnlyOnTheFirstBubbleOfARunInAGroup) {
   }
   EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("bubble-tail-in"), std::string::npos);
   EXPECT_NE(std::string(rows[4].content_rml.c_str()).find("bubble-tail-out"), std::string::npos);
-  // One person, one colour: the same glyph the Contacts list builds from the name alone.
-  EXPECT_EQ(rows[0].group_name_tone, MakeAvatarGlyph("Alice", {}).tone);
+  // One person, one colour: the same glyph the Contacts list builds from the person's id.
+  EXPECT_EQ(rows[0].group_name_tone, MakeAvatarGlyph("Alice", "account:a").tone);
   // The name sits inside the bubble, on the first bubble of a run only.
   const std::string first = rows[0].content_rml.c_str();
   const size_t bubble_at = first.find("class=\"bubble bubble-assistant");

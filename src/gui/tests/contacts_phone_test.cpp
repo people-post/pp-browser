@@ -94,9 +94,26 @@ TEST_F(ContactsPhoneTest, DetailShowsOnlyTheLastSixCharactersAndColoursByName) {
   SyncContactMirrors(contact);
   const ContactsController::ContactDetail detail = ToContactDetail(contact, {});
   EXPECT_EQ(std::string(detail.short_id.c_str()), "abcdef");
-  // The same input as the Chats list (the title), so one person has one colour in both tabs.
-  EXPECT_EQ(detail.avatar_tone, MakeAvatarGlyph(detail.title.c_str(), {}).tone);
-  EXPECT_EQ(std::string(detail.avatar_letter.c_str()), MakeAvatarGlyph(detail.title.c_str(), {}).letter);
+  // The same seed as every other screen (the account id), so one person has one colour in all of them.
+  EXPECT_EQ(detail.avatar_tone, MakeAvatarGlyph(detail.title.c_str(), "account:0123456789abcdef").tone);
+  EXPECT_EQ(std::string(detail.avatar_letter.c_str()),
+            MakeAvatarGlyph(detail.title.c_str(), "account:0123456789abcdef").letter);
+}
+
+// One person has one avatar colour on the contact page and the member page, and a remark does not recolour them.
+TEST_F(ContactsPhoneTest, OnePersonKeepsOneColourAcrossPagesAndRenames) {
+  Contact contact;
+  contact.id = "c9";
+  contact.remote.nickname = "David";
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:david-0001", true}};
+  SyncContactMirrors(contact);
+  const ContactsController::ContactDetail plain = ToContactDetail(contact, {});
+  const int member_tone = MemberPreviewDetail("account:david-0001", "David", "").avatar_tone;
+  EXPECT_EQ(plain.avatar_tone, member_tone);
+  EXPECT_EQ(member_tone, MakeAvatarGlyph("any name", "account:david-0001").tone);
+  contact.local.display_name = "Dave (work)";
+  SyncContactMirrors(contact);
+  EXPECT_EQ(ToContactDetail(contact, {}).avatar_tone, member_tone) << "a remark must not recolour the person";
 }
 
 // Kenneth 2026-11-03: a tap on a group member who is not a contact opens their page in its member state.
@@ -110,7 +127,7 @@ TEST_F(ContactsPhoneTest, AMemberWhoIsNotAContactGetsAMemberPage) {
   EXPECT_EQ(std::string(detail.short_id.c_str()), "abcdef");
   EXPECT_TRUE(detail.has_icon);
   EXPECT_FALSE(detail.can_message);
-  EXPECT_EQ(detail.avatar_tone, MakeAvatarGlyph("Grace", {}).tone);
+  EXPECT_EQ(detail.avatar_tone, MakeAvatarGlyph("Grace", "account:0123456789abcdef").tone);
   EXPECT_FALSE(MemberPreviewDetail("account:x", "", "").title.empty()) << "an unnamed member still has a title";
   EXPECT_FALSE(MemberPreviewDetail("account:x", "", "").has_icon);
 }

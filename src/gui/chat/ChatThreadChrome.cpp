@@ -229,8 +229,8 @@ void ChatThreadChrome::Update() {
     if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
       view_.thread_title = Tr("chat.new_chat").c_str();
     }
-    // Same glyph as the chat list row (ChatPresenter): letter and tone come from the title alone.
-    const AvatarGlyph glyph = MakeAvatarGlyph(view_.thread_title.c_str(), {});
+    // Same glyph as the chat list row (ChatPresenter): the colour is seeded with the same id.
+    const AvatarGlyph glyph = MakeAvatarGlyph(view_.thread_title.c_str(), label.stable_id);
     view_.thread_avatar_letter = glyph.letter.c_str();
     view_.thread_avatar_tone = glyph.tone;
     // The person's own photo when it is cached here, else the letter.

@@ -324,7 +324,7 @@ void ChatPresenter::Refresh() {
     row.updated_at = thread.updated_at;
     row.active = thread.id == active_id;
     {
-      const AvatarGlyph glyph = MakeAvatarGlyph(row.title, {});
+      const AvatarGlyph glyph = MakeAvatarGlyph(row.title, label.stable_id);
       row.avatar_letter = glyph.letter;
       row.avatar_tone = glyph.tone;
     }

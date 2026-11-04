@@ -200,8 +200,9 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     }
   }
   {
-    // Colour by display name only, as the Chats list does: one person, one colour everywhere.
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, {});
+    // Colour seeded with the person's id, as on every other screen: one person, one colour everywhere.
+    const AvatarGlyph glyph =
+        MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, ContactAvatarStableId(contact));
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
   }
@@ -274,8 +275,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     }
   }
   {
-    // Colour by display name only, as the Chats list does: one person, one colour everywhere.
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, {});
+    // Colour seeded with the person's id, as on every other screen: one person, one colour everywhere.
+    const AvatarGlyph glyph =
+        MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, ContactAvatarStableId(contact));
     detail.avatar_letter = glyph.letter.c_str();
     detail.avatar_tone = glyph.tone;
   }
@@ -391,8 +393,8 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
   detail.short_id = LastSixChars(account_id).c_str();
   detail.has_icon = !icon_src.empty();
   detail.icon_src = icon_src.c_str();
-  // Same colour input as everywhere else (the name only), so the avatar matches the one in the chat.
-  const AvatarGlyph glyph = MakeAvatarGlyph(title, {});
+  // Same colour seed as everywhere else (the account id), so the avatar matches the one in the chat.
+  const AvatarGlyph glyph = MakeAvatarGlyph(title, account_id);
   detail.avatar_letter = glyph.letter.c_str();
   detail.avatar_tone = glyph.tone;
   detail.member_preview = true;
@@ -2453,7 +2455,7 @@ void ContactsController::OnAddSearched(const std::string& /*query*/, const uint6
     row.index = std::to_string(add_hits_.size()).c_str();
     row.title = name.c_str();
     row.short_id = ShortRelayId(id).c_str();
-    const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
+    const AvatarGlyph glyph = MakeAvatarGlyph(name, id);
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
     add_rows_.push_back(std::move(row));

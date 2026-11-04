@@ -747,8 +747,9 @@ std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>
       // the name inside the first.
       row.group_column = true;
       const std::string name = facts.sender_label(message.sender_contact_id);
-      // Same glyph input as the Contacts list and the chat list (name only), so one person has one colour.
-      const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
+      // Same seed as the Contacts list, the chat list and the call page (the person's id), so one person has one colour.
+      const AvatarGlyph glyph = MakeAvatarGlyph(
+          name, facts.sender_stable_id ? facts.sender_stable_id(message.sender_contact_id) : std::string());
       row.group_name_tone = glyph.tone;
       row.group_avatar_letter = glyph.letter.c_str();
       if (facts.sender_icon) {

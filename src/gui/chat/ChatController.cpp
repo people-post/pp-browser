@@ -76,6 +76,7 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/messaging/GroupTypes.h"
 #include "lib/people/AvatarGlyph.h"
+#include "lib/people/ContactIdentity.h"
 #include "lib/people/ContactTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/PeopleLookupFailure.h"
@@ -1195,7 +1196,7 @@ void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows)
       if (title.empty()) {
         title = Tr("people_picker.unnamed");
       }
-      const AvatarGlyph glyph = MakeAvatarGlyph(title, {});
+      const AvatarGlyph glyph = MakeAvatarGlyph(title, ContactAvatarStableId(**contact));
       without_chat.push_back({.contact_id = id,
                               .thread_id = {},
                               .title = title,
