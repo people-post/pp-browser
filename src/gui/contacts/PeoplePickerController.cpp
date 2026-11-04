@@ -163,6 +163,10 @@ void PeoplePickerController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
 
+void PeoplePickerController::BindContactsNotify(ContactsNotifyPorts ports) {
+  contacts_notify_ = std::move(ports);
+}
+
 void PeoplePickerController::BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports) {
   surface_notify_ = std::move(ports);
 }
@@ -1310,6 +1314,10 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
     return;
   }
   const GroupMemberRow row = found->second;
+  if (CompactLayout()) {
+    ShowMemberTap(row, group_id_, group_is_owner_, row.identity == local_identity_);
+    return;
+  }
   if (row.identity == local_identity_) {
     return;
   }
@@ -1331,22 +1339,122 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
     // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
     if (row.IsContact() && (row.invited || row.unreachable)) {
       actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
-                         [this, row]() { ReinviteMember(row); },
+                         [this, group_id = group_id_, row]() { ReinviteMember(group_id, row); },
                          "../icons/group.svg"});
     }
     if (!row.invited) {
       actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
-                         [this, row]() { RemoveMember(row); }, "../icons/trash.svg", true});
+                         [this, group_id = group_id_, row]() { RemoveMember(group_id, row); }, "../icons/trash.svg",
+                         true});
     }
   }
   ContextMenuHost::Instance().ShowActions(menu_position, std::move(actions));
 }
 
-void PeoplePickerController::ReinviteMember(const GroupMemberRow& row) {
-  if (group_id_.empty() || !picker_ports_.invite_members_async) {
+bool PeoplePickerController::CompactLayout() const {
+  return shell_navigation_.snapshot && shell_navigation_.snapshot().layout_mode == LayoutMode::Compact;
+}
+
+void PeoplePickerController::TapGroupMember(const std::string& thread_id, const std::string& identity) {
+  if (!MessagingInitialized() || !picker_ports_.get_thread || !picker_ports_.list_group_roster || identity.empty()) {
     return;
   }
-  picker_ports_.invite_members_async(group_id_, {row.contact_id}, [this, name = row.title](GroupInviteBatchResult result) {
+  auto thread = picker_ports_.get_thread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return;
+  }
+  const std::string group_id = *(*thread)->group_id;
+  auto roster = picker_ports_.list_group_roster(group_id);
+  if (!roster) {
+    return;
+  }
+  const auto member = std::find_if(roster->begin(), roster->end(), [&identity](const GroupRosterMember& m) {
+    return m.member_identity == identity;
+  });
+  if (member == roster->end()) {
+    return;
+  }
+  std::string local_identity;
+  if (picker_ports_.local_relay_identity) {
+    if (auto local = picker_ports_.local_relay_identity()) {
+      local_identity = *local;
+    }
+  }
+  bool is_owner = false;
+  if (picker_ports_.is_local_owner) {
+    if (auto owner = picker_ports_.is_local_owner(group_id)) {
+      is_owner = *owner;
+    }
+  }
+  bool unreachable = false;
+  if (picker_ports_.list_unreachable_members) {
+    const std::vector<std::string> list = picker_ports_.list_unreachable_members(group_id);
+    unreachable = std::find(list.begin(), list.end(), identity) != list.end();
+  }
+  const std::optional<Contact> contact = ContactForMember(*member);
+  const std::string nickname =
+      !contact && picker_ports_.kept_card_nickname ? picker_ports_.kept_card_nickname(identity) : std::string();
+  const GroupMemberRow row = BuildGroupMemberRow(*member, contact, unreachable, nickname);
+  ShowMemberTap(row, group_id, is_owner, identity == local_identity);
+}
+
+void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std::string& group_id,
+                                           const bool viewer_is_owner, const bool is_self) {
+  const GroupMemberTap tap = DecideGroupMemberTap(row, is_self, viewer_is_owner);
+  if (tap.kind == GroupMemberTap::Kind::Nothing) {
+    return;
+  }
+  if (tap.kind == GroupMemberTap::Kind::OpenProfile) {
+    OpenMemberProfile(row);
+    return;
+  }
+  // The owner: the phone action sheet (rows of 57dp, Cancel below); Remove in red asks before it removes.
+  std::vector<ContextMenuAction> actions;
+  for (const GroupMemberAction action : tap.actions) {
+    switch (action) {
+    case GroupMemberAction::ViewProfile:
+      actions.push_back({"member_view_profile", Tr("group_info.view_profile"), nullptr,
+                         [this, row]() { OpenMemberProfile(row); }, "../icons/v2/user.svg"});
+      break;
+    case GroupMemberAction::Message:
+      actions.push_back({"member_message", Tr("people_picker.cta_message"), nullptr,
+                         [this, contact_id = row.contact_id]() { StartDirectMessage(contact_id); },
+                         "../icons/v2/tab-chats.svg"});
+      break;
+    case GroupMemberAction::AddContact:
+      actions.push_back({"member_add_contact", Tr("people_picker.add_as_contact"), nullptr,
+                         [this, row]() { AddMemberAsContact(row); }, "../icons/v2/user-plus.svg"});
+      break;
+    case GroupMemberAction::Reinvite:
+      actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
+                         [this, group_id, row]() { ReinviteMember(group_id, row); }, "../icons/v2/group.svg"});
+      break;
+    case GroupMemberAction::Remove:
+      actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
+                         [this, group_id, row]() { RemoveMember(group_id, row); }, "../icons/v2/trash.svg", true});
+      break;
+    }
+  }
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), std::move(actions));
+}
+
+void PeoplePickerController::OpenMemberProfile(const GroupMemberRow& row) {
+  if (row.IsContact()) {
+    if (contacts_notify_.select_contact_sheet) {
+      contacts_notify_.select_contact_sheet(row.contact_id);
+    }
+    return;
+  }
+  if (contacts_notify_.show_member_sheet) {
+    contacts_notify_.show_member_sheet(row.identity, row.title, std::string());
+  }
+}
+
+void PeoplePickerController::ReinviteMember(const std::string& group_id, const GroupMemberRow& row) {
+  if (group_id.empty() || !picker_ports_.invite_members_async) {
+    return;
+  }
+  picker_ports_.invite_members_async(group_id, {row.contact_id}, [this, name = row.title](GroupInviteBatchResult result) {
     if (!result.failed.empty()) {
       log().warning << "Group re-invite not sent: " << result.failed.front().second;
       ShowToast(Tr("people_picker.invite_partial", {{"ok", "0"}, {"failed", "1"}, {"names", name}}),
@@ -1361,13 +1469,13 @@ void PeoplePickerController::ReinviteMember(const GroupMemberRow& row) {
   });
 }
 
-void PeoplePickerController::RemoveMember(const GroupMemberRow& row) {
+void PeoplePickerController::RemoveMember(const std::string& group_id, const GroupMemberRow& row) {
   if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
   shell_feedback_.show_confirm_destructive(
       Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", row.title}}),
-      [this, group_id = group_id_, identity = row.identity](const bool ok) {
+      [this, group_id, identity = row.identity](const bool ok) {
         if (!ok || group_id.empty() || !picker_ports_.remove_member_by_identity) {
           return;
         }
@@ -1378,8 +1486,10 @@ void PeoplePickerController::RemoveMember(const GroupMemberRow& row) {
         if (contacts_ports_.notify_thread_changed) {
           contacts_ports_.notify_thread_changed();
         }
-        SyncGroupMemberRows();
-        DirtyAll();
+        if (layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupMembers && group_id_ == group_id) {
+          SyncGroupMemberRows();
+          DirtyAll();
+        }
         NotifySurfaceChanged();
       },
       {});
@@ -1453,6 +1563,9 @@ void PeoplePickerController::OnCreateGroup() {
 
 void PeoplePickerController::FinishOpenThread() {
   Close();
+  if (shell_navigation_.close_page_sheets) {
+    shell_navigation_.close_page_sheets(); // a chat opened from sheets stacked over each other: all of them go
+  }
   if (shell_navigation_.select_nav_tab) {
     shell_navigation_.select_nav_tab(NavTab::Sessions);
   }

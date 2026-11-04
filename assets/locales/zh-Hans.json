@@ -710,6 +710,7 @@
     "group_info.add_member": "添加成员",
     "group_info.view_all": "查看全部 {count} 位成员",
     "group_info.dissolved": "群已解散",
+    "group_info.view_profile": "查看资料",
     "chat.clear_history": "清除聊天记录？",
     "chat.jump_to_latest": "最新",
     "chat.search.menu": "搜索",

@@ -134,6 +134,30 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
+/** One item of the owner's member action sheet (phones). */
+enum class GroupMemberAction { ViewProfile, Message, AddContact, Reinvite, Remove };
+
+/** What a tap on someone in a group's member list (or the group info's member card) does on a phone. */
+struct GroupMemberTap {
+  enum class Kind {
+    /** Our own row. */
+    Nothing,
+    /** Straight to their profile (anyone but the owner, Kenneth 2026-11-04). */
+    OpenProfile,
+    /** The owner: an action sheet of `actions` (and Cancel). */
+    ShowActions,
+  };
+  Kind kind = Kind::Nothing;
+  std::vector<GroupMemberAction> actions;
+
+  bool operator==(const GroupMemberTap&) const = default;
+};
+/**
+ * The owner's sheet: View profile, Message (a contact), Add contact (not one), Re-invite (a contact still waiting or
+ * out of reach), Remove (anyone on the roster). Handing the group over is not here: it happens when the owner leaves.
+ */
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
+
 /** What the phone's group info sheet is built from (ChatPresenter::GroupInfoOf reads it; tests give it). */
 struct GroupInfoFacts {
   std::string thread_id;

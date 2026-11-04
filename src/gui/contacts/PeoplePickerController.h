@@ -6,6 +6,7 @@
 #include "feature/product/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
+#include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -53,6 +54,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app PeoplePickerShellBridge. */
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
+  /** A member's profile (a page sheet on phones). Clear via BindContactsNotify({}). */
+  void BindContactsNotify(ContactsNotifyPorts ports);
 
   struct PickerRow {
     ui::String id;
@@ -88,6 +91,9 @@ public:
   /** Add members to the group chat `thread_id` straight away (the group info sheet's "Add members"); closes when done. */
   void OpenForGroupAddMembers(const std::string& thread_id);
 
+  /** Someone tapped on the group info sheet's member card: the same as a tap in the member list. */
+  void TapGroupMember(const std::string& thread_id, const std::string& identity);
+
   void Close();
 
 private:
@@ -109,8 +115,13 @@ private:
   void RefreshGroupAddLimit();
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
-  void ReinviteMember(const GroupMemberRow& row);
-  void RemoveMember(const GroupMemberRow& row);
+  /** Phones: a non-owner goes to the profile, the owner gets the action sheet (DecideGroupMemberTap). */
+  void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, bool viewer_is_owner, bool is_self);
+  /** The member's profile as a page sheet (their contact page, or its member state). */
+  void OpenMemberProfile(const GroupMemberRow& row);
+  bool CompactLayout() const;
+  void ReinviteMember(const std::string& group_id, const GroupMemberRow& row);
+  void RemoveMember(const std::string& group_id, const GroupMemberRow& row);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
@@ -175,6 +186,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   PeoplePickerSurfaceNotifyPorts surface_notify_;
+  ContactsNotifyPorts contacts_notify_;
   std::string call_thread_id_;
   std::string call_id_;
   bool call_video_allowed_ = false;

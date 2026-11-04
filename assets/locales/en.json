@@ -732,6 +732,7 @@
     "group_info.add_member": "Add members",
     "group_info.view_all": "See all {count} members",
     "group_info.dissolved": "Group dissolved",
+    "group_info.view_profile": "View profile",
     "chat.clear_history": "Clear chat history?",
     "chat.jump_to_latest": "Latest",
     "chat.search.menu": "Search",

@@ -85,6 +85,28 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
   });
 }
 
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_self, const bool viewer_is_owner) {
+  GroupMemberTap tap;
+  if (is_self) {
+    return tap;
+  }
+  if (!viewer_is_owner) {
+    tap.kind = GroupMemberTap::Kind::OpenProfile;
+    return tap;
+  }
+  tap.kind = GroupMemberTap::Kind::ShowActions;
+  tap.actions.push_back(GroupMemberAction::ViewProfile);
+  tap.actions.push_back(row.IsContact() ? GroupMemberAction::Message : GroupMemberAction::AddContact);
+  // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
+  if (row.IsContact() && (row.invited || row.unreachable)) {
+    tap.actions.push_back(GroupMemberAction::Reinvite);
+  }
+  if (!row.invited) {
+    tap.actions.push_back(GroupMemberAction::Remove);
+  }
+  return tap;
+}
+
 GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
   GroupInfoScreen screen;
   screen.thread_id = facts.thread_id;

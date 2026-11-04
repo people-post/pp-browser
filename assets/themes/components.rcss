@@ -5884,7 +5884,7 @@ input.checkbox {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 48dp;
+  min-height: 50dp;
   margin: 0;
   padding: 12dp 16dp;
   border: 0;
@@ -5919,7 +5919,7 @@ input.checkbox {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 48dp;
+  min-height: 50dp;
   padding: 12dp 16dp;
   border-radius: 8dp;
   box-sizing: border-box;

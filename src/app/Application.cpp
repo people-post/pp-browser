@@ -1570,6 +1570,7 @@ bool Application::MountPresenters(ui::Context* context) {
     contacts_->OnShowMemberSheet(account_id, name, icon_src);
   };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  people_picker_->BindContactsNotify(contacts_notify); // a member's profile from the member list
   chat_->BindContactsNotify(std::move(contacts_notify));
 
   PeoplePickerNotifyPorts chat_people_picker_notify;
@@ -1580,6 +1581,9 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   chat_people_picker_notify.open_group_add_members = [this](const std::string& thread_id) {
     people_picker_->OpenForGroupAddMembers(thread_id);
+  };
+  chat_people_picker_notify.tap_group_member = [this](const std::string& thread_id, const std::string& identity) {
+    people_picker_->TapGroupMember(thread_id, identity);
   };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
@@ -1638,6 +1642,7 @@ bool Application::MountPresenters(ui::Context* context) {
       messaging_facade_->BindAgentInbound({});
     }
     chat_->BindContactsNotify({});
+    people_picker_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
     chat_->BindEmojiPickerNotify({});
     chat_->BindMessagingUi({});
@@ -2162,6 +2167,7 @@ void Application::Shutdown() {
     messaging_facade_->BindAgentInbound({});
   }
   chat_->BindContactsNotify({});
+  people_picker_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
   chat_->BindEmojiPickerNotify({});
   chat_->BindMessagingUi({});
