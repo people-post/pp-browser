@@ -323,7 +323,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
             contacts_notify_.refresh();
           }
           host_.ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
-          host_.NotifySurfaceChanged();
+          host_.AfterThreadPrefsChanged(); // the row shows (or drops) its "Blocked" mark at once
         };
         if (!block) {
           apply();

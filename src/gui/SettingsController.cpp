@@ -505,6 +505,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("security_page", &controller.security_page_);
     ctor.Bind("security_page_title", &controller.security_page_title_);
+    ctor.Bind("blocked_count", &controller.blocked_count_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
@@ -611,6 +612,11 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("open_security_page",
                            DataEvent<std::string>([this](const std::string& page) { OpenSecurityPage(page); }));
     ctor.BindEventCallback("close_security_page", DataEvent<>([this]() { OnCloseSecurityPage(); }));
+    ctor.BindEventCallback("open_blocked_people", DataEvent<>([this]() {
+      if (commands_.open_blocked_people) {
+        commands_.open_blocked_people();
+      }
+    }));
     ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
     ctor.BindEventCallback("open_settings_help", DataEvent<>([this]() { OnOpenSettingsHelp(); }));
@@ -800,6 +806,14 @@ void SettingsController::FinishPaneResync() {
   });
 }
 
+bool SettingsController::SheetMountEmpty() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return false;
+  }
+  ui::Element* mount = context_->GetDocument(0)->GetElementById("settings-section-mount-sheet");
+  return mount && mount->GetNumChildren() == 0;
+}
+
 void SettingsController::MountSelectedSettingsSection() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -838,7 +852,9 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
     // detail pane's section mount; fill it again or the open section shows blank.
-    if (chrome.settings_detail_primary && !selected_id_.empty()) {
+    // Phones too: a page pushed over the open section (Security > Blocked) and popped again remounts the shell.
+    if (!selected_id_.empty() &&
+        (chrome.settings_detail_primary || (show_detail_ && chrome.nav_tab == NavTab::Me && SheetMountEmpty()))) {
       suppress_auto_save_ = true;
       UiEditSession::Instance().BeginRemount();
       FinishPaneResync();
@@ -1072,7 +1088,7 @@ void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   }
   last_toast_section_ = section_id;
   last_toast_at_ms_ = now;
-  UserFeedback::Ok(Tr("settings.saved"));
+  ShowResult(Tr("settings.saved"));
 }
 
 void SettingsController::ReportFailure(const Error& err) {
@@ -1138,6 +1154,7 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   status_ = "";
   if (section_id == "security") {
     security_actions_.RefreshDiagnostics();
+    RefreshBlockedCount();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.layout_mode == LayoutMode::Compact) {
@@ -1261,6 +1278,11 @@ void SettingsController::OnBackToList() {
   } else {
     OnDetailDismissed();
   }
+}
+
+void SettingsController::RefreshBlockedCount() {
+  blocked_count_ = commands_.blocked_count ? commands_.blocked_count() : 0;
+  DataModelHost::Instance().Dirty("settings", "blocked_count");
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
@@ -1648,7 +1670,7 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
     return;
   }
   commands_.drain_pending_attachment_media();
-  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
+  ShowResult(Tr("settings.storage.pending_media_started"));
 }
 
 void SettingsController::OnClearDownloadedAttachments() {
@@ -1677,7 +1699,7 @@ void SettingsController::PerformClearDownloadedAttachments() {
   }
   SyncBindingsFromSession();
   DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
+  ShowResult(Tr("settings.storage.clear_attachments_done"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {
@@ -2035,6 +2057,18 @@ void SettingsController::OnRemoveMcpServer(const int index) {
 void SettingsController::ShowStatus(const std::string& status) {
   status_ = status.c_str();
   DataModelHost::Instance().Dirty("settings", "status");
+}
+
+void SettingsController::ShowResult(const std::string& message, const bool failed) {
+  if (compact_layout_ && show_detail_) {
+    ShowStatus(message);
+    return;
+  }
+  if (failed) {
+    UserFeedback::Fail(message);
+  } else {
+    UserFeedback::Ok(message);
+  }
 }
 
 void SettingsController::Resync(const bool include_profile_nickname) {

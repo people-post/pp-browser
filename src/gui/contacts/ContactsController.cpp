@@ -557,6 +557,10 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("nc_frequent", &controller.new_chat_frequent_);
     ctor.Bind("nc_sections", &controller.new_chat_sections_);
     ctor.Bind("nc_query", &controller.new_chat_query_);
+    ctor.Bind("blocked_rows", &controller.blocked_rows_);
+    ctor.Bind("blocked_status", &controller.blocked_status_);
+    ctor.Bind("detail_status", &controller.detail_status_);
+    ctor.Bind("detail_status_spot", &controller.detail_status_spot_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("advanced", &controller.advanced_);
     ctor.Bind("selected", &controller.selected_);
@@ -580,6 +584,10 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
     ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
     ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
+    ctor.BindEventCallback("blocked_unblock",
+                           DataEvent<std::string>([this](const std::string& id) { OnUnblockListed(id); }));
+    ctor.BindEventCallback("blocked_open_contact",
+                           DataEvent<std::string>([this](const std::string& id) { OnOpenBlockedContact(id); }));
     ctor.BindEventCallback("contacts_index_at", DataEventAt([this](ui::Event& ev) { OnContactsIndexAt(ev); }));
     ctor.BindEventCallback("contacts_index_end", DataEventAt([this](ui::Event&) { OnContactsIndexEnd(); }));
   });
@@ -605,6 +613,8 @@ void ContactsController::DirtyAll() {
   host.Dirty("contacts", "compact_layout");
   host.Dirty("contacts", "advanced");
   host.Dirty("contacts", "selected");
+  host.Dirty("contacts", "detail_status");
+  host.Dirty("contacts", "detail_status_spot");
 }
 
 void ContactsController::SyncLayoutMode() {
@@ -777,6 +787,10 @@ void ContactsController::Refresh() {
     SyncNewChat();
     DirtyNewChat();
   }
+  if (blocked_open_) {
+    SyncBlocked();
+    DirtyBlocked();
+  }
   if (!selected_.id.empty()) {
     LoadSelectedDetail(selected_.id.c_str());
   }
@@ -923,6 +937,7 @@ void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
   FlushPending();
+  detail_status_ = "";
   LoadSelectedDetail(contact_id);
   if (selected_.id.empty()) {
     return;
@@ -1004,6 +1019,7 @@ bool ContactsController::CloseContactDetailPane() {
 void ContactsController::OnDetailDismissed() {
   FlushPending();
   selected_ = {};
+  detail_status_ = "";
   contact_dirty_ = false;
   debounce_deadline_ms_ = 0;
   DirtyAll();
@@ -1042,6 +1058,7 @@ void ContactsController::OpenNewChatPage() {
   new_chat_open_ = true;
   DataModelHost::Instance().Dirty("contacts", "nc_query");
   DirtyNewChat();
+  // An iOS page sheet over the Chats list, like New group (Kenneth 2026-11-04): no back bar; X, scrim or swipe closes.
   PaneSpec spec;
   spec.key = "new_chat";
   spec.page_sheet = true;
@@ -1053,6 +1070,7 @@ void ContactsController::OpenNewChatPage() {
 
 void ContactsController::OnNewChatDismissed() {
   new_chat_open_ = false;
+  new_chat_layer_id_ = -1;
 }
 
 void ContactsController::CloseNewChatPage() {
@@ -1077,7 +1095,6 @@ void ContactsController::DirtyNewChat() {
 
 void ContactsController::SyncNewChat() {
   new_chat_frequent_.clear();
-  new_chat_layer_id_ = -1;
   new_chat_sections_.clear();
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
     return;
@@ -1213,8 +1230,15 @@ bool ContactsController::FlushSelectedContact() {
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
   if (!contacts_ports_.upsert_contact(updated)) {
-    UserFeedback::Fail(Tr("contacts.err.save"));
+    if (compact_layout_) {
+      ShowDetailResult(Tr("contacts.err.save"), "name");
+    } else {
+      UserFeedback::Fail(Tr("contacts.err.save"));
+    }
     return false;
+  }
+  if (compact_layout_) {
+    ShowDetailResult(Tr("contacts.status.saved"), "name"); // the name field is on the page: "Saved" under it
   }
 
   if (contacts_ports_.register_contact_direct_endpoints) {
@@ -1604,13 +1628,13 @@ void ContactsController::OnCopyId() {
     label = Tr("contacts.id_kind.generic");
   }
   if (value.empty()) {
-    ShowToast(Tr("contacts.toast.no_id"));
+    ShowDetailResult(Tr("contacts.toast.no_id"), "id");
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
-  ShowToast(Tr("contacts.toast.id_copied", {{"label", label}}));
+  ShowDetailResult(Tr("contacts.toast.id_copied", {{"label", label}}), "id");
 }
 
 // Share: the contact's card into one of your chats (ACCOUNT_CARD.md) — the person can add them with no
@@ -1703,26 +1727,156 @@ void ContactsController::ShareContactTo(const std::string& thread_id, const std:
   });
 }
 
-void ContactsController::OnSetTrust(const std::string& trust) {
-  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || selected_.id.empty() ||
+bool ContactsController::SetContactTrust(const std::string& contact_id, const std::string& trust) {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || contact_id.empty() ||
       !contacts_ports_.get_contact || !contacts_ports_.upsert_contact) {
-    return;
+    return false;
   }
-  auto contact = contacts_ports_.get_contact(selected_.id.c_str());
+  auto contact = contacts_ports_.get_contact(contact_id);
   if (!contact || !*contact) {
-    return;
+    return false;
   }
   Contact updated = **contact;
   updated.local.trust = TrustLevelFromString(trust);
   SyncContactMirrors(updated);
   if (!contacts_ports_.upsert_contact(updated)) {
     UserFeedback::Fail(Tr("contacts.err.trust"));
+    return false;
+  }
+  return true;
+}
+
+void ContactsController::OnSetTrust(const std::string& trust) {
+  const bool was_blocked = selected_.trust_key == "blocked";
+  if (!SetContactTrust(selected_.id.c_str(), trust)) {
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
+  if (blocked_open_) {
+    SyncBlocked(); // unblocked on a contact page opened off the blocked list: gone from it on the way back
+    DirtyBlocked();
+  }
   DirtyAll();
-  ShowToast(Tr("contacts.toast.trust_updated"));
+  // Kenneth 2026-11-04: say what happened where it happened (the line under Block / Unblock), not in a toast.
+  if (trust == "blocked") {
+    ShowDetailResult(Tr("contacts.status.blocked"), "block");
+  } else if (was_blocked) {
+    ShowDetailResult(Tr("contacts.status.unblocked"), "block");
+  } else if (!compact_layout_) {
+    ShowToast(Tr("contacts.toast.trust_updated")); // phones: the switch moving says it
+  }
+  if (contacts_ports_.notify_thread_changed) {
+    contacts_ports_.notify_thread_changed(); // the Chats list marks (or unmarks) the person's chat
+  }
+  NotifySurfaceChanged();
+}
+
+void ContactsController::ShowDetailResult(const std::string& message, const char* spot) {
+  if (!compact_layout_) {
+    ShowToast(message);
+    return;
+  }
+  detail_status_ = message.c_str();
+  detail_status_spot_ = spot;
+  DataModelHost::Instance().Dirty("contacts", "detail_status");
+  DataModelHost::Instance().Dirty("contacts", "detail_status_spot");
+}
+
+std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts) {
+  std::vector<Contact> blocked;
+  for (const Contact& contact : contacts) {
+    if (contact.trust == TrustLevel::Blocked) {
+      blocked.push_back(contact);
+    }
+  }
+  std::stable_sort(blocked.begin(), blocked.end(), [](const Contact& a, const Contact& b) {
+    return NameIndexLess(ContactEffectiveTitle(a), ContactEffectiveTitle(b));
+  });
+  return blocked;
+}
+
+void ContactsController::SyncBlocked() {
+  blocked_rows_.clear();
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
+    return;
+  }
+  auto stored = contacts_ports_.list_contacts();
+  if (!stored) {
+    return;
+  }
+  for (const Contact& contact : BlockedContactsByName(*stored)) {
+    blocked_rows_.push_back(ToContactListRow(contact, contacts_ports_));
+  }
+}
+
+void ContactsController::DirtyBlocked() {
+  DataModelHost::Instance().Dirty("contacts", "blocked_rows");
+  DataModelHost::Instance().Dirty("contacts", "blocked_status");
+}
+
+int ContactsController::BlockedCount() const {
+  if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
+    return 0;
+  }
+  auto stored = contacts_ports_.list_contacts();
+  return stored ? static_cast<int>(BlockedContactsByName(*stored).size()) : 0;
+}
+
+void ContactsController::OpenBlockedPeople() {
+  if (blocked_open_ || !shell_navigation_.push_transient) {
+    return;
+  }
+  FlushPending();
+  SyncBlocked();
+  blocked_status_ = "";
+  blocked_open_ = true;
+  DirtyBlocked();
+  PaneSpec spec;
+  spec.key = "blocked_people";
+  shell_navigation_.push_transient(spec);
+}
+
+void ContactsController::OnBlockedPeopleDismissed() {
+  blocked_open_ = false;
+  blocked_status_ = "";
+  blocked_rows_.clear();
+}
+
+void ContactsController::OnUnblockListed(const std::string& contact_id) {
+  std::string name;
+  for (const ContactListRow& row : blocked_rows_) {
+    if (row.id == contact_id.c_str()) {
+      name = row.title.c_str();
+    }
+  }
+  if (name.empty() || !SetContactTrust(contact_id, "unknown")) {
+    return;
+  }
+  // The row goes and the line under the list says who was unblocked (Kenneth 2026-11-04: inline, not a toast).
+  SyncBlocked();
+  blocked_status_ = Tr("contacts.blocked.unblocked", {{"name", name}}).c_str();
+  DirtyBlocked();
+  SyncFromStore();
+  DirtyAll();
+  if (contacts_ports_.notify_thread_changed) {
+    contacts_ports_.notify_thread_changed();
+  }
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OnOpenBlockedContact(const std::string& contact_id) {
+  FlushPending();
+  detail_status_ = "";
+  LoadSelectedDetail(contact_id);
+  if (selected_.id.empty() || !shell_navigation_.push_transient) {
+    return;
+  }
+  // Pushed over the list (not through OpenContactDetailPane: the Settings tab keeps its page under both).
+  PaneSpec spec;
+  spec.key = "contact_detail";
+  shell_navigation_.push_transient(spec);
+  DirtyAll();
   NotifySurfaceChanged();
 }
 
@@ -1763,7 +1917,7 @@ void ContactsController::OnSyncRemote() {
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShowToast(Tr("contacts.toast.synced"));
+  ShowDetailResult(Tr("contacts.toast.synced"), "id");
   NotifySurfaceChanged();
 }
 

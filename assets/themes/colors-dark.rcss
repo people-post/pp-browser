@@ -1376,6 +1376,10 @@ input.checkbox:checked {
   image-color: #ebebf54c;
 }
 
+.chat-row-blocked {
+  image-color: #ebebf599;
+}
+
 .chat-search {
   background-color: #2c2c2e;
 }
@@ -1417,7 +1421,8 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
-.shell-layer-compact .contact-detail-panel {
+.shell-layer-compact .contact-detail-panel,
+.blocked-page {
   background-color: #000000;
 }
 
@@ -1500,6 +1505,27 @@ input.checkbox:checked {
 
 .cd-card {
   background-color: #1c1c1e;
+}
+
+/* A hairline above every row but the first, inset to the name. */
+.blocked-row + .blocked-row .blocked-row-right {
+  border-top: 1dp #54545899;
+}
+
+.blocked-row-name {
+  color: #ffffff;
+}
+
+.blocked-unblock,
+.blocked-unblock:hover,
+.blocked-unblock:focus {
+  background-color: transparent;
+  color: #0a84ff;
+}
+
+.blocked-row-name:active,
+.blocked-unblock:active {
+  background-color: #7878803d;
 }
 
 .cd-row {

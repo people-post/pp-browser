@@ -123,6 +123,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("active", &SessionDisplayRow::active);
     session_handle.RegisterMember("pinned", &SessionDisplayRow::pinned);
     session_handle.RegisterMember("muted", &SessionDisplayRow::muted);
+    session_handle.RegisterMember("blocked", &SessionDisplayRow::blocked);
     session_handle.RegisterMember("unread_dot", &SessionDisplayRow::unread_dot);
     session_handle.RegisterMember("mentioned", &SessionDisplayRow::mentioned);
     session_handle.RegisterMember("avatar_letter", &SessionDisplayRow::avatar_letter);

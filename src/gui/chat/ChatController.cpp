@@ -1056,6 +1056,10 @@ SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
   row.muted = from.muted;
   row.unread_dot = from.unread_dot;
   row.mentioned = from.mentioned;
+  row.blocked = from.blocked;
+  if (from.blocked) {
+    row.preview = Tr("sidebar.blocked_preview").c_str();
+  }
   return row;
 }
 

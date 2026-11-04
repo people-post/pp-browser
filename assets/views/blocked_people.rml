@@ -1,0 +1,27 @@
+<div class="blocked-page" data-model="contacts">
+  <p class="cd-footnote blocked-help">{{i18n:contacts.blocked.help}}</p>
+  <div class="cd-card blocked-list" data-if="blocked_rows.size > 0">
+    <div data-for="row : blocked_rows" class="blocked-row">
+      <div class="contacts-row-avatar-frame blocked-row-avatar"
+           data-event-click="blocked_open_contact(row.id)"
+           data-class-avatar-tone-0="!row.has_icon && row.avatar_tone == 0"
+           data-class-avatar-tone-1="!row.has_icon && row.avatar_tone == 1"
+           data-class-avatar-tone-2="!row.has_icon && row.avatar_tone == 2"
+           data-class-avatar-tone-3="!row.has_icon && row.avatar_tone == 3"
+           data-class-avatar-tone-4="!row.has_icon && row.avatar_tone == 4"
+           data-class-avatar-tone-5="!row.has_icon && row.avatar_tone == 5"
+           data-class-avatar-tone-6="!row.has_icon && row.avatar_tone == 6"
+           data-class-avatar-tone-7="!row.has_icon && row.avatar_tone == 7">
+        <img class="contacts-row-avatar-image" data-if="row.has_icon" data-attr-src="row.icon_src"/>
+        <p class="avatar-letter" data-if="!row.has_icon">{{row.avatar_letter}}</p>
+      </div>
+      <div class="blocked-row-right">
+        <p class="blocked-row-name" data-event-click="blocked_open_contact(row.id)">{{row.title}}</p>
+        <button class="blocked-unblock" type="button"
+                data-event-click="blocked_unblock(row.id)">{{i18n:contacts.blocked.unblock}}</button>
+      </div>
+    </div>
+  </div>
+  <p class="cd-footnote blocked-empty" data-if="blocked_rows.size == 0">{{i18n:contacts.blocked.empty}}</p>
+  <p class="cd-footnote cd-status" data-if="blocked_status != ''">{{blocked_status}}</p>
+</div>

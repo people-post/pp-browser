@@ -67,6 +67,7 @@
           </span>
         </div>
       </div>
+      <p class="cd-footnote cd-status" data-if="detail_status != '' && detail_status_spot == 'name'">{{detail_status}}</p>
       <p class="cd-footnote" data-if="selected.their_nickname != ''">{{selected.their_nickname}}</p>
       <p class="cd-footnote" data-if="selected.trust_key != 'blocked'">{{i18n:contacts.trust_toggle.help}}</p>
       <p class="cd-footnote" data-if="selected.trust_key == 'blocked'">{{i18n:contacts.blocked_hint}}</p>
@@ -94,6 +95,7 @@
           </span>
         </button>
       </div>
+      <p class="cd-footnote cd-status" data-if="detail_status != '' && detail_status_spot == 'id'">{{detail_status}}</p>
 
       <div class="cd-card" data-if="selected.can_message || selected.threads.size > 0">
         <button class="cd-row" type="button" data-if="selected.can_message" data-event-click="start_chat()">
@@ -157,6 +159,7 @@
           <span class="cd-row-body"><span class="cd-row-text">{{i18n:contacts.remove_button}}</span></span>
         </button>
       </div>
+      <p class="cd-footnote cd-status" data-if="detail_status != '' && detail_status_spot == 'block'">{{detail_status}}</p>
     </div>
   </div>
 

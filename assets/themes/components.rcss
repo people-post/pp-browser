@@ -3904,7 +3904,8 @@ input.checkbox {
 .chat-search,
 .chat-row-avatar,
 .chat-row-type,
-.chat-row-mute {
+.chat-row-mute,
+.chat-row-blocked {
   display: none;
 }
 
@@ -4115,6 +4116,14 @@ input.checkbox {
 .shell-layer-compact .chat-row-mute {
   width: 16dp;
   height: 16dp;
+}
+
+/* A chat with someone blocked (Kenneth 2026-11-04): a small block mark before "Blocked", kept quiet. */
+.shell-layer-compact .chat-row-blocked {
+  display: block;
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
 }
 
 .shell-layer-compact .sidebar-unread {
@@ -5897,6 +5906,78 @@ input.checkbox {
   font-size: 13dp;
   line-height: 28dp;
   font-weight: bold;
+}
+
+/* Phone "Blocked" list (Settings > Security; Kenneth 2026-11-04): a short note, a card of 60dp rows (avatar, name,
+   a 44dp Unblock on the right); a tap on the avatar or name opens the person's page. The result line goes under it. */
+.blocked-page {
+  height: 100%;
+  overflow-y: auto;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.blocked-page .blocked-help {
+  margin-top: 16dp;
+}
+
+.blocked-page .blocked-list {
+  margin-top: 12dp;
+}
+
+.blocked-page .blocked-empty {
+  margin-top: 48dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+.blocked-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  height: 60dp;
+  padding-left: 16dp;
+}
+
+.blocked-row-avatar {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.blocked-row-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 60dp;
+  box-sizing: border-box;
+}
+
+.blocked-row-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 60dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.blocked-unblock {
+  flex-shrink: 0;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0 16dp;
+  border: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  cursor: pointer;
 }
 
 /* Contact detail, phone. */

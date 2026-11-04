@@ -102,6 +102,10 @@ struct SettingsCommands {
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
   /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
   std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** How many saved contacts this device blocked (Security's "Blocked" row). */
+  std::function<int()> blocked_count;
+  /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
+  std::function<void()> open_blocked_people;
   /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */

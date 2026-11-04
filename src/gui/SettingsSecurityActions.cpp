@@ -94,7 +94,7 @@ void SettingsSecurityActions::SendDiagnostics() {
           RefreshDiagnostics();
           if (result.kind == DiagnosticsUploadKind::Sent) {
             host_.ShowStatus("");
-            UserFeedback::Ok(text);
+            host_.ShowResult(text);
           } else {
             host_.ReportFailure(Error(text).WithUser(text));
           }
@@ -189,7 +189,7 @@ void SettingsSecurityActions::ChangePin() {
     ClearPinFields();
     host_.Resync(true);
     host_.ShowStatus(Tr("settings.security.pin_updated"));
-    UserFeedback::Ok(Tr("settings.security.pin_updated"));
+    host_.ShowResult(Tr("settings.security.pin_updated"));
   });
 }
 
@@ -220,8 +220,8 @@ void SettingsSecurityActions::ExportLinkDevice() {
               if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                 system->SetClipboardText(result.value().c_str());
               }
-              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
               host_.ShowStatus("");
+              host_.ShowResult(Tr("settings.security.link_device.export_done"));
             });
           });
         },
@@ -302,10 +302,10 @@ void SettingsSecurityActions::SaveAccountCopy() {
           host_.ReportFailure(copy.error());
           return;
         }
-        SaveFileAs(Backend::GetWindow(), AccountCopyFileName(), std::move(*copy), [](const bool saved) {
-          AppRuntime::PostUI([saved]() {
+        SaveFileAs(Backend::GetWindow(), AccountCopyFileName(), std::move(*copy), [this](const bool saved) {
+          AppRuntime::PostUI([this, saved]() {
             if (saved) {
-              UserFeedback::Ok(Tr("settings.security.copy.saved"));
+              host_.ShowResult(Tr("settings.security.copy.saved"));
             }
           });
         });
@@ -338,8 +338,8 @@ void SettingsSecurityActions::ClearUndeliveredOlderThan() {
               host_.ReportFailure(result.error());
               return;
             }
-            UserFeedback::Ok(Tr("settings.security.clear_undelivered_done"));
             host_.ShowStatus("");
+            host_.ShowResult(Tr("settings.security.clear_undelivered_done"));
           });
         });
       },

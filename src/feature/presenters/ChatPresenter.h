@@ -44,6 +44,8 @@ struct ChatSessionRow {
   bool active = false;
   /** A direct chat with someone who is not a saved contact (so not a blocked one either): a possible new friend. */
   bool from_stranger = false;
+  /** A direct chat with a saved contact this device blocked: the row says so instead of the last message. */
+  bool blocked = false;
   /** Letter and colour index (0..7) of the round avatar; the title decides both. */
   std::string avatar_letter;
   int avatar_tone = 0;

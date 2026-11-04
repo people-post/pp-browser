@@ -143,6 +143,12 @@ public:
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
   void OpenNewChatPage();
+  /** Phones (Settings > Security): the people this device blocked, each with Unblock; a tap opens their page. */
+  void OpenBlockedPeople();
+  /** The shell popped the blocked-people page. */
+  void OnBlockedPeopleDismissed();
+  /** How many saved contacts are blocked (the Settings row's count). */
+  int BlockedCount() const;
   /** The New chat page left the screen (back, swipe, or a row was chosen). */
   void OnNewChatDismissed();
 
@@ -228,6 +234,14 @@ private:
   /** "Add contact" with a pasted invite: the contact added, shown (UI thread). */
   void OnAddedFromInvite(const Roe<std::pair<std::string, bool>>& added);
   void OnSetTrust(const std::string& trust);
+  /** Saves `trust` for the contact; false (and a failure shown) when it could not be saved. */
+  bool SetContactTrust(const std::string& contact_id, const std::string& trust);
+  void SyncBlocked();
+  void DirtyBlocked();
+  void OnUnblockListed(const std::string& contact_id);
+  void OnOpenBlockedContact(const std::string& contact_id);
+  /** The contact page's result: inline under the page on phones, a toast on desktop. */
+  void ShowDetailResult(const std::string& message, const char* spot);
   void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);
   void OnSearchChanged();
@@ -254,6 +268,16 @@ private:
   std::vector<NewChatSectionRow> new_chat_sections_;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
+  /** Blocked people, by name (OpenBlockedPeople), and the result line under the list after an unblock. */
+  std::vector<ContactListRow> blocked_rows_;
+  ui::String blocked_status_;
+  bool blocked_open_ = false;
+  /** Phones: the result of an action on the contact page (block, unblock, copy, ...) shown under it, not a toast. */
+  ui::String detail_status_;
+  /** Where on the contact page that line sits: "name" (the name card), "id" (the ID card) or "block". */
+  ui::String detail_status_spot_;
+  /** The New chat sheet's overlay layer (-1: not open). */
+  int new_chat_layer_id_ = -1;
   ui::String search_query_;
   bool compact_layout_ = false;
   bool advanced_ = false;
@@ -266,10 +290,9 @@ private:
   ChatSessionPorts chat_ports_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  FlowCoordinatorPorts flow_coordinator_;
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
-  /** The New chat sheet's overlay layer (-1: not open). */
-  int new_chat_layer_id_ = -1;
 
   static ContactsController* installed_instance_;
 };
@@ -282,5 +305,7 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 
-  FlowCoordinatorPorts flow_coordinator_;
+/** The blocked ones of `contacts`, sorted by name as the Contacts list sorts them. */
+std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts);
+
 } // namespace pbr

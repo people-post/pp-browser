@@ -222,6 +222,10 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
     }
+    if (key == "blocked_people") {
+      contacts.OnBlockedPeopleDismissed();
+      settings.RefreshBlockedCount();
+    }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }
@@ -890,6 +894,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
+  settings_commands.blocked_count = [this]() { return contacts_ ? contacts_->BlockedCount() : 0; };
+  settings_commands.open_blocked_people = [this]() {
+    if (contacts_) {
+      contacts_->OpenBlockedPeople();
+    }
+  };
   settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
       return Error(Tr("support.unavailable"));
@@ -1386,6 +1396,7 @@ void Application::WireUnlockPinAndFlow() {
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
+    contacts_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
@@ -1402,7 +1413,6 @@ void Application::WireAgentAndConfig() {
     const auto log_not_started = [this](const SubmitOutcome outcome) {
       if (outcome != SubmitOutcome::Started) {
         log().warning << "AI question from the router not started (outcome " << static_cast<int>(outcome) << ")";
-    contacts_->BindFlowCoordinator(flow_ports);
       }
     };
     AgentInboundPorts inbound;

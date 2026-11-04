@@ -77,6 +77,10 @@ public:
   /** Clear detail UI without touching the shell local-back stack (used by sheet dismiss). */
   void ApplyBackToListUi();
   void OnDetailDismissed();
+  /** Re-reads the "Blocked" row's count (the blocked list closed, or a person was blocked or unblocked). */
+  void RefreshBlockedCount();
+  /** Phones: the open section's mount was emptied by a shell remount (a page pushed over it and popped). */
+  bool SheetMountEmpty() const;
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
@@ -232,6 +236,7 @@ private:
   // SettingsHost
   SessionStore& Store() override;
   void ShowStatus(const std::string& status) override;
+  void ShowResult(const std::string& message, bool failed = false) override;
   void Resync(bool include_profile_nickname) override;
   SettingsUiState& UiState() override;
   void PullFromView() override;
@@ -300,6 +305,8 @@ private:
   /** Phones: the Security page pushed over the section ("" none, "change_pin", "transfer") and its title. */
   ui::String security_page_;
   ui::String security_page_title_;
+  /** Security's "Blocked" row: how many people are blocked (0: no number shown). */
+  int blocked_count_ = 0;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

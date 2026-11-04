@@ -273,6 +273,10 @@ void ChatPresenter::Refresh() {
     }
     if (thread.kind == ThreadKind::Direct && label.contact_id) {
       row.icon_path = facade_->ContactIconPath(*label.contact_id);
+      // Kenneth 2026-11-04: a blocked person's chat must be findable again to unblock them.
+      if (auto contact = facade_->GetContact(*label.contact_id); contact && *contact) {
+        row.blocked = (*contact)->trust == TrustLevel::Blocked;
+      }
     }
     next.rows.push_back(std::move(row));
   }

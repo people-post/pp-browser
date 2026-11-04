@@ -129,6 +129,8 @@ struct SessionDisplayRow {
   bool unread_dot = false;
   /** An unread message here mentions us (group-chat G015): the preview line leads with "You were mentioned". */
   bool mentioned = false;
+  /** A chat with someone this device blocked: a small block mark and "Blocked" in place of the preview. */
+  bool blocked = false;
   /** Round avatar: first letter of the title and the colour index (avatar-tone-0..7). */
   ui::String avatar_letter;
   int avatar_tone = 0;
