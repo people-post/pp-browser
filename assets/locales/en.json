@@ -5,6 +5,7 @@
     "scan.title": "Scan QR code",
     "scan.opening": "Opening camera…",
     "scan.hint": "Point the camera at your friend's PP QR code.",
+    "scan.frame_hint": "Align the QR code within the frame",
     "scan.camera_denied": "Camera access is off. Allow PP to use the camera in Settings, then try again.",
     "scan.camera_busy": "The camera is in use by a call or another feature. Close it, then try again.",
     "scan.camera_error": "The camera didn't start. Try again.",

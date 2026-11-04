@@ -1051,6 +1051,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
   qr_scan_->BindShellNavigation(shell_navigation);
+  qr_scan_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
   });
@@ -2097,6 +2098,7 @@ void Application::Shutdown() {
     qr_scan_->Shutdown();
     qr_scan_->BindShellNavigation({});
     qr_scan_->BindFlowCoordinator({});
+    qr_scan_->BindShowMyQr({});
   }
   contacts_->BindScanPorts({});
   contacts_->BindAccountPorts({});

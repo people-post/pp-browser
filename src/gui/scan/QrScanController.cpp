@@ -31,6 +31,10 @@ QrScanController::~QrScanController() {
 
 void QrScanController::BindShellNavigation(ShellNavigationPorts ports) { navigation_ = std::move(ports); }
 void QrScanController::BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_ = std::move(ports); }
+void QrScanController::BindShowMyQr(std::function<void()> show_my_qr) {
+  show_my_qr_ = std::move(show_my_qr);
+  can_show_my_qr_ = static_cast<bool>(show_my_qr_);
+}
 
 bool QrScanController::RegisterModel(ui::Context* context) {
   context_ = context;
@@ -40,10 +44,18 @@ bool QrScanController::RegisterModel(ui::Context* context) {
   return DataModelHost::Instance().Register(context, "qr_scan", [this](ui::DataModelConstructor& ctor) {
     ctor.Bind("status", &status_);
     ctor.Bind("failed", &failed_);
+    ctor.Bind("can_show_my_qr", &can_show_my_qr_);
     ctor.BindEventCallback("cancel_scan", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) { Close(); });
     ctor.BindEventCallback("retry_scan", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
       if (IsOpen()) {
         BeginCapture();
+      }
+    });
+    // Like WeChat: "My QR code" under the frame leaves the scan (no result) and shows my code instead.
+    ctor.BindEventCallback("scan_show_my_qr", [this](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
+      Close();
+      if (show_my_qr_) {
+        show_my_qr_();
       }
     });
   });
@@ -67,6 +79,7 @@ void QrScanController::Open(QrScanResultCallback on_result) {
   spec.key = "qr_scan";
   spec.rml_path = "qr_scan";
   spec.role = PaneRole::Transient;
+  spec.full_screen = true;  // phones: the camera fills the screen, WeChat style (Kenneth 2026-11-04)
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
     ScanLog().warning << "Open ignored: push_layer returned no layer";

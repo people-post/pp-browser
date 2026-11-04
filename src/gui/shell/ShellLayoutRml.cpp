@@ -224,6 +224,15 @@ std::string ShellLayoutRml::TransientLayer() const {
 std::string ShellLayoutRml::Overlays() const {
   std::ostringstream out;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.full_screen && state_.layout_mode == LayoutMode::Compact) {
+      // Phone full-screen page (the scanner): no scrim, frame or close button; the view has its own back. ShellHost
+      // lifts the layer under the status bar and pads the body by the safe areas.
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\" id=\"shell-full-screen-"
+          << overlay.id << "\" data-model=\"window\">";
+      out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      out << "</div>";
+      continue;
+    }
     if (overlay.page_sheet && state_.layout_mode == LayoutMode::Compact) {
       // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches its drag
       // (ShellPageSheetGesture). The view keeps its own Cancel and its title row (.sheet-header); the close button

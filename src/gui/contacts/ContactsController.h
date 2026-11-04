@@ -179,6 +179,8 @@ public:
   void OnFindSomeone();
   /** Contacts → Scan QR code. Successful friend scans still ask before saving. */
   void OnScanQr();
+  /** My QR code in its own sheet (the phone scanner's button); a toast instead while there is no account. */
+  void OpenMyQr();
   /**
    * Share a contact into a chat: `share` sends the card. When it fails and `refresh_card` is set, the contact's
    * card is asked for once (its devices, then the directory — the path opening the contact uses) and, if one

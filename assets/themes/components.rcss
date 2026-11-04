@@ -6054,6 +6054,212 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Phone scanner (Kenneth 2026-11-04, WeChat style; ShellLayoutRml's full-screen layer): the camera and the finder
+   fill the whole screen behind the back button and the bottom button, which stay inside the safe areas the shell
+   pads the body by. The finder is a 250dp square in the middle with corner marks and a line sweeping it, dimmed
+   round it, the hint under it. Colours: colors.rcss.tmpl. */
+.qr-scan-finder,
+.qr-scan-back,
+.qr-scan-tools {
+  display: none;
+}
+
+.shell-layer-full-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The camera fills the layer (the absolute parts' box), not this padded body, so the body neither clips nor scrolls. */
+.shell-layer-full-screen .shell-overlay-body {
+  flex: 1;
+  overflow: visible;
+  clip: auto;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-scan {
+  justify-content: space-between;
+  gap: 0;
+}
+
+.shell-layer-compact .qr-scan-title,
+.shell-layer-compact .qr-scan-status,
+.shell-layer-compact .qr-scan-actions {
+  display: none;
+}
+
+.shell-layer-compact .qr-scan-camera,
+.shell-layer-compact .qr-scan-finder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 0;
+}
+
+.shell-layer-compact .qr-scan-finder {
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-layer-compact .qr-scan-dim {
+  flex: 1;
+}
+
+.shell-layer-compact .qr-scan-finder-row {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  height: 250dp;
+}
+
+.shell-layer-compact .qr-scan-frame {
+  position: relative;
+  flex-shrink: 0;
+  width: 250dp;
+  height: 250dp;
+}
+
+.shell-layer-compact .qr-scan-corner {
+  position: absolute;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-scan-corner--tl {
+  top: 0;
+  left: 0;
+  border-width: 3dp 0 0 3dp;
+}
+
+.shell-layer-compact .qr-scan-corner--tr {
+  top: 0;
+  right: 0;
+  border-width: 3dp 3dp 0 0;
+}
+
+.shell-layer-compact .qr-scan-corner--bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3dp 3dp;
+}
+
+.shell-layer-compact .qr-scan-corner--br {
+  right: 0;
+  bottom: 0;
+  border-width: 0 3dp 3dp 0;
+}
+
+@keyframes qr-scan-sweep {
+  from { transform: translateY(0dp); }
+  to { transform: translateY(234dp); }
+}
+
+/* Only while scanning: it goes with the failure line. */
+.shell-layer-compact .qr-scan-line {
+  position: absolute;
+  top: 7dp;
+  left: 10dp;
+  right: 10dp;
+  height: 2dp;
+  border-radius: 1dp;
+  animation: 1.2s cubic-in-out infinite alternate qr-scan-sweep;
+}
+
+/* Out of the flow, so the dimmed bands above and below the frame stay equal and the frame stays in the middle. */
+.shell-layer-compact .qr-scan-below {
+  position: relative;
+}
+
+.shell-layer-compact .qr-scan-below-text {
+  position: absolute;
+  top: 24dp;
+  left: 32dp;
+  right: 32dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shell-layer-compact .qr-scan-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+.shell-layer-compact .qr-scan-retry {
+  height: 44dp;
+  margin: 16dp 0 0 0;
+  padding: 0 24dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 17dp;
+  line-height: 44dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-back {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 0 0 8dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-back svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-compact .qr-scan-tools {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  padding: 0 0 24dp 0;
+}
+
+.shell-layer-compact .qr-scan-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 88dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-tool-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+}
+
+.shell-layer-compact .qr-scan-tool-disc svg {
+  width: 26dp;
+  height: 26dp;
+}
+
+.shell-layer-compact .qr-scan-tool-label {
+  margin-top: 8dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
 /* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
    account id; the detail page is a centred 96dp avatar, round action button and grouped cards. Desktop keeps its layout;
    the phone-only elements are hidden until the compact layer. */

@@ -77,6 +77,27 @@ TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
   EXPECT_FALSE(Has(rml, "--large"));
 }
 
+// The phone scanner (Kenneth 2026-11-04, WeChat style): a full-screen layer with no scrim, frame or X of the shell's;
+// the view brings its own back. Desktop keeps the centred panel with its close button.
+TEST(ShellLayoutRmlTest, AFullScreenLayerHasNoScrimFrameOrCloseButtonOnPhones) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  OverlayEntry scan;
+  scan.id = 9;
+  scan.key = "qr_scan";
+  scan.full_screen = true;
+  state.overlay_stack.push_back(scan);
+  std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-layer shell-layer-overlay shell-layer-full-screen\" id=\"shell-full-screen-9\""));
+  EXPECT_TRUE(Has(rml, "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-9\">"));
+  EXPECT_FALSE(Has(rml, "close_layer(9)")) << "no scrim tap or X closes it: the view's back does";
+  EXPECT_FALSE(Has(rml, "shell-frame"));
+  state.layout_mode = LayoutMode::Expanded;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(rml, "shell-layer-full-screen"));
+  EXPECT_TRUE(Has(rml, "shell-frame"));
+  EXPECT_TRUE(Has(rml, "close_layer(9)"));
+}
+
 TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = true;

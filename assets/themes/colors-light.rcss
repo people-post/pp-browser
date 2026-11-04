@@ -1577,6 +1577,43 @@ input.checkbox:checked {
   background-color: #ffffff;
 }
 
+/* Phone scanner over the camera: the same in both themes. */
+.qr-scan-dim {
+  background-color: #00000080;
+}
+
+.qr-scan-corner {
+  border-color: #ffffff;
+}
+
+.qr-scan-line {
+  background-color: #007aff;
+}
+
+.qr-scan-hint,
+.qr-scan-tool-label {
+  color: #ffffff;
+}
+
+.qr-scan-back,
+.qr-scan-tool {
+  background-color: transparent;
+}
+
+.qr-scan-back svg,
+.qr-scan-tool-disc svg {
+  image-color: #ffffff;
+}
+
+.qr-scan-tool-disc,
+.qr-scan-retry {
+  background-color: #ffffff33;
+}
+
+.qr-scan-retry {
+  color: #ffffff;
+}
+
 .nc-page {
   background-color: #ffffff;
 }

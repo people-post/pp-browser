@@ -126,6 +126,12 @@ struct PaneSpec {
    * panel. Desktop is unchanged.
    */
   bool page_sheet = false;
+  /**
+   * PushLayer on phones: a full-screen page reaching every screen edge (under the status bar and the home indicator)
+   * with no scrim, frame or close button: the view brings its own way out and keeps its controls inside the
+   * shell-overlay-body, which ShellHost pads by the safe areas. Desktop is unchanged.
+   */
+  bool full_screen = false;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
@@ -150,6 +156,8 @@ struct OverlayEntry {
   bool page_sheet = false;
   /** Where the sheet stands now (moved by its drag); while the keyboard is up it shows full height anyway. */
   SheetDetent sheet_detent = SheetDetent::Large;
+  /** PaneSpec::full_screen: edge to edge on phones. */
+  bool full_screen = false;
 };
 
 struct ToastEntry {

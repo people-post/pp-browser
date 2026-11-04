@@ -2251,6 +2251,15 @@ void ContactsController::OnAddShare(const ShareAnchor anchor) {
       });
 }
 
+void ContactsController::OpenMyQr() {
+  LoadMyAccount();  // the scanner may open from outside the Add contact sheet, which loads it otherwise
+  if (!my_has_account_ || my_locator_.empty()) {
+    ShowToast(Tr("settings.profile.no_peer_id"));
+    return;
+  }
+  OpenMyQrPage();
+}
+
 // My QR code: the invite locator as a QR in its own sheet (the Me > Profile "QR code" button shows it inline).
 void ContactsController::OpenMyQrPage() {
   if (my_qr_open_ || !shell_navigation_.push_layer) {

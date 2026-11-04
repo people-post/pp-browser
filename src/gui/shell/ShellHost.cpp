@@ -548,6 +548,7 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.key = spec.key;
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
   entry.page_sheet = spec.page_sheet;
+  entry.full_screen = spec.full_screen;
   if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
     sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
   }
@@ -1308,6 +1309,19 @@ void ShellHost::ApplySafeAreaLayout() {
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.
   const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.full_screen) {
+      // Edge to edge: the layer reaches up under the status bar (#shell-root starts below it; a narrow desktop
+      // window's own title bar stays uncovered) and down to the screen bottom; its body keeps the view's controls
+      // clear of both.
+      const float status_bar_dp = static_cast<float>(std::max(0, state_.safe_area_top_dp));
+      const std::string layer_id = "shell-full-screen-" + std::to_string(overlay.id);
+      set_dp(doc->GetElementById(layer_id.c_str()), "top", -status_bar_dp);
+      const std::string body_id = "overlay-body-" + std::to_string(overlay.id);
+      ui::Element* body = doc->GetElementById(body_id.c_str());
+      set_dp(body, "padding-top", status_bar_dp);
+      set_dp(body, "padding-bottom", strip_dp);
+      continue;
+    }
     if (overlay.page_sheet) {
       const std::string sheet_id = "shell-page-sheet-" + std::to_string(overlay.id);
       ui::Element* sheet = doc->GetElementById(sheet_id.c_str());
