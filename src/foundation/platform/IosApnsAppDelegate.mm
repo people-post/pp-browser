@@ -149,5 +149,9 @@ bool IsCallWake(NSDictionary* userInfo) {
 @end
 #pragma clang diagnostic pop
 
+namespace pbr {
+void LinkIosApnsAppDelegate() {}
+} // namespace pbr
+
 #endif // TARGET_OS_IPHONE
 #endif // __APPLE__
