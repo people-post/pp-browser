@@ -19,4 +19,7 @@ public:
 /** Cache APNs device token (hex) and notify listeners. Safe from any thread. */
 void SetIosCachedApnsToken(std::string token);
 
+/** Anchors IosApnsAppDelegate.mm: nothing else references it, so the linker would drop it from the static library. */
+void LinkIosApnsAppDelegate();
+
 } // namespace pbr

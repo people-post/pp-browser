@@ -83,6 +83,7 @@ void PlatformHooks::Register() {
     g_packaged_file_interface = &file_interface;
     IPushDeviceRegistrar::SetInstance(&IosPushRegistrar());
     ILocalNotifier::SetInstance(&IosNotifier());
+    LinkIosApnsAppDelegate();
 #endif
   } else {
     ILocalNotifier::SetInstance(&DesktopNotifier());
