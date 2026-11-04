@@ -14,6 +14,9 @@
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
+#include "gui/AccountInvite.h"
+#include "lib/ui/QrSvg.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactJson.h"
@@ -452,6 +455,10 @@ void ContactsController::BindScanPorts(ScanPorts ports) {
   scan_ports_ = std::move(ports);
 }
 
+void ContactsController::BindAccountPorts(ContactsAccountPorts ports) {
+  account_ports_ = std::move(ports);
+}
+
 ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
   return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
 }
@@ -533,7 +540,15 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       thread_handle.RegisterMember("unread_count", &ContactThreadRow::unread_count);
       thread_handle.RegisterMember("unread_display", &ContactThreadRow::unread_display);
     }
+    if (auto hit_handle = ctor.RegisterStruct<AddHitRow>()) {
+      hit_handle.RegisterMember("index", &AddHitRow::index);
+      hit_handle.RegisterMember("title", &AddHitRow::title);
+      hit_handle.RegisterMember("short_id", &AddHitRow::short_id);
+      hit_handle.RegisterMember("avatar_letter", &AddHitRow::avatar_letter);
+      hit_handle.RegisterMember("avatar_tone", &AddHitRow::avatar_tone);
+    }
     // Arrays must be registered before they are used as struct members.
+    ctor.RegisterArray<std::vector<AddHitRow>>();
     ctor.RegisterArray<std::vector<ContactListRow>>();
     if (auto section_handle = ctor.RegisterStruct<NewChatSectionRow>()) {
       section_handle.RegisterMember("letter", &NewChatSectionRow::letter);
@@ -580,6 +595,20 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("contact_index", &controller.contact_index_);
     ctor.Bind("contact_index_bubble", &controller.contact_index_bubble_);
     ctor.Bind("search_query", &controller.search_query_);
+    ctor.Bind("add_query", &controller.add_query_);
+    ctor.Bind("add_rows", &controller.add_rows_);
+    ctor.Bind("add_searching", &controller.add_searching_);
+    ctor.Bind("add_no_results", &controller.add_no_results_);
+    ctor.Bind("my_has_account", &controller.my_has_account_);
+    ctor.Bind("my_name", &controller.my_name_);
+    ctor.Bind("my_account_id", &controller.my_account_id_);
+    ctor.Bind("my_has_icon", &controller.my_has_icon_);
+    ctor.Bind("my_icon_src", &controller.my_icon_src_);
+    ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
+    ctor.Bind("my_avatar_tone", &controller.my_avatar_tone_);
+    ctor.Bind("my_qr_svg_rml", &controller.my_qr_svg_rml_);
+    ctor.Bind("can_scan", &controller.can_scan_);
+    ctor.Bind("can_new_group", &controller.can_new_group_);
     ctor.Bind("nc_frequent", &controller.new_chat_frequent_);
     ctor.Bind("nc_sections", &controller.new_chat_sections_);
     ctor.Bind("nc_query", &controller.new_chat_query_);
@@ -604,6 +633,11 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
     ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
+    ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
+    ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
+    ctor.BindEventCallback("add_action", DataEvent<std::string>([this](const std::string& a) { OnAddAction(a); }));
+    ctor.BindEventCallback("add_copy_id", DataEvent<>([this]() { OnAddCopyId(); }));
+    ctor.BindEventCallback("add_share", DataEventAt([this](ui::Event& ev) { OnAddShare(ShareAnchorFromEvent(ev)); }));
     ctor.BindEventCallback("new_chat_pick", &ContactsController::NewChatPickCallback);
     ctor.BindEventCallback("new_chat_action", &ContactsController::NewChatActionCallback);
     ctor.BindEventCallback("new_chat_search_changed", &ContactsController::NewChatSearchCallback);
@@ -1241,6 +1275,10 @@ void ContactsController::OnContactFieldChanged() {
 }
 
 void ContactsController::Tick() {
+  if (add_search_deadline_ms_ != 0 && SDL_GetTicks() >= add_search_deadline_ms_) {
+    add_search_deadline_ms_ = 0;
+    RunAddSearch();
+  }
   if (!contact_dirty_ || debounce_deadline_ms_ == 0) {
     return;
   }
@@ -1321,56 +1359,31 @@ void ContactsController::ShowAlreadyContact(const Contact& contact) {
   NotifySurfaceChanged();
 }
 
-std::vector<ContextMenuAction> ContactsController::AddContactMenuActions(const bool compact, const bool can_scan, const bool can_new_group) {
-  std::vector<ContextMenuAction> actions;
-  actions.push_back({
-      "add_contact",
-      Tr("contacts.add"),
-      nullptr,
-      []() { ContactsController::Instance().OnAddContact(); },
-      "../icons/v2/user-plus.svg",
-  });
-  if (compact) {
-    // On the phone this menu is the one entry point for scanning and for starting a group.
-    if (can_scan) {
-      actions.push_back({
-          "scan_qr",
-          Tr("scan.title"),
+std::vector<ContextMenuAction> ContactsController::AddContactMenuActions() {
+  return {
+      {
+          "add_contact",
+          Tr("contacts.add"),
           nullptr,
-          []() { ContactsController::Instance().OnScanQr(); },
-          "../icons/v2/qr-code.svg",
-      });
-    }
-    if (can_new_group) {
-      actions.push_back({
-          "new_group",
-          Tr("contacts.new_group"),
+          []() { ContactsController::Instance().OnAddContact(); },
+          "../icons/v2/user-plus.svg",
+      },
+      {
+          "find_someone",
+          Tr("contacts.find_someone"),
           nullptr,
-          []() { ContactsController::Instance().OnNewGroup(); },
-          "../icons/v2/group.svg",
-      });
-    }
-  }
-  actions.push_back({
-      "find_someone",
-      Tr("contacts.find_someone"),
-      nullptr,
-      []() { ContactsController::Instance().OnFindSomeone(); },
-      "../icons/v2/search.svg",
-  });
-  return actions;
+          []() { ContactsController::Instance().OnFindSomeone(); },
+          "../icons/v2/search.svg",
+      },
+  };
 }
 
 void ContactsController::OnAddContactMenu(ui::Event& ev) {
-  std::vector<ContextMenuAction> actions = AddContactMenuActions(
-      compact_layout_, static_cast<bool>(scan_ports_.scan_qr), static_cast<bool>(chat_ports_.open_new_group));
   if (compact_layout_) {
-    // The phone header "+": a pull-down under the button, not a sheet from the bottom.
-    ui::Element* button = ev.GetCurrentElement() ? ev.GetCurrentElement() : ev.GetTargetElement();
-    ContextMenuHost::Instance().ShowActionsPopover(button, std::move(actions));
+    OpenAddContactPage(); // the phone "+": a page sheet like New chat, not a menu
     return;
   }
-  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions));
+  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), AddContactMenuActions());
 }
 
 void ContactsController::OnNewGroup() {
@@ -1502,30 +1515,7 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
     return;
   }
   if (hits->size() == 1) {
-    const mesh::DirectoryHit& hit = hits->front();
-    const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
-    // A relay-only hit has no account id: show its relay id in the dialog and skip the known-contact check.
-    const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
-    std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
-    switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
-    case AddFromSearchDecision::AlreadyContact:
-      ShowAlreadyContact(*known);
-      return;
-    case AddFromSearchDecision::ConfirmByName: {
-      const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
-      ShowConfirm(Tr("contacts.confirm_add_title"),
-                  Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
-                  [hit](const bool ok) {
-                    if (ok) {
-                      ContactsController::Instance().AddContactFromHit(hit);
-                    }
-                  });
-      return;
-    }
-    case AddFromSearchDecision::AddDirect:
-      AddContactFromHit(hit);
-      return;
-    }
+    OfferHit(hits->front(), query);
     return;
   }
   // Several people match: pick one (name · short id). The hits are ranked, exact matches first,
@@ -1553,6 +1543,32 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
   }
   actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}, "../icons/v2/close.svg"});
   ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions));
+}
+
+void ContactsController::OfferHit(const mesh::DirectoryHit& hit, const std::string& query) {
+  const std::string account = PrimaryAccountIdFromHit(hit).value_or("");
+  // A relay-only hit has no account id: show its relay id in the dialog and skip the known-contact check.
+  const std::string shown_id = !account.empty() ? account : PrimaryRelayIdFromHit(hit).value_or("");
+  std::optional<Contact> known = account.empty() ? std::nullopt : FindContactByAccount(account);
+  switch (DecideAddFromSearch(HitMatchesExactPeopleId(hit, query), known.has_value())) {
+  case AddFromSearchDecision::AlreadyContact:
+    ShowAlreadyContact(*known);
+    return;
+  case AddFromSearchDecision::ConfirmByName: {
+    const std::string name = !hit.display_name.empty() ? hit.display_name : hit.nickname;
+    ShowConfirm(Tr("contacts.confirm_add_title"),
+                Tr("contacts.confirm_add_body", {{"name", name}, {"account", ShortRelayId(shown_id)}}),
+                [hit](const bool ok) {
+                  if (ok) {
+                    ContactsController::Instance().AddContactFromHit(hit);
+                  }
+                });
+    return;
+  }
+  case AddFromSearchDecision::AddDirect:
+    AddContactFromHit(hit);
+    return;
+  }
 }
 
 void ContactsController::AddContactFromHit(const mesh::DirectoryHit& hit) {
@@ -2007,5 +2023,245 @@ void ContactsController::OnSearchChanged() {
   host.Dirty("contacts", "search_query");
 }
 
+// ---- The phone Add contact sheet (Kenneth 2026-11-04: the "+" opens a big sheet, not a small menu) ----
+
+namespace {
+constexpr uint32_t kAddSearchDebounceMs = 300;
+constexpr size_t kAddMaxHits = 10;
+} // namespace
+
+void ContactsController::OpenAddContactPage() {
+  if (add_open_ || !shell_navigation_.push_layer) {
+    return;
+  }
+  add_query_ = "";
+  add_rows_.clear();
+  add_hits_.clear();
+  add_searching_ = false;
+  add_no_results_ = false;
+  add_search_deadline_ms_ = 0;
+  ++add_search_generation_;
+  LoadMyAccount();
+  can_scan_ = static_cast<bool>(scan_ports_.scan_qr);
+  can_new_group_ = static_cast<bool>(chat_ports_.open_new_group);
+  add_open_ = true;
+  DirtyAddContact();
+  PaneSpec spec;
+  spec.key = "add_contact";
+  spec.page_sheet = true;
+  add_layer_id_ = shell_navigation_.push_layer(spec);
+  if (flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(add_layer_id_, {}, [this]() { OnAddContactDismissed(); });
+  }
+}
+
+void ContactsController::OnAddContactDismissed() {
+  add_open_ = false;
+  add_layer_id_ = -1;
+  add_search_deadline_ms_ = 0;
+  ++add_search_generation_; // a search still in flight answers into nothing
+}
+
+void ContactsController::CloseAddContactPage() {
+  if (!add_open_) {
+    return;
+  }
+  const int layer_id = add_layer_id_;
+  if (flow_coordinator_.end_modal) {
+    flow_coordinator_.end_modal();
+  }
+  OnAddContactDismissed();
+  if (layer_id >= 0 && shell_navigation_.close_layer) {
+    shell_navigation_.close_layer(layer_id);
+  }
+}
+
+void ContactsController::DirtyAddContact() {
+  auto& host = DataModelHost::Instance();
+  for (const char* name :
+       {"add_query", "add_rows", "add_searching", "add_no_results", "my_has_account", "my_name", "my_account_id",
+        "my_has_icon", "my_icon_src", "my_avatar_letter", "my_avatar_tone", "my_qr_svg_rml", "can_scan",
+        "can_new_group"}) {
+    host.Dirty("contacts", name);
+  }
+}
+
+void ContactsController::LoadMyAccount() {
+  const ProfileIdentityView view = account_ports_.load_identity ? account_ports_.load_identity() : ProfileIdentityView{};
+  my_has_account_ = view.ready && !view.relay_id.empty();
+  my_nickname_ = view.nickname;
+  my_locator_ = view.contact_locator;
+  const std::string name = view.nickname.empty() ? Tr("people_picker.unnamed") : view.nickname;
+  my_name_ = name.c_str();
+  my_account_id_ = view.relay_id.c_str();
+  my_has_icon_ = view.profile_has_icon && !view.profile_icon_path.empty();
+  my_icon_src_ = view.profile_icon_path.c_str();
+  const AvatarGlyph glyph = MakeAvatarGlyph(name, AvatarStableId(view.account_id, view.relay_id, view.peer_id));
+  my_avatar_letter_ = glyph.letter.c_str();
+  my_avatar_tone_ = glyph.tone;
+}
+
+void ContactsController::AddSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                  const ui::VariantList& /*args*/) {
+  TakeEventValue(ev, Instance().add_query_);
+  Instance().OnAddSearchChanged();
+  DismissKeyboardOnReturn(ev);
+}
+
+// Typing searches as you type: each keystroke restarts a 300 ms wait, then the directory is asked once.
+void ContactsController::OnAddSearchChanged() {
+  ++add_search_generation_;
+  add_rows_.clear();
+  add_hits_.clear();
+  add_no_results_ = false;
+  if (util::Trim(add_query_.c_str()).empty()) {
+    add_searching_ = false;
+    add_search_deadline_ms_ = 0;
+  } else {
+    add_searching_ = true;
+    add_search_deadline_ms_ = SDL_GetTicks() + kAddSearchDebounceMs;
+  }
+  DirtyAddContact();
+}
+
+void ContactsController::RunAddSearch() {
+  const std::string query = util::Trim(add_query_.c_str());
+  if (query.empty()) {
+    return;
+  }
+  if (!contacts_ports_.search_people) {
+    add_searching_ = false;
+    add_no_results_ = true;
+    DirtyAddContact();
+    return;
+  }
+  const uint64_t generation = add_search_generation_;
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<std::vector<mesh::DirectoryHit>>>(
+      WorkerLane::Normal, [search = contacts_ports_.search_people, query]() { return search(query); },
+      [query, generation](Roe<std::vector<mesh::DirectoryHit>> hits) {
+        ContactsController::Instance().OnAddSearched(query, generation, std::move(hits));
+      });
+}
+
+void ContactsController::OnAddSearched(const std::string& /*query*/, const uint64_t generation,
+                                       Roe<std::vector<mesh::DirectoryHit>> hits) {
+  if (!add_open_ || generation != add_search_generation_) {
+    return; // typed on, or the sheet closed
+  }
+  add_searching_ = false;
+  if (!hits) {
+    if (ClassifyPeopleLookupError(hits.error()) == PeopleLookupFailure::DirectoryUnreachable) {
+      UserFeedback::Fail(Tr("contacts.err.directory_unreachable"));
+    } else {
+      log().warning << "People lookup failed: " << AppError::Log(hits.error());
+      UserFeedback::Fail(Tr("contacts.err.add"));
+    }
+    DirtyAddContact();
+    return;
+  }
+  add_no_results_ = hits->empty();
+  for (size_t i = 0; i < hits->size() && i < kAddMaxHits; ++i) {
+    const mesh::DirectoryHit& hit = (*hits)[i];
+    const std::string name = !hit.display_name.empty()
+                                 ? hit.display_name
+                                 : (!hit.nickname.empty() ? hit.nickname : Tr("people.result.unknown_person"));
+    const std::string id = PrimaryAccountIdFromHit(hit).value_or(PrimaryRelayIdFromHit(hit).value_or(""));
+    AddHitRow row;
+    row.index = std::to_string(add_hits_.size()).c_str();
+    row.title = name.c_str();
+    row.short_id = ShortRelayId(id).c_str();
+    const AvatarGlyph glyph = MakeAvatarGlyph(name, {});
+    row.avatar_letter = glyph.letter.c_str();
+    row.avatar_tone = glyph.tone;
+    add_rows_.push_back(std::move(row));
+    add_hits_.push_back(hit);
+  }
+  DirtyAddContact();
+}
+
+// A result chosen: the sheet goes, and the existing add flow (already a contact / ask first / add) takes over.
+void ContactsController::OnAddPick(const std::string& index) {
+  size_t i = 0;
+  try {
+    i = static_cast<size_t>(std::stoul(index));
+  } catch (...) {
+    return;
+  }
+  if (i >= add_hits_.size()) {
+    return;
+  }
+  const mesh::DirectoryHit hit = add_hits_[i];
+  const std::string query = util::Trim(add_query_.c_str());
+  CloseAddContactPage();
+  OfferHit(hit, query);
+}
+
+void ContactsController::OnAddAction(const std::string& action) {
+  if (action == "scan") {
+    CloseAddContactPage();
+    OnScanQr();
+  } else if (action == "qr") {
+    if (!my_has_account_ || my_locator_.empty()) {
+      ShowToast(Tr("settings.profile.no_peer_id"));
+      return;
+    }
+    CloseAddContactPage();
+    OpenMyQrPage();
+  } else if (action == "invite") {
+    OnAddShare({});
+  } else if (action == "group") {
+    CloseAddContactPage();
+    OnNewGroup();
+  }
+}
+
+void ContactsController::OnAddCopyId() {
+  if (!my_has_account_) {
+    return;
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->SetClipboardText(my_account_id_.c_str());
+  }
+  ShowToast(Tr("contacts.add_sheet.id_copied"));
+}
+
+void ContactsController::OnAddShare(const ShareAnchor anchor) {
+  // Same invite as Me > Profile > Share: name, account id and the locator a friend pastes into Add contact.
+  if (!my_has_account_) {
+    ShowToast(Tr("settings.profile.no_peer_id"));
+    return;
+  }
+  ShareInviteOrCopy(
+      AccountInviteText(my_nickname_, my_account_id_.c_str(), my_locator_),
+      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
+      anchor, [](const std::string& text) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(text.c_str());
+        }
+      });
+}
+
+// My QR code: the invite locator as a QR in its own sheet (the Me > Profile "QR code" button shows it inline).
+void ContactsController::OpenMyQrPage() {
+  if (my_qr_open_ || !shell_navigation_.push_layer) {
+    return;
+  }
+  auto qr = QrSvgContent(my_locator_);
+  my_qr_svg_rml_ = qr ? qr.value().c_str() : "";
+  DataModelHost::Instance().Dirty("contacts", "my_qr_svg_rml");
+  my_qr_open_ = true;
+  PaneSpec spec;
+  spec.key = "my_qr";
+  spec.page_sheet = true;
+  my_qr_layer_id_ = shell_navigation_.push_layer(spec);
+  if (flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(my_qr_layer_id_, {}, [this]() { OnMyQrDismissed(); });
+  }
+}
+
+void ContactsController::OnMyQrDismissed() {
+  my_qr_open_ = false;
+  my_qr_layer_id_ = -1;
+}
 
 } // namespace pbr

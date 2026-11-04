@@ -3,10 +3,14 @@
 #include "gui/contacts/ContactsController.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
+#include "lib/ui/ViewCatalog.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -29,19 +33,9 @@ protected:
   }
 };
 
-TEST_F(ContactsPhoneTest, PhoneMenuHasAddScanGroupAndFindInOrder) {
-  const auto ids = Ids(ContactsController::AddContactMenuActions(true, true, true));
-  EXPECT_EQ(ids, (std::vector<std::string>{"add_contact", "scan_qr", "new_group", "find_someone"}));
-}
-
-TEST_F(ContactsPhoneTest, PhoneMenuOmitsEntriesThatAreNotWired) {
-  EXPECT_EQ(Ids(ContactsController::AddContactMenuActions(true, false, false)),
-            (std::vector<std::string>{"add_contact", "find_someone"}));
-}
-
+// The phone "+" opens the Add contact sheet; only the desktop keeps the menu.
 TEST_F(ContactsPhoneTest, DesktopMenuKeepsAddAndFindOnly) {
-  EXPECT_EQ(Ids(ContactsController::AddContactMenuActions(false, true, true)),
-            (std::vector<std::string>{"add_contact", "find_someone"}));
+  EXPECT_EQ(Ids(ContactsController::AddContactMenuActions()), (std::vector<std::string>{"add_contact", "find_someone"}));
 }
 
 // Kenneth 2026-11-04: the New group sheet was titled "新建对话".
@@ -228,6 +222,48 @@ TEST_F(ContactsPhoneTest, ContactSearchMatchesChineseNamesByPinyinInitials) {
   EXPECT_TRUE(ContactMatchesQuery(zoe, "z"));
   EXPECT_FALSE(ContactMatchesQuery(wang, "z"));
   EXPECT_TRUE(ContactMatchesQuery(wang, "wf"));
+}
+
+// The Add contact sheet: every row and string the markup needs exists, in both languages.
+std::string ReadAsset(const std::string& relative) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
+}
+
+TEST_F(ContactsPhoneTest, AddContactSheetHasSearchAccountCardAndFourRows) {
+  EXPECT_EQ(ViewCatalog::ResolvePath("add_contact"), "views/add_contact.rml");
+  EXPECT_EQ(ViewCatalog::ResolvePath("my_qr"), "views/my_qr.rml");
+  const std::string rml = ReadAsset("views/add_contact.rml");
+  ASSERT_FALSE(rml.empty());
+  for (const char* piece :
+       {"class=\"sheet-header\"", "class=\"sheet-title\"", "data-value=\"add_query\"",
+        "data-event-change=\"add_search_changed()\"", "add_copy_id()", "add_share()", "add_action('scan')",
+        "add_action('qr')", "add_action('invite')", "add_action('group')", "add_pick(hit.index)",
+        "{{i18n:contacts.add_sheet.search_placeholder}}", "{{i18n:settings.profile.relay_id_none}}",
+        "data-if=\"add_no_results\""}) {
+    EXPECT_NE(rml.find(piece), std::string::npos) << piece;
+  }
+  // The account card and the rows are what an empty query shows; the buttons only exist with an account.
+  EXPECT_LT(rml.find("add_copy_id()"), rml.find("add_action('scan')"));
+  EXPECT_LT(rml.find("add_action('scan')"), rml.find("add_action('qr')"));
+  EXPECT_LT(rml.find("add_action('qr')"), rml.find("add_action('invite')"));
+  EXPECT_LT(rml.find("add_action('invite')"), rml.find("add_action('group')"));
+  EXPECT_NE(rml.find("data-if=\"my_has_account\" data-event-click=\"add_copy_id()\""), std::string::npos);
+}
+
+TEST_F(ContactsPhoneTest, AddContactSheetStringsAreTranslated) {
+  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "Search by name or account ID");
+  EXPECT_EQ(Tr("contacts.my_qr"), "My QR code");
+  EXPECT_EQ(Tr("contacts.invite_friends"), "Invite friends to PP");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("contacts.add"), "添加联系人");
+  EXPECT_EQ(Tr("contacts.add_sheet.search_placeholder"), "输入名字或账号 ID 找人");
+  EXPECT_EQ(Tr("contacts.my_qr"), "我的二维码");
+  EXPECT_EQ(Tr("contacts.invite_friends"), "邀请朋友使用 PP");
+  EXPECT_EQ(Tr("scan.title"), "扫一扫");
+  EXPECT_EQ(Tr("contacts.new_group"), "建群");
 }
 
 } // namespace

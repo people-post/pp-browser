@@ -1,0 +1,85 @@
+<div class="ac-page" data-model="contacts">
+  <!-- The sheet's title row (.sheet-header) stays put above the content. -->
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:contacts.add}}</p>
+  </div>
+  <div class="ac-scroll">
+    <div class="chat-search ac-search">
+      <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+      <input class="chat-search-input" type="text" data-value="add_query"
+             data-event-change="add_search_changed()"/>
+      <p class="chat-search-label" data-if="add_query == ''">{{i18n:contacts.add_sheet.search_placeholder}}</p>
+    </div>
+
+    <div data-if="add_query == ''">
+      <div class="ac-card ac-account">
+        <div class="contacts-row-avatar-frame ac-avatar"
+             data-class-avatar-tone-0="!my_has_icon && my_avatar_tone == 0"
+             data-class-avatar-tone-1="!my_has_icon && my_avatar_tone == 1"
+             data-class-avatar-tone-2="!my_has_icon && my_avatar_tone == 2"
+             data-class-avatar-tone-3="!my_has_icon && my_avatar_tone == 3"
+             data-class-avatar-tone-4="!my_has_icon && my_avatar_tone == 4"
+             data-class-avatar-tone-5="!my_has_icon && my_avatar_tone == 5"
+             data-class-avatar-tone-6="!my_has_icon && my_avatar_tone == 6"
+             data-class-avatar-tone-7="!my_has_icon && my_avatar_tone == 7">
+          <img class="contacts-row-avatar-image ac-avatar-image" data-if="my_has_icon" data-attr-src="my_icon_src"/>
+          <p class="avatar-letter" data-if="!my_has_icon">{{my_avatar_letter}}</p>
+        </div>
+        <div class="ac-account-body">
+          <p class="ac-account-name">{{my_name}}</p>
+          <p class="ac-account-id" data-if="my_has_account">{{my_account_id}}</p>
+          <p class="ac-account-id" data-if="!my_has_account">{{i18n:settings.profile.relay_id_none}}</p>
+        </div>
+        <button class="ac-icon-btn" type="button" data-if="my_has_account" data-event-click="add_copy_id()">
+          <svg src="../icons/v2/copy.svg" width="22" height="22"></svg>
+        </button>
+        <button class="ac-icon-btn" type="button" data-if="my_has_account" data-event-click="add_share()">
+          <svg src="../icons/v2/share.svg" width="22" height="22"></svg>
+        </button>
+      </div>
+
+      <div class="ac-card ac-group">
+        <div class="ac-row" data-if="can_scan" data-event-click="add_action('scan')">
+          <svg class="ac-row-icon" src="../icons/v2/camera.svg" width="22" height="22"></svg>
+          <p class="ac-row-label">{{i18n:scan.title}}</p>
+        </div>
+        <div class="ac-row" data-event-click="add_action('qr')">
+          <svg class="ac-row-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
+          <p class="ac-row-label">{{i18n:contacts.my_qr}}</p>
+        </div>
+        <div class="ac-row" data-event-click="add_action('invite')">
+          <svg class="ac-row-icon" src="../icons/v2/user-plus.svg" width="22" height="22"></svg>
+          <p class="ac-row-label">{{i18n:contacts.invite_friends}}</p>
+        </div>
+        <div class="ac-row" data-if="can_new_group" data-event-click="add_action('group')">
+          <svg class="ac-row-icon" src="../icons/v2/group.svg" width="22" height="22"></svg>
+          <p class="ac-row-label">{{i18n:contacts.new_group}}</p>
+        </div>
+      </div>
+    </div>
+
+    <div data-if="add_query != ''">
+      <div class="ac-results" data-if="add_rows.size > 0">
+        <div data-for="hit : add_rows" class="contacts-row" data-event-click="add_pick(hit.index)">
+          <div class="contacts-row-avatar-frame"
+               data-class-avatar-tone-0="hit.avatar_tone == 0"
+               data-class-avatar-tone-1="hit.avatar_tone == 1"
+               data-class-avatar-tone-2="hit.avatar_tone == 2"
+               data-class-avatar-tone-3="hit.avatar_tone == 3"
+               data-class-avatar-tone-4="hit.avatar_tone == 4"
+               data-class-avatar-tone-5="hit.avatar_tone == 5"
+               data-class-avatar-tone-6="hit.avatar_tone == 6"
+               data-class-avatar-tone-7="hit.avatar_tone == 7">
+            <p class="avatar-letter">{{hit.avatar_letter}}</p>
+          </div>
+          <div class="contacts-row-body">
+            <p class="contacts-row-title">{{hit.title}}</p>
+            <p class="contacts-row-subtitle contacts-row-subtitle--phone" data-if="hit.short_id != ''">{{hit.short_id}}</p>
+          </div>
+        </div>
+      </div>
+      <p class="ac-note" data-if="add_searching && add_rows.size == 0">{{i18n:contacts.add_sheet.searching}}</p>
+      <p class="ac-note" data-if="add_no_results">{{i18n:contacts.add_sheet.no_results}}</p>
+    </div>
+  </div>
+</div>

@@ -4,6 +4,7 @@
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
+#include "gui/contacts/ContactsAccountPorts.h"
 #include "gui/contacts/ContactsSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -14,6 +15,8 @@
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Types.h>
+
+#include "foundation/platform/PlatformShare.h"
 
 #include <cstdint>
 #include <functional>
@@ -48,6 +51,7 @@ public:
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
   void BindScanPorts(ScanPorts ports);
+  void BindAccountPorts(ContactsAccountPorts ports);
 
   struct ContactListRow {
     ui::String id;
@@ -74,6 +78,15 @@ public:
   struct IndexLetterRow {
     ui::String letter;
     bool present = false;
+  };
+
+  /** One directory hit in the Add contact sheet: `index` is its place in the hits kept for the pick. */
+  struct AddHitRow {
+    ui::String index;
+    ui::String title;
+    ui::String short_id;
+    ui::String avatar_letter = "?";
+    int avatar_tone = 0;
   };
 
   struct ContactIdentityRow {
@@ -143,6 +156,11 @@ public:
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
   void OpenNewChatPage();
+  /**
+   * Phone Contacts "+": the Add contact sheet. A search field (the directory, as you type), my account card with
+   * copy and share, and rows for scan, my QR code, inviting friends and a new group.
+   */
+  void OpenAddContactPage();
   /** Phones (Settings > Security): the people this device blocked, each with Unblock; a tap opens their page. */
   void OpenBlockedPeople();
   /** The shell popped the blocked-people page. */
@@ -169,8 +187,8 @@ public:
   static void ShareContactCard(const std::function<Roe<void>()>& share,
                                const std::function<void(std::function<void(bool kept)>)>& refresh_card,
                                std::function<void(bool shared)> done);
-  /** The "+" menu: add contact always; on the phone also scan and new group (when wired), then find someone. Exposed for tests. */
-  static std::vector<ContextMenuAction> AddContactMenuActions(bool compact, bool can_scan, bool can_new_group);
+  /** The desktop "+" menu: add contact, then find someone (the phone opens the Add contact sheet). Exposed for tests. */
+  static std::vector<ContextMenuAction> AddContactMenuActions();
   /** The Contacts tab's rows in index order (A-Z by name, Chinese by pinyin initial, then #), one section per letter. */
   static std::vector<NewChatSectionRow> ContactSections(std::vector<ContactListRow> rows);
   /** The index strip: every letter A-Z then #, marked present where `sections` has it. */
@@ -180,6 +198,23 @@ public:
 
 private:
   void OnNewGroup();
+  // The phone Add contact sheet.
+  static void AddSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  void OnAddSearchChanged();
+  void RunAddSearch();
+  void OnAddSearched(const std::string& query, uint64_t generation, Roe<std::vector<mesh::DirectoryHit>> hits);
+  void OnAddPick(const std::string& index);
+  void OnAddAction(const std::string& action);
+  void OnAddCopyId();
+  void OnAddShare(ShareAnchor anchor);
+  void LoadMyAccount();
+  void DirtyAddContact();
+  void CloseAddContactPage();
+  void OnAddContactDismissed();
+  void OpenMyQrPage();
+  void OnMyQrDismissed();
+  /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
+  void OfferHit(const mesh::DirectoryHit& hit, const std::string& query);
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void StartChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -273,6 +308,32 @@ private:
   /** The New chat sheet's overlay layer (-1: not open). */
   int new_chat_layer_id_ = -1;
   ui::String search_query_;
+  // The Add contact sheet.
+  ui::String add_query_;
+  std::vector<AddHitRow> add_rows_;
+  std::vector<mesh::DirectoryHit> add_hits_;
+  bool add_searching_ = false;
+  /** The last finished search found no one. */
+  bool add_no_results_ = false;
+  bool add_open_ = false;
+  int add_layer_id_ = -1;
+  /** When the typed query is searched (SDL ticks; 0: nothing pending). */
+  uint64_t add_search_deadline_ms_ = 0;
+  uint64_t add_search_generation_ = 0;
+  bool my_has_account_ = false;
+  ui::String my_name_;
+  ui::String my_account_id_;
+  bool my_has_icon_ = false;
+  ui::String my_icon_src_;
+  ui::String my_avatar_letter_ = "?";
+  int my_avatar_tone_ = 0;
+  std::string my_locator_;
+  std::string my_nickname_;
+  ui::String my_qr_svg_rml_;
+  bool can_scan_ = false;
+  bool can_new_group_ = false;
+  bool my_qr_open_ = false;
+  int my_qr_layer_id_ = -1;
   bool compact_layout_ = false;
   bool advanced_ = false;
   ContactDetail selected_;
@@ -287,6 +348,7 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
+  ContactsAccountPorts account_ports_;
 
   static ContactsController* installed_instance_;
 };

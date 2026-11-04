@@ -1531,6 +1531,55 @@ input.checkbox:checked {
   background-color: #000000;
 }
 
+.ac-page,
+.qr-page {
+  background-color: #000000;
+}
+
+.ac-card {
+  background-color: #1c1c1e;
+}
+
+.ac-account-name,
+.ac-row-label,
+.qr-name {
+  color: #ffffff;
+}
+
+.ac-account-id,
+.ac-note,
+.qr-hint {
+  color: #ebebf599;
+}
+
+.ac-icon-btn {
+  background-color: transparent;
+}
+
+.ac-icon-btn svg {
+  image-color: #ebebf599;
+}
+
+.ac-icon-btn:active {
+  background-color: #7878803d;
+}
+
+.ac-row-icon {
+  image-color: #0a84ff;
+}
+
+.ac-row:active {
+  background-color: #7878803d;
+}
+
+.ac-row + .ac-row {
+  border-top: 1dp #54545899;
+}
+
+.qr-card {
+  background-color: #1c1c1e;
+}
+
 .nc-page {
   background-color: #000000;
 }

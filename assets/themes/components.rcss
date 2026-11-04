@@ -6259,6 +6259,164 @@ input.checkbox {
   font-weight: bold;
 }
 
+/* Phone Add contact sheet (Kenneth 2026-11-04): a search field, my account card (avatar, name, account id, quiet copy and
+   share buttons of 44dp), then a card of 50dp rows with an icon on the left. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .ac-page,
+.shell-layer-compact .qr-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-search {
+  margin-top: 8dp;
+}
+
+.shell-layer-compact .ac-card {
+  margin: 12dp 16dp 0 16dp;
+  border-radius: 12dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .ac-account {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 76dp;
+  padding: 12dp 4dp 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-avatar,
+.shell-layer-compact .ac-avatar-image {
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.shell-layer-compact .ac-avatar .avatar-letter {
+  font-size: 22dp;
+}
+
+.shell-layer-compact .ac-account-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .ac-account-name {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .ac-account-id {
+  margin: 2dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.shell-layer-compact .ac-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .ac-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14dp;
+  height: 50dp;
+  padding: 0 16dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-layer-compact .ac-row-icon {
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-layer-compact .ac-row-label {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .ac-results {
+  margin-top: 4dp;
+}
+
+.shell-layer-compact .ac-note {
+  margin: 0;
+  padding: 32dp 16dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* My QR code sheet: the code on a white card, my name under it, one line of help. */
+.shell-layer-compact .qr-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24dp 16dp 32dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 260dp;
+  height: 260dp;
+  border-radius: 16dp;
+}
+
+.shell-layer-compact .qr-code {
+  width: 240dp;
+  height: 240dp;
+}
+
+.shell-layer-compact .qr-name {
+  margin: 20dp 0 0 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .qr-hint {
+  margin: 6dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
 /* Phone "Blocked" list (Settings > Security; Kenneth 2026-11-04): a short note, a card of 60dp rows (avatar, name,
    a 44dp Unblock on the right); a tap on the avatar or name opens the person's page. The result line goes under it. */
 .blocked-page {
