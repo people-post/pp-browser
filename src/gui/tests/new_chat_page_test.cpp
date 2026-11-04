@@ -57,7 +57,7 @@ TEST(NewChatPageTest, ActionRowsAreBigAndTheRowsAreTheContactsTabRows) {
 
 TEST(NewChatPageTest, ColoursComeFromTokensOnly) {
   const std::string css = ReadAsset("themes/components.rcss");
-  const size_t begin = css.find(".nc-page {");
+  const size_t begin = css.find("\n.nc-page {");
   const size_t end = css.find("/* Contact detail, phone. */");
   ASSERT_NE(begin, std::string::npos);
   ASSERT_NE(end, std::string::npos);

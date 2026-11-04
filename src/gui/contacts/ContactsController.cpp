@@ -412,6 +412,10 @@ void ContactsController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
 }
 
+void ContactsController::BindFlowCoordinator(FlowCoordinatorPorts ports) {
+  flow_coordinator_ = std::move(ports);
+}
+
 void ContactsController::BindShellFeedback(ShellFeedbackPorts ports) {
   shell_feedback_ = std::move(ports);
 }
@@ -1030,7 +1034,7 @@ void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui
 }
 
 void ContactsController::OpenNewChatPage() {
-  if (new_chat_open_ || !shell_navigation_.push_transient) {
+  if (new_chat_open_ || !shell_navigation_.push_layer) {
     return;
   }
   new_chat_query_ = "";
@@ -1040,7 +1044,11 @@ void ContactsController::OpenNewChatPage() {
   DirtyNewChat();
   PaneSpec spec;
   spec.key = "new_chat";
-  shell_navigation_.push_transient(spec);
+  spec.page_sheet = true;
+  new_chat_layer_id_ = shell_navigation_.push_layer(spec);
+  if (flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(new_chat_layer_id_, {}, [this]() { OnNewChatDismissed(); });
+  }
 }
 
 void ContactsController::OnNewChatDismissed() {
@@ -1048,10 +1056,17 @@ void ContactsController::OnNewChatDismissed() {
 }
 
 void ContactsController::CloseNewChatPage() {
-  if (new_chat_open_ && shell_navigation_.pop_transient) {
-    shell_navigation_.pop_transient(); // OnNewChatDismissed follows from the shell
+  if (!new_chat_open_) {
+    return;
   }
-  new_chat_open_ = false;
+  const int layer_id = new_chat_layer_id_;
+  if (flow_coordinator_.end_modal) {
+    flow_coordinator_.end_modal();
+  }
+  OnNewChatDismissed();
+  if (layer_id >= 0 && shell_navigation_.close_layer) {
+    shell_navigation_.close_layer(layer_id);
+  }
 }
 
 void ContactsController::DirtyNewChat() {
@@ -1062,6 +1077,7 @@ void ContactsController::DirtyNewChat() {
 
 void ContactsController::SyncNewChat() {
   new_chat_frequent_.clear();
+  new_chat_layer_id_ = -1;
   new_chat_sections_.clear();
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.list_contacts) {
     return;
@@ -1111,7 +1127,9 @@ void ContactsController::OnNewChatPick(const std::string& contact_id) {
     return;
   }
   if (!selected_.can_message) {
-    ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
+    if (!selected_.message_hint.empty()) { // the demo app has no hint: no empty pill
+      ShowToast(selected_.message_hint.c_str()); // the page stays; the person cannot be messaged yet
+    }
     selected_ = {};
     return;
   }

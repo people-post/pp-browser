@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/ChatSessionPorts.h"
+#include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/ContactsSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -42,6 +43,8 @@ public:
   void BindChatPorts(ChatSessionPorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** The New chat sheet tells the flow coordinator it is open, so a scrim tap, X or swipe-down reaches it. */
+  void BindFlowCoordinator(FlowCoordinatorPorts ports);
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
   void BindScanPorts(ScanPorts ports);
@@ -196,7 +199,7 @@ private:
   /** Rebuilds the New chat page's frequent and lettered rows from the contacts and chats (and its search). */
   void SyncNewChat();
   void DirtyNewChat();
-  /** Pops the New chat page when it is the page on top. */
+  /** Closes the New chat sheet when it is open. */
   void CloseNewChatPage();
   void OnNewChatPick(const std::string& contact_id);
   void OnNewChatAction(const std::string& action);
@@ -265,6 +268,8 @@ private:
   ShellFeedbackPorts shell_feedback_;
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
+  /** The New chat sheet's overlay layer (-1: not open). */
+  int new_chat_layer_id_ = -1;
 
   static ContactsController* installed_instance_;
 };
@@ -277,4 +282,5 @@ ContactsController::ContactDetail MemberPreviewDetail(const std::string& account
 /** Apply the editable detail fields (the remark, capped at kMaxNicknameChars) to a copy of the contact. */
 Contact BuildContactFromDetail(const Contact& existing, const ContactsController::ContactDetail& detail);
 
+  FlowCoordinatorPorts flow_coordinator_;
 } // namespace pbr

@@ -287,6 +287,7 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
+  spec.page_sheet = true;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();
@@ -320,6 +321,7 @@ void PeoplePickerController::OpenForGroupMembers(const std::string& thread_id) {
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
+  spec.page_sheet = true;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();
@@ -346,6 +348,7 @@ void PeoplePickerController::OpenForGroupAddMember() {
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
+  spec.page_sheet = true;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();
@@ -374,6 +377,7 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   DirtyAll();
   PaneSpec spec;
   spec.key = "people_picker";
+  spec.page_sheet = true;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();
@@ -412,8 +416,8 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
 
   PaneSpec spec;
   spec.key = "people_picker";
-  // New group on the phone: an iOS page sheet (Kenneth 2026-11-04); the other picker uses stay centred panels.
-  spec.page_sheet = mode_ == PeoplePickerMode::Free;
+  // On the phone every picker is an iOS page sheet (Kenneth 2026-11-04); desktop keeps the centred panel.
+  spec.page_sheet = true;
   layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
   RegisterFlow();
   NotifySurfaceChanged();

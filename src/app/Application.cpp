@@ -222,9 +222,6 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
     }
-    if (key == "new_chat") {
-      contacts.OnNewChatDismissed();
-    }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }
@@ -1405,6 +1402,7 @@ void Application::WireAgentAndConfig() {
     const auto log_not_started = [this](const SubmitOutcome outcome) {
       if (outcome != SubmitOutcome::Started) {
         log().warning << "AI question from the router not started (outcome " << static_cast<int>(outcome) << ")";
+    contacts_->BindFlowCoordinator(flow_ports);
       }
     };
     AgentInboundPorts inbound;

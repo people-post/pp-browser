@@ -226,13 +226,16 @@ std::string ShellLayoutRml::Overlays() const {
       // swipe-down (ShellPageSheetGesture). The view keeps its own Cancel; the close button stays top right.
       out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
-      out << "<div class=\"shell-page-sheet\" id=\"shell-page-sheet-" << overlay.id << "\">";
+      // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << "\" id=\"shell-page-sheet-" << overlay.id
+          << "\">";
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";
       out << "<svg src=\"../icons/v2/close.svg\" width=\"14\" height=\"14\"></svg>";
       out << "</button>";
-      out << "<div class=\"shell-overlay-body\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      // The compact class: a phone page shown in a sheet (New chat) keeps its phone styles.
+      out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
       out << "</div></div>";
       continue;
     }
