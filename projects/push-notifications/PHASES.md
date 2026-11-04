@@ -52,7 +52,7 @@
 
 ## p8 — iOS / APNs
 
-- [x] `IosPushDeviceRegistrar` + SDLUIKitDelegate subclass (`IosApnsAppDelegate.mm`)
+- [x] `IosPushDeviceRegistrar` + +load hook on SDL delegate classes (`IosApnsAppDelegate.mm`)
 - [x] Token → `/v1/devices/register` via existing `PushDeviceCoordinator`
 - [x] Silent remote notification → `RequestWakeSync` / `RequestCallWakeSync`
 - [x] www `ApnsPushSender` + `BRF_WWW_APNS_*` config
