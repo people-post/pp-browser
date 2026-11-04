@@ -118,7 +118,7 @@
         <div class="group-card" data-if="stay_connected_available">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.stay_connected}}</span>
+              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.stay_connected}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.stay_connected')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               <button class="settings-switch" type="button"
                       data-class-settings-switch--on="stay_connected == 'on'"
                       data-event-click="toggle_stay_connected()">

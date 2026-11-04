@@ -958,6 +958,16 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
+  settings_commands.ask_support = [this, open = settings_commands.open_support_chat](const std::string& question)
+      -> Roe<void> {
+    if (auto opened = open({}); !opened) {
+      return opened;
+    }
+    if (chat_) {
+      chat_->SendTypedText(question);
+    }
+    return {};
+  };
   settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
     DiagnosticsUploadDeps deps;
     deps.data_dir = store_.Snapshot().data_dir;

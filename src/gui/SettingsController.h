@@ -272,7 +272,8 @@ private:
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
   void OnOpenSupportChat();
-  void OnOpenSettingsHelp();
+  /** A "?" beside a hard setting: asks PP 客服 about it (sends the question; the answer arrives in that chat). */
+  void OnAskSettingHelp(const std::string& label_key);
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChooseTheme(ui::Event& ev);
@@ -332,5 +333,11 @@ private:
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
 
 };
+
+/**
+ * What a "?" beside a setting asks PP 客服: "What does “<label>” do?" in the UI language. `label_key` is the
+ * setting's own label key (a "settings." key); anything else asks nothing ("").
+ */
+std::string SettingHelpQuestion(const std::string& label_key);
 
 } // namespace pbr

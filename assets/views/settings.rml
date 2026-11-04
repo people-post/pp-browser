@@ -171,10 +171,6 @@
         <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
       </button>
       <p class="settings-header-title">{{selected_title}}</p>
-      <button class="settings-help-btn" type="button" title="{{i18n:settings.help.button}}"
-              data-event-click="open_settings_help()">
-        <svg class="settings-help-icon" src="../icons/v2/help-circle.svg" width="24" height="24"></svg>
-      </button>
     </div>
 
     <div class="settings-detail-body stack">
@@ -191,10 +187,6 @@
         <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
       </button>
       <p class="settings-header-title">{{security_page_title}}</p>
-      <button class="settings-help-btn" type="button" title="{{i18n:settings.help.button}}"
-              data-event-click="open_settings_help()">
-        <svg class="settings-help-icon" src="../icons/v2/help-circle.svg" width="24" height="24"></svg>
-      </button>
     </div>
 
     <div class="settings-detail-body stack">

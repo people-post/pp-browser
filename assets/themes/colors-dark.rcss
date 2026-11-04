@@ -2125,14 +2125,26 @@ input.checkbox:checked {
   background-color: transparent;
 }
 
-.shell-layer-compact .settings-back-v2,
-.shell-layer-compact .settings-help-icon {
+.shell-layer-compact .settings-back-v2 {
   image-color: #0a84ff;
 }
 
-.shell-layer-compact .settings-help-btn,
 .shell-layer-compact .group-id-btn {
   background-color: transparent;
+}
+
+.settings-q-btn,
+.settings-q-btn:hover,
+.settings-q-btn:focus {
+  background-color: transparent;
+}
+
+.settings-q-btn:active {
+  background-color: #7878803d;
+}
+
+.settings-q-icon {
+  image-color: #0a84ff;
 }
 
 .shell-layer-compact .group-id-label {

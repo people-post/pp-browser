@@ -124,6 +124,8 @@ public:
   /** The vault locked, or another tab was opened: a recording is thrown away and a clip stops. */
   void CancelVoice();
   void FinalizeThreadDisplay();
+  /** Sends `text` in the open chat as if the user typed it (a settings "?" asking PP 客服). */
+  void SendTypedText(const std::string& text) { SendUserText(text); }
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();

@@ -6592,9 +6592,49 @@ input.checkbox {
   display: block;
 }
 
+/* "?" beside a hard setting (Kenneth 2026-11-04): a 44dp target round a 20dp icon right after the label; a tap
+   asks PP 客服 about it (SettingsController::OnAskSettingHelp). */
+.settings-q-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.group-row-body .settings-q-label .group-row-text,
+.group-row-label.settings-q-label .group-row-text {
+  flex: 0 1 auto;
+}
+
+.settings-q-head {
+  align-items: center;
+}
+
+.settings-q-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: -10dp 0 -10dp -6dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+.settings-q-icon {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
 .settings-phone-only,
-.settings-back-v2,
-.settings-help-btn {
+.settings-back-v2 {
   display: none;
 }
 
@@ -6641,29 +6681,6 @@ input.checkbox {
   margin: 0;
   border-radius: 0;
   z-index: 1;
-}
-
-/* "?" in the bar's top-right corner opens PP 客服 with a question about this page. */
-.shell-layer-compact .settings-help-btn {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  cursor: pointer;
-  z-index: 1;
-}
-
-.shell-layer-compact .settings-help-icon {
-  width: 24dp;
-  height: 24dp;
 }
 
 .shell-layer-compact .settings-header-title {

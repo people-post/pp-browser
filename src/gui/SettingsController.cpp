@@ -619,7 +619,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     }));
     ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
-    ctor.BindEventCallback("open_settings_help", DataEvent<>([this]() { OnOpenSettingsHelp(); }));
+    ctor.BindEventCallback("ask_setting_help", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+      ev.StopPropagation(); // the "?" can sit inside a row that opens a page or toggles a switch
+      if (const auto key = data_event_detail::Arg<std::string>(args, 0)) {
+        OnAskSettingHelp(*key);
+      }
+    });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
@@ -1747,16 +1752,29 @@ void SettingsController::OnOpenSupportChat() {
   }
 }
 
-void SettingsController::OnOpenSettingsHelp() {
-  if (!commands_.open_support_chat) {
+std::string SettingHelpQuestion(const std::string& label_key) {
+  if (label_key.rfind("settings.", 0) != 0) {
+    return {};
+  }
+  const std::string title = Tr(label_key);
+  if (title.empty() || title == label_key) {
+    return {};
+  }
+  return Tr("settings.help.question", {{"title", title}});
+}
+
+void SettingsController::OnAskSettingHelp(const std::string& label_key) {
+  const std::string question = SettingHelpQuestion(label_key);
+  if (question.empty()) {
+    return;
+  }
+  if (!commands_.ask_support) {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  // The question about the current page is prefilled in the composer; the user sends it.
-  const ui::String& title = security_page_.empty() ? selected_title_ : security_page_title_;
-  if (auto opened = commands_.open_support_chat(Tr("settings.help.draft", {{"title", title.c_str()}}));
-      !opened) {
-    ReportFailure(opened.error());
+  // Kenneth 2026-11-04: no typing — the question goes straight to PP 客服 and the user watches the answer come.
+  if (auto asked = commands_.ask_support(question); !asked) {
+    ReportFailure(asked.error());
   }
 }
 

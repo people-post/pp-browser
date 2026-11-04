@@ -114,13 +114,14 @@ void SettingsSecurityActions::CopyDiagnosticsId() {
 }
 
 void SettingsSecurityActions::OpenDiagnosticsHelp() {
-  // help_key "troubleshooting/send-diagnostics" is the support article; the question is prefilled, the user sends it.
-  if (!commands_.open_support_chat) {
+  // help_key "troubleshooting/send-diagnostics" is the support article; the question goes out at once (Kenneth
+  // 2026-11-04: no typing), the answer comes in the PP 客服 chat.
+  if (!commands_.ask_support) {
     host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  if (auto opened = commands_.open_support_chat(Tr("settings.security.diagnostics.help_question")); !opened) {
-    host_.ReportFailure(opened.error());
+  if (auto asked = commands_.ask_support(Tr("settings.security.diagnostics.help_question")); !asked) {
+    host_.ReportFailure(asked.error());
   }
 }
 

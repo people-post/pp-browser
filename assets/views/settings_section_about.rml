@@ -12,7 +12,7 @@
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.about.advanced.label}}</span>
+              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.about.advanced.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.about.advanced.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               <button class="settings-switch" type="button"
                       data-class-settings-switch--on="show_advanced_settings == 'on'"
                       data-event-click="toggle_show_advanced_settings()">

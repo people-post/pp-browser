@@ -14,7 +14,7 @@
             </span>
           </label>
         </div>
-        <p class="text muted group-foot">{{i18n:settings.integrations.mcp_help}}</p>
+        <div class="settings-q-head row"><p class="text muted group-foot">{{i18n:settings.integrations.mcp_help}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.mcp')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
         <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
           <div class="group-card">
             <label class="settings-field group-row group-row--field">

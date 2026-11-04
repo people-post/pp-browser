@@ -20,7 +20,7 @@
           </div>
           <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
             <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span></span>
+              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </span>
           </button>
@@ -66,7 +66,7 @@
           </p>
         </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <p class="text group-head">{{i18n:settings.security.recovery}}</p>
+          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
           <div class="stack" data-if="recovery_phrase == ''">
             <div class="group-card" data-if="!pin_protection_is_default">
@@ -90,9 +90,12 @@
             </button>
           </div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
-          <button class="btn" type="button" data-event-click="save_account_copy()">
-            {{i18n:settings.security.copy.save}}
-          </button>
+          <div class="settings-toggle-row row group-actions">
+            <button class="btn" type="button" data-event-click="save_account_copy()">
+              {{i18n:settings.security.copy.save}}
+            </button>
+            <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+          </div>
         </div>
         <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
@@ -137,7 +140,7 @@
         <div class="group-card">
           <div class="settings-toggle-row row group-row">
             <span class="group-row-body">
-              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.crash_reports.label}}</span>
+              <span class="settings-q-label"><span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.crash_reports.label}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.crash_reports.label')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
               <button class="settings-switch" type="button"
                       data-class-settings-switch--on="crash_reports_enabled == 'on'"
                       data-event-click="toggle_crash_reports()">
@@ -152,8 +155,8 @@
                   data-event-click="send_diagnostics()">
             {{diagnostics_send_label}}
           </button>
-          <button class="btn" type="button" data-help-key="troubleshooting/send-diagnostics"
-                  data-event-click="open_diagnostics_help()">?</button>
+          <button class="settings-q-btn" type="button" data-help-key="troubleshooting/send-diagnostics"
+                  data-event-click="open_diagnostics_help()"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
         </div>
         <p class="text muted settings-help group-foot" data-if="show_diagnostics_send">{{i18n:settings.security.diagnostics.help}}</p>
         <button class="btn" type="button" data-if="diagnostics_last_id != ''"
