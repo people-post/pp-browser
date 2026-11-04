@@ -90,7 +90,7 @@ constexpr float kPopoverEdgeDp = 8.f;
 // red row is not hidden below a scroll; anything longer scrolls inside.
 constexpr float kSheetMaxShare = 0.5f;
 constexpr float kSheetBottomGapDp = 8.f;
-constexpr int kSheetIconDp = 22;
+constexpr int kSheetIconDp = 18;
 constexpr int kSheetDeadzonePx = 8;
 /// Let go this far down (share of the sheet's height), or flicked down, the sheet closes; else it springs back.
 constexpr float kSheetDismissShare = 0.3f;
@@ -203,9 +203,11 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
   }
 }
 
-// The phone sheet's rows: one card, 50dp rows, a 22dp accent icon, the hairline between rows starting after the icon
-// (the label's own top border), red text and icon for a destructive row. Quick actions (reactions) are a row of
-// their own above the card. A plain Cancel row is left out: the close disc stands for it.
+// The phone sheet's rows, like iOS's own context menu (Kenneth 2026-11-04: the leading 22dp icons looked big, the
+// hairlines deliberate): one card of 50dp rows, the label on the left, a small 18dp icon on the right in the secondary
+// label colour, a very faint hairline inset 16dp on both sides between rows, red text and icon for a destructive row.
+// Quick actions (reactions) are a row of their own above the card. A plain Cancel row is left out: the close disc
+// stands for it.
 void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuAction>& actions, const bool quick) {
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
@@ -228,14 +230,14 @@ void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuActio
       out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span></button>";
       continue;
     }
-    if (!action.icon.empty()) {
-      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon << "\" width=\"" << kSheetIconDp
-          << "\" height=\"" << kSheetIconDp << "\" crop-to-content=\"true\"></svg></div>";
-    }
     out << "<span class=\"context-menu-item-body\"><span class=\"context-menu-item-label\">" << EscapeRml(action.label)
         << "</span>";
     if (action.selected) {
       out << "<span class=\"context-menu-item-check\">✓</span>";
+    }
+    if (!action.icon.empty()) {
+      out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon << "\" width=\"" << kSheetIconDp
+          << "\" height=\"" << kSheetIconDp << "\" crop-to-content=\"true\"></svg></div>";
     }
     out << "</span></button>";
   }

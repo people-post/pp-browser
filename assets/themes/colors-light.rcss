@@ -2219,7 +2219,7 @@ input.checkbox:checked {
 }
 
 /* The phone's small sheet: the page sheets' grouped background, handle, title and grey disc; a white card of rows
-   with hairlines, accent icons, red for a destructive row. */
+   with very faint hairlines, small icons in the secondary label colour, red for a destructive row. */
 .context-menu-sheet {
   background-color: #f2f2f7;
 }
@@ -2246,11 +2246,11 @@ input.checkbox:checked {
 }
 
 .context-menu-sheet-list .context-menu-item-body {
-  border-top: 1dp #3c3c434a;
+  border-top: 1dp #7878801f;
 }
 
 .context-menu-sheet-list .context-menu-item-icon svg {
-  image-color: #007aff;
+  image-color: #3c3c4399;
 }
 
 .context-menu-sheet-list .context-menu-item-check {

@@ -6222,13 +6222,13 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-/* A sheet row: 50dp, the icon 16dp in, the label filling the rest; the hairline is the label's top edge, so it
-   starts after the icon (or at the text without one) and runs to the card's right edge. */
+/* A sheet row, like iOS's context menu: 50dp, the label from 16dp in, a small icon at the right end 16dp from the
+   edge; the hairline is the body's top edge, so it is inset 16dp on both sides. */
 .context-menu-sheet-list .context-menu-item {
   align-items: stretch;
-  gap: 12dp;
+  gap: 0;
   min-height: 50dp;
-  padding: 0 0 0 16dp;
+  padding: 0 16dp;
   border-radius: 0;
 }
 
@@ -6237,9 +6237,10 @@ input.checkbox {
   flex: 1;
   flex-direction: row;
   align-items: center;
+  gap: 12dp;
   min-width: 0;
   min-height: 50dp;
-  padding: 0 16dp 0 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
@@ -6264,11 +6265,11 @@ input.checkbox {
   flex-shrink: 0;
 }
 
-/* Phone sheet: 22dp leading icon (the svg itself is emitted at 22dp). */
+/* Phone sheet: an 18dp trailing icon (the svg itself is emitted at 18dp). */
 .context-menu-sheet-list .context-menu-item-icon {
   align-self: center;
-  width: 22dp;
-  height: 22dp;
+  width: 18dp;
+  height: 18dp;
 }
 
 .context-menu-item-label {

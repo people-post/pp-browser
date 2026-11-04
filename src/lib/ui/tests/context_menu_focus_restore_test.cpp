@@ -212,6 +212,18 @@ TEST_F(ContextMenuSheetTest, ThePhoneSheetHasTheTitleTheDiscAndOneCardWithoutACa
   EXPECT_FALSE(rows[0]->IsClassSet("context-menu-item--danger"));
   EXPECT_TRUE(rows[1]->IsClassSet("context-menu-item--danger"));
 
+  // Like iOS's context menu (Kenneth 2026-11-04): the label on the left, a small 18dp icon on the right.
+  ui::ElementList bodies;
+  rows[0]->GetElementsByClassName(bodies, "context-menu-item-body");
+  ASSERT_EQ(bodies.size(), 1u);
+  ui::Element* body = bodies[0];
+  ASSERT_GE(body->GetNumChildren(), 2);
+  EXPECT_TRUE(body->GetChild(0)->IsClassSet("context-menu-item-label"));
+  ui::Element* icon = body->GetChild(body->GetNumChildren() - 1);
+  EXPECT_TRUE(icon->IsClassSet("context-menu-item-icon")) << "the icon trails the label";
+  ASSERT_EQ(icon->GetNumChildren(), 1);
+  EXPECT_EQ(icon->GetChild(0)->GetAttribute<ui::String>("width", ""), "18");
+
   // The close disc closes without running anything.
   close->DispatchEvent(ui::EventId::Mousedown, Pointer(390, 10));
   ContextMenuHost::Instance().Update();
