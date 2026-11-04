@@ -5892,9 +5892,11 @@ input.checkbox {
   height: 20dp;
 }
 
-/* Compact ShowActions: iOS-style bottom action sheet.
-   Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
-   Block stack (not flex) avoids min-content overflow past the viewport frame. */
+/* Phone menus (ContextMenuHost, Presentation::ActionSheet): the small sheet, the page sheets' family (Kenneth
+   2026-11-04, ui-mockups/09-sheets-unify): edge to edge at the bottom, 12dp top corners, the grab handle, a 44dp row
+   with the centred title and the grey close disc, then one card of 50dp rows. Its height follows the rows, up to about
+   a third of the screen (LayoutActionSheet sets the list's max-height and the home-indicator padding); a drag down,
+   the disc or the scrim closes it. */
 .context-menu-layer--sheet {
   box-sizing: border-box;
 }
@@ -5903,41 +5905,114 @@ input.checkbox {
   position: absolute;
   z-index: 1;
   display: block;
-  overflow: hidden;
+  padding: 16dp 16dp 8dp 16dp;
+  border-radius: 12dp 12dp 0 0;
   box-sizing: border-box;
+  transform: translateY(0px);
+  transition: transform 0.25s cubic-out;
+  animation: 0.3s cubic-out shell-page-sheet-in;
+}
+
+.context-menu-sheet.context-menu-sheet--dragging {
+  transition: none;
+}
+
+.context-menu-sheet-grabber {
+  position: absolute;
+  top: 6dp;
+  left: 0;
+  right: 0;
+  width: 36dp;
+  height: 5dp;
+  margin: 0 auto;
+  border-radius: 2.5dp;
+}
+
+/* The title row keeps clear of the disc on both sides so the title stays centred (the sheet has 16dp side padding). */
+.context-menu-sheet-header {
+  display: block;
+  height: 44dp;
+  margin: 0;
+  padding: 0 36dp;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-title {
+  display: block;
+  height: 44dp;
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A 44dp target round a 30dp grey disc, where the page sheets have theirs. */
+.context-menu-sheet-close {
+  position: absolute;
+  top: 16dp;
+  right: 4dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.context-menu-sheet-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+/* Reactions over a chat message: one card row of emoji above the actions. */
+.context-menu-sheet-quick {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  margin: 4dp 0 8dp 0;
+  padding: 4dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-quick .context-menu-item {
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0;
+  justify-content: center;
+  border-radius: 22dp;
+}
+
+.context-menu-sheet-quick .context-menu-item-label {
+  flex: 0 0 auto;
+  font-size: 24dp;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .context-menu-sheet-list {
   display: block;
   width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  margin: 0;
-  margin-bottom: 8dp;
-  padding: 4dp;
+  margin: 4dp 0 0 0;
+  padding: 0;
   border-radius: 12dp;
   overflow: auto;
-  max-height: 320dp;
-  box-sizing: border-box;
-  /* No box-shadow: blur extend (~1.5*radius) exceeds the 12dp sheet inset and
-     RmlUi clips the shadow texture to the window, which clips the painted panel. */
-}
-
-.context-menu-sheet-cancel {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 50dp;
-  margin: 0;
-  padding: 12dp 16dp;
-  border: 0;
-  border-radius: 12dp;
-  font-family: LatoLatin;
-  font-size: 16dp;
-  font-weight: bold;
-  text-align: center;
-  cursor: pointer;
   box-sizing: border-box;
 }
 
@@ -5959,18 +6034,33 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-.context-menu-layer--sheet .context-menu-item {
-  width: 100%;
-  max-width: 100%;
+/* A sheet row: 50dp, the icon 16dp in, the label filling the rest; the hairline is the label's top edge, so it
+   starts after the icon (or at the text without one) and runs to the card's right edge. */
+.context-menu-sheet-list .context-menu-item {
+  align-items: stretch;
+  gap: 12dp;
+  min-height: 50dp;
+  padding: 0 0 0 16dp;
+  border-radius: 0;
+}
+
+.context-menu-sheet-list .context-menu-item-body {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
   min-width: 0;
   min-height: 50dp;
-  padding: 12dp 16dp;
-  border-radius: 8dp;
+  padding: 0 16dp 0 0;
   box-sizing: border-box;
 }
 
-.context-menu-layer--sheet .context-menu-item-label {
-  font-size: 16dp;
+.context-menu-sheet-list .context-menu-item:first-child .context-menu-item-body {
+  border-top-width: 0;
+}
+
+.context-menu-sheet-list .context-menu-item-label {
+  font-size: 17dp;
 }
 
 .context-menu-item-icon {
@@ -5986,10 +6076,11 @@ input.checkbox {
   flex-shrink: 0;
 }
 
-/* Phone action sheet: 20dp leading icon (the svg itself is emitted at 20dp). */
-.context-menu-layer--sheet .context-menu-item-icon {
-  width: 20dp;
-  height: 20dp;
+/* Phone sheet: 22dp leading icon (the svg itself is emitted at 22dp). */
+.context-menu-sheet-list .context-menu-item-icon {
+  align-self: center;
+  width: 22dp;
+  height: 22dp;
 }
 
 .context-menu-item-label {

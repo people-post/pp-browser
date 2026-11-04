@@ -82,6 +82,7 @@ inline std::vector<ContextMenuAction> PictureChoiceActions(std::string path, std
   actions.push_back({"attach_send_compressed", send_label, nullptr, [picture, send]() { send(*picture, false); }});
   actions.push_back({"attach_send_original", original_label, nullptr, [picture, send]() { send(*picture, true); }});
   actions.push_back({"attach_cancel", cancel_label, nullptr, [picture, release]() { release(*picture); }});
+  actions.back().cancel = true; // the phone sheet's close disc stands for it (closing releases the file too)
   return actions;
 }
 

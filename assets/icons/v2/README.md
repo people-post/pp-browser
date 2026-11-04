@@ -66,3 +66,5 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | share | phone context menus (shared item Share) | drawn | `share.svg` |
 | trash | phone context menus (Delete) | drawn | `trash.svg` |
 | arrow-up-right | phone sheet headers (ask-AI "Open in AI chat") | drawn | - |
+| photo | 09-sheets-unify; phone small sheet (attach Photo) | drawn | - |
+| file | 09-sheets-unify; phone small sheet (attach File) | drawn | - |

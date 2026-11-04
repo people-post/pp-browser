@@ -138,6 +138,13 @@ static_assert(kSessionMutedForever == kThreadMutedForever,
 
 namespace {
 
+/** The desktop menu's Cancel row; the phone sheet leaves it out (its close disc, the scrim or a drag down cancel). */
+ContextMenuAction AttachCancelAction() {
+  ContextMenuAction cancel{"attach_cancel", Tr("common.cancel"), nullptr, []() {}};
+  cancel.cancel = true;
+  return cancel;
+}
+
 /** Search inside a chat: typing settles this long before the query is applied (plan: 250 ms, 400 if IME jumps). */
 constexpr auto kSearchDebounce = std::chrono::milliseconds(250);
 
@@ -1417,13 +1424,14 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   // have their own entries.
   std::vector<ContextMenuAction> actions;
   if (Platform::IsMobile()) {
-    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video()});
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
   } else {
     actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_image()});
   }
-  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.title"));
 }
 
 void ChatController::ShowPictureSendChoice(std::string path) {
@@ -1437,7 +1445,8 @@ void ChatController::ShowPictureSendChoice(std::string path) {
       },
       release, Tr("chat.attach.send_compressed"), Tr("chat.attach.send_original"), Tr("common.cancel"));
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions),
-                                               [release, picture = std::move(path)]() { release(picture); });
+                                               [release, picture = std::move(path)]() { release(picture); },
+                                               Tr("chat.attach.send_photo_title"));
 }
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
@@ -1457,11 +1466,12 @@ void ChatController::OnAttachCapture(ui::Event* ev) {
   // Android has one system camera intent per kind: ask which.
   std::vector<ContextMenuAction> actions;
   actions.push_back({"capture_photo", Tr("chat.attach.capture_photo"), nullptr,
-                     [this]() { OpenCameraCapture(CameraCaptureKind::Photo); }});
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Photo); }, "../icons/v2/camera.svg"});
   actions.push_back({"capture_video", Tr("chat.attach.capture_video"), nullptr,
-                     [this]() { OpenCameraCapture(CameraCaptureKind::Video); }});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Video); }, "../icons/v2/video.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.capture"));
 }
 
 void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
@@ -1787,10 +1797,11 @@ bool ChatController::InAiComposerContext() const {
 void ChatController::ShowAttachChoice(std::function<void()> photo, std::function<void()> file) {
   // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
   std::vector<ContextMenuAction> actions;
-  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
-  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo), "../icons/v2/photo.svg"});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file), "../icons/v2/file.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.title"));
 }
 
 
@@ -3582,6 +3593,8 @@ bool ChatController::Setup(ui::Context* context) {
 
   ContextMenuHost::Instance().RegisterProvider(
       [this](const ContextMenuRequest& request) { return menus_.ForRequest(request); });
+  ContextMenuHost::Instance().SetTitleResolver(
+      [this](const ContextMenuRequest& request) { return menus_.MenuTitleFor(request); });
   ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
     for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
       if (cur->HasAttribute("message-id") || cur->HasAttribute("share-text")) {

@@ -149,13 +149,38 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   return actions;
 }
 
+std::string ChatMenus::SessionTitle(const std::string& thread_id) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!facade) {
+    return {};
+  }
+  auto found = facade->GetThread(thread_id);
+  if (!found || !*found) {
+    return {};
+  }
+  const std::string title = facade->ResolveThreadLabel(**found).title;
+  // The stored default AI title is English; the row shows it in the UI language.
+  return (*found)->kind == ThreadKind::Ai && title == "New chat" ? Tr("chat.new_chat") : title;
+}
+
+std::string ChatMenus::MenuTitleFor(const ContextMenuRequest& request) {
+  if (const std::string session_id = FindAttributeUp(request.target, "session-id"); !session_id.empty()) {
+    return SessionTitle(session_id);
+  }
+  if (!FindAttributeUp(request.target, "message-id").empty()) {
+    return Tr("chat.menu.message_title");
+  }
+  return {};
+}
+
 void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
   // The menu offers one of each pair (pin / unpin, ...) depending on the row's state; Delete is "leave" for a group.
   const char* ids[2] = {nullptr, nullptr};
   switch (action) {
   case SessionSwipeAction::More:
     // The long-press menu itself (a bottom action sheet on phones).
-    ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)));
+    ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), SessionActions(thread_id, ui::Vector2i(0, 0)), {},
+                                            SessionTitle(thread_id));
     return;
   case SessionSwipeAction::Archive:
     ids[0] = "session_archive";
@@ -392,7 +417,7 @@ void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i positi
         "../icons/v2/bell.svg",
     });
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("group_info.mute"));
 }
 
 void ChatMenus::OpenNewSession(ui::Event& ev) {
@@ -420,7 +445,7 @@ void ChatMenus::OpenNewSession(ui::Event& ev) {
       [this]() { host_.OnFindSomeone(); },
       "../icons/v2/search.svg",
   });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.new_chat"));
 }
 
 void ChatMenus::OpenThreadActions(ui::Event& ev) {
@@ -493,7 +518,7 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   if (actions.empty()) {
     return;
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
 }
 
 void ChatMenus::StartCall(ui::Event& ev) {
@@ -528,7 +553,7 @@ void ChatMenus::StartCall(ui::Event& ev) {
       [thread_id, start_call]() { (void)start_call(thread_id, true); },
       "../icons/video.svg",
   });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, chat_.thread_title.c_str());
 }
 
 void ChatMenus::OpenEmojiInsert(ui::Event* ev) {
@@ -610,7 +635,7 @@ void ChatMenus::OpenShareTargets(const std::string& text, const ui::Vector2i pos
                          host_.ShowToast(Tr("chat.share.sent", {{"name", name}}));
                        }});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.menu.share"));
 }
 
 void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector2i position) {
@@ -637,9 +662,10 @@ void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector
   mine.icon = "../icons/v2/trash.svg";
   actions.push_back(std::move(mine));
   actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}, "../icons/v2/close.svg"});
+  actions.back().cancel = true; // the phone sheet's close disc stands for it
   // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
   AppRuntime::PostUI([position, actions = std::move(actions)]() mutable {
-    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("chat.menu.delete_title"));
   });
 }
 

@@ -86,6 +86,10 @@ public:
 
   /** ContextMenuHost's provider: what a long press / right-click on `request.target` offers. */
   std::vector<ContextMenuAction> ForRequest(const ContextMenuRequest& request);
+  /** The phone sheet's title for a long press: the chat's name on a chat row, "Message" on a message, else none. */
+  std::string MenuTitleFor(const ContextMenuRequest& request);
+  /** The chat's name as its row shows it. */
+  std::string SessionTitle(const std::string& thread_id);
   /** A row in the chats list; `position` anchors a second step (mute durations). */
   std::vector<ContextMenuAction> SessionActions(const std::string& thread_id, ui::Vector2i position);
   /** A swipe button on a chats-list row: runs that row's matching long-press item (nothing if the menu lacks it). */

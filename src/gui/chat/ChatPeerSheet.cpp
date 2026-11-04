@@ -36,7 +36,8 @@ void ChatPeerSheet::Open(ui::Event& ev) {
   if (actions.empty()) {
     return;
   }
-  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions));
+  ContextMenuHost::Instance().ShowActions(MenuPositionBelowEvent(ev), std::move(actions), {},
+                                          host_.Facade()->ResolveThreadLabel(*thread).title);
 }
 
 void ChatPeerSheet::OpenGroupMembers() {

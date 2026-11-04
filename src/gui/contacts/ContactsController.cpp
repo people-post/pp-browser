@@ -1653,7 +1653,8 @@ void ContactsController::OnPeopleSearched(const std::string& query, Roe<std::vec
                        "../icons/contacts.svg"});
   }
   actions.push_back({"add_cancel", Tr("common.cancel"), nullptr, []() {}, "../icons/v2/close.svg"});
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions));
+  actions.back().cancel = true; // the phone sheet's close disc stands for it
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(160, 120), std::move(actions), {}, Tr("contacts.add"));
 }
 
 void ContactsController::OfferHit(const mesh::DirectoryHit& hit, const std::string& query) {
@@ -1837,7 +1838,7 @@ void ContactsController::OnShareContact(const ui::Vector2i position) {
                          ContactsController::Instance().ShareContactTo(thread_id, contact_id, name);
                        }});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions), {}, Tr("common.share"));
 }
 
 void ContactsController::ShareContactCard(const std::function<Roe<void>()>& share,

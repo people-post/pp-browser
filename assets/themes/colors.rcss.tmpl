@@ -2216,18 +2216,47 @@ input.checkbox:checked {
   background-color: {{scrim}};
 }
 
-.context-menu-sheet-list {
-  background-color: {{bg-card}};
-  border: 1dp {{separator}};
+/* The phone's small sheet: the page sheets' grouped background, handle, title and grey disc; a white card of rows
+   with hairlines, accent icons, red for a destructive row. */
+.context-menu-sheet {
+  background-color: {{bg-grouped}};
 }
 
-.context-menu-sheet-cancel {
+.context-menu-sheet-grabber {
+  background-color: {{label-3}};
+}
+
+.context-menu-sheet-title {
+  color: {{label}};
+}
+
+.context-menu-sheet-disc {
+  background-color: {{fill-2}};
+}
+
+.context-menu-sheet-disc svg {
+  image-color: {{label-2}};
+}
+
+.context-menu-sheet-list,
+.context-menu-sheet-quick {
   background-color: {{bg-card}};
+}
+
+.context-menu-sheet-list .context-menu-item-body {
+  border-top: 1dp {{separator}};
+}
+
+.context-menu-sheet-list .context-menu-item-icon svg {
+  image-color: {{accent}};
+}
+
+.context-menu-sheet-list .context-menu-item-check {
   color: {{accent}};
-  border: 1dp {{separator}};
 }
 
-.context-menu-sheet-cancel:hover {
+.context-menu-sheet-list .context-menu-item:active,
+.context-menu-sheet-quick .context-menu-item:active {
   background-color: {{fill-2}};
 }
 
@@ -2273,7 +2302,8 @@ input.checkbox:checked {
   background-color: {{fill-2}};
 }
 
-.context-menu-item--danger svg {
+.context-menu-item--danger svg,
+.context-menu-sheet-list .context-menu-item--danger .context-menu-item-icon svg {
   image-color: {{danger}};
 }
 /* ---- Phone chat window (UI refresh batch 3): date strips, in-bubble time, quotes, group names, composer. ---- */

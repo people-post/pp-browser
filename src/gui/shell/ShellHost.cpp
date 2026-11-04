@@ -1329,6 +1329,8 @@ void ShellHost::ApplySafeAreaLayout() {
   const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
   // Only a keyboard-sized inset: the home-indicator inset is already part of the menus' own margins.
   ContextMenuHost::Instance().SetBottomInsetDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? state_.safe_area_bottom_dp : 0);
+  // The phone's small sheet reaches the screen bottom like the page sheets: its rows clear the home indicator.
+  ContextMenuHost::Instance().SetHomeIndicatorDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? 0 : state_.safe_area_bottom_dp);
   CompactBottomSurface bottom_surface = CompactBottomSurface::None;
   if (state_.layout_mode == LayoutMode::Compact) {
     bottom_surface = !state_.transient_stack.empty() ? CompactBottomSurface::Page
