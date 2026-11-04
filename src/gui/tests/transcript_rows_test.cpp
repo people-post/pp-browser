@@ -422,5 +422,21 @@ TEST(TranscriptRmlTest, TheGroupAvatarColumnShowsTheSendersPhotoWhenItIsCachedAn
   EXPECT_EQ(std::string(rows[1].group_avatar_letter.c_str()), "B");
 }
 
+TEST(TranscriptRmlTest, ARebuiltTranscriptPicksUpASendersNewPhoto) {
+  using namespace phone_rows;
+  MentionRoster roster;
+  roster.local_account = "account:me";
+  std::string photo = "/profiles/x/icons/icon-1.jpg";
+  TranscriptFacts facts = NamedFacts();
+  facts.sender_icon = [&photo](const std::string&) { return photo; };
+  const std::vector<TranscriptRow> messages = {TextRow("1", "account:a", kNoon)};
+  EXPECT_EQ(std::string(RenderTranscript(messages, facts, roster)[0].group_avatar_src.c_str()), photo);
+
+  photo = "/profiles/x/icons/icon-2.jpg"; // the peer's new photo has landed under a new path
+  EXPECT_EQ(std::string(RenderTranscript(messages, facts, roster)[0].group_avatar_src.c_str()),
+            "/profiles/x/icons/icon-2.jpg");
+}
+
+
 } // namespace
 } // namespace pbr

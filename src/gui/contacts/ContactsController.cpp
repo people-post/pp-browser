@@ -1135,6 +1135,20 @@ void ContactsController::OnShowMemberSheet(const std::string& account_id, const 
   NotifySurfaceChanged();
 }
 
+void ContactsController::RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for) {
+  if (!selected_.member_preview || !icon_for) {
+    return;
+  }
+  const std::string icon = icon_for(selected_.member_account.c_str());
+  if (icon == selected_.icon_src.c_str()) {
+    return;
+  }
+  selected_.has_icon = !icon.empty();
+  selected_.icon_src = icon.c_str();
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
 void ContactsController::OpenContactDetailSheet() {
   if (DetailSheetOpen()) {
     return;

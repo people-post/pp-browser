@@ -94,6 +94,12 @@ public:
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
 
+  /**
+   * A peer's photo was fetched (new path: files are named after their bytes). Rebuilds what shows photos: the open
+   * transcript's sender avatars, the chat header, the chats list, Home's widgets and an open group info sheet.
+   */
+  void OnPeerIconsChanged();
+
   ChatController();
   ~ChatController() override = default;
 

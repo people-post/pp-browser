@@ -1027,6 +1027,19 @@ void ChatController::RefreshFromMessaging() {
   }
 }
 
+void ChatController::OnPeerIconsChanged() {
+  if (!messaging_ready_) {
+    return;
+  }
+  SyncShellSessions(); // chats list rows and Home's widgets are built from the presenter's list
+  SyncDisplayFromThread();
+  UpdateThreadChrome();
+  group_info_.Refresh();
+  DirtyChat();
+  DirtyShell();
+  NotifySurfaceChanged();
+}
+
 void ChatController::OnProfileDataReset() {
   CloseSearch(); // nothing decrypted from the old profile stays in memory
   messaging_ready_ = false;

@@ -190,6 +190,8 @@ public:
   void OnSelectContactSheet(const std::string& contact_id);
   /** The same for a group member who is not a contact (its member state); elsewhere OnShowMember. */
   void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  /** A peer's photo arrived: an open member state shows the new one (`icon_for(account id)` is its photo path). */
+  void RefreshMemberIcon(const std::function<std::string(const std::string&)>& icon_for);
   /** The contact page is open as a page sheet. */
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
   /**

@@ -13,6 +13,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/ProductStack.h"
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -116,6 +117,7 @@ private:
   std::unique_ptr<FlowCoordinator> flow_;
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
+  std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
   std::unique_ptr<CallController> call_;
   std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;

@@ -1877,9 +1877,19 @@ void Application::WireHubCallbacks() {
     });
   });
   messaging.SetOnPeerIconsChanged([this]() {
+    // A burst of icons (a group's members) is one refresh: the flag is cleared when the posted task runs.
+    if (peer_icons_refresh_posted_.exchange(true)) {
+      return;
+    }
     AppRuntime::PostUI([this]() {
+      peer_icons_refresh_posted_ = false;
       if (contacts_) {
         contacts_->Refresh();
+        contacts_->RefreshMemberIcon(
+            [this](const std::string& identity) { return Conversations().IdentityIconLocalPath(identity); });
+      }
+      if (chat_) {
+        chat_->OnPeerIconsChanged();
       }
       if (call_) {
         call_->RefreshPendingRing();
