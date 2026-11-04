@@ -2033,7 +2033,8 @@ void Application::Run() {
     if (shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
-    if (shell_->State().nav_tab == NavTab::Contacts) {
+    // The contact page also ticks while it is a page sheet over another tab (its edits, its close).
+    if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
       contacts_->Tick();
     }
     call_->Tick();

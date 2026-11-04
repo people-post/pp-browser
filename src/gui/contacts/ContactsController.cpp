@@ -1046,6 +1046,13 @@ void ContactsController::OnShowMember(const std::string& account_id, const std::
   NotifySurfaceChanged();
 }
 
+void ContactsController::NoticeDetailSheetClosed() {
+  if (detail_sheet_layer_id_ >= 0 &&
+      !(shell_navigation_.has_layer && shell_navigation_.has_layer(detail_sheet_layer_id_))) {
+    OnDetailSheetClosed();
+  }
+}
+
 bool ContactsController::DetailSheetAvailable() const {
   return ChromeSnapshot().layout_mode == LayoutMode::Compact && shell_navigation_.push_layer &&
          shell_navigation_.has_layer;
@@ -1056,6 +1063,7 @@ void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
     OnSelectContact(contact_id);
     return;
   }
+  NoticeDetailSheetClosed();
   FlushPending();
   if (!DetailSheetOpen()) {
     detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
@@ -1082,6 +1090,7 @@ void ContactsController::OnShowMemberSheet(const std::string& account_id, const 
   if (account_id.empty()) {
     return;
   }
+  NoticeDetailSheetClosed();
   FlushPending();
   if (!DetailSheetOpen()) {
     detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
@@ -1365,10 +1374,7 @@ void ContactsController::OnContactFieldChanged() {
 }
 
 void ContactsController::Tick() {
-  if (detail_sheet_layer_id_ >= 0 &&
-      !(shell_navigation_.has_layer && shell_navigation_.has_layer(detail_sheet_layer_id_))) {
-    OnDetailSheetClosed();
-  }
+  NoticeDetailSheetClosed();
   if (add_search_deadline_ms_ != 0 && SDL_GetTicks() >= add_search_deadline_ms_) {
     add_search_deadline_ms_ = 0;
     RunAddSearch();

@@ -23,7 +23,7 @@ TEST(ChatCallBarTest, TheBarSitsUnderTheHeaderAndJoins) {
   ASSERT_NE(bar, std::string::npos);
   EXPECT_LT(bar, header_end);
   EXPECT_NE(rml.find("data-event-click=\"join_group_call()\"", bar), std::string::npos);
-  EXPECT_NE(rml.find("chat-header-call-btn chat-header-call-btn--join\">{{i18n:call.join}}", bar), std::string::npos);
+  EXPECT_NE(rml.find("chat-header-call-btn chat-header-call-btn--join\"><span>{{i18n:call.join}}</span>", bar), std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t join = css.find(".chat-call-bar-join {");
   ASSERT_NE(join, std::string::npos);

@@ -266,6 +266,8 @@ private:
   void CloseSheetsBeforeLeaving();
   /** The sheet was closed (X, scrim, swipe, or code): its edits are saved, the tab's own page gets its contact back. */
   void OnDetailSheetClosed();
+  /** OnDetailSheetClosed once the shell no longer has the sheet's layer. */
+  void NoticeDetailSheetClosed();
   /** The selected contact cannot be messaged yet: ask for its account's card again (#409). */
   void MaybeRefreshContactCard(const std::string& contact_id);
   bool CloseContactDetailPane();

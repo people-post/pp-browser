@@ -90,6 +90,18 @@ TEST(ProfileSheetTest, SwipedDownTheSheetIsForgotten) {
   EXPECT_EQ(shell.layers.size(), 2u) << "opens again as a new sheet";
 }
 
+TEST(ProfileSheetTest, ClosedWhileNobodyTickedItAnotherPersonStillOpens) {
+  // The Contacts tab is not shown, so nothing ticked the controller when the sheet was swiped away.
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  controller.OnShowMemberSheet("acct:ann", "Ann", "");
+  shell.open.clear();
+  controller.OnShowMemberSheet("acct:bo", "Bo", "");
+  EXPECT_EQ(shell.layers.size(), 2u);
+  EXPECT_EQ(shell.open.size(), 1u);
+}
+
 TEST(ProfileSheetTest, TheDesktopKeepsItsPane) {
   FakeShell shell;
   shell.layout = LayoutMode::Expanded;

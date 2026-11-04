@@ -548,7 +548,9 @@ GroupInfoScreen ChatPresenter::GroupInfoOf(const std::string& thread_id) {
       if (member.member_identity.empty()) {
         continue;
       }
-      if (member.member_identity == facts.self_identity) {
+      // This device's row: its account id (the demo app's groups store the local self id instead).
+      if (member.member_identity == facts.self_identity || member.member_identity == kLocalSelfContactId) {
+        facts.self_identity = member.member_identity;
         GroupMemberRow self = BuildGroupMemberRow(member, std::nullopt, false);
         self.title = Tr("people_picker.you");
         facts.members.push_back(std::move(self));
@@ -944,10 +946,32 @@ OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
   if (!facade_) {
     return {};
   }
-  return BuildOwnerLeaveSheet(thread_id, PlanClose(thread_id), [this](const std::string& identity) {
+  CloseChatPlan plan = PlanClose(thread_id);
+  // Never this device's own row (the demo app's groups store the local self id rather than the account id).
+  std::erase(plan.successors, std::string(kLocalSelfContactId));
+  std::unordered_map<std::string, std::string> contact_of;
+  if (!plan.group_id.empty()) {
+    if (auto roster = facade_->ListGroupRoster(plan.group_id)) {
+      for (const GroupRosterMember& member : *roster) {
+        contact_of[member.member_identity] = member.contact_id;
+      }
+    }
+  }
+  return BuildOwnerLeaveSheet(thread_id, plan, [this, &contact_of](const std::string& identity) {
     // The name the member list shows: the contact's, else the nickname on their card.
-    if (auto contact = facade_->FindContactByIdentity(identity, mesh::ContactIdKind::Account); contact && *contact) {
-      if (std::string title = FormatContactTitle(**contact); !title.empty()) {
+    std::optional<Contact> contact;
+    if (auto it = contact_of.find(identity); it != contact_of.end() && !it->second.empty()) {
+      if (auto loaded = facade_->GetContact(it->second); loaded && *loaded) {
+        contact = **loaded;
+      }
+    }
+    if (!contact) {
+      if (auto found = facade_->FindContactByIdentity(identity, mesh::ContactIdKind::Account); found && *found) {
+        contact = **found;
+      }
+    }
+    if (contact) {
+      if (std::string title = FormatContactTitle(*contact); !title.empty()) {
         return title;
       }
     }

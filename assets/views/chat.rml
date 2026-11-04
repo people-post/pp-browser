@@ -101,7 +101,7 @@
     <span class="chat-call-bar-dot"></span>
     <p class="chat-call-bar-text">{{call_bar_text}}</p>
     <button class="chat-call-bar-join" type="button" data-event-click="join_group_call()">
-      <span class="chat-header-call-btn chat-header-call-btn--join">{{i18n:call.join}}</span>
+      <span class="chat-header-call-btn chat-header-call-btn--join"><span>{{i18n:call.join}}</span></span>
     </button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">

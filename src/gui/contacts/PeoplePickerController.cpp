@@ -1,6 +1,8 @@
 #include <stdexcept>
 #include "gui/contacts/PeoplePickerController.h"
 
+#include "common/thread/ThreadRecordTypes.h"
+
 #include "foundation/error/AppError.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/calls/CallSessionLogic.h"
@@ -1315,7 +1317,8 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
   }
   const GroupMemberRow row = found->second;
   if (CompactLayout()) {
-    ShowMemberTap(row, group_id_, group_is_owner_, row.identity == local_identity_);
+    ShowMemberTap(row, group_id_, group_is_owner_,
+                  row.identity == local_identity_ || row.identity == kLocalSelfContactId);
     return;
   }
   if (row.identity == local_identity_) {
@@ -1395,7 +1398,7 @@ void PeoplePickerController::TapGroupMember(const std::string& thread_id, const 
   const std::string nickname =
       !contact && picker_ports_.kept_card_nickname ? picker_ports_.kept_card_nickname(identity) : std::string();
   const GroupMemberRow row = BuildGroupMemberRow(*member, contact, unreachable, nickname);
-  ShowMemberTap(row, group_id, is_owner, identity == local_identity);
+  ShowMemberTap(row, group_id, is_owner, identity == local_identity || identity == kLocalSelfContactId);
 }
 
 void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std::string& group_id,
