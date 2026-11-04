@@ -901,6 +901,7 @@
     "chat.banner.older_hint": "对方那里可能还有更早的消息。",
     "chat.banner.load_older": "加载更早的消息",
     "chat.insert_emoji": "插入表情",
+    "chat.emoji_sheet": "表情",
     "chat.react": "回应",
     "chat.shared_badge": "已分享",
     "chat.psk_rotate_notice": "对方只用这台设备接收新消息。",

@@ -290,8 +290,10 @@ std::string ShellLayoutRml::BottomChrome() const {
     out << " surface-chrome--solid";
   }
   out << "\" id=\"shell-emoji-keyboard-panel\">";
+  // The rounded sheet stands on the panel, which is the composer's colour, so the bar above runs on behind its corners.
+  out << "<div class=\"shell-emoji-keyboard-sheet\">";
   out << "<div class=\"shell-emoji-keyboard-body\" id=\"shell-bottom-chrome-body\"></div>";
-  out << "</div></div>";
+  out << "</div></div></div>";
   return out.str();
 }
 

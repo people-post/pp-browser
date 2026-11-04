@@ -1626,14 +1626,6 @@ bool Application::MountPresenters(ui::Context* context) {
       chat_->ReactWithEmoji(message_id, emoji);
     });
   };
-  emoji_notify.open_react_in = [this](ui::Element* mount, const std::string& message_id, std::function<void()> done) {
-    emoji_picker_->OpenReactIn(mount, message_id, [this, message_id, done = std::move(done)](std::string emoji) {
-      chat_->ReactWithEmoji(message_id, emoji);
-      if (done) {
-        done();
-      }
-    });
-  };
   emoji_notify.close_if_open = [this]() {
     if (emoji_picker_->IsOpen()) {
       emoji_picker_->Close();

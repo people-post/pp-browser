@@ -89,7 +89,7 @@ Choose the lightest primitive that fits the user task:
 | Style | API | Use when | Examples |
 |-------|-----|----------|----------|
 | **Pane navigation** | `SetPrimaryPane`, `PushTransient` / `PopTransient` | User stays in a tab; back returns within that tab | Sessions→chat, Contacts→detail (compact uses transient) |
-| **Bottom chrome** | `SetBottomChrome` / `ClearBottomChrome` | IME-replacement bottom panel: remount-only, no scrim, latched IME height | Mobile/compact emoji **Insert** |
+| **Bottom chrome** | `SetBottomChrome` / `ClearBottomChrome` | IME-replacement bottom panel: remount-only, no scrim, latched IME height or a share of the window (`height_share`) | Mobile/compact emoji **Insert** (a third of the window) |
 | **Modal flow** | `PushLayer` + `FlowCoordinator` | Task blocks the app until finished; may have multiple in-overlay steps | New conversation / group create (`PeoplePickerController`); emoji **React** / expanded Insert overlay |
 | **Atomic feedback** | `ShellFeedback` dialog/toast | One-shot confirm/rename/prompt with no surrounding flow | Delete confirm, rename thread |
 

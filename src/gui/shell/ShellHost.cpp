@@ -567,6 +567,7 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
   entry.page_sheet = spec.page_sheet;
   entry.full_screen = spec.full_screen;
+  entry.sheet_detent = spec.sheet_detent;
   if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
     sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
   }
@@ -1262,7 +1263,7 @@ void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
   if (sdl.bottom_dp >= kImeLatchMinDp) {
     last_ime_bottom_dp_ = sdl.bottom_dp;
-    if (bottom_chrome_open_) {
+    if (bottom_chrome_open_ && !bottom_chrome_fixed_height_) {
       bottom_chrome_height_dp_ = std::max(bottom_chrome_height_dp_, last_ime_bottom_dp_);
     }
   }
@@ -1302,8 +1303,15 @@ bool ShellHost::SetBottomChrome(const BottomChromeSpec& spec) {
   bottom_chrome_open_ = true;
   bottom_chrome_key_ = spec.key;
   bottom_chrome_rml_path_ = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
+  bottom_chrome_fixed_height_ = false;
   bottom_chrome_height_dp_ =
       std::max(last_ime_bottom_dp_ > 0 ? last_ime_bottom_dp_ : 0, kDefaultEmojiKeyboardPanelDp);
+  if (spec.height_share > 0.f && context_) {
+    const float ratio = context_->GetDensityIndependentPixelRatio();
+    const float window_dp = static_cast<float>(context_->GetDimensions().y) / (ratio > 0.f ? ratio : 1.f);
+    bottom_chrome_height_dp_ = static_cast<int>(std::lround(window_dp * spec.height_share));
+    bottom_chrome_fixed_height_ = true;
+  }
   state_.safe_area_bottom_dp = std::max(state_.safe_area_bottom_dp, bottom_chrome_height_dp_);
   RemountBottomChrome();
   ApplySafeAreaLayout();
@@ -1317,6 +1325,7 @@ void ShellHost::ClearBottomChrome() {
   }
   bottom_chrome_open_ = false;
   bottom_chrome_height_dp_ = 0;
+  bottom_chrome_fixed_height_ = false;
   bottom_chrome_key_.clear();
   bottom_chrome_rml_path_.clear();
   RemountBottomChrome();

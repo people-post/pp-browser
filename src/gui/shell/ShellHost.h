@@ -349,6 +349,8 @@ private:
   int last_ime_bottom_dp_ = 0;
   /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
   int bottom_chrome_height_dp_ = 0;
+  /** The panel keeps a share of the window's height (BottomChromeSpec::height_share), not the keyboard's. */
+  bool bottom_chrome_fixed_height_ = false;
   bool bottom_chrome_open_ = false;
   std::string bottom_chrome_key_;
   std::string bottom_chrome_rml_path_;

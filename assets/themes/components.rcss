@@ -7300,17 +7300,12 @@ input.checkbox {
 }
 
 /* Scrolled by touch: no room kept for the engine's 16dp scrollbars (the row would grow and the emoji ride high). */
-.context-menu-sheet-quick-scroll scrollbarhorizontal,
-.context-menu-sheet-expand .emoji-picker-rail scrollbarhorizontal {
+.context-menu-sheet-quick-scroll scrollbarhorizontal {
   height: 0dp;
 }
 
-.context-menu-sheet-expand .emoji-picker-body scrollbarvertical {
-  width: 0dp;
-}
-
-/* The "+" grew the sheet (ContextMenuHost::ExpandSheet sets its height, the large stop): the reactions and the rows
-   give way to every emoji, category tabs along the top and the grid scrolling below (Kenneth 2026-11-04, WhatsApp). */
+/* A menu action with an expander grew the sheet (ContextMenuHost::ExpandSheet sets its height, the large stop): the
+   quick row and the rows give way to what it mounts. */
 .context-menu-sheet--expanded {
   display: flex;
   flex-direction: column;
@@ -7335,35 +7330,6 @@ input.checkbox {
   border-radius: 12dp;
   overflow: hidden;
   clip: always;
-}
-
-.context-menu-sheet-expand .emoji-picker {
-  flex: 1 1 0;
-  height: auto;
-  min-height: 0;
-  gap: 0;
-}
-
-.context-menu-sheet-expand .emoji-picker-header {
-  display: none;
-}
-
-.context-menu-sheet-expand .emoji-picker-main.row {
-  flex-direction: column;
-}
-
-.context-menu-sheet-expand .emoji-picker-rail {
-  flex-direction: row;
-  width: auto;
-  height: 52dp;
-  padding: 4dp 4dp;
-  overflow-x: auto;
-  overflow-y: hidden;
-  box-sizing: border-box;
-}
-
-.context-menu-sheet-expand .emoji-picker-body {
-  padding: 0 4dp 12dp 4dp;
 }
 
 .context-menu-sheet-quick .context-menu-item {
@@ -7495,6 +7461,9 @@ input.checkbox {
   pointer-events: auto;
 }
 
+/* Phones: the composer's emoji sheet (Kenneth 2026-11-05 原话 79, 82): about a third of the screen (ShellHost sets the
+   height), right under the message field. The panel is square and the composer's colour; the rounded sheet on it
+   (.shell-emoji-keyboard-sheet) is a page sheet's colour, so the bar above runs on behind its corners. */
 .shell-emoji-keyboard-panel {
   position: absolute;
   left: 0;
@@ -7503,13 +7472,24 @@ input.checkbox {
   height: 280dp;
   display: flex;
   flex-direction: column;
-  border-radius: 12dp 12dp 0 0;
-  padding: 8dp 8dp 4dp 8dp;
+  padding: 0;
   box-sizing: border-box;
   overflow: hidden;
   /* Force scissor even when flex children absorb overflow (scroll lives on .emoji-picker-body). */
   clip: always;
   z-index: 51;
+}
+
+.shell-emoji-keyboard-sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 8dp;
+  border-radius: 12dp 12dp 0 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
 }
 
 .shell-emoji-keyboard-body {
@@ -7526,6 +7506,101 @@ input.checkbox {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* The phone sheets' top (emoji_picker.rml): the composer's sheet shows its grabber, title and X; a page sheet (the
+   reaction picker) brings its own grabber and X, so only the title row shows. The desktop keeps its header. */
+.emoji-sheet-top {
+  display: none;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-top,
+.shell-page-sheet .emoji-sheet-top {
+  display: block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shell-emoji-keyboard-body .emoji-picker-header,
+.shell-page-sheet .emoji-picker-header,
+.shell-page-sheet .emoji-sheet-grabber,
+.shell-page-sheet .emoji-sheet-close {
+  display: none;
+}
+
+.shell-emoji-keyboard-body .emoji-picker,
+.shell-page-sheet .emoji-picker {
+  gap: 0;
+}
+
+.emoji-sheet-grabber {
+  width: 36dp;
+  height: 5dp;
+  margin: 6dp auto 0 auto;
+  border-radius: 2.5dp;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 44dp;
+  margin: 0 48dp;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-header .sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* A 44dp target around the small grey disc, at the right end of the title row (as on the page sheets). */
+.emoji-sheet-close {
+  position: absolute;
+  top: 8dp;
+  right: -4dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.emoji-sheet-close .sheet-icon-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+.emoji-sheet-close svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+/* Section names scroll with their emoji (a sticky name sat on the first row on the phone). */
+.shell-emoji-keyboard-body .emoji-picker-section-label,
+.shell-page-sheet .emoji-picker-section-label {
+  position: static;
+}
+
+.shell-emoji-keyboard-body .emoji-picker-body scrollbarvertical,
+.shell-page-sheet .emoji-picker-body scrollbarvertical {
+  width: 0dp;
 }
 
 /* Emoji picker overlay (expanded desktop modal) */

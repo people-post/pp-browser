@@ -109,12 +109,7 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   }
   ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
   more.quick = true;
-  if (emoji_picker_notify_.open_react_in) {
-    // The phone sheet grows in place to every emoji (the desktop menu still opens the picker window).
-    more.expand = [this, message_id](ui::Element* mount, std::function<void()> done) {
-      emoji_picker_notify_.open_react_in(mount, message_id, std::move(done));
-    };
-  }
+  // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
   actions.push_back(std::move(more));
 
   // A contact card: its person can be added (the card is checked first).

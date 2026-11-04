@@ -134,12 +134,17 @@ struct PaneSpec {
    * shell-overlay-body, which ShellHost pads by the safe areas. Desktop is unchanged.
    */
   bool full_screen = false;
+  /** A phone page sheet's first stop (the reaction emoji picker opens at Small, about a third of the screen). */
+  SheetDetent sheet_detent = SheetDetent::Large;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
 struct BottomChromeSpec {
   std::string key;
   std::string rml_path;
+  /** > 0: the panel is this share of the window's height (a sheet, Kenneth 2026-11-05: about a third) and keeps it;
+   *  0: it takes the on-screen keyboard's height, like the keyboard it stands in for. */
+  float height_share = 0.f;
 };
 
 struct PaneState {

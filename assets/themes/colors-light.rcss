@@ -954,8 +954,31 @@ select selectbox option:hover {
   background-color: #ffffff;
 }
 
-.shell-page-sheet-grabber {
+.shell-page-sheet-grabber,
+.emoji-sheet-grabber {
   background-color: #3c3c434c;
+}
+
+/* The composer's emoji sheet: the panel is the composer's colour behind the sheet's rounded top. */
+.shell-emoji-keyboard-panel.surface-chrome {
+  background-color: #f2f2f7;
+  border-width: 0;
+}
+
+.shell-emoji-keyboard-sheet {
+  background-color: #ffffff;
+}
+
+.emoji-sheet-header .sheet-title {
+  color: #000000;
+}
+
+.emoji-sheet-close .sheet-icon-disc {
+  background-color: #7878801f;
+}
+
+.emoji-sheet-close svg {
+  image-color: #3c3c4399;
 }
 
 .shell-page-sheet .shell-page-sheet-close,

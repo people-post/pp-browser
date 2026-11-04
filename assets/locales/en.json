@@ -931,6 +931,7 @@
     "chat.banner.older_hint": "Older messages may be available from your peer.",
     "chat.banner.load_older": "Load older messages",
     "chat.insert_emoji": "Insert emoji",
+    "chat.emoji_sheet": "Emoji",
     "chat.react": "React",
     "chat.shared_badge": "Shared",
     "chat.psk_rotate_notice": "They're using only this device for new messages.",
