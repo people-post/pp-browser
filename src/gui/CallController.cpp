@@ -319,6 +319,7 @@ void CallController::ClearInCall() {
   minimized_corner_ = 0;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
+  last_debug_subtitle_ = {};
   audio_fault_gate_.Reset();
   peer_video_log_key_.clear();
   video_start_since_ms_ = 0;
@@ -1277,7 +1278,11 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
       call_ports_.call_diagnostics_enabled && call_ports_.call_diagnostics_enabled();
   in_call.show_debug_subtitle = diagnostics && media.IsActive();
   if (in_call.show_debug_subtitle) {
-    in_call.debug_subtitle = FormatCallDebugSubtitle(view, now_ms).c_str();
+    const auto now = std::chrono::steady_clock::now();
+    if (in_call.debug_subtitle.empty() || now - last_debug_subtitle_ >= kDebugSubtitleInterval) {
+      in_call.debug_subtitle = FormatCallDebugSubtitle(view, now_ms).c_str();
+      last_debug_subtitle_ = now;
+    }
   } else {
     in_call.debug_subtitle = "";
   }
