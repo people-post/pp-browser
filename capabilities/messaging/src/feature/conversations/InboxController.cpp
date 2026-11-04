@@ -697,15 +697,23 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   }
   if (IsAttachmentImageMime(fields->mime) && !view.local_path.empty()) {
     // The bytes are a contact's: look at the declared size before the picture is decoded into an <img>.
-    const auto cached = inline_image_ok_.find(view.local_path);
-    if (cached != inline_image_ok_.end()) {
-      view.inline_image_ok = cached->second;
-    } else {
+    auto cached = inline_image_ok_.find(view.local_path);
+    if (cached == inline_image_ok_.end()) {
       const uint64_t max_pixels = attachment_downloads_ ? attachment_downloads_->Limits().max_image_pixels
                                                         : DefaultAttachmentLimits().max_image_pixels;
-      view.inline_image_ok = ImageWithinPixelCap(view.local_path, max_pixels);
-      inline_image_ok_[view.local_path] = view.inline_image_ok;
+      InlineImageFacts facts;
+      if (const auto header = ReadImageHeader(view.local_path)) {
+        facts.ok = static_cast<uint64_t>(header->width) * static_cast<uint64_t>(header->height) <= max_pixels;
+        // Orientations 5..8 turn the picture a quarter: it shows with its sides swapped.
+        const bool turned = header->exif_orientation >= 5 && header->exif_orientation <= 8;
+        facts.width = turned ? header->height : header->width;
+        facts.height = turned ? header->width : header->height;
+      }
+      cached = inline_image_ok_.emplace(view.local_path, facts).first;
     }
+    view.inline_image_ok = cached->second.ok;
+    view.image_width = cached->second.width;
+    view.image_height = cached->second.height;
   }
   if (attachment_downloads_) {
     view.state = attachment_downloads_->StateFor(message.thread_id, *fields);

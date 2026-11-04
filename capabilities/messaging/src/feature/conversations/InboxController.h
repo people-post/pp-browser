@@ -35,6 +35,9 @@ struct TranscriptAttachmentView {
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
    */
   bool inline_image_ok = true;
+  /** A picture's size in pixels the right way up (its EXIF orientation applied); 0 when unknown. */
+  int image_width = 0;
+  int image_height = 0;
   /**
    * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
    * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
@@ -172,8 +175,13 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
-  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
-  mutable std::unordered_map<std::string, bool> inline_image_ok_;
+  /** Pixel-cap verdict and upright size per view file, so a render does not re-read the head of every picture. */
+  struct InlineImageFacts {
+    bool ok = false;
+    int width = 0;
+    int height = 0;
+  };
+  mutable std::unordered_map<std::string, InlineImageFacts> inline_image_ok_;
   std::string active_thread_id_;
   IThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;

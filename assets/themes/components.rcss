@@ -7745,7 +7745,8 @@ input.checkbox {
 
 /* Pictures, files and voice notes take the bubble colours and corners. Files and videos are compact cards (at most
    240dp, small display text, a 44dp-tall plain "Open" row); a picture card is a 3dp frame around the picture, which
-   keeps its own shape inside a 220 x 260dp box (the engine keeps the ratio under max-width / max-height). */
+   keeps its own shape inside a 200 x 240dp box: TranscriptRml gives the picture its fitted size (width / height), so
+   the frame is laid out for it on every shape (left to max-width / max-height, a very tall one spilled out). */
 .shell-chat-overlay .chat-attachment-card {
   display: inline-block;
   min-width: 160dp;
@@ -7800,8 +7801,8 @@ input.checkbox {
 .shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
   display: inline-block;
   vertical-align: top;
-  max-width: 220dp;
-  max-height: 260dp;
+  max-width: 200dp;
+  max-height: 240dp;
   margin: 0;
   border-radius: 9dp;
 }

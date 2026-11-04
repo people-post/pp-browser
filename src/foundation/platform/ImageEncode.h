@@ -23,4 +23,9 @@ SDL_Surface* ScaleToMaxDimension(SDL_Surface* source, int max_dimension);
  *  `source`; returns it unchanged for 1 or an unknown value, nullptr when the copy cannot be made. */
 SDL_Surface* ApplyExifOrientation(SDL_Surface* source, int orientation);
 
+/** Decodes a picture file's bytes the right way up: SDL_image ignores a JPEG's EXIF orientation, so a phone's portrait
+ *  photo came out on its side; it is applied here. `type_hint` is SDL_image's (the file extension, may be empty).
+ *  Caller owns the result; nullptr when the bytes cannot be decoded. */
+SDL_Surface* DecodeImageUpright(const uint8_t* bytes, size_t size, const char* type_hint);
+
 } // namespace pbr

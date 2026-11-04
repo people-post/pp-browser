@@ -154,5 +154,39 @@ TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
   EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
 }
 
+// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble. Every shape fits a
+// 200 x 240dp box with its own ratio, and the picture carries that size so its 3dp frame is laid out round it.
+TEST(PictureBubbleFit, EveryShapeFitsTheBoxWithItsOwnRatio) {
+  const auto fit = [](const int w, const int h) {
+    const PictureBubbleSize size = FitPictureInBubble(w, h);
+    return std::make_pair(size.width_dp, size.height_dp);
+  };
+  EXPECT_EQ(fit(4032, 3024), std::make_pair(200, 150)) << "a landscape photo";
+  EXPECT_EQ(fit(3024, 4032), std::make_pair(180, 240)) << "a portrait photo";
+  EXPECT_EQ(fit(600, 2400), std::make_pair(60, 240)) << "very tall";
+  EXPECT_EQ(fit(2400, 400), std::make_pair(200, 33)) << "very wide";
+  EXPECT_EQ(fit(20000, 10), std::make_pair(200, 1)) << "a sliver keeps 1dp";
+  EXPECT_EQ(fit(120, 90), std::make_pair(120, 90)) << "a small picture is not enlarged";
+  EXPECT_EQ(fit(0, 300), std::make_pair(0, 0)) << "unknown size";
+}
+
+TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/tall.jpg";
+    view.image_width = 3024;  // upright: InboxController has swapped a quarter-turned photo's sides
+    view.image_height = 4032;
+    return view;
+  };
+  const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
+  EXPECT_NE(rml.find("width=\"180\" height=\"240\""), std::string::npos) << rml;
+  // Without a known size the picture is left to the stylesheet's limits.
+  const std::string unknown = Render(Attachment("p4", "x.jpg", "image/jpeg", 50000), Facts(true));
+  EXPECT_NE(unknown.find("class=\"chat-attachment-image\" src=\"/tmp/x\" data-event-click="), std::string::npos)
+      << unknown;
+}
+
 } // namespace
 } // namespace pbr

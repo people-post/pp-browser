@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
@@ -326,10 +327,14 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {
-    // A tap opens the full picture in the system viewer (zoomable): the bubble shows it at most 240 dp high.
-    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) +
-            "\" data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" +
-            JsArgInAttribute(local_path) + "')\"/>";
+    // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
+    // its size is given, so the frame round it is laid out for that size and never for the file's own.
+    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
+    if (const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height); fit.width_dp > 0) {
+      html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"";
+    }
+    html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
+            "')\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;
@@ -640,6 +645,16 @@ bool AddBubbleTail(std::string& content, bool ours) {
 }
 
 } // namespace
+
+PictureBubbleSize FitPictureInBubble(const int width_px, const int height_px) {
+  if (width_px <= 0 || height_px <= 0) {
+    return {};
+  }
+  const double scale = std::min({1.0, static_cast<double>(kPictureBubbleMaxWidthDp) / width_px,
+                                 static_cast<double>(kPictureBubbleMaxHeightDp) / height_px});
+  return {std::max(1, static_cast<int>(std::lround(width_px * scale))),
+          std::max(1, static_cast<int>(std::lround(height_px * scale)))};
+}
 
 std::vector<MessageDisplayRow> RenderTranscript(const std::vector<TranscriptRow>& entries,
                                                 const TranscriptFacts& facts_in,

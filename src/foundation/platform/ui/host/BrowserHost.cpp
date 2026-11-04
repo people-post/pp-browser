@@ -3,6 +3,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ImageEncode.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
@@ -68,7 +69,8 @@ public:
 		ui::String extension = (i_ext == ui::String::npos ? ui::String() : source.substr(i_ext + 1));
 
 #if SDL_MAJOR_VERSION >= 3
-		auto CreateSurface = [&]() { return IMG_LoadTyped_IO(SDL_IOFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str()); };
+		// A phone's portrait photo stands up (EXIF orientation) in a chat bubble and in the picture preview.
+		auto CreateSurface = [&]() { return pbr::DecodeImageUpright(reinterpret_cast<const uint8_t*>(buffer.get()), buffer_size, extension.c_str()); };
 		auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format; };
 		auto ConvertSurface = [](SDL_Surface* surface, SDL_PixelFormat format) { return SDL_ConvertSurface(surface, format); };
 		auto DestroySurface = [](SDL_Surface* surface) { SDL_DestroySurface(surface); };
