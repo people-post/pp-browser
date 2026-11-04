@@ -1526,6 +1526,36 @@ Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_c
 }
 
 Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id) {
+  return StartRosterCheckAttempt(group_id, 0);
+}
+
+void GroupMembershipWorkflow::ScheduleRosterReask(const std::string& group_id, const std::string& request_id,
+                                                  const size_t attempt) {
+  if (attempt >= std::size(kRosterReaskDelaysMs)) {
+    return; // a member's next group message, or the next start, still asks again (G013)
+  }
+  // The workflow goes with the messaging session (profile reset, account switch); a re-ask that outlives it does nothing.
+  AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(kRosterReaskDelaysMs[attempt]),
+      [this, group_id, request_id, attempt, alive = alive_]() {
+        if (!alive->load()) {
+          return;
+        }
+        AppRuntime::PostWorkerNormal([this, group_id, request_id, attempt, alive]() {
+          if (!alive->load() || AppRuntime::IsShuttingDown()) {
+            return;
+          }
+          auto metadata = roster_.LoadMetadata(group_id);
+          if (!metadata || !*metadata || !group_roster_sync::StillAwaiting(**metadata, request_id)) {
+            return; // answered, or a newer check runs with its own re-asks
+          }
+          log().info << "Roster check unanswered group=" << group_id << ", asking again";
+          (void)StartRosterCheckAttempt(group_id, attempt + 1);
+        });
+      });
+}
+
+Roe<void> GroupMembershipWorkflow::StartRosterCheckAttempt(const std::string& group_id, const size_t attempt) {
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
@@ -1560,6 +1590,7 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id)
         }
       },
       WorkerLane::Normal);
+  ScheduleRosterReask(group_id, check->request.request_id, attempt);
   return {};
 }
 
