@@ -525,7 +525,7 @@
     "contacts.toast.removed": "联系人已移除",
     "contacts.this_contact": "该联系人",
     "contacts.remove_confirm_body": "要把 {name} 从联系人中移除吗？对话仍保留在本机。之后可通过“找人”重新添加。",
-    "people_picker.title": "新建对话",
+    "people_picker.title": "新建群",
     "people_picker.title_add": "添加成员",
     "people_picker.search_placeholder": "搜索联系人",
     "people_picker.empty": "暂无可发消息的联系人。请先添加联系人。",

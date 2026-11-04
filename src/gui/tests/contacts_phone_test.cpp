@@ -44,6 +44,13 @@ TEST_F(ContactsPhoneTest, DesktopMenuKeepsAddAndFindOnly) {
             (std::vector<std::string>{"add_contact", "find_someone"}));
 }
 
+// Kenneth 2026-11-04: the New group sheet was titled "新建对话".
+TEST_F(ContactsPhoneTest, NewGroupSheetTitleSaysGroup) {
+  EXPECT_EQ(Tr("people_picker.title"), "New group");
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  EXPECT_EQ(Tr("people_picker.title"), "新建群");
+}
+
 // Kenneth 2026-11-03: "联系人这一页在右边加入一个字母排序吧。中文的用按拼音排序，英文的按字母排序".
 TEST_F(ContactsPhoneTest, ContactsAreSectionedByLetterChineseByPinyinHashLast) {
   std::vector<ContactsController::ContactListRow> rows;

@@ -538,7 +538,7 @@
     "contacts.this_contact": "this contact",
     "contacts.remove_confirm_body":
         "Remove {name} from contacts? Conversations stay on this device. You can add them again later from Find.",
-    "people_picker.title": "New conversation",
+    "people_picker.title": "New group",
     "people_picker.title_add": "Add people",
     "people_picker.search_placeholder": "Search contacts",
     "people_picker.empty": "No messageable contacts yet. Add contacts first.",
