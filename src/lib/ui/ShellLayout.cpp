@@ -66,6 +66,10 @@ bool ShellLayout::SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab) {
   return TabHasSecondary(tab) ? false : collapsed;
 }
 
+bool ShellLayout::OpenChatSwitchesToChats(const LayoutMode mode, const NavTab tab) {
+  return mode == LayoutMode::Compact && tab == NavTab::Home;
+}
+
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   PaneVisibility vis{};
   vis.primary = true;

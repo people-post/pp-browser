@@ -319,3 +319,12 @@ TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   EXPECT_TRUE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
   EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(false, NavTab::Home));
 }
+
+TEST(ShellHostTest, AChatPickedOnThePhonesHomeOpensFromChats) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.5): a tap on Home's "New messages" row only made it vanish.
+  using namespace pbr;
+  EXPECT_TRUE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Home));
+  EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Sessions));
+  EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Contacts));
+  EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Expanded, NavTab::Home)) << "the desktop keeps its panes";
+}

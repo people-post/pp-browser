@@ -23,6 +23,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
+#include "lib/ui/ShellLayout.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
@@ -765,6 +766,11 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   }
   if (thread_id != search_thread_) {
     CloseSearch(); // another chat: the search and its index belong to the one left
+  }
+  // A row of Home's "New messages" widget: go to Chats first, as a tap in the Chats list would, so the chat opens
+  // (the phone's chat overlay only opens over Chats) instead of the row just being read and vanishing.
+  if (ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
+    ShellSelectNavTab(NavTab::Sessions);
   }
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
