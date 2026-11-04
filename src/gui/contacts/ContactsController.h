@@ -152,6 +152,16 @@ public:
   void OnSelectContact(const std::string& contact_id);
   /** A group member who is not a contact: their page in its member state, pushed like a contact's page. */
   void OnShowMember(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  /**
+   * Phones, from a group (a sender in the chat, the group info sheet, the member list): the contact's page as a 4/5
+   * page sheet over where the user is (no tab or chat changes); swiped down, the user is back there. Elsewhere (the
+   * desktop) OnSelectContact.
+   */
+  void OnSelectContactSheet(const std::string& contact_id);
+  /** The same for a group member who is not a contact (its member state); elsewhere OnShowMember. */
+  void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src);
+  /** The contact page is open as a page sheet. */
+  bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
   void OnDetailDismissed();
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
@@ -248,6 +258,14 @@ private:
   void OnNewChatAction(const std::string& action);
   void LoadSelectedDetail(const std::string& contact_id);
   void OpenContactDetailPane();
+  /** Phones with layers: the detail can open as a page sheet. */
+  bool DetailSheetAvailable() const;
+  /** Pushes the contact page as a page sheet (once; a second person replaces the first in it). */
+  void OpenContactDetailSheet();
+  /** Closes every page sheet (this one and the ones under it) before a button leaves for another page. */
+  void CloseSheetsBeforeLeaving();
+  /** The sheet was closed (X, scrim, swipe, or code): its edits are saved, the tab's own page gets its contact back. */
+  void OnDetailSheetClosed();
   /** The selected contact cannot be messaged yet: ask for its account's card again (#409). */
   void MaybeRefreshContactCard(const std::string& contact_id);
   bool CloseContactDetailPane();
@@ -309,6 +327,10 @@ private:
   bool blocked_open_ = false;
   /** The New chat sheet's overlay layer (-1: not open). */
   int new_chat_layer_id_ = -1;
+  /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
+  int detail_sheet_layer_id_ = -1;
+  /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */
+  std::string detail_under_sheet_;
   ui::String search_query_;
   // The Add contact sheet.
   ui::String add_query_;

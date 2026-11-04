@@ -133,6 +133,8 @@ public:
   void CloseLayer(int layer_id = -1);
   /** Layer `layer_id` (PushLayer) is still open: not closed by its X, the scrim, a swipe or code. */
   bool HasLayer(int layer_id) const;
+  /** Closes every page sheet layer, top first (each owner hears its own close as for a swipe). */
+  void ClosePageSheets();
 
   /**
    * Single dismiss entry for Escape, back buttons, and swipe gestures.

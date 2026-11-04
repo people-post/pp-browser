@@ -1822,17 +1822,18 @@ void ChatController::OpenGroupSender(const std::string& message_id) {
   if (!contact || !*contact) {
     contact = facade_->FindContactByIdentity(sender, mesh::ContactIdKind::Account);
   }
+  // Over the chat as a page sheet on phones (Kenneth 2026-11-04: swiped down, back in the chat); the desktop's pane.
   if (contact && *contact) {
-    if (contacts_notify_.select_contact) {
-      contacts_notify_.select_contact((*contact)->id);
+    if (contacts_notify_.select_contact_sheet) {
+      contacts_notify_.select_contact_sheet((*contact)->id);
     }
     return;
   }
-  if (contacts_notify_.show_member) {
+  if (contacts_notify_.show_member_sheet) {
     // Not a contact: the same page in its member state (name, photo, Account ID, Add contact).
     const TranscriptFacts facts = facade_->TranscriptFactsFor();
-    contacts_notify_.show_member(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
-                                 facts.sender_icon ? facts.sender_icon(sender) : std::string());
+    contacts_notify_.show_member_sheet(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
+                                       facts.sender_icon ? facts.sender_icon(sender) : std::string());
   }
 }
 

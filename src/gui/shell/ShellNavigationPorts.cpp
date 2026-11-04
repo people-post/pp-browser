@@ -41,6 +41,7 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
   navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
   navigation.has_layer = [&shell](const int layer_id) { return shell.HasLayer(layer_id); };
+  navigation.close_page_sheets = [&shell]() { shell.ClosePageSheets(); };
   navigation.set_bottom_chrome = [&shell](const BottomChromeSpec& spec) { return shell.SetBottomChrome(spec); };
   navigation.clear_bottom_chrome = [&shell]() { shell.ClearBottomChrome(); };
   navigation.bottom_chrome_open = [&shell]() { return shell.BottomChromeOpen(); };

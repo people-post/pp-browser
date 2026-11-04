@@ -451,6 +451,7 @@
     "contacts.info": "Contact info",
     "contacts.member_info": "Member info",
     "contacts.member_not_contact": "In this group, not in your contacts.",
+    "contacts.cant_message_yet": "You can't message them yet.",
     "contacts.new_group": "New group",
     "new_chat.title": "New chat",
     "new_chat.ai": "AI chat",

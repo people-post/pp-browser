@@ -623,6 +623,18 @@ bool ShellHost::HasLayer(const int layer_id) const {
                      [layer_id](const OverlayEntry& entry) { return entry.id == layer_id; });
 }
 
+void ShellHost::ClosePageSheets() {
+  std::vector<int> sheets;
+  for (auto it = state_.overlay_stack.rbegin(); it != state_.overlay_stack.rend(); ++it) {
+    if (it->page_sheet) {
+      sheets.push_back(it->id);
+    }
+  }
+  for (const int id : sheets) {
+    CloseLayer(id);
+  }
+}
+
 DismissTarget ShellHost::ResolveDismissTarget() const {
   if (!local_back_stack_.empty()) {
     return DismissTarget::LocalBack;

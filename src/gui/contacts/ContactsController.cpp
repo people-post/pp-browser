@@ -56,6 +56,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string_view>
+#include <utility>
 #include <cctype>
 #include <sstream>
 #include "common/PbrCompat.h"
@@ -494,6 +495,7 @@ void ContactsController::ShowConfirm(const std::string& title, const std::string
 }
 
 void ContactsController::NavigateToChatSession() {
+  CloseSheetsBeforeLeaving();
   if (shell_navigation_.select_nav_tab) {
     shell_navigation_.select_nav_tab(NavTab::Sessions);
   }
@@ -1044,6 +1046,86 @@ void ContactsController::OnShowMember(const std::string& account_id, const std::
   NotifySurfaceChanged();
 }
 
+bool ContactsController::DetailSheetAvailable() const {
+  return ChromeSnapshot().layout_mode == LayoutMode::Compact && shell_navigation_.push_layer &&
+         shell_navigation_.has_layer;
+}
+
+void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
+  if (!DetailSheetAvailable()) {
+    OnSelectContact(contact_id);
+    return;
+  }
+  FlushPending();
+  if (!DetailSheetOpen()) {
+    detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
+  }
+  LoadSelectedDetail(contact_id);
+  if (selected_.id.empty()) {
+    return;
+  }
+  MaybeRefreshContactCard(contact_id);
+  if (contacts_ports_.refresh_contact_profile) {
+    contacts_ports_.refresh_contact_profile(contact_id);
+  }
+  OpenContactDetailSheet();
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OnShowMemberSheet(const std::string& account_id, const std::string& name,
+                                           const std::string& icon_src) {
+  if (!DetailSheetAvailable()) {
+    OnShowMember(account_id, name, icon_src);
+    return;
+  }
+  if (account_id.empty()) {
+    return;
+  }
+  FlushPending();
+  if (!DetailSheetOpen()) {
+    detail_under_sheet_ = selected_.member_preview ? std::string() : std::string(selected_.id.c_str());
+  }
+  selected_ = MemberPreviewDetail(account_id, name, icon_src);
+  OpenContactDetailSheet();
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
+void ContactsController::OpenContactDetailSheet() {
+  if (DetailSheetOpen()) {
+    return;
+  }
+  PaneSpec spec;
+  spec.key = "contact_detail";
+  spec.page_sheet = true; // the sheets' one height, handle, centred title and grey X (Kenneth 2026-11-04)
+  detail_sheet_layer_id_ = shell_navigation_.push_layer(spec);
+}
+
+void ContactsController::CloseSheetsBeforeLeaving() {
+  if (shell_navigation_.close_page_sheets) {
+    shell_navigation_.close_page_sheets(); // the whole stack (group info, member list, this page) goes at once
+  }
+  if (DetailSheetOpen()) {
+    OnDetailSheetClosed();
+  }
+}
+
+void ContactsController::OnDetailSheetClosed() {
+  detail_sheet_layer_id_ = -1;
+  FlushPending();
+  const std::string under = std::exchange(detail_under_sheet_, std::string());
+  if (!under.empty()) {
+    LoadSelectedDetail(under); // the Contacts tab's own page shows its contact again
+  } else {
+    selected_ = {};
+    contact_dirty_ = false;
+    debounce_deadline_ms_ = 0;
+  }
+  DirtyAll();
+  NotifySurfaceChanged();
+}
+
 void ContactsController::MaybeRefreshContactCard(const std::string& contact_id) {
   // Not messageable yet: its card may never have arrived (its devices were out of reach when it was added,
   // #409). Opening it asks once more; the page updates when the card comes.
@@ -1062,6 +1144,9 @@ void ContactsController::MaybeRefreshContactCard(const std::string& contact_id) 
 }
 
 void ContactsController::OpenContactDetailPane() {
+  if (DetailSheetOpen()) {
+    return; // the sheet shows the shared detail: a contact just added there (a member) stays in it
+  }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   compact_layout_ = chrome.layout_mode == LayoutMode::Compact;
   if (compact_layout_) {
@@ -1085,6 +1170,10 @@ void ContactsController::OpenContactDetailPane() {
 }
 
 bool ContactsController::CloseContactDetailPane() {
+  if (DetailSheetOpen()) {
+    CloseSheetsBeforeLeaving(); // removed or blocked from the sheet: it goes, the page under it stays
+    return true;
+  }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (IsContactDetailTransientActive(chrome) && shell_navigation_.pop_transient) {
     shell_navigation_.pop_transient();
@@ -1276,6 +1365,10 @@ void ContactsController::OnContactFieldChanged() {
 }
 
 void ContactsController::Tick() {
+  if (detail_sheet_layer_id_ >= 0 &&
+      !(shell_navigation_.has_layer && shell_navigation_.has_layer(detail_sheet_layer_id_))) {
+    OnDetailSheetClosed();
+  }
   if (add_search_deadline_ms_ != 0 && SDL_GetTicks() >= add_search_deadline_ms_) {
     add_search_deadline_ms_ = 0;
     RunAddSearch();
@@ -2002,6 +2095,7 @@ void ContactsController::OnOpenThread(const std::string& thread_id) {
   if (thread_id.empty()) {
     return;
   }
+  CloseSheetsBeforeLeaving();
   if (shell_navigation_.select_nav_tab) {
     shell_navigation_.select_nav_tab(NavTab::Sessions);
   }

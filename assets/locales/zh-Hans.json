@@ -442,6 +442,7 @@
     "contacts.info": "联系人信息",
     "contacts.member_info": "成员信息",
     "contacts.member_not_contact": "群成员，还不是你的联系人。",
+    "contacts.cant_message_yet": "暂时不能给 TA 发消息",
     "contacts.new_group": "建群",
     "new_chat.title": "新聊天",
     "new_chat.ai": "AI 聊天",

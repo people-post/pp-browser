@@ -7096,6 +7096,21 @@ input.checkbox {
   line-height: 18dp;
 }
 
+/* The contact page's sheet title row: only in a page sheet (the pushed page and the desktop pane have a title bar). The
+   page under it scrolls on its own, so the row stays put. */
+.cd-sheet-header {
+  display: none;
+}
+
+.shell-page-sheet .cd-sheet-header {
+  display: flex;
+}
+
+.shell-page-sheet .contact-detail-panel {
+  flex: 1;
+  min-height: 0;
+}
+
 /* A card's header line above it (the group info's "5 members"): the card then sits right under it. */
 .cd-header {
   margin: 20dp 0 6dp 0;
