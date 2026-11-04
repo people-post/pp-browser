@@ -3072,20 +3072,6 @@ select selectbox option {
   height: 24dp;
 }
 
-.ask-ai-mic svg {
-  width: 22dp;
-  height: 22dp;
-}
-
-/* The microphone's 3-second hint, above the input. */
-.ask-ai-mic-hint {
-  flex-shrink: 0;
-  margin: 6dp 20dp 0 20dp;
-  font-size: 13dp;
-  line-height: 18dp;
-  text-align: center;
-}
-
 /* The picture waiting to be sent: a thumbnail and an X. */
 .ask-ai-picture {
   flex-shrink: 0;

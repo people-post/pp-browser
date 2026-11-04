@@ -649,7 +649,7 @@ TEST(AskAiPanelSourceTest, OpenInAiChatIsAnIconInTheSheetHeader) {
   EXPECT_EQ(tag.find(">{{i18n:ask_ai.open_in_chat}}<"), std::string::npos) << "no text link any more";
 }
 
-// --- the input row (5b): microphone, camera, attachment ------------------------------------------------------------
+// --- the input row (5b): camera, attachment, Send ----------------------------------------------------------------
 
 /** The panel's picture ports replaced by recorders: a pick/capture hands over "pick.jpg" at once, prepare answers at once. */
 class AskAiInputRowTest : public AskAiPanelTest {
@@ -694,53 +694,6 @@ protected:
   std::vector<std::string> dropped_;
   AgentTurnController::ImageSend send_result_ = AgentTurnController::ImageSend::Started;
 };
-
-TEST_F(AskAiInputRowTest, TheMicrophoneHintShowsOnEveryTapPerPlatform) {
-  struct Case {
-    AskAiMicKind kind;
-    const char* key;
-    const char* zh_part;
-  };
-  const Case cases[] = {
-      {AskAiMicKind::Phone, "ask_ai.mic_hint.ios", "设置 → 通用 → 键盘"},
-      {AskAiMicKind::Android, "ask_ai.mic_hint.android", "点输入法上的麦克风说话"},
-      {AskAiMicKind::Mac, "ask_ai.mic_hint.mac", "按两下 Fn"},
-      {AskAiMicKind::Windows, "ask_ai.mic_hint.windows", "Win + H"},
-  };
-  for (const Case& c : cases) {
-    SCOPED_TRACE(c.key);
-    panel_.SetMicKind(c.kind);
-    ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
-    EXPECT_TRUE(panel_.View().show_mic);
-    EXPECT_EQ(std::string(AskAiMicHintKey(c.kind)), c.key);
-    EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty()) << "no hint until the microphone is tapped";
-    for (int tap = 0; tap < 2; ++tap) {
-      panel_.Mic();
-      EXPECT_EQ(std::string(panel_.View().mic_hint.c_str()), Tr(c.key)) << "every tap shows it again";
-      EXPECT_NE(Tr(c.key), c.key) << "the key is in the locale files";
-      panel_.ExpireMicHint(std::chrono::steady_clock::now() + AskAiPanel::kMicHintFor + std::chrono::milliseconds(50));
-      EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty()) << "gone after about 3 s";
-    }
-    panel_host_.AskAiCloseSheet(0);
-  }
-}
-
-TEST_F(AskAiInputRowTest, TheHintStaysUntilItsTimeIsUp) {
-  panel_.SetMicKind(AskAiMicKind::Mac);
-  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
-  panel_.Mic();
-  panel_.ExpireMicHint(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
-  EXPECT_FALSE(std::string(panel_.View().mic_hint.c_str()).empty());
-}
-
-TEST_F(AskAiInputRowTest, LinuxHasNoMicrophone) {
-  panel_.SetMicKind(AskAiMicKind::None);
-  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
-  EXPECT_FALSE(panel_.View().show_mic);
-  panel_.Mic();
-  EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty());
-  EXPECT_EQ(AskAiMicHintKey(AskAiMicKind::None), nullptr);
-}
 
 TEST_F(AskAiInputRowTest, APickedPictureShowsAThumbnailThatCanBeRemoved) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
@@ -849,26 +802,39 @@ TEST_F(AskAiInputRowTest, ThePanelPreparesThroughTheChatsOneAndAHalfMegabytePath
   EXPECT_EQ(panel.find("1536"), std::string::npos);
 }
 
-TEST(AskAiInputRowSourceTest, TheRowIsCameraAttachmentInputMicrophone) {
+TEST(AskAiInputRowSourceTest, TheRowIsCameraAttachmentInputSend) {
   const std::string rml = ReadSource("assets/views/ask_ai.rml");
   const size_t camera = rml.find("ask_ai_camera()");
   const size_t attach = rml.find("ask_ai_attach()");
   const size_t input = rml.find("id=\"ask-ai-input\"");
-  const size_t mic = rml.find("ask_ai_mic()");
+  const size_t send = rml.find("ask_ai_send()");
   ASSERT_NE(camera, std::string::npos);
   ASSERT_NE(attach, std::string::npos);
   ASSERT_NE(input, std::string::npos);
-  ASSERT_NE(mic, std::string::npos);
+  ASSERT_NE(send, std::string::npos);
   EXPECT_LT(camera, attach);
   EXPECT_LT(attach, input);
-  EXPECT_LT(input, mic);
-  // Camera and attachment only where media shows; the microphone gives way to Send once there is something to send.
+  EXPECT_LT(input, send);
+  // Camera and attachment only where media shows; Send once there is something to send.
   EXPECT_NE(rml.substr(rml.rfind("<button", camera), camera - rml.rfind("<button", camera)).find("data-if=\"show_media\""),
             std::string::npos);
-  EXPECT_NE(rml.substr(rml.rfind("<button", mic), mic - rml.rfind("<button", mic)).find("show_mic"), std::string::npos);
   EXPECT_NE(rml.find("data-if=\"draft != '' || has_picture\""), std::string::npos);
   const std::string rcss = ReadSource("assets/themes/components.rcss");
   EXPECT_NE(rcss.find(".ask-ai-send {"), std::string::npos);
+}
+
+// Kenneth 2026-11-04: the microphone is for voice messages only; dictation is the input method's own business, and
+// the panel opens with the cursor already in the field. No microphone, no hint line, no per-platform hints.
+TEST(AskAiInputRowSourceTest, ThePanelHasNoMicrophone) {
+  const std::string rml = ReadSource("assets/views/ask_ai.rml");
+  EXPECT_EQ(rml.find("mic"), std::string::npos);
+  const std::string panel = ReadSource("src/gui/chat/AskAiPanel.cpp") + ReadSource("src/gui/chat/AskAiPanel.h");
+  EXPECT_EQ(panel.find("Mic"), std::string::npos);
+  EXPECT_EQ(panel.find("mic_"), std::string::npos);
+  for (const char* locale : {"assets/locales/en.json", "assets/locales/zh-Hans.json"}) {
+    EXPECT_EQ(ReadSource(locale).find("\"ask_ai.mic"), std::string::npos) << locale;
+  }
+  EXPECT_EQ(ReadSource("assets/themes/components.rcss").find(".ask-ai-mic"), std::string::npos);
 }
 
 // A permission card tapped in the panel belongs to the panel's AI chat: a stale one is rewritten there, never in the

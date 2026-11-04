@@ -20,15 +20,6 @@ class Context;
 
 namespace pbr {
 
-/** Which speech-to-text the microphone points the person to (the input method's own; the app has none). */
-enum class AskAiMicKind { Phone, Android, Mac, Windows, None /* Linux: no microphone shown */ };
-
-/** The platform this runs on. */
-AskAiMicKind DetectAskAiMicKind();
-
-/** Locale key of the hint line the microphone shows; nullptr for None. */
-const char* AskAiMicHintKey(AskAiMicKind kind);
-
 /** How the panel picks, prepares and sends a picture; the defaults are the agent controller's (the chat's path). */
 struct AskAiImagePorts {
   std::function<void(std::function<void(std::string path)>)> pick;
@@ -73,9 +64,6 @@ struct AskAiView {
   ui::String draft;
   /** Camera and attachment buttons (the shared conversation only; a setting's "?" is explanation only). */
   bool show_media = true;
-  /** The microphone shows (not on Linux), and the hint line above the input for the 3 s after a tap. */
-  bool show_mic = true;
-  ui::String mic_hint;
   /** The picture waiting for its question (being prepared, or ready with its thumbnail). */
   bool has_picture = false;
   bool picture_preparing = false;
@@ -161,8 +149,6 @@ public:
   void Close();
   void RunAction(const std::string& entry_id, int action_index);
   void OpenLink(const std::string& entry_id, int link_index);
-  /** The microphone: the cursor goes into the input, the keyboard comes up, and the platform's dictation hint shows. */
-  void Mic();
   /** The camera / the attachment button: one picture for the next question. */
   void PickPicture(bool camera);
   void RemovePicture();
@@ -181,11 +167,6 @@ public:
   const AskAiView& View() const { return view_; }
   /** The UI demo app (no AI backend): answers come from `answer` ("" = it fails), streamed in small steps. */
   void SetFakeAnswers(std::function<std::string(const std::string& question)> answer) { fake_answer_ = std::move(answer); }
-  /** How long the microphone's hint stays. */
-  static constexpr std::chrono::milliseconds kMicHintFor{3000};
-  /** Hides the microphone hint once its time is up (per frame). */
-  void ExpireMicHint(std::chrono::steady_clock::time_point now);
-  void SetMicKind(AskAiMicKind kind);
   AskAiImagePorts& ImagePorts() { return image_ports_; }
   /** Tests: the panel's draft as if typed. */
   void SetDraftForTest(const std::string& text) { view_.draft = text.c_str(); }
@@ -228,8 +209,6 @@ private:
   AskAiView view_;
   int layer_id_ = -1;
 
-  AskAiMicKind mic_kind_ = DetectAskAiMicKind();
-  std::optional<std::chrono::steady_clock::time_point> mic_hint_until_;
   AskAiImagePorts image_ports_;
   std::optional<AgentTurnController::PendingAiImage> picture_;
   bool picture_preparing_ = false;

@@ -909,7 +909,6 @@ select selectbox option:hover {
 }
 
 .ask-ai-privacy,
-.ask-ai-mic-hint,
 .ask-ai-picture-note,
 .ask-ai-reminder,
 .ask-ai-section,

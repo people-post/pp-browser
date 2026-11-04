@@ -11,9 +11,6 @@
 #include "lib/ui/DataEvent.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
-#include "foundation/platform/Platform.h"
-
-#include <SDL3/SDL_platform.h>
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Context.h>
@@ -69,43 +66,7 @@ AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
 
 } // namespace
 
-AskAiMicKind DetectAskAiMicKind() {
-  switch (Platform::Detect()) {
-  case PlatformKind::IOS:
-    return AskAiMicKind::Phone;
-  case PlatformKind::Android:
-    return AskAiMicKind::Android;
-  case PlatformKind::Desktop:
-    break;
-  }
-  const std::string os = SDL_GetPlatform();
-  if (os == "macOS") {
-    return AskAiMicKind::Mac;
-  }
-  if (os == "Windows") {
-    return AskAiMicKind::Windows;
-  }
-  return AskAiMicKind::None;
-}
-
-const char* AskAiMicHintKey(const AskAiMicKind kind) {
-  switch (kind) {
-  case AskAiMicKind::Phone:
-    return "ask_ai.mic_hint.ios";
-  case AskAiMicKind::Android:
-    return "ask_ai.mic_hint.android";
-  case AskAiMicKind::Mac:
-    return "ask_ai.mic_hint.mac";
-  case AskAiMicKind::Windows:
-    return "ask_ai.mic_hint.windows";
-  case AskAiMicKind::None:
-    break;
-  }
-  return nullptr;
-}
-
 AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {
-  view_.show_mic = mic_kind_ != AskAiMicKind::None;
   image_ports_.pick = [this](std::function<void(std::string)> picked) { agent_.PickAiImage(std::move(picked)); };
   image_ports_.capture = [this](std::function<void(std::string)> picked) { agent_.CaptureAiPhoto(std::move(picked)); };
   image_ports_.prepare = [this](std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)> done) {
@@ -116,11 +77,6 @@ AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_
     return agent_.SendAiImageTo(thread_id, text, std::move(image));
   };
   image_ports_.drop = [this](const AgentTurnController::PendingAiImage& image) { agent_.DropAiImage(image); };
-}
-
-void AskAiPanel::SetMicKind(const AskAiMicKind kind) {
-  mic_kind_ = kind;
-  view_.show_mic = kind != AskAiMicKind::None;
 }
 
 bool AskAiPanel::Register(ui::Context* context) {
@@ -141,12 +97,9 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("show_support", &view_.show_support);
     ctor.Bind("draft", &view_.draft);
     ctor.Bind("show_media", &view_.show_media);
-    ctor.Bind("show_mic", &view_.show_mic);
-    ctor.Bind("mic_hint", &view_.mic_hint);
     ctor.Bind("has_picture", &view_.has_picture);
     ctor.Bind("picture_preparing", &view_.picture_preparing);
     ctor.Bind("picture_src", &view_.picture_src);
-    ctor.BindEventCallback("ask_ai_mic", DataEvent([this] { Mic(); }));
     ctor.BindEventCallback("ask_ai_camera", DataEvent([this] { PickPicture(/*camera=*/true); }));
     ctor.BindEventCallback("ask_ai_attach", DataEvent([this] { PickPicture(/*camera=*/false); }));
     ctor.BindEventCallback("ask_ai_remove_picture", DataEvent([this] { RemovePicture(); }));
@@ -209,8 +162,6 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
       // Closed by the X, the scrim or a swipe: the draft stays, a running answer goes on where it belongs.
       layer_id_ = -1;
       focus_pending_ = false;
-      mic_hint_until_.reset();
-      view_.mic_hint = "";
     });
     if (layer_id_ < 0) {
       return false;
@@ -276,27 +227,6 @@ void AskAiPanel::Send() {
     AskOnce(text, /*fresh=*/false);
   } else {
     SendShared(text);
-  }
-}
-
-void AskAiPanel::Mic() {
-  const char* key = AskAiMicHintKey(mic_kind_);
-  if (!key) {
-    return;
-  }
-  // The input method's own dictation does the listening: the cursor goes into the field (the keyboard comes up) and
-  // a line says how to start it. Every tap says it again.
-  focus_pending_ = true;
-  view_.mic_hint = Tr(key).c_str();
-  mic_hint_until_ = std::chrono::steady_clock::now() + kMicHintFor;
-  Dirty("mic_hint");
-}
-
-void AskAiPanel::ExpireMicHint(const std::chrono::steady_clock::time_point now) {
-  if (mic_hint_until_ && now >= *mic_hint_until_) {
-    mic_hint_until_.reset();
-    view_.mic_hint = "";
-    Dirty("mic_hint");
   }
 }
 
@@ -803,7 +733,6 @@ void AskAiPanel::Tick() {
   if (!IsOpen()) {
     return;
   }
-  ExpireMicHint(std::chrono::steady_clock::now());
   // "Thinking", the queue and the streamed text follow the conversation shown.
   if (!view_.once) {
     const ui::String queued = shared_thread_.empty() ? "" : agent_.QueuedText(shared_thread_).c_str();
