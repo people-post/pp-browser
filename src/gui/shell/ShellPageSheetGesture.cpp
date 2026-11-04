@@ -167,7 +167,8 @@ void ShellPageSheetGesture::Release() {
     // The stop's class moves the top edge (with its transition) from where the finger left it.
     options_.on_detent(release == PageSheetModel::Release::ToFull    ? SheetDetent::Full
                        : release == PageSheetModel::Release::ToLarge ? SheetDetent::Large
-                                                                     : SheetDetent::Half);
+                       : release == PageSheetModel::Release::ToHalf  ? SheetDetent::Half
+                                                                     : SheetDetent::Small);
   }
   sheet_->SetClass(kDraggingClass, false);
   sheet_->RemoveProperty("top");

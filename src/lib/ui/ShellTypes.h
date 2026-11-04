@@ -18,9 +18,10 @@ enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
 /**
  * Where a phone page sheet stops (Kenneth 2026-11-04, every sheet alike): Large is the height it opens at (about 4/5
- * of the screen, a strip of the page behind left in sight); Full near the top of the screen; Half about half of it.
+ * of the screen, a strip of the page behind left in sight); Full near the top of the screen; Half about half of it;
+ * Small about a third (the title row and the top of the content).
  */
-enum class SheetDetent { Full, Large, Half };
+enum class SheetDetent { Full, Large, Half, Small };
 
 enum class InterruptionKind {
   None,
@@ -122,7 +123,8 @@ struct PaneSpec {
   std::string return_focus_id;
   /**
    * PushLayer on phones: an iOS page sheet (rises from the bottom to SheetDetent::Large, rounded top, grab handle,
-   * the page behind dimmed; dragged between half, large and full, down from half to close) instead of the centred
+   * the page behind dimmed; dragged between small, half, large and full, let go low or flicked down from small to
+   * close) instead of the centred
    * panel. Desktop is unchanged.
    */
   bool page_sheet = false;

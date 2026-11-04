@@ -2672,8 +2672,8 @@ select selectbox option {
 
 /* Phone page sheet (iOS, Kenneth 2026-11-04: the centred new-group panel looked odd; then every sheet alike). It
    rises from the bottom to about 4/5 of the screen (--large), the page behind dimmed by the scrim, rounded top
-   corners and a grab handle; it is dragged to full height (no class), down to half (--half) and from there closed
-   (ShellPageSheetGesture, PageSheetModel: keep the tops here and its constants the same). ShellHost pads the bottom
+   corners and a grab handle; it is dragged to full height (no class), down to half (--half) and a third (--small),
+   and let go low it closes (ShellPageSheetGesture, PageSheetModel: keep the tops here and its constants the same). ShellHost pads the bottom
    by the home-indicator inset. */
 @keyframes shell-page-sheet-in {
   from { transform: translateY(100%); }
@@ -2714,6 +2714,15 @@ select selectbox option {
 
 .shell-layer-sheet--half .shell-scrim {
   opacity: 0.5;
+}
+
+/* At small: about a third of the screen (the title row and the top of the content), the page behind dimmed least. */
+.shell-page-sheet.shell-page-sheet--small {
+  top: 66%;
+}
+
+.shell-layer-sheet--small .shell-scrim {
+  opacity: 0.25;
 }
 
 .shell-page-sheet-enter {

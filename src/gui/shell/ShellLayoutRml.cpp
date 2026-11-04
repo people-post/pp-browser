@@ -237,13 +237,17 @@ std::string ShellLayoutRml::Overlays() const {
       // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches its drag
       // (ShellPageSheetGesture). The view keeps its own Cancel and its title row (.sheet-header); the close button
       // sits at the right end of that row: a 44dp target around a small grey disc with the X.
-      // The stop's class sets the top edge (ShellHost switches to full height while the keyboard is up); at half the
-      // page behind is dimmed less.
-      const bool half = overlay.sheet_detent == SheetDetent::Half;
-      const char* stop = half ? " shell-page-sheet--half"
-                              : overlay.sheet_detent == SheetDetent::Large ? " shell-page-sheet--large" : "";
-      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << (half ? " shell-layer-sheet--half" : "")
-          << "\" data-model=\"window\">";
+      // The stop's class sets the top edge (ShellHost switches to full height while the keyboard is up); at half and
+      // small the page behind is dimmed less.
+      const SheetDetent detent = overlay.sheet_detent;
+      const char* stop = detent == SheetDetent::Small   ? " shell-page-sheet--small"
+                         : detent == SheetDetent::Half  ? " shell-page-sheet--half"
+                         : detent == SheetDetent::Large ? " shell-page-sheet--large"
+                                                        : "";
+      const char* layer_stop = detent == SheetDetent::Small  ? " shell-layer-sheet--small"
+                               : detent == SheetDetent::Half ? " shell-layer-sheet--half"
+                                                             : "";
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
       out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop << "\" id=\"shell-page-sheet-"

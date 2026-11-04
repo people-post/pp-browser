@@ -2,27 +2,30 @@
 
 #include "lib/ui/ShellTypes.h"
 
+#include <cmath>
 #include <deque>
+#include <optional>
 
 namespace pbr {
 
 /**
  * Phone page sheet (iOS style, Kenneth 2026-11-04): the drag decisions without any DOM. Every sheet opens at Large
- * (about 4/5 of the screen) and stops at three heights: from Large a drag up goes Full and a drag down goes Half; from
- * Full a drag down goes back to Large; from Half a drag down closes it (and a drag up goes back to Large). A drag
- * moves on to the next stop once it has covered a quarter of the way there (closing: a quarter of the sheet's height
- * at half), or when it is flicked; anything less springs back. A long drag can pass more than one stop.
+ * (about 4/5 of the screen) and stops at four heights, Full, Large, Half and Small (about a third of the screen: the
+ * title row and the top of the content). Like Apple Maps, a released sheet goes to the stop nearest its top edge; a
+ * flick goes on to the next stop in the flick's direction instead. It closes only when it is let go with its top
+ * below 85% of the layer, or flicked down from Small.
  *
- * The tops here are the ones components.rcss gives .shell-page-sheet and its --large / --half classes.
+ * The tops here are the ones components.rcss gives .shell-page-sheet and its --large / --half / --small classes.
  */
 struct PageSheetModel {
   /** The top edge at each stop: Full a fixed gap under the status bar, the others a share of the sheet layer. */
   static constexpr float kFullTopDp = 10.f;
   static constexpr float kLargeTopRatio = 0.2f;
   static constexpr float kHalfTopRatio = 0.45f;
-  /** The share of the way to the next stop a slow drag must cover. */
-  static constexpr float kMoveRatio = 0.25f;
-  /** A release this fast (towards the next stop) moves there even when it has covered less than the quarter... */
+  static constexpr float kSmallTopRatio = 0.66f;
+  /** Let go with its top below this share of the layer, the sheet closes. */
+  static constexpr float kDismissTopRatio = 0.85f;
+  /** A release this fast moves one stop on in its direction... */
   static constexpr float kFlickVelocityDpPerS = 700.f;
   /** ...once it has moved at least this far (a tap that wobbles is not a flick). */
   static constexpr float kFlickMinDragDp = 24.f;
@@ -30,7 +33,7 @@ struct PageSheetModel {
   static constexpr double kVelocityWindowMs = 100.0;
 
   /** What a released drag does to the sheet. */
-  enum class Release { Stay, ToFull, ToLarge, ToHalf, Dismiss };
+  enum class Release { Stay, ToFull, ToLarge, ToHalf, ToSmall, Dismiss };
 
   /** The sheet's top edge at `detent`, in dp from the top of a layer `layer_height_dp` tall. */
   static float TopDp(const SheetDetent detent, const float layer_height_dp) {
@@ -41,6 +44,8 @@ struct PageSheetModel {
       return layer_height_dp * kLargeTopRatio;
     case SheetDetent::Half:
       return layer_height_dp * kHalfTopRatio;
+    case SheetDetent::Small:
+      return layer_height_dp * kSmallTopRatio;
     }
     return kFullTopDp;
   }
@@ -51,59 +56,63 @@ struct PageSheetModel {
    */
   static Release OnRelease(const SheetDetent from, const float drag_dp, const float layer_height_dp,
                            const float velocity_dp_per_s) {
+    static constexpr SheetDetent kTopDown[] = {SheetDetent::Full, SheetDetent::Large, SheetDetent::Half,
+                                               SheetDetent::Small};
     const float top = TopDp(from, layer_height_dp) + drag_dp;
-    SheetDetent at = from;
-    if (drag_dp > 0.f) {
-      while (true) {
-        const float at_top = TopDp(at, layer_height_dp);
-        // Below Half the sheet closes: the way there is the sheet's height at half.
-        const float way = at == SheetDetent::Half ? layer_height_dp - at_top
-                                                  : TopDp(Below(at), layer_height_dp) - at_top;
-        if (!Passes(top - at_top, way, at == from ? velocity_dp_per_s : 0.f)) {
+    const bool flick = std::abs(velocity_dp_per_s) >= kFlickVelocityDpPerS && std::abs(drag_dp) >= kFlickMinDragDp;
+    std::optional<SheetDetent> to;
+    if (flick && velocity_dp_per_s > 0.f) {
+      // Down: the first stop below the top edge. Past Small, only a sheet that stood at Small (or is let go below
+      // the closing line) closes; one flicked down from higher up stops at Small.
+      for (const SheetDetent detent : kTopDown) {
+        if (TopDp(detent, layer_height_dp) > top) {
+          to = detent;
           break;
         }
-        if (at == SheetDetent::Half) {
+      }
+      if (!to) {
+        if (from == SheetDetent::Small || top >= layer_height_dp * kDismissTopRatio) {
           return Release::Dismiss;
         }
-        at = Below(at);
+        to = SheetDetent::Small;
       }
-    } else if (drag_dp < 0.f) {
-      while (at != SheetDetent::Full) {
-        const float at_top = TopDp(at, layer_height_dp);
-        const float way = at_top - TopDp(Above(at), layer_height_dp);
-        if (!Passes(at_top - top, way, at == from ? -velocity_dp_per_s : 0.f)) {
-          break;
+    } else if (flick) {
+      // Up: the first stop above the top edge; nothing above Full.
+      to = SheetDetent::Full;
+      for (const SheetDetent detent : kTopDown) {
+        if (TopDp(detent, layer_height_dp) < top) {
+          to = detent;
         }
-        at = Above(at);
+      }
+    } else if (top >= layer_height_dp * kDismissTopRatio) {
+      return Release::Dismiss;
+    } else {
+      to = SheetDetent::Full;
+      for (const SheetDetent detent : kTopDown) {
+        if (std::abs(TopDp(detent, layer_height_dp) - top) < std::abs(TopDp(*to, layer_height_dp) - top)) {
+          to = detent;
+        }
       }
     }
-    if (at == from) {
+    if (*to == from) {
       return Release::Stay;
     }
-    return at == SheetDetent::Full ? Release::ToFull : at == SheetDetent::Large ? Release::ToLarge : Release::ToHalf;
+    switch (*to) {
+    case SheetDetent::Full:
+      return Release::ToFull;
+    case SheetDetent::Large:
+      return Release::ToLarge;
+    case SheetDetent::Half:
+      return Release::ToHalf;
+    case SheetDetent::Small:
+      return Release::ToSmall;
+    }
+    return Release::Stay;
   }
 
   /** The height a sheet shows: full while the keyboard is up (the content needs the room), else where it stands. */
   static SheetDetent Shown(const SheetDetent detent, const bool keyboard_up) {
     return keyboard_up ? SheetDetent::Full : detent;
-  }
-
-  /** `moved_dp` towards a stop `way_dp` away, released at `velocity_dp_per_s` towards it: does the sheet go there? */
-  static bool Passes(const float moved_dp, const float way_dp, const float velocity_dp_per_s) {
-    if (moved_dp <= 0.f) {
-      return false;
-    }
-    if (way_dp > 0.f && moved_dp >= way_dp * kMoveRatio) {
-      return true;
-    }
-    return velocity_dp_per_s >= kFlickVelocityDpPerS && moved_dp >= kFlickMinDragDp;
-  }
-
-  static SheetDetent Below(const SheetDetent detent) {
-    return detent == SheetDetent::Full ? SheetDetent::Large : SheetDetent::Half;
-  }
-  static SheetDetent Above(const SheetDetent detent) {
-    return detent == SheetDetent::Half ? SheetDetent::Large : SheetDetent::Full;
   }
 
   /** Downward speed at release from the recent moves (dp per second; up is negative). */

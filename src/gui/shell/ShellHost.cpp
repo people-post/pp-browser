@@ -1398,10 +1398,13 @@ void ShellHost::ApplySafeAreaLayout() {
       if (sheet) {
         const SheetDetent shown = PageSheetModel::Shown(overlay.sheet_detent, keyboard_up);
         const bool half = shown == SheetDetent::Half;
+        const bool small = shown == SheetDetent::Small;
         sheet->SetClass("shell-page-sheet--large", shown == SheetDetent::Large);
         sheet->SetClass("shell-page-sheet--half", half);
+        sheet->SetClass("shell-page-sheet--small", small);
         if (ui::Element* layer = sheet->GetParentNode()) {
           layer->SetClass("shell-layer-sheet--half", half);
+          layer->SetClass("shell-layer-sheet--small", small);
         }
       }
     }

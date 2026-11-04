@@ -53,8 +53,8 @@ TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
   }
 }
 
-// Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half also lightens the scrim, full
-// has none), and its X is a 44dp button around a small grey disc.
+// Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half and --small also lighten the
+// scrim, full has none), and its X is a 44dp button around a small grey disc.
 TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   OverlayEntry sheet;
@@ -71,9 +71,15 @@ TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
   EXPECT_TRUE(Has(rml, "shell-page-sheet--half"));
   EXPECT_TRUE(Has(rml, "shell-layer-sheet--half"));
   EXPECT_FALSE(Has(rml, "shell-page-sheet--large"));
+  state.overlay_stack.back().sheet_detent = SheetDetent::Small;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "shell-page-sheet--small"));
+  EXPECT_TRUE(Has(rml, "shell-layer-sheet--small")) << "the scrim lightest at a third";
+  EXPECT_FALSE(Has(rml, "--half"));
   state.overlay_stack.back().sheet_detent = SheetDetent::Full;
   rml = ShellLayoutRml(state, false, "").ShellRoot();
   EXPECT_FALSE(Has(rml, "--half"));
+  EXPECT_FALSE(Has(rml, "--small"));
   EXPECT_FALSE(Has(rml, "--large"));
 }
 

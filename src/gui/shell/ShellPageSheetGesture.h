@@ -20,8 +20,8 @@ namespace pbr {
  * Drags a phone page sheet (ShellLayoutRml, PaneSpec::page_sheet) between its stops (PageSheetModel). A drag down
  * follows the finger from anywhere on the sheet (not from fields or buttons) while its content is scrolled to the
  * top; a drag up, below full height, only from outside scrolling content (the grab handle, the title row), so a list
- * still scrolls. Released, the sheet springs back, `on_detent` records a new stop, or below half it slides out and
- * `on_dismiss` runs.
+ * still scrolls. Released, the sheet goes to the nearest stop (`on_detent` records a new one), or, let go low or
+ * flicked down from small, it slides out and `on_dismiss` runs.
  */
 struct ShellPageSheetOptions {
   /** Where the sheet shows now (full while the keyboard is up); read at each press. */
