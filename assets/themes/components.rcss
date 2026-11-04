@@ -4726,21 +4726,24 @@ input.checkbox {
   display: none;
 }
 
+/* One leading column on every phone list (Kenneth 2026-11-04, PLAN-ui-refresh-impl 68): 16dp in, a 44dp avatar (or a
+   36dp icon tile centred in 44dp), 12dp to the text, so text starts 72dp into the row on Chats, Contacts, Me and the
+   member lists alike. */
 .shell-layer-compact .chat-row-avatar {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 48dp;
-  height: 48dp;
-  border-radius: 24dp;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
   overflow: hidden;
 }
 
 /* A cached profile photo replaces the letter: the round frame clips it. */
 .shell-layer-compact .chat-row-avatar .avatar-photo {
-  width: 48dp;
-  height: 48dp;
+  width: 44dp;
+  height: 44dp;
 }
 
 .chat-row-avatar-letter {
@@ -6809,18 +6812,18 @@ input.checkbox {
 }
 
 .shell-layer-compact .contacts-row-avatar-frame {
-  width: 40dp;
-  height: 40dp;
-  border-radius: 20dp;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
 }
 
 .shell-layer-compact .contacts-row-avatar-image {
-  width: 40dp;
-  height: 40dp;
+  width: 44dp;
+  height: 44dp;
 }
 
 .shell-layer-compact .contacts-row-avatar-frame .avatar-letter {
-  font-size: 17dp;
+  font-size: 18dp;
 }
 
 .shell-layer-compact .contacts-row-body {
@@ -7539,14 +7542,15 @@ input.checkbox {
   margin-top: 0;
 }
 
-/* A person in a card (the group info's members): a 52dp row with a 36dp round avatar before the name. */
+/* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'
+   leading column, text at 72dp). */
 .cd-row.cd-row--member {
-  height: 52dp;
+  height: 60dp;
   gap: 12dp;
 }
 
 .cd-row--member .cd-row-body {
-  height: 52dp;
+  height: 60dp;
 }
 
 .cd-row--static {
@@ -7559,13 +7563,21 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+/* The add row's plus: a 36dp disc centred in the 44dp column, its text at 72dp like the members'. */
+.cd-row-plus {
   width: 36dp;
   height: 36dp;
+  margin: 0 16dp 0 4dp;
   border-radius: 18dp;
 }
 
 .cd-row-avatar .avatar-letter {
-  font-size: 15dp;
+  font-size: 18dp;
 }
 
 /* A small label after a name in a row ("Owner", "Can't reach"). */
@@ -8283,20 +8295,21 @@ input.checkbox {
   box-sizing: border-box;
 }
 
+/* A 36dp tile centred in the lists' 44dp leading column (4dp each side, then the 12dp gap): text at 72dp like Chats. */
 .shell-layer-compact .group-icon {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 29dp;
-  height: 29dp;
-  margin-right: 12dp;
-  border-radius: 6dp;
+  width: 36dp;
+  height: 36dp;
+  margin: 0 16dp 0 4dp;
+  border-radius: 8dp;
 }
 
 .shell-layer-compact .group-icon svg {
-  width: 18dp;
-  height: 18dp;
+  width: 22dp;
+  height: 22dp;
 }
 
 .shell-layer-compact .group-row-label {
@@ -8859,16 +8872,16 @@ textarea:composing ~ .prompt-composer-label,
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  margin-right: 10dp;
-  border-radius: 18dp;
+  width: 44dp;
+  height: 44dp;
+  margin-right: 12dp;
+  border-radius: 22dp;
   overflow: hidden;
 }
 
 .shell-layer-compact .home-chat-av .avatar-photo {
-  width: 36dp;
-  height: 36dp;
+  width: 44dp;
+  height: 44dp;
 }
 
 .shell-layer-compact .home-chat-letter {
