@@ -315,6 +315,9 @@ jobs:
   linux-package:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
     env:
       CCACHE_COMPRESSLEVEL: 5
     steps:
@@ -334,9 +337,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ccache-pkg-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
           restore-keys: |
-            ${{ runner.os }}-ccache-pkg-v1-
+            ${{ runner.os }}-ccache-v2-
 
       - name: Configure
         run: |
@@ -359,7 +362,18 @@ jobs:
           name: pp-browser-linux-${{ github.ref_name }}
           path: pp-browser-linux-x86_64-*.tar.gz
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ github.ref_name == 'main' && 90 || 14 }}
+
+      # Retention alone does not cap the count: keep the newest 10 (main) / 5 (develop).
+      - name: Prune old artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ github.ref_name == 'main' && 10 || 5 }}
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=pp-browser-linux-${GITHUB_REF_NAME}&per_page=100" \
+            --jq '.artifacts | sort_by(.created_at) | reverse | .[] | .id' \
+            | tail -n +$((KEEP + 1)) \
+            | while read -r id; do gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; done
 
   # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
   # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
