@@ -25,12 +25,21 @@ struct AiDotScene {
 };
 
 /**
- * The short idle action the dot plays now and then (RCSS keyframes switched on by a class; nothing runs between them).
- * The motions are the mockups' (DEV/ui-mockups/mascot-compare.html): sway, blink, hop (the "happy" jump), talk (the
- * mouth opens and shuts; the plain look shows text lines instead), shy (leans away, eyes aside, cheeks pink), look
- * around (eyes left, then right).
+ * A short action the dot plays (RCSS keyframes switched on by a class; nothing runs between them). The motions and
+ * their particles are the mockups' (DEV/ui-mockups/mascot-v1.html, mascot-v2.html, mascot-compare.html):
+ * - Sway: rocks side to side. Blink. Look: the two bubbles glance at each other (the mockup's idle glance).
+ * - Talk: the mouth opens and shuts (C: three equalizer bars; D: text lines write themselves), the partner nods.
+ * - Shy: the front bubble leans away and peeks aside with its eyes half shut and pink cheeks, the partner ducks behind.
+ * - Wave: the front bubble waves its body with happy eyes, the partner hops twice.
+ * - Listen: leans in with big eyes, both nod, signal arcs pulse beside the partner (D: equalizer bars in its bubble).
+ * - Think: eyes up and right, a "typing" bubble with three bouncing dots (D: the dots in its bubble).
+ * - Five: the two bump into a high five with happy eyes and a star (C, D: sparkle lines).
+ * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a check).
+ * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
+ * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
+ * then it stays still, asleep, until the next touch) and Poke (a tap: it squashes and wobbles, then the panel opens).
  */
-enum class AiDotIdle { None, Sway, Blink, Hop, Talk, Shy, Look };
+enum class AiDotIdle { None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke };
 
 /** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
 enum class AiDotLook { OneEye, TwoEyes, Cool, Plain };
@@ -67,8 +76,10 @@ struct AiDotPoint {
  * timer (Kenneth 2026-11-04): the user tucks it half off the screen by letting go with more than half of it past the
  * edge, or by flinging it fast toward an edge; a tap on a tucked dot opens the panel and it stays tucked, a drag
  * brings it out. While it is out, every 3–6 s it plays one idle action picked at random, never the same one twice in
- * a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，……他靠边的这个时间稍微慢一点"); tucked, it does nothing, so
- * nothing wakes the app.
+ * a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，……他靠边的这个时间稍微慢一点"; 原话 21: all the mockup's
+ * motions, hearts, signal arcs and stars); tucked, it does nothing, so nothing wakes the app. Left alone for
+ * kSleepAfterMs it plays Sleep once and then rests asleep with nothing scheduled; any touch wakes it. A tap on it out
+ * plays Poke and opens the panel when the poke has played (Changes::open).
  * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
  * edge and the clamps follow it. Times are milliseconds on any steady clock. UI thread.
  */
@@ -100,13 +111,25 @@ public:
   static constexpr int64_t kFlingWindowMs = 100;
   static constexpr int64_t kIdleMinMs = 3000;
   static constexpr int64_t kIdleMaxMs = 6000;
-  /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. */
+  /** No touch anywhere in the app for this long: the next action is Sleep, and after it nothing until a touch. */
+  static constexpr int64_t kSleepAfterMs = 120000;
+  /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. The calm
+   * looks (C, D) wave and poke more slowly (the mockup's tiltC / hopC 2.2 s, pokeC 0.45 s). */
   static constexpr int64_t kSwayMs = 1200;
   static constexpr int64_t kBlinkMs = 500;
-  static constexpr int64_t kHopMs = 1300;
+  static constexpr int64_t kLookMs = 2000;
   static constexpr int64_t kTalkMs = 1680;
   static constexpr int64_t kShyMs = 1600;
-  static constexpr int64_t kLookMs = 1800;
+  static constexpr int64_t kWaveMs = 1600;
+  static constexpr int64_t kWaveCalmMs = 2200;
+  static constexpr int64_t kListenMs = 2400;
+  static constexpr int64_t kThinkMs = 2400;
+  static constexpr int64_t kFiveMs = 1500;
+  static constexpr int64_t kHappyMs = 1800;
+  static constexpr int64_t kPrivateMs = 2000;
+  static constexpr int64_t kSleepMs = 4000;
+  static constexpr int64_t kPokeMs = 600;
+  static constexpr int64_t kPokeCalmMs = 450;
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {
@@ -114,17 +137,24 @@ public:
                                                                                       : AiDotLook::TwoEyes;
   }
 
-  /** The actions a look plays: the plain look has no eyes, so only hop, sway and talk (its text lines). */
+  /** C and D move less and more slowly (DESIGN-pp-ui §8.14). */
+  static bool Calm(const AiDotLook look) { return look == AiDotLook::Cool || look == AiDotLook::Plain; }
+
+  /** The random rotation of a look: every mockup action but Sleep and Poke; the plain look has no eyes, so no blink and
+   * no glance (its talk, listen, think, happy and private show symbols in its bubble instead). */
   static std::span<const AiDotIdle> IdleActions(const AiDotLook look) {
-    static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway, AiDotIdle::Blink, AiDotIdle::Hop,
-                                          AiDotIdle::Talk, AiDotIdle::Shy,   AiDotIdle::Look};
-    static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway, AiDotIdle::Hop, AiDotIdle::Talk};
+    static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway,   AiDotIdle::Blink, AiDotIdle::Look,  AiDotIdle::Talk,
+                                          AiDotIdle::Shy,    AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
+                                          AiDotIdle::Five,   AiDotIdle::Happy, AiDotIdle::Private};
+    static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway,  AiDotIdle::Talk,  AiDotIdle::Shy,
+                                           AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
+                                           AiDotIdle::Five,  AiDotIdle::Happy, AiDotIdle::Private};
     return look == AiDotLook::Plain ? std::span<const AiDotIdle>(kPlain) : std::span<const AiDotIdle>(kFace);
   }
 
   /** One of the look's actions other than `previous`, chosen by `roll` (any random number). */
   static AiDotIdle PickIdle(const AiDotLook look, const AiDotIdle previous, const uint32_t roll) {
-    AiDotIdle choices[8];
+    AiDotIdle choices[16];
     uint32_t count = 0;
     for (const AiDotIdle idle : IdleActions(look)) {
       if (idle != previous) {
@@ -141,14 +171,28 @@ public:
       return "sway";
     case AiDotIdle::Blink:
       return "blink";
-    case AiDotIdle::Hop:
-      return "hop";
+    case AiDotIdle::Look:
+      return "look";
     case AiDotIdle::Talk:
       return "talk";
     case AiDotIdle::Shy:
       return "shy";
-    case AiDotIdle::Look:
-      return "look";
+    case AiDotIdle::Wave:
+      return "wave";
+    case AiDotIdle::Listen:
+      return "listen";
+    case AiDotIdle::Think:
+      return "think";
+    case AiDotIdle::Five:
+      return "five";
+    case AiDotIdle::Happy:
+      return "happy";
+    case AiDotIdle::Private:
+      return "private";
+    case AiDotIdle::Sleep:
+      return "sleep";
+    case AiDotIdle::Poke:
+      return "poke";
     case AiDotIdle::None:
       break;
     }
@@ -196,20 +240,34 @@ public:
     return kIdleMinMs + static_cast<int64_t>((mixed >> 8) % static_cast<uint32_t>(kIdleMaxMs - kIdleMinMs + 1));
   }
 
-  static int64_t IdleLengthMs(const AiDotIdle idle) {
+  static int64_t IdleLengthMs(const AiDotIdle idle, const AiDotLook look) {
     switch (idle) {
     case AiDotIdle::Sway:
       return kSwayMs;
     case AiDotIdle::Blink:
       return kBlinkMs;
-    case AiDotIdle::Hop:
-      return kHopMs;
+    case AiDotIdle::Look:
+      return kLookMs;
     case AiDotIdle::Talk:
       return kTalkMs;
     case AiDotIdle::Shy:
       return kShyMs;
-    case AiDotIdle::Look:
-      return kLookMs;
+    case AiDotIdle::Wave:
+      return Calm(look) ? kWaveCalmMs : kWaveMs;
+    case AiDotIdle::Listen:
+      return kListenMs;
+    case AiDotIdle::Think:
+      return kThinkMs;
+    case AiDotIdle::Five:
+      return kFiveMs;
+    case AiDotIdle::Happy:
+      return kHappyMs;
+    case AiDotIdle::Private:
+      return kPrivateMs;
+    case AiDotIdle::Sleep:
+      return kSleepMs;
+    case AiDotIdle::Poke:
+      return Calm(look) ? kPokeCalmMs : kPokeMs;
     case AiDotIdle::None:
       break;
     }
@@ -224,25 +282,52 @@ public:
     tucked_ = tucked;
     pressed_ = false;
     dragging_ = false;
+    asleep_ = false;
+    open_when_done_ = false;
+    last_touch_ms_ = now_ms;
     idle_ = AiDotIdle::None;
     next_idle_ms_ = tucked_ ? std::nullopt : std::optional<int64_t>(now_ms + IdleDelayMs(idle_count_));
   }
 
-  /** The dot went off screen: no clock runs (nothing wakes the app for it). */
+  /** The dot went off screen: no clock runs (nothing wakes the app for it); a poke's panel no longer opens. */
   void Hide() {
     shown_ = false;
     pressed_ = false;
     dragging_ = false;
+    asleep_ = false;
+    open_when_done_ = false;
     idle_ = AiDotIdle::None;
     next_idle_ms_.reset();
   }
 
+  /**
+   * A touch or a key anywhere in the app: the sleep clock starts again, and an asleep dot (or one falling asleep)
+   * wakes, with its next action scheduled. True when that changed Asleep() or Idle().
+   */
+  bool Touch(const int64_t now_ms) {
+    last_touch_ms_ = now_ms;
+    if (!asleep_ && idle_ != AiDotIdle::Sleep) {
+      return false;
+    }
+    asleep_ = false;
+    if (idle_ == AiDotIdle::Sleep) {
+      idle_ = AiDotIdle::None;
+      ++idle_count_;
+    }
+    if (shown_ && !pressed_) {
+      ResumeIdle(now_ms);
+    }
+    return true;
+  }
+
   struct Changes {
-    bool idle = false; ///< Idle() changed.
+    bool idle = false; ///< Idle() or Asleep() changed.
+    bool open = false; ///< A tap's poke has played: open the ask-AI panel now.
   };
 
-  /** Moves the clocks on to `now_ms`; `look` decides which actions may play. */
+  /** Moves the clocks on to `now_ms`; `look` decides which actions may play and how long they last. */
   Changes Advance(const int64_t now_ms, const AiDotLook look) {
+    look_ = look;
     Changes changes;
     if (!shown_) {
       return changes;
@@ -251,16 +336,29 @@ public:
       next_idle_ms_.reset(); // tucked away it rests; a drag brings it out and starts the actions again
     }
     if (idle_ != AiDotIdle::None && now_ms >= idle_end_ms_) {
+      const AiDotIdle ended = idle_;
       idle_ = AiDotIdle::None;
       changes.idle = true;
       ++idle_count_;
-      if (!tucked_) {
+      if (ended == AiDotIdle::Sleep) {
+        // It rests asleep (Asleep() since the sleep began, so the still pose takes over its end): nothing until a touch.
+      } else if (!tucked_) {
         next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
       }
-    } else if (idle_ == AiDotIdle::None && !pressed_ && !tucked_ && next_idle_ms_ && now_ms >= *next_idle_ms_) {
-      idle_ = PickIdle(look, last_idle_, static_cast<uint32_t>(rng_()));
-      last_idle_ = idle_;
-      idle_end_ms_ = now_ms + IdleLengthMs(idle_) + kIdleTailMs;
+      if (open_when_done_) {
+        open_when_done_ = false;
+        changes.open = true;
+      }
+    } else if (idle_ == AiDotIdle::None && !pressed_ && !tucked_ && !asleep_ && next_idle_ms_ &&
+               now_ms >= *next_idle_ms_) {
+      if (now_ms - last_touch_ms_ >= kSleepAfterMs) {
+        idle_ = AiDotIdle::Sleep;
+        asleep_ = true;
+      } else {
+        idle_ = PickIdle(look, last_idle_, static_cast<uint32_t>(rng_()));
+        last_idle_ = idle_;
+      }
+      idle_end_ms_ = now_ms + IdleLengthMs(idle_, look) + kIdleTailMs;
       next_idle_ms_.reset();
       changes.idle = true;
     }
@@ -288,17 +386,22 @@ public:
   bool ShownNow() const { return shown_; }
   bool Tucked() const { return tucked_; }
   AiDotIdle Idle() const { return idle_; }
+  /** It is falling asleep or asleep: eyes shut, and after Sleep has played nothing is scheduled until a touch. */
+  bool Asleep() const { return asleep_; }
   bool Dragging() const { return dragging_; }
 
   // --- Touch -------------------------------------------------------------------------------------------------------
 
   /**
-   * A finger went down on the dot standing at `rest` (where it is drawn now, tucked or not): its idle move stops and
-   * no clock runs while it is held. A tucked dot stays tucked until it is dragged.
+   * A finger went down on the dot standing at `rest` (where it is drawn now, tucked or not): its idle move stops (a
+   * poke still playing too, and its panel no longer opens: this press decides again) and no clock runs while it is
+   * held. A tucked dot stays tucked until it is dragged.
    */
   void Press(const AiDotPoint& finger_dp, const AiDotPoint& rest) {
     pressed_ = true;
     dragging_ = false;
+    open_when_done_ = false;
+    asleep_ = false; // touched: awake
     idle_ = AiDotIdle::None;
     samples_.clear();
     press_finger_ = finger_dp;
@@ -337,7 +440,8 @@ public:
   }
 
   struct Release {
-    bool tap = false;          ///< No drag: open the ask-AI panel.
+    bool tap = false;          ///< No drag: the dot is poked (Changes::open follows when the poke has played)...
+    bool open_now = false;     ///< ...or, tucked, the ask-AI panel opens at once.
     bool moved = false;        ///< Dragged: `place` is where it now rests.
     AiDotPlace place;
     bool tucked = false;       ///< Dragged past the edge or flung at it: `place` is its side, half off the screen.
@@ -351,9 +455,18 @@ public:
       return release;
     }
     pressed_ = false;
+    last_touch_ms_ = now_ms;
     if (!dragging_) {
       release.tap = true;
-      ResumeIdle(now_ms);
+      if (tucked_) {
+        release.open_now = true;
+        return release;
+      }
+      // The poke plays first (RCSS keyframes), then the panel opens; nothing else is scheduled meanwhile.
+      idle_ = AiDotIdle::Poke;
+      idle_end_ms_ = now_ms + IdleLengthMs(AiDotIdle::Poke, look_) + kIdleTailMs;
+      next_idle_ms_.reset();
+      open_when_done_ = true;
       return release;
     }
     dragging_ = false;
@@ -422,6 +535,12 @@ private:
 
   bool shown_ = false;
   bool tucked_ = false;
+  bool asleep_ = false;
+  /** A tap's poke is playing: open the panel when it ends. */
+  bool open_when_done_ = false;
+  /** The look last passed to Advance (a tap's poke lasts as long as that look's). */
+  AiDotLook look_ = AiDotLook::TwoEyes;
+  int64_t last_touch_ms_ = 0;
   bool pressed_ = false;
   bool dragging_ = false;
   AiDotIdle idle_ = AiDotIdle::None;

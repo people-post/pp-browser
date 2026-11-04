@@ -60,6 +60,11 @@ void ShellAiDot::Attach(ui::Element* dot) {
   document_ = dot->GetOwnerDocument();
   dot_->AddEventListener(ui::EventId::Mousedown, this);
   dot_->AddEventListener(ui::EventId::Click, this);
+  if (document_) {
+    // Any touch or key in the window keeps the dot awake (AiDotModel::Touch; it sleeps after kSleepAfterMs without).
+    document_->AddEventListener(ui::EventId::Mousedown, this, true);
+    document_->AddEventListener(ui::EventId::Keydown, this, true);
+  }
 }
 
 void ShellAiDot::Detach() {
@@ -68,6 +73,10 @@ void ShellAiDot::Detach() {
   if (dot_) {
     dot_->RemoveEventListener(ui::EventId::Mousedown, this);
     dot_->RemoveEventListener(ui::EventId::Click, this);
+  }
+  if (document_) {
+    document_->RemoveEventListener(ui::EventId::Mousedown, this, true);
+    document_->RemoveEventListener(ui::EventId::Keydown, this, true);
   }
   removing_ = false;
   dot_ = nullptr;
@@ -146,8 +155,10 @@ void ShellAiDot::SetDocumentCapture(const bool enabled) {
 
 void ShellAiDot::SyncIdle() {
   const char* name = AiDotModel::IdleName(model_.Idle());
-  if (state_.ai_dot_idle != name) {
+  const bool asleep = model_.Asleep();
+  if (state_.ai_dot_idle != name || state_.ai_dot_asleep != asleep) {
     state_.ai_dot_idle = name;
+    state_.ai_dot_asleep = asleep;
     if (callbacks_.dirty) {
       callbacks_.dirty();
     }
@@ -176,8 +187,9 @@ void ShellAiDot::Update(ui::Context* context, const AiDotScene& scene) {
       model_.Hide();
     }
   }
+  bool open = false;
   if (show) {
-    model_.Advance(now, AiDotModel::LookFrom(state_.ai_dot_look.c_str()));
+    open = model_.Advance(now, AiDotModel::LookFrom(state_.ai_dot_look.c_str())).open;
     const AiDotArea area = Area();
     if (!pressed_ && area.width_dp > 0.f) {
       const bool tucked = model_.Tucked();
@@ -198,6 +210,9 @@ void ShellAiDot::Update(ui::Context* context, const AiDotScene& scene) {
     }
   }
   SyncIdle();
+  if (open && callbacks_.on_tap) {
+    callbacks_.on_tap(); // a tap's poke has played
+  }
 }
 
 std::optional<int64_t> ShellAiDot::MsUntilNext() const {
@@ -232,9 +247,11 @@ void ShellAiDot::EndPress(const bool cancelled) {
     }
     return;
   }
-  if (release.tap && callbacks_.on_tap) {
+  if (release.open_now && callbacks_.on_tap) {
     callbacks_.on_tap();
   }
+  // Otherwise a tap's poke is playing: Update opens the panel when it has (AiDotModel::Changes::open).
+  SyncIdle();
 }
 
 void ShellAiDot::ProcessEvent(ui::Event& event) {
@@ -247,6 +264,13 @@ void ShellAiDot::ProcessEvent(ui::Event& event) {
     return AiDotPoint{ToDp(static_cast<float>(event.GetParameter<int>("mouse_x", 0)) - origin.x),
                       ToDp(static_cast<float>(event.GetParameter<int>("mouse_y", 0)) - origin.y)};
   };
+  if (document_ && event.GetCurrentElement() == document_ &&
+      (event.GetId() == ui::EventId::Mousedown || event.GetId() == ui::EventId::Keydown)) {
+    if (model_.Touch(SteadyMs())) {
+      SyncIdle();
+    }
+    return;
+  }
   switch (event.GetId()) {
   case ui::EventId::Mousedown: {
     // The dot's own press: nothing under it sees it (no row, no swipe, no scroll starts there).

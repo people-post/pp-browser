@@ -59,7 +59,7 @@ private:
   /** Puts the dot's top-left corner at `at`, sliding there over `seconds` (0: at once). */
   void MoveTo(const AiDotPoint& at, float seconds, const std::optional<AiDotPoint>& from = std::nullopt);
   void SetDocumentCapture(bool enabled);
-  /** Copies the model's idle move into the bound field. */
+  /** Copies the model's action and whether it is asleep into the bound fields. */
   void SyncIdle();
   void EndPress(bool cancelled);
 

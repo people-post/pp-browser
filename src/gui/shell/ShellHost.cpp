@@ -225,6 +225,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("ai_dot_look", &host.state_.ai_dot_look);
     ctor.Bind("ai_dot_size", &host.state_.ai_dot_size);
     ctor.Bind("ai_dot_idle", &host.state_.ai_dot_idle);
+    ctor.Bind("ai_dot_asleep", &host.state_.ai_dot_asleep);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
@@ -931,6 +932,7 @@ void ShellHost::DirtyAiDot() {
   DataModelHost::Instance().Dirty("window", "ai_dot_look");
   DataModelHost::Instance().Dirty("window", "ai_dot_size");
   DataModelHost::Instance().Dirty("window", "ai_dot_idle");
+  DataModelHost::Instance().Dirty("window", "ai_dot_asleep");
 }
 
 AiDotScene ShellHost::AiDotSceneNow() const {
