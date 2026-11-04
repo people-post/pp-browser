@@ -7988,6 +7988,20 @@ input.checkbox {
   pointer-events: none;
 }
 
+/* While an IME composes (pinyin), the bound value is still empty but the field already shows the composition: the
+   engine marks the field :composing, and the placeholder label after it hides (Kenneth 2026-11-04: "消息" stayed under
+   the pinyin). The prefixed forms outrank the phone rules that show the labels. */
+input:composing ~ .group-field-hint,
+input:composing ~ .chat-search-label,
+input:composing ~ .people-picker-search-hint,
+textarea:composing ~ .prompt-composer-label,
+.shell-layer-compact input:composing ~ .group-field-hint,
+.shell-layer-compact input:composing ~ .chat-search-label,
+.shell-layer-compact .shell-page-sheet input:composing ~ .people-picker-search-hint,
+.shell-layer-compact textarea:composing ~ .prompt-composer-label {
+  display: none;
+}
+
 /* A row that only shows a value (nothing to tap). */
 .shell-layer-compact .group-row--static {
   cursor: default;
