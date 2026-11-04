@@ -891,6 +891,7 @@ void ChatController::DissolveGroupAfterConfirm(const std::string& group_id) {
 
 void ChatController::AfterThreadPrefsChanged() {
   RefreshFromMessaging();
+  group_info_.Refresh(); // its mute button follows at once
   NotifySurfaceChanged();
 }
 
@@ -3482,7 +3483,7 @@ bool ChatController::Setup(ui::Context* context) {
             [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
-        ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { peer_sheet_.Open(ev); }));
+        ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
         ctor.BindEventCallback("retry_gap_sync", DataEvent([this] { OnRetryGapSync(); }));
         ctor.BindEventCallback("start_new_secure_chat", DataEvent([this] { OnStartNewSecureChat(); }));
@@ -3501,6 +3502,9 @@ bool ChatController::Setup(ui::Context* context) {
     return false;
   }
   if (!ask_ai_.Register(context)) {
+    return false;
+  }
+  if (!group_info_.Register(context)) {
     return false;
   }
   if constexpr (kUiDemoBuild) {
@@ -3676,6 +3680,7 @@ void ChatController::Update() {
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
+  group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
 
   if (search_.view().open) {
     const auto search_now = std::chrono::steady_clock::now();
@@ -4050,6 +4055,88 @@ void ChatController::AskAiCloseSheet(const int layer_id) {
   if (layer_id >= 0 && shell_navigation_.close_layer) {
     shell_navigation_.close_layer(layer_id); // the coordinator hears it closing and tells the panel
   }
+}
+
+// --- the group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1) -------------------------------------------------
+
+void ChatController::OpenPeerSheet(ui::Event& ev) {
+  if (messaging_ready_ && facade_ && chat_.show_peer_sheet) {
+    auto thread = facade_->GetActiveThread();
+    const bool group = thread && thread->kind == ThreadKind::Group && thread->group_id;
+    if (ChooseChatHeaderSheet(AskAiCompact(), group) == ChatHeaderSheet::GroupInfo) {
+      (void)group_info_.Open(thread->id);
+      return;
+    }
+  }
+  peer_sheet_.Open(ev);
+}
+
+GroupInfoScreen ChatController::GroupInfoRead(const std::string& thread_id) {
+  return messaging_ready_ ? presenter_.GroupInfoOf(thread_id) : GroupInfoScreen{};
+}
+
+int ChatController::GroupInfoPushSheet(const PaneSpec& spec) {
+  return shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
+}
+
+void ChatController::GroupInfoCloseSheet(const int layer_id) {
+  if (shell_navigation_.close_layer && GroupInfoSheetOpen(layer_id)) {
+    shell_navigation_.close_layer(layer_id);
+  }
+}
+
+bool ChatController::GroupInfoSheetOpen(const int layer_id) const {
+  return layer_id >= 0 && shell_navigation_.has_layer && shell_navigation_.has_layer(layer_id);
+}
+
+void ChatController::GroupInfoCall(const std::string& thread_id, const bool video) {
+  if (call_actions_.start_call) {
+    (void)call_actions_.start_call(thread_id, video); // joins the call that goes on, else the member picker
+  }
+}
+
+void ChatController::GroupInfoMute(const std::string& thread_id, const bool muted) {
+  menus_.OpenMute(thread_id, ui::Vector2i(120, 120), /*offer_unmute=*/muted); // an action sheet on the phone
+}
+
+void ChatController::GroupInfoRename(const std::string& thread_id, const bool for_everyone) {
+  auto refresh = [this]() { group_info_.Refresh(); };
+  if (for_everyone) {
+    peer_sheet_.RenameForEveryone(thread_id, refresh);
+  } else {
+    peer_sheet_.RenameForMe(thread_id, refresh);
+  }
+}
+
+void ChatController::GroupInfoRestoreName(const std::string& thread_id) {
+  peer_sheet_.ClearMyName(thread_id);
+  RefreshFromMessaging();
+}
+
+void ChatController::GroupInfoViewAll(const std::string& thread_id) {
+  if (people_picker_notify_.open_group_members) {
+    people_picker_notify_.open_group_members(thread_id);
+  }
+}
+
+void ChatController::GroupInfoAddMember(const std::string& thread_id) {
+  if (people_picker_notify_.open_group_add_members) {
+    people_picker_notify_.open_group_add_members(thread_id);
+  }
+}
+
+void ChatController::GroupInfoTapMember(const std::string& thread_id, const std::string& identity) {
+  if (people_picker_notify_.tap_group_member) {
+    people_picker_notify_.tap_group_member(thread_id, identity);
+  }
+}
+
+void ChatController::GroupInfoLeave(const std::string& thread_id) {
+  OnCloseThread(thread_id); // asks first; an owner hands the group over or dissolves it
+}
+
+void ChatController::GroupInfoDissolve(const std::string& group_id) {
+  DissolveGroupAfterConfirm(group_id);
 }
 
 void ChatController::ShowThreadInChat(const std::string& thread_id) {

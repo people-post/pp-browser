@@ -134,6 +134,52 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
+/** What the phone's group info sheet is built from (ChatPresenter::GroupInfoOf reads it; tests give it). */
+struct GroupInfoFacts {
+  std::string thread_id;
+  std::string group_id;
+  /** The name the chat shows (this device's own name for it when one is set). */
+  std::string title;
+  /** This device renamed the group for itself ("Restore group name" then shows). */
+  bool has_local_title = false;
+  bool dissolved = false;
+  bool is_owner = false;
+  bool muted = false;
+  /** Everyone on the roster, this device too (its row is `self_identity`'s, already titled "You"). */
+  std::vector<GroupMemberRow> members;
+  std::string self_identity;
+};
+
+/** The group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1): which rows show, and the first members. */
+struct GroupInfoScreen {
+  std::string thread_id;
+  std::string group_id;
+  std::string title;
+  bool dissolved = false;
+  bool is_owner = false;
+  bool muted = false;
+  /** On the roster ("N people", "N members", "See all N members"). */
+  int member_count = 0;
+  /** The member card's first rows: the owner first, then as the member list sorts them. */
+  std::vector<GroupMemberRow> preview;
+  std::string self_identity;
+  /** Hidden for a dissolved group (G016): members, calls, renaming, leaving. */
+  bool show_members = false;
+  bool show_calls = false;
+  bool show_rename = false;
+  /** The owner renames the group for everyone; anyone else names it for themselves. */
+  bool rename_for_everyone = false;
+  bool show_restore_name = false;
+  bool show_add_member = false;
+  bool show_leave = false;
+  bool show_dissolve = false;
+
+  bool operator==(const GroupInfoScreen&) const = default;
+};
+/** The member card shows at most this many people; "See all" opens the whole list. */
+inline constexpr size_t kGroupInfoPreviewMembers = 5;
+GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts);
+
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
 
@@ -235,6 +281,8 @@ public:
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
+  /** The phone's group info sheet for group chat `thread_id` (an empty screen when it is not one). */
+  GroupInfoScreen GroupInfoOf(const std::string& thread_id);
   /**
    * The peer sheet's group actions. A failure's message is already the localized text to show (the engine's
    * own wording goes to the log only).

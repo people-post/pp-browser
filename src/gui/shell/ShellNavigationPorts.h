@@ -80,6 +80,8 @@ struct ShellNavigationPorts {
   std::function<void()> close_auxiliary;
   std::function<int(const PaneSpec& spec)> push_layer;
   std::function<void(int layer_id)> close_layer;
+  /** The layer push_layer returned is still open (a sheet stacked over others learns it was closed). */
+  std::function<bool(int layer_id)> has_layer;
   /**
    * Mobile / compact IME-replacement bottom panel (latch height, no scrim, remount-only).
    * set_bottom_chrome returns false when that presentation is unavailable (expanded desktop).

@@ -618,6 +618,11 @@ void ShellHost::CloseLayer(int layer_id) {
   RequestSyncLayout(true);
 }
 
+bool ShellHost::HasLayer(const int layer_id) const {
+  return std::any_of(state_.overlay_stack.begin(), state_.overlay_stack.end(),
+                     [layer_id](const OverlayEntry& entry) { return entry.id == layer_id; });
+}
+
 DismissTarget ShellHost::ResolveDismissTarget() const {
   if (!local_back_stack_.empty()) {
     return DismissTarget::LocalBack;

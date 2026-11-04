@@ -85,6 +85,38 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
   });
 }
 
+GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
+  GroupInfoScreen screen;
+  screen.thread_id = facts.thread_id;
+  screen.group_id = facts.group_id;
+  screen.title = facts.title;
+  screen.dissolved = facts.dissolved;
+  screen.muted = facts.muted;
+  screen.self_identity = facts.self_identity;
+  if (facts.dissolved) {
+    return screen; // G016: the name, "Group dissolved" and mute; nobody left to list, call or leave
+  }
+  screen.is_owner = facts.is_owner;
+  screen.member_count = static_cast<int>(facts.members.size());
+  std::vector<GroupMemberRow> rows = facts.members;
+  SortGroupMemberRows(rows);
+  // The owner heads the card (the full list keeps the unreachable first, for the owner to re-invite).
+  std::stable_partition(rows.begin(), rows.end(), [](const GroupMemberRow& row) { return row.is_owner; });
+  if (rows.size() > kGroupInfoPreviewMembers) {
+    rows.resize(kGroupInfoPreviewMembers);
+  }
+  screen.preview = std::move(rows);
+  screen.show_members = true;
+  screen.show_calls = true;
+  screen.show_rename = true;
+  screen.rename_for_everyone = facts.is_owner;
+  screen.show_restore_name = facts.has_local_title;
+  screen.show_add_member = facts.is_owner;
+  screen.show_leave = true;
+  screen.show_dissolve = facts.is_owner;
+  return screen;
+}
+
 bool MyReactionActive(const std::vector<ThreadMessage>& messages, const std::string& message_id,
                       const std::string& emoji_key) {
   int64_t latest_order = -1;
@@ -459,6 +491,65 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
     sheet.unreachable_members.emplace_back(identity, name.empty() ? identity : name);
   }
   return sheet;
+}
+
+GroupInfoScreen ChatPresenter::GroupInfoOf(const std::string& thread_id) {
+  if (!facade_) {
+    return {};
+  }
+  auto thread = facade_->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    return {};
+  }
+  GroupInfoFacts facts;
+  facts.thread_id = thread_id;
+  facts.group_id = *(*thread)->group_id;
+  facts.title = facade_->ResolveThreadLabel(**thread).title;
+  facts.has_local_title = !(*thread)->local_title.empty();
+  facts.dissolved = facade_->IsGroupDissolved(facts.group_id);
+  if (std::optional<ThreadLocalPrefs> prefs = PrefsOf(thread_id)) {
+    facts.muted = ThreadIsMuted(prefs->muted_until, util::NowUnixMs());
+  }
+  if (facts.dissolved) {
+    return BuildGroupInfoScreen(facts);
+  }
+  if (auto owner = facade_->IsLocalOwner(facts.group_id)) {
+    facts.is_owner = *owner; // the engine decides by the group's recorded owner, as everywhere else
+  }
+  if (auto identity = facade_->GetIdentity()) {
+    facts.self_identity = identity->account_id;
+  }
+  const std::vector<std::string> unreachable_list = facade_->ListUnreachableMembers(facts.group_id);
+  const std::unordered_set<std::string> unreachable(unreachable_list.begin(), unreachable_list.end());
+  if (auto roster = facade_->ListGroupRoster(facts.group_id)) {
+    for (const GroupRosterMember& member : *roster) {
+      if (member.member_identity.empty()) {
+        continue;
+      }
+      if (member.member_identity == facts.self_identity) {
+        GroupMemberRow self = BuildGroupMemberRow(member, std::nullopt, false);
+        self.title = Tr("people_picker.you");
+        facts.members.push_back(std::move(self));
+        continue;
+      }
+      std::optional<Contact> contact;
+      if (!member.contact_id.empty()) {
+        if (auto loaded = facade_->GetContact(member.contact_id); loaded && *loaded) {
+          contact = **loaded;
+        }
+      }
+      if (!contact) {
+        if (auto found = facade_->FindContactByIdentity(member.member_identity, mesh::ContactIdKind::Account);
+            found && *found) {
+          contact = **found;
+        }
+      }
+      const std::string nickname = contact ? std::string() : facade_->KeptCardNickname(member.member_identity);
+      facts.members.push_back(
+          BuildGroupMemberRow(member, contact, unreachable.count(member.member_identity) > 0, nickname));
+    }
+  }
+  return BuildGroupInfoScreen(facts);
 }
 
 std::string GroupActionFailureText(const Error& error) {

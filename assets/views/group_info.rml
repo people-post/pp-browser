@@ -1,0 +1,95 @@
+<!-- The phone's group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1, mockup 06-GroupInfo): a page sheet over the
+     group chat, laid out like the contact page (the same avatar block, round buttons, cards and rows). Sheets, menus
+     and dialogs opened from it stack over it. -->
+<div class="ac-page" data-model="group_info">
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:group_info.title}}</p>
+  </div>
+  <div class="ac-scroll contact-detail-panel">
+    <div class="contacts-detail-header stack">
+      <div class="contact-detail-avatar-row row">
+        <div class="contact-detail-avatar-frame chat-row-avatar--group">
+          <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="52" height="52"></svg>
+        </div>
+        <div class="contact-detail-title-block stack">
+          <div class="contacts-row-title-line row">
+            <p class="contacts-header-title">{{title}}</p>
+          </div>
+          <p class="cd-account" data-if="count_label != ''">{{count_label}}</p>
+          <p class="cd-account" data-if="dissolved">{{i18n:group_info.dissolved}}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cd-phone">
+      <div class="cd-acts row">
+        <button class="cd-act" type="button" data-if="show_calls" data-event-click="group_info_voice()">
+          <svg class="cd-act-icon" src="../icons/v2/phone.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:group_info.voice}}</p>
+        </button>
+        <button class="cd-act" type="button" data-if="show_calls" data-event-click="group_info_video()">
+          <svg class="cd-act-icon" src="../icons/v2/video.svg" width="24" height="24"></svg>
+          <p class="cd-act-label">{{i18n:group_info.video}}</p>
+        </button>
+        <button class="cd-act" type="button" data-class-cd-act--on="muted" data-event-click="group_info_mute()">
+          <svg class="cd-act-icon" src="../icons/v2/bell-off.svg" width="24" height="24"></svg>
+          <p class="cd-act-label" data-if="!muted">{{i18n:group_info.mute}}</p>
+          <p class="cd-act-label" data-if="muted">{{i18n:group_info.muted}}</p>
+        </button>
+      </div>
+
+      <div class="cd-card" data-if="show_rename">
+        <button class="cd-row" type="button" data-event-click="group_info_rename()">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:group_info.name}}</span>
+            <span class="cd-row-value">{{title}}</span>
+            <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+        <button class="cd-row" type="button" data-if="show_restore_name" data-event-click="group_info_restore_name()">
+          <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{i18n:group_info.restore_name}}</span></span>
+        </button>
+      </div>
+
+      <div data-if="show_members">
+        <p class="cd-header">{{members_label}}</p>
+        <div class="cd-card cd-card--headed">
+          <button class="cd-row cd-row--member" type="button" data-if="show_add_member"
+                  data-event-click="group_info_add_member()">
+            <span class="cd-row-plus"><svg src="../icons/v2/plus.svg" width="20" height="20"></svg></span>
+            <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{i18n:group_info.add_member}}</span></span>
+          </button>
+          <button class="cd-row cd-row--member" type="button" data-for="member : members"
+                  data-class-cd-row--static="member.self"
+                  data-event-click="group_info_member(member.identity)">
+            <span class="cd-row-avatar"
+                  data-class-avatar-tone-0="member.tone == 0" data-class-avatar-tone-1="member.tone == 1"
+                  data-class-avatar-tone-2="member.tone == 2" data-class-avatar-tone-3="member.tone == 3"
+                  data-class-avatar-tone-4="member.tone == 4" data-class-avatar-tone-5="member.tone == 5"
+                  data-class-avatar-tone-6="member.tone == 6" data-class-avatar-tone-7="member.tone == 7">
+              <span class="avatar-letter">{{member.letter}}</span>
+            </span>
+            <span class="cd-row-body">
+              <span class="cd-row-text">{{member.title}}</span>
+              <span class="cd-tag" data-if="member.owner">{{i18n:group_info.owner}}</span>
+              <span class="cd-tag cd-tag--muted" data-if="member.unreachable">{{i18n:group_info.unreachable}}</span>
+              <svg class="cd-chevron" data-if="!member.self" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+          <button class="cd-row" type="button" data-event-click="group_info_view_all()">
+            <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{view_all_label}}</span></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="cd-card" data-if="show_leave || show_dissolve">
+        <button class="cd-row cd-row--danger" type="button" data-if="show_leave" data-event-click="group_info_leave()">
+          <span class="cd-row-body"><span class="cd-row-text">{{i18n:chat.group.leave_title}}</span></span>
+        </button>
+        <button class="cd-row cd-row--danger" type="button" data-if="show_dissolve" data-event-click="group_info_dissolve()">
+          <span class="cd-row-body"><span class="cd-row-text">{{i18n:chat.group.dissolve}}</span></span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1700,6 +1700,48 @@ input.checkbox:checked {
   opacity: 0.6;
 }
 
+/* A round button that is on (the group info's mute): filled, its icon and word white. */
+.cd-act.cd-act--on {
+  background-color: #007aff;
+}
+
+.cd-act--on .cd-act-icon {
+  image-color: #ffffff;
+}
+
+.cd-act--on .cd-act-label {
+  color: #ffffff;
+}
+
+.cd-header {
+  color: #3c3c4399;
+}
+
+.cd-tag {
+  background-color: #007aff1f;
+  color: #007aff;
+}
+
+.cd-tag.cd-tag--muted {
+  background-color: #7878801f;
+  color: #3c3c4399;
+}
+
+.cd-row-plus {
+  background-color: #007aff1f;
+}
+
+.cd-row-plus svg {
+  image-color: #007aff;
+}
+
+/* Sheets laid out like the contact page (grouped cards on the grouped background). */
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--contact_detail {
+  background-color: #f2f2f7;
+}
+
 .cd-act-icon,
 .cd-icon {
   image-color: #007aff;
@@ -1741,6 +1783,10 @@ input.checkbox:checked {
 
 .cd-row:active {
   background-color: #7878801f;
+}
+
+.cd-row--static:active {
+  background-color: transparent;
 }
 
 /* Separator above each row but the first: a row hidden by data-if at the end of a card leaves no stray line. */

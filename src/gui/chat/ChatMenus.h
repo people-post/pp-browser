@@ -106,9 +106,13 @@ public:
   /** Delete: our own message in a chat offers "for everyone" too; anything else asks, then deletes for me. */
   void OpenDeleteChoice(const std::string& message_id, ui::Vector2i position);
 
+  /**
+   * Second step of "Mute": 8 hours / 1 week / Always; `offer_unmute` (the group info sheet, already muted) adds
+   * Unmute. On the phone an action sheet.
+   */
+  void OpenMute(const std::string& thread_id, ui::Vector2i position, bool offer_unmute = false);
+
 private:
-  /** Second step of "Mute": 8 hours / 1 week / Always. */
-  void OpenMute(const std::string& thread_id, ui::Vector2i position);
 
   ChatMenusHost& host_;
   ChatPresenter& presenter_;

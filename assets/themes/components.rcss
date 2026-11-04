@@ -3084,7 +3084,10 @@ select selectbox option {
 
 /* New chat in a sheet (Kenneth 2026-11-04): the sheets' title row, the rows edge to edge (the rows pad themselves, so
    the sheet drops its side padding). */
-.shell-page-sheet.shell-page-sheet--new_chat {
+.shell-page-sheet.shell-page-sheet--new_chat,
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--contact_detail {
   padding-left: 0;
   padding-right: 0;
 }
@@ -6906,6 +6909,7 @@ input.checkbox {
 
 .cd-acts {
   justify-content: center;
+  gap: 16dp;
   margin-top: 16dp;
 }
 
@@ -7090,6 +7094,59 @@ input.checkbox {
   padding: 0 32dp;
   font-size: 13dp;
   line-height: 18dp;
+}
+
+/* A card's header line above it (the group info's "5 members"): the card then sits right under it. */
+.cd-header {
+  margin: 20dp 0 6dp 0;
+  padding: 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.cd-card.cd-card--headed {
+  margin-top: 0;
+}
+
+/* A person in a card (the group info's members): a 52dp row with a 36dp round avatar before the name. */
+.cd-row.cd-row--member {
+  height: 52dp;
+  gap: 12dp;
+}
+
+.cd-row--member .cd-row-body {
+  height: 52dp;
+}
+
+.cd-row--static {
+  cursor: default;
+}
+
+.cd-row-avatar,
+.cd-row-plus {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.cd-row-avatar .avatar-letter {
+  font-size: 15dp;
+}
+
+/* A small label after a name in a row ("Owner", "Can't reach"). */
+.cd-tag {
+  flex-shrink: 0;
+  height: 20dp;
+  padding: 0 6dp;
+  border-radius: 6dp;
+  box-sizing: border-box;
+  font-size: 12dp;
+  line-height: 20dp;
+  font-weight: bold;
 }
 
 /* Group member page: help line sits centred under the Add contact button. */

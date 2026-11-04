@@ -85,6 +85,9 @@ public:
   /** The member list of the group chat `thread_id`; the owner adds, removes and re-invites from it. */
   void OpenForGroupMembers(const std::string& thread_id);
 
+  /** Add members to the group chat `thread_id` straight away (the group info sheet's "Add members"); closes when done. */
+  void OpenForGroupAddMembers(const std::string& thread_id);
+
   void Close();
 
 private:
@@ -187,6 +190,8 @@ private:
   /** The latest invite batch; an older one finishing does not end the current send. */
   uint64_t invite_batch_ = 0;
   int group_roster_count_ = 0;
+  /** Add members was opened from the member list (its Cancel / Invite go back there), not over the group info. */
+  bool add_returns_to_list_ = true;
   std::unordered_map<std::string, GroupMemberRow> member_rows_;
 
   static PeoplePickerController* installed_instance_;

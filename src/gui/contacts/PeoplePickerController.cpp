@@ -327,10 +327,28 @@ void PeoplePickerController::OpenForGroupMembers(const std::string& thread_id) {
   NotifySurfaceChanged();
 }
 
+void PeoplePickerController::OpenForGroupAddMembers(const std::string& thread_id) {
+  if (!MessagingInitialized() || !picker_ports_.get_thread) {
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
+    return;
+  }
+  auto thread = picker_ports_.get_thread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
+    UserFeedback::Fail(Tr("people_picker.err.group_required"));
+    return;
+  }
+  Close();
+  group_id_ = *(*thread)->group_id;
+  group_thread_id_ = thread_id;
+  OpenForGroupAddMember();
+  add_returns_to_list_ = false;
+}
+
 void PeoplePickerController::OpenForGroupAddMember() {
   const std::string group_id = group_id_;
   const std::string thread_id = group_thread_id_;
   Close();
+  add_returns_to_list_ = true;
   mode_ = PeoplePickerMode::GroupAddMember;
   group_id_ = group_id;
   group_thread_id_ = thread_id;
@@ -1131,7 +1149,7 @@ void PeoplePickerController::OnSearchChanged() {
 
 void PeoplePickerController::CloseAddMembers() {
   const std::string thread_id = group_thread_id_;
-  const bool from_list = mode_ == PeoplePickerMode::GroupAddMember && !thread_id.empty();
+  const bool from_list = mode_ == PeoplePickerMode::GroupAddMember && !thread_id.empty() && add_returns_to_list_;
   Close();
   if (from_list) {
     OpenForGroupMembers(thread_id);  // Add members is only opened from the member list

@@ -22,6 +22,7 @@
 #include "gui/chat/ChatPeerSheet.h"
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
+#include "gui/chat/GroupInfoSheet.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
@@ -75,7 +76,11 @@ class InputCoordinator;
 /** One chats-list row as the RML binds it (letter avatar, or the person's photo when `icon_path` is set). */
 SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from);
 
-class ChatController : public Module, private AgentTurnHost, private ChatMenusHost, private AskAiPanelHost {
+class ChatController : public Module,
+                       private AgentTurnHost,
+                       private ChatMenusHost,
+                       private AskAiPanelHost,
+                       private GroupInfoSheetHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
@@ -410,6 +415,23 @@ private:
   void OpenAskAiPanel() override { (void)ask_ai_.Open(AskAiEntry::ChatMenu); }
   /** Opens the thread in the full chat page (Sessions tab, chat pane, the phone's chat page). */
   void ShowThreadInChat(const std::string& thread_id);
+  /** The chat title: the group info sheet (a group chat on a phone), else the small peer menu. */
+  void OpenPeerSheet(ui::Event& ev);
+  // The group info sheet's side of the screen (GroupInfoSheetHost).
+  bool GroupInfoCompact() const override { return AskAiCompact(); }
+  GroupInfoScreen GroupInfoRead(const std::string& thread_id) override;
+  int GroupInfoPushSheet(const PaneSpec& spec) override;
+  void GroupInfoCloseSheet(int layer_id) override;
+  bool GroupInfoSheetOpen(int layer_id) const override;
+  void GroupInfoCall(const std::string& thread_id, bool video) override;
+  void GroupInfoMute(const std::string& thread_id, bool muted) override;
+  void GroupInfoRename(const std::string& thread_id, bool for_everyone) override;
+  void GroupInfoRestoreName(const std::string& thread_id) override;
+  void GroupInfoViewAll(const std::string& thread_id) override;
+  void GroupInfoAddMember(const std::string& thread_id) override;
+  void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) override;
+  void GroupInfoLeave(const std::string& thread_id) override;
+  void GroupInfoDissolve(const std::string& group_id) override;
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
 
@@ -483,6 +505,8 @@ private:
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
+  /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
+  GroupInfoSheet group_info_{*this};
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
   /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */

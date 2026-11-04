@@ -361,7 +361,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
   return actions;
 }
 
-void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i position) {
+void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i position, const bool offer_unmute) {
   static constexpr std::pair<SessionMuteChoice, const char*> kChoices[] = {
       {SessionMuteChoice::EightHours, "sidebar.menu.mute_8h"},
       {SessionMuteChoice::OneWeek, "sidebar.menu.mute_1w"},
@@ -378,6 +378,18 @@ void ChatMenus::OpenMute(const std::string& thread_id, const ui::Vector2i positi
           host_.AfterThreadPrefsChanged();
         },
         "../icons/v2/bell-off.svg",
+    });
+  }
+  if (offer_unmute) {
+    actions.push_back({
+        "session_unmute",
+        Tr("group_info.unmute"),
+        nullptr,
+        [this, thread_id]() {
+          presenter_.Unmute(thread_id);
+          host_.AfterThreadPrefsChanged();
+        },
+        "../icons/v2/bell.svg",
     });
   }
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
