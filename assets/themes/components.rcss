@@ -2576,9 +2576,11 @@ select selectbox option {
   clip: always;
 }
 
-/* Phone page sheet (iOS, Kenneth 2026-11-04: the centred new-group panel looked odd). It rises from the bottom over
-   all but a sliver of the page behind (dimmed by the scrim), rounded top corners and a grab handle; swiping it down
-   closes it (ShellPageSheetGesture). ShellHost pads the bottom by the home-indicator inset. */
+/* Phone page sheet (iOS, Kenneth 2026-11-04: the centred new-group panel looked odd; then every sheet alike). It
+   rises from the bottom to about 4/5 of the screen (--large), the page behind dimmed by the scrim, rounded top
+   corners and a grab handle; it is dragged to full height (no class), down to half (--half) and from there closed
+   (ShellPageSheetGesture, PageSheetModel: keep the tops here and its constants the same). ShellHost pads the bottom
+   by the home-indicator inset. */
 @keyframes shell-page-sheet-in {
   from { transform: translateY(100%); }
   to { transform: translateY(0%); }
@@ -2606,8 +2608,12 @@ select selectbox option {
   transition: none;
 }
 
-/* A half-stop sheet (the ask-AI panel) standing at half: its top at 45% of the screen, the page behind it dimmed
-   less, so what the user was doing stays in sight. */
+/* Where every sheet opens: a fifth of the page behind stays in sight above it. */
+.shell-page-sheet.shell-page-sheet--large {
+  top: 20%;
+}
+
+/* At half: its top at 45% of the screen, the page behind it dimmed less, so what the user was doing stays in sight. */
 .shell-page-sheet.shell-page-sheet--half {
   top: 45%;
 }
@@ -2631,7 +2637,48 @@ select selectbox option {
   border-radius: 2.5dp;
 }
 
-/* Close: top right on the title row, a 44dp target around a plain X. */
+/* One title row for every sheet (Kenneth 2026-11-04): 44dp under the grab handle, the title centred (17dp bold), the
+   sheet's X at its right end. Each view marks its row .sheet-header and its title .sheet-title; the row keeps clear
+   of the X on both sides so the title stays centred (the people picker's sheet keeps its 16dp side padding, so its row
+   needs 16dp less). */
+.shell-page-sheet .sheet-header {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0 52dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet--people_picker .sheet-header {
+  padding: 0 36dp;
+}
+
+/* A second button left of the X (ask-AI's "Open in AI chat"): the row keeps clear of both. */
+.shell-page-sheet .sheet-header.sheet-header--two-buttons {
+  padding: 0 96dp;
+}
+
+.shell-page-sheet .sheet-header .sheet-title {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The header's buttons (iOS): a 44dp target around a quiet 30dp grey disc holding a small secondary-colour icon. The
+   X is the sheet's own (ShellLayoutRml), top right on the title row. */
 .shell-page-sheet .shell-page-sheet-close {
   top: 16dp;
   right: 4dp;
@@ -2641,21 +2688,18 @@ select selectbox option {
   border-radius: 22dp;
 }
 
-.shell-page-sheet .shell-page-sheet-close svg {
-  width: 18dp;
-  height: 18dp;
-}
-
-/* The people picker in a sheet: a 44dp title row, the title centred between Cancel-side space and the X. */
-.shell-page-sheet .people-picker-header {
-  height: 44dp;
+.shell-page-sheet .sheet-icon-disc {
+  display: flex;
+  align-items: center;
   justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
 }
 
-.shell-page-sheet .people-picker-title {
-  font-size: 17dp;
-  line-height: 44dp;
-  text-align: center;
+.shell-page-sheet .shell-page-sheet-close svg {
+  width: 12dp;
+  height: 12dp;
 }
 
 .shell-page-sheet .people-picker-row {
@@ -2733,8 +2777,8 @@ select selectbox option {
   font-size: 17dp;
 }
 
-/* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14) in its half-stop sheet: a 44dp title row (the
-   sheet's X at its right end), one line on what goes to the AI, the bubbles, the input row and the reminder under it. */
+/* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14) in its sheet: the sheet's title row (an "Open in AI
+   chat" icon left of the X), one line on what goes to the AI, the bubbles, the input row and the reminder under it. */
 .shell-page-sheet.shell-page-sheet--ask_ai {
   padding-left: 0;
   padding-right: 0;
@@ -2747,32 +2791,26 @@ select selectbox option {
   flex-direction: column;
 }
 
-.ask-ai-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  flex-shrink: 0;
-  height: 44dp;
-  padding: 0 52dp 0 16dp;
-}
-
-.ask-ai-title {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 17dp;
-  line-height: 44dp;
-  font-weight: bold;
-}
-
+/* Left of the sheet's X (right 4dp, 44dp wide): the same 44dp target and grey disc. */
 .ask-ai-open-chat {
-  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  right: 48dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
   height: 44dp;
-  padding: 0 8dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
   border: 0;
-  font-size: 15dp;
-  line-height: 44dp;
-  white-space: nowrap;
+  border-radius: 22dp;
+}
+
+.ask-ai-open-chat svg {
+  width: 14dp;
+  height: 14dp;
 }
 
 .ask-ai-privacy {
@@ -2937,21 +2975,11 @@ select selectbox option {
   border-radius: 18dp;
 }
 
-/* New chat in a sheet (Kenneth 2026-11-04): a 44dp title row centred like the people picker's, the rows edge to edge
-   (the rows pad themselves, so the sheet drops its side padding). */
+/* New chat in a sheet (Kenneth 2026-11-04): the sheets' title row, the rows edge to edge (the rows pad themselves, so
+   the sheet drops its side padding). */
 .shell-page-sheet.shell-page-sheet--new_chat {
   padding-left: 0;
   padding-right: 0;
-}
-
-.shell-page-sheet .nc-page .nc-title {
-  height: 44dp;
-  margin: 0;
-  padding: 0 60dp;
-  font-size: 17dp;
-  line-height: 44dp;
-  font-weight: bold;
-  text-align: center;
 }
 
 .shell-dialog {
@@ -6158,13 +6186,17 @@ input.checkbox {
 
 /* Phone "New chat" page (pushed from the Chats compose button): title, search, three 56dp action rows with a 36dp
    coloured round icon, then Frequent and A-Z groups of the Contacts tab's 60dp rows. Colours: colors.rcss.tmpl. */
+/* The title row above the list (it does not scroll), the list taking the rest. */
 .nc-page {
   height: 100%;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
 }
 
 .nc-scroll {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 32dp;
   box-sizing: border-box;

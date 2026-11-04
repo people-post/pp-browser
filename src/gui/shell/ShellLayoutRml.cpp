@@ -225,21 +225,24 @@ std::string ShellLayoutRml::Overlays() const {
   std::ostringstream out;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
     if (overlay.page_sheet && state_.layout_mode == LayoutMode::Compact) {
-      // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches the
-      // swipe-down (ShellPageSheetGesture). The view keeps its own Cancel; the close button stays top right.
-      // A half-stop sheet standing at half: its top at about the middle, the page behind dimmed less (ShellHost
-      // switches it to full height while the keyboard is up).
-      const bool half = overlay.sheet_half_stop && overlay.sheet_detent == SheetDetent::Half;
+      // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches its drag
+      // (ShellPageSheetGesture). The view keeps its own Cancel and its title row (.sheet-header); the close button
+      // sits at the right end of that row: a 44dp target around a small grey disc with the X.
+      // The stop's class sets the top edge (ShellHost switches to full height while the keyboard is up); at half the
+      // page behind is dimmed less.
+      const bool half = overlay.sheet_detent == SheetDetent::Half;
+      const char* stop = half ? " shell-page-sheet--half"
+                              : overlay.sheet_detent == SheetDetent::Large ? " shell-page-sheet--large" : "";
       out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << (half ? " shell-layer-sheet--half" : "")
           << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
-      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << (half ? " shell-page-sheet--half" : "")
-          << "\" id=\"shell-page-sheet-" << overlay.id << "\">";
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop << "\" id=\"shell-page-sheet-"
+          << overlay.id << "\">";
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";
-      out << "<svg src=\"../icons/v2/close.svg\" width=\"14\" height=\"14\"></svg>";
+      out << "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\" height=\"12\"></svg></span>";
       out << "</button>";
       // The compact class: a phone page shown in a sheet (New chat) keeps its phone styles.
       out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";

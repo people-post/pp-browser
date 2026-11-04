@@ -53,27 +53,28 @@ TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
   }
 }
 
-// The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a half-stop sheet at half carries the half classes (its top at
-// mid-screen, a lighter scrim); at full, or a plain sheet, does not.
-TEST(ShellLayoutRmlTest, AHalfStopSheetAtHalfIsMarkedHalf) {
+// Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half also lightens the scrim, full
+// has none), and its X is a 44dp button around a small grey disc.
+TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   OverlayEntry sheet;
   sheet.id = 7;
-  sheet.key = "ask_ai";
+  sheet.key = "new_chat";
   sheet.page_sheet = true;
-  sheet.sheet_half_stop = true;
-  sheet.sheet_detent = SheetDetent::Half;
   state.overlay_stack.push_back(sheet);
   std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "shell-page-sheet--large")) << "every sheet opens at 4/5";
+  EXPECT_FALSE(Has(rml, "--half"));
+  EXPECT_TRUE(Has(rml, "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\""));
+  state.overlay_stack.back().sheet_detent = SheetDetent::Half;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
   EXPECT_TRUE(Has(rml, "shell-page-sheet--half"));
   EXPECT_TRUE(Has(rml, "shell-layer-sheet--half"));
+  EXPECT_FALSE(Has(rml, "shell-page-sheet--large"));
   state.overlay_stack.back().sheet_detent = SheetDetent::Full;
   rml = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_FALSE(Has(rml, "shell-page-sheet--half"));
-  EXPECT_FALSE(Has(rml, "shell-layer-sheet--half"));
-  state.overlay_stack.back().sheet_half_stop = false;
-  state.overlay_stack.back().sheet_detent = SheetDetent::Half;
-  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "--half")) << "no half stop: always full";
+  EXPECT_FALSE(Has(rml, "--half"));
+  EXPECT_FALSE(Has(rml, "--large"));
 }
 
 TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {

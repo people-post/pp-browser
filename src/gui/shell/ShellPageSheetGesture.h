@@ -17,19 +17,16 @@ class Event;
 namespace pbr {
 
 /**
- * Swipe down to close a phone page sheet (ShellLayoutRml, PaneSpec::page_sheet). The sheet follows the finger
- * from anywhere on it (not from fields or buttons) while its content is scrolled to the top; released past
- * PageSheetModel's threshold or flicked it slides out and `on_dismiss` runs, otherwise it springs back.
- *
- * A sheet with a half stop (PaneSpec::sheet_half_stop) also moves between half and full height: at half it follows
- * a drag up that starts outside scrolling content (the title bar, the grab handle), and a drag down from full goes
- * back to half (PageSheetModel::OnRelease); `on_detent` then records the new stop.
+ * Drags a phone page sheet (ShellLayoutRml, PaneSpec::page_sheet) between its stops (PageSheetModel). A drag down
+ * follows the finger from anywhere on the sheet (not from fields or buttons) while its content is scrolled to the
+ * top; a drag up, below full height, only from outside scrolling content (the grab handle, the title row), so a list
+ * still scrolls. Released, the sheet springs back, `on_detent` records a new stop, or below half it slides out and
+ * `on_dismiss` runs.
  */
 struct ShellPageSheetOptions {
-  bool half_stop = false;
   /** Where the sheet shows now (full while the keyboard is up); read at each press. */
   std::function<SheetDetent()> shown_detent;
-  /** A released drag moved the sheet to the other stop. */
+  /** A released drag moved the sheet to another stop. */
   std::function<void(SheetDetent)> on_detent;
 };
 
@@ -60,7 +57,7 @@ private:
   /** The stop the sheet showed at the press, and its top edge then (dp from its containing block). */
   SheetDetent press_detent_ = SheetDetent::Full;
   float press_top_dp_ = 0.f;
-  /** This press may drag the sheet up (a half-stop sheet at half, pressed outside scrolling content). */
+  /** This press may drag the sheet up (below full height, pressed outside scrolling content). */
   bool may_drag_up_ = false;
   PageSheetModel::Velocity velocity_;
   bool document_capture_ = false;

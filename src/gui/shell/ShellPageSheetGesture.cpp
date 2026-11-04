@@ -17,8 +17,6 @@ namespace {
 constexpr int kDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 constexpr const char* kDraggingClass = "shell-swipe-dragging";
-/** components.rcss .shell-page-sheet top: a sheet dragged up from half stops there. */
-constexpr float kFullTopDp = 10.f;
 
 double NowMs() {
   return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -109,8 +107,8 @@ void ShellPageSheetGesture::SetOffset(const float dy_dp, const bool animate) {
   sheet_->SetClass(kDraggingClass, !animate);
   char buffer[64];
   if (dy_dp < 0.f && may_drag_up_) {
-    // Up from half: the top edge itself moves (a transform would lift the bottom off the screen).
-    const float top_dp = std::max(kFullTopDp, press_top_dp_ + dy_dp);
+    // Up: the top edge itself moves (a transform would lift the bottom off the screen).
+    const float top_dp = std::max(PageSheetModel::kFullTopDp, press_top_dp_ + dy_dp);
     std::snprintf(buffer, sizeof(buffer), "%.1fdp", top_dp);
     sheet_->SetProperty("top", buffer);
     sheet_->SetProperty("transform", "translateY(0dp)");
@@ -151,12 +149,13 @@ void ShellPageSheetGesture::Release() {
   swallow_since_ = std::chrono::steady_clock::now();
   const float drag_dp = ToDp(last_y_px_ - start_y_px_);
   const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
-  const float height_px = sheet_->GetBox().GetSize(ui::BoxArea::Border).y;
-  const float height_dp = ratio > 0.f ? height_px / ratio : height_px;
-  // Measured against the height it had at the press (a drag up has grown it since).
-  const float press_height_dp = drag_dp < 0.f && may_drag_up_ ? height_dp + drag_dp : height_dp;
-  const PageSheetModel::Release release = PageSheetModel::OnRelease(
-      press_detent_, options_.half_stop, drag_dp, press_height_dp, velocity_.AtRelease(NowMs()));
+  const auto to_dp = [ratio](const float px) { return ratio > 0.f ? px / ratio : px; };
+  const float height_dp = to_dp(sheet_->GetBox().GetSize(ui::BoxArea::Border).y);
+  // The stops are shares of the layer the sheet stands in (its containing block).
+  ui::Element* layer = sheet_->GetParentNode();
+  const float layer_height_dp = layer ? to_dp(layer->GetClientHeight()) : height_dp;
+  const PageSheetModel::Release release =
+      PageSheetModel::OnRelease(press_detent_, drag_dp, layer_height_dp, velocity_.AtRelease(NowMs()));
   if (release == PageSheetModel::Release::Dismiss && on_dismiss_) {
     sheet_->RemoveProperty("top");
     SetOffset(height_dp, true);
@@ -164,10 +163,11 @@ void ShellPageSheetGesture::Release() {
     dismiss(); // may detach this gesture (the shell remounts)
     return;
   }
-  if ((release == PageSheetModel::Release::ToFull || release == PageSheetModel::Release::ToHalf) &&
-      options_.on_detent) {
+  if (release != PageSheetModel::Release::Stay && release != PageSheetModel::Release::Dismiss && options_.on_detent) {
     // The stop's class moves the top edge (with its transition) from where the finger left it.
-    options_.on_detent(release == PageSheetModel::Release::ToFull ? SheetDetent::Full : SheetDetent::Half);
+    options_.on_detent(release == PageSheetModel::Release::ToFull    ? SheetDetent::Full
+                       : release == PageSheetModel::Release::ToLarge ? SheetDetent::Large
+                                                                     : SheetDetent::Half);
   }
   sheet_->SetClass(kDraggingClass, false);
   sheet_->RemoveProperty("top");
@@ -196,7 +196,7 @@ void ShellPageSheetGesture::ProcessEvent(ui::Event& event) {
       return;
     }
     press_detent_ = options_.shown_detent ? options_.shown_detent() : SheetDetent::Full;
-    may_drag_up_ = options_.half_stop && press_detent_ == SheetDetent::Half && !InScrollingContent(target);
+    may_drag_up_ = press_detent_ != SheetDetent::Full && !InScrollingContent(target);
     if (!may_drag_up_ && !ScrolledToTop(target)) {
       return;
     }

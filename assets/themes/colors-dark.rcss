@@ -889,8 +889,20 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+/* The sheets' title row: the title, and its buttons as a quiet grey disc with a secondary-colour icon. */
+.shell-page-sheet .sheet-header .sheet-title {
+  color: #ffffff;
+}
+
+.shell-page-sheet .sheet-icon-disc {
+  background-color: #7878803d;
+}
+
+.ask-ai-open-chat svg {
+  image-color: #ebebf599;
+}
+
 /* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
-.ask-ai-title,
 .ask-ai-intro-body,
 .ask-ai-input {
   color: #ffffff;
@@ -911,7 +923,10 @@ select selectbox option:hover {
 .ask-ai-open-chat,
 .ask-ai-open-chat:hover,
 .ask-ai-open-chat:focus,
-.ask-ai-open-chat:active,
+.ask-ai-open-chat:active {
+  background-color: transparent;
+}
+
 .ask-ai-intro-ok,
 .ask-ai-intro-ok:hover,
 .ask-ai-intro-ok:focus,

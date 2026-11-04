@@ -1,11 +1,13 @@
-<!-- The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a half-height page sheet over whatever page is open. The rows
+<!-- The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a page sheet over whatever page is open. The rows
      are the shared AI conversation's last bubbles (or the settings "?" one-off question); the input row sends to it.
-     The sheet's own grab handle and X sit around this view. -->
+     The sheet's own grab handle and X sit around this view; "Open in AI chat" is an icon left of the X. -->
 <div class="ask-ai" data-model="ask_ai">
-  <div class="ask-ai-header">
-    <p class="ask-ai-title">{{i18n:ask_ai.title}}</p>
-    <button class="ask-ai-open-chat" type="button" data-if="!once"
-            data-event-click="ask_ai_open_in_chat()">{{i18n:ask_ai.open_in_chat}}</button>
+  <div class="sheet-header sheet-header--two-buttons">
+    <p class="sheet-title">{{i18n:ask_ai.title}}</p>
+    <button class="ask-ai-open-chat" type="button" data-if="!once" title="{{i18n:ask_ai.open_in_chat}}"
+            data-event-click="ask_ai_open_in_chat()">
+      <span class="sheet-icon-disc"><svg src="../icons/v2/arrow-up-right.svg" width="14" height="14"></svg></span>
+    </button>
   </div>
   <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
   <div class="ask-ai-scroll" id="ask-ai-scroll">

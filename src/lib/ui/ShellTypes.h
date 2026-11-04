@@ -16,8 +16,11 @@ enum class NavTab { Home, Sessions, Contacts, Me };
 
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
-/** Where a phone page sheet stops: near the top of the screen, or at about half its height (the ask-AI panel). */
-enum class SheetDetent { Full, Half };
+/**
+ * Where a phone page sheet stops (Kenneth 2026-11-04, every sheet alike): Large is the height it opens at (about 4/5
+ * of the screen, a strip of the page behind left in sight); Full near the top of the screen; Half about half of it.
+ */
+enum class SheetDetent { Full, Large, Half };
 
 enum class InterruptionKind {
   None,
@@ -118,16 +121,11 @@ struct PaneSpec {
    */
   std::string return_focus_id;
   /**
-   * PushLayer on phones: an iOS page sheet (slides up over most of the screen, rounded top, grab handle, the
-   * page behind dimmed; swipe down to close) instead of the centred panel. Desktop is unchanged.
+   * PushLayer on phones: an iOS page sheet (rises from the bottom to SheetDetent::Large, rounded top, grab handle,
+   * the page behind dimmed; dragged between half, large and full, down from half to close) instead of the centred
+   * panel. Desktop is unchanged.
    */
   bool page_sheet = false;
-  /**
-   * page_sheet only: the sheet also stops at half height (drag up to full, down to half, down again to close) and
-   * opens at `sheet_detent`. Without it the sheet is full height only, as before.
-   */
-  bool sheet_half_stop = false;
-  SheetDetent sheet_detent = SheetDetent::Full;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
@@ -150,10 +148,8 @@ struct OverlayEntry {
   std::function<void(bool)> on_result;
   /** PaneSpec::page_sheet: shown as a page sheet on phones. */
   bool page_sheet = false;
-  /** PaneSpec::sheet_half_stop. */
-  bool sheet_half_stop = false;
   /** Where the sheet stands now (moved by its drag); while the keyboard is up it shows full height anyway. */
-  SheetDetent sheet_detent = SheetDetent::Full;
+  SheetDetent sheet_detent = SheetDetent::Large;
 };
 
 struct ToastEntry {

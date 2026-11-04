@@ -1,5 +1,5 @@
-// The ask-AI half sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a): the real AskAiPanel and AgentTurnController, driven with a
-// fake chat screen and fake agent ports. What is checked: each entry opens the sheet at the right height; the settings
+// The ask-AI sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a): the real AskAiPanel and AgentTurnController, driven with a
+// fake chat screen and fake agent ports. What is checked: each entry opens the sheet; the settings
 // "?" is a one-off question in the Home session (never PP 客服, never the shared chat); the shared conversation is one
 // thread for every entry and for "Open in AI chat"; closing keeps the draft and the running answer and sends nothing
 // again; a guest's single turn queues the question once and shows it (the one-off too); no answer shows plain words
@@ -246,26 +246,25 @@ protected:
 
 // --- the entries -----------------------------------------------------------------------------------
 
-TEST_F(AskAiPanelTest, EveryEntryOpensTheHalfStopSheetAndTheHomeFieldOpensItFull) {
+TEST_F(AskAiPanelTest, EveryEntryOpensAPlainPageSheet) {
+  // Every sheet opens at 4/5 (Kenneth 2026-11-04): the panel asks for no height of its own, the Home field included
+  // (its keyboard takes the sheet to full height).
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   ASSERT_EQ(panel_host_.sheets.size(), 1u);
   EXPECT_TRUE(panel_host_.sheets[0].page_sheet);
-  EXPECT_TRUE(panel_host_.sheets[0].sheet_half_stop);
-  EXPECT_EQ(panel_host_.sheets[0].sheet_detent, SheetDetent::Half) << "the chat stays in sight above it";
   EXPECT_EQ(panel_host_.sheets[0].key, "ask_ai");
   panel_host_.AskAiCloseSheet(0);
 
   ASSERT_TRUE(panel_.Open(AskAiEntry::HomeInput));
-  EXPECT_EQ(panel_host_.sheets.back().sheet_detent, SheetDetent::Full) << "typing at once: full height, no jump";
   panel_host_.AskAiCloseSheet(0);
-
-  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "今日要闻"));
-  EXPECT_EQ(panel_host_.sheets.back().sheet_detent, SheetDetent::Half);
+  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "你能做什么？"));
   panel_host_.AskAiCloseSheet(0);
-
   ASSERT_TRUE(panel_.OpenOnce("「发送崩溃报告」是什么意思？"));
-  EXPECT_EQ(panel_host_.sheets.back().sheet_detent, SheetDetent::Half);
-  EXPECT_EQ(panel_host_.sheets.size(), 4u);
+  ASSERT_EQ(panel_host_.sheets.size(), 4u);
+  for (const PaneSpec& spec : panel_host_.sheets) {
+    EXPECT_TRUE(spec.page_sheet);
+    EXPECT_EQ(spec.key, "ask_ai");
+  }
 }
 
 TEST_F(AskAiPanelTest, TheDesktopHasNoPanel) {
@@ -616,6 +615,21 @@ TEST(AskAiPanelSourceTest, NewChatsAiChatStartsANewAiChat) {
   EXPECT_EQ(ReadSource("src/gui/chat/ChatController.cpp").find("void ChatController::StartNewAiChat("),
             std::string::npos)
       << "no phone-only path to the shared chat";
+}
+
+// The panel's title row (Kenneth 2026-11-04): the sheets' centred title, "Open in AI chat" an icon button left of
+// the X, labelled with the same words.
+TEST(AskAiPanelSourceTest, OpenInAiChatIsAnIconInTheSheetHeader) {
+  const std::string view = ReadSource("assets/views/ask_ai.rml");
+  ASSERT_FALSE(view.empty());
+  EXPECT_NE(view.find("<div class=\"sheet-header sheet-header--two-buttons\">"), std::string::npos);
+  EXPECT_NE(view.find("<p class=\"sheet-title\">{{i18n:ask_ai.title}}</p>"), std::string::npos);
+  const size_t button = view.find("class=\"ask-ai-open-chat\"");
+  ASSERT_NE(button, std::string::npos);
+  const std::string tag = view.substr(button, view.find("</button>", button) - button);
+  EXPECT_NE(tag.find("title=\"{{i18n:ask_ai.open_in_chat}}\""), std::string::npos);
+  EXPECT_NE(tag.find("../icons/v2/arrow-up-right.svg"), std::string::npos);
+  EXPECT_EQ(tag.find(">{{i18n:ask_ai.open_in_chat}}<"), std::string::npos) << "no text link any more";
 }
 
 // A permission card tapped in the panel belongs to the panel's AI chat: a stale one is rewritten there, never in the

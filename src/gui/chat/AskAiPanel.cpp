@@ -134,10 +134,9 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
   if (!IsOpen()) {
     PaneSpec spec;
     spec.key = "ask_ai";
+    // Opens at the height every sheet opens at (Kenneth 2026-11-04); the Home field's cursor brings the keyboard
+    // up at once, and the sheet goes full height with it.
     spec.page_sheet = true;
-    spec.sheet_half_stop = true;
-    // Typing at once (the Home field) needs the room: full height from the start, not half and then a jump.
-    spec.sheet_detent = entry == AskAiEntry::HomeInput ? SheetDetent::Full : SheetDetent::Half;
     layer_id_ = host_.AskAiPushSheet(spec, [this]() {
       // Closed by the X, the scrim or a swipe: the draft stays, a running answer goes on where it belongs.
       layer_id_ = -1;

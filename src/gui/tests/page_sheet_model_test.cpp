@@ -1,5 +1,5 @@
-// Phone page sheet (new group): swipe down to close, else spring back (Kenneth 2026-11-04). The ask-AI panel's sheet
-// also stops at half height (DEV/PLAN-ui-batch5-ask-ai.md 5a).
+// Phone page sheets (Kenneth 2026-11-04): every sheet opens at about 4/5 of the screen and stops at half, 4/5 and
+// full; a quarter of the way to the next stop or a flick moves it there, below half it closes.
 #include "gui/shell/PageSheetModel.h"
 
 #include <gtest/gtest.h>
@@ -7,57 +7,84 @@
 namespace pbr {
 namespace {
 
-constexpr float kHeightDp = 760.f;
-
-TEST(PageSheetModelTest, AQuarterOfTheHeightCloses) {
-  EXPECT_FALSE(PageSheetModel::ShouldDismiss(kHeightDp * 0.25f - 1.f, kHeightDp, 0.f));
-  EXPECT_TRUE(PageSheetModel::ShouldDismiss(kHeightDp * 0.25f, kHeightDp, 0.f));
-  EXPECT_TRUE(PageSheetModel::ShouldDismiss(kHeightDp * 0.6f, kHeightDp, 0.f));
-}
-
-TEST(PageSheetModelTest, AFlickClosesAShortDrag) {
-  EXPECT_TRUE(PageSheetModel::ShouldDismiss(60.f, kHeightDp, 900.f));
-  EXPECT_FALSE(PageSheetModel::ShouldDismiss(60.f, kHeightDp, 300.f)) << "slow and short springs back";
-  EXPECT_FALSE(PageSheetModel::ShouldDismiss(10.f, kHeightDp, 2000.f)) << "a wobbly tap is no flick";
-}
-
-TEST(PageSheetModelTest, UpwardOrNoDragNeverCloses) {
-  EXPECT_FALSE(PageSheetModel::ShouldDismiss(0.f, kHeightDp, 5000.f));
-  EXPECT_FALSE(PageSheetModel::ShouldDismiss(-300.f, kHeightDp, 5000.f));
-}
-
 using Release = PageSheetModel::Release;
-constexpr float kHalfDp = 420.f;
 
-TEST(PageSheetModelTest, WithoutAHalfStopOnlyCloseOrStay) {
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, false, kHeightDp * 0.3f, kHeightDp, 0.f), Release::Dismiss);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, false, 40.f, kHeightDp, 0.f), Release::Stay);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, false, -400.f, kHeightDp, -3000.f), Release::Stay);
+constexpr float kLayerDp = 800.f;
+// The tops at this layer height: full 10, large 160, half 360; the sheet at half is 440 tall.
+constexpr float kFullTop = PageSheetModel::kFullTopDp;
+constexpr float kLargeTop = kLayerDp * PageSheetModel::kLargeTopRatio;
+constexpr float kHalfTop = kLayerDp * PageSheetModel::kHalfTopRatio;
+
+TEST(PageSheetModelTest, TheStopsAreFullLargeAndHalfFromTheTop) {
+  EXPECT_FLOAT_EQ(PageSheetModel::TopDp(SheetDetent::Full, kLayerDp), 10.f);
+  EXPECT_FLOAT_EQ(PageSheetModel::TopDp(SheetDetent::Large, kLayerDp), 160.f) << "about 4/5 of the screen";
+  EXPECT_FLOAT_EQ(PageSheetModel::TopDp(SheetDetent::Half, kLayerDp), 360.f);
 }
 
-TEST(PageSheetModelTest, FromHalfAQuarterUpOrAFlickUpGoesFull) {
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, -kHalfDp * 0.25f, kHalfDp, 0.f), Release::ToFull);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, -40.f, kHalfDp, -900.f), Release::ToFull);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, -kHalfDp * 0.25f + 1.f, kHalfDp, -100.f), Release::Stay);
+TEST(PageSheetModelTest, ANewSheetStandsAtLarge) {
+  EXPECT_EQ(OverlayEntry{}.sheet_detent, SheetDetent::Large);
 }
 
-TEST(PageSheetModelTest, FromHalfAQuarterDownOrAFlickDownCloses) {
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, kHalfDp * 0.25f, kHalfDp, 0.f), Release::Dismiss);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, 40.f, kHalfDp, 900.f), Release::Dismiss);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, true, 30.f, kHalfDp, 100.f), Release::Stay);
+TEST(PageSheetModelTest, FromLargeAQuarterUpOrAFlickUpGoesFull) {
+  const float way = kLargeTop - kFullTop;
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, -way * 0.25f, kLayerDp, 0.f), Release::ToFull);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, -30.f, kLayerDp, -900.f), Release::ToFull);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, -way * 0.25f + 1.f, kLayerDp, -100.f), Release::Stay);
 }
 
-TEST(PageSheetModelTest, FromFullADragDownGoesBackToHalfNotClosed) {
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, true, kHeightDp * 0.25f, kHeightDp, 0.f), Release::ToHalf);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, true, kHeightDp * 0.9f, kHeightDp, 3000.f), Release::ToHalf)
-      << "even a long fast drag stops at half first";
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, true, 40.f, kHeightDp, 100.f), Release::Stay);
-  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, true, -200.f, kHeightDp, -3000.f), Release::Stay)
+TEST(PageSheetModelTest, FromLargeAQuarterDownOrAFlickDownGoesHalf) {
+  const float way = kHalfTop - kLargeTop;
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, way * 0.25f, kLayerDp, 0.f), Release::ToHalf);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, 30.f, kLayerDp, 900.f), Release::ToHalf)
+      << "a flick moves one stop";
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, way * 0.25f - 1.f, kLayerDp, 100.f), Release::Stay);
+}
+
+TEST(PageSheetModelTest, FromFullADragDownGoesBackToLarge) {
+  const float way = kLargeTop - kFullTop;
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, way * 0.25f, kLayerDp, 0.f), Release::ToLarge);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, 30.f, kLayerDp, 3000.f), Release::ToLarge);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, 20.f, kLayerDp, 100.f), Release::Stay);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, -200.f, kLayerDp, -3000.f), Release::Stay)
       << "nothing above full";
 }
 
+TEST(PageSheetModelTest, FromHalfAQuarterDownOrAFlickDownClosesAndUpGoesBackToLarge) {
+  const float height = kLayerDp - kHalfTop;
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, height * 0.25f, kLayerDp, 0.f), Release::Dismiss);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, 40.f, kLayerDp, 900.f), Release::Dismiss);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, 30.f, kLayerDp, 100.f), Release::Stay);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, -(kHalfTop - kLargeTop) * 0.25f, kLayerDp, 0.f),
+            Release::ToLarge);
+}
+
+TEST(PageSheetModelTest, ALongDragPassesMoreThanOneStop) {
+  // From large past half by more than a quarter of the half sheet: closed in one go.
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, (kHalfTop - kLargeTop) + (kLayerDp - kHalfTop) * 0.3f,
+                                      kLayerDp, 0.f),
+            Release::Dismiss);
+  // Just past half: it stops at half.
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, (kHalfTop - kLargeTop) + 20.f, kLayerDp, 3000.f),
+            Release::ToHalf)
+      << "the flick counts for the first stop only";
+  // From full down to past half's quarter: half.
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Full, (kLargeTop - kFullTop) + (kHalfTop - kLargeTop) * 0.5f,
+                                      kLayerDp, 0.f),
+            Release::ToHalf);
+  // From half up near the top: full.
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, -(kHalfTop - 20.f), kLayerDp, 0.f), Release::ToFull);
+}
+
+TEST(PageSheetModelTest, ATapThatWobblesIsNoFlick) {
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Half, 10.f, kLayerDp, 2000.f), Release::Stay);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, -10.f, kLayerDp, -2000.f), Release::Stay);
+  EXPECT_EQ(PageSheetModel::OnRelease(SheetDetent::Large, 0.f, kLayerDp, 5000.f), Release::Stay);
+}
+
 TEST(PageSheetModelTest, TheKeyboardShowsFullAndItsGoingBackRestoresTheStop) {
+  EXPECT_EQ(PageSheetModel::Shown(SheetDetent::Large, true), SheetDetent::Full);
   EXPECT_EQ(PageSheetModel::Shown(SheetDetent::Half, true), SheetDetent::Full);
+  EXPECT_EQ(PageSheetModel::Shown(SheetDetent::Large, false), SheetDetent::Large) << "keyboard down: back to 4/5";
   EXPECT_EQ(PageSheetModel::Shown(SheetDetent::Half, false), SheetDetent::Half) << "keyboard down: back to half";
   EXPECT_EQ(PageSheetModel::Shown(SheetDetent::Full, false), SheetDetent::Full);
 }

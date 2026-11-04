@@ -92,7 +92,7 @@ public:
 };
 
 /**
- * The ask-AI half sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14): opens over the page the user is on, which
+ * The ask-AI sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14): opens over the page the user is on, which
  * stays where it was. It shows the shared AI conversation, the AI chat used last (Home and the panel continue it; New
  * chat's "AI chat" makes a new one, which is then the last), and sends into it through the same router and queue as
  * the chat page (the sessions' cap, a guest's 1). A setting's "?" asks a one-off question instead: the Home session,

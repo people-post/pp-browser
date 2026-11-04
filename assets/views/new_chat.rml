@@ -1,6 +1,9 @@
 <div class="nc-page" data-model="contacts">
+  <!-- The sheet's title row (.sheet-header) stays put above the list, so a drag up from it moves the sheet. -->
+  <div class="sheet-header">
+    <p class="large-title nc-title sheet-title">{{i18n:new_chat.title}}</p>
+  </div>
   <div class="nc-scroll">
-    <p class="large-title nc-title">{{i18n:new_chat.title}}</p>
     <div class="chat-search nc-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="nc_query"

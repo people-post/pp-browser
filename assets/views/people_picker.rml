@@ -1,7 +1,7 @@
 <div class="people-picker stack" data-model="people_picker">
   <div data-if="step == 'select'" class="people-picker-select stack">
-    <div class="people-picker-header row">
-      <p class="people-picker-title">{{title}}</p>
+    <div class="people-picker-header sheet-header row">
+      <p class="people-picker-title sheet-title">{{title}}</p>
     </div>
 
     <div class="people-picker-search">
@@ -53,8 +53,8 @@
   </div>
 
   <div data-if="step == 'name'" class="people-picker-name stack">
-    <div class="people-picker-header row">
-      <p class="people-picker-title">{{title}}</p>
+    <div class="people-picker-header sheet-header row">
+      <p class="people-picker-title sheet-title">{{title}}</p>
     </div>
 
     <p class="text muted people-picker-name-help">{{group_title_help}}</p>
