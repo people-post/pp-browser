@@ -50,7 +50,8 @@
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
 //                                       per-stream rx frames, video tx / rx and how each video stream's
-//                                       frames arrived: gaps, stalls, bunched, lost)
+//                                       frames arrived: gaps, stalls, bunched, lost; the call link's
+//                                       round trip and Reliable resends)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
@@ -349,6 +350,16 @@ public:
         video.push_back(ObjectValue(std::move(row)));
       }
       out.set("video_arrivals", ArrayValue(std::move(video)));
+      // The call's link (Amp ConnectionStats of the association its media rides).
+      const CallLinkCounters link = calls_->MediaLinkCounters();
+      if (link.available) {
+        Object row;
+        row.set("link_id", link.link_id);
+        row.set("reliable_sent", link.reliable_sent);
+        row.set("retransmits", link.retransmits);
+        row.set("srtt_ms", link.srtt_ms);
+        out.set("link", ObjectValue(std::move(row)));
+      }
       std::vector<Value> joined;
       if (!last_call_id_.empty()) {
         if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {
