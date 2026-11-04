@@ -1887,6 +1887,24 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     (void)store_.SaveProfilePrefs(prefs);
   });
+  // Phone AI dot (DESIGN-pp-ui §8.14): on / look follow Me → AI assistant through ConfigApplyBridge; where it rests
+  // is written here after a drag. A tap opens the ask-AI panel; it keeps off Me → Account & security.
+  shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look);
+  shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille);
+  shell_->SetOnAiDotTap([this]() { chat_->OpenAskAiFromDot(); });
+  shell_->SetOnAiDotMoved([this](const bool left, const int y_permille) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.ai_dot_left == left && prefs.ai_dot_y_permille == y_permille) {
+      return;
+    }
+    prefs.ai_dot_left = left;
+    prefs.ai_dot_y_permille = y_permille;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
+  shell_->SetAiDotSecretPage([this]() {
+    return shell_->State().nav_tab == NavTab::Me && settings_->ShowsSecuritySection();
+  });
   shell_->SetAuxiliaryWidthPref(bootstrap.profile_prefs.auxiliary_width_dp);
   shell_->SetOnAuxiliaryWidthChanged([this](int width_dp) {
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;

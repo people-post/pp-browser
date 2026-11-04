@@ -461,6 +461,18 @@ struct ShellState {
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */
   int safe_area_bottom_dp = 0;
 
+  /**
+   * Phone AI dot (DESIGN-pp-ui §8.14; ShellAiDot). From profile prefs: Me → AI assistant → Show AI dot and the
+   * assistant look (`a` one eye, `b` two eyes, `c` cool, `d` plain), and where it rests (side, height in the band).
+   */
+  bool ai_dot_enabled = true;
+  ui::String ai_dot_look = "b";
+  bool ai_dot_left = false;
+  int ai_dot_y_permille = 600;
+  /** Bound: the dot is on screen now; its idle move now (`sway`, `blink` or empty). */
+  bool ai_dot_shown = false;
+  ui::String ai_dot_idle;
+
   /** From profile prefs — opaque compact chrome only (no backdrop frost). */
   bool reduce_transparency = false;
   /** From profile prefs — when false, frost tier disabled; layout unchanged. */

@@ -60,3 +60,4 @@ x-dock-bar	#f2f2f7	#1a1a1c	extra: Home tab bar fill, a shade off the dock
 x-scan-dim	#00000080	#00000080	extra: phone scanner, the camera dimmed round the frame (black 50%)
 x-scan-ink	#ffffff	#ffffff	extra: phone scanner, corner marks, hint, back and button labels over the camera
 x-scan-tool	#ffffff33	#ffffff33	extra: phone scanner, round button and Try again fill (white 20%)
+x-mascot-ink	#ffffff	#ffffff	extra: AI dot and assistant-look previews, full-colour mascot SVGs drawn untinted (image-color white)

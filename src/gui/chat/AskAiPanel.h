@@ -46,6 +46,7 @@ enum class AskAiEntry {
   HomeChip,    // a Home chip: its question is asked at once
   ChatMenu,    // a chat's "⋯ → Ask AI": nothing of the chat goes along
   SettingHelp, // a setting's "?": a one-off question (AskAiPanel::OpenOnce)
+  Dot,         // the floating AI dot (5c): like the chat menu, at the sheet's usual height
 };
 
 /** One bubble in the panel, drawn like the chat's. */

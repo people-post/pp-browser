@@ -52,6 +52,7 @@ pp_browser_add_feature_library(pp_gui
     shell/DeferredStartup.cpp
     shell/DocumentLoader.cpp
     shell/RmlMount.cpp
+    shell/ShellAiDot.cpp
     shell/ShellCallChromeGesture.cpp
     shell/ShellCallChromeRml.cpp
     shell/ShellLayoutRml.cpp

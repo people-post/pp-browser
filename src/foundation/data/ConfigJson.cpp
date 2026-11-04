@@ -4,6 +4,7 @@
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <limits>
 #include <string_view>
 #include "common/PbrCompat.h"
@@ -766,6 +767,10 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
+  object.set("ai_dot_shown", prefs.ai_dot_shown);
+  object.set("ai_dot_look", prefs.ai_dot_look);
+  object.set("ai_dot_left", prefs.ai_dot_left);
+  object.set("ai_dot_y_permille", static_cast<int64_t>(prefs.ai_dot_y_permille));
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -841,6 +846,15 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
   prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
+  prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);
+  if (auto look = object.getString("ai_dot_look")) {
+    prefs.ai_dot_look = *look;
+  }
+  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
+    prefs.ai_dot_look = "b";
+  }
+  prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
+  prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {

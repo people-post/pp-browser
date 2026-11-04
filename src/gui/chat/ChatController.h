@@ -156,6 +156,8 @@ public:
   void OnShellLayoutSynced();
   /** Phone Chats list swipe: runs the same item the long-press menu offers. */
   void OnSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
+  /** A tap on the phone AI dot: the ask-AI panel over the current page (DESIGN-pp-ui §8.14). */
+  void OpenAskAiFromDot() { (void)ask_ai_.Open(AskAiEntry::Dot); }
   /** Escape after the shell closed nothing (desktop). Not in the composer: NotInComposer. */
   enum class ComposerEscape { NotInComposer, Handled, Idle };
   ComposerEscape OnComposerEscape();

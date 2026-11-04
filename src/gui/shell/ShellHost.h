@@ -3,6 +3,7 @@
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
+#include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -63,11 +64,15 @@ public:
     std::string appearance = "system";
     bool reduce_transparency = false;
     bool compact_chrome_frost = true;
+    /** Phone AI dot: shown or not, and its look (`a`–`d`). */
+    bool ai_dot = true;
+    std::string ai_dot_look = "b";
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
              reduce_transparency == other.reduce_transparency &&
-             compact_chrome_frost == other.compact_chrome_frost;
+             compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
+             ai_dot_look == other.ai_dot_look;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
@@ -211,6 +216,17 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
+  /** Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch and look (`a`–`d`); takes effect at once. */
+  void SetAiDot(bool enabled, const std::string& look);
+  /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
+  void SetAiDotPlace(bool left, int y_permille);
+  /** A tap on the AI dot (open the ask-AI panel). */
+  void SetOnAiDotTap(std::function<void()> callback);
+  /** The user dragged the AI dot to a new resting place (persist it). */
+  void SetOnAiDotMoved(std::function<void(bool left, int y_permille)> callback);
+  /** True while a page the AI dot must not sit on is up (Me → Account & security: change PIN, recovery phrase). */
+  void SetAiDotSecretPage(std::function<bool()> showing);
+
 
   bool RegisterWindowModel(ui::Context* context);
 
@@ -299,6 +315,10 @@ private:
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool ChromeFrostEnabled() const;
+  /** What is on screen now, for the AI dot (AiDotModel::Shown). */
+  AiDotScene AiDotSceneNow() const;
+  /** The AI dot's bound keys (ai_dot_*). */
+  void DirtyAiDot();
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
@@ -376,6 +396,10 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
+  ShellAiDot ai_dot_{state_};
+  std::function<void()> on_ai_dot_tap_;
+  std::function<void(bool, int)> on_ai_dot_moved_;
+  std::function<bool()> ai_dot_secret_page_;
 
 };
 

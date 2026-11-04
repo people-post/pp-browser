@@ -78,6 +78,13 @@ struct ProfilePreferences {
   bool onboarding_completed = false;
   /** The ask-AI panel's one-time privacy card was dismissed ("Got it"; DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   bool ai_panel_intro_seen = false;
+  /** Phone AI dot (DESIGN-pp-ui §8.14): Me → AI assistant → Show AI dot. */
+  bool ai_dot_shown = true;
+  /** Its look: `a` one eye, `b` two eyes (default), `c` cool, `d` plain. */
+  std::string ai_dot_look = "b";
+  /** Where it rests: the left or right edge, and how far down its band (0 top – 1000 bottom). */
+  bool ai_dot_left = false;
+  int ai_dot_y_permille = 600;
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */

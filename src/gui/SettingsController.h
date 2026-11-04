@@ -86,6 +86,8 @@ public:
   void RefreshBlockedCount();
   /** Phones: the open section's mount was emptied by a shell remount (a page pushed over it and popped). */
   bool SheetMountEmpty() const;
+  /** Phones: Account & security is the open section (change PIN, recovery phrase: the AI dot keeps off). */
+  bool ShowsSecuritySection() const { return show_detail_ && selected_id_ == "security"; }
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */

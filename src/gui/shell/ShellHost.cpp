@@ -221,6 +221,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("fonts_ready", &host.state_.fonts_ready);
     ctor.Bind("unlock_in_progress", &host.state_.unlock_in_progress);
     ctor.Bind("startup_cover_visible", &host.state_.startup_cover_visible);
+    ctor.Bind("ai_dot_shown", &host.state_.ai_dot_shown);
+    ctor.Bind("ai_dot_look", &host.state_.ai_dot_look);
+    ctor.Bind("ai_dot_idle", &host.state_.ai_dot_idle);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
       badge_handle.RegisterMember("sessions_unread", &NavBadgeState::sessions_unread);
@@ -314,6 +317,19 @@ void ShellHost::Initialize(ui::Context* context) {
   sync_pending_ = false;
   restore_focus_after_sync_ = false;
   PlatformNavigation::SetDismissHandler([this] { return HandleDismiss(); });
+  ai_dot_.SetCallbacks({.on_tap =
+                            [this]() {
+                              if (on_ai_dot_tap_) {
+                                on_ai_dot_tap_();
+                              }
+                            },
+                        .on_moved =
+                            [this](const AiDotPlace& place) {
+                              if (on_ai_dot_moved_) {
+                                on_ai_dot_moved_(place.left, place.y_permille);
+                              }
+                            },
+                        .dirty = [this]() { DirtyAiDot(); }});
   if (state_.titlebar_traffic_lights) {
     // Leading traffic lights: ~8+12×3+8×2+8 ≈ 68dp (native-like spacing).
     config_.titlebar_controls_width_dp = 68.f;
@@ -888,7 +904,60 @@ void ShellHost::DirtyWindow() {
   DirtyFeedback();
   DirtyPinGate();
   DirtyCallChrome();
+  DirtyAiDot();
   statusbar_.Dirty();
+}
+
+void ShellHost::DirtyAiDot() {
+  DataModelHost::Instance().Dirty("window", "ai_dot_shown");
+  DataModelHost::Instance().Dirty("window", "ai_dot_look");
+  DataModelHost::Instance().Dirty("window", "ai_dot_idle");
+}
+
+AiDotScene ShellHost::AiDotSceneNow() const {
+  AiDotScene scene;
+  scene.enabled = state_.ai_dot_enabled;
+  scene.phone = state_.layout_mode == LayoutMode::Compact;
+  scene.call = state_.call_ring.active || state_.call_in_progress.active;
+  scene.pin_gate = state_.pin_gate.active;
+  // The startup cover, the onboarding wizard and a picture preview cover the whole screen.
+  scene.cover = state_.startup_cover_visible || !overlay_bodies_.empty();
+  scene.secret_page = ai_dot_secret_page_ && ai_dot_secret_page_();
+  scene.layer_open = !state_.overlay_stack.empty();
+  for (const OverlayEntry& overlay : state_.overlay_stack) {
+    scene.scanning = scene.scanning || overlay.full_screen;
+  }
+  scene.keyboard_up = bottom_chrome_open_ || state_.safe_area_bottom_dp >= kImeLatchMinDp;
+  return scene;
+}
+
+void ShellHost::SetAiDot(const bool enabled, const std::string& look) {
+  const bool known = look == "a" || look == "b" || look == "c" || look == "d";
+  const ui::String next_look = known ? look.c_str() : "b";
+  if (state_.ai_dot_enabled == enabled && state_.ai_dot_look == next_look) {
+    return;
+  }
+  state_.ai_dot_enabled = enabled;
+  state_.ai_dot_look = next_look;
+  DirtyAiDot();
+  Backend::RequestForceFrame();
+}
+
+void ShellHost::SetAiDotPlace(const bool left, const int y_permille) {
+  state_.ai_dot_left = left;
+  state_.ai_dot_y_permille = std::clamp(y_permille, 0, 1000);
+}
+
+void ShellHost::SetOnAiDotTap(std::function<void()> callback) {
+  on_ai_dot_tap_ = std::move(callback);
+}
+
+void ShellHost::SetOnAiDotMoved(std::function<void(bool left, int y_permille)> callback) {
+  on_ai_dot_moved_ = std::move(callback);
+}
+
+void ShellHost::SetAiDotSecretPage(std::function<bool()> showing) {
+  ai_dot_secret_page_ = std::move(showing);
 }
 
 void ShellHost::DirtyCallChrome() {
@@ -1362,11 +1431,14 @@ ShellHost::ChromePrefs ShellHost::ProjectChrome(const ProfilePreferences& prefs)
   return {.theme = prefs.theme,
           .appearance = prefs.appearance,
           .reduce_transparency = prefs.reduce_transparency,
-          .compact_chrome_frost = prefs.compact_chrome_frost};
+          .compact_chrome_frost = prefs.compact_chrome_frost,
+          .ai_dot = prefs.ai_dot_shown,
+          .ai_dot_look = prefs.ai_dot_look};
 }
 
 void ShellHost::Apply(const ChromePrefs& prefs) {
   SyncChromeMaterialPrefs(prefs.reduce_transparency, prefs.compact_chrome_frost);
+  SetAiDot(prefs.ai_dot, prefs.ai_dot_look);
 }
 
 void ShellHost::OnLayoutModeChanged() {
@@ -2092,6 +2164,7 @@ void ShellHost::Update(ui::Context* context) {
       statusbar_.Dirty();
     }
   }
+  ai_dot_.Update(context, AiDotSceneNow());
 }
 
 void ShellHost::NotifyFrameEnd(ui::Context* context) {
@@ -2111,6 +2184,11 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   const double toast_delay = ShellFeedback::SecondsUntilNextFeedbackExpiry(state_, elapsed_ms_);
   if (toast_delay >= 0.0) {
     delay_sec = std::min(delay_sec, toast_delay);
+  }
+
+  // The AI dot's next tuck or idle move: one frame then, nothing in between (its moves are RCSS keyframes).
+  if (const std::optional<int64_t> ai_dot_ms = ai_dot_.MsUntilNext()) {
+    delay_sec = std::min(delay_sec, static_cast<double>(*ai_dot_ms) / 1000.0);
   }
 
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.

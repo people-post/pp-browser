@@ -968,6 +968,30 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+/* Phone AI dot and the Me → AI assistant look previews: full-colour art, drawn as it is (the dot's soft shadow, the
+   third one DESIGN-pp-ui §6 allows, is drawn into its body SVG). */
+.ai-dot svg,
+.ai-look-art svg {
+  image-color: #ffffff;
+}
+
+.ai-look-art {
+  background-color: #f2f2f7;
+  border-color: #f2f2f7;
+}
+
+.ai-look--on .ai-look-art {
+  border-color: #007aff;
+}
+
+.ai-look-name {
+  color: #3c3c4399;
+}
+
+.ai-look--on .ai-look-name {
+  color: #007aff;
+}
+
 .ask-ai-tool,
 .ask-ai-tool:hover,
 .ask-ai-tool:focus,
