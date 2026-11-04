@@ -191,6 +191,8 @@ struct ChatShellState {
   /** Edit Home: the widgets on Home (in order) and the ones that can be added. */
   std::vector<HomeEditRow> home_edit_on;
   std::vector<HomeEditRow> home_edit_off;
+  /** The widget whose handle is being dragged in Edit Home ("" = none): its row is lifted. */
+  ui::String home_edit_dragging;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

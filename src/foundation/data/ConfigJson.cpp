@@ -792,6 +792,11 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
     hidden_widgets.emplace_back(id);
   }
   object.set("home_widgets_hidden", makeArray(std::move(hidden_widgets)));
+  std::vector<Value> widget_order;
+  for (const std::string& id : prefs.home_widgets_order) {
+    widget_order.emplace_back(id);
+  }
+  object.set("home_widgets_order", makeArray(std::move(widget_order)));
   std::vector<Value> starred;
   for (const std::string& id : prefs.starred_contacts) {
     starred.emplace_back(id);
@@ -928,6 +933,14 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     for (const Value& item : hidden->elements) {
       if (auto id = asString(item)) {
         prefs.home_widgets_hidden.push_back(*id);
+      }
+    }
+  }
+  prefs.home_widgets_order.clear();
+  if (const Array* order = object.getArray("home_widgets_order")) {
+    for (const Value& item : order->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_order.push_back(*id);
       }
     }
   }

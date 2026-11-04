@@ -1,20 +1,26 @@
 <!-- Edit Home (DESIGN-pp-ui 8.16, mockup 10-home-widgets B), like iPhone "edit widgets": the widgets on Home, each
-     with a red minus that removes it and its size, and the ones that can be added, each with a green plus. The
-     choices are kept on this device only (profile preferences); a removed widget is not drawn, computed or fetched. -->
+     with a red minus that removes it, its size and a handle on the right to drag it up or down; the ones that can be
+     added, each with a green plus. The choices are kept on this device only (profile preferences); a removed widget
+     is not drawn, computed or fetched. -->
 <div class="ac-page" data-model="shell">
   <div class="sheet-header">
     <p class="sheet-title">{{i18n:home_edit.title}}</p>
   </div>
   <div class="ac-scroll">
-    <p class="text group-head" data-if="home_edit_on.size > 0">{{i18n:home_edit.on_home}}</p>
+    <p class="text group-head" data-if="home_edit_on.size > 0">{{i18n:home_edit.on_home}} · {{i18n:home_edit.drag_hint}}</p>
     <div class="group-card home-edit-card" data-if="home_edit_on.size > 0">
-      <div class="group-row home-edit-row" data-for="row : home_edit_on">
+      <div class="group-row home-edit-row" data-for="row : home_edit_on"
+           data-class-home-edit-row--lifted="row.id == home_edit_dragging">
         <button class="home-edit-toggle" type="button" data-event-click="home_widget_remove(row.id)">
           <span class="home-edit-sign home-edit-sign--remove"><svg src="../icons/v2/minus.svg" width="14" height="14"></svg></span>
         </button>
         <span class="group-row-body">
           <span class="group-row-text">{{row.name}}</span>
           <span class="home-edit-size">{{row.size}}</span>
+          <button class="home-edit-handle" type="button" data-event-dragstart="home_edit_drag_start(row.id)"
+                  data-event-drag="home_edit_drag()" data-event-dragend="home_edit_drag_end()">
+            <svg src="../icons/v2/menu.svg" width="22" height="22"></svg>
+          </button>
         </span>
       </div>
     </div>
@@ -27,6 +33,7 @@
         <span class="group-row-body">
           <span class="group-row-text">{{row.name}}</span>
           <span class="home-edit-size">{{row.size}}</span>
+          <span class="home-edit-handle-gap"></span>
         </span>
       </div>
     </div>

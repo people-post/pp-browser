@@ -1393,6 +1393,7 @@
     "home.calls.latest": "Latest: {call}",
     "home.new_people.count": "new people messaged you",
     "home_edit.on_home": "On Home",
+    "home_edit.drag_hint": "Drag the handle to reorder",
     "home_edit.can_add": "More widgets",
     "home_edit.wide": "Wide",
     "home_edit.small": "Small",

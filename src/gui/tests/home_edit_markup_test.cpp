@@ -34,6 +34,15 @@ TEST(HomeEditMarkupTest, EditHomeIsAPageSheetWithRemoveAndAddRows) {
   EXPECT_TRUE(Has(rml, "home_widget_remove(row.id)"));
   EXPECT_TRUE(Has(rml, "home_widget_add(row.id)"));
   EXPECT_TRUE(Has(rml, "{{row.size}}")) << "wide or small";
+  // A drag handle on each row on Home reorders them; the dragged row is lifted.
+  EXPECT_TRUE(Has(rml, "data-event-dragstart=\"home_edit_drag_start(row.id)\""));
+  EXPECT_TRUE(Has(rml, "data-event-drag=\"home_edit_drag()\""));
+  EXPECT_TRUE(Has(rml, "data-event-dragend=\"home_edit_drag_end()\""));
+  EXPECT_TRUE(Has(rml, "data-class-home-edit-row--lifted=\"row.id == home_edit_dragging\""));
+  const std::string rcss = ReadAsset("themes/components.rcss");
+  const size_t handle = rcss.find(".home-edit-handle {");
+  ASSERT_NE(handle, std::string::npos);
+  EXPECT_NE(rcss.find("drag: drag;", handle), std::string::npos) << "the engine sends it drag events";
 }
 
 TEST(HomeEditMarkupTest, HomeDrawsTheWidgetsInTheUsersOrderAndHasAnEditButton) {

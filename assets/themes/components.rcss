@@ -9009,6 +9009,34 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 20dp;
 }
 
+/* The drag handle: a 44 x 50dp target at the row's end; holding it drags the row (the list does not scroll). */
+.shell-layer-compact .group-row-body .home-edit-handle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 50dp;
+  margin: 0 -12dp 0 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  drag: drag;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-edit-handle svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+/* "More widgets" rows have no handle: the same room, so the sizes line up with the rows above. */
+.shell-layer-compact .home-edit-handle-gap {
+  display: block;
+  flex: none;
+  width: 32dp;
+}
+
 /* The chips row is pinned above the tab bar and does not scroll with the widgets. */
 .shell-layer-compact .home-landing {
   position: relative;

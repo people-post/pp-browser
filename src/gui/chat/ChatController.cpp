@@ -1229,6 +1229,10 @@ void ChatController::ApplyHomeWidgets() {
   for (const std::string& id : ShownHomeWidgets(layout, HomeWidgetDataOf(home_summary_, calls, top.size()))) {
     shell_.home_widgets.push_back({.id = id.c_str(), .wide = HomeWidgetWide(id)});
   }
+  ApplyHomeEditRows(home_edit_drag_ ? *home_edit_drag_ : layout);
+}
+
+void ChatController::ApplyHomeEditRows(const HomeWidgetLayout& layout) {
   shell_.home_edit_on.clear();
   shell_.home_edit_off.clear();
   for (const std::string& id : layout.order) {
@@ -1237,6 +1241,66 @@ void ChatController::ApplyHomeWidgets() {
                     .size = Tr(HomeWidgetWide(id) ? "home_edit.wide" : "home_edit.small").c_str()};
     (layout.Kept(id) ? shell_.home_edit_on : shell_.home_edit_off).push_back(std::move(row));
   }
+  shell_.home_edit_dragging = home_edit_drag_ ? home_edit_drag_id_.c_str() : "";
+}
+
+void ChatController::OnHomeEditDragStart(const std::string& id) {
+  const HomeWidgetLayout layout = HomeLayout();
+  if (!layout.Kept(id)) {
+    return;
+  }
+  home_edit_drag_ = layout;
+  home_edit_drag_id_ = id;
+  ApplyHomeEditRows(*home_edit_drag_);
+  DirtyShell();
+}
+
+void ChatController::OnHomeEditDrag(ui::Event& event) {
+  if (!home_edit_drag_) {
+    return;
+  }
+  // The row whose centre is nearest the finger (the list of rows on Home, in the card the handle is in).
+  ui::Element* card = event.GetCurrentElement();
+  while (card && !card->IsClassSet("home-edit-card")) {
+    card = card->GetParentNode();
+  }
+  if (!card) {
+    return;
+  }
+  const float y = static_cast<float>(event.GetParameter<int>("mouse_y", 0));
+  ui::ElementList rows;
+  card->QuerySelectorAll(rows, ".home-edit-row");
+  int nearest = -1;
+  float nearest_distance = 0.f;
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const float centre =
+        rows[i]->GetAbsoluteOffset(ui::BoxArea::Border).y + rows[i]->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+    const float distance = std::abs(centre - y);
+    if (nearest < 0 || distance < nearest_distance) {
+      nearest = static_cast<int>(i);
+      nearest_distance = distance;
+    }
+  }
+  const std::vector<std::string> on_home = home_edit_drag_->OnHome();
+  const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
+  if (nearest < 0 || at == on_home.end() || static_cast<size_t>(nearest) == static_cast<size_t>(at - on_home.begin())) {
+    return;
+  }
+  home_edit_drag_ = MoveHomeWidget(*home_edit_drag_, home_edit_drag_id_, static_cast<size_t>(nearest));
+  ApplyHomeEditRows(*home_edit_drag_);
+  DirtyShell();
+}
+
+void ChatController::OnHomeEditDragEnd() {
+  if (!home_edit_drag_) {
+    return;
+  }
+  const HomeWidgetLayout dragged = *home_edit_drag_;
+  home_edit_drag_.reset();
+  home_edit_drag_id_.clear();
+  SaveHomeLayout(dragged);
+  ApplyHomeWidgets(); // the lifted row comes down even when the order did not change
+  DirtyShell();
 }
 
 void ChatController::RefreshHomeCalls() {
@@ -1280,7 +1344,7 @@ HomeWidgetLayout ChatController::HomeLayout() const {
     return HomeWidgetLayoutFrom({}, {});
   }
   const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
-  return HomeWidgetLayoutFrom({}, prefs.home_widgets_hidden);
+  return HomeWidgetLayoutFrom(prefs.home_widgets_order, prefs.home_widgets_hidden);
 }
 
 void ChatController::OpenHomeEdit() {
@@ -1305,6 +1369,7 @@ void ChatController::SaveHomeLayout(const HomeWidgetLayout& layout) {
   ProfilePreferences prefs = Store().Snapshot().profile_prefs;
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   prefs.home_widgets_hidden = HiddenHomeWidgets(layout);
+  prefs.home_widgets_order = layout.order;
   if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
     log().warning << "Edit Home: could not save the choice: " << saved.error().message;
     ShowToast(UserFeedback::FailFrom(saved.error()));
@@ -3929,6 +3994,10 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& id) { SaveHomeLayout(RemoveHomeWidget(HomeLayout(), id)); }));
         ctor.BindEventCallback("home_widget_add", DataEvent<std::string>(
             [this](const std::string& id) { SaveHomeLayout(AddHomeWidget(HomeLayout(), id)); }));
+        ctor.BindEventCallback("home_edit_drag_start", DataEvent<std::string>(
+            [this](const std::string& id) { OnHomeEditDragStart(id); }));
+        ctor.BindEventCallback("home_edit_drag", DataEventAt([this](ui::Event& ev) { OnHomeEditDrag(ev); }));
+        ctor.BindEventCallback("home_edit_drag_end", DataEvent([this] { OnHomeEditDragEnd(); }));
         BindSharedEvents(ctor);
       })) {
     return false;

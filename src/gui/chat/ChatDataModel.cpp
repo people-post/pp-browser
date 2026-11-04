@@ -171,6 +171,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("home_brief", &state.home_brief);
   ctor.Bind("home_edit_on", &state.home_edit_on);
   ctor.Bind("home_edit_off", &state.home_edit_off);
+  ctor.Bind("home_edit_dragging", &state.home_edit_dragging);
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
@@ -284,7 +285,7 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "home_date_label");
   for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
                            "home_mentions", "home_mentions_where", "home_new_people", "home_brief", "home_edit_on",
-                           "home_edit_off"}) {
+                           "home_edit_off", "home_edit_dragging"}) {
     DataModelHost::Instance().Dirty("shell", name);
   }
   DataModelHost::Instance().Dirty("shell", "archived_count");

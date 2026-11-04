@@ -56,6 +56,11 @@ std::vector<std::string> HiddenHomeWidgets(const HomeWidgetLayout& layout);
 HomeWidgetLayout RemoveHomeWidget(HomeWidgetLayout layout, const std::string& id);
 /** `id` back on Home, at its end; an unknown id changes nothing. */
 HomeWidgetLayout AddHomeWidget(HomeWidgetLayout layout, const std::string& id);
+/**
+ * `id` moved to place `to` among the widgets on Home (OnHome; past the end: last); the removed ones keep their order
+ * after them. A widget not on Home changes nothing.
+ */
+HomeWidgetLayout MoveHomeWidget(HomeWidgetLayout layout, const std::string& id, size_t to);
 
 /** A saved contact in the Favorites widget. */
 struct HomeFavorite {

@@ -195,6 +195,13 @@ TEST(ConfigJsonTest, ProfilePrefsHomeWidgetsHiddenDefaultsEmptyAndRoundTrips) {
   pbr::ProfilePreferences parsed;
   pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
   EXPECT_EQ(parsed.home_widgets_hidden, (std::vector<std::string>{"brief", "new_people"}));
+
+  // Edit Home's order: absent reads back as none (the default order), a written one comes back as it was.
+  EXPECT_TRUE(loaded.home_widgets_order.empty());
+  edited.home_widgets_order = {"brief", "favorites", "calls"};
+  pbr::ProfilePreferences ordered;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), ordered);
+  EXPECT_EQ(ordered.home_widgets_order, (std::vector<std::string>{"brief", "favorites", "calls"}));
 }
 
 TEST(ConfigJsonTest, ProfilePrefsStarredContactsRoundTripInStarOrder) {

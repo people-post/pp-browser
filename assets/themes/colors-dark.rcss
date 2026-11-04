@@ -2681,6 +2681,15 @@ input.checkbox:checked {
   background-color: #30d158;
 }
 
+.shell-layer-compact .home-edit-handle svg {
+  image-color: #8e8e93;
+}
+
+/* The row being dragged stands out on its card. */
+.shell-layer-compact .home-edit-row--lifted {
+  background-color: #7878803d;
+}
+
 /* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets
    fade into it instead (Apple's widget pages). Other tabs keep the bar as it is. */
 .shell-layer-compact .home-landing {

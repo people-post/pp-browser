@@ -242,6 +242,15 @@ private:
   HomeWidgetLayout HomeLayout() const;
   /** Saves an Edit Home change, redraws Home, and reads / fetches what a widget put back needs. */
   void SaveHomeLayout(const HomeWidgetLayout& layout);
+  /**
+   * Edit Home's drag handles: a press on `id`'s handle lifts its row; while the finger moves the row takes the place
+   * of the row nearest the finger (the list redraws in that order); let go, the order is saved.
+   */
+  void OnHomeEditDragStart(const std::string& id);
+  void OnHomeEditDrag(ui::Event& event);
+  void OnHomeEditDragEnd();
+  /** Edit Home's rows from `layout` (the drag's working order while a handle is held). */
+  void ApplyHomeEditRows(const HomeWidgetLayout& layout);
   void OnToggleArchived();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
@@ -585,6 +594,9 @@ private:
   std::vector<call_queries::RecentCall> home_calls_;
   bool home_calls_reading_ = false;
   bool home_calls_again_ = false;  // asked again while a read ran: read once more when it ends
+  /** The order being dragged in Edit Home (saved when the handle is let go); none while no handle is held. */
+  std::optional<HomeWidgetLayout> home_edit_drag_;
+  std::string home_edit_drag_id_;
   HomeBriefCache home_brief_;
   std::string home_brief_dir_;          // the profile directory the cache was read from
   bool home_brief_fetching_ = false;

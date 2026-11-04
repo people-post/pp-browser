@@ -92,6 +92,20 @@ HomeWidgetLayout AddHomeWidget(HomeWidgetLayout layout, const std::string& id) {
   return layout;
 }
 
+HomeWidgetLayout MoveHomeWidget(HomeWidgetLayout layout, const std::string& id, const size_t to) {
+  std::vector<std::string> on_home = layout.OnHome();
+  const auto it = std::find(on_home.begin(), on_home.end(), id);
+  if (it == on_home.end()) {
+    return layout;
+  }
+  on_home.erase(it);
+  on_home.insert(on_home.begin() + static_cast<std::ptrdiff_t>(std::min(to, on_home.size())), id);
+  const std::vector<std::string> removed = layout.Addable();
+  on_home.insert(on_home.end(), removed.begin(), removed.end());
+  layout.order = std::move(on_home);
+  return layout;
+}
+
 bool IsStrangerChat(const ThreadKind kind, const PeerDisplayLabel& label) {
   return kind == ThreadKind::Direct && !label.contact_id && label.trust != PeerLabelTrust::Contact;
 }
