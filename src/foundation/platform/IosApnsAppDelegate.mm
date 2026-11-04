@@ -128,7 +128,7 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
   // Set before launch finishes so a tap that launched the app is delivered.
   [UNUserNotificationCenter currentNotificationCenter].delegate = g_center_delegate;
   [[NSNotificationCenter defaultCenter]
-      addObserverForName:UIApplicationWillFinishLaunchingNotification
+      addObserverForName:UIApplicationDidFinishLaunchingNotification
                   object:nil
                    queue:nil
               usingBlock:^(NSNotification* /*note*/) {
