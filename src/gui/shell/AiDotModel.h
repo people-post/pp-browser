@@ -37,12 +37,14 @@ struct AiDotScene {
  * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a
  *   check).
  * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
+ * - Float: the mockups' float, drifting gently up and down once for 2.5 s and back at rest (C: floatC, half as far);
+ *   it was a continuous loop there, here it is one timed action (Kenneth 2026-11-04) so nothing runs between them.
  * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
  * then it stays still, asleep, until the next touch), Poke (a tap: it squashes and wobbles, then the panel opens) and
  * Pop (a tap on it tucked: it jumps out, the mockups' squash-and-stretch jump, then the panel opens).
  */
 enum class AiDotIdle {
-  None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke, Pop
+  None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke, Pop, Float
 };
 
 /** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
@@ -135,6 +137,7 @@ public:
   static constexpr int64_t kPokeMs = 600;
   static constexpr int64_t kPokeCalmMs = 450;
   static constexpr int64_t kPopMs = 700;
+  static constexpr int64_t kFloatMs = 2500;
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {
@@ -150,10 +153,10 @@ public:
   static std::span<const AiDotIdle> IdleActions(const AiDotLook look) {
     static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway,   AiDotIdle::Blink, AiDotIdle::Look,  AiDotIdle::Talk,
                                           AiDotIdle::Shy,    AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
-                                          AiDotIdle::Five,   AiDotIdle::Happy, AiDotIdle::Private};
+                                          AiDotIdle::Five,   AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float};
     static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway,  AiDotIdle::Talk,  AiDotIdle::Shy,
                                            AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,
-                                           AiDotIdle::Five,  AiDotIdle::Happy, AiDotIdle::Private};
+                                           AiDotIdle::Five,  AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float};
     return look == AiDotLook::Plain ? std::span<const AiDotIdle>(kPlain) : std::span<const AiDotIdle>(kFace);
   }
 
@@ -200,6 +203,8 @@ public:
       return "poke";
     case AiDotIdle::Pop:
       return "pop";
+    case AiDotIdle::Float:
+      return "float";
     case AiDotIdle::None:
       break;
     }
@@ -277,6 +282,8 @@ public:
       return Calm(look) ? kPokeCalmMs : kPokeMs;
     case AiDotIdle::Pop:
       return kPopMs;
+    case AiDotIdle::Float:
+      return kFloatMs;
     case AiDotIdle::None:
       break;
     }

@@ -71,6 +71,7 @@
          data-class-ai-dot--five="ai_dot_idle == 'five'" data-class-ai-dot--happy="ai_dot_idle == 'happy'"
          data-class-ai-dot--private="ai_dot_idle == 'private'" data-class-ai-dot--sleep="ai_dot_idle == 'sleep'"
          data-class-ai-dot--poke="ai_dot_idle == 'poke'" data-class-ai-dot--pop="ai_dot_idle == 'pop'"
+         data-class-ai-dot--float="ai_dot_idle == 'float'"
          data-class-ai-dot--asleep="ai_dot_asleep"
          data-class-ai-dot--calm="ai_dot_look == 'c' || ai_dot_look == 'd'" data-class-ai-dot--plain="ai_dot_look == 'd'"
          data-class-ai-dot--size-s="ai_dot_size == 's'" data-class-ai-dot--size-l="ai_dot_size == 'l'">

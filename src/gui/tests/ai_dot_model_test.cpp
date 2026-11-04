@@ -200,12 +200,12 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
     const std::set<AiDotIdle> actions(AiDotModel::IdleActions(look).begin(), AiDotModel::IdleActions(look).end());
     EXPECT_EQ(actions, (std::set<AiDotIdle>{AiDotIdle::Sway, AiDotIdle::Blink, AiDotIdle::Look, AiDotIdle::Talk,
                                             AiDotIdle::Shy, AiDotIdle::Wave, AiDotIdle::Listen, AiDotIdle::Think,
-                                            AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private}));
+                                            AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float}));
   }
   const auto plain = AiDotModel::IdleActions(AiDotLook::Plain);
   EXPECT_EQ(std::set<AiDotIdle>(plain.begin(), plain.end()),
             (std::set<AiDotIdle>{AiDotIdle::Sway, AiDotIdle::Talk, AiDotIdle::Shy, AiDotIdle::Wave, AiDotIdle::Listen,
-                                 AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private}))
+                                 AiDotIdle::Think, AiDotIdle::Five, AiDotIdle::Happy, AiDotIdle::Private, AiDotIdle::Float}))
       << "no eyes: no blink or glance";
   for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
     for (const AiDotIdle idle : AiDotModel::IdleActions(look)) {
@@ -219,6 +219,18 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
   EXPECT_EQ(AiDotModel::LookFrom("c"), AiDotLook::Cool);
   EXPECT_EQ(AiDotModel::LookFrom("d"), AiDotLook::Plain);
   EXPECT_EQ(AiDotModel::LookFrom("?"), AiDotLook::TwoEyes);
+}
+
+TEST(AiDotModelTest, TheFloatIsOneTimedActionOfAboutTwoAndAHalfSecondsForEveryLook) {
+  EXPECT_STREQ(AiDotModel::IdleName(AiDotIdle::Float), "float");
+  for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
+    const auto actions = AiDotModel::IdleActions(look);
+    EXPECT_NE(std::find(actions.begin(), actions.end(), AiDotIdle::Float), actions.end());
+    EXPECT_EQ(AiDotModel::IdleLengthMs(AiDotIdle::Float, look), 2500);
+    for (uint32_t roll = 0; roll < 64; ++roll) {
+      EXPECT_NE(AiDotModel::PickIdle(look, AiDotIdle::Float, roll), AiDotIdle::Float) << "never twice in a row";
+    }
+  }
 }
 
 TEST(AiDotModelTest, APickIsNeverTheActionJustPlayed) {
@@ -739,7 +751,7 @@ TEST_F(AiDotKeyframesTest, TheCalmSwayIsAsLongAsTheOther) {
 std::vector<AiDotIdle> AllActions() {
   return {AiDotIdle::Sway,  AiDotIdle::Blink, AiDotIdle::Look,    AiDotIdle::Talk,  AiDotIdle::Shy,
           AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,  AiDotIdle::Five,  AiDotIdle::Happy,
-          AiDotIdle::Private, AiDotIdle::Sleep, AiDotIdle::Poke, AiDotIdle::Pop};
+          AiDotIdle::Private, AiDotIdle::Float, AiDotIdle::Sleep, AiDotIdle::Poke, AiDotIdle::Pop};
 }
 
 /** The dot's look classes as window_shell.rml binds them (calm: C and D; plain: D). */
