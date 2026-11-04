@@ -4,7 +4,8 @@
 FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates \
+            ca-certificates \
+      gdb \
       iproute2 \
       iputils-ping \
       libstdc++6 \
