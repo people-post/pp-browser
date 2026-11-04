@@ -85,9 +85,10 @@ constexpr float kViewportMarginPx = 8.f;
 constexpr float kBarGapDp = 8.f;
 constexpr float kAnchorGapDp = 6.f;
 constexpr float kPopoverEdgeDp = 8.f;
-// The phone's small sheet (Kenneth 2026-11-04, ui-mockups/09-sheets-unify): its height follows the rows, up to about a
-// third of the screen (the page sheets' Small stop, PageSheetModel::kSmallTopRatio); longer lists scroll inside.
-constexpr float kSheetMaxShare = 0.34f;
+// The phone's small sheet (Kenneth 2026-11-04, ui-mockups/09-sheets-unify): its height follows the rows. Short menus
+// stay around a third of the screen; a long one (the message menu with its reactions) may grow to half so its last,
+// red row is not hidden below a scroll; anything longer scrolls inside.
+constexpr float kSheetMaxShare = 0.5f;
 constexpr float kSheetBottomGapDp = 8.f;
 constexpr int kSheetIconDp = 22;
 constexpr int kSheetDeadzonePx = 8;
