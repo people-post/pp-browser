@@ -698,9 +698,10 @@ void ChatController::ShowConfirm(const std::string& title, const std::string& me
 
 void ChatController::ShowConfirmWithCheckbox(const std::string& title, const std::string& message,
                                              const std::string& checkbox_label, const bool checkbox_default,
-                                             std::function<void(bool, bool)> on_result) {
+                                             std::function<void(bool, bool)> on_result, const std::string& ok_label) {
   if (shell_feedback_.show_confirm_with_checkbox) {
-    shell_feedback_.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
+    shell_feedback_.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result),
+                                               ok_label);
   }
 }
 
@@ -1481,7 +1482,7 @@ void ChatController::OpenHomeBrief(const int index) {
     return;
   }
   if (!top[static_cast<size_t>(index)].url.empty()) {
-    ConfirmAndOpenUrl(top[static_cast<size_t>(index)].url);
+    OpenTrustedUrl(top[static_cast<size_t>(index)].url); // our own brief feed
     return;
   }
   SendSuggestionAction("articles");
@@ -2467,7 +2468,21 @@ void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::str
   if (!url) {
     return;
   }
-  ConfirmAndOpenUrl(*url);
+  OpenTrustedUrl(*url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+}
+
+bool ChatController::MessageFromAssistant(const std::string& thread_id, const std::string& entry_id) {
+  if (!messaging_ready_ || !facade_) {
+    return false;
+  }
+  auto found = facade_->GetMessage(thread_id, entry_id);
+  return found && found->has_value() && (*found)->sender_contact_id == kAiAssistantContactId;
+}
+
+void ChatController::OpenTrustedUrl(const std::string& url) {
+  if (IsOpenableUrl(url)) {
+    (void)PlatformOpenUrl(url);
+  }
 }
 
 void ChatController::ConfirmAndOpenUrl(const std::string& url) {
@@ -2478,15 +2493,18 @@ void ChatController::ConfirmAndOpenUrl(const std::string& url) {
     (void)PlatformOpenUrl(url);
     return;
   }
-  // The opt-out lives in memory only: the next launch asks again.
-  ShowConfirmWithCheckbox(Tr("chat.open_link_title", {{"host", UrlHost(url)}}), Tr("chat.open_link_body", {{"url", url}}),
-                          Tr("chat.open_link_skip"), false, [this, url](const bool ok, const bool skip) {
+  // One fixed question and the host only, never the whole address (Kenneth 2026-11-04). The opt-out lives in
+  // memory only: the next launch asks again.
+  ShowConfirmWithCheckbox(Tr("chat.open_link_title"), Tr("chat.open_link_from", {{"host", UrlHost(url)}}),
+                          Tr("chat.open_link_skip"), false,
+                          [this, url](const bool ok, const bool skip) {
                             if (!ok) {
                               return;
                             }
                             skip_link_confirm_this_run_ = skip;
                             (void)PlatformOpenUrl(url);
-                          });
+                          },
+                          Tr("chat.open_link_open"));
 }
 
 void ChatController::RestoreWorkingSetsFromActiveThread() {
@@ -2559,8 +2577,14 @@ void ChatController::HandleLocalActionIn(const std::string& thread_id, const std
       return;
     }
     if (action_type && *action_type == "open_url") {
-      // Same guard as open_chat_link: https only, and the user confirms the host first.
-      ConfirmAndOpenUrl(action_json->getString("url").value_or(""));
+      // An article card's button: straight to the browser when the AI assistant wrote it (our own feed), else the
+      // host is confirmed first. https only either way.
+      const std::string url = action_json->getString("url").value_or("");
+      if (MessageFromAssistant(thread_id, entry_id)) {
+        OpenTrustedUrl(url);
+      } else {
+        ConfirmAndOpenUrl(url);
+      }
       return;
     }
     if (!action_type && action_json && !action_json->getString("tool").value_or("").empty() && chat_.thread_is_ai) {

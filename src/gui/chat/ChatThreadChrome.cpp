@@ -63,7 +63,7 @@ void ShowConfirmWithCheckbox(const ShellFeedbackPorts& ports, const std::string&
                              const std::string& checkbox_label, const bool checkbox_default,
                              std::function<void(bool, bool)> on_result) {
   if (ports.show_confirm_with_checkbox) {
-    ports.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
+    ports.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result), {});
   }
 }
 

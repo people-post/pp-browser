@@ -351,8 +351,14 @@ private:
   void OpenChatLink(const std::string& entry_id, int link_index) { OpenChatLinkIn(ActiveThreadId(), entry_id, link_index); }
   /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
   void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
-  /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
+  /** A link someone sent in a chat: opens an https URL after the user confirms its host; the dialog offers to stop
+   *  asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
+  /** A link from our own feed (Home's briefs, an AI answer's article or source): opens an https URL with no prompt
+   *  (Kenneth 2026-11-04). The caller says where it came from; nothing is matched on the URL itself. */
+  void OpenTrustedUrl(const std::string& url);
+  /** Whether message `entry_id` of `thread_id` was written by the AI assistant (false when it cannot be read). */
+  bool MessageFromAssistant(const std::string& thread_id, const std::string& entry_id);
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions() override;
   void UpdateThreadChrome();
@@ -455,7 +461,7 @@ private:
   void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
     OpenChatLinkIn(thread_id, entry_id, link_index);
   }
-  void AskAiOpenUrl(const std::string& url) override { ConfirmAndOpenUrl(url); }
+  void AskAiOpenUrl(const std::string& url) override { OpenTrustedUrl(url); } // a one-off AI answer's link
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
   void AskAiToast(const std::string& text) override { ShowToast(text); }
@@ -516,7 +522,8 @@ private:
   void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
                    bool destructive = false) override;
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
-                               bool checkbox_default, std::function<void(bool, bool)> on_result);
+                               bool checkbox_default, std::function<void(bool, bool)> on_result,
+                               const std::string& ok_label = {});
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
                   std::function<void(bool, std::string)> on_result) override;
 

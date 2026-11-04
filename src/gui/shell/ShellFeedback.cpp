@@ -157,12 +157,12 @@ void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, con
 
 void ShellFeedback::ShowConfirmWithCheckbox(ShellState& state, const std::string& title, const std::string& message,
                                             const std::string& checkbox_label, const bool checkbox_default,
-                                            std::function<void(bool, bool)> on_result) {
+                                            std::function<void(bool, bool)> on_result, const std::string& ok_label) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
   state.dialog.title = ui::String(title.c_str());
   state.dialog.message = ui::String(message.c_str());
-  state.dialog.ok_label = {};
+  state.dialog.ok_label = ui::String(ok_label.c_str());
   state.dialog.show_cancel = true;
   state.dialog.show_checkbox = true;
   state.dialog.checkbox_label = ui::String(checkbox_label.c_str());

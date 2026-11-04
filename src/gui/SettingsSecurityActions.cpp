@@ -379,7 +379,8 @@ void SettingsSecurityActions::ResetProfile() {
           return;
         }
         PerformResetProfile();
-      });
+      },
+      {});
 }
 
 void SettingsSecurityActions::PerformResetProfile() {
