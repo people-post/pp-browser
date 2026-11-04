@@ -250,6 +250,19 @@ std::string ThreadIdForDirect(const int index) {
 
 constexpr const char* kAiThreadId = "demo-thread-ai";
 
+/** A direct chat with someone who is not a contact, unread: Home's "New people" widget shows it. */
+constexpr const char* kStrangerThreadId = "demo-thread-stranger";
+constexpr const char* kStrangerName = "林小雨";
+constexpr const char* kStrangerAccount = "demo-acct-stranger-01";
+
+const std::vector<Line>& StrangerLines() {
+  static const std::vector<Line> lines = {
+      {Who::Them, "你好，我是读书会的小雨，在群里看到你的", {0, 9, 2}},
+      {Who::Them, "想问问上次你推荐的那本书叫什么名字？", {0, 9, 3}},
+  };
+  return lines;
+}
+
 /** Not secret and not a real key: fixed, so reseeding produces byte-identical rows. Only passes the format checks. */
 ByteVector FixedBytes(const size_t size, const uint8_t seed) {
   ByteVector out(size);
@@ -511,6 +524,23 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
     }
   }
 
+  {
+    Thread thread = ThreadFor(kStrangerThreadId, ThreadKind::Direct, kStrangerName, {}, StrangerLines(), 2, deps);
+    thread.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+    thread.peer_identity_value = kStrangerAccount;
+    if (auto put = deps.threads.UpsertThread(thread); !put) {
+      return put.error();
+    }
+    if (auto put = PutMessages(deps, kStrangerThreadId, "demo-msg-stranger", StrangerLines(), {kStrangerAccount},
+                               *landscape, *portrait);
+        !put) {
+      return put.error();
+    }
+    if (auto put = deps.threads.UpsertThread(thread); !put) {
+      return put.error();
+    }
+  }
+
   int group_no = 0;
   for (const DemoGroup& group : Groups()) {
     ++group_no;
@@ -663,6 +693,19 @@ std::string DemoAskAiAnswer(const std::string& question) {
          "- **On or off**: what changes either way;\n"
          "- **When to change it**: the default suits most people, and when it does not.\n\n"
          "Still unsure? Ask a follow-up, or tap \"Ask PP Support\" below.";
+}
+
+std::vector<DemoHeadline> DemoBriefHeadlines(const bool chinese) {
+  if (chinese) {
+    return {{"本周油价小幅回落，部分地区每升降一毛", "https://www.example.com/news/oil", 60},
+            {"北方多地迎来今冬首场降雪，出行注意安全", "https://news.example.org/weather/snow", 150},
+            {"新款手机续航测试结果出炉：最长超过两天", "https://tech.example.net/phones/battery", 26 * 60},
+            {"本地图书馆周末延长开放时间", "https://www.example.com/city/library", 30 * 60}};
+  }
+  return {{"Fuel prices ease slightly this week", "https://www.example.com/news/oil", 60},
+          {"First snow of the winter reaches the north", "https://news.example.org/weather/snow", 150},
+          {"New phones tested: the best battery lasts over two days", "https://tech.example.net/phones/battery", 26 * 60},
+          {"City library opens longer at weekends", "https://www.example.com/city/library", 30 * 60}};
 }
 
 std::string DemoPeerReply(const std::string& sent) {

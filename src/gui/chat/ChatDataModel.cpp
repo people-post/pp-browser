@@ -133,12 +133,20 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     session_handle.RegisterMember("icon_src", &SessionDisplayRow::icon_src);
   }
   ctor.RegisterArray<std::vector<SessionDisplayRow>>();
+  if (auto brief_handle = ctor.RegisterStruct<HomeBriefRow>()) {
+    brief_handle.RegisterMember("title", &HomeBriefRow::title);
+    brief_handle.RegisterMember("meta", &HomeBriefRow::meta);
+  }
+  ctor.RegisterArray<std::vector<HomeBriefRow>>();
   ctor.Bind("sessions", &state.sessions);
   ctor.Bind("home_date_label", &state.home_date_label);
   ctor.Bind("home_unread", &state.home_unread);
   ctor.Bind("home_all_label", &state.home_all_label);
-  ctor.Bind("home_new_contacts", &state.home_new_contacts);
   ctor.Bind("home_new_contacts_label", &state.home_new_contacts_label);
+  ctor.Bind("home_brief", &state.home_brief);
+  ctor.Bind("home_show_messages", &state.home_show_messages);
+  ctor.Bind("home_show_new_contacts", &state.home_show_new_contacts);
+  ctor.Bind("home_show_brief", &state.home_show_brief);
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
@@ -252,8 +260,11 @@ void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "home_date_label");
   DataModelHost::Instance().Dirty("shell", "home_unread");
   DataModelHost::Instance().Dirty("shell", "home_all_label");
-  DataModelHost::Instance().Dirty("shell", "home_new_contacts");
   DataModelHost::Instance().Dirty("shell", "home_new_contacts_label");
+  DataModelHost::Instance().Dirty("shell", "home_brief");
+  DataModelHost::Instance().Dirty("shell", "home_show_messages");
+  DataModelHost::Instance().Dirty("shell", "home_show_new_contacts");
+  DataModelHost::Instance().Dirty("shell", "home_show_brief");
   DataModelHost::Instance().Dirty("shell", "archived_count");
   DataModelHost::Instance().Dirty("shell", "showing_archived");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");

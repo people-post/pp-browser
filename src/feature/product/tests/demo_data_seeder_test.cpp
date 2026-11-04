@@ -158,7 +158,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
       }
     }
   }
-  EXPECT_EQ(direct, 10u);
+  EXPECT_EQ(direct, 11u);  // ten with contacts, one with someone who is not a contact (Home's New people)
   EXPECT_EQ(group, 2u);
   EXPECT_EQ(ai, 1u);
   EXPECT_TRUE(unread.count(0) && unread.count(3) && unread.count(120));

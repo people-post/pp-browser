@@ -5,6 +5,8 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "feature/presenters/ChatPresenter.h"
+#include "feature/presenters/HomeBrief.h"
+#include "feature/presenters/HomeToday.h"
 #include "feature/presenters/ThreadSearchSession.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -207,8 +209,21 @@ private:
                      bool show_error_text = false);
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
-  /** The phone Today page's date line, "New messages" rows and "New contacts" count, from the same list. */
+  /** The phone Today page's date line, "New messages" rows and "New people" count, from the same list. */
   void ApplyHomeToday(const ChatListScreen& list);
+  /** Which Today widgets show, and the briefs' rows, from the last summary and the briefs cache. */
+  void ApplyHomeWidgets();
+  /**
+   * Phones, Home shown: reads the profile's briefs cache once and, when it is over 3 hours old (or for another
+   * language), fetches the article feed again on a worker (DESIGN-pp-ui 8.16).
+   */
+  void RefreshHomeBrief();
+  /** The article feed of the UI language ("cn" / "en"). */
+  static std::string HomeBriefFeed();
+  /** A tap on a headline: its article through the usual open-link confirm; with no link, the feed in the AI chat. */
+  void OpenHomeBrief(int index);
+  /** A tap on the "New people" line: the first chat with unread messages from someone who is not a contact. */
+  void OpenHomeNewPeople();
   void OnToggleArchived();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
@@ -545,6 +560,12 @@ private:
     }
   }
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
+  // Phone Today page (DESIGN-pp-ui 8.16): the last unread summary and the Today's briefs cache.
+  HomeTodaySummary home_summary_;
+  HomeBriefCache home_brief_;
+  std::string home_brief_dir_;          // the profile directory the cache was read from
+  bool home_brief_fetching_ = false;
+  int64_t home_brief_failed_ms_ = 0;    // the last fetch that failed; 0 none
   bool local_action_in_flight_ = false; // a row action (Add / Message) is waiting on its directory lookup
   bool focus_draft_after_sync_ = false;
   std::optional<int64_t> last_escape_ms_; // a second Escape within kDoubleEscapeWindowMs stops the turn

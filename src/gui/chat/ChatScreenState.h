@@ -131,6 +131,13 @@ struct ChatScreenState {
   ui::String queued_note;   // the line under it: why it waits ("Up to 3 chats answer at once — queued")
 };
 
+/** One headline of the phone Today page's "Today's briefs" widget. */
+struct HomeBriefRow {
+  ui::String title;
+  /** "site · 08:00". */
+  ui::String meta;
+};
+
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */
 struct ChatShellState {
   std::vector<SessionDisplayRow> sessions;
@@ -142,12 +149,18 @@ struct ChatShellState {
   bool sessions_more = false;
   /** The search box above the list: rows are kept when their title or preview contains it. */
   ui::String sessions_query;
-  /** Phone Today page: the date line, the first unread chats ("New messages") and the "New contacts" count. */
+  /**
+   * Phone Today page: the date line, the first unread chats ("New messages"), the "New people" line and the first
+   * headlines ("Today's briefs"). A widget shows only when it has something (home_show_*).
+   */
   ui::String home_date_label;
   std::vector<SessionDisplayRow> home_unread;
   ui::String home_all_label;
-  int home_new_contacts = 0;
   ui::String home_new_contacts_label;
+  std::vector<HomeBriefRow> home_brief;
+  bool home_show_messages = false;
+  bool home_show_new_contacts = false;
+  bool home_show_brief = false;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

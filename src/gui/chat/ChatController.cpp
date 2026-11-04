@@ -29,6 +29,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/NotificationBody.h"
+#include "feature/ai/ArticleFeedFetch.h"
 #include "feature/presenters/HomeToday.h"
 #include "feature/presenters/SessionListText.h"
 #include "feature/presenters/SessionMenu.h"
@@ -755,6 +756,7 @@ void ChatController::OnHomeTabActivated() {
   RefreshFromMessaging();
   ShellSyncLayout();
   NotifySurfaceChanged();
+  RefreshHomeBrief();
 }
 
 void ChatController::OnSessionsTabActivated() {
@@ -1133,14 +1135,139 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
   if (list.showing_archived) {
     return;
   }
-  const HomeTodaySummary summary = SummarizeHomeToday(list.rows);
+  home_summary_ = SummarizeHomeToday(list.rows);
   shell_.home_unread.clear();
-  for (const ChatSessionRow& from : summary.unread) {
+  for (const ChatSessionRow& from : home_summary_.unread) {
     shell_.home_unread.push_back(ToSessionDisplayRow(from));
   }
-  shell_.home_all_label = Tr("home.all_count", {{"count", std::to_string(summary.unread_total)}}).c_str();
-  shell_.home_new_contacts = summary.new_contacts;
-  shell_.home_new_contacts_label = Tr("home.new_contacts_row", {{"count", std::to_string(summary.new_contacts)}}).c_str();
+  shell_.home_all_label = Tr("home.all_count", {{"count", std::to_string(home_summary_.unread_total)}}).c_str();
+  shell_.home_new_contacts_label =
+      Tr("home.new_contacts_row", {{"count", std::to_string(home_summary_.new_contacts)}}).c_str();
+  ApplyHomeWidgets();
+}
+
+void ChatController::ApplyHomeWidgets() {
+  const int64_t now_ms = util::NowUnixMs();
+  const std::vector<HomeBriefItem> top = HomeBriefTop(home_brief_, HomeBriefFeed());
+  shell_.home_brief.clear();
+  for (const HomeBriefItem& item : top) {
+    shell_.home_brief.push_back({.title = item.title.c_str(), .meta = HomeBriefMeta(item, now_ms).c_str()});
+  }
+  const HomeWidgetsShown shown = ShownHomeWidgets(home_summary_, top.size());
+  shell_.home_show_messages = shown.messages;
+  shell_.home_show_new_contacts = shown.new_contacts;
+  shell_.home_show_brief = shown.brief;
+}
+
+std::string ChatController::HomeBriefFeed() {
+  return ArticleFeedName(LocalizationService::Instance().ResolvedLanguage());
+}
+
+void ChatController::RefreshHomeBrief() {
+  // The widgets exist only on phones; the desktop's Home is the centred composer.
+  if (!facade_ || ChromeSnapshot().layout_mode != LayoutMode::Compact) {
+    return;
+  }
+  const std::string profile_dir = facade_->ProfileDataDir();
+  if (profile_dir.empty()) {
+    return;
+  }
+  if (profile_dir != home_brief_dir_) {
+    home_brief_dir_ = profile_dir;
+    home_brief_ = LoadHomeBriefCache(profile_dir);
+    home_brief_failed_ms_ = 0;
+    ApplyHomeWidgets();
+    DirtyShell();
+  }
+  const std::string feed = HomeBriefFeed();
+  const int64_t now_ms = util::NowUnixMs();
+  // The demo app has no network: DemoDataSeeder's made-up headlines stand in for the feed.
+  if constexpr (kUiDemoBuild) {
+    if (home_brief_.feed != feed) {
+      // As the feed would send them, so the items go through the same reading as a real answer.
+      std::vector<Value> articles;
+      for (const DemoHeadline& line : DemoBriefHeadlines(feed == "cn")) {
+        Object article;
+        article.set("title", std::string(line.title));
+        article.set("link_to", std::string(line.url));
+        article.set("created_at", now_ms - int64_t{line.minutes_ago} * 60 * 1000);
+        articles.push_back(ObjectValue(std::move(article)));
+      }
+      Object doc;
+      doc.set("articles", ArrayValue(std::move(articles)));
+      home_brief_ = {.fetched_at_ms = now_ms,
+                     .feed = feed,
+                     .items = ParseHomeBriefArticles(DumpJson(doc)).value_or(std::vector<HomeBriefItem>{})};
+      ApplyHomeWidgets();
+      DirtyShell();
+    }
+    return;
+  }
+  if (!ShouldFetchHomeBrief(/*widget_on=*/true, home_brief_fetching_, home_brief_failed_ms_, home_brief_, feed,
+                            now_ms)) {
+    return;
+  }
+  home_brief_fetching_ = true;
+  const AppConfig config = Store().Snapshot().config;
+  const Object arguments = ArticleFeedArguments(LocalizationService::Instance().ResolvedLanguage());
+  // The worker's answer: the new cache, or why there is none.
+  using Fetched = std::pair<std::optional<HomeBriefCache>, std::string>;
+  AppRuntime::PostWorkerAndReplyOnUI<Fetched>(
+      WorkerLane::Background,
+      [config, arguments, feed, profile_dir]() -> Fetched {
+        auto answer = FetchArticleFeed(config, arguments);
+        if (!answer) {
+          return {std::nullopt, answer.error().message};
+        }
+        auto items = ParseHomeBriefArticles(*answer);
+        if (!items) {
+          return {std::nullopt, "the feed answer is not an article list"};
+        }
+        HomeBriefCache cache;
+        cache.fetched_at_ms = util::NowUnixMs();
+        cache.feed = feed;
+        cache.items = std::move(*items);
+        std::string note;
+        if (auto saved = SaveHomeBriefCache(profile_dir, cache); !saved) {
+          note = "cache not saved: " + saved.error().message;
+        }
+        return {std::move(cache), std::move(note)};
+      },
+      [this, profile_dir](Fetched fetched) {
+        home_brief_fetching_ = false;
+        if (!fetched.second.empty()) {
+          log().info << "Home briefs: " << fetched.second;
+        }
+        if (profile_dir != home_brief_dir_) {
+          return; // another profile is open now
+        }
+        if (!fetched.first) {
+          home_brief_failed_ms_ = util::NowUnixMs();
+          return;
+        }
+        home_brief_failed_ms_ = 0;
+        home_brief_ = std::move(*fetched.first);
+        ApplyHomeWidgets();
+        DirtyShell();
+      });
+}
+
+void ChatController::OpenHomeBrief(const int index) {
+  const std::vector<HomeBriefItem> top = HomeBriefTop(home_brief_, HomeBriefFeed());
+  if (index < 0 || static_cast<size_t>(index) >= top.size()) {
+    return;
+  }
+  if (!top[static_cast<size_t>(index)].url.empty()) {
+    ConfirmAndOpenUrl(top[static_cast<size_t>(index)].url);
+    return;
+  }
+  SendSuggestionAction("articles");
+}
+
+void ChatController::OpenHomeNewPeople() {
+  if (!home_summary_.first_stranger_thread_id.empty()) {
+    OnSelectThread(home_summary_.first_stranger_thread_id);
+  }
 }
 
 void ChatController::OnMessagesScroll() {
@@ -3607,6 +3734,9 @@ bool ChatController::Setup(ui::Context* context) {
         }));
         ctor.BindEventCallback("select_thread", DataEvent<std::string>(
             [this](const std::string& thread_id) { OnSelectThread(thread_id); }));
+        ctor.BindEventCallback("home_open_brief", DataEvent<int>([this](const int index) { OpenHomeBrief(index); }));
+        ctor.BindEventCallback("home_brief_all", DataEvent([this] { SendSuggestionAction("articles"); }));
+        ctor.BindEventCallback("home_open_new_people", DataEvent([this] { OpenHomeNewPeople(); }));
         BindSharedEvents(ctor);
       })) {
     return false;

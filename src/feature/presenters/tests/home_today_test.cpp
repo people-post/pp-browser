@@ -41,6 +41,31 @@ TEST(HomeTodayTest, NewContactsCountUnreadChatsWithStrangersOnly) {
   EXPECT_EQ(summary.new_contacts, 2);
 }
 
+TEST(HomeTodayTest, NewPeopleOpensTheFirstStrangerChatInListOrder) {
+  const HomeTodaySummary summary =
+      SummarizeHomeToday({Row("friend", 3), Row("stranger-read", 0, true), Row("s1", 1, true), Row("s2", 4, true)});
+  EXPECT_EQ(summary.new_contacts, 2);
+  EXPECT_EQ(summary.first_stranger_thread_id, "s1");
+  EXPECT_TRUE(SummarizeHomeToday({Row("friend", 3)}).first_stranger_thread_id.empty());
+}
+
+TEST(HomeTodayTest, AWidgetWithNothingToShowIsHidden) {
+  const HomeWidgetsShown none = ShownHomeWidgets(SummarizeHomeToday({Row("a", 0)}), 0);
+  EXPECT_FALSE(none.messages);
+  EXPECT_FALSE(none.new_contacts);
+  EXPECT_FALSE(none.brief);
+
+  const HomeWidgetsShown friends_only = ShownHomeWidgets(SummarizeHomeToday({Row("friend", 2)}), 0);
+  EXPECT_TRUE(friends_only.messages);
+  EXPECT_FALSE(friends_only.new_contacts) << "no unread chat from a stranger";
+  EXPECT_FALSE(friends_only.brief) << "no headlines";
+
+  const HomeWidgetsShown all = ShownHomeWidgets(SummarizeHomeToday({Row("s", 1, true)}), 3);
+  EXPECT_TRUE(all.messages);
+  EXPECT_TRUE(all.new_contacts);
+  EXPECT_TRUE(all.brief);
+}
+
 TEST(HomeTodayTest, ContactsAndBlockedPeopleAreNotStrangers) {
   PeerDisplayLabel contact;
   contact.trust = PeerLabelTrust::Contact;

@@ -16,6 +16,9 @@ HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows) {
     }
     summary.unread_total += row.unread_count;
     if (row.from_stranger) {
+      if (summary.new_contacts == 0) {
+        summary.first_stranger_thread_id = row.id;
+      }
       ++summary.new_contacts;
     }
     if (summary.unread.size() < kHomeUnreadRows) {
@@ -23,6 +26,14 @@ HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows) {
     }
   }
   return summary;
+}
+
+HomeWidgetsShown ShownHomeWidgets(const HomeTodaySummary& summary, const size_t brief_items) {
+  HomeWidgetsShown shown;
+  shown.messages = !summary.unread.empty();
+  shown.new_contacts = summary.new_contacts > 0;
+  shown.brief = brief_items > 0;
+  return shown;
 }
 
 std::string HomeDateLabel(const std::tm& now) {

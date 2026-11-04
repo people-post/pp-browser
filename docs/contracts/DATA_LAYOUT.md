@@ -48,6 +48,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 2: local + remote + overrides{}; v2 = remarks that copied the nickname are cleared once on load); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
+  home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
+                            # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
+                            # 3 h old while the widget is on; device-only, never synced; optional
   threads/
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
                             # restart_pending: a public session kept through Reset chats starts its next epoch on the next send — additive);

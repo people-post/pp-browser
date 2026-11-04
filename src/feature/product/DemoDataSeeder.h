@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -17,8 +18,8 @@ namespace pbr {
 class ConversationsHub;
 
 /**
- * Fixed fake data for the UI demo app (kUiDemoBuild, DEV/PLAN-ui-demo-data.md): 12 contacts, 10 direct chats, 2 groups
- * and one AI chat, so every screen can be compared with the design with long names, long messages, unread counts,
+ * Fixed fake data for the UI demo app (kUiDemoBuild, DEV/PLAN-ui-demo-data.md): 12 contacts, 10 direct chats and one
+ * unread chat with someone who is not a contact, 2 groups and one AI chat, so every screen can be compared with the design with long names, long messages, unread counts,
  * a quote reply and two pictures on show. Always compiled and covered by the normal build's tests; only the app's
  * ready callback calls it, and only when kUiDemoBuild.
  *
@@ -75,6 +76,15 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub);
  * the panel's error state. Chinese when the question has CJK text, else English.
  */
 std::string DemoAskAiAnswer(const std::string& question);
+
+/** A made-up headline for Home's Today's briefs widget in the demo app (it has no network). */
+struct DemoHeadline {
+  const char* title;
+  const char* url;
+  /** Published this many minutes before now. */
+  int minutes_ago;
+};
+std::vector<DemoHeadline> DemoBriefHeadlines(bool chinese);
 
 /**
  * The demo app has no peers: a message sent in a direct or group chat gets this short reply from the other side, so

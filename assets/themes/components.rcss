@@ -8686,28 +8686,16 @@ textarea:composing ~ .prompt-composer-label,
   margin-bottom: -1dp;
 }
 
-.shell-layer-compact .home-friend-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8dp;
-  min-height: 60dp;
-  padding: 0 16dp;
-  box-sizing: border-box;
-}
-
-.shell-layer-compact .home-friend-text {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: 17dp;
-  line-height: 22dp;
-}
-
+/* "View" at the end of the New people row (the whole row is the target). */
 .shell-layer-compact .home-friend-view {
   flex-shrink: 0;
-  height: 44dp;
   font-size: 17dp;
+}
+
+/* "See all" beside a widget's title: a 44dp-tall target that does not push the title row apart. */
+.shell-layer-compact .home-widget-more {
+  margin: -11dp 0;
+  padding: 11dp 0 11dp 12dp;
 }
 
 /* The chips row is pinned above the tab bar and does not scroll with the widgets. */

@@ -15,7 +15,7 @@
   <div class="home-scroll root-scroll" data-model="shell">
     <p class="home-date">{{home_date_label}}</p>
     <p class="large-title">{{i18n:home.title}}</p>
-    <div class="home-widget" data-if="home_unread.size > 0">
+    <div class="home-widget" data-if="home_show_messages">
       <div class="home-widget-head row">
         <p class="home-widget-title">{{i18n:home.new_messages}}</p>
         <button class="home-widget-more" type="button" data-model="window"
@@ -64,16 +64,37 @@
         </div>
       </div>
     </div>
-    <div class="home-widget" data-if="home_new_contacts > 0">
+    <!-- Unread chats from people who are not contacts: only how many; the tap opens the first of them. -->
+    <div class="home-widget" data-if="home_show_new_contacts">
       <div class="home-widget-head row">
         <p class="home-widget-title">{{i18n:home.new_contacts}}</p>
       </div>
-      <div class="home-card">
-        <div class="home-friend-row row">
-          <p class="home-friend-text">{{home_new_contacts_label}}</p>
-          <button class="home-friend-view" type="button" data-model="window"
-                  data-event-click="select_nav_tab('contacts')">{{i18n:home.view}}</button>
-        </div>
+      <div class="group-card home-card">
+        <button class="group-row" type="button" data-event-click="home_open_new_people()">
+          <span class="group-row-body">
+            <span class="group-row-text">{{home_new_contacts_label}}</span>
+            <span class="home-friend-view">{{i18n:home.view}}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+    <!-- The first three headlines of the article feed (cached, refreshed when over 3 hours old); "See all" shows the
+         feed in the AI chat like the Latest briefs chip. -->
+    <div class="home-widget" data-if="home_show_brief">
+      <div class="home-widget-head row">
+        <p class="home-widget-title">{{i18n:home.brief}}</p>
+        <button class="home-widget-more" type="button" data-event-click="home_brief_all()">{{i18n:home.see_all}}</button>
+      </div>
+      <div class="group-card home-card">
+        <button class="group-row" type="button" data-for="item, item_index : home_brief"
+                data-event-click="home_open_brief(item_index)">
+          <span class="group-row-body">
+            <span class="group-row-label">
+              <span class="group-row-text">{{item.title}}</span>
+              <span class="group-row-sub" data-if="item.meta != ''">{{item.meta}}</span>
+            </span>
+          </span>
+        </button>
       </div>
     </div>
   </div>

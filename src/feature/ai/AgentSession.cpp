@@ -1,5 +1,6 @@
 #include "feature/ai/AgentSession.h"
 #include "feature/ai/AiTurnPool.h"
+#include "feature/ai/ArticleFeedFetch.h"
 #include "foundation/platform/Platform.h"
 
 #include "lib/ai/AppActionClassifier.h"
@@ -23,9 +24,7 @@
 #include "lib/ai/conversation/TurnCoordinator.h"
 #include "foundation/error/AppError.h"
 #include "lib/ai/mcp/McpClient.h"
-#include "lib/net/HttpClient.h"
 
-#include <map>
 #include "lib/ai/mcp/McpRuntime.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
@@ -2048,14 +2047,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
 
     const AppConfig defaults = Config::DefaultAppConfig();
-    McpClient::SetHttpPost([](const std::string& url, const std::string& body,
-                              const std::map<std::string, std::string>& headers, const long timeout_s) {
-      HttpTimeout timeout;
-      if (timeout_s > 0) {
-        timeout.total_s = timeout_s;
-      }
-      return HttpClient::Post(url, body, headers, kMaxHttpClientBodyBytes, timeout);
-    });
+    WireMcpHttpPost();
     state->mcp.Start(state->config, defaults);
 
     std::vector<std::string> custom_prefixes;
