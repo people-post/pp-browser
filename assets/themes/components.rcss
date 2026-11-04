@@ -1454,14 +1454,26 @@ select selectbox option {
   pointer-events: none;
 }
 
+/* Me → AI assistant → Assistant size (AiDotModel::SizeDp): small 52dp, medium 64dp (default), large 76dp. The box is
+   also what takes the touch, so the hit area follows the size. */
 .ai-dot {
   display: none;
   position: absolute;
   left: 0dp;
   top: 0dp;
-  width: 56dp;
-  height: 56dp;
+  width: 64dp;
+  height: 64dp;
   pointer-events: auto;
+}
+
+.ai-dot--size-s {
+  width: 52dp;
+  height: 52dp;
+}
+
+.ai-dot--size-l {
+  width: 76dp;
+  height: 76dp;
 }
 
 .ai-dot--shown {
@@ -1469,23 +1481,24 @@ select selectbox option {
 }
 
 /* Sways from near its feet. The layers (body with its baked-in shadow, back eyes, front eyes) share one square
-   viewBox with 4dp of room round the 56dp mascot for the shadow, so they are drawn 64dp wide at -4dp. The shadow is in
-   the SVG (rasterized once), not an RCSS filter: a filter renders an extra layer every frame the dot is drawn. */
+   viewBox with room round the mascot for the shadow (64 of its 900 units on each side), so they are drawn 1028/900 of
+   the dot wide, 64/900 of it out, at every size. The shadow is in the SVG (rasterized once), not an RCSS filter: a
+   filter renders an extra layer every frame the dot is drawn. */
 .ai-dot-figure {
   position: absolute;
   top: 0;
   left: 0;
-  width: 56dp;
-  height: 56dp;
+  width: 100%;
+  height: 100%;
   transform-origin: 50% 85%;
 }
 
 .ai-dot-layer {
   position: absolute;
-  top: -4dp;
-  left: -4dp;
-  width: 64dp;
-  height: 64dp;
+  top: -7.1111%;
+  left: -7.1111%;
+  width: 114.2222%;
+  height: 114.2222%;
 }
 
 /* Each pair of eyes blinks about its own row (front y 540, back y 296 of the -24–1004 viewBox). */

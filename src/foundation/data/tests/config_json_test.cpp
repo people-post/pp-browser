@@ -182,33 +182,37 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
 }
 
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
-  // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, right edge, 600 down its band unless written otherwise.
+  // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
   ASSERT_TRUE(absent.has_value());
   pbr::ProfilePreferences loaded;
   pbr::ProfilePrefsFromObject(*absent, loaded);
   EXPECT_TRUE(loaded.ai_dot_shown);
   EXPECT_EQ(loaded.ai_dot_look, "b");
+  EXPECT_EQ(loaded.ai_dot_size, "m");
   EXPECT_FALSE(loaded.ai_dot_left);
   EXPECT_EQ(loaded.ai_dot_y_permille, 600);
 
   pbr::ProfilePreferences edited;
   edited.ai_dot_shown = false;
   edited.ai_dot_look = "c";
+  edited.ai_dot_size = "l";
   edited.ai_dot_left = true;
   edited.ai_dot_y_permille = 125;
   pbr::ProfilePreferences parsed;
   pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
   EXPECT_FALSE(parsed.ai_dot_shown);
   EXPECT_EQ(parsed.ai_dot_look, "c");
+  EXPECT_EQ(parsed.ai_dot_size, "l");
   EXPECT_TRUE(parsed.ai_dot_left);
   EXPECT_EQ(parsed.ai_dot_y_permille, 125);
 
-  auto odd = pbr::TryParseObject(R"({ "ai_dot_look": "z", "ai_dot_y_permille": 5000 })");
+  auto odd = pbr::TryParseObject(R"({ "ai_dot_look": "z", "ai_dot_size": "xl", "ai_dot_y_permille": 5000 })");
   ASSERT_TRUE(odd.has_value());
   pbr::ProfilePreferences clamped;
   pbr::ProfilePrefsFromObject(*odd, clamped);
   EXPECT_EQ(clamped.ai_dot_look, "b");
+  EXPECT_EQ(clamped.ai_dot_size, "m");
   EXPECT_EQ(clamped.ai_dot_y_permille, 1000);
 }
 

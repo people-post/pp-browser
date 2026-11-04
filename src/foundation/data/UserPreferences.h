@@ -82,6 +82,8 @@ struct ProfilePreferences {
   bool ai_dot_shown = true;
   /** Its look: `a` one eye, `b` two eyes (default), `c` cool, `d` plain. */
   std::string ai_dot_look = "b";
+  /** Its size: `s` 52dp, `m` 64dp (default), `l` 76dp (Me → AI assistant → Assistant size). */
+  std::string ai_dot_size = "m";
   /** Where it rests: the left or right edge, and how far down its band (0 top – 1000 bottom). */
   bool ai_dot_left = false;
   int ai_dot_y_permille = 600;

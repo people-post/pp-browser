@@ -64,15 +64,16 @@ public:
     std::string appearance = "system";
     bool reduce_transparency = false;
     bool compact_chrome_frost = true;
-    /** Phone AI dot: shown or not, and its look (`a`–`d`). */
+    /** Phone AI dot: shown or not, its look (`a`–`d`) and size (`s` / `m` / `l`). */
     bool ai_dot = true;
     std::string ai_dot_look = "b";
+    std::string ai_dot_size = "m";
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
              reduce_transparency == other.reduce_transparency &&
              compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
-             ai_dot_look == other.ai_dot_look;
+             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
@@ -220,8 +221,11 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
-  /** Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch and look (`a`–`d`); takes effect at once. */
-  void SetAiDot(bool enabled, const std::string& look);
+  /**
+   * Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch, look (`a`–`d`) and size (`s` / `m` / `l`); takes
+   * effect at once.
+   */
+  void SetAiDot(bool enabled, const std::string& look, const std::string& size);
   /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
   void SetAiDotPlace(bool left, int y_permille);
   /** A tap on the AI dot (open the ask-AI panel). */

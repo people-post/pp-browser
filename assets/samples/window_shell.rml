@@ -63,7 +63,8 @@
   <div id="shell-ai-dot-mount" class="shell-ai-dot-mount">
     <div id="shell-ai-dot" class="ai-dot" data-class-ai-dot--shown="ai_dot_shown"
          data-class-ai-dot--sway="ai_dot_idle == 'sway'" data-class-ai-dot--blink="ai_dot_idle == 'blink'"
-         data-class-ai-dot--calm="ai_dot_look == 'c' || ai_dot_look == 'd'">
+         data-class-ai-dot--calm="ai_dot_look == 'c' || ai_dot_look == 'd'"
+         data-class-ai-dot--size-s="ai_dot_size == 's'" data-class-ai-dot--size-l="ai_dot_size == 'l'">
       <div class="ai-dot-figure">
         <svg class="ai-dot-layer" data-if="ai_dot_look != 'c'" src="../icons/mascot/body.svg"></svg>
         <svg class="ai-dot-layer" data-if="ai_dot_look == 'c'" src="../icons/mascot/body-c.svg"></svg>

@@ -35,6 +35,18 @@
             <span class="ai-look-name">{{i18n:settings.ai_dot.look_d}}</span>
           </button>
         </div>
+        <div class="group-card settings-phone-only">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_ai_dot_size()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.ai_dot.size}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{ai_dot_size_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
         <div class="stack" data-if="advanced">
         <div class="group-card">
           <label class="settings-field group-row group-row--field">

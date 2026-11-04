@@ -16,9 +16,10 @@
 namespace pbr {
 namespace {
 
-// An iPhone 16 Pro in dp: 402 × 874, 62 under the status bar, 34 over the home indicator.
-constexpr AiDotArea kArea{402.f, 874.f, 62.f, 34.f};
-constexpr float kSize = AiDotModel::kSizeDp;
+// An iPhone 16 Pro in dp: 402 × 874, 62 under the status bar, 34 over the home indicator; the medium dot.
+constexpr AiDotArea kArea{402.f, 874.f, 62.f, 34.f, AiDotModel::kMediumDp};
+constexpr float kSize = kArea.size_dp;
+const float kGap = AiDotModel::EdgeGapDp(kSize);
 
 AiDotScene Home() { return AiDotScene{}; }
 
@@ -56,9 +57,48 @@ TEST(AiDotModelTest, HidesWhileTheKeyboardIsUpOrASheetIsOpen) {
 
 TEST(AiDotModelTest, RestsAtTheRightEdgeInsideTheSafeArea) {
   const AiDotPoint at = AiDotModel::Rest(AiDotPlace{}, kArea, /*tucked=*/false);
-  EXPECT_FLOAT_EQ(at.x_dp, 402.f - kSize - AiDotModel::kEdgeGapDp);
+  EXPECT_FLOAT_EQ(at.x_dp, 402.f - kSize - kGap);
   EXPECT_GE(at.y_dp, kArea.safe_top_dp + AiDotModel::kTopReserveDp);
   EXPECT_LE(at.y_dp + kSize, kArea.height_dp - kArea.safe_bottom_dp - AiDotModel::kBottomReserveDp);
+}
+
+TEST(AiDotModelTest, ThreeSizesMediumByDefault) {
+  EXPECT_FLOAT_EQ(AiDotModel::SizeDp("s"), 52.f);
+  EXPECT_FLOAT_EQ(AiDotModel::SizeDp("m"), 64.f);
+  EXPECT_FLOAT_EQ(AiDotModel::SizeDp("l"), 76.f);
+  EXPECT_FLOAT_EQ(AiDotModel::SizeDp(""), 64.f) << "an unknown size is the medium one";
+  EXPECT_FLOAT_EQ(AiDotArea{}.size_dp, 64.f);
+  EXPECT_FLOAT_EQ(AiDotModel::EdgeGapDp(56.f), 8.f) << "the first 56dp dot's gap";
+}
+
+TEST(AiDotModelTest, TheTuckTheEdgeGapAndTheClampsFollowTheSize) {
+  for (const char* size : {"s", "m", "l"}) {
+    AiDotArea area = kArea;
+    area.size_dp = AiDotModel::SizeDp(size);
+    const float side = area.size_dp;
+    const float gap = AiDotModel::EdgeGapDp(side);
+    SCOPED_TRACE(size);
+    // At rest: its gap to the edge grows with it.
+    EXPECT_FLOAT_EQ(AiDotModel::Rest(AiDotPlace{false, 500}, area, false).x_dp, 402.f - side - gap);
+    EXPECT_FLOAT_EQ(AiDotModel::Rest(AiDotPlace{true, 500}, area, false).x_dp, gap);
+    // Tucked: half of this size past the edge.
+    EXPECT_FLOAT_EQ(AiDotModel::Rest(AiDotPlace{false, 500}, area, true).x_dp, 402.f - side / 2.f);
+    EXPECT_FLOAT_EQ(AiDotModel::Rest(AiDotPlace{true, 500}, area, true).x_dp, -side / 2.f);
+    // The lowest rest keeps the whole dot above the tab bar.
+    EXPECT_FLOAT_EQ(AiDotModel::Rest(AiDotPlace{true, 1000}, area, false).y_dp, 874.f - 34.f - 57.f - side);
+    // Which side it sticks to is decided by its own middle.
+    EXPECT_FALSE(AiDotModel::Snap({201.f - side / 2.f + 1.f, 300.f}, area).left);
+    EXPECT_TRUE(AiDotModel::Snap({201.f - side / 2.f - 1.f, 300.f}, area).left);
+    // Dragged far off, the whole dot stays on the screen, inside the safe area.
+    AiDotModel model;
+    model.Show(0);
+    const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, area, false);
+    model.Press({rest.x_dp, rest.y_dp}, rest);
+    const auto offset = model.Move({rest.x_dp + 500.f, rest.y_dp + 2000.f}, area);
+    ASSERT_TRUE(offset.has_value());
+    EXPECT_FLOAT_EQ(rest.x_dp + offset->x_dp, 402.f - side);
+    EXPECT_FLOAT_EQ(rest.y_dp + offset->y_dp, 874.f - 34.f - side);
+  }
 }
 
 TEST(AiDotModelTest, TheBandRunsFromUnderTheNavBarToAboveTheTabBar) {
@@ -66,7 +106,7 @@ TEST(AiDotModelTest, TheBandRunsFromUnderTheNavBarToAboveTheTabBar) {
   const AiDotPoint bottom = AiDotModel::Rest(AiDotPlace{true, 1000}, kArea, false);
   EXPECT_FLOAT_EQ(top.y_dp, 62.f + 44.f);
   EXPECT_FLOAT_EQ(bottom.y_dp, 874.f - 34.f - 57.f - kSize);
-  EXPECT_FLOAT_EQ(top.x_dp, AiDotModel::kEdgeGapDp);
+  EXPECT_FLOAT_EQ(top.x_dp, kGap);
 }
 
 TEST(AiDotModelTest, TuckedHalfOfItIsPastTheEdge) {
@@ -88,7 +128,7 @@ TEST(AiDotModelTest, ADragLetGoSnapsToTheNearerSideAndKeepsItsHeight) {
   EXPECT_TRUE(release.place.left);
   EXPECT_FLOAT_EQ(release.dropped.y_dp, rest.y_dp - 100.f);
   const AiDotPoint snapped = AiDotModel::Rest(release.place, kArea, false);
-  EXPECT_FLOAT_EQ(snapped.x_dp, AiDotModel::kEdgeGapDp);
+  EXPECT_FLOAT_EQ(snapped.x_dp, kGap);
   EXPECT_NEAR(snapped.y_dp, release.dropped.y_dp, 0.5f) << "only the side changes";
 }
 

@@ -433,6 +433,8 @@ void SettingsController::SyncBindingsFromSession() {
   }
   ai_dot_shown_ = bootstrap.profile_prefs.ai_dot_shown;
   ai_dot_look_ = bootstrap.profile_prefs.ai_dot_look.c_str();
+  ai_dot_size_ = bootstrap.profile_prefs.ai_dot_size.c_str();
+  ai_dot_size_label_ = Tr("settings.ai_dot.size_" + bootstrap.profile_prefs.ai_dot_size).c_str();
   if (commands_.last_mesh_error) {
     ui_state_.mesh_status_message = commands_.last_mesh_error();
   } else {
@@ -623,6 +625,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("status", &controller.status_);
     ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
     ctor.Bind("ai_dot_look", &controller.ai_dot_look_);
+    ctor.Bind("ai_dot_size_label", &controller.ai_dot_size_label_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
     ctor.BindEventCallback("open_security_page",
@@ -645,6 +648,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
+    ctor.BindEventCallback("on_choose_ai_dot_size", DataEventAt([this](ui::Event& ev) { OnChooseAiDotSize(ev); }));
     ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
     ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
@@ -774,6 +778,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_advanced_settings");
   host.Dirty("settings", "ai_dot_shown");
   host.Dirty("settings", "ai_dot_look");
+  host.Dirty("settings", "ai_dot_size_label");
   host.Dirty("settings", "advanced");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
@@ -2039,17 +2044,27 @@ void SettingsController::ToggleCallDiagnostics() {
 }
 
 void SettingsController::ToggleAiDot() {
-  SaveAiDot(!ai_dot_shown_, ai_dot_look_.c_str());
+  SaveAiDot(!ai_dot_shown_, ai_dot_look_.c_str(), ai_dot_size_.c_str());
 }
 
 void SettingsController::SetAiDotLook(const std::string& look) {
   if (look != "a" && look != "b" && look != "c" && look != "d") {
     return;
   }
-  SaveAiDot(ai_dot_shown_, look);
+  SaveAiDot(ai_dot_shown_, look, ai_dot_size_.c_str());
 }
 
-void SettingsController::SaveAiDot(const bool shown, const std::string& look) {
+void SettingsController::OnChooseAiDotSize(ui::Event& ev) {
+  const std::string current = ai_dot_size_.c_str();
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"s", "m", "l"}) {
+    options.push_back({id, Tr(std::string("settings.ai_dot.size_") + id).c_str(), current == id});
+  }
+  ShowChoice(ev, "ai_dot_size", Tr("settings.ai_dot.size"), {}, {}, std::move(options),
+             [this](const std::string& id) { SaveAiDot(ai_dot_shown_, ai_dot_look_.c_str(), id); });
+}
+
+void SettingsController::SaveAiDot(const bool shown, const std::string& look, const std::string& size) {
   if (!commands_.session_store) {
     return;
   }
@@ -2058,6 +2073,7 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look) {
   ProfilePreferences prefs = Store().Snapshot().profile_prefs;
   prefs.ai_dot_shown = shown;
   prefs.ai_dot_look = look;
+  prefs.ai_dot_size = size;
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
     ReportFailure(saved.error());
@@ -2065,8 +2081,11 @@ void SettingsController::SaveAiDot(const bool shown, const std::string& look) {
   }
   ai_dot_shown_ = shown;
   ai_dot_look_ = look.c_str();
+  ai_dot_size_ = size.c_str();
+  ai_dot_size_label_ = Tr("settings.ai_dot.size_" + size).c_str();
   DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
   DataModelHost::Instance().Dirty("settings", "ai_dot_look");
+  DataModelHost::Instance().Dirty("settings", "ai_dot_size_label");
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

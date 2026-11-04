@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace pbr {
 
@@ -32,12 +33,16 @@ struct AiDotPlace {
   bool operator!=(const AiDotPlace& other) const { return !(*this == other); }
 };
 
-/** The screen the dot lives on, in dp: the whole document body (edge to edge on phones) and its safe areas. */
+/**
+ * The screen the dot lives on, in dp: the whole document body (edge to edge on phones) and its safe areas, and the
+ * dot's own side there (Me → AI assistant → Assistant size; AiDotModel::SizeDp).
+ */
 struct AiDotArea {
   float width_dp = 0.f;
   float height_dp = 0.f;
   float safe_top_dp = 0.f;
   float safe_bottom_dp = 0.f;
+  float size_dp = 64.f;
 };
 
 struct AiDotPoint {
@@ -49,13 +54,20 @@ struct AiDotPoint {
  * The phone AI dot without any DOM (Kenneth 2026-11-02/03: "可以到处放，或者把它吸在侧边", "设置里面设置打开或关闭"):
  * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 4.5 s after the last
  * touch it tucks half off the screen, a press brings it out again; while it shows, a short sway or blink every 5–10 s.
- * Times are milliseconds on any steady clock. UI thread.
+ * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
+ * edge and the clamps follow it. Times are milliseconds on any steady clock. UI thread.
  */
 class AiDotModel {
 public:
-  static constexpr float kSizeDp = 56.f;
-  /** Gap to the screen edge at rest. */
-  static constexpr float kEdgeGapDp = 8.f;
+  /** Me → AI assistant → Assistant size: `s` small, `m` medium (the default; 56dp looked too small), `l` large. */
+  static constexpr float kSmallDp = 52.f;
+  static constexpr float kMediumDp = 64.f;
+  static constexpr float kLargeDp = 76.f;
+  static float SizeDp(const std::string_view size) {
+    return size == "s" ? kSmallDp : size == "l" ? kLargeDp : kMediumDp;
+  }
+  /** Gap to the screen edge at rest: 8dp on the first 56dp dot, as much more as the dot is bigger. */
+  static float EdgeGapDp(const float size_dp) { return size_dp / 7.f; }
   /** Kept clear under the status bar: the 44dp navigation bar. */
   static constexpr float kTopReserveDp = 44.f;
   /** Kept clear above the home indicator: the 49dp tab bar (the composer is about as tall) and a gap. */
@@ -79,14 +91,15 @@ public:
   /** The highest and lowest top edge the dot rests at: under the navigation bar, above the tab bar. */
   static float MinTop(const AiDotArea& area) { return area.safe_top_dp + kTopReserveDp; }
   static float MaxTop(const AiDotArea& area) {
-    return std::max(MinTop(area), area.height_dp - area.safe_bottom_dp - kBottomReserveDp - kSizeDp);
+    return std::max(MinTop(area), area.height_dp - area.safe_bottom_dp - kBottomReserveDp - area.size_dp);
   }
 
   /** The dot's top-left corner at rest (tucked: half of it past the edge). */
   static AiDotPoint Rest(const AiDotPlace& place, const AiDotArea& area, const bool tucked) {
-    const float half = kSizeDp * 0.5f;
-    const float x = place.left ? (tucked ? -half : kEdgeGapDp)
-                               : (tucked ? area.width_dp - half : area.width_dp - kSizeDp - kEdgeGapDp);
+    const float size = area.size_dp;
+    const float half = size * 0.5f;
+    const float gap = EdgeGapDp(size);
+    const float x = place.left ? (tucked ? -half : gap) : (tucked ? area.width_dp - half : area.width_dp - size - gap);
     const float permille = static_cast<float>(std::clamp(place.y_permille, 0, 1000));
     return {x, MinTop(area) + (MaxTop(area) - MinTop(area)) * permille / 1000.f};
   }
@@ -94,7 +107,7 @@ public:
   /** Where a dot let go with its top-left corner at `at` comes to rest: the nearer side, the height kept in the band. */
   static AiDotPlace Snap(const AiDotPoint& at, const AiDotArea& area) {
     AiDotPlace place;
-    place.left = at.x_dp + kSizeDp * 0.5f < area.width_dp * 0.5f;
+    place.left = at.x_dp + area.size_dp * 0.5f < area.width_dp * 0.5f;
     const float span = MaxTop(area) - MinTop(area);
     const float y = std::clamp(at.y_dp, MinTop(area), MaxTop(area));
     place.y_permille = span > 0.f ? static_cast<int>(std::lround((y - MinTop(area)) * 1000.f / span)) : 0;
@@ -230,9 +243,9 @@ public:
       }
       dragging_ = true;
     }
-    const float x = std::clamp(press_rest_.x_dp + dx, 0.f, std::max(0.f, area.width_dp - kSizeDp));
+    const float x = std::clamp(press_rest_.x_dp + dx, 0.f, std::max(0.f, area.width_dp - area.size_dp));
     const float y = std::clamp(press_rest_.y_dp + dy, area.safe_top_dp,
-                               std::max(area.safe_top_dp, area.height_dp - area.safe_bottom_dp - kSizeDp));
+                               std::max(area.safe_top_dp, area.height_dp - area.safe_bottom_dp - area.size_dp));
     offset_ = {x - press_rest_.x_dp, y - press_rest_.y_dp};
     return offset_;
   }

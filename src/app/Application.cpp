@@ -1901,9 +1901,10 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     (void)store_.SaveProfilePrefs(prefs);
   });
-  // Phone AI dot (DESIGN-pp-ui §8.14): on / look follow Me → AI assistant through ConfigApplyBridge; where it rests
+  // Phone AI dot (DESIGN-pp-ui §8.14): on / look / size follow Me → AI assistant through ConfigApplyBridge; where it rests
   // is written here after a drag. A tap opens the ask-AI panel; it keeps off Me → Account & security.
-  shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look);
+  shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look,
+                   bootstrap.profile_prefs.ai_dot_size);
   shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille);
   shell_->SetOnAiDotTap([this]() { chat_->OpenAskAiFromDot(); });
   shell_->SetOnAiDotMoved([this](const bool left, const int y_permille) {

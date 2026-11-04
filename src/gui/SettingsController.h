@@ -226,10 +226,12 @@ private:
   void ToggleReduceTransparency();
   void ToggleCallDiagnostics();
   void ToggleShowAdvancedSettings();
-  /** Me → AI assistant: the AI dot's switch and look (`a`–`d`), saved to the profile prefs at once. */
+  /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleAiDot();
   void SetAiDotLook(const std::string& look);
-  void SaveAiDot(bool shown, const std::string& look);
+  /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
+  void OnChooseAiDotSize(ui::Event& ev);
+  void SaveAiDot(bool shown, const std::string& look, const std::string& size);
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
 
@@ -333,9 +335,11 @@ private:
   uint64_t choice_pop_generation_ = 0;
   /** Security's "Blocked" row: how many people are blocked (0: no number shown). */
   int blocked_count_ = 0;
-  /** Me → AI assistant (phones): the AI dot's switch and its look. */
+  /** Me → AI assistant (phones): the AI dot's switch, its look and size (with the size's name for its row). */
   bool ai_dot_shown_ = true;
   ui::String ai_dot_look_ = "b";
+  ui::String ai_dot_size_ = "m";
+  ui::String ai_dot_size_label_;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

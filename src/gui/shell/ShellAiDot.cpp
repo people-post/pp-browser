@@ -87,6 +87,7 @@ AiDotArea ShellAiDot::Area() const {
   area.height_dp = ToDp(mount->GetClientHeight());
   area.safe_top_dp = static_cast<float>(state_.safe_area_top_dp);
   area.safe_bottom_dp = static_cast<float>(state_.safe_area_bottom_dp);
+  area.size_dp = AiDotModel::SizeDp(state_.ai_dot_size.c_str());
   return area;
 }
 

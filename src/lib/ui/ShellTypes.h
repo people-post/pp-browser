@@ -465,10 +465,12 @@ struct ShellState {
 
   /**
    * Phone AI dot (DESIGN-pp-ui §8.14; ShellAiDot). From profile prefs: Me → AI assistant → Show AI dot and the
-   * assistant look (`a` one eye, `b` two eyes, `c` cool, `d` plain), and where it rests (side, height in the band).
+   * assistant look (`a` one eye, `b` two eyes, `c` cool, `d` plain), its size (`s` 52dp, `m` 64dp, `l` 76dp; bound),
+   * and where it rests (side, height in the band).
    */
   bool ai_dot_enabled = true;
   ui::String ai_dot_look = "b";
+  ui::String ai_dot_size = "m";
   bool ai_dot_left = false;
   int ai_dot_y_permille = 600;
   /** Bound: the dot is on screen now; its idle move now (`sway`, `blink` or empty). */

@@ -775,6 +775,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
   object.set("ai_dot_shown", prefs.ai_dot_shown);
   object.set("ai_dot_look", prefs.ai_dot_look);
+  object.set("ai_dot_size", prefs.ai_dot_size);
   object.set("ai_dot_left", prefs.ai_dot_left);
   object.set("ai_dot_y_permille", static_cast<int64_t>(prefs.ai_dot_y_permille));
   object.set("reduce_transparency", prefs.reduce_transparency);
@@ -858,6 +859,12 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   }
   if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
     prefs.ai_dot_look = "b";
+  }
+  if (auto size = object.getString("ai_dot_size")) {
+    prefs.ai_dot_size = *size;
+  }
+  if (prefs.ai_dot_size != "s" && prefs.ai_dot_size != "m" && prefs.ai_dot_size != "l") {
+    prefs.ai_dot_size = "m";
   }
   prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
   prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));

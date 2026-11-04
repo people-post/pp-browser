@@ -184,6 +184,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 | `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
 | `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
+| `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |
 | `ai_dot_left` | `preferences.json` | boolean, optional; default false (right edge). The side the phone AI dot rests on, written after a drag |
 | `ai_dot_y_permille` | `preferences.json` | integer 0–1000, optional; default 600. How far down its band (under the navigation bar, above the tab bar) the dot rests |
 

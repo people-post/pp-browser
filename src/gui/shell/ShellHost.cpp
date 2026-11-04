@@ -223,6 +223,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("startup_cover_visible", &host.state_.startup_cover_visible);
     ctor.Bind("ai_dot_shown", &host.state_.ai_dot_shown);
     ctor.Bind("ai_dot_look", &host.state_.ai_dot_look);
+    ctor.Bind("ai_dot_size", &host.state_.ai_dot_size);
     ctor.Bind("ai_dot_idle", &host.state_.ai_dot_idle);
 
     if (auto badge_handle = ctor.RegisterStruct<NavBadgeState>()) {
@@ -928,6 +929,7 @@ void ShellHost::DirtyWindow() {
 void ShellHost::DirtyAiDot() {
   DataModelHost::Instance().Dirty("window", "ai_dot_shown");
   DataModelHost::Instance().Dirty("window", "ai_dot_look");
+  DataModelHost::Instance().Dirty("window", "ai_dot_size");
   DataModelHost::Instance().Dirty("window", "ai_dot_idle");
 }
 
@@ -948,14 +950,16 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   return scene;
 }
 
-void ShellHost::SetAiDot(const bool enabled, const std::string& look) {
+void ShellHost::SetAiDot(const bool enabled, const std::string& look, const std::string& size) {
   const bool known = look == "a" || look == "b" || look == "c" || look == "d";
   const ui::String next_look = known ? look.c_str() : "b";
-  if (state_.ai_dot_enabled == enabled && state_.ai_dot_look == next_look) {
+  const ui::String next_size = size == "s" || size == "l" ? size.c_str() : "m";
+  if (state_.ai_dot_enabled == enabled && state_.ai_dot_look == next_look && state_.ai_dot_size == next_size) {
     return;
   }
   state_.ai_dot_enabled = enabled;
   state_.ai_dot_look = next_look;
+  state_.ai_dot_size = next_size;
   DirtyAiDot();
   Backend::RequestForceFrame();
 }
@@ -1459,12 +1463,13 @@ ShellHost::ChromePrefs ShellHost::ProjectChrome(const ProfilePreferences& prefs)
           .reduce_transparency = prefs.reduce_transparency,
           .compact_chrome_frost = prefs.compact_chrome_frost,
           .ai_dot = prefs.ai_dot_shown,
-          .ai_dot_look = prefs.ai_dot_look};
+          .ai_dot_look = prefs.ai_dot_look,
+          .ai_dot_size = prefs.ai_dot_size};
 }
 
 void ShellHost::Apply(const ChromePrefs& prefs) {
   SyncChromeMaterialPrefs(prefs.reduce_transparency, prefs.compact_chrome_frost);
-  SetAiDot(prefs.ai_dot, prefs.ai_dot_look);
+  SetAiDot(prefs.ai_dot, prefs.ai_dot_look, prefs.ai_dot_size);
 }
 
 void ShellHost::OnLayoutModeChanged() {
