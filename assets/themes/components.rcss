@@ -2745,11 +2745,12 @@ select selectbox option {
 .shell-page-sheet .people-picker-search-field {
   height: 36dp;
   min-height: 36dp;
-  padding: 0 12dp;
+  padding: 7dp 12dp;
   border-width: 0;
   border-radius: 10dp;
   font-size: 17dp;
-  line-height: 36dp;
+  /* A 22dp line between 7dp paddings: text and a line-tall caret sit in the middle (a 36dp line drew a full-height caret). */
+  line-height: 22dp;
 }
 
 .shell-page-sheet .people-picker-search-hint {
@@ -4293,6 +4294,14 @@ input.checkbox {
   box-sizing: border-box;
   font-size: 17dp;
   background-color: transparent;
+}
+
+/* Text and caret centred in the 36dp pill: the engine draws them one line tall at the top of the content box, so
+   the box is a 22dp line with 7dp above and below (Kenneth 2026-11-04: the caret was not in the middle). Phones only. */
+.shell-layer-compact .chat-search-input {
+  padding-top: 7dp;
+  padding-bottom: 7dp;
+  line-height: 22dp;
 }
 
 /* The input renders no placeholder: this label sits over it while it is empty and lets clicks through. */
