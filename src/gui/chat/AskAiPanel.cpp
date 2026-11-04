@@ -168,9 +168,13 @@ bool AskAiPanel::OpenOnce(const std::string& question) {
   if (question.empty() || !Show(AskAiEntry::SettingHelp, /*once=*/true)) {
     return false;
   }
-  // The same "?" again while its question still shows (asked, answering or answered): nothing is sent twice.
+  // The same "?" again while its question still shows (asked, answering or answered): nothing is sent twice. One
+  // that failed is asked again.
   if (!once_turns_.empty() && once_turns_.front().question == question) {
-    return true;
+    const bool failed = once_turns_.back().failed && !agent_.Busy().BusyIn(kAskAiOnceThread);
+    if (!failed) {
+      return true;
+    }
   }
   if (once_pending_ && *once_pending_ == question) {
     return true;
@@ -186,6 +190,10 @@ bool AskAiPanel::OpenOnce(const std::string& question) {
 void AskAiPanel::Send() {
   const std::string text = util::Trim(view_.draft.c_str());
   if (text.empty() || view_.thinking) {
+    return;
+  }
+  if (view_.once && once_pending_) {
+    host_.AskAiToast(Tr("chat.ai_queue.already")); // a question already waits for a free turn: this one stays typed
     return;
   }
   view_.draft = "";
@@ -364,9 +372,20 @@ bool AskAiPanel::TryStartOnce() {
   }
   if (!agent_.AgentCloudReady() && !(agent_.AgentReady() && agent_.AgentHasCredentials())) {
     once_pending_.reset();
+    once_waits_for_turn_ = false;
     once_turns_.push_back({.question = text, .failed = true});
     Refresh();
     return true;
+  }
+  // The sessions' cap counts it like a chat's question (a guest has one turn): with every turn taken it waits, shown
+  // as waiting ("AI is busy, sent later"), and goes out when one is free (Tick).
+  const bool full = agent_.CanStart(kAskAiOnceThread) == TurnStart::Full;
+  if (full != once_waits_for_turn_) {
+    once_waits_for_turn_ = full;
+    Refresh();
+  }
+  if (full) {
+    return false;
   }
   AgentUiPorts& ports = agent_.Ports();
   if (once_pending_fresh_) {
@@ -386,6 +405,7 @@ bool AskAiPanel::TryStartOnce() {
   }
   once_pending_.reset();
   once_cancel_sent_ = false;
+  once_waits_for_turn_ = false;
   once_turns_.push_back({.question = text, .failed = outcome != SubmitOutcome::Started});
   if (outcome != SubmitOutcome::Started) {
     log().warning << "One-off question not started (outcome " << static_cast<int>(outcome) << ")";
@@ -505,13 +525,15 @@ void AskAiPanel::Refresh() {
         base_rows_.push_back({("ask-ai-once-" + std::to_string(n)).c_str(), false, turn.answer_rml.c_str()});
       }
     }
-    if (once_pending_) {
+    // A question waiting for a free turn shows as queued; one waiting for the earlier one-off to stop, as asked.
+    const bool queued = once_pending_ && once_waits_for_turn_;
+    if (once_pending_ && !queued) {
       base_rows_.push_back({"ask-ai-once-pending", true, UserBubble(*once_pending_).c_str()});
     }
     const bool failed = !once_turns_.empty() && once_turns_.back().failed;
     const bool running = once_pending_.has_value() || agent_.Busy().BusyIn(kAskAiOnceThread);
     view_.error = failed && !running;
-    view_.queued_text = "";
+    view_.queued_text = queued ? once_pending_->c_str() : "";
     // Under the answer (or the error): the same question to a person.
     view_.show_support = !once_turns_.empty() && (once_turns_.front().done || failed) && !running;
   } else {
@@ -553,7 +575,7 @@ void AskAiPanel::RefreshStreaming(const bool force) {
         {kStreamRowId, false, AssistantBubble(InjectEntryPlaceholders(answer.rml, kStreamRowId), text).c_str()});
     view_.thinking = false; // the text itself shows the AI is at work
   } else if (view_.once) {
-    view_.thinking = once_pending_.has_value() || agent_.Busy().BusyIn(kAskAiOnceThread);
+    view_.thinking = (once_pending_ && !once_waits_for_turn_) || agent_.Busy().BusyIn(kAskAiOnceThread);
   } else {
     view_.thinking = !shared_thread_.empty() && agent_.Busy().BusyIn(shared_thread_);
   }

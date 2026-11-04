@@ -143,6 +143,10 @@ public:
    * question (settings "?") goes without earlier context. False while a Home turn runs.
    */
   bool StartNewHomeConversation() { return home_->StartNewConversation(); }
+  /** The ask-AI panel's one-off in the Home session: words only (AgentSession::SubmitExplanation). */
+  SubmitOutcome SubmitHomeExplanation(const std::string& text) { return home_->SubmitExplanation(text); }
+  /** The Home session's newest turn (AgentEvent::turn of its events). */
+  uint64_t HomeTurnGeneration() const { return home_->TurnGeneration(); }
 
   /** The Home composer's session; its conversation is the Home transcript. */
   AgentSession& Home() { return *home_; }

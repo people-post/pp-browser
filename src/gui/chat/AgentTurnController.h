@@ -147,6 +147,7 @@ public:
   /** Per frame: the streamed row, a held send, the agent's events. */
   void Tick();
   void HandleAgentEvent(const AgentEvent& event);
+  /** Stores an answer in `thread_id`, the chat its turn belongs to; with none it is dropped (never the open chat). */
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
@@ -160,8 +161,9 @@ public:
    */
   void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
   /**
-   * The ask-AI panel's one-off question in the Home session (its conversation started empty first): busy in
-   * kAskAiOnceThread once taken. Its events reach only the panel (OnAskAiOnceReply), never a chat.
+   * The ask-AI panel's one-off question in the Home session (its conversation started empty first), answered in
+   * words only (no app action, no permission card): busy in kAskAiOnceThread once taken. Its events reach only the
+   * panel (OnAskAiOnceReply), never a chat.
    */
   SubmitOutcome SubmitAskAiOnce(const std::string& text);
   /** The answer streaming in `thread_id` so far ("" when none). */
@@ -288,6 +290,12 @@ private:
    * events (which carry no thread) belong there.
    */
   std::optional<std::string> home_turn_thread_;
+  /**
+   * The Home session's newest turn the UI knows (AgentEvent::turn): a Home event of an older turn is a stopped turn's
+   * late one and is dropped (it must not end, or answer for, the turn that runs now).
+   */
+  uint64_t home_turn_ = 0;
+  void NoteHomeTurnStarted();
 
   std::optional<PendingAiImage> pending_image_;
   std::map<std::string, PendingAiImage> stashed_images_; // per conversation, while another one is shown

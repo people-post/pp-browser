@@ -1177,6 +1177,26 @@ TEST_F(AgentSessionLocalAppActionTest, HitWithAnImageStillStreams) {
   EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
 }
 
+// The ask-AI panel's one-off (settings "?") explains in words: the same sentence is not run as an app action, nothing
+// is offered to brief_AI to hand back, and no permission card is left waiting.
+TEST_F(AgentSessionLocalAppActionTest, AnExplanationIsNeverAnAppAction) {
+  StartWithMessagingTool();
+  ASSERT_EQ(session_->SubmitExplanation("加张三为好友"), SubmitOutcome::Started);
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u) << "answered by brief_AI, not run on the device";
+  EXPECT_TRUE(requests[0].capabilities.empty()) << "nothing offered to hand back";
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_TRUE(session_->CanClose()) << "no permission card or question asked back left behind";
+
+  // The next ordinary Home question is an app action again.
+  session_->Submit("加张三为好友");
+  (void)WaitForTurn();
+  EXPECT_EQ(Requests().size(), 1u);
+}
+
 TEST_F(AgentSessionLocalAppActionTest, HitInTheHomeComposerAlsoSkipsTheStream) {
   StartWithMessagingTool();
   session_->Submit("加张三为好友");

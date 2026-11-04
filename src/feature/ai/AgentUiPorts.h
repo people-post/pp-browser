@@ -54,6 +54,13 @@ struct AgentUiPorts {
   std::function<void(const std::string& thread_id)> forget_thread;
   /** The Home session's conversation starts empty (the ask-AI panel's one-off question); false while it answers. */
   std::function<bool()> start_new_home_conversation;
+  /** The one-off question in the Home session, answered in words only (no app action, no card). */
+  std::function<SubmitOutcome(const std::string& text)> submit_home_explanation;
+  /**
+   * The Home session's newest turn (raised by each submit). Its events carry the turn they belong to: an event of an
+   * older, stopped turn is dropped (it carries no thread to tell it apart otherwise).
+   */
+  std::function<uint64_t()> home_turn;
   /**
    * A turn runs in `thread_id` (empty: the Home composer). The UI uses it to recover a "busy" it never heard end
    * (B112).

@@ -2,8 +2,10 @@
 // fake chat screen and fake agent ports. What is checked: each entry opens the sheet at the right height; the settings
 // "?" is a one-off question in the Home session (never PP 客服, never the shared chat); the shared conversation is one
 // thread for every entry and for "Open in AI chat"; closing keeps the draft and the running answer and sends nothing
-// again; a guest's single turn queues the question once and shows it; no answer shows plain words and "Ask PP
-// Support"; the privacy card shows once.
+// again; a guest's single turn queues the question once and shows it (the one-off too); no answer shows plain words
+// and "Ask PP Support"; the privacy card shows once. A stopped one-off's late events (Home events carry no thread, only
+// their turn) never end or answer for the next one, and an answer with no chat to go in is never stored in the open
+// chat.
 #include "gui/chat/AskAiPanel.h"
 #include "gui/chat/AgentTurnController.h"
 #include "foundation/data/SessionStore.h"
@@ -12,8 +14,10 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <fstream>
 #include <functional>
 #include <map>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -28,6 +32,8 @@ public:
   std::string active_thread;
   bool messaging_ready = false;
   int display_syncs = 0;
+  /** FinishAssistantReply ran (it alone syncs the chat list): an answer was stored in a chat. */
+  int stored_replies = 0;
   AskAiPanel* panel = nullptr;
   /** What a started queued send does (ChatController marks that chat busy). */
   std::function<void(const std::string&)> on_started;
@@ -41,7 +47,7 @@ public:
   ShellChromeSnapshot ChromeSnapshot() const override { return {}; }
   bool InAiComposerContext() const override { return true; }
   void SyncDisplayFromThread() override { ++display_syncs; }
-  void SyncShellSessions() override {}
+  void SyncShellSessions() override { ++stored_replies; }
   void SyncComposerInputState() override {}
   void UpdateSidebarPreview(const std::string&) override {}
   bool EnsureHomeOutboundSession(const std::string&) override { return true; }
@@ -151,18 +157,21 @@ public:
   void AskAiToast(const std::string& text) override { toasts.push_back(text); }
 };
 
-AgentEvent Loading(const bool loading, const std::string& thread = {}) {
+/** `turn`: the session turn it belongs to (AgentEvent::turn; 0 = not said). */
+AgentEvent Loading(const bool loading, const std::string& thread = {}, const uint64_t turn = 0) {
   AgentEvent event;
   event.type = AgentEventType::LoadingChanged;
   event.loading = loading;
   event.thread_id = thread;
+  event.turn = turn;
   return event;
 }
 
-AgentEvent Ready(const std::string& text, const std::string& thread = {}) {
+AgentEvent Ready(const std::string& text, const std::string& thread = {}, const uint64_t turn = 0) {
   AgentEvent event;
   event.type = AgentEventType::AssistantReady;
   event.thread_id = thread;
+  event.turn = turn;
   event.text = text;
   event.render_mode = RenderMode::Markdown;
   event.from_model = true;
@@ -183,10 +192,15 @@ protected:
     ports.has_session = [] { return true; };
     ports.can_start = [this](const std::string& thread_id) { return can_start_(thread_id); };
     ports.max_thread_turns = [this] { return max_turns_; };
-    ports.submit = [this](const std::string& text, std::optional<std::string>) {
+    // The one-off goes to the Home session in words only (SubmitExplanation); each submit is a new turn there.
+    ports.submit_home_explanation = [this](const std::string& text) {
       home_submits_.push_back(text);
+      if (home_outcome_ == SubmitOutcome::Started) {
+        ++home_turn_;
+      }
       return home_outcome_;
     };
+    ports.home_turn = [this] { return home_turn_; };
     ports.start_new_home_conversation = [this] {
       ++new_home_conversations_;
       return home_free_;
@@ -226,6 +240,7 @@ protected:
   SubmitOutcome home_outcome_ = SubmitOutcome::Started;
   int new_home_conversations_ = 0;
   bool home_free_ = true;
+  uint64_t home_turn_ = 0;
   std::vector<std::string> cancels_;
 };
 
@@ -358,6 +373,91 @@ TEST_F(AskAiPanelTest, AOneOffWithNoAnswerSaysSoAndOffersSupport) {
   EXPECT_EQ(panel_host_.support[0], "q1");
 }
 
+TEST_F(AskAiPanelTest, AFailedQuestionMarkIsAskedAgain) {
+  ASSERT_TRUE(panel_.OpenOnce("q1"));
+  agent_.HandleAgentEvent(Loading(true, {}, 1));
+  agent_.HandleAgentEvent(Loading(false, {}, 1)); // no answer
+  ASSERT_TRUE(panel_.View().error);
+  panel_host_.AskAiCloseSheet(0);
+  ASSERT_TRUE(panel_.OpenOnce("q1")); // the same "?" again
+  ASSERT_EQ(home_submits_.size(), 2u) << "a failed one is asked again";
+  EXPECT_EQ(home_submits_[1], "q1");
+  EXPECT_EQ(new_home_conversations_, 2);
+  EXPECT_FALSE(panel_.View().error);
+  EXPECT_TRUE(panel_.View().thinking);
+}
+
+// The review's interleaving: one-off A answers; "?" B stops it and starts once the Home session is free; A's late
+// answer and end arrive after B has started. Neither is stored in the open chat (a chat with a person here), B is not
+// ended or failed by them, and B's own answer reaches the panel.
+TEST_F(AskAiPanelTest, AStoppedOneOffsLateEventsNeitherReachTheOpenChatNorEndTheNextOne) {
+  turn_host_.active_thread = "chat-with-a-person";
+  ASSERT_TRUE(panel_.OpenOnce("q-a"));
+  ASSERT_EQ(home_turn_, 1u);
+  agent_.HandleAgentEvent(Loading(true, {}, 1));
+
+  home_free_ = false; // A still answers
+  ASSERT_TRUE(panel_.OpenOnce("q-b"));
+  ASSERT_EQ(cancels_.size(), 1u) << "A is stopped";
+  EXPECT_EQ(home_submits_.size(), 1u) << "B waits until A's turn has really ended";
+  home_free_ = true; // A's steps ended (its "ended" event is still on its way)
+  panel_.Tick();
+  ASSERT_EQ(home_submits_.size(), 2u);
+  ASSERT_EQ(home_turn_, 2u);
+  ASSERT_TRUE(agent_.Busy().BusyIn(kAskAiOnceThread));
+
+  const int syncs = turn_host_.display_syncs;
+  agent_.HandleAgentEvent(Ready("A's late answer", {}, 1));
+  agent_.HandleAgentEvent(Loading(false, {}, 1));
+  EXPECT_EQ(turn_host_.stored_replies, 0) << "nothing stored in any chat";
+  EXPECT_EQ(turn_host_.display_syncs, syncs);
+  EXPECT_TRUE(agent_.Busy().BusyIn(kAskAiOnceThread)) << "B still answers";
+  EXPECT_TRUE(panel_.View().thinking);
+  EXPECT_FALSE(panel_.View().error) << "B is not shown as failed";
+  ASSERT_EQ(panel_.View().rows.size(), 1u) << "only B's question; A's answer is not B's";
+
+  agent_.HandleAgentEvent(Loading(true, {}, 2));
+  agent_.HandleAgentEvent(Ready("B's answer", {}, 2));
+  agent_.HandleAgentEvent(Loading(false, {}, 2));
+  EXPECT_EQ(turn_host_.stored_replies, 0) << "B's answer is the panel's only";
+  EXPECT_FALSE(agent_.Busy().Any());
+  EXPECT_FALSE(panel_.View().error);
+  ASSERT_EQ(panel_.View().rows.size(), 2u);
+  EXPECT_FALSE(panel_.View().rows[1].user);
+  EXPECT_NE(std::string(panel_.View().rows[1].content_rml.c_str()).find("B's answer"), std::string::npos);
+}
+
+// Defence in depth: a Home answer whose turn the UI no longer knows (no chat it belongs to) is dropped, never stored
+// in whichever chat is open.
+TEST_F(AskAiPanelTest, AHomeAnswerWithNoChatIsNeverStoredInTheOpenChat) {
+  turn_host_.active_thread = "chat-with-a-person";
+  agent_.HandleAgentEvent(Ready("an answer nobody waits for"));
+  EXPECT_EQ(turn_host_.stored_replies, 0);
+  agent_.FinishAssistantReply("entry", "text", /*from_llm=*/true, {}, /*thread_id=*/{});
+  EXPECT_EQ(turn_host_.stored_replies, 0);
+}
+
+TEST_F(AskAiPanelTest, AOneOffWaitsForAFreeTurnShownAsQueued) {
+  max_turns_ = 1; // a guest
+  can_start_ = [](const std::string&) { return TurnStart::Full; }; // another chat's answer takes the one turn
+  ASSERT_TRUE(panel_.OpenOnce("q"));
+  EXPECT_TRUE(home_submits_.empty()) << "the cap counts the one-off too";
+  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "q") << "shown as 'AI is busy, sent later'";
+  EXPECT_FALSE(panel_.View().thinking);
+  EXPECT_TRUE(panel_.View().rows.empty());
+  panel_.Tick();
+  EXPECT_TRUE(home_submits_.empty());
+
+  can_start_ = [](const std::string&) { return TurnStart::Yes; }; // that answer ended
+  panel_.Tick();
+  ASSERT_EQ(home_submits_.size(), 1u);
+  EXPECT_EQ(home_submits_[0], "q");
+  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "");
+  EXPECT_TRUE(panel_.View().thinking);
+  ASSERT_EQ(panel_.View().rows.size(), 1u);
+  EXPECT_TRUE(panel_.View().rows[0].user);
+}
+
 // --- the shared conversation -------------------------------------------------------------------------
 
 TEST_F(AskAiPanelTest, EveryEntryAndOpenInAiChatUseTheOneSharedThread) {
@@ -487,6 +587,39 @@ TEST_F(AskAiPanelTest, TheDemoStreamsAMadeUpOneOffAnswer) {
   ASSERT_EQ(panel_.View().rows.size(), 2u);
   EXPECT_NE(std::string(panel_.View().rows[1].content_rml.c_str()).find("Made-up answer"), std::string::npos);
   EXPECT_TRUE(panel_.View().show_support);
+}
+
+// --- what ChatController does with the panel (source checks: it needs the whole app to run) -------------
+
+/** A source file of the repo with "\r" dropped (a Windows checkout has CRLF line ends). */
+std::string ReadSource(const std::string& relative) {
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/" + relative, std::ios::binary);
+  std::ostringstream out;
+  out << in.rdbuf();
+  std::string text = out.str();
+  std::erase(text, '\r');
+  return text;
+}
+
+/** The text of a function from its definition line to the closing brace at column 0 ("" when not found). */
+std::string Body(const std::string& source, const std::string& signature) {
+  const size_t at = source.find("\n" + signature);
+  const size_t close = at == std::string::npos ? at : source.find("\n}\n", at);
+  return close == std::string::npos ? std::string() : source.substr(at, close + 3 - at);
+}
+
+// A permission card tapped in the panel belongs to the panel's AI chat: a stale one is rewritten there, never in the
+// chat open under the panel.
+TEST(AskAiPanelSourceTest, APanelCardIsAnsweredInItsOwnChat) {
+  const std::string source = ReadSource("src/gui/chat/ChatController.cpp");
+  const std::string run = Body(source, "void ChatController::AskAiRunAction(");
+  ASSERT_FALSE(run.empty());
+  EXPECT_NE(run.find("HandleLocalActionIn(thread_id, action.message"), std::string::npos);
+  EXPECT_EQ(run.find("HandleLocalAction(action"), std::string::npos);
+  const std::string handle = Body(source, "void ChatController::HandleLocalActionIn(");
+  ASSERT_FALSE(handle.empty());
+  EXPECT_NE(handle.find("CloseApprovalCard(thread_id,"), std::string::npos);
+  EXPECT_EQ(handle.find("CloseApprovalCard(ActiveThreadId()"), std::string::npos);
 }
 
 } // namespace

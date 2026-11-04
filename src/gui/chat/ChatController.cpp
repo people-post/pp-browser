@@ -2108,8 +2108,8 @@ void ChatController::RestoreWorkingSetsFromActiveThread() {
   }
 }
 
-void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
-                                       const std::string& entry_id) {
+void ChatController::HandleLocalActionIn(const std::string& thread_id, const std::string& message,
+                                         const std::optional<std::string>& payload, const std::string& entry_id) {
   if (payload && !payload->empty()) {
     auto action_json = TryParseObject(*payload);
     auto action_type = action_json ? action_json->getString("type") : std::nullopt;
@@ -2130,7 +2130,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
           break;
         case ApprovalTapReaction::StaleRewrite:
           ShowToast(Tr("chat.permission.stale"));
-          agent_.CloseApprovalCard(ActiveThreadId(), entry_id, ApprovalOutcome::Stale);
+          agent_.CloseApprovalCard(thread_id, entry_id, ApprovalOutcome::Stale); // the card's chat, not the open one
           break;
         }
       }
@@ -4063,14 +4063,16 @@ void ChatController::AskAiRunAction(const std::string& thread_id, const std::str
   const std::string type = payload ? payload->getString("type").value_or("") : std::string();
   // A permission card and a link are answered where they are; the session holding the card is found by its id.
   if (type == "tool_permission" || type == "open_url") {
-    AppRuntime::PostUI([this, action, entry_id]() { HandleLocalAction(action.message, action.payload, entry_id); });
+    AppRuntime::PostUI([this, thread_id, action, entry_id]() {
+      HandleLocalActionIn(thread_id, action.message, action.payload, entry_id); // a stale card is closed there
+    });
     return;
   }
   // Anything else continues in the full AI chat, where its answer (a list, a form) can show.
   AppRuntime::PostUI([this, thread_id, action, entry_id]() {
     ask_ai_.Close();
     ShowThreadInChat(thread_id);
-    HandleLocalAction(action.message, action.payload, entry_id);
+    HandleLocalActionIn(thread_id, action.message, action.payload, entry_id);
   });
 }
 

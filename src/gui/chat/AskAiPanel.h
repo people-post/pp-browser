@@ -92,10 +92,12 @@ public:
 
 /**
  * The ask-AI half sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14): opens over the page the user is on, which
- * stays where it was. It shows the shared AI conversation, the one thread Home, the panel and New chat's "AI chat"
- * all continue, and sends into it through the same router and queue as the chat page (the sessions' cap, a guest's 1).
- * A setting's "?" asks a one-off question instead: the Home session, its conversation started empty, in memory only,
- * shown here and nowhere else; its follow-ups stay in it; it ends when another "?" starts one.
+ * stays where it was. It shows the shared AI conversation, the AI chat used last (Home, the panel and New chat's
+ * "AI chat" all continue it), and sends into it through the same router and queue as
+ * the chat page (the sessions' cap, a guest's 1). A setting's "?" asks a one-off question instead: the Home session,
+ * its conversation started empty, in memory only, shown here and nowhere else, answered in words only (no app action,
+ * no permission card), counted in the sessions' cap; its follow-ups stay in it; it ends when another "?" starts one,
+ * once the earlier one's turn has really ended.
  *
  * Closing keeps the unsent text and lets a running answer finish where it belongs; opening again sends nothing.
  *
@@ -114,7 +116,10 @@ public:
   bool Open(AskAiEntry entry);
   /** Opens and asks `question` in the shared conversation (a Home chip); a question already waiting is not sent twice. */
   bool OpenAndAsk(AskAiEntry entry, const std::string& question);
-  /** Opens with `question` asked as a one-off (settings "?"); the same question still shown is not asked again. */
+  /**
+   * Opens with `question` asked as a one-off (settings "?"); the same question still asking, answering or answered is
+   * not asked again, a failed one is.
+   */
   bool OpenOnce(const std::string& question);
 
   // --- the panel's buttons ---------------------------------------------------------------------------
@@ -194,6 +199,8 @@ private:
   bool once_pending_fresh_ = false;
   /** The earlier one-off still answering was asked to stop (once). */
   bool once_cancel_sent_ = false;
+  /** The waiting one-off waits for a free turn (every turn the sessions allow runs): shown as queued, not thinking. */
+  bool once_waits_for_turn_ = false;
   std::map<std::string, std::vector<std::string>> once_links_;
 
   std::function<std::string(const std::string&)> fake_answer_;

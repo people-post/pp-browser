@@ -186,6 +186,59 @@ TEST_F(AgentSessionBusyTest, ASendTakenTheInstantATurnEndsKeepsItsChat) {
   EXPECT_EQ(second_turn, (std::vector<std::string>{kLocalSelfContactId, kAiAssistantContactId}));
 }
 
+// A Home turn stopped by Cancel() frees "busy" at once, but its steps may still use the conversation: a new one-off
+// (the ask-AI panel's settings "?") must not start it afresh until they have ended. The stream here ignores the stop
+// until it is released, like an HTTP read that has not returned yet.
+TEST_F(AgentSessionBusyTest, AStoppedHomeTurnKeepsItsConversationUntilItsStepsEnd) {
+  Start();
+  std::atomic<bool> started{false};
+  std::atomic<bool> release{false};
+  session_->SetBriefAiStream([&started, &release](const BriefAiRequest&,
+                                                  const std::function<void(const BriefAiEvent&)>& on_event,
+                                                  const std::atomic<bool>& cancel) -> Roe<BriefAiOutcome> {
+    on_event(Meta());
+    on_event(Token("part"));
+    started = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!release.load() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return cancel.load() ? Roe<BriefAiOutcome>(BriefAiOutcome::Cancelled) : Roe<BriefAiOutcome>(BriefAiOutcome::Done);
+  });
+  std::atomic<bool> released{false};
+  AgentSession::SetTurnReleasedHookForTests([&released] { released = true; });
+  session_->Submit("q-a");
+  WaitUntil(started);
+
+  session_->Cancel();
+  EXPECT_FALSE(session_->IsBusy()) << "a stop frees the session for the UI at once";
+  EXPECT_FALSE(session_->StartNewConversation()) << "but the stopped turn still runs";
+  EXPECT_FALSE(released);
+
+  release = true;
+  (void)WaitForTurn();
+  WaitUntil(released);
+  AgentSession::SetTurnReleasedHookForTests(nullptr);
+  EXPECT_TRUE(session_->StartNewConversation()) << "its steps ended: a new one-off may start";
+}
+
+// Home events carry no thread; their turn tells a stopped turn's late ones from the next turn's.
+TEST_F(AgentSessionBusyTest, HomeEventsCarryTheTurnTheyBelongTo) {
+  Start();
+  Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  session_->Submit("first");
+  const uint64_t first = session_->TurnGeneration();
+  for (const AgentEvent& event : WaitForTurn()) {
+    EXPECT_EQ(event.turn, first) << "event type " << static_cast<int>(event.type);
+  }
+  session_->Submit("second");
+  const uint64_t second = session_->TurnGeneration();
+  EXPECT_GT(second, first);
+  for (const AgentEvent& event : WaitForTurn()) {
+    EXPECT_EQ(event.turn, second) << "event type " << static_cast<int>(event.type);
+  }
+}
+
 // An error names the chat of its turn, so the UI writes it there only (never into Home's last answer).
 TEST_F(AgentSessionBusyTest, AnErrorNamesTheChatOfItsTurn) {
   StartWithStore();

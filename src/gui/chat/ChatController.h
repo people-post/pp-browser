@@ -322,7 +322,12 @@ private:
   std::string attachment_thread_;
   void UpdateSidebarPreview(const std::string& preview_text) override;
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
-                         const std::string& entry_id) override;
+                         const std::string& entry_id) override {
+    HandleLocalActionIn(ActiveThreadId(), message, payload, entry_id);
+  }
+  /** A button of a stored answer of `thread_id` (the open chat, or the ask-AI panel's AI chat under it). */
+  void HandleLocalActionIn(const std::string& thread_id, const std::string& message,
+                           const std::optional<std::string>& payload, const std::string& entry_id);
   QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) override;
   void PutBackDraft(const std::string& thread_id, const std::string& text) override;
   /** Text that did not go out goes back to `key`'s composer (a thread id, or ThreadDrafts::kHome). */

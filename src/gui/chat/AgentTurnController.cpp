@@ -5,6 +5,7 @@
 #include "common/directory/PeopleDiscoveryBlocks.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -610,6 +611,9 @@ void AgentTurnController::OnAssistantDelta(const AgentEvent& event) {
     return;
   }
   const std::string thread_id = EventThread(event); // a Home turn streams into the chat it shows in
+  if (thread_id.empty()) {
+    return; // a Home turn with no chat to show in: never the open one
+  }
   const auto it = streaming_.find(thread_id);
   if (it == streaming_.end() || it->second.row_id != "streaming-" + event.entry_id) {
     ClearStreamingRow(thread_id);
@@ -694,16 +698,24 @@ void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const
   }
   MarkAgentBusy(thread_id);     // "thinking" shows in the chat it was typed in
   home_turn_thread_ = thread_id; // but it runs in the Home session: stop and recovery ask that one
+  NoteHomeTurnStarted();
+}
+
+void AgentTurnController::NoteHomeTurnStarted() {
+  if (agent_ports_.home_turn) {
+    home_turn_ = std::max(home_turn_, agent_ports_.home_turn());
+  }
 }
 
 SubmitOutcome AgentTurnController::SubmitAskAiOnce(const std::string& text) {
-  if (!agent_ports_.submit) {
+  if (!agent_ports_.submit_home_explanation) {
     return SubmitOutcome::Ignored;
   }
-  const SubmitOutcome outcome = agent_ports_.submit(text, std::nullopt);
+  const SubmitOutcome outcome = agent_ports_.submit_home_explanation(text);
   if (outcome == SubmitOutcome::Started) {
     MarkAgentBusy(kAskAiOnceThread);
     home_turn_thread_ = kAskAiOnceThread; // the Home session's events belong to the panel, not to a chat
+    NoteHomeTurnStarted();                // and a stopped earlier one-off's late events are dropped
   }
   return outcome;
 }
@@ -1002,6 +1014,10 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
                                     const std::string& finish_reason, const std::string& thread_id,
                                     ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode,
                                     const std::vector<BriefAiSource>& sources) {
+  if (thread_id.empty()) {
+    log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
+    return;
+  }
   const bool markdown = render_mode == RenderMode::Markdown;
   if (!from_llm && !markdown) {
     response_goal = InferResponseGoalFromBlocksJson(raw_output);
@@ -1029,8 +1045,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
       log().warning << "LLM finish_reason: " << finish_reason;
     }
     if (host_.MessagingIsReady()) {
-      const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
-      auto found = host_.Facade()->GetMessage(active_thread, entry_id);
+      auto found = host_.Facade()->GetMessage(thread_id, entry_id);
       if (found && found->has_value()) {
         ThreadMessage message = **found;
         message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
@@ -1057,7 +1072,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     // Working-set / bubble buttons must key send_chat_action to the ThreadMessage that
     // actually stores chat_actions — not a stale agent entry id when we append a new row.
     std::string action_entry_id = entry_id;
-    const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
+    const std::string& active_thread = thread_id;
     bool message_exists = false;
     if (host_.MessagingIsReady() && !action_entry_id.empty()) {
       auto found = host_.Facade()->GetMessage(active_thread, action_entry_id);
@@ -1155,7 +1170,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
   // An answer that arrived in a chat the user is not looking at shows as unread in the chat list (Kenneth
   // 2026-10-28: "在那个对话框列表那显示……一或者是二这样的一个提醒"). The open chat is never counted.
-  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id) &&
+  if (host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id) &&
       !host_.AskAiPanelShows(thread_id)) {
     host_.Facade()->IncrementUnread(thread_id);
   }
@@ -1163,7 +1178,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
   host_.SyncShellSessions();
   chat_.status = "";
   if (!use_llm_) {
-    MarkAgentIdle(thread_id.empty() ? host_.ActiveThreadId() : thread_id); // the mock has no session to say it ended
+    MarkAgentIdle(thread_id); // the mock has no session to say it ended
     DrainQueue();
   } else {
     RefreshBusyForActiveThread(); // the session's LoadingChanged(false) ends "busy"
@@ -1173,6 +1188,14 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 }
 
 void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
+  if (event.thread_id.empty() && event.turn != 0) {
+    // A Home event carries no thread: its turn tells a stopped turn's late answer or end from the turn now running.
+    if (event.turn < home_turn_) {
+      log().info << "Late event of a stopped Home turn dropped (type " << static_cast<int>(event.type) << ")";
+      return;
+    }
+    home_turn_ = event.turn; // a Home turn started elsewhere (a card, a button) is newer
+  }
   // An image turn rejected by the server (413 / 400) is worded here, not with the server's text.
   const char* image_error_key = AiImageErrorKindKey(event.error_kind);
   const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
@@ -1221,16 +1244,23 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
   case AgentEventType::AssistantDelta:
     OnAssistantDelta(event);
     break;
-  case AgentEventType::AssistantReady:
-    ClearStreamingRow(EventThread(event));
-    if (EventThread(event) == kAskAiOnceThread) {
+  case AgentEventType::AssistantReady: {
+    const std::string thread = EventThread(event);
+    ClearStreamingRow(thread);
+    if (thread == kAskAiOnceThread) {
       host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
       break;
     }
-    FinishAssistantReply(event.entry_id, event.text, event.from_model,
-                         event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
-                         event.shared_ai_mode, event.sources);
+    if (thread.empty()) {
+      // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
+      // person. Dropped, said in the log.
+      log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
+      break;
+    }
+    FinishAssistantReply(event.entry_id, event.text, event.from_model, event.finish_reason, thread,
+                         event.response_goal, event.render_mode, event.shared_ai_mode, event.sources);
     break;
+  }
   case AgentEventType::ApprovalClosed:
     CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome, event.approval_id);
     break;
