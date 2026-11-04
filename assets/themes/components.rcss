@@ -8915,6 +8915,13 @@ textarea:composing ~ .prompt-composer-label,
   font-weight: bold;
 }
 
+.shell-layer-compact .home-num--word {
+  font-size: 17dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .shell-layer-compact .home-small {
   display: block;
   font-size: 13dp;

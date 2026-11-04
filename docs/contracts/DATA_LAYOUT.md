@@ -59,6 +59,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
                             # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's
                             # when it goes; never written by history sync; per device. "You were mentioned" and jump-to-mention read it (additive)
+                            # thread_mentions_read (thread_id PRIMARY KEY, message_id, created_at) — the newest read mention of a thread: written
+                            # when the thread is opened (its newest unread row, if newer), dropped with that message or the thread / its
+                            # history; Home's Mentions widget reads the newest over both tables to stay up 7 days (additive)
                             # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
                             # G015. Added on open when missing — user_version unchanged)
                             # thread_local_prefs.share_ai_confirmed INTEGER NOT NULL DEFAULT 0 (1: "don't ask again" before sharing this chat

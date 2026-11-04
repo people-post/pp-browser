@@ -4,6 +4,7 @@
 
 #include "common/thread/ThreadRecordTypes.h"
 #include "lib/calls/CallSessionQueries.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <cstdint>
@@ -76,11 +77,11 @@ struct HomeFavorite {
   bool operator==(const HomeFavorite&) const = default;
 };
 
-/** The Mentions widget: unread @me in groups. */
+/** The Mentions widget: @me in groups, shown while the newest is recent (like Calls), read or not. */
 struct HomeMentions {
-  /** Unread messages that mention us, over every chat. */
+  /** Unread messages that mention us, over every chat (the big number; 0: "Recent mention" instead). */
   int count = 0;
-  /** The most recently active chat with one (what a tap opens, at its oldest unread mention). */
+  /** The chat of the newest mention (what a tap opens, at its oldest unread mention if any); empty: hidden. */
   std::string thread_id;
   std::string title;
   std::string preview;
@@ -105,8 +106,17 @@ inline constexpr size_t kHomeRecentRows = 3;
  */
 bool IsStrangerChat(ThreadKind kind, const PeerDisplayLabel& label);
 
-/** `rows`: the main (not archived) chats list. A widget the layout removed is left empty (not computed). */
-HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, const HomeWidgetLayout& layout);
+/** How long the Mentions widget keeps showing the newest mention once it is read. */
+inline constexpr int64_t kHomeMentionsRecentMs = 7LL * 24 * 60 * 60 * 1000;
+
+/**
+ * `rows`: the main (not archived) chats list. A widget the layout removed is left empty (not computed).
+ * `latest_mention`: the newest mention, read or not (IThreadMentionsStore::Latest); shown while it is at most
+ * kHomeMentionsRecentMs older than `now_ms` and its chat is in `rows`.
+ */
+HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, const HomeWidgetLayout& layout,
+                                    const std::optional<IThreadMentionsStore::Mention>& latest_mention = std::nullopt,
+                                    int64_t now_ms = 0);
 
 /** The starred contacts with no direct chat in `rows` (the caller looks them up to show them). */
 std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& rows,
@@ -140,7 +150,8 @@ HomeCalls SummarizeHomeCalls(const std::vector<call_queries::RecentCall>& calls,
 struct HomeWidgetData {
   bool any_chat = false;
   bool calls = false;
-  int mentions = 0;
+  /** A mention to show (unread, or read within kHomeMentionsRecentMs). */
+  bool mentions = false;
   int new_people = 0;
   size_t brief_items = 0;
 };

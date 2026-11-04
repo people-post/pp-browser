@@ -110,7 +110,9 @@ bool IsStrangerChat(const ThreadKind kind, const PeerDisplayLabel& label) {
   return kind == ThreadKind::Direct && !label.contact_id && label.trust != PeerLabelTrust::Contact;
 }
 
-HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, const HomeWidgetLayout& layout) {
+HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, const HomeWidgetLayout& layout,
+                                    const std::optional<IThreadMentionsStore::Mention>& latest_mention,
+                                    const int64_t now_ms) {
   HomeTodaySummary summary;
   if (layout.Kept(kHomeWidgetRecentChats)) {
     // The newest by activity, whatever is pinned at the top of the Chats list.
@@ -143,6 +145,15 @@ HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, con
       summary.mentions.count += row.mention_count;
       if (!latest || row.updated_at > latest->updated_at) {
         latest = &row;
+      }
+    }
+    // The newest mention's chat, read or not, while it is recent: the widget stays after the chat is opened.
+    if (latest_mention && now_ms - latest_mention->created_at <= kHomeMentionsRecentMs) {
+      for (const ChatSessionRow& row : rows) {
+        if (row.id == latest_mention->thread_id) {
+          latest = &row;
+          break;
+        }
       }
     }
     if (latest) {
@@ -233,7 +244,7 @@ HomeCalls SummarizeHomeCalls(const std::vector<call_queries::RecentCall>& calls,
 HomeWidgetData HomeWidgetDataOf(const HomeTodaySummary& summary, const HomeCalls& calls, const size_t brief_items) {
   return {.any_chat = !summary.recent.empty(),
           .calls = calls.latest.has_value(),
-          .mentions = summary.mentions.count,
+          .mentions = !summary.mentions.thread_id.empty(),
           .new_people = summary.new_contacts,
           .brief_items = brief_items};
 }
@@ -242,7 +253,7 @@ std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const 
   std::vector<std::string> shown;
   for (const std::string& id : layout.OnHome()) {
     const bool has = id == kHomeWidgetFavorites || (id == kHomeWidgetRecentChats && data.any_chat) ||
-                     (id == kHomeWidgetCalls && data.calls) || (id == kHomeWidgetMentions && data.mentions > 0) ||
+                     (id == kHomeWidgetCalls && data.calls) || (id == kHomeWidgetMentions && data.mentions) ||
                      (id == kHomeWidgetNewPeople && data.new_people > 0) ||
                      (id == kHomeWidgetBrief && data.brief_items > 0);
     if (has) {

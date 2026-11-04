@@ -12,6 +12,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
@@ -173,6 +174,8 @@ public:
   std::map<std::string, int> MentionCounts();
   /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
   std::optional<std::string> OldestMention(const std::string& thread_id);
+  /** The newest mention over every chat, read or not (Home's Mentions widget); none when none or unknown. */
+  std::optional<IThreadMentionsStore::Mention> LatestMention();
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */

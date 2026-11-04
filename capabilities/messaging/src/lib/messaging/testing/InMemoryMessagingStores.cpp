@@ -340,14 +340,35 @@ Roe<void> InMemoryThreadMentionsStore::Add(const std::string& thread_id, const s
   return {};
 }
 
+Roe<void> InMemoryThreadMentionsStore::MarkThreadRead(const std::string& thread_id) const {
+  std::lock_guard lock(mutex_);
+  auto thread = mentions_.find(thread_id);
+  if (thread == mentions_.end()) {
+    return {};
+  }
+  if (!thread->second.empty()) {
+    const auto& newest = *thread->second.rbegin();
+    auto [kept, inserted] = read_.try_emplace(thread_id, newest);
+    if (!inserted && kept->second < newest) {
+      kept->second = newest;
+    }
+  }
+  mentions_.erase(thread);
+  return {};
+}
+
 Roe<void> InMemoryThreadMentionsStore::DropThread(const std::string& thread_id) const {
   std::lock_guard lock(mutex_);
   mentions_.erase(thread_id);
+  read_.erase(thread_id);
   return {};
 }
 
 Roe<void> InMemoryThreadMentionsStore::DropMessage(const std::string& thread_id, const std::string& message_id) const {
   std::lock_guard lock(mutex_);
+  if (auto read = read_.find(thread_id); read != read_.end() && read->second.second == message_id) {
+    read_.erase(read);
+  }
   if (auto thread = mentions_.find(thread_id); thread != mentions_.end()) {
     std::erase_if(thread->second, [&](const auto& m) { return m.second == message_id; });
     if (thread->second.empty()) {
@@ -386,6 +407,26 @@ Roe<std::optional<std::string>> InMemoryThreadMentionsStore::Oldest(const std::s
     return std::optional<std::string>();
   }
   return std::optional<std::string>(thread->second.begin()->second); // by created_at, then message id
+}
+
+Roe<std::optional<IThreadMentionsStore::Mention>> InMemoryThreadMentionsStore::Latest() const {
+  std::lock_guard lock(mutex_);
+  std::optional<Mention> latest;
+  const auto consider = [&latest](const std::string& thread_id, const std::pair<int64_t, std::string>& at) {
+    if (!latest || at.first > latest->created_at ||
+        (at.first == latest->created_at && at.second > latest->message_id)) {
+      latest = Mention{.thread_id = thread_id, .message_id = at.second, .created_at = at.first};
+    }
+  };
+  for (const auto& [thread_id, mentions] : mentions_) {
+    if (!mentions.empty()) {
+      consider(thread_id, *mentions.rbegin());
+    }
+  }
+  for (const auto& [thread_id, newest] : read_) {
+    consider(thread_id, newest);
+  }
+  return latest;
 }
 
 } // namespace pbr

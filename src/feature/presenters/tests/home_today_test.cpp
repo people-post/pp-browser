@@ -83,6 +83,50 @@ TEST(HomeTodayTest, MentionsCountEveryUnreadMentionAndNameTheLatestChat) {
   EXPECT_EQ(SummarizeHomeToday({Row("quiet", 5)}, kAll).mentions.count, 0);
 }
 
+// Kenneth 2026-11-04: the widget stays once the chat is opened, like Calls: a mention from the last 7 days, read or
+// not, keeps its chat on Home; the number shows only while some are unread.
+TEST(HomeTodayTest, ARecentReadMentionKeepsTheWidgetWithNoNumber) {
+  const int64_t day = 24LL * 60 * 60 * 1000;
+  const int64_t now = 100 * day;
+  ChatSessionRow work = Row("work", 0, false, now - day);
+  work.preview = "Bob: thanks";
+  const std::vector<ChatSessionRow> rows = {Row("quiet", 0, false, now), work};
+  const IThreadMentionsStore::Mention read{.thread_id = "work", .message_id = "m1", .created_at = now - 2 * day};
+
+  const HomeTodaySummary summary = SummarizeHomeToday(rows, kAll, read, now);
+  EXPECT_EQ(summary.mentions.count, 0);
+  EXPECT_EQ(summary.mentions.thread_id, "work");
+  EXPECT_EQ(summary.mentions.title, "T-work");
+  EXPECT_EQ(summary.mentions.preview, "Bob: thanks");
+  EXPECT_TRUE(HomeWidgetDataOf(summary, {}, 0).mentions);
+
+  // Older than 7 days: hidden.
+  const IThreadMentionsStore::Mention old{.thread_id = "work", .message_id = "m1", .created_at = now - 8 * day};
+  const HomeTodaySummary stale = SummarizeHomeToday(rows, kAll, old, now);
+  EXPECT_TRUE(stale.mentions.thread_id.empty());
+  EXPECT_FALSE(HomeWidgetDataOf(stale, {}, 0).mentions);
+  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(stale, {}, 0)),
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetRecentChats}));
+
+  // Its chat deleted (not in the list): hidden too.
+  EXPECT_TRUE(SummarizeHomeToday({Row("quiet", 0, false, now)}, kAll, read, now).mentions.thread_id.empty());
+}
+
+TEST(HomeTodayTest, TheNewestMentionNamesTheChatWhileOthersAreUnread) {
+  const int64_t now = 1'000'000'000'000;
+  ChatSessionRow hiking = Row("hiking", 2, false, now - 500);
+  hiking.mention_count = 1;
+  ChatSessionRow work = Row("work", 0, false, now - 100);
+  // A newer mention in "work", already read; one unread in "hiking": the number counts the unread one, the chat
+  // named is the newest mention's.
+  const IThreadMentionsStore::Mention newest{.thread_id = "work", .message_id = "m9", .created_at = now - 100};
+  const HomeTodaySummary summary = SummarizeHomeToday({hiking, work}, kAll, newest, now);
+  EXPECT_EQ(summary.mentions.count, 1);
+  EXPECT_EQ(summary.mentions.thread_id, "work");
+  // No store answer: the latest chat with an unread mention, as before.
+  EXPECT_EQ(SummarizeHomeToday({hiking, work}, kAll).mentions.thread_id, "hiking");
+}
+
 TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
   const int64_t midnight = 1'000'000'000;
   const int64_t now = midnight + 10LL * 60 * 60 * 1000;

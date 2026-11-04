@@ -1139,7 +1139,10 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
     return;
   }
   const HomeWidgetLayout layout = HomeLayout();
-  home_summary_ = SummarizeHomeToday(list.rows, layout);
+  // The newest mention, read or not, keeps the Mentions widget while it is recent (only read when it is kept).
+  const std::optional<IThreadMentionsStore::Mention> latest_mention =
+      layout.Kept(kHomeWidgetMentions) && messaging_ready_ && facade_ ? facade_->LatestMention() : std::nullopt;
+  home_summary_ = SummarizeHomeToday(list.rows, layout, latest_mention, util::NowUnixMs());
   shell_.home_recent.clear();
   for (const ChatSessionRow& from : home_summary_.recent) {
     shell_.home_recent.push_back(ToSessionDisplayRow(from));

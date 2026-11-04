@@ -91,13 +91,15 @@
           <span class="home-small">{{i18n:home.calls.missed}}</span>
           <span class="home-small home-small--two">{{home_calls_latest}}</span>
         </button>
-        <!-- Mentions: unread @me in groups; a tap opens the chat at its oldest unread mention. -->
+        <!-- Mentions: @me in groups from the last 7 days, read or not (like Calls); the number counts the unread ones,
+             none unread: "Recent mention". A tap opens the chat (at its oldest unread mention, if any). -->
         <button class="home-w home-w--tap" type="button" data-if="w.id == 'mentions'" data-event-click="home_open_mentions()">
           <span class="home-wh">
             <span class="home-wh-icon home-wh-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="13" height="13"></svg></span>
             <span class="home-wh-title">{{i18n:home.widget.mentions}}</span>
           </span>
-          <span class="home-num">{{home_mentions}}</span>
+          <span class="home-num" data-if="home_mentions > 0">{{home_mentions}}</span>
+          <span class="home-num home-num--word" data-if="home_mentions == 0">{{i18n:home.mentions.recent}}</span>
           <span class="home-small home-small--two">{{home_mentions_where}}</span>
         </button>
         <!-- New people: unread chats from people who are not contacts; a tap opens the first. -->

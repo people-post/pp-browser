@@ -1345,6 +1345,7 @@
     "home.widget.brief": "今日简报",
     "home.favorites.empty": "在联系人页点星标，常用的人就会出现在这里。",
     "home.calls.missed": "今天未接来电",
+    "home.mentions.recent": "最近提到我",
     "home.calls.voice": "语音",
     "home.calls.video": "视频",
     "home.calls.latest": "最近：{call}",

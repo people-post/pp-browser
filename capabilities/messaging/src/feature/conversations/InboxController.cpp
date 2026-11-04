@@ -84,7 +84,7 @@ Roe<Thread> InboxController::OpenThread(const std::string& thread_id) {
   KeepListed(thread_id);  // a chat the user opened is theirs, even before anything is said in it
   MarkThreadRead(thread_id);
   if (mentions_) {
-    (void)mentions_->DropThread(thread_id);  // read: "You were mentioned" goes with the unread count
+    (void)mentions_->MarkThreadRead(thread_id);  // read: "You were mentioned" goes with the unread count
   }
   if (on_thread_changed_) {
     on_thread_changed_();

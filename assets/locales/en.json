@@ -1389,6 +1389,7 @@
     "home.widget.brief": "Today's briefs",
     "home.favorites.empty": "Tap the star on a contact's page to keep them here.",
     "home.calls.missed": "Missed today",
+    "home.mentions.recent": "Recent mention",
     "home.calls.voice": "Voice",
     "home.calls.video": "Video",
     "home.calls.latest": "Latest: {call}",

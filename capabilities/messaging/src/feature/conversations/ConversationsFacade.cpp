@@ -418,6 +418,15 @@ std::optional<std::string> ConversationsFacade::OldestMention(const std::string&
   return oldest ? *oldest : std::nullopt;
 }
 
+std::optional<IThreadMentionsStore::Mention> ConversationsFacade::LatestMention() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return std::nullopt;
+  }
+  auto latest = mentions->Latest();
+  return latest ? *latest : std::nullopt;
+}
+
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
   return hub_.ShareContact(thread_id, contact_id);
 }

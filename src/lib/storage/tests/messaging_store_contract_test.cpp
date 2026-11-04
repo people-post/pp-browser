@@ -250,6 +250,42 @@ TEST_P(MessagingStoreContractTest, MentionsAreOnePerMessageOldestFirst) {
   EXPECT_FALSE(mentions.Oldest("t1").value().has_value());
 }
 
+// Opening a chat reads its mentions; Home's widget still sees the newest one (Latest) until the chat or the message
+// goes.
+TEST_P(MessagingStoreContractTest, ReadMentionsLeaveTheUnreadSetButStayLatest) {
+  IThreadMentionsStore& mentions = stores_->Mentions();
+  EXPECT_FALSE(mentions.Latest().value().has_value());
+  ASSERT_TRUE(mentions.Add("t1", "m1", 10));
+  ASSERT_TRUE(mentions.Add("t1", "m2", 30));
+  ASSERT_TRUE(mentions.Add("t2", "m3", 20));
+  using Mention = IThreadMentionsStore::Mention;
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m2", .created_at = 30}));
+
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  EXPECT_EQ(mentions.Threads().value(), std::set<std::string>{"t2"});
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t2", 1}}));
+  EXPECT_FALSE(mentions.Oldest("t1").value().has_value());
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m2", .created_at = 30}))
+      << "read, still the newest";
+  ASSERT_TRUE(mentions.MarkThreadRead("t1")) << "nothing unread: a no-op";
+  EXPECT_EQ(mentions.Latest().value()->message_id, "m2");
+
+  // A newer mention anywhere takes over; reading it replaces the thread's read one.
+  ASSERT_TRUE(mentions.Add("t1", "m4", 40));
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t1", .message_id = "m4", .created_at = 40}));
+
+  // The message deleted: the read row goes and the next newest shows.
+  ASSERT_TRUE(mentions.DropMessage("t1", "m4"));
+  EXPECT_EQ(mentions.Latest().value(), (Mention{.thread_id = "t2", .message_id = "m3", .created_at = 20}));
+  // The chat deleted or cleared: read and unread go.
+  ASSERT_TRUE(mentions.Add("t1", "m5", 50));
+  ASSERT_TRUE(mentions.MarkThreadRead("t1"));
+  ASSERT_TRUE(mentions.DropThread("t1"));
+  ASSERT_TRUE(mentions.DropThread("t2"));
+  EXPECT_FALSE(mentions.Latest().value().has_value());
+}
+
 INSTANTIATE_TEST_SUITE_P(Impls, MessagingStoreContractTest, ::testing::Values(Impl::Sqlite, Impl::Memory),
                          [](const ::testing::TestParamInfo<Impl>& info) {
                            return info.param == Impl::Sqlite ? std::string("Sqlite") : std::string("Memory");
