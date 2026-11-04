@@ -2043,10 +2043,11 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-/* 24dp tab icons (§8.2): size in dp so the layout box matches the drawn icon on every density. */
+/* 28dp tab icons, one step up from §8.2's 24dp (Kenneth 2026-11-04: "图标好像小了一点，感觉很小气"); the 11dp label
+   stays. Size in dp so the layout box matches the drawn icon on every density. */
 .shell-nav-rail--compact .shell-nav-tab svg {
-  width: 24dp;
-  height: 24dp;
+  width: 28dp;
+  height: 28dp;
 }
 
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */

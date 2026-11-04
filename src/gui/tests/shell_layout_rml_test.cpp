@@ -3,6 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 namespace pbr {
@@ -42,6 +45,20 @@ TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
 }
 
 // Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
+TEST(ShellLayoutRmlTest, ThePhoneTabIconsAre28dpAndTheLabels11dp) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.6): the icons one step bigger, the words as they were.
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string css = buffer.str();
+  const size_t icon = css.find(".shell-nav-rail--compact .shell-nav-tab svg {");
+  ASSERT_NE(icon, std::string::npos);
+  EXPECT_EQ(css.find("width: 28dp;\n  height: 28dp;", icon), css.find("width:", icon));
+  const size_t label = css.find(".shell-nav-rail--compact .shell-nav-tab-label {");
+  ASSERT_NE(label, std::string::npos);
+  EXPECT_EQ(css.find("font-size: 11dp;", label), css.find("font-size:", label));
+}
+
 TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
