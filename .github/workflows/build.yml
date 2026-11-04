@@ -310,6 +310,57 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
+  # Downloadable Linux build of every develop / main push (no tests: the build job runs them). Packaged
+  # layout (bin/ + share/pp-browser/assets); no backend URL is compiled in, set PP_BROWSER_ORIGIN at run time.
+  linux-package:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_COMPRESSLEVEL: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ccache libx11-dev libxext-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev libxfixes-dev libxrender-dev libxss-dev libgl-dev libdbus-1-dev libssl-dev libpulse-dev libasound2-dev
+
+      - name: Ensure ccache directory exists
+        run: |
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ runner.os }}-ccache-pkg-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-pkg-v1-
+
+      - name: Configure
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_COMPILER_CACHE=ON \
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/stage/pp-browser-linux-x86_64"
+
+      - name: Build
+        run: cmake --build build --target pp-browser -j 4
+
+      - name: Install and pack
+        run: |
+          cmake --install build --strip
+          tar -C stage -czf "pp-browser-linux-x86_64-${GITHUB_SHA::8}.tar.gz" pp-browser-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp-browser-linux-${{ github.ref_name }}
+          path: pp-browser-linux-x86_64-*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
   # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
   # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
   # October 2026. Mirrors `scripts/platform/ios_build.sh configure-device` + `build`, Ninja tree.
