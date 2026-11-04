@@ -34,12 +34,16 @@ struct AiDotScene {
  * - Listen: leans in with big eyes, both nod, signal arcs pulse beside the partner (D: equalizer bars in its bubble).
  * - Think: eyes up and right, a "typing" bubble with three bouncing dots (D: the dots in its bubble).
  * - Five: the two bump into a high five with happy eyes and a star (C, D: sparkle lines).
- * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a check).
+ * - Happy: both jump one after the other with happy eyes, cheeks and two floating hearts (C, D: a nod; D draws a
+ *   check).
  * - Private: closes its eyes, turns away and shows a lock ("I don't read your chats").
  * Not in the random rotation: Sleep (closed eyes, a breath, three rising z's; once after kSleepAfterMs without a touch,
- * then it stays still, asleep, until the next touch) and Poke (a tap: it squashes and wobbles, then the panel opens).
+ * then it stays still, asleep, until the next touch), Poke (a tap: it squashes and wobbles, then the panel opens) and
+ * Pop (a tap on it tucked: it jumps out, the mockups' squash-and-stretch jump, then the panel opens).
  */
-enum class AiDotIdle { None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke };
+enum class AiDotIdle {
+  None, Sway, Blink, Look, Talk, Shy, Wave, Listen, Think, Five, Happy, Private, Sleep, Poke, Pop
+};
 
 /** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
 enum class AiDotLook { OneEye, TwoEyes, Cool, Plain };
@@ -74,12 +78,12 @@ struct AiDotPoint {
  * The phone AI dot without any DOM (Kenneth 2026-11-02/03: "可以到处放，或者把它吸在侧边", "设置里面设置打开或关闭"):
  * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area. It never tucks on a
  * timer (Kenneth 2026-11-04): the user tucks it half off the screen by letting go with more than half of it past the
- * edge, or by flinging it fast toward an edge; a tap on a tucked dot opens the panel and it stays tucked, a drag
- * brings it out. While it is out, every 3–6 s it plays one idle action picked at random, never the same one twice in
- * a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，……他靠边的这个时间稍微慢一点"; 原话 21: all the mockup's
- * motions, hearts, signal arcs and stars); tucked, it does nothing, so nothing wakes the app. Left alone for
- * kSleepAfterMs it plays Sleep once and then rests asleep with nothing scheduled; any touch wakes it. A tap on it out
- * plays Poke and opens the panel when the poke has played (Changes::open).
+ * edge, or by flinging it fast toward an edge; a tap on a tucked dot makes it jump out and then opens the panel, and
+ * it stays out (原话 21.2: "点它的时候他就自己跳出来"); a drag brings it out too. While it is out, every 3–6 s it
+ * plays one idle action picked at random, never the same one twice in a row (Kenneth 2026-11-04: "说话呀、害羞啊……
+ * 都没有看到"; 原话 21: all the mockup's motions, hearts, signal arcs and stars); tucked, it does nothing, so nothing
+ * wakes the app. Left alone for kSleepAfterMs it plays Sleep once and then rests asleep with nothing scheduled; any
+ * touch wakes it. A tap on it out plays Poke and opens the panel when the poke has played (Changes::open).
  * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
  * edge and the clamps follow it. Times are milliseconds on any steady clock. UI thread.
  */
@@ -130,6 +134,7 @@ public:
   static constexpr int64_t kSleepMs = 4000;
   static constexpr int64_t kPokeMs = 600;
   static constexpr int64_t kPokeCalmMs = 450;
+  static constexpr int64_t kPopMs = 700;
   static constexpr int64_t kIdleTailMs = 100;
 
   static AiDotLook LookFrom(const std::string_view look) {
@@ -193,6 +198,8 @@ public:
       return "sleep";
     case AiDotIdle::Poke:
       return "poke";
+    case AiDotIdle::Pop:
+      return "pop";
     case AiDotIdle::None:
       break;
     }
@@ -268,6 +275,8 @@ public:
       return kSleepMs;
     case AiDotIdle::Poke:
       return Calm(look) ? kPokeCalmMs : kPokeMs;
+    case AiDotIdle::Pop:
+      return kPopMs;
     case AiDotIdle::None:
       break;
     }
@@ -341,7 +350,8 @@ public:
       changes.idle = true;
       ++idle_count_;
       if (ended == AiDotIdle::Sleep) {
-        // It rests asleep (Asleep() since the sleep began, so the still pose takes over its end): nothing until a touch.
+        // It rests asleep (Asleep() since the sleep began, so the still pose takes over its end): nothing until a
+        // touch.
       } else if (!tucked_) {
         next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
       }
@@ -440,8 +450,8 @@ public:
   }
 
   struct Release {
-    bool tap = false;          ///< No drag: the dot is poked (Changes::open follows when the poke has played)...
-    bool open_now = false;     ///< ...or, tucked, the ask-AI panel opens at once.
+    bool tap = false;          ///< No drag: a poke, or a jump out of the tuck; then Changes::open opens the panel.
+    bool untucked = false;     ///< The tap was on it tucked: it is out now, at the same place (persist that).
     bool moved = false;        ///< Dragged: `place` is where it now rests.
     AiDotPlace place;
     bool tucked = false;       ///< Dragged past the edge or flung at it: `place` is its side, half off the screen.
@@ -458,13 +468,12 @@ public:
     last_touch_ms_ = now_ms;
     if (!dragging_) {
       release.tap = true;
-      if (tucked_) {
-        release.open_now = true;
-        return release;
-      }
-      // The poke plays first (RCSS keyframes), then the panel opens; nothing else is scheduled meanwhile.
-      idle_ = AiDotIdle::Poke;
-      idle_end_ms_ = now_ms + IdleLengthMs(AiDotIdle::Poke, look_) + kIdleTailMs;
+      // The poke (out) or the jump out of the tuck plays first (RCSS keyframes), then the panel opens; nothing else
+      // is scheduled meanwhile. Out of its tuck it stays out, also after the panel.
+      release.untucked = tucked_;
+      tucked_ = false;
+      idle_ = release.untucked ? AiDotIdle::Pop : AiDotIdle::Poke;
+      idle_end_ms_ = now_ms + IdleLengthMs(idle_, look_) + kIdleTailMs;
       next_idle_ms_.reset();
       open_when_done_ = true;
       return release;

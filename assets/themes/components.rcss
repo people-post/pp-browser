@@ -2671,6 +2671,32 @@ select selectbox option {
   animation: 0.45s cubic-out ai-dot-wide-eyes-calm;
 }
 
+/* Pop (a tap on it tucked): while it slides out of the tuck it jumps once, the mockups' squash-and-stretch jump
+   (calm: a small hop); the panel opens when it has landed. */
+@keyframes ai-dot-pop {
+  0% { transform: translateY(0%) scale(1, 1); }
+  15% { transform: translateY(0%) scale(1.08, 0.88); }
+  45% { transform: translateY(-12%) scale(0.94, 1.07); }
+  72% { transform: translateY(0%) scale(1.1, 0.86); }
+  88% { transform: translateY(0%) scale(0.98, 1.03); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-pop-calm {
+  0% { transform: translateY(0%); }
+  40% { transform: translateY(-4%); }
+  75% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+.ai-dot--pop .ai-dot-figure {
+  animation: 0.7s quadratic-in-out ai-dot-pop;
+}
+
+.ai-dot--calm.ai-dot--pop .ai-dot-figure {
+  animation: 0.7s sine-in-out ai-dot-pop-calm;
+}
+
 /* Happy eyes: the front ones while waving, all while giving five or happy; the calm looks keep theirs open for wave and
    five (C's happy eyes show for happy). */
 .ai-dot--wave .ai-dot-front .ai-dot-open,

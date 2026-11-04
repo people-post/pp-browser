@@ -476,7 +476,7 @@ struct ShellState {
   /** Tucked half off its side by the user (flung or dragged into the edge); kept with the place. */
   bool ai_dot_tucked = false;
   /** Bound: the dot is on screen now; its action now (AiDotModel::IdleName: `sway`, `blink`, `look`, `talk`, `shy`,
-   * `wave`, `listen`, `think`, `five`, `happy`, `private`, `sleep`, `poke`, or empty); asleep (eyes shut, still) after
+   * `wave`, `listen`, `think`, `five`, `happy`, `private`, `sleep`, `poke`, `pop`, or empty); asleep (eyes shut, still) after
    * its sleep until the next touch. */
   bool ai_dot_shown = false;
   ui::String ai_dot_idle;

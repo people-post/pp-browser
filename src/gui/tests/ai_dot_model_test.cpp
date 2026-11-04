@@ -1,7 +1,7 @@
 // The phone AI dot (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c): three sizes, drag anywhere, stick to the nearer
-// side, tuck half away only when the user flings or drags it into the edge, a random action from the mockups (never the
-// same twice running) every 3–6 s while it is out, sleep after two minutes without a touch, a poke before the panel
-// opens, and hidden wherever it would be in the way.
+// side, tuck half away only when the user flings or drags it into the edge (a tap brings it out with a jump), a random
+// action from the mockups (never the same twice running) every 3–6 s while it is out, sleep after two minutes without
+// a touch, a poke before the panel opens, and hidden wherever it would be in the way.
 #include "gui/shell/AiDotModel.h"
 
 #include <ui/base/SystemInterface.h>
@@ -211,6 +211,7 @@ TEST(AiDotModelTest, EachLookPlaysEveryMockupActionThePlainOneWithoutEyes) {
     for (const AiDotIdle idle : AiDotModel::IdleActions(look)) {
       EXPECT_NE(idle, AiDotIdle::Sleep) << "sleep comes only after a long time alone";
       EXPECT_NE(idle, AiDotIdle::Poke) << "a poke is the answer to a tap";
+      EXPECT_NE(idle, AiDotIdle::Pop) << "so is the jump out of the tuck";
     }
   }
   EXPECT_EQ(AiDotModel::LookFrom("a"), AiDotLook::OneEye);
@@ -370,19 +371,41 @@ TEST(AiDotModelTest, ASlowOrStoppedDragIsNoFling) {
   EXPECT_FALSE(DragAndRelease(vertical, rest, 0.f, -300.f, 100, 0).tucked) << "up is no edge";
 }
 
-TEST(AiDotModelTest, ATapOnATuckedDotOpensThePanelAndItStaysTucked) {
+TEST(AiDotModelTest, ATapOnATuckedDotMakesItJumpOutThenOpensThePanelAndItStaysOut) {
+  for (const AiDotLook look : {AiDotLook::TwoEyes, AiDotLook::Plain}) {
+    AiDotModel model;
+    model.Show(0, /*tucked=*/true);
+    model.Advance(0, look);
+    EXPECT_FALSE(model.MsUntilNext(0).has_value());
+    const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, true);
+    model.Press({rest.x_dp + 5.f, rest.y_dp + 5.f}, rest);
+    EXPECT_TRUE(model.Tucked()) << "a press alone does not bring it out";
+    const AiDotModel::Release release = model.Up(kArea, 1000);
+    EXPECT_TRUE(release.tap);
+    EXPECT_TRUE(release.untucked);
+    EXPECT_FALSE(release.moved) << "same side, same height";
+    EXPECT_FALSE(model.Tucked()) << "out at once (ShellAiDot slides it out)";
+    EXPECT_EQ(model.Idle(), AiDotIdle::Pop) << "with a jump";
+    const int64_t end = 1000 + AiDotModel::kPopMs + AiDotModel::kIdleTailMs;
+    EXPECT_EQ(model.MsUntilNext(1000), end - 1000) << "one wake: the landing";
+    EXPECT_FALSE(model.Advance(end - 1, look).open);
+    EXPECT_TRUE(model.Advance(end, look).open) << "then the panel opens";
+    // The panel hides the dot; closed again, it comes back out, as the tap left it.
+    model.Hide();
+    model.Show(60000, model.Tucked());
+    EXPECT_FALSE(model.Tucked());
+    EXPECT_TRUE(model.MsUntilNext(60000).has_value()) << "out: its actions resume";
+  }
+}
+
+TEST(AiDotModelTest, ATapOnADotThatIsOutStillJustPokes) {
   AiDotModel model;
-  model.Show(0, /*tucked=*/true);
-  EXPECT_FALSE(model.MsUntilNext(0).has_value());
-  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, true);
-  model.Press({rest.x_dp + 5.f, rest.y_dp + 5.f}, rest);
-  EXPECT_TRUE(model.Tucked()) << "a press alone does not bring it out";
+  model.Show(0);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  model.Press({rest.x_dp, rest.y_dp}, rest);
   const AiDotModel::Release release = model.Up(kArea, 1000);
-  EXPECT_TRUE(release.tap);
-  EXPECT_TRUE(release.open_now) << "no poke while tucked: the panel opens at once";
-  EXPECT_TRUE(model.Tucked());
-  EXPECT_FALSE(model.MsUntilNext(1000).has_value()) << "still nothing scheduled";
-  EXPECT_FALSE(model.Advance(600000, kLook).idle);
+  EXPECT_FALSE(release.untucked);
+  EXPECT_EQ(model.Idle(), AiDotIdle::Poke);
 }
 
 TEST(AiDotModelTest, DraggingATuckedDotOutBringsItBackAndTheActionsResume) {
@@ -464,7 +487,7 @@ TEST(AiDotModelTest, ATapPokesItAndThePanelOpensWhenThePokeHasPlayed) {
     model.Press({rest.x_dp + 5.f, rest.y_dp + 5.f}, rest);
     const AiDotModel::Release release = model.Up(kArea, 1000);
     EXPECT_TRUE(release.tap);
-    EXPECT_FALSE(release.open_now) << "the poke plays first";
+    EXPECT_FALSE(release.untucked);
     EXPECT_EQ(model.Idle(), AiDotIdle::Poke);
     const int64_t end = 1000 + AiDotModel::IdleLengthMs(AiDotIdle::Poke, look) + AiDotModel::kIdleTailMs;
     EXPECT_EQ(model.MsUntilNext(1000), end - 1000) << "one wake: the end of the poke";
@@ -712,11 +735,11 @@ TEST_F(AiDotKeyframesTest, TheCalmSwayIsAsLongAsTheOther) {
   EXPECT_LE(frames, AiDotModel::kSwayMs * 60 / 1000 + 3);
 }
 
-/** Every action there is: each look's rotation, and sleep and poke. */
+/** Every action there is: each look's rotation, and sleep, poke and pop. */
 std::vector<AiDotIdle> AllActions() {
   return {AiDotIdle::Sway,  AiDotIdle::Blink, AiDotIdle::Look,    AiDotIdle::Talk,  AiDotIdle::Shy,
           AiDotIdle::Wave,  AiDotIdle::Listen, AiDotIdle::Think,  AiDotIdle::Five,  AiDotIdle::Happy,
-          AiDotIdle::Private, AiDotIdle::Sleep, AiDotIdle::Poke};
+          AiDotIdle::Private, AiDotIdle::Sleep, AiDotIdle::Poke, AiDotIdle::Pop};
 }
 
 /** The dot's look classes as window_shell.rml binds them (calm: C and D; plain: D). */

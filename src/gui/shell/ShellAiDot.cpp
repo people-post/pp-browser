@@ -211,7 +211,7 @@ void ShellAiDot::Update(ui::Context* context, const AiDotScene& scene) {
   }
   SyncIdle();
   if (open && callbacks_.on_tap) {
-    callbacks_.on_tap(); // a tap's poke has played
+    callbacks_.on_tap(); // a tap's poke or jump out has played
   }
 }
 
@@ -247,10 +247,14 @@ void ShellAiDot::EndPress(const bool cancelled) {
     }
     return;
   }
-  if (release.open_now && callbacks_.on_tap) {
-    callbacks_.on_tap();
+  if (release.untucked) {
+    // Tapped while tucked: it jumps out (Update slides it to its place out of the tuck) and stays out.
+    state_.ai_dot_tucked = false;
+    if (callbacks_.on_moved) {
+      callbacks_.on_moved(Place(), false);
+    }
   }
-  // Otherwise a tap's poke is playing: Update opens the panel when it has (AiDotModel::Changes::open).
+  // A tap's poke or jump is playing: Update opens the panel when it has (AiDotModel::Changes::open).
   SyncIdle();
 }
 
@@ -279,7 +283,7 @@ void ShellAiDot::ProcessEvent(ui::Event& event) {
       return;
     }
     const AiDotArea area = Area();
-    // Where it stands now: a tucked dot stays half out until it is dragged (a tap opens the panel, still tucked).
+    // Where it stands now: a tucked dot stays half out until it is dragged or let go (a tap makes it jump out).
     model_.Press(finger(), AiDotModel::Rest(Place(), area, model_.Tucked()));
     pressed_ = true;
     SyncIdle();
