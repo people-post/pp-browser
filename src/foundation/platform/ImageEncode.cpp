@@ -134,9 +134,9 @@ SDL_Surface* DecodeImageUpright(const uint8_t* bytes, const size_t size, const c
   if (!surface) {
     return nullptr;
   }
-  // The orientation sits in the head of the file (EXIF comes before the image data).
-  constexpr size_t kHeadBytes = 128 * 1024;
-  const std::vector<uint8_t> head(bytes, bytes + std::min(size, kHeadBytes));
+  // The orientation sits in the head of the file (EXIF comes before the image data); the same window as
+  // ReadImageHeader, which sizes the bubble, so a picture is never laid out turned but drawn sideways.
+  const std::vector<uint8_t> head(bytes, bytes + std::min(size, kImageHeaderReadBytes));
   const std::optional<ImageHeaderInfo> header = ReadImageHeaderBytes(head);
   return header ? ApplyExifOrientation(surface, header->exif_orientation) : surface;
 }

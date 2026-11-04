@@ -3,10 +3,13 @@
 // 2026-11-04, PLAN-ui-refresh-impl 62.3: "这张图就没有正过来").
 #include "foundation/platform/ImageEncode.h"
 
+#include "common/ImageMetadata.h"
+
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -73,6 +76,37 @@ TEST(ImageUprightTest, AnUprightPhotoAndOneWithoutATagStayAsTheyAre) {
     ExpectColourAt(surface, 150, 50, false);
     SDL_DestroySurface(surface);
   }
+}
+
+// A camera that writes big metadata (maker notes, a preview) before the EXIF orientation: the decoder must still find
+// it, and agree with ReadImageHeader, which lays the bubble out (review of 51d463d8b: 128 KB vs 512 KB windows).
+TEST(ImageUprightTest, AnOrientationBehindLargeSegmentsStillTurnsAndMatchesTheHeaderSize) {
+  std::vector<uint8_t> jpeg = TwoToneJpeg(6);
+  // Three 65 KB APP4 segments (no meaning to any reader) between SOI and the EXIF segment: about 195 KB.
+  std::vector<uint8_t> padding;
+  for (int i = 0; i < 3; ++i) {
+    const uint16_t length = 65'000;
+    padding.insert(padding.end(), {0xFF, 0xE4, static_cast<uint8_t>(length >> 8), static_cast<uint8_t>(length & 0xFF)});
+    padding.insert(padding.end(), length - 2, 0x00);
+  }
+  jpeg.insert(jpeg.begin() + 2, padding.begin(), padding.end());
+  ASSERT_GT(padding.size(), 128u * 1024u);
+  ASSERT_LT(padding.size() + 64, kImageHeaderReadBytes);
+
+  SDL_Surface* surface = DecodeImageUpright(jpeg.data(), jpeg.size(), "jpg");
+  ASSERT_NE(surface, nullptr);
+  EXPECT_EQ(surface->w, 100) << "portrait, not on its side";
+  EXPECT_EQ(surface->h, 200);
+  ExpectColourAt(surface, 50, 25, true);
+
+  const std::vector<uint8_t> head(jpeg.begin(), jpeg.begin() + std::min(jpeg.size(), kImageHeaderReadBytes));
+  const auto header = ReadImageHeaderBytes(head);
+  ASSERT_TRUE(header.has_value());
+  EXPECT_EQ(header->exif_orientation, 6);
+  // The bubble's box (sides swapped for orientations 5..8) is the decoded picture's size.
+  EXPECT_EQ(header->height, surface->w);
+  EXPECT_EQ(header->width, surface->h);
+  SDL_DestroySurface(surface);
 }
 
 TEST(ImageUprightTest, AWrongExtensionDoesNotMatterAndGarbageIsNoPicture) {

@@ -8,9 +8,6 @@ namespace pbr {
 
 namespace {
 
-/** How much of a file is read to find its size: JPEG metadata segments can be large, the rest is tiny. */
-constexpr size_t kHeadBytes = 512 * 1024;
-
 uint16_t Be16(const uint8_t* p) { return static_cast<uint16_t>((p[0] << 8) | p[1]); }
 uint32_t Be32(const uint8_t* p) {
   return (static_cast<uint32_t>(p[0]) << 24) | (static_cast<uint32_t>(p[1]) << 16) |
@@ -189,7 +186,7 @@ std::optional<ImageHeaderInfo> ReadImageHeader(const std::string& path) {
   if (!input) {
     return std::nullopt;
   }
-  std::vector<uint8_t> head(kHeadBytes);
+  std::vector<uint8_t> head(kImageHeaderReadBytes);
   input.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
   head.resize(static_cast<size_t>(input.gcount()));
   return ReadImageHeaderBytes(head);
