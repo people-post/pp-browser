@@ -1661,15 +1661,20 @@ select selectbox option {
 
 /* Float: the mockup's float (translateY 0, -10, 0 units; calm floatC -5), once for 2.5 s instead of a loop, and back
    at rest (AiDotModel::kFloatMs). */
+/* Two soft bobs, ~4.5dp at the medium size: the mockup's 1% drift was invisible on a phone. */
 @keyframes ai-dot-float {
   0% { transform: translateY(0%); }
-  50% { transform: translateY(-0.97%); }
+  25% { transform: translateY(-7%); }
+  50% { transform: translateY(-1%); }
+  75% { transform: translateY(-5%); }
   100% { transform: translateY(0%); }
 }
 
 @keyframes ai-dot-float-calm {
   0% { transform: translateY(0%); }
-  50% { transform: translateY(-0.49%); }
+  25% { transform: translateY(-4%); }
+  50% { transform: translateY(-0.5%); }
+  75% { transform: translateY(-3%); }
   100% { transform: translateY(0%); }
 }
 
