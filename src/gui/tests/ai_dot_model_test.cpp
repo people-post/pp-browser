@@ -1,5 +1,5 @@
 // The phone AI dot (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c): three sizes, drag anywhere, stick to the nearer
-// side, tuck half away after 15 s, a random idle action (never the same twice running) every 5–10 s while it is out,
+// side, tuck half away after 20 s, a random idle action (never the same twice running) every 3–6 s while it is out,
 // and hidden wherever it would be in the way.
 #include "gui/shell/AiDotModel.h"
 
@@ -184,33 +184,33 @@ TEST(AiDotModelTest, ADragNeverCountsAsATapEvenWhenItEndsWhereItBegan) {
   EXPECT_TRUE(release.moved);
 }
 
-TEST(AiDotModelTest, TucksAfterFifteenSecondsAlone) {
+TEST(AiDotModelTest, TucksAfterTwentySecondsAlone) {
   AiDotModel model;
   model.Show(0);
-  EXPECT_FALSE(model.Advance(14999, kLook).tucked);
+  EXPECT_FALSE(model.Advance(19999, kLook).tucked);
   EXPECT_FALSE(model.Tucked());
-  EXPECT_TRUE(model.Advance(15000, kLook).tucked);
+  EXPECT_TRUE(model.Advance(20000, kLook).tucked);
   EXPECT_TRUE(model.Tucked());
 }
 
 TEST(AiDotModelTest, APressBringsATuckedDotOutAndTheClockStartsAgainOnRelease) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(15000, kLook);
+  model.Advance(20000, kLook);
   ASSERT_TRUE(model.Tucked());
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
   EXPECT_FALSE(model.Tucked());
   EXPECT_FALSE(model.Advance(40000, kLook).tucked) << "held: it does not tuck under the finger";
   model.Up(kArea, 40000);
-  EXPECT_FALSE(model.Advance(54999, kLook).tucked);
-  EXPECT_TRUE(model.Advance(55000, kLook).tucked);
+  EXPECT_FALSE(model.Advance(59999, kLook).tucked);
+  EXPECT_TRUE(model.Advance(60000, kLook).tucked);
 }
 
-TEST(AiDotModelTest, IdleActionsComeEveryFiveToTenSeconds) {
+TEST(AiDotModelTest, IdleActionsComeEveryThreeToSixSeconds) {
   for (int n = 0; n < 50; ++n) {
-    EXPECT_GE(AiDotModel::IdleDelayMs(n), 5000);
-    EXPECT_LE(AiDotModel::IdleDelayMs(n), 10000);
+    EXPECT_GE(AiDotModel::IdleDelayMs(n), 3000);
+    EXPECT_LE(AiDotModel::IdleDelayMs(n), 6000);
   }
   EXPECT_NE(AiDotModel::IdleDelayMs(0), AiDotModel::IdleDelayMs(1)) << "not a metronome";
 }
@@ -310,10 +310,10 @@ TEST(AiDotModelTest, AnIdleActionRunsOnlyAsLongAsItsKeyframes) {
 TEST(AiDotModelTest, TuckedItPlaysNothingSoTheAppCanSleep) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(15000, kLook);
+  model.Advance(20000, kLook);
   ASSERT_TRUE(model.Tucked());
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
-  EXPECT_FALSE(model.MsUntilNext(15000).has_value()) << "no wake at all while it sits tucked";
+  EXPECT_FALSE(model.MsUntilNext(20000).has_value()) << "no wake at all while it sits tucked";
   EXPECT_FALSE(model.Advance(600000, kLook).idle);
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
@@ -366,12 +366,12 @@ TEST(AiDotModelTest, HiddenNothingIsDueSoTheAppCanSleep) {
 TEST(AiDotModelTest, ShownAgainItComesOutAtItsEdge) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(15000, kLook);
+  model.Advance(20000, kLook);
   ASSERT_TRUE(model.Tucked());
   model.Hide();
-  model.Show(20000);
+  model.Show(25000);
   EXPECT_FALSE(model.Tucked());
-  EXPECT_EQ(model.MsUntilNext(20000), AiDotModel::IdleDelayMs(0)) << "its first action, then the tuck 15 s on";
+  EXPECT_EQ(model.MsUntilNext(25000), AiDotModel::IdleDelayMs(0)) << "its first action, then the tuck 20 s on";
 }
 
 TEST(AiDotModelTest, APressStopsAnIdleAction) {

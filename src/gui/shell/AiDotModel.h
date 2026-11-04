@@ -62,8 +62,8 @@ struct AiDotPoint {
 
 /**
  * The phone AI dot without any DOM (Kenneth 2026-11-02/03: "可以到处放，或者把它吸在侧边", "设置里面设置打开或关闭"):
- * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 15 s after the last
- * touch it tucks half off the screen, a press brings it out again. While it is out (not tucked), every 5–10 s it plays
+ * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 20 s after the last
+ * touch it tucks half off the screen, a press brings it out again. While it is out (not tucked), every 3–6 s it plays
  * one idle action picked at random, never the same one twice in a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，
  * ……他靠边的这个时间稍微慢一点"); tucked, it does nothing, so nothing wakes the app.
  * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
@@ -86,9 +86,9 @@ public:
   static constexpr float kBottomReserveDp = 57.f;
   /** A press that moves less than this is a tap. */
   static constexpr float kTapSlopDp = 10.f;
-  static constexpr int64_t kTuckAfterMs = 15000;
-  static constexpr int64_t kIdleMinMs = 5000;
-  static constexpr int64_t kIdleMaxMs = 10000;
+  static constexpr int64_t kTuckAfterMs = 20000;
+  static constexpr int64_t kIdleMinMs = 3000;
+  static constexpr int64_t kIdleMaxMs = 6000;
   /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. */
   static constexpr int64_t kSwayMs = 1200;
   static constexpr int64_t kBlinkMs = 500;
@@ -179,7 +179,7 @@ public:
     return place;
   }
 
-  /** The pause before idle move number `n` (5–10 s, varied but repeatable). */
+  /** The pause before idle move number `n` (3–6 s, varied but repeatable). */
   static int64_t IdleDelayMs(const int n) {
     const uint32_t mixed = static_cast<uint32_t>(n + 1) * 2654435761u;
     return kIdleMinMs + static_cast<int64_t>((mixed >> 8) % static_cast<uint32_t>(kIdleMaxMs - kIdleMinMs + 1));
