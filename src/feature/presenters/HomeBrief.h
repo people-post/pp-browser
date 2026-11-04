@@ -60,7 +60,7 @@ bool HomeBriefStale(const HomeBriefCache& cache, const std::string& feed, int64_
 bool ShouldFetchHomeBrief(bool widget_on, bool fetching, int64_t last_failed_ms, const HomeBriefCache& cache,
                           const std::string& feed, int64_t now_ms);
 
-/** The first kHomeBriefShown items of the cache when it is for `feed` (even when old); none otherwise. */
+/** The first kHomeBriefShown items with a link when the cache is for `feed` (even when old); none otherwise. */
 std::vector<HomeBriefItem> HomeBriefTop(const HomeBriefCache& cache, const std::string& feed);
 
 /** The line under a headline: "site · 08:00" (the chats list's date style); either part may be missing. */

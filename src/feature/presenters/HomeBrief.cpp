@@ -92,8 +92,17 @@ std::vector<HomeBriefItem> HomeBriefTop(const HomeBriefCache& cache, const std::
   if (cache.feed != feed) {
     return {};
   }
-  const size_t count = std::min(cache.items.size(), kHomeBriefShown);
-  return {cache.items.begin(), cache.items.begin() + static_cast<std::ptrdiff_t>(count)};
+  // Only headlines with a page to open: a row that opened the briefs chat instead would do what "See all" does.
+  std::vector<HomeBriefItem> top;
+  for (const HomeBriefItem& item : cache.items) {
+    if (top.size() == kHomeBriefShown) {
+      break;
+    }
+    if (!item.url.empty()) {
+      top.push_back(item);
+    }
+  }
+  return top;
 }
 
 std::string HomeBriefMeta(const HomeBriefItem& item, const int64_t now_ms) {

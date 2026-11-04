@@ -18,7 +18,7 @@ HomeBriefCache CacheOf(const std::string& feed, const int64_t fetched_at_ms, con
   cache.feed = feed;
   cache.fetched_at_ms = fetched_at_ms;
   for (size_t i = 0; i < count; ++i) {
-    cache.items.push_back({.title = "headline " + std::to_string(i + 1)});
+    cache.items.push_back({.title = "headline " + std::to_string(i + 1), .url = "https://example.com/" + std::to_string(i + 1)});
   }
   return cache;
 }
@@ -64,6 +64,15 @@ TEST(HomeBriefTest, ShowsTheFirstThreeOfItsOwnLanguage) {
   EXPECT_EQ(HomeBriefTop(CacheOf("en", kNow, 2), "en").size(), 2u);
   EXPECT_TRUE(HomeBriefTop(CacheOf("cn", kNow, 5), "en").empty()) << "another language's headlines are not shown";
   EXPECT_TRUE(HomeBriefTop(HomeBriefCache{}, "en").empty()) << "no data: the widget hides";
+}
+
+TEST(HomeBriefTest, SkipsHeadlinesWithoutAPageToOpen) {
+  HomeBriefCache cache = CacheOf("en", kNow, 4);
+  cache.items[0].url.clear();
+  const std::vector<HomeBriefItem> top = HomeBriefTop(cache, "en");
+  ASSERT_EQ(top.size(), 3u);
+  EXPECT_EQ(top[0].title, "headline 2") << "every row opens its page; the briefs chat is See all's";
+  EXPECT_EQ(top[2].title, "headline 4");
 }
 
 TEST(HomeBriefTest, FetchesOnlyWhenOnStaleIdleAndNotJustFailed) {
