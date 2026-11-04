@@ -438,6 +438,8 @@ History: [V021](../../projects/p2p-av-calls/DECISIONS.md#v021--blind-media-forwa
 
 **Audio packets:** a sent Opus packet holds 40 ms. That is half the packets of 20 ms, and with them half the per-packet headers: about 41 kbit/s less on the wire per stream to the hop, for 20 ms more delay ([A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag)). Playout runs in 20 ms slots and plays any packet length a peer sends, read from the packet's own Opus header; a 40 ms packet plays over two slots. The jitter buffer's delays are in milliseconds and counted in the sender's packets: a 60–400 ms adaptive target (3–20 packets of 20 ms, 2–10 of 40 ms) and an 800 ms cap. A lost packet is concealed as long as the packet before it. Health: `audio_io=vpio|sdl|none`, `io_underruns`, `fec=`.
 
+**Media frames:** every path sends the same [media frame](../contracts/WIRE_SCHEMAS.md#media-frames) (A029 H2), sealed once end to end under the call's media key, with a nonce derived from the frame's channel, stream, sender instance and seq and the key epoch. The engine draws its sender instance when it starts and counts audio and video from 1 under it. The 1:1 path renumbers audio for each media session (`CallDirectPath::audio_seq_`) and draws a new instance with it; its video keeps the engine's. Each 1:1 leg and each hop send function has its own `MediaFrameSendGuard`, as each has its own key.
+
 ---
 
 ## Internal design
@@ -625,7 +627,7 @@ is live until the hop attaches (`LiveCalls::NoteDirectHandedToHop`).
 | `capabilities/calls/src/feature/calls/CallEngine.*` | One call's handle on the engine, lent to its paths (V057) |
 | `capabilities/calls/src/feature/calls/CallDirectPath.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` / `CallDirectSeatPorts` (V048) |
 | `capabilities/calls/src/domain/call_media/CallMediaAmpTransport.*` | Amp call-media transport (`pp_domain_call_media`: pp-browser's realtime protocol, a client of the mesh) |
-| `capabilities/calls/src/domain/call_media/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
+| `capabilities/calls/src/domain/call_media/CallMediaFrameCrypto.h` | The seal contexts of a call's [media frames](../contracts/WIRE_SCHEMAS.md#media-frames): through a hop, and 1:1 |
 | `capabilities/calls/src/feature/calls/CallHopPath.*` | Hop planner façade; embeds `CallHopArmingPorts` / `CallHopPathSeatPorts`; projects into owned Workflow (V046/V048) |
 | `capabilities/calls/src/feature/calls/CallHopPathHostPorts.h` | CallDevice→Topology HostPorts (V046); Topology projects migrate subset to Workflow |
 | `capabilities/calls/src/feature/calls/CallHopRelayDeps.h` | `CallHopMediaRelayDeps` (hop pick wiring); includes the neutral ports below |

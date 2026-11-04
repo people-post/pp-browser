@@ -1,6 +1,7 @@
 #include "feature/calls/CallDirectPath.h"
 
 #include "lib/calls/CallDirectPathLogic.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "mesh/types/MediaChannel.h"
 #include "lib/calls/CallTxOnlyEscalateLogic.h"
 #include "lib/calls/SeedParkOutcome.h"
@@ -1291,6 +1292,7 @@ void CallDirectPath::ResetDirectSessionState(const std::string& call_id, const s
     receive_->remote_stream.store(PublisherStreamIdForIdentity(peer_identity), std::memory_order_release);
   }
   audio_seq_.store(0);
+  audio_instance_.store(mesh::NewMediaSenderInstance()); // a restarted numbering is a new sender instance
   ClearMeshConnectFailed();
   if (!offerer) {
     pending_answerer_ = false;
@@ -1345,8 +1347,11 @@ Roe<void> CallDirectPath::StartDirectEngine(const std::string& call_id) {
     if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
       return;
     }
-    const uint32_t seq = mesh::IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
-    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
+    // Audio is renumbered here (its own counter and instance); video keeps the engine's seq and instance.
+    const bool audio = mesh::IsAudioChannel(pkt.channel_id);
+    const uint32_t seq = audio ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+    const uint64_t instance = audio ? audio_instance_.load(std::memory_order_acquire) : pkt.instance;
+    (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark, instance);
   });
   if (!started) {
     return started;

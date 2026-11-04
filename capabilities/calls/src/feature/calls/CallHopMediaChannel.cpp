@@ -1,6 +1,7 @@
 #include "feature/calls/CallHopMediaChannel.h"
 
 #include "domain/call_media/CallMediaFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "mesh/types/MediaChannel.h"
 #include "common/Utilities.h"
 
@@ -55,10 +56,10 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
       return;
     }
     // The newest epoch first; the previous one while the others switch to it.
-    Roe<CallMediaDecodedFrame> plain = Error("no key opened the frame");
+    Roe<std::vector<uint8_t>> plain = Error("no key opened the frame");
+    const std::string context = CallMediaSfuContext(self->call_id_);
     for (const SfuKeyRing::Key& key : open_with) {
-      plain = DecryptCallMediaSfuFrame(key.key, self->call_id_, key.epoch, frame.stream_id,
-                                       static_cast<uint8_t>(frame.channel_id), frame.payload);
+      plain = mesh::OpenMediaFrame(key.key, context, key.epoch, frame);
       if (plain) {
         break;
       }
@@ -73,39 +74,39 @@ std::function<void(mesh::MediaDataFrame)> CallHopMediaChannel::MakeFrameSink(std
       }
       return;
     }
-    pkt.payload = std::move(plain->payload);
+    pkt.payload = std::move(*plain);
     (void)self->engine_->Deliver(pkt);
   };
 }
 
 MediaEngine::PacketSendFn CallHopMediaChannel::MakeSendFn(std::shared_ptr<SfuKeyRing> keys) {
-  return
-      [self = shared_from_this(), pub = LocalStreamId(), keys = std::move(keys)](const MediaEngine::MediaPacket& pkt) {
-        if (!self->relay_.relay) {
-          return;
-        }
-        mesh::MediaDataFrame frame;
-        frame.stream_id = pub;
-        frame.channel_id = pkt.channel_id;
-        frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
-        frame.seq = pkt.seq;
-        frame.mark = pkt.mark;
-        const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
-        if (!key.key.empty()) {
-          auto sealed = EncryptCallMediaSfuFrame(key.key, self->call_id_, key.epoch, pub, pkt.seq, pkt.mark,
-                                                 static_cast<uint8_t>(pkt.channel_id), pkt.payload);
-          if (!sealed) {
-            self->engine_->NoteOutboundDrop();
-            return;
-          }
-          frame.payload = std::move(*sealed);
-        } else {
-          frame.payload = pkt.payload;
-        }
-        if (!self->relay_.relay->SendFrame(frame)) {
-          self->engine_->NoteOutboundDrop();
-        }
-      };
+  return [self = shared_from_this(), pub = LocalStreamId(), keys = std::move(keys),
+          guard = std::make_shared<mesh::MediaFrameSendGuard>()](const MediaEngine::MediaPacket& pkt) {
+    if (!self->relay_.relay) {
+      return;
+    }
+    mesh::MediaDataFrame frame;
+    frame.stream_id = pub;
+    frame.channel_id = pkt.channel_id;
+    frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
+    frame.seq = pkt.seq;
+    frame.mark = pkt.mark;
+    frame.instance = pkt.instance;
+    const SfuKeyRing::Key key = keys->Current(); // the newest epoch (V003)
+    if (!key.key.empty()) {
+      // Never the same (channel, seq) twice under one instance and epoch: it would repeat a nonce (A029 H2).
+      if (!guard->Admit(pkt.instance, key.epoch, static_cast<uint8_t>(pkt.channel_id), pkt.seq) ||
+          !mesh::SealMediaFrame(key.key, CallMediaSfuContext(self->call_id_), key.epoch, frame, pkt.payload)) {
+        self->engine_->NoteOutboundDrop();
+        return;
+      }
+    } else {
+      frame.payload = pkt.payload;
+    }
+    if (!self->relay_.relay->SendFrame(frame)) {
+      self->engine_->NoteOutboundDrop();
+    }
+  };
 }
 
 void CallHopMediaChannel::AddRemoteStream(const uint32_t id) {

@@ -32,6 +32,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <random>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -49,6 +50,20 @@ constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 /** Bytes of one 20 ms mono s16 frame on the speaker. */
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+
+/**
+ * A random, nonzero media sender instance (the media frame nonce's, A029 H2): unique, not secret. pp-cpp-mesh's
+ * NewMediaSenderInstance is the same, out of lib/'s reach (mesh/types/ only).
+ */
+uint64_t NewSenderInstance() {
+  std::random_device rd;
+  uint64_t v = 0;
+  while (v == 0) {
+    v = (static_cast<uint64_t>(rd()) << 32) ^ rd();
+  }
+  return v;
+}
+
 /**
  * One sent Opus packet holds 40 ms (two 20 ms device frames): half the packets of 20 ms, and with them half the
  * per-packet headers — 41 kbit/s less on the wire per stream to the hop, for 20 ms more delay (A029). Playout
@@ -301,6 +316,8 @@ struct MediaEngine::Impl {
   std::mutex packet_send_call_mu;
   std::atomic<uint32_t> tx_audio_seq{0};
   std::atomic<uint32_t> tx_video_seq{0};
+  /** Picked with the counters above (they start here and only count up): the sender instance of every packet. */
+  const uint64_t tx_instance = NewSenderInstance();
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_send_video{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
@@ -1303,6 +1320,7 @@ struct MediaEngine::Impl {
           MediaPacket pkt;
           pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = tx_audio_seq.fetch_add(1) + 1;
+          pkt.instance = tx_instance;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
             capture_stage.Set(MediaThreadStage::Send);
@@ -1477,6 +1495,7 @@ struct MediaEngine::Impl {
     MediaPacket pkt;
     pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = tx_video_seq.fetch_add(1) + 1;
+    pkt.instance = tx_instance;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
     try {
