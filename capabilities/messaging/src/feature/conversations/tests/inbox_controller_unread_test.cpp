@@ -158,13 +158,66 @@ TEST(InboxControllerUnreadTest, ClearingAChatsHistoryDropsItsMentionMarker) {
   Thread other = group;
   other.id = "thread-group-2";
   ASSERT_TRUE(env.store->UpsertThread(other));
-  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 2000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: m-1 becomes the chat's read-mention row
+  env.inbox->ClearActiveThread();
+  ASSERT_TRUE(mentions.Add(group.id, "m-3", 3000));
   ASSERT_TRUE(mentions.Add(other.id, "m-2", 1000));
   ASSERT_EQ(*mentions.Threads(), (std::set<std::string>{group.id, other.id}));
+  ASSERT_EQ(mentions.Latest().value()->message_id, "m-3");
 
   ASSERT_TRUE(env.inbox->ClearThreadHistory(group.id, /*forget_memory=*/false));
   EXPECT_EQ(*mentions.Threads(), (std::set<std::string>{other.id})) << "only the cleared chat loses its marker";
   EXPECT_FALSE(mentions.Oldest(group.id).value());
+  // The cleared chat's read row (m-1, newer than m-2) went too: only the other chat's older mention is left.
+  const auto latest = mentions.Latest().value();
+  ASSERT_TRUE(latest);
+  EXPECT_EQ(latest->thread_id, other.id);
+  EXPECT_EQ(latest->message_id, "m-2");
+}
+
+TEST(InboxControllerUnreadTest, DeletingAChatDropsItsReadMention) {
+  InboxTestEnv env("close_drops_read_mention");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  InMemoryThreadMentionsStore mentions;
+  env.inbox->SetThreadMentions(&mentions);
+  Thread group;
+  group.id = "thread-group-close";
+  group.kind = ThreadKind::Group;
+  group.title = "Hike";
+  group.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(group));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: m-1 becomes the chat's read-mention row
+  ASSERT_TRUE(mentions.Threads()->empty());
+  ASSERT_TRUE(mentions.Latest().value());
+
+  ASSERT_TRUE(env.inbox->CloseThread(group.id));
+  EXPECT_FALSE(mentions.Latest().value()) << "a deleted chat leaves no recent mention";
+}
+
+TEST(InboxControllerUnreadTest, DeletingTheNewestReadMentionDropsItsRow) {
+  InboxTestEnv env("delete_drops_read_mention");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  InMemoryThreadMentionsStore mentions;
+  env.inbox->SetThreadMentions(&mentions);
+  Thread group;
+  group.id = "thread-group-delete";
+  group.kind = ThreadKind::Group;
+  group.title = "Hike";
+  group.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(group));
+  ASSERT_TRUE(mentions.Add(group.id, "m-1", 1000));
+  ASSERT_TRUE(mentions.Add(group.id, "m-2", 2000));
+  ASSERT_TRUE(env.inbox->OpenThread(group.id)); // read: the newest, m-2, is kept as the read-mention row
+  ASSERT_EQ(mentions.Latest().value()->message_id, "m-2");
+
+  ThreadMessage deleted;
+  deleted.id = "m-2";
+  deleted.thread_id = group.id;
+  deleted.content_type = ChatContentType::Text;
+  env.inbox->AfterMessageDeleted(group.id, deleted);
+  EXPECT_FALSE(mentions.Latest().value()) << "the deleted mention was the chat's only remembered one";
 }
 
 // A direct chat the group traffic made (store creation: not listed until it is the user's).
