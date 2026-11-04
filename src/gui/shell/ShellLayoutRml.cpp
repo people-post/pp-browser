@@ -203,11 +203,12 @@ std::string ShellLayoutRml::TransientLayer() const {
   std::ostringstream out;
   // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
   const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
-  out << "<div class=\"shell-layer shell-layer-transient" << compact
-      << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   // The contact page has a titled bar on phones, the colour of every phone bar, no lines. So does the blocked list.
+  // Both open with a large title in the page; the bar's title fades in once it scrolled away (ShellNavBarScroll).
   const bool blocked_list = compact[0] != '\0' && top.spec.key == "blocked_people";
   const bool titled = compact[0] != '\0' && (top.spec.key == "contact_detail" || blocked_list);
+  out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-title-host" : "")
+      << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"

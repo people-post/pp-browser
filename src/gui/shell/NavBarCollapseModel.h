@@ -5,6 +5,9 @@ namespace pbr {
 /**
  * Phone collapsing bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71): the decisions without any DOM.
  *
+ * A pushed page opens with an iOS large title in its content; the bar's small title replaces it once it scrolled
+ * under the bar (the tab pages' pattern, ShellLargeTitleScroll).
+ *
  * The chat header is taller at rest (avatar, name, subtitle) and shrinks to a thin bar with a centred name while the
  * user reads older history, so more of the transcript shows. It goes by the distance from the newest message (the
  * bottom of the transcript), which neither a page of older history loaded on top nor a new message while pinned
@@ -23,6 +26,14 @@ struct NavBarCollapseModel {
   static constexpr float kChatCollapseDp = 24.f;
   /** ...and back this far towards the newest, it expands. */
   static constexpr float kChatExpandDp = 32.f;
+
+  /**
+   * Pushed pages (settings pages, the contact / member page, the blocked list): a large title at the top of the
+   * content under a slim bar; the bar's small centred title fades in once the large title's text line (28dp on a 34dp
+   * line, components.rcss .page-large-title) has scrolled under the bar. A page too short to scroll keeps it.
+   */
+  static constexpr float kPageLargeTitleLineDp = 34.f;
+  static bool PageTitleCollapsed(const float scroll_top_dp) { return scroll_top_dp >= kPageLargeTitleLineDp; }
 
   /** One open chat's header. A new chat starts expanded (it opens at its newest message). */
   struct ChatHeader {

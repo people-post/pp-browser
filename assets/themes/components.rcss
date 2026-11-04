@@ -9395,6 +9395,85 @@ input.checkbox {
   box-sizing: border-box;
 }
 
+/* The engine leaves a scroller's own bottom padding out of its scroll height, so the clearance above the tab bar
+   goes on the section inside it: with the large title on top, the end of a longer page (Security) would otherwise
+   stay under the tab bar where it cannot be scrolled to. */
+.shell-layer-compact #settings-section-mount-sheet {
+  padding-bottom: 81dp;
+}
+
+/* Pushed pages' large title (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71; NavBarCollapseModel): a settings page,
+   a pushed page over it (Change PIN, a choice page), the contact / member page and the blocked list open with a 28dp
+   title at the top of their content under a slim, clear bar (back arrow, "?"). Once it has scrolled under the bar,
+   ShellNavBarScroll sets .nav-title-collapsed on the page (.nav-title-host): the bar's material, fade and small
+   centred title fade in, like the tab pages. A page too short to scroll keeps the large title. Page sheets keep
+   their centred title row (the large title shows only on the pushed page). */
+.page-large-title {
+  display: none;
+}
+
+.shell-layer-compact .settings-detail-view .page-large-title,
+.shell-layer-transient.shell-layer-compact .page-large-title {
+  display: block;
+  flex-shrink: 0;
+  height: 41dp;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 28dp;
+  line-height: 34dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once a page overflows; pushed pages scroll by touch, so their cards
+   keep their 16dp margins on both sides (the large title makes more pages long enough to scroll). */
+.shell-layer-compact .nav-title-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+/* A page pushed over a settings page has a clear bar at rest too: the page under it hides its own bar meanwhile. */
+.shell-layer-compact .settings-panel--subpage #settings-detail-view .settings-detail-header {
+  visibility: hidden;
+}
+
+/* The pushed contact page starts under its 48dp bar like the blocked list (the phone rule above zeroed its top). */
+.shell-layer-transient.shell-layer-compact .contact-detail-panel {
+  padding-top: 48dp;
+}
+
+.shell-layer-compact .nav-title-host .settings-detail-header,
+.shell-layer-transient.nav-title-host .shell-transient-chrome {
+  transition: background-color 0.2s cubic-out;
+}
+
+.shell-layer-compact .nav-title-host .settings-header-title,
+.shell-layer-compact .nav-title-host .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-title-host .shell-transient-title,
+.shell-layer-transient.nav-title-host .shell-transient-chrome .bar-fade {
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-header-title,
+.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-title,
+.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-chrome .bar-fade {
+  opacity: 1;
+}
+
+/* Frosted only once the bar shows (at rest it is clear, nothing is under it). */
+.shell-nav-page--frost .nav-title-host .settings-detail-header,
+.shell-layer-transient.nav-title-host .shell-transient-chrome.surface-chrome--frost {
+  backdrop-filter: none;
+}
+
+.shell-nav-page--frost .nav-title-host.nav-title-collapsed .settings-detail-header,
+.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-chrome.surface-chrome--frost {
+  backdrop-filter: blur(20px);
+}
+
 .shell-layer-compact .settings-section {
   margin-top: 0;
   padding: 0 16dp;

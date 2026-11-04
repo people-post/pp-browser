@@ -778,6 +778,27 @@ select selectbox option:hover {
   background-color: {{x-bar-blur}};
 }
 
+/* A pushed page with a large title: its bar is clear at rest (the bar colour at 0%, so the fade-in has no grey cast)
+   and takes the bar colour once the large title has scrolled under it; solid with Transparency off. */
+.shell-layer-compact .nav-title-host .settings-detail-header,
+.shell-layer-transient.shell-layer-compact.nav-title-host .shell-transient-chrome {
+  background-color: {{x-bar-fade}};
+}
+
+.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-detail-header,
+.shell-layer-transient.shell-layer-compact.nav-title-host.nav-title-collapsed .shell-transient-chrome {
+  background-color: {{x-bar}};
+}
+
+.shell-nav-page--frost .nav-title-host.nav-title-collapsed .settings-detail-header,
+.shell-layer-transient.shell-layer-compact.nav-title-host.nav-title-collapsed .shell-transient-chrome.surface-chrome--frost {
+  background-color: {{x-bar-blur}};
+}
+
+.page-large-title {
+  color: {{label}};
+}
+
 /* What runs under the chat header stays under a banner. */
 .shell-chat-overlay .chat-gap-banner {
   background-color: {{chat-bg}};

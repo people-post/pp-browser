@@ -83,6 +83,14 @@ TEST(NavBarCollapseModelTest, OnlyAFlipReports) {
   EXPECT_EQ(flips, 2);
 }
 
+TEST(NavBarCollapseModelTest, APushedPageKeepsItsLargeTitleUntilItScrolledUnderTheBar) {
+  EXPECT_FALSE(Model::PageTitleCollapsed(0.f)) << "at rest (and on a page too short to scroll) the large title shows";
+  EXPECT_FALSE(Model::PageTitleCollapsed(Model::kPageLargeTitleLineDp - 1.f));
+  EXPECT_TRUE(Model::PageTitleCollapsed(Model::kPageLargeTitleLineDp)) << "its 34dp line is under the bar";
+  EXPECT_TRUE(Model::PageTitleCollapsed(500.f));
+  EXPECT_FALSE(Model::PageTitleCollapsed(10.f)) << "scrolled back, the large title returns";
+}
+
 TEST(NavBarCollapseModelTest, ResetStartsExpanded) {
   Model::ChatHeader header;
   header.OnScroll(500.f);

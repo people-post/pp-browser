@@ -14,6 +14,9 @@ namespace {
 constexpr const char* kChatOverlayId = "shell-chat-overlay";
 constexpr const char* kTranscriptId = "chat-messages";
 constexpr const char* kChatCompactClass = "chat-bar-compact";
+constexpr const char* kPageScrollClass = "nav-title-scroll";
+constexpr const char* kPageHostClass = "nav-title-host";
+constexpr const char* kPageCollapsedClass = "nav-title-collapsed";
 
 float DpRatio(ui::Element* element) {
   ui::Context* context = element ? element->GetContext() : nullptr;
@@ -44,21 +47,44 @@ void ShellNavBarScroll::Refresh() {
   if (!document_) {
     return;
   }
+  ui::ElementList scrollers;
+  document_->GetElementsByClassName(scrollers, kPageScrollClass);
+  for (ui::Element* scroller : scrollers) {
+    OnPageScroll(scroller);
+  }
   ui::Element* overlay = document_->GetElementById(kChatOverlayId);
   if (!overlay) {
     chat_.Reset();
     return;
   }
-  if (ui::Element* transcript = document_->GetElementById(kTranscriptId)) {
-    OnChatScroll(transcript);
-  }
+  // A remount (a sheet opening over the chat) rebuilds the transcript, whose scroll position comes back only later:
+  // keep the state it had and let the next scroll decide. A chat that closed starts the next one expanded.
   overlay->SetClass(kChatCompactClass, chat_.compact);
 }
 
 void ShellNavBarScroll::ProcessEvent(ui::Event& event) {
   ui::Element* target = event.GetTargetElement();
-  if (target && target->GetId() == kTranscriptId) {
+  if (!target) {
+    return;
+  }
+  if (target->GetId() == kTranscriptId) {
     OnChatScroll(target);
+  } else if (target->IsClassSet(kPageScrollClass)) {
+    OnPageScroll(target);
+  }
+}
+
+void ShellNavBarScroll::OnPageScroll(ui::Element* scroller) {
+  ui::Element* host = scroller->GetParentNode();
+  while (host && !host->IsClassSet(kPageHostClass)) {
+    host = host->GetParentNode();
+  }
+  if (!host) {
+    return;  // a page sheet's copy of the page: it keeps its own title row
+  }
+  const bool collapsed = NavBarCollapseModel::PageTitleCollapsed(scroller->GetScrollTop() / DpRatio(scroller));
+  if (host->IsClassSet(kPageCollapsedClass) != collapsed) {
+    host->SetClass(kPageCollapsedClass, collapsed);
   }
 }
 
@@ -69,7 +95,8 @@ void ShellNavBarScroll::OnChatScroll(ui::Element* transcript) {
     return;
   }
   const float max_top = std::max(0.f, transcript->GetScrollHeight() - transcript->GetClientHeight());
-  const float from_newest_dp = std::max(0.f, max_top - transcript->GetScrollTop()) / DpRatio(transcript);
+  // Clamped: the rubber band past the oldest message springing back is not a move towards the newest.
+  const float from_newest_dp = std::clamp(max_top - transcript->GetScrollTop(), 0.f, max_top) / DpRatio(transcript);
   if (chat_.OnScroll(from_newest_dp)) {
     overlay->SetClass(kChatCompactClass, chat_.compact);
   }

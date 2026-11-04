@@ -4,7 +4,10 @@
   <p class="sheet-title" data-if="selected.member_preview">{{i18n:contacts.member_info}}</p>
   <p class="sheet-title" data-if="!selected.member_preview">{{i18n:contacts.info}}</p>
 </div>
-<div class="contact-detail-panel stack" data-model="contacts">
+<div class="contact-detail-panel nav-title-scroll stack" data-model="contacts">
+  <!-- The pushed page on phones only: a large title the bar's title replaces once it scrolled away. -->
+  <p class="page-large-title" data-if="selected.member_preview">{{i18n:contacts.member_info}}</p>
+  <p class="page-large-title" data-if="!selected.member_preview">{{i18n:contacts.info}}</p>
   <div class="contacts-detail-header stack">
     <div class="contact-detail-avatar-row row">
       <div class="contact-detail-avatar-frame"
