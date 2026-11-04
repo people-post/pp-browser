@@ -9,7 +9,9 @@ pp_browser_add_lib_library(pp_lib_media
     MediaEngine.cpp
     NoiseSuppressor.cpp
     SdlMediaDeviceBackend.cpp
+    SyntheticVideo.cpp
     ThreadCpu.cpp
+    VideoArrivalStats.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoYuv.cpp

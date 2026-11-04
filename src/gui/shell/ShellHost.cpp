@@ -983,10 +983,9 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
   DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
-  DataModelHost::Instance().Dirty("window", "call_in_progress_mic_level");
-  DataModelHost::Instance().Dirty("window", "call_in_progress_peer_level");
-  DataModelHost::Instance().Dirty("window", "call_in_progress_mic_hint");
-  DataModelHost::Instance().Dirty("window", "call_in_progress_peer_hint");
+  for (const char* name : kCallLevelVariables) {  // the same list LevelsOnly dirties
+    DataModelHost::Instance().Dirty("window", name);
+  }
   DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_on");
   DataModelHost::Instance().Dirty("window", "call_in_progress_speaker_on");
@@ -1024,6 +1023,11 @@ void ShellHost::ApplyCallChromeSnapshot(const CallChromeSnapshot& snapshot, Call
     RemountCallChrome();
   } else if (update == CallChromeUpdate::DirtyOnly) {
     DirtyCallChrome();
+  } else if (update == CallChromeUpdate::LevelsOnly) {
+    // Meters only: dirtying the whole call group here re-laid the call screen every frame (B146).
+    for (const char* name : kCallLevelVariables) {
+      DataModelHost::Instance().Dirty("window", name);
+    }
   }
   // Force Present so ring/accept chrome is not held behind idle wait (THREADING.md UI delivery).
   Backend::RequestForceFrame();

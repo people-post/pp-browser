@@ -1,4 +1,5 @@
 #include "feature/calls/CallHopRanking.h"
+#include "lib/people/RelaySetRules.h"
 
 #include "lib/calls/PeerCapsLogic.h"
 
@@ -73,7 +74,13 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
     ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));
   }
   // Only group calls take a media hop: durable relays first, whatever prefer_contacts says (#385).
-  return DurableRelaysFirst(std::move(ranked));
+  ranked = DurableRelaysFirst(std::move(ranked));
+  // N032: what this profile distrusts, a second relay of one operator, and old nodes are tried after the rest.
+  const std::shared_ptr<MeshNodeReputation> reputation = deps_->node_reputation ? deps_->node_reputation() : nullptr;
+  const RelaySetContext context =
+      MakeRelaySetContext(contacts, directory_nodes, deps_->bootstrap_peers, deps_->preferred_min_node_version,
+                          reputation.get(), MeshNodeReputation::NowMs());
+  return ApplyRelaySetRules(std::move(ranked), context);
 }
 
 bool CallHopRanking::HasCandidates() const {

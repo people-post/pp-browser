@@ -488,6 +488,9 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
+  if (!config.preferred_min_node_version.empty()) {
+    object.set("preferred_min_node_version", config.preferred_min_node_version);
+  }
   object.set("reachable_without_relay", config.reachable_without_relay);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
@@ -534,6 +537,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto trusted = object.getIf<bool>("trusted_relays_only")) {
     config.trusted_relays_only = *trusted;
+  }
+  if (auto floor = object.getString("preferred_min_node_version")) {
+    config.preferred_min_node_version = *floor;
   }
   if (auto audience = object.getString("direct_connections")) {
     if (auto parsed = mesh::DirectAudienceFromName(*audience)) {

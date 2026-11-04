@@ -194,6 +194,25 @@ std::string EncodePathSegment(const std::string& value) {
   return out;
 }
 
+} // namespace
+
+/** N032: what a mesh_node runs, at the top level of register/finish and of a /v1/mesh/nodes row. */
+static void ApplyNodeClaims(Object& body, const RegistrationPublishOpts& publish) {
+  if (publish.amp_wire > 0) {
+    body.set("amp_wire", static_cast<int64_t>(publish.amp_wire));
+  }
+  if (!publish.node_version.empty()) {
+    body.set("node_version", publish.node_version);
+  }
+  if (!publish.features.empty()) {
+    std::vector<Value> features;
+    for (const std::string& f : publish.features) {
+      features.emplace_back(f);
+    }
+    body.set("features", makeArray(std::move(features)));
+  }
+}
+
 void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& publish) {
   if (!publish.entity_kind.empty()) {
     body.set("entity_kind", publish.entity_kind);
@@ -206,9 +225,8 @@ void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& p
     caps.set("ledger_gateway", publish.capabilities.ledger_gateway);
     body.set("capabilities", std::move(caps));
   }
+  ApplyNodeClaims(body, publish);
 }
-
-} // namespace
 
 Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
   if (base_url_.empty()) {
@@ -236,18 +254,8 @@ Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& 
   return DirectoryHitFromJson(*root);
 }
 
-Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
-  if (base_url_.empty()) {
-    return Error("Directory base_url not configured");
-  }
-  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
-  if (!response) {
-    return response.error();
-  }
-  if (response.value().status_code < 200 || response.value().status_code >= 300) {
-    return Error("Mesh nodes list failed with status " + std::to_string(response.value().status_code));
-  }
-  auto root = TryParseObject(response.value().body);
+Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::string& json) {
+  auto root = TryParseObject(json);
   if (!root) {
     return Error("Invalid mesh nodes JSON");
   }
@@ -310,6 +318,19 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
         hit.capabilities.ledger_gateway = *ledger;
       }
     }
+    if (auto wire = obj->getIf<int64_t>("amp_wire"); wire && *wire > 0 && *wire < 16) {
+      hit.amp_wire = static_cast<int>(*wire);
+    }
+    if (auto version = obj->getString("node_version")) {
+      hit.node_version = *version;
+    }
+    if (const Array* features = obj->getArray("features")) {
+      for (const Value& f : features->elements) {
+        if (auto s = asString(f)) {
+          hit.features.push_back(*s);
+        }
+      }
+    }
     if (const Array* endpoints = obj->getArray("endpoints")) {
       for (const Value& ep_val : endpoints->elements) {
         const Object* ep = asObject(ep_val);
@@ -339,6 +360,20 @@ Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
     out.push_back(std::move(hit));
   }
   return out;
+}
+
+Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
+  if (base_url_.empty()) {
+    return Error("Directory base_url not configured");
+  }
+  const auto response = HttpClient::Get(base_url_ + "/v1/mesh/nodes");
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Mesh nodes list failed with status " + std::to_string(response.value().status_code));
+  }
+  return MeshNodeHitsFromDirectoryJson(response.value().body);
 }
 
 HttpRegistrationClient::HttpRegistrationClient(std::string base_url) : base_url_(std::move(base_url)) {}

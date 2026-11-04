@@ -3,6 +3,7 @@
 #include "common/MeshConfig.h"
 #include "common/ServiceEndpoints.h"
 #include "lib/people/IdentityStore.h"
+#include "lib/people/MeshNodeReputation.h"
 #include "mesh/host/MeshHost.h"
 #include "mesh/reachability/LanMdnsDiscovery.h"
 #include "mesh/types/AddressDisclosure.h"
@@ -104,6 +105,11 @@ public:
   virtual void MaybeRefreshDirectory() = 0;
   /** Drops the cache (the profile closes). Idempotent. */
   virtual void StopDirectoryCache() = 0;
+  /**
+   * What this profile saw mesh nodes do wrong (N032), kept with the directory cache: one per profile, persisted in
+   * its data dir. Never null (in memory only while no cache runs). Any thread.
+   */
+  virtual std::shared_ptr<MeshNodeReputation> NodeReputation() const = 0;
 
   // --- The neutral mesh objects (L015): reach, the hop policy, the media relay client. The owner keeps them for
   // the hub's lifetime and lends them to the features riding the mesh; the hub says where it is in the mesh's

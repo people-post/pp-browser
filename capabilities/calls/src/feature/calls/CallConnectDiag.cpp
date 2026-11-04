@@ -149,6 +149,8 @@ ShareWord PeerFailWord(const mesh::PeerReachFailure failure) {
     return "keepalive_lost";
   case mesh::PeerReachFailure::Unreachable:
     return "unreachable";
+  case mesh::PeerReachFailure::VersionMismatch:
+    return "version_mismatch";
   case mesh::PeerReachFailure::None:
     break;
   }

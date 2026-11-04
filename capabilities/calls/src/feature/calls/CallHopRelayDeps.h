@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/people/MeshNodeReputation.h"
 #include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "mesh/reach/MeshReachPorts.h"
 #include "domain/call_media/ICallMediaTransport.h"
@@ -41,6 +42,10 @@ struct CallHopMediaRelayDeps {
   bool trusted_relays_only = false;
   /** Cached mesh_node listings (n-dir). */
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
+  /** N032: this profile's verdicts on mesh nodes (the media hop ranking demotes what it distrusts). */
+  std::function<std::shared_ptr<MeshNodeReputation>()> node_reputation;
+  /** N032: relays said to run older than this (or nothing) are ranked after the others; empty = none. */
+  std::string preferred_min_node_version;
   /** DHT peer_routing cache (n2-caps). */
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** When false, org seed hops are omitted (bridge score / n-dir). */

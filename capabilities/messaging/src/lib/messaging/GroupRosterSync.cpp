@@ -265,6 +265,11 @@ Roe<ReplyOutcome> ApplyReply(IGroupRosterStore& roster, const group_roster_sync_
   return settle(listed ? GroupSyncState::Active : GroupSyncState::Removed);
 }
 
+bool StillAwaiting(const GroupMetadata& metadata, const std::string& request_id) {
+  return metadata.sync_state == GroupSyncState::Checking && !request_id.empty() &&
+         metadata.sync_request_id == request_id;
+}
+
 bool MaySend(const GroupMetadata& metadata) {
   return metadata.sync_state == GroupSyncState::Active;
 }

@@ -121,8 +121,13 @@ public:
                               const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
   /** G013: answer a member's roster check; as the owner, with a statement signed now. */
   Roe<void> AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request, const std::string& asker);
-  /** G013: check the group's members — ask the owner and every member we know; no sends until answered. */
+  /**
+   * G013: check the group's members — ask the owner and every member we know; no sends until answered. A check still
+   * unanswered is asked again after each of kRosterReaskDelaysMs (an answer can be lost: sealed for a device the
+   * member did not know yet, on a lane that does not resend).
+   */
   Roe<void> StartRosterCheck(const std::string& group_id);
+  static constexpr int64_t kRosterReaskDelaysMs[] = {15'000, 60'000, 300'000};
   /** Groups as the account locker keeps them (multi-device M023 §4). */
   Roe<std::vector<AccountStateGroup>> StateGroups() const;
   /**
@@ -132,6 +137,9 @@ public:
   Roe<void> RestoreGroup(const AccountStateGroup& group);
 
 private:
+  Roe<void> StartRosterCheckAttempt(const std::string& group_id, size_t attempt);
+  /** Ask again after kRosterReaskDelaysMs[attempt] unless answered, or a newer check (with its own timer) began. */
+  void ScheduleRosterReask(const std::string& group_id, const std::string& request_id, size_t attempt);
   Roe<std::string> ResolveRelayIdentity(const std::string& contact_id) const;
   Roe<std::string> LocalRelayIdentity() const;
   Roe<GroupMetadata> LoadMetadataOrError(const std::string& group_id) const;

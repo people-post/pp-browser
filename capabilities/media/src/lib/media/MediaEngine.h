@@ -62,6 +62,11 @@ public:
     uint16_t channel_id = 0;
     uint32_t seq = 0;
     uint8_t mark = 0;
+    /**
+     * Outbound: this engine's sender instance (random, never 0), with the seq counters it numbers: the media frame's
+     * nonce takes it, so a restarted engine under the same key never repeats one (A029 H2). Inbound: unused.
+     */
+    uint64_t instance = 0;
     std::vector<uint8_t> payload;
   };
   using PacketSendFn = std::function<void(const MediaPacket&)>;

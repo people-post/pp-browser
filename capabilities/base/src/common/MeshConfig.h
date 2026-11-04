@@ -58,6 +58,11 @@ struct MeshConfig {
    */
   bool trusted_relays_only = false;
   /**
+   * N032: relays that say they run an older pp-node than this (or say nothing) are tried after the others, never
+   * dropped. Raised as a node rollout progresses; empty = no floor.
+   */
+  std::string preferred_min_node_version;
+  /**
    * Desktop: keep a reservation on the mesh seeds so contacts can reach this device by its PeerId with no
    * relay (docs/contracts/ACCOUNT_CARD.md). Costs a little traffic and tells the seeds when it is online;
    * phones are woken by push instead.

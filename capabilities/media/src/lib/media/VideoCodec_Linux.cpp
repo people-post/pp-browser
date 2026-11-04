@@ -27,7 +27,7 @@ namespace {
 constexpr int64_t kMinBitrateBps = 200000;
 constexpr int64_t kMaxBitrateBps = 4000000;
 constexpr int kMaxDpbSurfaces = 4;
-constexpr int kIntraIdrPeriod = 48; // force IDR periodically (~2s @ 24fps)
+constexpr int kIntraIdrPeriod = 45; // force IDR periodically (kKeyframeIntervalSeconds at 15 fps)
 
 int32_t EstimateBitrateBps(int width, int height, int fps) {
   const double raw = static_cast<double>(width) * static_cast<double>(height) *

@@ -46,7 +46,7 @@ constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/12D3KooWGro
 // A second reachable hop (gt3): ranks first on A after StartCall; the planned hop must still win.
 constexpr char kOtherHopPeerId[] = "12D3KooWGroupCallComposeOtherHop";
 constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeOtherHop";
-/** Audio frames (20 ms) each side must decode from each other publisher. */
+/** Audio packets (40 ms) each side must decode from each other publisher. */
 constexpr uint64_t kMinRxFrames = 25;
 
 class FakeHopClient;

@@ -6,7 +6,7 @@
 
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/media/VideoCodecUnavailable.h"
-#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "lib/broadcast/BroadcastMedia.h"
 #include "common/MeshAlias.h"
 
@@ -148,9 +148,11 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   EXPECT_EQ(frame.stream_id, stream);
   EXPECT_EQ(frame.channel_id, mesh::kMediaChannelAudio);
   EXPECT_EQ(frame.channel_type, mesh::MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
-  auto opened = mesh::OpenMediaRelayFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, stream,
-                                    static_cast<uint8_t>(frame.channel_id), frame.payload);
+  EXPECT_NE(frame.instance, 0u) << "the engine's sender instance rides in the clear header";
+  auto opened = mesh::OpenMediaFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, frame);
   EXPECT_TRUE(opened) << "viewers open it with the broadcast label";
+  EXPECT_FALSE(mesh::OpenMediaFrame(key_, std::string("call-media-sfu|") + kProgram, 1, frame))
+      << "never under a call's label";
   EXPECT_GE(workflow_->CurrentStatus().frames_sent, 3u);
 }
 

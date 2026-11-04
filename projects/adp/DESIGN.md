@@ -27,6 +27,8 @@ L2 opaque payload (Noise / AEAD / RPC / Opus)
 
 ## Wire v1 (little-endian)
 
+*History: superseded by wire v2 (pp-cpp-amp v4.0.0, [A029](DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag)); the wire now is [ADP.md](../../docs/contracts/ADP.md).*
+
 | Field | Size | Notes |
 |-------|------|-------|
 | `version` | 1 | `1` |

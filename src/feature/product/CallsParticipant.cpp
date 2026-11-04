@@ -141,6 +141,7 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
   deps.mesh = reach.mesh;
   deps.mesh_config = reach.mesh_config;
   deps.list_directory_nodes = reach.list_directory_nodes;
+  deps.node_reputation = reach.node_reputation;
   deps.list_dht_nodes = reach.list_dht_nodes;
   deps.seed_dial_ok = reach.seed_dial_ok;
   deps.note_peer_device = [&hub](const std::string& account, const std::string& peer_id) {

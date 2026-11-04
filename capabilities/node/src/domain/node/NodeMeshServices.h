@@ -50,16 +50,22 @@ void ConfigureNodeAmpDirectory(
     mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys,
     std::function<std::vector<std::string>(const std::vector<std::string>&)> choose_query_peers = {});
 
-/** This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs. */
-mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config);
+/**
+ * This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs, and what it
+ * runs (N032: its amp wire version and `node_version`, the build's).
+ */
+mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config,
+                                        const std::string& node_version);
 
 /** Org seed: admit strangers for circuit + media relay at short-term + public scope (N018). */
 void ApplyOrgSeedAdmission(mesh::MeshHost& mesh);
 
 /**
  * Org seed (`pp-node`) after the Amp stack is up: dial endpoints for the bootstrap seeds, DHT and
- * directory against them, a static self row in the directory, and open admission.
+ * directory against them, a static self row in the directory, and open admission. In the node role it also tells
+ * every peer what it runs over channel 0 (N032; `node_version` is the build's).
  */
-void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role);
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
+                          const std::string& node_version);
 
 } // namespace pbr

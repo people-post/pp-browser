@@ -73,10 +73,6 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.ring_caller_label != next.ring_caller_label ||
                               synced.ring_media_label != next.ring_media_label ||
                               synced.in_call_title != next.in_call_title ||
-                              synced.in_call_mic_level != next.in_call_mic_level ||
-                              synced.in_call_peer_level != next.in_call_peer_level ||
-                              synced.in_call_mic_hint != next.in_call_mic_hint ||
-                              synced.in_call_peer_hint != next.in_call_peer_hint ||
                               synced.in_call_muted != next.in_call_muted ||
                               synced.in_call_camera_on != next.in_call_camera_on ||
                               synced.in_call_speaker_on != next.in_call_speaker_on ||
@@ -107,9 +103,35 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.ring_accept_short != next.ring_accept_short ||
                               synced.ring_voice_short != next.ring_voice_short;
   if (labels_changed) {
-    return CallChromeUpdate::DirtyOnly;
+    return CallChromeUpdate::DirtyOnly; // dirties the meters too
+  }
+
+  const bool levels_changed = synced.in_call_mic_level != next.in_call_mic_level ||
+                              synced.in_call_peer_level != next.in_call_peer_level ||
+                              synced.in_call_mic_hint != next.in_call_mic_hint ||
+                              synced.in_call_peer_hint != next.in_call_peer_hint;
+  if (levels_changed) {
+    // Meters exist only in the Expanded bar without a roster (ShellCallChromeRml): elsewhere a
+    // level change is invisible, and pushing it re-laid the whole call screen every frame (B146).
+    const bool meters_on_screen =
+        next.in_call_active && next.in_call_mode == CallChromeMode::Expanded && !next.in_call_show_roster;
+    return meters_on_screen ? CallChromeUpdate::LevelsOnly : CallChromeUpdate::None;
   }
   return CallChromeUpdate::None;
+}
+
+CallChromeUpdate CallChromeSyncGate::Decide(const CallChromeLayer& next,
+                                            std::chrono::steady_clock::time_point now) {
+  const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_, next);
+  if (update == CallChromeUpdate::LevelsOnly) {
+    if (levels_pushed_ && now - last_levels_ < kLevelInterval) {
+      return CallChromeUpdate::None; // keep synced_: the next poll pushes the newest level
+    }
+    last_levels_ = now;
+    levels_pushed_ = true;
+  }
+  synced_ = next;
+  return update;
 }
 
 } // namespace pbr

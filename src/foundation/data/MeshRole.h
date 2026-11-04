@@ -17,14 +17,15 @@ namespace pbr {
  * runtime mesh services prefer HTTP `GET /v1/mesh/nodes` (then this list).
  */
 inline constexpr const char* kDefaultMeshBootstrapPeers[] = {
-    // The org relays the directory listed on 2026-10-31 (after the 2026-10-30 fleet move, #416).
-    "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
-    "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
-    "/ip4/54.217.120.211/udp/443/adp/1.0.0/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
-    "/ip4/35.158.70.252/udp/443/adp/1.0.0/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
-    "/ip4/57.181.254.92/udp/443/adp/1.0.0/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
-    "/ip4/15.164.114.146/udp/443/adp/1.0.0/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
-    "/ip4/3.1.86.213/udp/443/adp/1.0.0/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j",
+    // The org relays the directory listed on 2026-10-31 (after the 2026-10-30 fleet move, #416), on wire v2 (N032
+    // item 3: an address says its wire version; a config's legacy /adp/1.0.0/ form still dials).
+    "/ip4/34.233.23.235/udp/443/adp/2/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+    "/ip4/50.18.237.202/udp/443/adp/2/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
+    "/ip4/54.217.120.211/udp/443/adp/2/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
+    "/ip4/35.158.70.252/udp/443/adp/2/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
+    "/ip4/57.181.254.92/udp/443/adp/2/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
+    "/ip4/15.164.114.146/udp/443/adp/2/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
+    "/ip4/3.1.86.213/udp/443/adp/2/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j",
 };
 inline constexpr std::size_t kDefaultMeshBootstrapPeerCount =
     sizeof(kDefaultMeshBootstrapPeers) / sizeof(kDefaultMeshBootstrapPeers[0]);

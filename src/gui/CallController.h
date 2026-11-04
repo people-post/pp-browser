@@ -16,6 +16,7 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 
+#include <chrono>
 #include <memory>
 #include <cstdint>
 #include <functional>
@@ -137,6 +138,10 @@ private:
   int64_t disconnected_since_ms_ = 0;
   static constexpr int64_t kDisconnectedCloseMs = 3000;
   int64_t last_media_health_log_ms_ = 0;
+  /** The diagnostics subtitle carries a millisecond age, new every frame; it is rebuilt at most once a
+   *  second so it does not re-lay the call screen every frame (B146). */
+  std::chrono::steady_clock::time_point last_debug_subtitle_{};
+  static constexpr std::chrono::milliseconds kDebugSubtitleInterval{1000};
   /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
   CallAudioFaultToastGate audio_fault_gate_;
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
@@ -168,7 +173,7 @@ private:
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
   /** Last chrome applied — idle poll must not remount when unchanged. */
-  CallChromeLayer synced_chrome_;
+  CallChromeSyncGate chrome_gate_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;

@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-What the `channel_id` of a media frame means, on the `media_relay` data plane (`u16`, [WIRE_SCHEMAS](WIRE_SCHEMAS.md)) and in the call-media frame body (`u8`). Relays forward and filter on it; they never look inside the payload.
+What the channel byte of a [media frame](WIRE_SCHEMAS.md#media-frames) means, on every path (`channel_id`, `u16` in code, one byte on the wire). Relays forward and filter on it; they never look inside the payload.
 
 ## Layout
 

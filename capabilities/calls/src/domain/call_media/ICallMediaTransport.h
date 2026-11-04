@@ -157,8 +157,9 @@ public:
                                int timeout_ms = 15000) = 0;
 
   virtual Roe<void> SendAudio(const std::vector<uint8_t>& opus_payload, uint32_t seq, uint8_t mark = 0) = 0;
-  virtual Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
-                              uint8_t mark = 0) = 0;
+  /** `instance`: the sender instance of the counter that numbered `seq` (0 = the transport's own; A029 H2). */
+  virtual Roe<void> SendMedia(uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq, uint8_t mark = 0,
+                              uint64_t instance = 0) = 0;
 };
 
 } // namespace pbr
