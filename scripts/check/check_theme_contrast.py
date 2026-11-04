@@ -3,6 +3,7 @@
 
 Two tiers, both themes (decided 2026-11-03: keep the Apple palette, check by tier):
   * body text  (label)                                   >= 4.5 : 1
+  * sender names (x-name-N, x-name-indigo) on bubble-in      >= 3.0 : 1 (light variants reach 4.5)
   * secondary  (label-2, accent / danger as text,
                 white text on accent, bubble-out, danger, mention)  >= 3.0 : 1
 Not checked: label-3 (placeholder, disabled) and icon-only colours (secure, warn, gray, success).
@@ -25,6 +26,9 @@ PAIRS = (
     + [("accent", s, 3.0) for s in ["bg", "bg-grouped", "bg-card", "bg-chrome", "chat-bg"]]
     + [("danger", s, 3.0) for s in ["bg", "bg-grouped", "bg-card"]]
     + [("label-on-accent", s, 3.0) for s in ["accent", "bubble-out", "danger", "mention"]]
+    # group sender names on a received bubble (light variants are darkened avatar colours; dark is the avatar colour)
+    + [(f"x-name-{n}", "bubble-in", 3.0) for n in (0, 1, 2, 3, 4, 5, 7)]
+    + [("x-name-indigo", "bubble-in", 3.0)]  # dark only; light indigo is avatar-6 (5.65:1, not a token pair)
 )
 
 
@@ -68,6 +72,8 @@ def main():
         for fg_name, bg_name, need in PAIRS:
             if fg_name not in tokens or bg_name not in tokens:
                 missing.update(n for n in (fg_name, bg_name) if n not in tokens)
+                continue
+            if tokens[fg_name][theme] == "-":  # a dark-only token has no light value
                 continue
             bg_rgb, bg_a = parse(tokens[bg_name][theme])
             surface = over(bg_rgb, bg_a, base_rgb)

@@ -92,3 +92,10 @@ x-call-accept	#34c759	#34c759	extra: phone call page answer buttons
 x-call-accent	#0a84ff	#0a84ff	extra: phone call page primary pill (Try again)
 x-card-3	-	#3a3a3c	extra: dark only, a field inside a card inside a raised (dark) sheet
 x-name-indigo	-	#7d7aff	extra: dark only, indigo group sender name (avatar-6 is 2.5:1 on a dark bubble)
+x-name-0	#0071ed	#007aff	extra: group sender name 0; light is darker than avatar-0 (>= 4.5:1 on the incoming bubble), dark is avatar-0
+x-name-1	#24883d	#34c759	extra: group sender name 1; light is darker than avatar-1 (>= 4.5:1 on the incoming bubble), dark is avatar-1
+x-name-2	#ad6500	#ff9500	extra: group sender name 2; light is darker than avatar-2 (>= 4.5:1 on the incoming bubble), dark is avatar-2
+x-name-3	#ec002d	#ff2d55	extra: group sender name 3; light is darker than avatar-3 (>= 4.5:1 on the incoming bubble), dark is avatar-3
+x-name-4	#aa47dc	#af52de	extra: group sender name 4; light is darker than avatar-4 (>= 4.5:1 on the incoming bubble), dark is avatar-4
+x-name-5	#238192	#30b0c7	extra: group sender name 5; light is darker than avatar-5 (>= 4.5:1 on the incoming bubble), dark is avatar-5
+x-name-7	#8c7251	#a2845e	extra: group sender name 7; light is darker than avatar-7 (>= 4.5:1 on the incoming bubble), dark is avatar-7
