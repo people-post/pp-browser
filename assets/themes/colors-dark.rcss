@@ -2730,9 +2730,16 @@ input.checkbox:checked {
   image-color: #8e8e93;
 }
 
-/* The row being dragged stands out on its card. */
-.shell-layer-compact .home-edit-row--lifted {
-  background-color: #7878803d;
+/* The row being dragged is lifted off its card: its own card colour and a soft shadow. While a row is held the press
+   tint would stay on the row the finger went down on, whichever widget it shows after a move: none while dragging. */
+.shell-layer-compact .home-edit-card--dragging .home-edit-row:active {
+  background-color: transparent;
+}
+
+.shell-layer-compact .home-edit-row--lifted,
+.shell-layer-compact .home-edit-card--dragging .home-edit-row--lifted:active {
+  background-color: #1c1c1e;
+  box-shadow: 0 6dp 18dp #00000026;
 }
 
 /* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets

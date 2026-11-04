@@ -124,6 +124,9 @@
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Element.h>
+#include <ui/base/Tween.h>
+#include <ui/style/Property.h>
+#include <ui/style/Transform.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/widgets/ElementFormControlTextArea.h>
 #include <ui/base/StringUtilities.h>
@@ -1248,6 +1251,41 @@ void ChatController::ApplyHomeEditRows(const HomeWidgetLayout& layout) {
   shell_.home_edit_dragging = home_edit_drag_ ? home_edit_drag_id_.c_str() : "";
 }
 
+namespace {
+
+// Edit Home's drag, like iOS (Kenneth 2026-11-04): the held row is lifted (a little larger, above the others, with a
+// shadow) and follows the finger; a row it passes slides into its new slot; on release it settles into its own.
+// Everything moves on `transform` (layout and the slot maths stay put) and only while a row is held or settling.
+constexpr float kHomeEditLift = 1.03f;
+constexpr float kHomeEditSlideSeconds = 0.2f;
+constexpr float kHomeEditFollowSeconds = 0.05f;
+
+ui::Property HomeEditRowTransform(const float dy_px, const float scale) {
+  return ui::Transform::MakeProperty({ui::Transforms::TranslateY(dy_px, ui::Unit::PX), ui::Transforms::Scale2D(scale)});
+}
+
+const ui::Tween kHomeEditEase(ui::Tween::Cubic, ui::Tween::Out);
+
+/** A row's slot centre on the page, px (transforms do not move the layout box). */
+float HomeEditSlotCentre(ui::Element* row) {
+  return row->GetAbsoluteOffset(ui::BoxArea::Border).y + row->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+}
+
+/** The rows on Home in `card`, in order: the list's hidden template row (data-for) is left out. */
+ui::ElementList HomeEditRows(ui::Element* card) {
+  ui::ElementList all;
+  card->QuerySelectorAll(all, ".home-edit-row");
+  ui::ElementList rows;
+  for (ui::Element* row : all) {
+    if (row->IsVisible()) {
+      rows.push_back(row);
+    }
+  }
+  return rows;
+}
+
+} // namespace
+
 void ChatController::OnHomeEditDragStart(const std::string& id) {
   const HomeWidgetLayout layout = HomeLayout();
   if (!layout.Kept(id)) {
@@ -1255,6 +1293,7 @@ void ChatController::OnHomeEditDragStart(const std::string& id) {
   }
   home_edit_drag_ = layout;
   home_edit_drag_id_ = id;
+  home_edit_grabbed_ = false;
   ApplyHomeEditRows(*home_edit_drag_);
   DirtyShell();
 }
@@ -1271,28 +1310,54 @@ void ChatController::OnHomeEditDrag(ui::Event& event) {
   if (!card) {
     return;
   }
+  home_edit_card_ = card->GetObserverPtr();
   const float y = static_cast<float>(event.GetParameter<int>("mouse_y", 0));
-  ui::ElementList rows;
-  card->QuerySelectorAll(rows, ".home-edit-row");
-  int nearest = -1;
-  float nearest_distance = 0.f;
+  const ui::ElementList rows = HomeEditRows(card);
+  const std::vector<std::string> on_home = home_edit_drag_->OnHome();
+  const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
+  if (rows.empty() || at == on_home.end() || static_cast<size_t>(at - on_home.begin()) >= rows.size()) {
+    return;
+  }
+  size_t current = static_cast<size_t>(at - on_home.begin());
+  if (!home_edit_grabbed_) {
+    // Where on the row the finger is (a handle is on the row, so at most half its height from the centre).
+    const float half = rows[current]->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+    home_edit_grab_px_ = std::clamp(y - HomeEditSlotCentre(rows[current]), -half, half);
+    home_edit_grabbed_ = true;
+  }
+  // The row's centre where the finger holds it, kept between the first and last slots.
+  const float first = HomeEditSlotCentre(rows.front());
+  const float last = HomeEditSlotCentre(rows.back());
+  const float held = std::clamp(y - home_edit_grab_px_, first, last);
+  size_t nearest = current;
+  float nearest_distance = std::abs(HomeEditSlotCentre(rows[current]) - held);
   for (size_t i = 0; i < rows.size(); ++i) {
-    const float centre =
-        rows[i]->GetAbsoluteOffset(ui::BoxArea::Border).y + rows[i]->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
-    const float distance = std::abs(centre - y);
-    if (nearest < 0 || distance < nearest_distance) {
-      nearest = static_cast<int>(i);
+    const float distance = std::abs(HomeEditSlotCentre(rows[i]) - held);
+    if (distance < nearest_distance) {
+      nearest = i;
       nearest_distance = distance;
     }
   }
-  const std::vector<std::string> on_home = home_edit_drag_->OnHome();
-  const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
-  if (nearest < 0 || at == on_home.end() || static_cast<size_t>(nearest) == static_cast<size_t>(at - on_home.begin())) {
-    return;
+  if (nearest != current) {
+    home_edit_drag_ = MoveHomeWidget(*home_edit_drag_, home_edit_drag_id_, nearest);
+    ApplyHomeEditRows(*home_edit_drag_);
+    DirtyShell();
+    // The list keeps its elements by position: each row between the old and new slot now shows the widget that was
+    // one slot over, so it starts where that widget was drawn and slides home.
+    const bool down = nearest > current;
+    const size_t lo = down ? current : nearest + 1;
+    const size_t hi = down ? nearest : current + 1;
+    for (size_t i = lo; i < hi; ++i) {
+      const size_t was = down ? i + 1 : i - 1;
+      const ui::Property from = HomeEditRowTransform(HomeEditSlotCentre(rows[was]) - HomeEditSlotCentre(rows[i]), 1.f);
+      rows[i]->Animate("transform", HomeEditRowTransform(0.f, 1.f), kHomeEditSlideSeconds, kHomeEditEase, 1, false,
+                       0.f, &from);
+    }
+    current = nearest;
   }
-  home_edit_drag_ = MoveHomeWidget(*home_edit_drag_, home_edit_drag_id_, static_cast<size_t>(nearest));
-  ApplyHomeEditRows(*home_edit_drag_);
-  DirtyShell();
+  // The held row follows the finger (a short ease smooths the touch samples).
+  rows[current]->Animate("transform", HomeEditRowTransform(held - HomeEditSlotCentre(rows[current]), kHomeEditLift),
+                         kHomeEditFollowSeconds, kHomeEditEase);
 }
 
 void ChatController::OnHomeEditDragEnd() {
@@ -1300,6 +1365,18 @@ void ChatController::OnHomeEditDragEnd() {
     return;
   }
   const HomeWidgetLayout dragged = *home_edit_drag_;
+  // The held row settles into its slot and comes back to its size.
+  if (ui::Element* card = home_edit_card_.get(); card && home_edit_grabbed_) {
+    const ui::ElementList rows = HomeEditRows(card);
+    const std::vector<std::string> on_home = dragged.OnHome();
+    const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
+    if (at != on_home.end() && static_cast<size_t>(at - on_home.begin()) < rows.size()) {
+      rows[static_cast<size_t>(at - on_home.begin())]->Animate("transform", HomeEditRowTransform(0.f, 1.f),
+                                                              kHomeEditSlideSeconds, kHomeEditEase);
+    }
+  }
+  home_edit_card_ = nullptr;
+  home_edit_grabbed_ = false;
   home_edit_drag_.reset();
   home_edit_drag_id_.clear();
   SaveHomeLayout(dragged);

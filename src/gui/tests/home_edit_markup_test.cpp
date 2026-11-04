@@ -45,6 +45,27 @@ TEST(HomeEditMarkupTest, EditHomeIsAPageSheetWithRemoveAndAddRows) {
   EXPECT_NE(rcss.find("drag: drag;", handle), std::string::npos) << "the engine sends it drag events";
 }
 
+// Kenneth 2026-11-04: reordering should feel like iOS. The held row is lifted (above the others, a shadow from the
+// token, out of the card's clip while held); ChatController moves rows on transform only, and only while dragging.
+TEST(HomeEditMarkupTest, TheHeldRowLiftsAndRowsSlideOnTransform) {
+  const std::string rml = ReadAsset("views/home_edit.rml");
+  EXPECT_TRUE(Has(rml, "data-class-home-edit-row--lifted=\"row.id == home_edit_dragging\""));
+  EXPECT_TRUE(Has(rml, "data-class-home-edit-card--dragging=\"home_edit_dragging != ''\""));
+  const std::string css = ReadAsset("themes/components.rcss");
+  EXPECT_TRUE(Has(css, ".shell-layer-compact .home-edit-row--lifted {\n  z-index: 2;"));
+  EXPECT_TRUE(Has(css, ".shell-layer-compact .home-edit-card--dragging {\n  overflow: visible;"));
+  for (const char* theme : {"themes/colors-light.rcss", "themes/colors-dark.rcss"}) {
+    EXPECT_TRUE(Has(ReadAsset(theme), "box-shadow: 0 6dp 18dp")) << theme;
+  }
+  std::ifstream in(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatController.cpp");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string source = buffer.str();
+  EXPECT_TRUE(Has(source, "constexpr float kHomeEditLift = 1.03f;"));
+  EXPECT_TRUE(Has(source, "constexpr float kHomeEditSlideSeconds = 0.2f;"));
+  EXPECT_TRUE(Has(source, "rows[i]->Animate(\"transform\""));
+}
+
 TEST(HomeEditMarkupTest, HomeDrawsTheWidgetsInTheUsersOrderAndHasAnEditButton) {
   const std::string rml = ReadAsset("views/home.rml");
   EXPECT_TRUE(Has(rml, "data-for=\"w : home_widgets\""));

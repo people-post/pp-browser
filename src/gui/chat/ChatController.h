@@ -51,6 +51,7 @@
 #include "lib/ui/ContextMenuHost.h"
 
 #include <source_location>
+#include <ui/base/ObserverPtr.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Input.h>
@@ -604,6 +605,11 @@ private:
   /** The order being dragged in Edit Home (saved when the handle is let go); none while no handle is held. */
   std::optional<HomeWidgetLayout> home_edit_drag_;
   std::string home_edit_drag_id_;
+  /** The card the held row is in (for the settle on release), and where on the row the finger took it (px from its
+   *  centre; set on the first move, home_edit_grabbed_). */
+  ui::ObserverPtr<ui::Element> home_edit_card_;
+  float home_edit_grab_px_ = 0.f;
+  bool home_edit_grabbed_ = false;
   HomeBriefCache home_brief_;
   std::string home_brief_dir_;          // the profile directory the cache was read from
   bool home_brief_fetching_ = false;

@@ -8,7 +8,8 @@
   </div>
   <div class="ac-scroll">
     <p class="text group-head" data-if="home_edit_on.size > 0">{{i18n:home_edit.on_home}} · {{i18n:home_edit.drag_hint}}</p>
-    <div class="group-card home-edit-card" data-if="home_edit_on.size > 0">
+    <div class="group-card home-edit-card" data-if="home_edit_on.size > 0"
+         data-class-home-edit-card--dragging="home_edit_dragging != ''">
       <div class="group-row home-edit-row" data-for="row : home_edit_on"
            data-class-home-edit-row--lifted="row.id == home_edit_dragging">
         <button class="home-edit-toggle" type="button" data-event-click="home_widget_remove(row.id)">

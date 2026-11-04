@@ -9082,7 +9082,18 @@ textarea:composing ~ .prompt-composer-label,
 
 /* Edit Home (mockup 10-home-widgets B): a red minus / green plus at the start of each row, the size at its end. */
 .shell-layer-compact .home-edit-row {
+  position: relative;
   padding-left: 0;
+}
+
+/* The held row (ChatController moves it on transform): above the others with a soft shadow (colors-*.rcss), a moving
+   element being the one exception to "no shadows". The card lets it out while a row is held. */
+.shell-layer-compact .home-edit-row--lifted {
+  z-index: 2;
+}
+
+.shell-layer-compact .home-edit-card--dragging {
+  overflow: visible;
 }
 
 .shell-layer-compact .home-edit-toggle {
