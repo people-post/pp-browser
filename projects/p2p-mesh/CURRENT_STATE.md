@@ -2,7 +2,7 @@
 
 > **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `foundation/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-10-31
+**Last updated:** 2026-11-04
 
 ## Landed
 
@@ -150,6 +150,7 @@
 2. Curated public / paid regulation later  
 3. **L3.5** multi-hop when single-hop cannot reach B  
 4. Optional DHT lab smoke (two Nodes, DHT on) — **done** (`scripts/test/pp_node_dht_smoke.sh`)
+5. **N032** node versions — versions and features in the directory row and channel 0, a version negotiation packet (pp-cpp-amp) before the next wire break, client rules (claims only exclude, verification promotes, operator diversity, local reputation): [N032](DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), not started
 
 ## Follow-ups
 
