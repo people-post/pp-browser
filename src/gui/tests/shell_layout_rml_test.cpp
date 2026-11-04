@@ -91,6 +91,37 @@ TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoo
   EXPECT_TRUE(Has(rml.ShellRoot(), "id=\"shell-dialog-mount\""));
 }
 
+TEST(ShellLayoutRmlTest, ADestructiveConfirmCarriesTheDangerClassAndASplitButtonPair) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.dialog.active = true;
+  state.dialog.kind = OverlayKind::Confirm;
+  state.dialog.show_cancel = true;
+  const std::string plain = ShellLayoutRml(state, false, "").Dialog();
+  EXPECT_FALSE(Has(plain, "shell-dialog--destructive"));
+  EXPECT_TRUE(Has(plain, "shell-dialog-ok shell-dialog-ok--split"));
+  EXPECT_FALSE(Has(plain, "shell-dialog-actions--stack"));
+
+  state.dialog.destructive = true;
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog--destructive"));
+
+  // An alert has the one button, with no vertical hairline beside it.
+  state.dialog.show_cancel = false;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-ok--split"));
+}
+
+TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
+  EXPECT_FALSE(ShellLayoutRml::DialogButtonsStacked("Cancel", "Delete"));
+  EXPECT_FALSE(ShellLayoutRml::DialogButtonsStacked("取消", "移除联系人"));
+  EXPECT_TRUE(ShellLayoutRml::DialogButtonsStacked("Cancel", "Remove this device"));
+  EXPECT_TRUE(ShellLayoutRml::DialogButtonsStacked("取消", "移除这台设备并退出登录"));
+
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.dialog.active = true;
+  state.dialog.show_cancel = true;
+  state.dialog.ok_label = "Remove this device";
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
+}
+
 TEST(ShellLayoutRmlTest, NoDialogNoPinGateNoMarkup) {
   const ShellLayoutRml rml(ShellState{}, false, "");
   EXPECT_TRUE(rml.Dialog().empty());

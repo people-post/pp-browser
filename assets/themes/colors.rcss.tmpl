@@ -937,6 +937,27 @@ input.checkbox:checked {
   color: {{label}};
 }
 
+/* Phone alert buttons (DESIGN-pp-ui §9): no pills, accent text, hairlines; a destructive confirm in the danger colour. */
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn {
+  background-color: transparent;
+  color: {{accent}};
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn:hover,
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn:focus {
+  background-color: {{fill-2}};
+}
+
+.shell-body--compact .shell-dialog--destructive .shell-dialog-actions .shell-dialog-ok {
+  color: {{danger}};
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions,
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok,
+.shell-body--compact .shell-dialog--alert .shell-dialog-cancel {
+  border-color: {{separator}};
+}
+
 .shell-call-meter-label {
   color: {{label-2}};
 }
@@ -1424,7 +1445,8 @@ input.checkbox:checked {
   border-bottom: 1dp {{separator}};
 }
 
-.shell-layer-compact .contacts-row:last-of-type .contacts-row-body {
+/* data-for leaves its hidden template element after the rows, so the last real row is the second-last div. */
+.shell-layer-compact .contacts-row:nth-last-of-type(2) .contacts-row-body {
   border-bottom-color: transparent;
 }
 

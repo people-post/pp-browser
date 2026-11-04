@@ -381,7 +381,8 @@ private:
   void ShellSetActivity(bool visible, const ui::String& message = {}) override;
   void ShellRemountNavRail();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) override;
-  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result) override;
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                   bool destructive = false) override;
   void ShowConfirmWithCheckbox(const std::string& title, const std::string& message, const std::string& checkbox_label,
                                bool checkbox_default, std::function<void(bool, bool)> on_result);
   void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,

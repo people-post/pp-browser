@@ -272,6 +272,26 @@ std::string ShellLayoutRml::BottomChrome() const {
   return out.str();
 }
 
+bool ShellLayoutRml::DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label) {
+  // Two buttons share the 270dp card side by side (17dp text, a few dp of padding each); a label that would
+  // not fit in half of it sends the pair to a column, like UIAlertController does.
+  constexpr float kCjkDp = 17.f;
+  constexpr float kLatinDp = 9.f;
+  constexpr float kHalfButtonTextDp = 112.f;
+  const auto text_width = [](const std::string& label) {
+    float width = 0.f;
+    for (const unsigned char c : label) {
+      if (c >= 0xE0) {
+        width += kCjkDp; // lead byte of a 3-byte sequence (CJK)
+      } else if (c < 0x80) {
+        width += kLatinDp;
+      }
+    }
+    return width;
+  };
+  return text_width(cancel_label) > kHalfButtonTextDp || text_width(ok_label) > kHalfButtonTextDp;
+}
+
 std::string ShellLayoutRml::Dialog() const {
   if (!state_.dialog.active) {
     return {};
@@ -283,7 +303,13 @@ std::string ShellLayoutRml::Dialog() const {
   } else {
     out << "<div class=\"shell-scrim\" data-event-click=\"dialog_ok()\"></div>";
   }
-  out << "<div class=\"shell-dialog\">";
+  const std::string ok_label =
+      state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str());
+  const std::string cancel_label = Tr("common.cancel");
+  const bool stacked = state_.dialog.show_cancel && DialogButtonsStacked(cancel_label, ok_label);
+  out << "<div class=\"shell-dialog shell-dialog--alert" << (state_.dialog.destructive ? " shell-dialog--destructive" : "")
+      << "\">";
+  out << "<div class=\"shell-dialog-body\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{dialog_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{dialog_message}}</p>";
   out << "<label class=\"shell-dialog-checkbox row\" data-if=\"dialog_show_checkbox\">";
@@ -293,13 +319,13 @@ std::string ShellLayoutRml::Dialog() const {
   out << "</label>";
   out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
          "data-value=\"dialog_prompt_value\"/>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"dialog_show_cancel\" "
+  out << "</div>";
+  out << "<div class=\"shell-dialog-actions row" << (stacked ? " shell-dialog-actions--stack" : "") << "\">";
+  out << "<button class=\"btn btn-secondary shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"
-      << Tr("common.cancel") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"dialog_ok()\">"
-      << (state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str()))
-      << "</button>";
+      << cancel_label << "</button>";
+  out << "<button class=\"btn btn-primary shell-dialog-ok" << (state_.dialog.show_cancel ? " shell-dialog-ok--split" : "")
+      << "\" data-event-click=\"dialog_ok()\">" << ok_label << "</button>";
   out << "</div></div></div>";
   return out.str();
 }

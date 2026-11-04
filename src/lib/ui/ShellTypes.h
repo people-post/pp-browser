@@ -157,6 +157,8 @@ struct DialogState {
   /** When non-empty, used as the primary button label instead of common.ok. */
   ui::String ok_label;
   bool show_cancel = false;
+  /** The confirm button deletes / removes / resets something: shown in the danger colour on the phone. */
+  bool destructive = false;
   bool show_checkbox = false;
   ui::String checkbox_label;
   bool checkbox_checked = false;

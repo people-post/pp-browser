@@ -321,10 +321,10 @@ void SettingsSecurityActions::ClearUndeliveredOlderThan() {
         Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
     return;
   }
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(
+  feedback_.show_confirm_destructive(
       Tr("settings.security.clear_undelivered_confirm_title"),
       Tr("settings.security.clear_undelivered_confirm_message"),
       [this](const bool ok) {
@@ -348,10 +348,10 @@ void SettingsSecurityActions::ClearUndeliveredOlderThan() {
 }
 
 void SettingsSecurityActions::ResetToolPermissions() {
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.security.tool_permissions.reset_title"),
+  feedback_.show_confirm_destructive(Tr("settings.security.tool_permissions.reset_title"),
                          Tr("settings.security.tool_permissions.reset_message"),
                          [this](const bool ok) {
                            if (!ok) {
@@ -399,10 +399,10 @@ void SettingsSecurityActions::PerformResetProfile() {
 }
 
 void SettingsSecurityActions::ResetChats() {
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.storage.reset_chats_confirm_title"),
+  feedback_.show_confirm_destructive(Tr("settings.storage.reset_chats_confirm_title"),
                          Tr("settings.storage.reset_chats_confirm_message"),
                          [this](const bool ok) {
                            if (ok) {

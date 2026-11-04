@@ -23,6 +23,10 @@ struct ShellFeedbackPorts {
   std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
                      const std::string& ok_label)>
       show_confirm;
+  /** Same as show_confirm, but the confirm button deletes / removes / resets something (danger colour on the phone). */
+  std::function<void(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                     const std::string& ok_label)>
+      show_confirm_destructive;
   std::function<void(const std::string& title, const std::string& message, const std::string& checkbox_label,
                      bool checkbox_default, std::function<void(bool confirmed, bool checkbox_checked)> on_result)>
       show_confirm_with_checkbox;

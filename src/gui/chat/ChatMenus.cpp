@@ -334,7 +334,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
                             if (ok) {
                               apply();
                             }
-                          });
+                          }, true);
       };
       break;
     }
@@ -600,7 +600,7 @@ void ChatMenus::OpenDeleteChoice(const std::string& message_id, const ui::Vector
       if (ok) {
         host_.DeleteMessageForMe(message_id);
       }
-    });
+    }, true);
     return;
   }
   std::vector<ContextMenuAction> actions;

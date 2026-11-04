@@ -218,7 +218,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
                                   UserFeedback::Fail(removed.error().message);
                                 }
                                 host_.NotifySurfaceChanged();
-                              });
+                              }, true);
           },
           "../icons/trash.svg",
           true,

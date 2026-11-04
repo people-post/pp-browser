@@ -673,8 +673,10 @@ void ChatController::ShowToast(const std::string& message, const ToastDuration d
 }
 
 void ChatController::ShowConfirm(const std::string& title, const std::string& message,
-                                 std::function<void(bool)> on_result) {
-  if (shell_feedback_.show_confirm) {
+                                 std::function<void(bool)> on_result, const bool destructive) {
+  if (destructive && shell_feedback_.show_confirm_destructive) {
+    shell_feedback_.show_confirm_destructive(title, message, std::move(on_result), {});
+  } else if (shell_feedback_.show_confirm) {
     shell_feedback_.show_confirm(title, message, std::move(on_result), {});
   }
 }
@@ -806,7 +808,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       if (ok) {
         run();
       }
-    });
+    }, true);
   };
   switch (plan.kind) {
   case CloseChatPlan::Kind::Delete:
@@ -881,7 +883,7 @@ void ChatController::DissolveGroupAfterConfirm(const std::string& group_id) {
       UserFeedback::Fail(dissolved.error().message);
     }
     RefreshFromMessaging();
-  });
+  }, true);
 }
 
 void ChatController::AfterThreadPrefsChanged() {
@@ -930,7 +932,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
     }
     presenter_.ForgetCachedPrefs();  // clearing also resets the chat's "don't ask again" for the AI
     AfterHistoryCleared(thread_id);
-  });
+  }, true);
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
@@ -965,7 +967,7 @@ void ChatController::OnForgetMemory() {
           return;
         }
         NotifySurfaceChanged();
-      });
+      }, true);
 }
 
 void ChatController::RefreshFromMessaging() {

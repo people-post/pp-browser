@@ -34,8 +34,9 @@ public:
   virtual void AfterThreadPrefsChanged() = 0;
   virtual void NotifySurfaceChanged() = 0;
   virtual void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short) = 0;
-  virtual void ShowConfirm(const std::string& title, const std::string& message,
-                           std::function<void(bool)> on_result) = 0;
+  /** `destructive`: the confirm button deletes / removes / blocks something (danger colour on the phone). */
+  virtual void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                           bool destructive = false) = 0;
   virtual void ShowPrompt(const std::string& title, const std::string& message, const std::string& default_value,
                           std::function<void(bool, std::string)> on_result) = 0;
 

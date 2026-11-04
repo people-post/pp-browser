@@ -1112,10 +1112,10 @@ void SettingsController::OnResetSection(const std::string& section_id) {
     return;
   }
 
-  if (!shell_feedback_.show_confirm) {
+  if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm(
+  shell_feedback_.show_confirm_destructive(
       Tr("settings.reset_defaults_confirm_title"), Tr("settings.reset_defaults_confirm_message"),
       [this, section_id](const bool ok) {
         if (!ok) {
@@ -1679,10 +1679,10 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
 }
 
 void SettingsController::OnClearDownloadedAttachments() {
-  if (!shell_feedback_.show_confirm) {
+  if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm(Tr("settings.storage.clear_attachments_confirm_title"),
+  shell_feedback_.show_confirm_destructive(Tr("settings.storage.clear_attachments_confirm_title"),
                                Tr("settings.storage.clear_attachments_confirm_message"),
                                [this](const bool ok) {
                                  if (!ok) {

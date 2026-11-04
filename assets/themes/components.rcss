@@ -2613,11 +2613,12 @@ select selectbox option {
 .shell-page-sheet-grabber {
   position: absolute;
   top: 6dp;
-  left: 50%;
+  left: 0;
+  right: 0;
   width: 36dp;
   height: 5dp;
-  margin-left: -18dp;
-  border-radius: 3dp;
+  margin: 0 auto;
+  border-radius: 2.5dp;
 }
 
 /* Close: top right on the title row, a 44dp target around a plain X. */
@@ -3407,6 +3408,105 @@ input.checkbox {
   justify-content: flex-end;
   gap: 8dp;
   margin-top: 16dp;
+}
+
+/* Phone alerts look like a UIAlertController (DESIGN-pp-ui §9): a 270dp rounded card, centred 17dp title and 13dp
+   message, a prompt field, then a flush button area under a hairline: two buttons side by side split by a vertical
+   hairline, a longer pair stacked (the confirm on top). Text-only buttons, 44dp tall; the confirm is bold. */
+.shell-body--compact .shell-dialog--alert {
+  width: 270dp;
+  max-width: 270dp;
+  padding: 0;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-body {
+  display: block;
+  padding: 20dp 16dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-message {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-prompt {
+  height: 38dp;
+  min-height: 38dp;
+  margin: 14dp 0 0 0;
+  padding: 0 10dp;
+  border-width: 0;
+  border-radius: 8dp;
+  font-size: 15dp;
+  line-height: 38dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-checkbox {
+  gap: 10dp;
+  min-height: 44dp;
+  margin: 10dp 0 -10dp 0;
+  font-size: 13dp;
+  text-align: left;
+}
+
+.shell-body--compact .shell-dialog--alert input.checkbox {
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  margin: 0;
+  border-top-width: 1dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack {
+  flex-direction: column-reverse;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn {
+  display: block;
+  flex: 1 1 0;
+  width: auto;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0 4dp;
+  border-width: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: normal;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok {
+  font-weight: bold;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok--split {
+  border-left-width: 1dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack .shell-dialog-ok--split {
+  border-left-width: 0;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack .shell-dialog-cancel {
+  border-top-width: 1dp;
 }
 
 .shell-pin-gate-chooser {
@@ -6752,6 +6852,11 @@ input.checkbox {
   margin: 20dp 32dp 6dp 32dp;
   font-size: 13dp;
   line-height: 18dp;
+}
+
+/* A "?" right after the heading: the heading gives up its right margin (the button's own -6dp pulls it in). */
+.shell-layer-compact .settings-q-head .group-head {
+  margin-right: 0;
 }
 
 .shell-layer-compact .group-foot {

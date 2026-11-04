@@ -49,3 +49,22 @@ TEST(PinGateChromeRemountTest, ShowAndDismissRemountPinGate) {
 
   controller.BindShellPinGate({});
 }
+
+TEST(DialogChromeRemountTest, OnlyAConfirmAskedAsDestructiveIsMarkedDestructive) {
+  pbr::ShellState state;
+  pbr::ShellFeedbackChromePorts ports;
+  ports.shell_state = [&state]() -> pbr::ShellState& { return state; };
+  ports.remount_dialog = []() {};
+  ports.dirty_feedback = []() {};
+  pbr::ShellFeedback::BindChromePorts(std::move(ports));
+
+  pbr::ShellFeedback::ShowConfirm(state, "Title", "Message", [](bool) {});
+  EXPECT_FALSE(state.dialog.destructive);
+  pbr::ShellFeedback::DialogCancel(state);
+  EXPECT_FALSE(state.dialog.active);
+
+  pbr::ShellFeedback::ShowConfirm(state, "Title", "Message", [](bool) {}, {}, true);
+  EXPECT_TRUE(state.dialog.destructive);
+  pbr::ShellFeedback::DialogOk(state);
+  EXPECT_FALSE(state.dialog.destructive);
+}

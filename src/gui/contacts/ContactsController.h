@@ -254,7 +254,8 @@ private:
   /** Push surface snapshot to app bridge (no shell chrome knowledge). */
   void NotifySurfaceChanged();
   void ShowToast(const std::string& message, ToastDuration duration = ToastDuration::Short);
-  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result);
+  void ShowConfirm(const std::string& title, const std::string& message, std::function<void(bool)> on_result,
+                   bool destructive = false);
   void NavigateToChatSession();
 
   std::vector<ContactListRow> contacts_;

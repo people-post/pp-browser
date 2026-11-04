@@ -454,8 +454,10 @@ void ContactsController::ShowToast(const std::string& message, const ToastDurati
 }
 
 void ContactsController::ShowConfirm(const std::string& title, const std::string& message,
-                                     std::function<void(bool)> on_result) {
-  if (shell_feedback_.show_confirm) {
+                                     std::function<void(bool)> on_result, const bool destructive) {
+  if (destructive && shell_feedback_.show_confirm_destructive) {
+    shell_feedback_.show_confirm_destructive(title, message, std::move(on_result), {});
+  } else if (shell_feedback_.show_confirm) {
     shell_feedback_.show_confirm(title, message, std::move(on_result), {});
   }
 }
@@ -876,7 +878,7 @@ void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui:
                            if (ok) {
                              Instance().OnSetTrust("blocked");
                            }
-                         });
+                         }, true);
 }
 
 void ContactsController::UnblockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1733,6 +1735,8 @@ bool ContactsController::SetContactTrust(const std::string& contact_id, const st
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
+  const bool was_blocked = selected_.trust_key == "blocked";
+  const std::string name = selected_.title.empty() ? Tr("contacts.this_contact") : std::string(selected_.title.c_str());
   if (!SetContactTrust(selected_.id.c_str(), trust)) {
     return;
   }
@@ -1743,7 +1747,13 @@ void ContactsController::OnSetTrust(const std::string& trust) {
     DirtyBlocked();
   }
   DirtyAll();
-  ShowToast(Tr("contacts.toast.trust_updated"));
+  if (trust == "blocked") {
+    ShowToast(Tr("contacts.toast.blocked", {{"name", name}}));
+  } else if (was_blocked) {
+    ShowToast(Tr("contacts.toast.unblocked", {{"name", name}}));
+  } else {
+    ShowToast(Tr("contacts.toast.trust_updated"));
+  }
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed(); // the Chats list marks (or unmarks) the person's chat
   }
@@ -1917,7 +1927,7 @@ void ContactsController::OnRemoveContact() {
       contacts_ports_.notify_thread_changed();
     }
     NotifySurfaceChanged();
-  });
+  }, true);
 }
 
 void ContactsController::OnOpenThread(const std::string& thread_id) {

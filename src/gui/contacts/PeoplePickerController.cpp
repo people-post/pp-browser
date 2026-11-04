@@ -1344,10 +1344,10 @@ void PeoplePickerController::ReinviteMember(const GroupMemberRow& row) {
 }
 
 void PeoplePickerController::RemoveMember(const GroupMemberRow& row) {
-  if (!shell_feedback_.show_confirm) {
+  if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm(
+  shell_feedback_.show_confirm_destructive(
       Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", row.title}}),
       [this, group_id = group_id_, identity = row.identity](const bool ok) {
         if (!ok || group_id.empty() || !picker_ports_.remove_member_by_identity) {

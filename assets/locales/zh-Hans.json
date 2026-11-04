@@ -514,6 +514,8 @@
     "contacts.share.no_chats": "没有可分享到的聊天",
     "contacts.share.not_yet": "暂时分享不了这个联系人，请稍后再试",
     "contacts.toast.trust_updated": "信任级别已更新",
+    "contacts.toast.blocked": "已屏蔽 {name}",
+    "contacts.toast.unblocked": "已取消屏蔽 {name}",
     "contacts.toast.synced": "联系人已同步",
     "contacts.blocked.title": "已屏蔽的人",
     "contacts.blocked.help": "屏蔽的人发不了消息、打不了电话给你，对方不会被告知。",

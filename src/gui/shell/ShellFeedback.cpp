@@ -133,9 +133,11 @@ void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const
 }
 
 void ShellFeedback::ShowConfirm(ShellState& state, const std::string& title, const std::string& message,
-                                std::function<void(bool)> on_result, const std::string& ok_label) {
+                                std::function<void(bool)> on_result, const std::string& ok_label,
+                                const bool destructive) {
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
+  state.dialog.destructive = destructive;
   state.dialog.title = ui::String(title.c_str());
   state.dialog.message = ui::String(message.c_str());
   state.dialog.ok_label = ui::String(ok_label.c_str());

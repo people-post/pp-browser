@@ -40,6 +40,10 @@ ShellFeedbackPorts BindSharedShellFeedback(ShellHost& shell) {
                                    std::function<void(bool)> on_result, const std::string& ok_label) {
     ShellFeedback::ShowConfirm(shell.State(), title, message, std::move(on_result), ok_label);
   };
+  feedback.show_confirm_destructive = [&shell](const std::string& title, const std::string& message,
+                                               std::function<void(bool)> on_result, const std::string& ok_label) {
+    ShellFeedback::ShowConfirm(shell.State(), title, message, std::move(on_result), ok_label, true);
+  };
   feedback.show_confirm_with_checkbox =
       [&shell](const std::string& title, const std::string& message, const std::string& checkbox_label,
                const bool checkbox_default, std::function<void(bool, bool)> on_result) {

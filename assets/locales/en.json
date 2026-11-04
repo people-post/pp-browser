@@ -526,6 +526,8 @@
     "contacts.share.no_chats": "No chats to share it into",
     "contacts.share.not_yet": "Can't share this contact right now. Try again later.",
     "contacts.toast.trust_updated": "Trust updated",
+    "contacts.toast.blocked": "Blocked {name}",
+    "contacts.toast.unblocked": "Unblocked {name}",
     "contacts.toast.synced": "Contact synced",
     "contacts.blocked.title": "Blocked",
     "contacts.blocked.help": "Blocked people can't message or call you, and they aren't told.",
