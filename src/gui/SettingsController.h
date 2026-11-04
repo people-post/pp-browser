@@ -225,6 +225,10 @@ private:
   void ToggleReduceTransparency();
   void ToggleCallDiagnostics();
   void ToggleShowAdvancedSettings();
+  /** Me → AI assistant: the AI dot's switch and look (`a`–`d`), saved to the profile prefs at once. */
+  void ToggleAiDot();
+  void SetAiDotLook(const std::string& look);
+  void SaveAiDot(bool shown, const std::string& look);
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
 
@@ -312,6 +316,9 @@ private:
   ui::String security_page_title_;
   /** Security's "Blocked" row: how many people are blocked (0: no number shown). */
   int blocked_count_ = 0;
+  /** Me → AI assistant (phones): the AI dot's switch and its look. */
+  bool ai_dot_shown_ = true;
+  ui::String ai_dot_look_ = "b";
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;

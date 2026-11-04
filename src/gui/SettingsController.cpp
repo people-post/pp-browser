@@ -428,6 +428,8 @@ void SettingsController::SyncBindingsFromSession() {
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
   }
+  ai_dot_shown_ = bootstrap.profile_prefs.ai_dot_shown;
+  ai_dot_look_ = bootstrap.profile_prefs.ai_dot_look.c_str();
   if (commands_.last_mesh_error) {
     ui_state_.mesh_status_message = commands_.last_mesh_error();
   } else {
@@ -607,6 +609,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     security_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
+    ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
+    ctor.Bind("ai_dot_look", &controller.ai_dot_look_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
     ctor.BindEventCallback("open_security_page",
@@ -651,6 +655,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       }
     }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
+    ctor.BindEventCallback("set_ai_dot_look",
+                           DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
     ctor.BindEventCallback("toggle_crash_reports", DataEvent<>([this]() { ToggleCrashReports(); }));
     ctor.BindEventCallback("toggle_auto_renew_registration", DataEvent<>([this]() { ToggleAutoRenewRegistration(); }));
     ctor.BindEventCallback("on_integrations_field_changed", DataEvent<>([this]() { MarkSectionDirty("integrations"); }));
@@ -749,6 +756,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "show_advanced_settings");
+  host.Dirty("settings", "ai_dot_shown");
+  host.Dirty("settings", "ai_dot_look");
   host.Dirty("settings", "advanced");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
@@ -2031,6 +2040,37 @@ void SettingsController::ToggleCallDiagnostics() {
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
+}
+
+void SettingsController::ToggleAiDot() {
+  SaveAiDot(!ai_dot_shown_, ai_dot_look_.c_str());
+}
+
+void SettingsController::SetAiDotLook(const std::string& look) {
+  if (look != "a" && look != "b" && look != "c" && look != "d") {
+    return;
+  }
+  SaveAiDot(ai_dot_shown_, look);
+}
+
+void SettingsController::SaveAiDot(const bool shown, const std::string& look) {
+  if (!commands_.session_store) {
+    return;
+  }
+  // Saved at once (no section flush): ConfigApplyBridge hands the new prefs to the shell, which shows, hides or
+  // redraws the dot on the next frame.
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.ai_dot_shown = shown;
+  prefs.ai_dot_look = look;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  ai_dot_shown_ = shown;
+  ai_dot_look_ = look.c_str();
+  DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
+  DataModelHost::Instance().Dirty("settings", "ai_dot_look");
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

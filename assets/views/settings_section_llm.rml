@@ -1,5 +1,40 @@
       <div class="settings-section settings-section--grouped stack">
         <p class="text group-foot group-foot--lead" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.ai_dot.show}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="ai_dot_shown"
+                      data-event-click="toggle_ai_dot()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text group-head settings-phone-only">{{i18n:settings.ai_dot.look}}</p>
+        <div class="group-card ai-look-picker settings-phone-only">
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'a'"
+                  data-event-click="set_ai_dot_look('a')">
+            <span class="ai-look-art"><svg src="../icons/mascot/a.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_a}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'b'"
+                  data-event-click="set_ai_dot_look('b')">
+            <span class="ai-look-art"><svg src="../icons/mascot/b.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_b}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'c'"
+                  data-event-click="set_ai_dot_look('c')">
+            <span class="ai-look-art"><svg src="../icons/mascot/c.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_c}}</span>
+          </button>
+          <button class="ai-look" type="button" data-class-ai-look--on="ai_dot_look == 'd'"
+                  data-event-click="set_ai_dot_look('d')">
+            <span class="ai-look-art"><svg src="../icons/mascot/d.svg"></svg></span>
+            <span class="ai-look-name">{{i18n:settings.ai_dot.look_d}}</span>
+          </button>
+        </div>
         <div class="stack" data-if="advanced">
         <div class="group-card">
           <label class="settings-field group-row group-row--field">
