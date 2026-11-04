@@ -188,10 +188,19 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
   if (control_type && *control_type == GroupMembershipControlType::GroupInvite) {
-    if (GroupMembershipCodec::InviteResolutionFromMessage(message)) {
+    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
+    if (const auto resolution = GroupMembershipCodec::InviteResolutionFromMessage(message)) {
+      // Answered: the card gives way to a small centred line (Kenneth 2026-11-04: the card spread over the whole
+      // width after Accept / Decline), in the user's language; the stored text is the workflow's English.
+      const std::string group = invite ? invite->group_title : std::string();
+      if (!group.empty() && *resolution == InviteStatus::Accepted) {
+        return SystemLineRml(Tr("chat.group_invite.joined", {{"group", group}}));
+      }
+      if (!group.empty() && *resolution == InviteStatus::Declined) {
+        return SystemLineRml(Tr("chat.group_invite.declined", {{"group", group}}));
+      }
       return SystemLineRml(message.text);
     }
-    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
     const std::string title =
         invite && !invite->group_title.empty()
             ? invite->group_title

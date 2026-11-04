@@ -2380,6 +2380,17 @@ input.checkbox:checked {
   color: #007aff;
 }
 
+.shell-chat-overlay .chat-group-invite {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.shell-chat-overlay .chat-group-invite .chat-suggestion {
+  border-top: 1dp #7878801f;
+  background-color: transparent;
+  color: #007aff;
+}
+
 .shell-chat-overlay .message-row-user .chat-attachment-card .chat-suggestion {
   color: #ffffff;
 }

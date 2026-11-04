@@ -935,6 +935,8 @@
     "chat.group_action.dismiss": "知道了",
     "chat.group_invite.title": "群邀请",
     "chat.group_invite.body": "邀请你加入这个群。",
+    "chat.group_invite.joined": "你已加入「{group}」",
+    "chat.group_invite.declined": "你拒绝了「{group}」的邀请",
     "chat.group_owner_unreachable.title": "群主暂时联系不上",
     "chat.group_owner_unreachable.body":
         "在线的人还可以继续聊天。邀请新成员、给所有人改群名、移除成员都需要群主。如果群主已经离开，可以从这个群新建一个群。",

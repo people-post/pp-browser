@@ -965,6 +965,8 @@
     "chat.group_action.dismiss": "Got it",
     "chat.group_invite.title": "Group invitation",
     "chat.group_invite.body": "You've been invited to join this group.",
+    "chat.group_invite.joined": "You joined “{group}”",
+    "chat.group_invite.declined": "You declined the invitation to “{group}”",
     "chat.group_owner_unreachable.title": "Owner hasn’t been reachable",
     "chat.group_owner_unreachable.body":
         "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing members need the owner. If they’ve left for good, start a new group from this one.",
