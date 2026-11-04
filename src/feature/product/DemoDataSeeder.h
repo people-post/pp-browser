@@ -76,4 +76,10 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub);
  */
 std::string DemoAskAiAnswer(const std::string& question);
 
+/**
+ * The demo app has no peers: a message sent in a direct or group chat gets this short reply from the other side, so
+ * the chat shows my message on the right and an answer on the left. Chinese when the message has CJK text.
+ */
+std::string DemoPeerReply(const std::string& sent);
+
 } // namespace pbr

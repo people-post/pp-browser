@@ -365,6 +365,11 @@ TEST_F(DemoDataSeederTest, EveryTimeIsAFixedOffsetFromTodayMidnight) {
   EXPECT_EQ(offsets(kLater), at_first_day);
 }
 
+TEST(DemoPeerReplyTest, AnswersInTheMessagesLanguage) {
+  EXPECT_EQ(DemoPeerReply("see you at 8"), "Got it! (an automatic reply in the demo app)");
+  EXPECT_EQ(DemoPeerReply("晚上八点见"), "收到！（演示版的自动回复）");
+}
+
 TEST(LocalMidnightTest, IsAtMostOneDayBeforeTheInstantAndOnAWholeLocalDay) {
   const int64_t midnight = LocalMidnightMs(kSomeDay);
   EXPECT_LE(midnight, kSomeDay);

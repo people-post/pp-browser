@@ -665,4 +665,10 @@ std::string DemoAskAiAnswer(const std::string& question) {
          "Still unsure? Ask a follow-up, or tap \"Ask PP Support\" below.";
 }
 
+std::string DemoPeerReply(const std::string& sent) {
+  const bool chinese =
+      std::any_of(sent.begin(), sent.end(), [](const char c) { return static_cast<unsigned char>(c) >= 0xE0; });
+  return chinese ? "收到！（演示版的自动回复）" : "Got it! (an automatic reply in the demo app)";
+}
+
 } // namespace pbr

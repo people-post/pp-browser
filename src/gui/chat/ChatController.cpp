@@ -2806,6 +2806,35 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     (void)facade_->AppendMessage(user_message);
     SyncDisplayFromThread();
     DirtyChatTurns();
+    if constexpr (kUiDemoBuild) {
+      // The demo app: my message stays on the right and the answer comes from the other side, on the left. (The
+      // mock reply below is keyed to my message's id, so it was written over my message, as if I had sent it.)
+      std::optional<Thread> thread;
+      if (auto found = facade_->GetThread(thread_id); found && *found) {
+        thread = **found;
+      }
+      if (thread && thread->kind != ThreadKind::Ai && !thread->participant_contact_ids.empty()) {
+        ThreadMessage reply;
+        reply.id = util::GenerateUuid();
+        reply.thread_id = thread_id;
+        reply.sender_contact_id = thread->participant_contact_ids.front();
+        reply.text = DemoPeerReply(trimmed);
+        reply.timestamp = user_message.timestamp + 1;
+        reply.transport = MessageTransport::Relay;
+        reply.delivery = MessageDelivery::Relayed;
+        (void)facade_->AppendMessage(reply);
+        (void)facade_->UpdatePreview(thread_id, reply.text);
+        SyncDisplayFromThread();
+        SyncShellSessions();
+        DirtyChatTurns();
+        return;
+      }
+      // An AI chat: the mock answer as a new message from the assistant.
+      agent_.MarkAgentBusy(thread_id);
+      pending_reply_ = PendingReply{.entry_id = std::string(), .thread_id = thread_id,
+                                    .output = MockAssistantRespond(trimmed), .from_llm = false};
+      return;
+    }
     log().debug << "Using mock assistant response";
     agent_.MarkAgentBusy(thread_id);
     pending_reply_ = PendingReply{.entry_id = user_message.id, .thread_id = thread_id,
