@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_gui
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp
+    CallDemoScenes.cpp
     chat/AgentTurnController.cpp
     chat/AskAiPanel.cpp
     chat/ChatMenus.cpp

@@ -104,6 +104,10 @@ private:
   void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
   /** The in-call state from the presenter's screen (names, roster, status line, phone page fields). */
   void FillInCallFromScreen(const CallScreen& screen);
+  /** UI demo app only (kUiDemoBuild): draws the scripted call PP_DEMO_CALL names; false when none is set. */
+  bool RenderDemoScene();
+  /** UI demo app only: an answer / decline / hang-up ends the scripted call. */
+  void EndDemoScene();
   void ShowNotice(const CallNotice& notice);
   void SyncShellState();
   void ClearRing();
@@ -210,6 +214,8 @@ private:
   std::string story_logged_call_;
   size_t story_events_logged_ = 0;
   bool story_sheet_open_ = false;
+  int64_t demo_started_ms_ = 0;
+  bool demo_ended_ = false;
   std::string group_title_thread_;
   std::string group_title_;
 };

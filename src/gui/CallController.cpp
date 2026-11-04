@@ -29,6 +29,8 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
+#include "gui/CallDemoScenes.h"
+#include "foundation/product/DevTools.h"
 #include "gui/CallMetricsTracker.h"
 #include "lib/ui/CallConflictCopy.h"
 #include "lib/calls/CallMediaErrorText.h"
@@ -304,6 +306,11 @@ void CallController::BindToMessaging() {
 }
 
 void CallController::Tick() {
+  if constexpr (kUiDemoBuild) {
+    if (RenderDemoScene()) {
+      return;  // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
+    }
+  }
   presenter_.Tick();  // expired rings; the in-call screen (Calling… / timer / levels) every frame
   const int64_t now = util::NowUnixMs();
   if (ring_.active) {
@@ -975,10 +982,12 @@ bool CallController::VideoCallAvailable() {
 }
 
 void CallController::AcceptIncoming() {
+  EndDemoScene();
   (void)presenter_.Accept(false);
 }
 
 void CallController::AcceptIncomingVoiceOnly() {
+  EndDemoScene();
   (void)presenter_.Accept(true);
 }
 
@@ -987,6 +996,7 @@ void CallController::AcceptIncomingWithCharge() {
 }
 
 void CallController::DeclineIncoming() {
+  EndDemoScene();
   (void)presenter_.Decline();
 }
 
@@ -1010,6 +1020,7 @@ void CallController::EndDisconnectedCall(const int64_t now_ms) {
 }
 
 void CallController::LeaveActive() {
+  EndDemoScene();
   (void)presenter_.Leave();
   StopRingback(Backend());
 }
@@ -1521,6 +1532,54 @@ void CallController::ShowCallDetails() {
         }
       },
       Tr("call.details.copy"));
+}
+
+bool CallController::RenderDemoScene() {
+  static const std::pair<std::string, int64_t> spec = []() {
+    const char* env = std::getenv("PP_DEMO_CALL");
+    return env && env[0] ? ParseDemoCallScene(env) : std::pair<std::string, int64_t>{};
+  }();
+  if (spec.first.empty()) {
+    return false;
+  }
+  const int64_t now = util::NowUnixMs();
+  if (demo_started_ms_ == 0) {
+    demo_started_ms_ = now - spec.second;
+  }
+  if (demo_ended_) {
+    return true;
+  }
+  const DemoCallFrame f = DemoCallSceneAt(spec.first, now - demo_started_ms_, now);
+  if (!f.valid) {
+    return false;
+  }
+  phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
+  if (f.screen.kind == CallScreen::Kind::Ringing) {
+    RenderRing(f.screen);
+    ringtone_.Stop();
+    return true;
+  }
+  ClearRing();
+  FillInCallFromScreen(f.screen);
+  in_call_.stage_visible = f.video_stage;
+  in_call_.show_camera = true;
+  in_call_.camera_on = f.video_stage;
+  in_call_.show_flip = f.video_stage;
+  in_call_.remote_placeholder = "";
+  ApplyConnectStory(f.screen, f.path_kind, f.quality, f.quality_bars, now);
+  SyncShellState();
+  return true;
+}
+
+void CallController::EndDemoScene() {
+  if constexpr (kUiDemoBuild) {
+    if (demo_started_ms_ != 0 && !demo_ended_) {
+      demo_ended_ = true;
+      ClearInCall();
+      ClearRing();
+      SyncShellState();
+    }
+  }
 }
 
 std::string CallController::GroupTitle(const std::string& thread_id) {
