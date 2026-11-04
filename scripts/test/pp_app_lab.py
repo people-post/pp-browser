@@ -17,6 +17,7 @@ between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings
 """
 
 import argparse
+import contextlib
 import json
 import os
 import queue
@@ -51,7 +52,7 @@ NO_DIRECTORY = "http://127.0.0.1:9/api/relay"
 class User:
     """One person with the app: a pp-app-probe process over a profile dir that outlives it."""
 
-    def __init__(self, lab, name, container=None, directory=True, reachable=False):
+    def __init__(self, lab, name, container=None, directory=True, reachable=False, seeds=None):
         self.lab = lab
         self.name = name
         self.container = container  # --nat: the user's own NAT'd container (None: a host process)
@@ -59,7 +60,7 @@ class User:
         os.makedirs(self.dir, exist_ok=True)
         self.config = os.path.join(self.dir, "config.json")
         with open(self.config, "w") as f:
-            json.dump(lab.config_for(self.dir, directory, reachable), f, indent=2)
+            json.dump(lab.config_for(self.dir, directory, reachable, seeds), f, indent=2)
         self.proc = None
         self.next_id = 1
         self.replies = {}
@@ -302,6 +303,8 @@ class Lab:
         self.probe = os.path.abspath(args.probe)
         self.relay = args.relay.rstrip("/")
         self.hop = args.hop
+        self.hop2 = args.hop2  # the second seed (call_path_*_two_hops)
+        self.hop2_status = args.hop2_status
         # --nat: users run in these containers, one each in turn; they reach the relay at user_relay.
         self.containers = args.nat_containers.split(",") if args.nat else []
         self.user_relay = args.nat_relay.rstrip("/") if args.nat else self.relay
@@ -324,7 +327,7 @@ class Lab:
         self.synthetic_video = False
         self.users = []
 
-    def config_for(self, data_dir, directory=True, reachable=False):
+    def config_for(self, data_dir, directory=True, reachable=False, seeds=None):
         return {
             "config_version": 1,
             "data_dir": data_dir,
@@ -336,7 +339,8 @@ class Lab:
                 "node_enabled": False,
                 "mesh_enabled": True,
                 "amp_udp_port": 0,
-                "bootstrap_peers": [self.hop],
+                # seeds: the ones the user bootstraps from (default the lab hop alone; the two-hop rows add hop2).
+                "bootstrap_peers": seeds or [self.hop],
                 "capabilities": {"dht": False},
                 # Me → Network → Reachable without the relay: keep a reservation on the seed (the lab hop).
                 "reachable_without_relay": reachable,
@@ -374,16 +378,17 @@ class Lab:
             time.sleep(0.5)
         raise ProbeError("relay did not come back after restart")
 
-    def user(self, name, directory=True, reachable=False, beside=None):
+    def user(self, name, directory=True, reachable=False, beside=None, seeds=None):
         """A registered user; directory=False: one whose directory never answers; reachable=True: one that
         stays reachable without the relay (parked on the lab's seed); beside=<user>: --nat, on that user's
-        network (the same Wi-Fi), not behind a NAT of its own."""
+        network (the same Wi-Fi), not behind a NAT of its own; seeds=[...]: the seeds it bootstraps from
+        (default the lab hop alone)."""
         self.fresh_registration()
         if beside is not None:
             container = beside.container
         else:
             container = self.containers[len(self.users) % len(self.containers)] if self.containers else None
-        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable)
+        u = User(self, "%s-%s" % (name, uuid.uuid4().hex[:6]), container, directory, reachable, seeds)
         self.users.append(u)
         u.start()
         u.wait_ready()
@@ -1110,6 +1115,8 @@ PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
 PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
 # A long path and nothing else (a US <-> China call through a relay): 250 ms more round trip on each user's link.
 PHONE_FAR = {"delay": 125, "loss": 0, "up": 4000, "down": 8000}
+# The same long path, lossy as a long mobile one is.
+PHONE_FAR_LOSSY = {"delay": 125, "loss": 3, "up": 4000, "down": 8000}
 
 
 def gw_net(u, script):
@@ -1149,10 +1156,10 @@ def handover(u, outage=1.5):
 
 
 class Road:
-    """Phones on the road (--nat), as a context: `users`' links behave like `profile`, and with
-    `handover_s=(lo, hi)` each one hands over every lo..hi s on its own random schedule. `park()`
-    stops the handovers (the links stay as they are); leaving clears the links. The schedule's seed
-    is printed — PP_APP_LAB_ROAD_SEED replays it."""
+    """Phones on the road (--nat), as a context: `users`' links behave like `profile` (one PHONE_* for all, or
+    {user: PHONE_* or None} — None leaves that one's link clean), and with `handover_s=(lo, hi)` each one hands
+    over every lo..hi s on its own random schedule. `park()` stops the handovers (the links stay as they are);
+    leaving clears the links. The schedule's seed is printed — PP_APP_LAB_ROAD_SEED replays it."""
 
     def __init__(self, users, profile, handover_s=None):
         self.users, self.profile, self.handover_s = list(users), profile, handover_s
@@ -1166,7 +1173,9 @@ class Road:
         print("road seed=%d (%s)" % (self.seed, ", ".join(u.name for u in self.users)), flush=True)
         for u in self.users:
             clear_link(u)
-            phone_link(u, self.profile)
+            profile = self.profile.get(u) if isinstance(self.profile, dict) else self.profile
+            if profile:
+                phone_link(u, profile)
         if self.handover_s:
             for i, u in enumerate(self.users):
                 t = threading.Thread(target=self._drive, args=(u, random.Random(self.seed + i)), daemon=True)
@@ -2909,64 +2918,114 @@ def call_link(u):
     return u.state().get("link")
 
 
-def scenario_call_on_a_far_path(lab):
-    """A 1:1 call set up on clean links; then both links get 250 ms longer (PHONE_FAR). The call's link learns
-    the new round trip and resends little: before amp v5.0.1 a new packet's first resend came after the old
-    (or the 50 ms initial) timeout, every packet was resent before its ack, Karn's rule never took a sample, and
-    the link resent everything with its round trip unknown (#502: link_rtt_ms=-1, link_resend_pct=100)."""
-    a, a_thread, b, _ = open_pair(lab)
-    users = [a, b]
+# The call-path matrix (--nat; run with --only call_path_<path>_<timing>[_two_hops]). A 1:1 voice call between
+# Alice and Bob on a long path; each row is one path x one timing, on the lab hop or on two seeds. Every row checks
+# the same things: the call connects, both hear each other, and each call link learns its round trip and resends a
+# bounded share of its Reliable packets.
+CALL_PATHS = {
+    "far": (PHONE_FAR, PHONE_FAR),  # both far, nothing else: the round trip alone
+    "far_lossy": (PHONE_FAR_LOSSY, PHONE_FAR_LOSSY),  # both far and lossy, as long mobile paths are
+    "one_far": (None, PHONE_FAR_LOSSY),  # Alice near the relay, Bob far on a lossy path (#502's call)
+}
+# mid: set up on clean links, then the path turns long (a live call adapting). start: long from the start, the call
+# 20 s later (setting one up). idle: long from the start, the call after 3 min idle. A phone holds no reservation
+# while idle (it parks for a call), so this is a call set up on links and NAT mappings that have aged.
+CALL_TIMINGS = {"mid": 0, "start": 20, "idle": 180}
+LAB_HOP_IP = "198.51.100.10"
+
+
+def place_voice_call(a, a_thread, b):
+    """Alice calls Bob (voice); he answers; both are in the call and hear each other."""
     call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
     b.wait_surface("ringing", 60, call_id=call_id)
     b.cmd("accept_voice")
-    for u in users:
+    for u in (a, b):
         u.wait_surface("in_call", 90, call_id=call_id)
-    for u in users:
+    for u in (a, b):
         assert_hears(u, 1, timeout=60)
-    report = {}
-    with Road(users, PHONE_FAR):
-        time.sleep(20)  # the link meets the long path
-        before = {u.name: call_link(u) for u in users}
-        time.sleep(30)
-        after = {u.name: call_link(u) for u in users}
-        for u in users:
-            assert_hears(u, 1, timeout=30)
-    leave_all(users)
+    return call_id
+
+
+def check_call_links(profiles, settle=20, window=30):
+    """After `settle` s on the path, over `window` s: everyone still hears the other, each call link has learned
+    its round trip (at least 80 % of what its profile adds) and resent at most a quarter of its Reliable packets
+    (two fifths on a lossy profile). Returns a line per user."""
+    users = list(profiles)
+    time.sleep(settle)
+    before = {u: call_link(u) for u in users}
+    time.sleep(window)
+    after = {u: call_link(u) for u in users}
     for u in users:
-        was, now = before[u.name], after[u.name]
+        assert_hears(u, 1, timeout=30)
+    report = {}
+    for u in users:
+        profile, was, now = profiles[u], before[u], after[u]
         if not now:
             raise ProbeError("%s: no call link counters" % u.name)
         sent = now["reliable_sent"] - was["reliable_sent"] if was and was["link_id"] == now["link_id"] else 0
         resent = now["retransmits"] - was["retransmits"] if sent else 0
         report[u.name.split("-")[0]] = "rtt=%d ms sent=%d resent=%d" % (now["srtt_ms"], sent, resent)
-        if now["srtt_ms"] < 200:
-            raise ProbeError("%s: the call link's round trip is %d ms on a 250 ms longer path (not learned)"
-                             % (u.name, now["srtt_ms"]))
-        if sent and resent > sent // 4:
-            raise ProbeError("%s: %d of %d Reliable packets resent on a lossless path" % (u.name, resent, sent))
+        want_rtt = int(0.8 * 2 * profile["delay"]) if profile else 0
+        if now["srtt_ms"] < want_rtt:
+            raise ProbeError("%s: the call link's round trip is %d ms on a path %d ms longer (not learned)"
+                             % (u.name, now["srtt_ms"], 2 * profile["delay"]))
+        bound = 0.4 if profile and profile.get("loss") else 0.25
+        if sent and resent > sent * bound:
+            raise ProbeError("%s: %d of %d Reliable packets resent (at most %d %%)" % (u.name, resent, sent, bound * 100))
     return report
 
 
-def scenario_call_starts_on_a_far_path(lab):
-    """Both users' links are 250 ms longer (PHONE_FAR) from the start; they idle 150 s, then a 1:1 voice call.
-    The call connects through the hop's circuit (a nested handshake over two long legs) and both hear each other.
-    Before amp v5.0.2 the nested handshake got the 800 ms per-address budget (the peer's id had direct addresses
-    on record), which ran out before its first answer: "nested ... dial timeout" ~1.6 s into every relayed call
-    (#502)."""
-    a, a_thread, b, _ = open_pair(lab)
-    users = [a, b]
-    with Road(users, PHONE_FAR):
-        time.sleep(150)
-        call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
-        b.wait_surface("ringing", 60, call_id=call_id)
-        b.cmd("accept_voice")
-        for u in users:
-            u.wait_surface("in_call", 90, call_id=call_id)
-        for u in users:
-            assert_hears(u, 1, timeout=60)
-        report = {u.name.split("-")[0]: call_link(u) for u in users}
-    leave_all(users)
-    return report
+class OnlyOwnRelay:
+    """Two seeds (the _two_hops rows), as a context: the user in `container` cannot reach the lab hop (its
+    gateway drops what goes there), only hop2 — a phone near its own relay that cannot get through to the other
+    one, so it parks only on its own and the caller has to find it there. Entered before the user starts."""
+
+    def __init__(self, container):
+        self.u = argparse.Namespace(name=container, container=container)
+
+    def __enter__(self):
+        gw_net(self.u, "iptables -I FORWARD -d %s -j DROP" % LAB_HOP_IP)
+        return self
+
+    def __exit__(self, *exc):
+        gw_net(self.u, "iptables -D FORWARD -d %s -j DROP; true" % LAB_HOP_IP)
+        return False
+
+
+def call_path_measurement(path, timing, two_hops):
+    def run(lab):
+        if two_hops and not lab.hop2:
+            raise ProbeError("this lab has no second seed (hop2)")
+        with contextlib.ExitStack() as stack:
+            if two_hops:
+                stack.enter_context(OnlyOwnRelay(lab.containers[1]))  # Bob's: users take the containers in turn
+            # Two seeds: both know both (as every phone knows every prod relay); Bob's own comes first and is the
+            # only one he can reach.
+            a = lab.user("alice", seeds=[lab.hop, lab.hop2] if two_hops else None)
+            b = lab.user("bob", seeds=[lab.hop2, lab.hop] if two_hops else None)
+            a.wait_mesh()
+            b.wait_mesh()
+            a_thread = a.cmd("open_chat", account=b.account)["thread"]
+            b.cmd("open_chat", account=a.account)
+            a_profile, b_profile = CALL_PATHS[path]
+            profiles = {a: a_profile, b: b_profile}
+            if timing == "mid":
+                place_voice_call(a, a_thread, b)
+                stack.enter_context(Road([a, b], profiles))
+            else:
+                stack.enter_context(Road([a, b], profiles))
+                time.sleep(CALL_TIMINGS[timing])
+                place_voice_call(a, a_thread, b)
+            report = check_call_links(profiles)
+        leave_all([a, b])
+        return report
+    return run
+
+
+CALL_PATH_MATRIX = [("call_path_%s_%s%s" % (path, timing, "_two_hops" if two_hops else ""),
+                     call_path_measurement(path, timing, two_hops))
+                    for two_hops in (False, True) for path in CALL_PATHS for timing in CALL_TIMINGS
+                    if not two_hops or path == "one_far"]
 
 
 def scenario_group_call_on_the_road(lab):
@@ -3085,18 +3144,19 @@ SCENARIOS = [
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
-    ("call_on_a_far_path", scenario_call_on_a_far_path),
-    ("call_starts_on_a_far_path", scenario_call_starts_on_a_far_path),
     ("group_call_on_the_road", scenario_group_call_on_the_road),
     ("group_call_weak_upload", scenario_group_call_weak_upload),
     ("group_video_three", scenario_group_video_three),
     ("group_video_on_the_road", scenario_group_video_on_the_road),
     ("video_on_the_road", scenario_video_on_the_road),
     *VIDEO_MEASUREMENTS,
+    *CALL_PATH_MATRIX,
 ]
 
 # Scenarios run only when named (--only).
-OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS}
+# The call-path matrix runs only when named, but for its two rows that guard #502's fixes on every --nat run.
+CALL_PATH_GUARDS = {"call_path_far_mid", "call_path_far_start"}
+OPT_IN = {name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX} - CALL_PATH_GUARDS
 
 # Scenarios that take the hop away: behind NATs there is then no path between users at all, so with
 # --nat they run only when named.
@@ -3105,7 +3165,8 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
-             "bystander_is_no_relay", "call_on_a_far_path", "call_starts_on_a_far_path"} | {name for name, _ in VIDEO_MEASUREMENTS}
+             "bystander_is_no_relay"} | {
+    name for name, _ in VIDEO_MEASUREMENTS + CALL_PATH_MATRIX}
 
 
 def main():
@@ -3114,6 +3175,9 @@ def main():
     ap.add_argument("--relay", default="http://127.0.0.1:18719/api/relay", help="lab relay base url")
     ap.add_argument("--hop", help="mesh seed multiaddr (default: the lab hop, from its /status)")
     ap.add_argument("--hop-status", default="http://127.0.0.1:18718")
+    ap.add_argument("--hop2", help="the second seed's multiaddr (default: the lab's hop2, from its /status)")
+    ap.add_argument("--hop2-status", default="http://127.0.0.1:18728")
+    ap.add_argument("--hop2-ip", default="198.51.100.30", help="the second seed's address on the lab network")
     ap.add_argument("--hop-ip", default="198.51.100.10", help="the lab hop's address on the lab network")
     ap.add_argument("--relay-container", default="pp-app-lab-www-1",
                     help="lab relay gateway container, restarted when registrations run out")
@@ -3134,10 +3198,12 @@ def main():
     ap.add_argument("--summary", help="write every scenario's outcome here (JSON), for the nightly lab")
     args = ap.parse_args()
     if not args.hop:
-        import urllib.request
-        with urllib.request.urlopen(args.hop_status + "/status", timeout=5) as r:
-            peer = json.load(r)["peer_id"]
-        args.hop = "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (args.hop_ip, peer)
+        args.hop = seed_multiaddr(args.hop_status, args.hop_ip)
+    if not args.hop2:
+        try:
+            args.hop2 = seed_multiaddr(args.hop2_status, args.hop2_ip)
+        except OSError:
+            args.hop2 = None  # a lab without the second seed: the two-hop rows fail, the rest run
 
     skipped = OPT_IN | (NEEDS_DIRECT_PATH if args.nat else NEEDS_NAT)
     selected = [(n, f) for n, f in SCENARIOS if n in args.only or (not args.only and n not in skipped)]
@@ -3159,6 +3225,13 @@ def main():
         with open(args.summary, "w") as f:
             json.dump({"nat": bool(args.nat), "results": results}, f, indent=2)
     sys.exit(1 if any(r["result"] == "fail" for r in results) else 0)
+
+
+def seed_multiaddr(status_url, ip):
+    import urllib.request
+    with urllib.request.urlopen(status_url + "/status", timeout=5) as r:
+        peer = json.load(r)["peer_id"]
+    return "/ip4/%s/udp/18517/adp/1.0.0/p2p/%s" % (ip, peer)
 
 
 def run_scenario(args, name, fn):
