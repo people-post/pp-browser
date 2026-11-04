@@ -1517,17 +1517,7 @@ std::string ConversationsHub::IdentityIconLocalPath(const std::string& identity)
       }
     }
   }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::Account)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::RelayUser)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  return ProfileIconLocalPath(data_dir_, SanitizeProfileIconCacheKey(identity));
+  return ProfileIconLocalPathForIdentity(data_dir_, *contacts_, identity);
 }
 
 void ConversationsHub::EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit) {

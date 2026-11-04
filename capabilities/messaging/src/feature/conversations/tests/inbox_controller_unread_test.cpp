@@ -7,6 +7,7 @@
 #include "feature/conversations/InboxController.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "common/Utilities.h"
+#include "lib/people/ProfileIconCache.h"
 #include "feature/conversations/PeerDisplaySources.h"
 
 #include <filesystem>
@@ -395,6 +396,22 @@ TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
   ASSERT_TRUE(env.inbox->CloseThread(group->id));
   EXPECT_FALSE(env.store->FindGroupThread("group:hike")->has_value());
 }
+
+// A group row's sender can be an account id of someone who is not a contact (Kenneth 2026-11-04: no avatar column).
+TEST(InboxControllerUnreadTest, SenderIconResolvesANonContactAccountThroughTheIdentityCache) {
+  InboxTestEnv env("sender_icon_test");
+  const std::string profile = env.data_dir.string();
+  env.inbox->SetProfileDataDir(profile);
+  ProfileIconCacheMeta meta;
+  ASSERT_TRUE(SaveProfileIconCache(profile, {1, 2, 3}, "jpg", meta, SanitizeProfileIconCacheKey("account:stranger")));
+  const std::string expected = ProfileIconLocalPath(profile, SanitizeProfileIconCacheKey("account:stranger"));
+  ASSERT_FALSE(expected.empty());
+
+  const TranscriptFacts facts = env.inbox->Facts();
+  EXPECT_EQ(facts.sender_icon("account:stranger"), expected);
+  EXPECT_TRUE(facts.sender_icon("account:nobody").empty());
+}
+
 
 } // namespace
 } // namespace pbr

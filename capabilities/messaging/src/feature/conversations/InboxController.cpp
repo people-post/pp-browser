@@ -643,12 +643,12 @@ TranscriptFacts InboxController::Facts() const {
   TranscriptFacts facts;
   facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
   facts.sender_icon = [this](const std::string& contact_id) -> std::string {
-    auto contact = contacts_.Get(contact_id);
-    if (!contact || !*contact) {
-      return {};
+    // A contact id, or the account / relay id of a group member who is not a contact.
+    if (auto contact = contacts_.Get(contact_id); contact && *contact) {
+      const std::string key = ProfileIconCacheKeyForContact(**contact);
+      return key.empty() ? std::string() : ProfileIconLocalPath(profile_data_dir_, key);
     }
-    const std::string key = ProfileIconCacheKeyForContact(**contact);
-    return key.empty() ? std::string() : ProfileIconLocalPath(profile_data_dir_, key);
+    return ProfileIconLocalPathForIdentity(profile_data_dir_, contacts_, contact_id);
   };
   facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
   facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
