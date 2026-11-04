@@ -150,6 +150,25 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
     const mesh::ReachabilitySignals signals = mesh_->Reachability().Snapshot().signals;
     return signals.seed_dial_ok || signals.seed_dial_error.empty();
   };
+  reach.node_reputation = [this]() -> std::shared_ptr<MeshNodeReputation> {
+    return mesh_owner_ ? mesh_owner_->NodeReputation() : nullptr;
+  };
+  reach.observe_node = [this](const std::string& peer_id) {
+    ObservedNode seen;
+    if (mesh_ && mesh_->Amp()) {
+      if (auto told = mesh_->Amp()->Links().RemoteCapabilityExtension(peer_id)) {
+        seen.told = true;
+        seen.amp_wire = told->amp_wire;
+        seen.node_version = told->node_version;
+        seen.features = told->features;
+      }
+    }
+    if (mesh_owner_) {
+      seen.answered_other_wire =
+          mesh_owner_->Connectivity().ReachFacts(peer_id).last_failure == mesh::PeerReachFailure::VersionMismatch;
+    }
+    return seen;
+  };
   reach.note_lan_peer_id = [this](const std::string& peer_id) { NoteLanMdnsPeerId(peer_id); };
   reach.register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (mesh_messaging_) {

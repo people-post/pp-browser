@@ -1,5 +1,7 @@
 #include "feature/conversations/MeshConnectivityWiring.h"
 
+#include "amp/L1/Types.h"
+
 #include "lib/people/MeshHopPolicy.h"
 #include "common/MeshConfig.h"
 #include "common/runtime/AppRuntime.h"
@@ -39,6 +41,25 @@ namespace {
 MeshConfig MeshConfigOf(const MeshConnectivityWiringInputs& in) {
   auto cfg = in.mesh_config ? in.mesh_config() : nullptr;
   return cfg ? *cfg : MeshConfig{};
+}
+
+/**
+ * N032 rules 5–8 on the park / circuit surface: audit the directory nodes' claims against what was seen of them, lead
+ * with an anchor every few relays, then demote what this profile distrusts and a second relay of one operator.
+ */
+std::vector<mesh::MeshHopCandidate> ComposeRendezvousSurface(
+    std::vector<mesh::MeshHopCandidate> rendezvous, const MeshConnectivityWiringInputs& in,
+    const std::vector<Contact>& contacts, const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+    const MeshConfig& mesh_cfg) {
+  const std::shared_ptr<MeshNodeReputation> reputation = in.node_reputation ? in.node_reputation() : nullptr;
+  const int64_t now = MeshNodeReputation::NowMs();
+  if (reputation) {
+    AuditNodeClaims(directory_nodes, in.observe_node, *reputation, pp::adp::kWireVersion, now);
+  }
+  const RelaySetContext context = MakeRelaySetContext(contacts, directory_nodes, mesh_cfg.bootstrap_peers,
+                                                      mesh_cfg.preferred_min_node_version, reputation.get(), now);
+  // Anchors first, then the bands: what is distrusted or repeated drops behind every anchor, never between two.
+  return ApplyRelaySetRules(AnchorLed(std::move(rendezvous), context), context);
 }
 
 } // namespace
@@ -97,6 +118,7 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
     std::erase_if(contact_introducers, [&trusted](const mesh::MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
   }
 
+  rendezvous = ComposeRendezvousSurface(std::move(rendezvous), in, contacts, directory_nodes, mesh_cfg);
   for (const auto& hop : rendezvous) {
     grant(hop, mesh::kReachRoleRendezvous);
   }
