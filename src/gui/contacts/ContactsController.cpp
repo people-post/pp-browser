@@ -54,7 +54,9 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <string_view>
 #include <utility>
 #include <cctype>
@@ -67,6 +69,8 @@ namespace pbr {
 namespace {
 
 constexpr uint32_t kContactDebounceMs = 400;
+/** Typing paused this long (and saved): the edit is over, the "Note saved" pill shows (once, RemarkSaveNotice). */
+constexpr uint32_t kRemarkNoticeQuietMs = 1500;
 
 std::string MultiaddrsToText(const std::vector<std::string>& multiaddrs) {
   std::ostringstream out;
@@ -1422,6 +1426,8 @@ void ContactsController::OnContactFieldChanged() {
   }
   contact_dirty_ = true;
   debounce_deadline_ms_ = SDL_GetTicks() + kContactDebounceMs;
+  remark_notice_deadline_ms_ = SDL_GetTicks() + kRemarkNoticeQuietMs;
+  WakeForRemarkNotice();
 
   if (contacts_ports_.snapshot && contacts_ports_.snapshot().initialized && contacts_ports_.get_contact) {
     if (auto existing = contacts_ports_.get_contact(selected_.id.c_str())) {
@@ -1440,12 +1446,38 @@ void ContactsController::Tick() {
     add_search_deadline_ms_ = 0;
     RunAddSearch();
   }
-  if (!contact_dirty_ || debounce_deadline_ms_ == 0) {
-    return;
-  }
-  if (SDL_GetTicks() >= debounce_deadline_ms_) {
+  if (contact_dirty_ && debounce_deadline_ms_ != 0 && SDL_GetTicks() >= debounce_deadline_ms_) {
     debounce_deadline_ms_ = 0;
     (void)FlushSelectedContact();
+  }
+  // A pause in the typing ends the edit (a tap elsewhere on a phone does not always take the focus from the field).
+  if (remark_notice_deadline_ms_ != 0 && !contact_dirty_ && SDL_GetTicks() >= remark_notice_deadline_ms_) {
+    AnnounceRemarkSaved();
+  }
+}
+
+void ContactsController::WakeForRemarkNotice() {
+  // An idle phone draws no frames, so nothing would tick when the pause is over: wake the loop then.
+  if (remark_wake_pending_ || remark_notice_deadline_ms_ == 0 || !AppRuntime::IsRunning()) {
+    return;
+  }
+  remark_wake_pending_ = true;
+  const uint64_t now = SDL_GetTicks();
+  const uint64_t delay = remark_notice_deadline_ms_ > now ? remark_notice_deadline_ms_ - now : 0;
+  std::thread([this, delay]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay + 20));
+    AppRuntime::PostUI([this]() {
+      remark_wake_pending_ = false;
+      Tick();
+      WakeForRemarkNotice(); // typing went on meanwhile: wait for the new pause
+    });
+  }).detach();
+}
+
+void ContactsController::AnnounceRemarkSaved() {
+  remark_notice_deadline_ms_ = 0;
+  if (const std::string notice = remark_notice_.Take(); !notice.empty()) {
+    ShowToast(Tr(notice));
   }
 }
 
@@ -1454,10 +1486,8 @@ void ContactsController::FlushPending() {
     debounce_deadline_ms_ = 0;
     (void)FlushSelectedContact();
   }
-  // Leaving the page (closed, another person, back) also ends the edit.
-  if (const std::string notice = remark_notice_.Take(); !notice.empty()) {
-    ShowToast(Tr(notice));
-  }
+  // Leaving the field or the page (closed, another person, back) also ends the edit.
+  AnnounceRemarkSaved();
 }
 
 void ContactsController::OnContactFieldLeft() {

@@ -336,6 +336,8 @@ private:
   void OnContactFieldChanged();
   /** The remark field lost focus: save now and say so once (RemarkSaveNotice). */
   void OnContactFieldLeft();
+  /** The edit is over (field left, page gone, typing paused): "Note saved" once if a save changed the remark. */
+  void AnnounceRemarkSaved();
   void OnSyncRemote();
   bool FlushSelectedContact();
   void UpdateMessagingEligibility(const Contact& contact);
@@ -367,6 +369,10 @@ private:
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
   RemarkSaveNotice remark_notice_;
+  /** When a pause in the typing ends the remark edit (SDL ticks; 0: none pending). */
+  uint64_t remark_notice_deadline_ms_ = 0;
+  bool remark_wake_pending_ = false;
+  void WakeForRemarkNotice();
   GroupAdminCard group_admin_;
   bool admin_shown_ = false;
   bool admin_can_reinvite_ = false;
