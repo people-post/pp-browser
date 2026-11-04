@@ -69,4 +69,11 @@ private:
 /** The deps of the running app, read from the hub's stores (call on the UI thread once messaging is ready). */
 Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub);
 
+/**
+ * The demo app has no AI backend: the ask-AI panel streams this made-up Markdown answer instead, so the screens can
+ * be seen (DEV/PLAN-ui-batch5-ask-ai.md 5a). A question containing "出错" or "error" gets "" (the turn fails), to show
+ * the panel's error state. Chinese when the question has CJK text, else English.
+ */
+std::string DemoAskAiAnswer(const std::string& question);
+
 } // namespace pbr

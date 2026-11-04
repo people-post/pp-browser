@@ -52,6 +52,8 @@ struct AgentUiPorts {
   std::function<void()> cancel_all;
   /** A thread was cleared or closed: the session forgets which brief_AI role answered it last. */
   std::function<void(const std::string& thread_id)> forget_thread;
+  /** The Home session's conversation starts empty (the ask-AI panel's one-off question); false while it answers. */
+  std::function<bool()> start_new_home_conversation;
   /**
    * A turn runs in `thread_id` (empty: the Home composer). The UI uses it to recover a "busy" it never heard end
    * (B112).

@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <thread>
 #include <stdexcept>
 #include <filesystem>
@@ -94,6 +95,8 @@
 #include "gui/SettingsController.h"
 #include "lib/ui/PaymentFeedback.h"
 #include "gui/UserFeedback.h"
+#include "feature/product/DemoDataSeeder.h"
+#include "foundation/product/DevTools.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "mesh/reachability/Reachability.h"
 #include "foundation/data/Config.h"
@@ -2039,11 +2042,11 @@ void ChatController::SyncDisplayFromThread() {
 
 
 
-void ChatController::OpenChatLink(const std::string& entry_id, const int link_index) {
+void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index) {
   auto links = chat_links_.find(entry_id);
   if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
     // After a restart the map is empty: rebuild from the message's own stored text.
-    if (auto messages = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 10000)) {
+    if (auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000)) {
       for (const ThreadMessage& message : *messages) {
         if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
           links = chat_links_.emplace(entry_id, RecoverChatLinks(message.text)).first;
@@ -3457,6 +3460,12 @@ bool ChatController::Setup(ui::Context* context) {
       })) {
     return false;
   }
+  if (!ask_ai_.Register(context)) {
+    return false;
+  }
+  if constexpr (kUiDemoBuild) {
+    ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
+  }
 
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
@@ -3626,6 +3635,7 @@ void ChatController::Update() {
   }
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
+  ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
 
   if (search_.view().open) {
     const auto search_now = std::chrono::steady_clock::now();
@@ -3896,6 +3906,181 @@ void ChatController::OnSearchMessagesChanged() {
 void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
   if (!thread_id.empty() && thread_id == search_thread_) {
     OnSearchMessagesChanged(); // the answer is stored now
+  }
+  ask_ai_.OnTurnEnded(thread_id);
+}
+
+// --- the ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a) ---------------------------------------------------
+
+bool ChatController::AskAiCompact() const {
+  return ChromeSnapshot().layout_mode == LayoutMode::Compact;
+}
+
+std::string ChatController::AskAiSharedThread(const bool create) {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  // The AI chat used last is the conversation Home, the panel and "AI chat" continue.
+  std::string best;
+  int64_t best_at = std::numeric_limits<int64_t>::min();
+  if (auto threads = facade_->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Ai && thread.listed && thread.updated_at > best_at) {
+        best = thread.id;
+        best_at = thread.updated_at;
+      }
+    }
+  }
+  if (best.empty() && create) {
+    // Not opened: the page under the panel (maybe a chat with a person) stays as it is.
+    if (auto created = facade_->CreateAiThread()) {
+      best = created->id;
+      SyncShellSessions();
+    } else {
+      log().warning << "Ask AI: could not create the AI chat: " << created.error().message;
+    }
+  }
+  return best;
+}
+
+std::vector<AskAiRow> ChatController::AskAiRecentRows(const std::string& thread_id, const size_t limit) {
+  std::vector<AskAiRow> out;
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return out;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, static_cast<int>(limit));
+  if (!page || page->empty()) {
+    return out;
+  }
+  int64_t oldest = page->front().display_order;
+  for (const ThreadMessage& message : *page) {
+    oldest = std::min(oldest, message.display_order);
+  }
+  for (const MessageDisplayRow& row : BuildMessageRows(thread_id, oldest, std::nullopt)) {
+    if (row.content_rml.empty()) {
+      continue;
+    }
+    out.push_back({row.message_id, row.row_class == "message-row-user", row.content_rml});
+  }
+  return out;
+}
+
+bool ChatController::AskAiLastIsQuestion(const std::string& thread_id) {
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return false;
+  }
+  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
+  return newest && !newest->empty() && newest->back().sender_contact_id == kLocalSelfContactId;
+}
+
+std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, const std::string& text) {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  ThreadMessage message;
+  message.id = util::GenerateUuid();
+  message.thread_id = thread_id;
+  message.sender_contact_id = kLocalSelfContactId;
+  message.text = text;
+  message.timestamp = util::NowUnixMs();
+  message.transport = MessageTransport::Local;
+  auto stored = facade_->AppendMessage(message);
+  if (!stored) {
+    log().warning << "Ask AI: could not store the question: " << stored.error().message;
+    return {};
+  }
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(text));
+  (void)facade_->UpdatePreview(thread_id, text);
+  SyncShellSessions();
+  return stored->id.empty() ? message.id : stored->id;
+}
+
+int ChatController::AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) {
+  if (!shell_navigation_.push_layer) {
+    return -1;
+  }
+  const int layer_id = shell_navigation_.push_layer(spec);
+  if (flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(layer_id, {}, std::move(on_closed));
+  }
+  return layer_id;
+}
+
+void ChatController::AskAiCloseSheet(const int layer_id) {
+  if (layer_id >= 0 && shell_navigation_.close_layer) {
+    shell_navigation_.close_layer(layer_id); // the coordinator hears it closing and tells the panel
+  }
+}
+
+void ChatController::ShowThreadInChat(const std::string& thread_id) {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  if (auto opened = facade_->OpenThread(thread_id); !opened) {
+    log().warning << "Ask AI: could not open the AI chat: " << opened.error().message;
+    return;
+  }
+  ShellSelectNavTab(NavTab::Sessions);
+  ShellSetPrimaryPane("chat");
+  FinalizeThreadDisplay();
+  NotifySurfaceChanged();
+}
+
+void ChatController::AskAiOpenInChat(const std::string& thread_id) {
+  // After the tap's own handler: the sheet and the page under it are rebuilt.
+  AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
+}
+
+void ChatController::AskAiSupport(const std::string& question) {
+  AppRuntime::PostUI([this, question]() {
+    if (!ask_support_) {
+      UserFeedback::Fail(Tr("settings.support.unavailable"));
+      return;
+    }
+    if (auto asked = ask_support_(question); !asked) {
+      (void)UserFeedback::FailFrom(asked.error());
+    }
+  });
+}
+
+void ChatController::AskAiRunAction(const std::string& thread_id, const std::string& entry_id, const int action_index) {
+  if (!messaging_ready_ || !facade_ || action_index < 0) {
+    return;
+  }
+  auto found = facade_->GetMessage(thread_id, entry_id);
+  if (!found || !found->has_value() || static_cast<size_t>(action_index) >= (*found)->chat_actions.size()) {
+    log().warning << "Ask AI: answer button not found (index " << action_index << ")";
+    return;
+  }
+  const TranscriptChatAction action = (*found)->chat_actions[static_cast<size_t>(action_index)];
+  const auto payload = action.payload ? TryParseObject(*action.payload) : std::nullopt;
+  const std::string type = payload ? payload->getString("type").value_or("") : std::string();
+  // A permission card and a link are answered where they are; the session holding the card is found by its id.
+  if (type == "tool_permission" || type == "open_url") {
+    AppRuntime::PostUI([this, action, entry_id]() { HandleLocalAction(action.message, action.payload, entry_id); });
+    return;
+  }
+  // Anything else continues in the full AI chat, where its answer (a list, a form) can show.
+  AppRuntime::PostUI([this, thread_id, action, entry_id]() {
+    ask_ai_.Close();
+    ShowThreadInChat(thread_id);
+    HandleLocalAction(action.message, action.payload, entry_id);
+  });
+}
+
+bool ChatController::AskAiIntroSeen() const {
+  return session_store_ && Store().Snapshot().profile_prefs.ai_panel_intro_seen;
+}
+
+void ChatController::AskAiMarkIntroSeen() {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  prefs.ai_panel_intro_seen = true;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Ask AI: could not remember the privacy card: " << saved.error().message;
   }
 }
 

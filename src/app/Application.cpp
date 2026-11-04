@@ -968,6 +968,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
+  if (chat_) {
+    chat_->BindAskSupport(settings_commands.ask_support); // the ask-AI panel's "Ask PP Support"
+  }
   settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
     DiagnosticsUploadDeps deps;
     deps.data_dir = store_.Snapshot().data_dir;
@@ -1407,6 +1410,7 @@ void Application::WireUnlockPinAndFlow() {
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
     contacts_->BindFlowCoordinator(flow_ports);
+    chat_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }

@@ -2440,6 +2440,15 @@ void AgentSession::WaitForConfigureIdle() {
   impl_->configure_cv.wait(lock, [&] { return impl_->configure_inflight == 0; });
 }
 
+bool AgentSession::StartNewConversation() {
+  if (impl_->busy.load()) {
+    return false;
+  }
+  ForgetThread({});
+  impl_->conversation.StartNewConversation();
+  return true;
+}
+
 void AgentSession::ForgetThread(const std::string& thread_id) {
   {
     std::lock_guard lock(impl_->shared->last_role_mutex);

@@ -288,6 +288,21 @@ TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   EXPECT_TRUE(env.inbox->ActiveThreadId().empty());
 }
 
+// The ask-AI panel's first question makes its AI chat without opening it: the chat on screen stays the open one.
+TEST(InboxControllerTest, AnAiChatCanBeMadeWithoutOpeningIt) {
+  InboxTestEnv env("ai_thread_not_opened");
+  auto open = env.inbox->CreateNewAiThread();
+  ASSERT_TRUE(open);
+  auto made = env.inbox->CreateAiThread();
+  ASSERT_TRUE(made);
+  EXPECT_EQ(made->kind, ThreadKind::Ai);
+  EXPECT_NE(made->id, open->id);
+  EXPECT_EQ(env.inbox->ActiveThreadId(), open->id) << "the open chat did not change";
+  auto listed = env.inbox->ListThreads();
+  ASSERT_TRUE(listed);
+  EXPECT_EQ(listed->size(), 2u);
+}
+
 // G016: a dissolved group's chat is deleted like any chat (nobody is left to tell); the line shows in the group only.
 TEST(InboxControllerTest, ADissolvedGroupChatReadsWithItsLineAndDeletes) {
   InboxTestEnv env("dissolved_group_chat");

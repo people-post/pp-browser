@@ -9,6 +9,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/AskAiPanel.h"
 #include "foundation/runtime/BackgroundActivity.h"
 #include "gui/chat/AttachmentPreparing.h"
 #include "gui/chat/CameraCaptureFlow.h"
@@ -29,6 +30,7 @@
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
+#include "gui/FlowCoordinatorPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
@@ -73,7 +75,7 @@ class InputCoordinator;
 /** One chats-list row as the RML binds it (letter avatar, or the person's photo when `icon_path` is set). */
 SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from);
 
-class ChatController : public Module, private AgentTurnHost, private ChatMenusHost {
+class ChatController : public Module, private AgentTurnHost, private ChatMenusHost, private AskAiPanelHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
@@ -133,6 +135,12 @@ public:
   void OnFindSomeone() override;
   /** A new chat with the AI (the phone "New chat" page's first row). */
   void StartNewAiChat() { OnNewChat(); }
+  /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
+  void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
+    ask_support_ = std::move(ask_support);
+  }
+  /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
+  void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
   void OnSelectThread(const std::string& thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
@@ -279,7 +287,9 @@ private:
   std::chrono::steady_clock::time_point last_call_joinable_poll_{};
   /** Each second: whether the open group chat has a call this device may join (calls change it). */
   void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
-  void OpenChatLink(const std::string& entry_id, int link_index);
+  void OpenChatLink(const std::string& entry_id, int link_index) { OpenChatLinkIn(ActiveThreadId(), entry_id, link_index); }
+  /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
+  void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);
   /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
   void ConfirmAndOpenUrl(const std::string& url);
   void RestoreWorkingSetsFromActiveThread();
@@ -362,6 +372,29 @@ private:
   /** Messages of the searched chat were added or removed: rebuild the index (at most every 2 s, one at a time). */
   void OnSearchMessagesChanged();
   void OnAgentTurnEnded(const std::string& thread_id) override;
+  bool AskAiPanelShows(const std::string& thread_id) const override { return ask_ai_.Shows(thread_id); }
+  void OnAskAiOnceReply(const AgentEvent& event) override { ask_ai_.OnOnceReply(event); }
+  // The ask-AI panel's side of the screen (AskAiPanelHost).
+  bool AskAiCompact() const override;
+  std::string AskAiSharedThread(bool create) override;
+  std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;
+  bool AskAiLastIsQuestion(const std::string& thread_id) override;
+  QueuedSendOutcome AskAiSendNow(const QueuedAgentSend& item) override { return RunQueuedAgentSend(item); }
+  std::string AskAiStoreQuestion(const std::string& thread_id, const std::string& text) override;
+  int AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) override;
+  void AskAiCloseSheet(int layer_id) override;
+  void AskAiOpenInChat(const std::string& thread_id) override;
+  void AskAiSupport(const std::string& question) override;
+  void AskAiRunAction(const std::string& thread_id, const std::string& entry_id, int action_index) override;
+  void AskAiOpenLink(const std::string& thread_id, const std::string& entry_id, int link_index) override {
+    OpenChatLinkIn(thread_id, entry_id, link_index);
+  }
+  void AskAiOpenUrl(const std::string& url) override { ConfirmAndOpenUrl(url); }
+  bool AskAiIntroSeen() const override;
+  void AskAiMarkIntroSeen() override;
+  void AskAiToast(const std::string& text) override { ShowToast(text); }
+  /** Opens the thread in the full chat page (Sessions tab, chat pane, the phone's chat page). */
+  void ShowThreadInChat(const std::string& thread_id);
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
 
@@ -427,6 +460,10 @@ private:
   std::map<std::string, std::vector<std::string>> chat_links_;
   /** The agent's side of the screen (turns, streaming, held sends, AI images, its widgets). */
   AgentTurnController agent_{*this, chat_, chat_links_, widgets_, working_set_, shell_feedback_};
+  /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
+  AskAiPanel ask_ai_{*this, agent_};
+  std::function<Roe<void>(const std::string& question)> ask_support_;
+  FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,
                    call_actions_};

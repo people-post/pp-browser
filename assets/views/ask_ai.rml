@@ -1,0 +1,45 @@
+<!-- The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a): a half-height page sheet over whatever page is open. The rows
+     are the shared AI conversation's last bubbles (or the settings "?" one-off question); the input row sends to it.
+     The sheet's own grab handle and X sit around this view. -->
+<div class="ask-ai" data-model="ask_ai">
+  <div class="ask-ai-header">
+    <p class="ask-ai-title">{{i18n:ask_ai.title}}</p>
+    <button class="ask-ai-open-chat" type="button" data-if="!once"
+            data-event-click="ask_ai_open_in_chat()">{{i18n:ask_ai.open_in_chat}}</button>
+  </div>
+  <p class="ask-ai-privacy">{{i18n:ask_ai.privacy}}</p>
+  <div class="ask-ai-scroll" id="ask-ai-scroll">
+    <div class="ask-ai-intro" data-if="show_intro">
+      <p class="ask-ai-intro-body">{{i18n:ask_ai.intro.body}}</p>
+      <button class="ask-ai-intro-ok" type="button" data-event-click="ask_ai_intro_seen()">{{i18n:ask_ai.intro.ok}}</button>
+    </div>
+    <p class="ask-ai-section" data-if="once">{{i18n:ask_ai.once_title}}</p>
+    <p class="ask-ai-empty" data-if="!once && !show_intro && rows.size == 0 && queued_text == '' && !thinking && !error">{{i18n:ask_ai.empty}}</p>
+    <div data-for="row : rows" class="message-row ask-ai-row"
+         data-class-message-row-user="row.user" data-class-message-row-ai="!row.user">
+      <div selectable="text" data-rml="row.content_rml"></div>
+    </div>
+    <!-- A question waiting for a free turn: shown, not stored, until it goes out. -->
+    <div class="message-row message-row-user message-row-queued" data-if="queued_text != ''">
+      <div class="bubble bubble-user bubble-queued">{{queued_text}}</div>
+      <p class="queued-note muted">{{i18n:ask_ai.queued}}</p>
+    </div>
+    <p class="text muted thinking" data-if="thinking">{{i18n:chat.thinking}}</p>
+    <p class="ask-ai-error" data-if="error">{{i18n:ask_ai.error}}</p>
+    <button class="ask-ai-support" type="button" data-if="show_support"
+            data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
+  </div>
+  <div class="ask-ai-input-row">
+    <div class="ask-ai-pill">
+      <textarea id="ask-ai-input" class="ask-ai-input" rows="1" max-rows="4" maxlength="4000"
+                data-value="draft"></textarea>
+      <!-- The engine draws no placeholder on phones: a label over the empty input. -->
+      <p class="ask-ai-placeholder" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
+    </div>
+    <button class="ask-ai-send" type="button" data-if="draft != ''" data-attrif-disabled="thinking"
+            data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
+      <svg src="../icons/send.svg" width="16" height="16" crop-to-content="true"></svg>
+    </button>
+  </div>
+  <p class="ask-ai-reminder">{{i18n:ask_ai.reminder}}</p>
+</div>

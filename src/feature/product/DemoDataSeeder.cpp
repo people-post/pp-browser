@@ -2,6 +2,7 @@
 
 #include "domain/attachments/AttachmentContent.h"
 #include "common/Logger.h"
+#include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/crypto/AttachmentContentHash.h"
@@ -12,6 +13,7 @@
 #include "lib/delivery/ReactionTypes.h"
 #include "lib/messaging/QuoteReply.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <chrono>
@@ -623,6 +625,44 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
                       LocalMidnightMs(now_ms),
                       now_ms,
                       ReadDemoAsset};
+}
+
+std::string DemoAskAiAnswer(const std::string& question) {
+  if (question.find("出错") != std::string::npos || util::ToLowerAscii(question).find("error") != std::string::npos) {
+    return {};
+  }
+  const bool chinese = std::any_of(question.begin(), question.end(),
+                                   [](const char c) { return static_cast<unsigned char>(c) >= 0xE0; });
+  // A setting's "?" asks about that setting; anything else gets a general sample.
+  const bool about_setting = question.find("「") != std::string::npos || question.find("“") != std::string::npos;
+  if (!about_setting) {
+    if (chinese) {
+      return "这是演示版的示例回答（演示版不连 AI）。\n\n"
+             "真正的 AI 会在这里一段一段地写出回答，你可以：\n\n"
+             "- 接着追问，它记得这段对话；\n"
+             "- 往上拖面板看更多，往下拖收起，回到原来的页面；\n"
+             "- 点右上角「在 AI 聊天里打开」看完整对话。";
+    }
+    return "This is a sample answer from the demo app (it has no AI).\n\n"
+           "A real answer is written here bit by bit. You can:\n\n"
+           "- ask a follow-up; it remembers this conversation;\n"
+           "- drag the panel up for more room, or down to go back to your page;\n"
+           "- tap \"Open in AI chat\" for the whole conversation.";
+  }
+  if (chinese) {
+    return "这是演示版的示例回答（演示版不连 AI）。\n\n"
+           "真正的 AI 会在这里说清这个设置：\n\n"
+           "- **一句话**：它是做什么的；\n"
+           "- **开或关**：打开、关掉以后会怎样；\n"
+           "- **什么时候改**：一般用默认就好，什么情况下需要动它。\n\n"
+           "还没看懂，可以接着问，或者点下面的「问 PP 客服」。";
+  }
+  return "This is a sample answer from the demo app (it has no AI).\n\n"
+         "A real answer explains this setting here:\n\n"
+         "- **In short**: what it does;\n"
+         "- **On or off**: what changes either way;\n"
+         "- **When to change it**: the default suits most people, and when it does not.\n\n"
+         "Still unsure? Ask a follow-up, or tap \"Ask PP Support\" below.";
 }
 
 } // namespace pbr

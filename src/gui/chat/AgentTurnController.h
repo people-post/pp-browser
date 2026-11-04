@@ -33,6 +33,11 @@ class ToolRegistry;
 
 /** Pseudo thread whose blobs_view holds AI image thumbnails; wiped with the other session plaintext views. */
 inline constexpr const char* kAiImageViewThread = "ai-images";
+/**
+ * The ask-AI panel's one-off question (settings "?", DEV/PLAN-ui-batch5-ask-ai.md 5a): it runs in the Home session
+ * and shows only in the panel, under this pseudo thread ("busy", the streamed text). Never a stored thread.
+ */
+inline constexpr const char* kAskAiOnceThread = "ask-ai-once";
 
 /** What AgentTurnController needs from the chat screen it is part of (ChatController). UI thread. */
 class AgentTurnHost {
@@ -66,6 +71,13 @@ public:
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
   /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
   virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
+  /** The ask-AI panel shows this thread now: an answer there is read, not unread. */
+  virtual bool AskAiPanelShows(const std::string& thread_id) const {
+    (void)thread_id;
+    return false;
+  }
+  /** The finished answer of the panel's one-off question (kAskAiOnceThread): never stored in a thread. */
+  virtual void OnAskAiOnceReply(const AgentEvent& event) { (void)event; }
 };
 
 /**
@@ -147,6 +159,15 @@ public:
    * not (its turn still runs), the text goes back to that composer.
    */
   void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
+  /**
+   * The ask-AI panel's one-off question in the Home session (its conversation started empty first): busy in
+   * kAskAiOnceThread once taken. Its events reach only the panel (OnAskAiOnceReply), never a chat.
+   */
+  SubmitOutcome SubmitAskAiOnce(const std::string& text);
+  /** The answer streaming in `thread_id` so far ("" when none). */
+  std::string StreamingText(const std::string& thread_id) const;
+  /** The question waiting in the queue for `thread_id` ("" when none). */
+  std::string QueuedText(const std::string& thread_id) const;
 
   // --- several turns at once, "busy" per thread, a queue once the sessions are full (B112) -------
   const AgentBusyState& Busy() const { return busy_; }

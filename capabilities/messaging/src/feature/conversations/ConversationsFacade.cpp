@@ -218,6 +218,7 @@ Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
 void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread(); }
 
 Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().CreateNewAiThread(); }
+Roe<Thread> ConversationsFacade::CreateAiThread() { return hub_.Inbox().CreateAiThread(); }
 
 Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
   return hub_.Inbox().UpdatePreview(thread_id, preview);

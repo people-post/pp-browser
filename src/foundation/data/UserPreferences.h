@@ -76,6 +76,8 @@ struct ProfilePreferences {
   bool show_advanced_settings = false;
   /** First-run wizard finished or skipped (or an account was brought over). */
   bool onboarding_completed = false;
+  /** The ask-AI panel's one-time privacy card was dismissed ("Got it"; DEV/PLAN-ui-batch5-ask-ai.md 5a). */
+  bool ai_panel_intro_seen = false;
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */

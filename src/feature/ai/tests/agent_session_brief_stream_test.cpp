@@ -609,6 +609,36 @@ TEST_F(AgentSessionBriefStreamTest, FollowUpHistoryHasMarkerAndNoImage) {
   EXPECT_EQ(requests[1].history[1].content, "A cat.");
 }
 
+// The ask-AI panel's one-off question (settings "?", DEV/PLAN-ui-batch5-ask-ai.md 5a) runs in the Home session after
+// StartNewConversation: it goes without the earlier Home turns, and its own follow-up keeps it.
+TEST_F(AgentSessionBriefStreamTest, ANewHomeConversationSendsNoEarlierHistory) {
+  Start();
+  Script({Meta(), Token("a"), Done("Earlier answer.")}, BriefAiOutcome::Done);
+  session_->Submit("earlier question");
+  WaitForTurn();
+  ASSERT_TRUE(session_->StartNewConversation());
+  EXPECT_TRUE(session_->conversation().Entries().empty());
+  session_->Submit("What does Send crash reports do?");
+  WaitForTurn();
+  session_->Submit("And is it on by default?");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_TRUE(requests[1].history.empty()) << "the one-off question carries nothing from before";
+  ASSERT_EQ(requests[2].history.size(), 2u) << "its follow-up stays with it";
+  EXPECT_EQ(requests[2].history[0].content, "What does Send crash reports do?");
+}
+
+TEST_F(AgentSessionBriefStreamTest, ANewHomeConversationWaitsForTheRunningTurn) {
+  Start();
+  Script({Meta(), Token("a"), Done("A")}, BriefAiOutcome::Done);
+  session_->Submit("question");
+  EXPECT_FALSE(session_->StartNewConversation()) << "a running turn keeps its conversation";
+  WaitForTurn();
+  EXPECT_TRUE(session_->StartNewConversation());
+}
+
 // --- Home chips: tool payload turns run on the device, no stream and no completions call ---
 // The config's completions endpoint is a closed port, so a model call would surface as an Error event.
 

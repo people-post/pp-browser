@@ -765,6 +765,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
+  object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -839,6 +840,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
+  prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {

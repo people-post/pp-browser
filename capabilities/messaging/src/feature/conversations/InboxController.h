@@ -95,6 +95,8 @@ public:
   Roe<Thread> OpenThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
+  /** A new AI thread, stored but not opened (the open chat stays as it is). */
+  Roe<Thread> CreateAiThread();
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);

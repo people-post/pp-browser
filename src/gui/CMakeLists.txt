@@ -8,6 +8,7 @@ pp_browser_add_feature_library(pp_gui
     CallChromeSync.cpp
     CallController.cpp
     chat/AgentTurnController.cpp
+    chat/AskAiPanel.cpp
     chat/ChatMenus.cpp
     chat/ChatMentionPicker.cpp
     chat/ChatPeerSheet.cpp

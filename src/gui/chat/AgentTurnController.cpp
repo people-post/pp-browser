@@ -696,6 +696,28 @@ void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const
   home_turn_thread_ = thread_id; // but it runs in the Home session: stop and recovery ask that one
 }
 
+SubmitOutcome AgentTurnController::SubmitAskAiOnce(const std::string& text) {
+  if (!agent_ports_.submit) {
+    return SubmitOutcome::Ignored;
+  }
+  const SubmitOutcome outcome = agent_ports_.submit(text, std::nullopt);
+  if (outcome == SubmitOutcome::Started) {
+    MarkAgentBusy(kAskAiOnceThread);
+    home_turn_thread_ = kAskAiOnceThread; // the Home session's events belong to the panel, not to a chat
+  }
+  return outcome;
+}
+
+std::string AgentTurnController::StreamingText(const std::string& thread_id) const {
+  const auto it = streaming_.find(thread_id);
+  return it == streaming_.end() ? std::string() : it->second.text;
+}
+
+std::string AgentTurnController::QueuedText(const std::string& thread_id) const {
+  const QueuedAgentSend* queued = queue_.Find(thread_id);
+  return queued ? queued->text : std::string();
+}
+
 TurnStart AgentTurnController::CanStart(const std::string& thread_id) const {
   if (busy_.BusyIn(thread_id)) {
     return TurnStart::BusyHere;
@@ -1133,7 +1155,8 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
   // An answer that arrived in a chat the user is not looking at shows as unread in the chat list (Kenneth
   // 2026-10-28: "在那个对话框列表那显示……一或者是二这样的一个提醒"). The open chat is never counted.
-  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id)) {
+  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id) &&
+      !host_.AskAiPanelShows(thread_id)) {
     host_.Facade()->IncrementUnread(thread_id);
   }
   host_.SyncDisplayFromThread();
@@ -1200,6 +1223,10 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::AssistantReady:
     ClearStreamingRow(EventThread(event));
+    if (EventThread(event) == kAskAiOnceThread) {
+      host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
+      break;
+    }
     FinishAssistantReply(event.entry_id, event.text, event.from_model,
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
                          event.shared_ai_mode, event.sources);

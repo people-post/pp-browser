@@ -2733,6 +2733,191 @@ select selectbox option {
   font-size: 17dp;
 }
 
+/* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14) in its half-stop sheet: a 44dp title row (the
+   sheet's X at its right end), one line on what goes to the AI, the bubbles, the input row and the reminder under it. */
+.shell-page-sheet.shell-page-sheet--ask_ai {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ask-ai {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ask-ai-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  height: 44dp;
+  padding: 0 52dp 0 16dp;
+}
+
+.ask-ai-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+}
+
+.ask-ai-open-chat {
+  flex-shrink: 0;
+  height: 44dp;
+  padding: 0 8dp;
+  border: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  white-space: nowrap;
+}
+
+.ask-ai-privacy {
+  flex-shrink: 0;
+  margin: 0 16dp 6dp 16dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.ask-ai-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8dp 16dp 8dp 16dp;
+}
+
+.ask-ai-intro {
+  margin: 0 0 16dp 0;
+  padding: 14dp 16dp 4dp 16dp;
+  border-radius: 12dp;
+}
+
+.ask-ai-intro-body {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.ask-ai-intro-ok {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  margin-top: 6dp;
+  border: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.ask-ai-section {
+  margin: 0 0 10dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.ask-ai-empty {
+  margin: 24dp 0;
+  font-size: 15dp;
+  line-height: 21dp;
+  text-align: center;
+}
+
+.ask-ai .bubble-user,
+.ask-ai .bubble-assistant {
+  max-width: 88%;
+}
+
+/* The chat page's bubble tails are drawn for its own rows only. */
+.ask-ai .bubble-tail {
+  display: none;
+}
+
+.ask-ai-error {
+  margin: 4dp 0 0 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.ask-ai-support {
+  display: inline-block;
+  height: 44dp;
+  margin-top: 10dp;
+  padding: 0 18dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 15dp;
+  line-height: 44dp;
+}
+
+.ask-ai-input-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  flex-shrink: 0;
+  padding: 8dp 16dp 0 16dp;
+}
+
+.ask-ai-pill {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 44dp;
+  padding: 0 14dp;
+  border-radius: 22dp;
+  box-sizing: border-box;
+}
+
+.ask-ai-input {
+  display: block;
+  width: 100%;
+  padding: 11dp 0;
+  border: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.ask-ai-placeholder {
+  position: absolute;
+  top: 0;
+  left: 14dp;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  pointer-events: none;
+}
+
+.ask-ai-send {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin-left: 8dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.ask-ai-send svg {
+  width: 16dp;
+  height: 16dp;
+}
+
+.ask-ai-reminder {
+  flex-shrink: 0;
+  margin: 6dp 16dp 6dp 16dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
 /* New chat in a sheet (Kenneth 2026-11-04): a 44dp title row centred like the people picker's, the rows edge to edge
    (the rows pad themselves, so the sheet drops its side padding). */
 .shell-page-sheet.shell-page-sheet--new_chat {

@@ -190,6 +190,11 @@ public:
    * this session's permission card and question asked back in that thread. UI thread.
    */
   void ForgetThread(const std::string& thread_id);
+  /**
+   * The Home conversation (no thread) starts empty: no earlier turn, summary, card or question asked back goes
+   * with the next question. False (nothing changed) while a turn runs. UI thread.
+   */
+  bool StartNewConversation();
 
   bool IsConfigured() const;
   const Conversation& conversation() const;

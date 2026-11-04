@@ -102,15 +102,18 @@ void InboxController::ClearActiveThread() {
   }
 }
 
-Roe<Thread> InboxController::CreateNewAiThread() {
+Roe<Thread> InboxController::CreateAiThread() {
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
   thread.title = kDefaultAiThreadTitle;
   thread.preview = "";
   thread.updated_at = util::NowUnixMs();
+  return store_.UpsertThread(thread);
+}
 
-  auto saved = store_.UpsertThread(thread);
+Roe<Thread> InboxController::CreateNewAiThread() {
+  auto saved = CreateAiThread();
   if (!saved) {
     return saved.error();
   }

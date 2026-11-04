@@ -138,6 +138,11 @@ public:
   bool StopTurnsAndWait(std::chrono::milliseconds budget);
   /** The thread was cleared or deleted: forget its last brief_AI role, its card and its question asked back. */
   void ForgetThread(const std::string& thread_id);
+  /**
+   * The Home session's conversation starts empty (AgentSession::StartNewConversation): the ask-AI panel's one-off
+   * question (settings "?") goes without earlier context. False while a Home turn runs.
+   */
+  bool StartNewHomeConversation() { return home_->StartNewConversation(); }
 
   /** The Home composer's session; its conversation is the Home transcript. */
   AgentSession& Home() { return *home_; }
