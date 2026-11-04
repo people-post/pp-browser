@@ -602,6 +602,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("my_has_account", &controller.my_has_account_);
     ctor.Bind("my_name", &controller.my_name_);
     ctor.Bind("my_account_id", &controller.my_account_id_);
+    ctor.Bind("my_account_id_shown", &controller.my_account_id_shown_);
     ctor.Bind("my_has_icon", &controller.my_has_icon_);
     ctor.Bind("my_icon_src", &controller.my_icon_src_);
     ctor.Bind("my_avatar_letter", &controller.my_avatar_letter_);
@@ -2079,7 +2080,7 @@ void ContactsController::CloseAddContactPage() {
 void ContactsController::DirtyAddContact() {
   auto& host = DataModelHost::Instance();
   for (const char* name :
-       {"add_query", "add_rows", "add_searching", "add_no_results", "my_has_account", "my_name", "my_account_id",
+       {"add_query", "add_rows", "add_searching", "add_no_results", "my_has_account", "my_name", "my_account_id", "my_account_id_shown",
         "my_has_icon", "my_icon_src", "my_avatar_letter", "my_avatar_tone", "my_qr_svg_rml", "can_scan",
         "can_new_group"}) {
     host.Dirty("contacts", name);
@@ -2094,6 +2095,15 @@ void ContactsController::LoadMyAccount() {
   const std::string name = view.nickname.empty() ? Tr("people_picker.unnamed") : view.nickname;
   my_name_ = name.c_str();
   my_account_id_ = view.relay_id.c_str();
+  // Shown without the internal "relay:" / "account:" kind prefix; copy and share keep the full id.
+  std::string shown_id = view.relay_id;
+  for (const char* prefix : {"relay:", "account:"}) {
+    if (shown_id.rfind(prefix, 0) == 0) {
+      shown_id.erase(0, std::char_traits<char>::length(prefix));
+      break;
+    }
+  }
+  my_account_id_shown_ = shown_id.c_str();
   my_has_icon_ = view.profile_has_icon && !view.profile_icon_path.empty();
   my_icon_src_ = view.profile_icon_path.c_str();
   const AvatarGlyph glyph = MakeAvatarGlyph(name, AvatarStableId(view.account_id, view.relay_id, view.peer_id));

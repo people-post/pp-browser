@@ -323,6 +323,7 @@ private:
   bool my_has_account_ = false;
   ui::String my_name_;
   ui::String my_account_id_;
+  ui::String my_account_id_shown_;
   bool my_has_icon_ = false;
   ui::String my_icon_src_;
   ui::String my_avatar_letter_ = "?";

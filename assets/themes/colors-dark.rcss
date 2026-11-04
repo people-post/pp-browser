@@ -1531,13 +1531,9 @@ input.checkbox:checked {
   background-color: #000000;
 }
 
-.ac-page,
-.qr-page {
-  background-color: #000000;
-}
-
+/* Same white sheet as New chat; the cards are a light fill so nothing frames the sheet's inner padding. */
 .ac-card {
-  background-color: #1c1c1e;
+  background-color: #2c2c2e;
 }
 
 .ac-account-name,
