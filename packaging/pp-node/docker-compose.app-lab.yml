@@ -1,11 +1,11 @@
-# App lab: the real Brief relay stack (www gateway + messenger inbox + Mongo) for pp-app-probe runs —
+# App lab: the real relay stack (www gateway + messenger inbox + Mongo) for pp-app-probe runs —
 # the product's messaging, control lane and AutoKey sessions over the relay the app uses in production.
-# Builds from a web2 checkout: PP_WEB2_ROOT (default ../../../../web2, beside web3/).
+# Builds from a checkout of the relay server sources: PP_WEB2_ROOT (default ../../../../web2).
 #
-#   PP_WEB2_ROOT=~/codes/dailybrief/web2 docker compose -f docker-compose.app-lab.yml -p pp-app-lab up -d --build
+#   PP_WEB2_ROOT=/path/to/relay-server-checkout docker compose -f docker-compose.app-lab.yml -p pp-app-lab up -d --build
 #
-# No fixed container names and no Mongo host port: it never collides with a developer's own Brief
-# stack (brief_db / brief_www). The gateway is published on 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}.
+# No fixed container names and no Mongo host port: it never collides with a developer's own relay
+# stack (its own db and gateway containers). The gateway is published on 127.0.0.1:${PP_APP_LAB_RELAY_PORT:-18719}.
 #
 # The lab's own mesh seed (pp-node, image pp-node:local as staged by pp_local_test.sh) sits on a
 # TEST-NET-2 network: the product dials seeds only on public addresses, and 198.51.100.0/24 reads

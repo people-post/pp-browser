@@ -61,6 +61,22 @@ ToolMeta Meta(std::string domain, std::string risk, const bool mutating) {
   return ToolMeta{"messaging", std::move(domain), std::move(risk), mutating};
 }
 
+/** Reads the local contacts / chat list: one app action at a time (ToolMeta::app_state), on the turn's thread. */
+ToolMeta AppState(ToolMeta meta) {
+  meta.app_state = true;
+  return meta;
+}
+
+/** Opening a chat switches the inbox and the chat screen: on the UI thread (ToolMeta::ui_thread). */
+ToolMeta OnUi(ToolMeta meta) {
+  meta.app_state = true;
+  meta.ui_thread = true;
+  return meta;
+}
+
+// search_people, register_user and update_profile_nickname wait on the network: neither serialized nor on the UI
+// thread.
+
 } // namespace
 
 MessagingToolProvider::MessagingToolProvider(ConversationsFacade& messaging) : messaging_(messaging) {}
@@ -101,7 +117,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     properties.set("query", StringProp("Optional filter"));
     tools.push_back(MakeTool(
       ToolDefinition{"list_contacts", "List or search local contacts.", ObjectSchema(std::move(properties))},
-      Meta("people", "read", false),
+      AppState(Meta("people", "read", false)),
       [&messaging](const Object& arguments) -> Roe<std::string> {
                        const std::string query = arguments.getString("query").value_or("");
                        auto contacts = messaging.SearchLocalContacts(query);
@@ -117,7 +133,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
 
   tools.push_back(MakeTool(
       ToolDefinition{"list_conversations", "List inbox threads (AI and person-to-person).", ObjectSchema(Object{})},
-      Meta("communications", "read", false),
+      AppState(Meta("communications", "read", false)),
       [&messaging](const Object& /*arguments*/) -> Roe<std::string> {
                      auto threads = messaging.ListThreads();
                      if (!threads) {
@@ -131,7 +147,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     properties.set("thread_id", StringProp());
     tools.push_back(MakeTool(
       ToolDefinition{"open_conversation", "Switch the active inbox thread by thread id.", ObjectSchema(std::move(properties), {"thread_id"})},
-      Meta("communications", "read", false),
+      OnUi(Meta("communications", "read", false)),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string thread_id = arguments.getString("thread_id").value_or("");
            auto thread = messaging.OpenThread(thread_id);
@@ -147,7 +163,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     properties.set("contact_id", StringProp());
     tools.push_back(MakeTool(
       ToolDefinition{"start_conversation", "Open or create a direct conversation with a local contact id.", ObjectSchema(std::move(properties), {"contact_id"})},
-      Meta("communications", "write", true),
+      OnUi(Meta("communications", "write", true)),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            const std::string contact_id = arguments.getString("contact_id").value_or("");
            auto thread = messaging.FindOrCreateDirectThread(contact_id, ThreadChannel::E2ePublic);

@@ -1,13 +1,13 @@
 name: nightly-lab
 
 # The app lab every night on develop (docs/ops/TEST_STRATEGY.md § Nightly lab): `--suite app` and
-# `--suite app-nat` on the lab machine — an EC2 instance in the web3 account (infra-terraform
-# pp-lab.tf, infra-ansible lab-runner/) that is stopped except while this runs. The relay is its
-# published images (packaging/pp-node/docker-compose.app-lab-images.yml). A scenario that fails twice
+# `--suite app-nat` on the lab machine — a self-hosted EC2 runner that is stopped except while this
+# runs. The relay is its published images (packaging/pp-node/docker-compose.app-lab-images.yml). A scenario that fails twice
 # (one retry) opens or updates an issue labelled nightly-lab; one that passes again closes it.
 #
 # Never on pull requests: the lab machine runs only what this workflow, from the default branch, gives
-# it. Idle until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE are set.
+# it. Idle until the repository variables PP_LAB_INSTANCE_ID and PP_LAB_AWS_ROLE and the secrets
+# PP_LAB_WWW_IMAGE and PP_LAB_MESSENGER_IMAGE are set.
 
 on:
   schedule:
@@ -37,26 +37,39 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       id-token: write
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
     steps:
+      # The secrets context is unavailable in job-level `if`, so the image secrets are checked here.
+      - name: Check the image secrets
+        id: gate
+        env:
+          WWW_IMAGE: ${{ secrets.PP_LAB_WWW_IMAGE }}
+          MESSENGER_IMAGE: ${{ secrets.PP_LAB_MESSENGER_IMAGE }}
+        run: |
+          if [ -n "$WWW_IMAGE" ] && [ -n "$MESSENGER_IMAGE" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; fi
       - uses: aws-actions/configure-aws-credentials@v6
+        if: steps.gate.outputs.enabled == 'true'
         with:
           role-to-assume: ${{ vars.PP_LAB_AWS_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Start the lab machine
+        if: steps.gate.outputs.enabled == 'true'
         run: |
           aws ec2 start-instances --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}" >/dev/null
           aws ec2 wait instance-running --instance-ids "${{ vars.PP_LAB_INSTANCE_ID }}"
 
   lab:
     needs: start
+    if: needs.start.outputs.enabled == 'true'
     runs-on: [self-hosted, pp-lab]
     timeout-minutes: 220
     env:
       # Outside the workspace (checkout cleans it): the build and its ccache carry over between nights.
       PP_LOCAL_BUILD_DIR: /home/runner/pp-lab/build
       CCACHE_DIR: /home/runner/pp-lab/ccache
-      PP_APP_LAB_WWW_IMAGE: ${{ vars.PP_LAB_WWW_IMAGE || '553020909527.dkr.ecr.us-east-1.amazonaws.com/static-api:main' }}
-      PP_APP_LAB_MESSENGER_IMAGE: ${{ vars.PP_LAB_MESSENGER_IMAGE || '405439564754.dkr.ecr.us-east-1.amazonaws.com/messenger:main' }}
+      PP_APP_LAB_WWW_IMAGE: ${{ secrets.PP_LAB_WWW_IMAGE }}
+      PP_APP_LAB_MESSENGER_IMAGE: ${{ secrets.PP_LAB_MESSENGER_IMAGE }}
     steps:
       - uses: actions/checkout@v7
 
@@ -121,7 +134,7 @@ jobs:
 
   report:
     needs: [start, lab]
-    if: always() && needs.start.result == 'success'
+    if: always() && needs.start.result == 'success' && needs.start.outputs.enabled == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -145,7 +158,7 @@ jobs:
 
   stop:
     needs: [start, lab]
-    if: always() && needs.start.result == 'success'
+    if: always() && needs.start.result == 'success' && needs.start.outputs.enabled == 'true'
     runs-on: ubuntu-24.04
     permissions:
       id-token: write

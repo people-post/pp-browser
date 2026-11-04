@@ -2,8 +2,9 @@
 #include "gui/CallController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/media/CallAudioSession.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/AudioSession.h"
+#include "lib/calls/CallMediaAdaptation.h"
+#include "lib/media/IMediaView.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/DeviceVitals.h"
 #include "common/media/CallMediaHealth.h"
@@ -15,6 +16,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
@@ -31,7 +33,7 @@
 #include "CallVideoTileRenderer.h"
 #include "gui/UserFeedback.h"
 
-#include "foundation/data/PricingTypes.h"
+#include "lib/pricing/PricingTypes.h"
 
 #include "common/Utilities.h"
 
@@ -62,6 +64,7 @@ CallController::CallController()
                               .now_ms = {},
                           }) {
   redirectLogger("CallController");
+  CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
   CallPresenter::Callbacks callbacks;
   callbacks.on_changed = [this]() { Render(); };
   callbacks.notify = [this](const CallNotice& notice) { ShowNotice(notice); };
@@ -208,6 +211,11 @@ std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
 
 std::string ComposeGroupCallStatusHint() {
   return Tr("call.hint.group_media");
+}
+
+/** The call's media was live and is not now while it runs (it reconnects or moves path): the call's state. */
+bool CallMediaDropped(CallUiBackend& backend, IMediaView& media, const std::string& call_id) {
+  return media.IsActive() && !backend.MediaChromeLive() && backend.LiveSinceMs(call_id) > 0;
 }
 
 } // namespace
@@ -439,7 +447,7 @@ void CallController::StopRingback(CallUiBackend* backend) {
   }
   // The ringback worker itself owns activate/release of the audio session (see
   // CallRingtone::RunLoop) — a fast cancel could otherwise race a Deactivate() here
-  // against the worker's own ActivateForVoipCall() and leave the phone in VoIP mode.
+  // against the worker's own ActivateForVoip() and leave the phone in VoIP mode.
   // The engine owns the session once media is active — release unless the call engine
   // is actually active and owns it (a null/unavailable backend means nobody else does).
   const bool release = !(backend && backend->Available() && backend->Media().IsActive());
@@ -552,6 +560,8 @@ void CallController::Render() {
     in_call_.stage_visible = screen.answered_video;
     in_call_.remote_video = false;
     in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
+    in_call_.show_speaker = screen.show_speaker;
+    in_call_.speaker_on = screen.speaker_on;
     SyncShellState();
     SyncRingtone();
     return;
@@ -731,7 +741,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
     if (screen.hint == CallScreen::Hint::GroupMedia) {
       in_call.status_hint = ComposeGroupCallStatusHint().c_str();
-    } else if (screen.hint == CallScreen::Hint::P2pConnect) {
+    } else if (screen.hint == CallScreen::Hint::DirectConnect) {
       in_call.status_hint = ComposeP2pStatusHint(screen.hint_missing_mic, screen.hint_seed_unreachable).c_str();
     }
     break;
@@ -774,9 +784,6 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
   case Status::WaitingForMediaPath:
     in_call.subtitle = Tr("call.status.waiting_for_media_path").c_str();
     break;
-  case Status::Raw:
-    in_call.subtitle = screen.raw_state.c_str();
-    break;
   }
   if (in_call.show_roster && ShowsParticipantCount(screen)) {
     in_call.subtitle = Tr("call.participants_elapsed",
@@ -792,9 +799,8 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
       log().info << "in-call subtitle=\"" << sub << "\" phase=" << CallPhaseName(backend.Phase())
                  << " status=" << CallMediaStatusName(backend.MediaStatus())
                  << " screen=" << CallScreenStatusName(screen.status)
-                 << " media_connected=" << (backend.Media().IsConnected() ? 1 : 0)
-                 << " media_active=" << (backend.Media().IsActive() ? 1 : 0)
-                 << " media_state=" << backend.Media().ConnectionState();
+                 << " media_live=" << (backend.MediaChromeLive() ? 1 : 0)
+                 << " media_active=" << (backend.Media().IsActive() ? 1 : 0);
     }
   }
   SyncShellState();
@@ -891,17 +897,19 @@ void CallController::ToggleSpeaker() {
   presenter_.ToggleSpeaker();
 }
 
-void CallController::ApplyAudioLevels(CallMediaEngine& media) {
+void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
   in_call.muted = muted;
   if (auto failure = media.TakeCameraFailure()) {
-    // Camera opens asynchronously (media device thread): report the miss and withdraw the video
-    // flag the roster already advertised.
-    UserFeedback::Fail(*failure);
-    if (auto* failed_backend = Backend(); failed_backend && failed_backend->Available()) {
+    // Camera opens asynchronously (media device thread): report the miss. A camera that only waits
+    // for the device (busy, or not responding yet) stays on and comes on by itself (L016); any
+    // other miss withdraws the video flag the roster already advertised.
+    presenter_.ReportCameraFailure(*failure);
+    if (auto* failed_backend = Backend();
+        !media.CameraWaitingForDevice() && failed_backend && failed_backend->Available()) {
       failed_backend->SetLocalVideoEnabled(false);
     }
   }
@@ -917,16 +925,16 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     StopCameraOrientationTracking();  // camera off: don't keep the motion sensors running
     pushed_camera_rotation_ = -1;
   }
-  in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
-  in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
+  in_call.show_speaker = AudioSession::SupportsSpeakerToggle();
+  in_call.speaker_on = AudioSession::IsSpeakerphoneOn();
   auto* backend = Backend();
-  in_call.video_allowed = false;
   in_call.show_camera = false;
   if (backend && backend->Available() && !presenter_.ActiveCallId().empty()) {
     if (auto allowed = backend->VideoAllowedForCall(presenter_.ActiveCallId());
         allowed && allowed->has_value() && **allowed) {
-      in_call.video_allowed = true;
-      in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
+      in_call.show_camera = ShowsCameraButton(
+          media.VideoEncoderAvailable(),
+          CallMediaAdaptation::CameraPathAllowsVideo(media.PathPressure(), media.UplinkBudget()), in_call.camera_on);
       camera_sync_off_done_ = false;
     } else if (!camera_sync_off_done_ && media.IsCameraEnabled() && allowed && allowed->has_value() &&
                !**allowed) {
@@ -943,6 +951,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
         }
       });
     }
+  }
+  // Whatever VideoAllowedForCall said (false, error), a sending camera can always be turned off.
+  if (!in_call.show_camera) {
+    in_call.show_camera = ShowsCameraButton(media.VideoEncoderAvailable(), /*path_allows_video=*/false, in_call.camera_on);
   }
   in_call.show_flip = ShowsCameraFlip(Platform::IsMobile(), in_call.show_camera, in_call.camera_on);
 
@@ -992,20 +1004,20 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   }
 
   const bool stalling = media.IsRemoteVideoStalling();
-  const std::string conn = media.ConnectionState();
   const bool expect_remote_video = !have_peer_video_flag || peer_camera_on;
   const bool missing_after_video =
       media.EverHadRemoteVideo() && expect_remote_video && !media.HasRemoteVideo();
   // A call that was live and then failed reads "disconnected" (CallScreen decides); the mesh
   // "couldn't connect" copy below is for calls that never connected.
-  const bool mesh_messaging_failed =
-      backend && backend->Available() && backend->IsP2pConnectFailed() &&
-      !backend->IsAwaitingSfuRecovery() && !media.IsSfuMode() &&
-      presenter_.Screen().status != CallScreen::Status::Disconnected;
+  const bool mesh_messaging_failed = backend && backend->Available() && backend->IsDirectConnectFailed() &&
+                                     !backend->IsAwaitingSfuRecovery() && backend->MediaPath() != CallMediaPath::Hop &&
+                                     presenter_.Screen().status != CallScreen::Status::Disconnected;
   const bool path_lost =
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   const bool media_reconnect =
-      !mesh_messaging_failed && (stalling || missing_after_video || conn == "disconnected" || path_lost);
+      !mesh_messaging_failed &&
+      (stalling || missing_after_video || path_lost ||
+       (backend && backend->Available() && CallMediaDropped(*backend, media, presenter_.ActiveCallId())));
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1013,7 +1025,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     CallVideoTileRenderer::Instance().ClearRemote();
   }
 
-  CallMediaEngine::VideoTileFrame local_tile;
+  IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
   if (in_call.local_preview) {
     CallVideoTileRenderer::Frame frame;
@@ -1024,7 +1036,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     CallVideoTileRenderer::Instance().SubmitLocalFrame(std::move(frame));
   }
   if (in_call.remote_video) {
-    CallMediaEngine::VideoTileFrame remote_tile;
+    IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
@@ -1048,7 +1060,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       continue;
     }
     live_peer_streams.push_back(stream);
-    CallMediaEngine::VideoTileFrame peer_tile;
+    IMediaView::VideoTileFrame peer_tile;
     if (!media.CopyRemoteVideoFrameForStream(stream, peer_tile)) {
       continue;
     }
@@ -1124,14 +1136,14 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   in_call.peer_hint = LevelHint(in_call.peer_level, true, false).c_str();
   if (mesh_messaging_failed) {
     in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
-  } else if (path_lost || (media_reconnect && !media.IsConnected())) {
-    // The media layer lost its path (the engine may still say connected) or the engine itself did.
+  } else if (path_lost ||
+             (media_reconnect && backend && CallMediaDropped(*backend, media, presenter_.ActiveCallId()))) {
+    // The call lost its path, or its media stopped being live while it runs.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
     in_call.subtitle = ReconnectingSubtitle(in_call.elapsed.c_str()).c_str();
   } else if (stalling) {
     in_call.subtitle = Tr("call.status.reconnecting").c_str();
-  } else if (backend && backend->Available() &&
-             backend->MediaChromeLive()) {
+  } else if (backend && backend->Available() && backend->MediaChromeLive()) {
     // Provisional Connected — ApplyMediaHealth may override for NoAudio / TX-only / Degraded.
     in_call.elapsed = FormatElapsed(call_live_since_ms);
     if (!in_call.elapsed.empty()) {
@@ -1144,7 +1156,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   ApplyMediaHealth(media, backend, media_reconnect || mesh_messaging_failed);
 }
 
-CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
+CallMediaHealthView CallController::BuildMediaHealthView(IMediaView& media, CallUiBackend* backend,
                                                          const bool media_reconnect) const {
   CallMediaHealthInput in;
   in.engine = media.HealthSnapshot();
@@ -1181,8 +1193,7 @@ void CallController::SampleLinkHealth(CallUiBackend* backend, const int64_t now_
   link_counters_ = now;
 }
 
-void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend,
-                                      const bool media_reconnect) {
+void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend, const bool media_reconnect) {
   auto& in_call = in_call_;
   if (!in_call.active) {
     return;
@@ -1306,7 +1317,7 @@ void CallController::ShowCallDetails() {
   }
 
   auto& media = backend->Media();
-  const bool media_reconnect = !media.IsConnected() && media.IsActive();
+  const bool media_reconnect = CallMediaDropped(*backend, media, presenter_.ActiveCallId());
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
   const bool diagnostics =

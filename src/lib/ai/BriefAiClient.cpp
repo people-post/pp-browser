@@ -173,6 +173,9 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
   if (auto valid = ValidateImage(request); !valid) {
     return valid.error();
   }
+  if (stream_url_.empty() && config_.base_url.empty()) {
+    return AppError::Config(Err::Config::Invalid, "Brief AI base URL not configured");
+  }
   SseRequest sse;
   sse.url = stream_url_.empty() ? config_.base_url + std::string(kStreamPath) : stream_url_;
   // The user's key goes only to the derived gateway URL, or to an override that is https or loopback;

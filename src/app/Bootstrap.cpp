@@ -4,9 +4,11 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
+#include "foundation/data/BackendProfile.h"
 #include "foundation/data/Config.h"
 #include "foundation/platform/DeploymentProfile.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
+#include "feature/product/HubSettingsProjection.h"
 #include "common/StartupTiming.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "foundation/platform/PlatformLogSink.h"
@@ -35,14 +37,6 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   if (!config) {
     return config.error();
   }
-  if (SandboxMode()) {
-    const std::string config_path = Config::DiscoverConfigPath(options.argc, options.argv);
-    logging::getLogger("Bootstrap").warning
-        << "Sandbox mode active — config "
-        << (config_path.empty() ? AppPaths::ConfigFilePath() : config_path) << ", data "
-        << AppPaths::DataDir(config->data_dir);
-  }
-
   AppPaths::DataDir(config->data_dir);
 
   auto registry = ProfileRegistry::Load(AppPaths::DataDir());
@@ -58,10 +52,15 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
     return ensured.error();
   }
 
+  const std::string backend_key = BackendProfileKey(*config);
+  if (auto selected = registry->SelectProfileForBackend(backend_key); !selected) {
+    return selected.error();
+  }
+
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
   AppPaths::EnsureDirs(profile_data_dir);
 
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_data_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {
     return manifest.error();
   }
 
@@ -86,7 +85,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
 
   if (auto hub = [&]() -> Roe<void> {
         StartupPhase phase("Bootstrap::ConversationsHub::Initialize");
-        return messaging.Initialize(*config, profile_data_dir);
+        return messaging.Initialize(HubSettingsFrom(*config, *profile_prefs), profile_data_dir);
       }();
       !hub) {
     return hub.error();
@@ -114,6 +113,7 @@ Roe<BootstrapResult> Bootstrap::Run(const BootstrapOptions& options, Conversatio
   result.profile_registry = std::move(*registry);
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;
+  result.backend_key = backend_key;
   result.config_path = Config::DiscoverConfigPath(options.argc, options.argv);
   if (result.config_path.empty()) {
     result.config_path = AppPaths::ConfigFilePath();

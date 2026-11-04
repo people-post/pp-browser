@@ -1,0 +1,456 @@
+#include "lib/people/ContactsStore.h"
+#include "lib/people/ContactTypes.h"
+#include "lib/people/ContactJson.h"
+#include "lib/people/SupportContact.h"
+#include "common/PlatformLimits.h"
+#include "common/ValueJson.h"
+
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
+#include <sstream>
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
+
+namespace {
+
+using namespace pbr;
+
+class ContactsStoreTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() /
+                ("pp_browser_contacts_store_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) +
+                 "_" + std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  void TearDown() override { std::filesystem::remove_all(data_dir_); }
+
+  std::filesystem::path data_dir_;
+};
+
+TEST_F(ContactsStoreTest, RemoveDeletesContactAndPersists) {
+  ContactsStore store(data_dir_.string());
+
+  Contact contact;
+  contact.id = "contact-alice";
+  contact.display_name = "Alice";
+  contact.server_nickname = "alice";
+  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.trust = TrustLevel::Unknown;
+
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(contact))) << "upsert failed";
+
+  auto listed = store.List();
+  ASSERT_TRUE(static_cast<bool>(listed));
+  ASSERT_EQ(listed->size(), 1u);
+
+  auto removed = store.Remove(contact.id);
+  ASSERT_TRUE(static_cast<bool>(removed)) << removed.error().message;
+  EXPECT_TRUE(*removed);
+
+  auto missing = store.Get(contact.id);
+  ASSERT_TRUE(static_cast<bool>(missing));
+  EXPECT_FALSE(missing->has_value());
+
+  auto empty_list = store.List();
+  ASSERT_TRUE(static_cast<bool>(empty_list));
+  EXPECT_TRUE(empty_list->empty());
+
+  ContactsStore reloaded(data_dir_.string());
+  auto reloaded_get = reloaded.Get(contact.id);
+  ASSERT_TRUE(static_cast<bool>(reloaded_get));
+  EXPECT_FALSE(reloaded_get->has_value());
+}
+
+TEST_F(ContactsStoreTest, RemoveMissingReturnsFalse) {
+  ContactsStore store(data_dir_.string());
+  auto removed = store.Remove("does-not-exist");
+  ASSERT_TRUE(static_cast<bool>(removed)) << removed.error().message;
+  EXPECT_FALSE(*removed);
+}
+
+// projects/privacy: who may learn our address follows the address book as it changes.
+TEST_F(ContactsStoreTest, ChangesNotifyOnceEach) {
+  ContactsStore store(data_dir_.string());
+  int changes = 0;
+  store.SetOnChanged([&changes] { ++changes; });
+
+  auto created = store.AddEmpty();
+  ASSERT_TRUE(static_cast<bool>(created));
+  EXPECT_EQ(changes, 1);
+  Contact contact = *created;
+  contact.local.trust = TrustLevel::Friendly;
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(contact)));
+  EXPECT_EQ(changes, 2);
+  ASSERT_TRUE(static_cast<bool>(store.Remove(contact.id)));
+  EXPECT_EQ(changes, 3);
+  (void)store.List();
+  EXPECT_EQ(changes, 3) << "reads do not notify";
+}
+
+TEST_F(ContactsStoreTest, AddEmptyPersists) {
+  ContactsStore store(data_dir_.string());
+
+  auto created = store.AddEmpty();
+  ASSERT_TRUE(static_cast<bool>(created)) << "add empty failed";
+  EXPECT_FALSE(created->id.empty());
+  EXPECT_TRUE(created->display_name.empty());
+  EXPECT_TRUE(created->server_nickname.empty());
+  EXPECT_TRUE(created->ids.empty());
+  EXPECT_TRUE(created->multiaddrs.empty());
+
+  ContactsStore reloaded(data_dir_.string());
+  auto loaded = reloaded.Get(created->id);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  ASSERT_TRUE(loaded->has_value());
+  EXPECT_EQ(loaded->value().id, created->id);
+  EXPECT_TRUE(loaded->value().display_name.empty());
+}
+
+TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
+  ContactsStore store(data_dir_.string());
+
+  mesh::DirectoryHit hit;
+  hit.hit_id = "relay:bob";
+  hit.display_name = "Bob";
+  hit.nickname = "bob";
+  hit.account_id = "account:bob";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true},
+             {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
+  hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
+
+  auto first = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(first)) << first.error().message;
+  Contact edited = *first;
+  edited.local.display_name = "Bobby";
+  edited.local.trust = TrustLevel::Friendly;
+  SyncContactMirrors(edited);
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(edited)));
+
+  hit.nickname = "robert";
+  hit.multiaddrs = {"/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWBob"};
+  auto second = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(second)) << second.error().message;
+  EXPECT_EQ(second->id, first->id);
+  EXPECT_EQ(second->local.display_name, "Bobby");
+  EXPECT_EQ(second->local.trust, TrustLevel::Friendly);
+  EXPECT_EQ(second->remote.nickname, "robert");
+  ASSERT_EQ(second->remote.multiaddrs.size(), 1u);
+  EXPECT_EQ(second->remote.multiaddrs[0], "/ip4/10.0.0.1/tcp/4001/p2p/12D3KooWBob");
+  EXPECT_GT(second->remote.fetched_at, 0);
+}
+
+TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.hit_id = "relay:bob";
+  hit.nickname = "bob";
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
+  auto result = store.AddFromDirectoryHit(hit);
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
+}
+
+TEST_F(ContactsStoreTest, SchemaVersionWrittenAndLegacyMigrated) {
+  const auto path = data_dir_ / "contacts.json";
+  std::filesystem::create_directories(data_dir_);
+  {
+    Object id_row;
+    id_row.set("kind", "relay_user");
+    id_row.set("value", "relay:alice");
+    id_row.set("primary", true);
+
+    Object contact;
+    contact.set("id", "c1");
+    contact.set("display_name", "Alice");
+    contact.set("server_nickname", "alice");
+    contact.set("ids", ArrayValue({ObjectValue(std::move(id_row))}));
+    contact.set("multiaddrs", ArrayValue({}));
+    contact.set("trust", "friendly");
+
+    Object legacy;
+    legacy.set("contacts", ArrayValue({ObjectValue(std::move(contact))}));
+    std::ofstream out(path);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << DumpJson(legacy, 2);
+  }
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
+  ASSERT_EQ(listed->size(), 1u);
+  EXPECT_EQ(listed->front().local.display_name, "Alice");
+  EXPECT_EQ(listed->front().remote.nickname, "alice");
+  EXPECT_EQ(listed->front().local.trust, TrustLevel::Friendly);
+
+  std::ifstream in(path);
+  ASSERT_TRUE(static_cast<bool>(in));
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  auto rewritten = TryParseObject(ss.str());
+  ASSERT_TRUE(static_cast<bool>(rewritten));
+  ASSERT_TRUE(rewritten->contains("schema_version"));
+  EXPECT_EQ(static_cast<int>(rewritten->getIf<int64_t>("schema_version").value_or(-1)),
+            ContactsStore::kSchemaVersion);
+  const Array* contacts = rewritten->getArray("contacts");
+  ASSERT_NE(contacts, nullptr);
+  ASSERT_EQ(contacts->elements.size(), 1u);
+  const Object* first = asObject(contacts->elements[0]);
+  ASSERT_NE(first, nullptr);
+  EXPECT_TRUE(first->contains("local"));
+  EXPECT_TRUE(first->contains("remote"));
+  EXPECT_TRUE(first->contains("overrides"));
+}
+
+TEST_F(ContactsStoreTest, RejectsNewerSchemaVersion) {
+  const auto path = data_dir_ / "contacts.json";
+  std::filesystem::create_directories(data_dir_);
+  {
+    Object newer;
+    newer.set("schema_version", static_cast<int64_t>(ContactsStore::kSchemaVersion + 1));
+    newer.set("contacts", ArrayValue({}));
+    std::ofstream out(path);
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << DumpJson(newer, 2);
+  }
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_FALSE(static_cast<bool>(listed));
+  EXPECT_NE(listed.error().message.find("schema"), std::string::npos);
+}
+
+TEST_F(ContactsStoreTest, LoadsContactsAtProfileJsonFileSizeLimit) {
+  Object root;
+  root.set("schema_version", static_cast<int64_t>(ContactsStore::kSchemaVersion));
+  root.set("contacts", ArrayValue({}));
+  root.set("padding", "");
+  const std::string base_json = DumpJson(root, 2);
+  root.set("padding", std::string(kMaxProfileJsonFileBytes - base_json.size(), 'x'));
+  const std::string json = DumpJson(root, 2);
+  ASSERT_EQ(json.size(), kMaxProfileJsonFileBytes);
+
+  std::filesystem::create_directories(data_dir_);
+  std::ofstream out(data_dir_ / "contacts.json", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(out));
+  out.write(json.data(), static_cast<std::streamsize>(json.size()));
+  out.close();
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_TRUE(static_cast<bool>(listed)) << listed.error().message;
+  EXPECT_TRUE(listed->empty());
+}
+
+TEST_F(ContactsStoreTest, RejectsContactsOverProfileJsonFileSizeLimit) {
+  std::filesystem::create_directories(data_dir_);
+  std::ofstream out(data_dir_ / "contacts.json", std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(out));
+  std::string oversized(kMaxProfileJsonFileBytes + 1, 'x');
+  out.write(oversized.data(), static_cast<std::streamsize>(oversized.size()));
+  out.close();
+
+  ContactsStore store(data_dir_.string());
+  auto listed = store.List();
+  ASSERT_FALSE(static_cast<bool>(listed));
+  EXPECT_NE(listed.error().message.find("exceeds limit"), std::string::npos);
+}
+
+// A stranger who wrote first is added from a bare id; when the directory later answers, the nickname lands
+// in the contact and becomes its title, while the user's own remark stays empty (and editable).
+TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
+  ContactsStore store(data_dir_.string());
+
+  mesh::DirectoryHit bare;
+  bare.hit_id = "account:stranger";
+  bare.account_id = "account:stranger";
+  bare.ids = {{mesh::ContactIdKind::Account, "account:stranger", true}};
+  auto added = store.AddFromDirectoryHit(bare);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+  EXPECT_TRUE(added->local.display_name.empty());
+  EXPECT_TRUE(ContactEffectiveTitle(*added).find("account") != std::string::npos ||
+              ContactEffectiveTitle(*added).find("stranger") != std::string::npos)
+      << "before the lookup only the id is known: " << ContactEffectiveTitle(*added);
+
+  mesh::DirectoryHit answered = bare;
+  answered.nickname = "Ada";
+  auto filled = store.ApplyRemoteSnapshot(added->id, answered, 0);
+  ASSERT_TRUE(static_cast<bool>(filled)) << filled.error().message;
+  EXPECT_EQ(filled->remote.nickname, "Ada");
+  EXPECT_TRUE(filled->local.display_name.empty()) << "the remark is the user's; never filled from the directory";
+  EXPECT_EQ(ContactEffectiveTitle(*filled), "Ada");
+}
+
+TEST_F(ContactsStoreTest, ProfileRefreshChangesOnlyNicknameIconAndFetchTime) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:ada";
+  hit.nickname = "Ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}, {mesh::ContactIdKind::RelayUser, "relay:ada", false}};
+  hit.multiaddrs = {"/ip4/10.0.0.1/tcp/1/p2p/QmAda"};
+  hit.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/old.png", "old", ""};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+
+  mesh::DirectoryHit fresh;
+  fresh.account_id = "account:ada";
+  fresh.nickname = "Ada L.";
+  fresh.ids = {{mesh::ContactIdKind::Account, "account:ada", true},
+               {mesh::ContactIdKind::RelayUser, "relay:other", false}};
+  fresh.multiaddrs = {"/ip4/9.9.9.9/tcp/9/p2p/QmElse"};
+  fresh.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/new.png", "new", ""};
+  auto refreshed = store.ApplyProfileRefresh(added->id, fresh, 12345);
+  ASSERT_TRUE(static_cast<bool>(refreshed)) << refreshed.error().message;
+  EXPECT_EQ(refreshed->remote.nickname, "Ada L.");
+  ASSERT_TRUE(refreshed->remote.icon.has_value());
+  EXPECT_EQ(refreshed->remote.icon->url, "https://cdn.example/avatars/new.png");
+  EXPECT_EQ(refreshed->remote.fetched_at, 12345);
+  EXPECT_EQ(refreshed->id, added->id);
+  EXPECT_EQ(refreshed->remote.multiaddrs, added->remote.multiaddrs) << "endpoints are never taken from a refresh";
+  ASSERT_EQ(refreshed->remote.ids.size(), added->remote.ids.size());
+  for (size_t i = 0; i < added->remote.ids.size(); ++i) {
+    EXPECT_EQ(refreshed->remote.ids[i].value, added->remote.ids[i].value);
+  }
+
+  fresh.nickname.clear(); // an empty nickname never wipes the known one
+  auto kept = store.ApplyProfileRefresh(added->id, fresh, 20000);
+  ASSERT_TRUE(static_cast<bool>(kept));
+  EXPECT_EQ(kept->remote.nickname, "Ada L.");
+}
+
+TEST_F(ContactsStoreTest, ProfileRefreshFromAnotherAccountChangesNothing) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.account_id = "account:ada";
+  hit.nickname = "Ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added));
+
+  mesh::DirectoryHit other = hit;
+  other.account_id = "account:mallory";
+  other.nickname = "Mallory";
+  other.ids = {{mesh::ContactIdKind::Account, "account:mallory", true}};
+  other.icon = mesh::ProfileIconRef{"https://cdn.example/avatars/m.png", "m", ""};
+  EXPECT_FALSE(static_cast<bool>(store.ApplyProfileRefresh(added->id, other, 999)));
+  auto after = store.Get(added->id);
+  ASSERT_TRUE(static_cast<bool>(after) && after->has_value());
+  EXPECT_EQ((*after)->remote.nickname, "Ada");
+  EXPECT_EQ((*after)->remote.fetched_at, added->remote.fetched_at);
+  EXPECT_FALSE((*after)->remote.icon.has_value());
+}
+
+TEST_F(ContactsStoreTest, AddingAContactLeavesTheRemarkEmpty) {
+  ContactsStore store(data_dir_.string());
+  mesh::DirectoryHit hit;
+  hit.hit_id = "account:ada";
+  hit.display_name = "Ada L.";
+  hit.nickname = "Ada";
+  hit.account_id = "account:ada";
+  hit.ids = {{mesh::ContactIdKind::Account, "account:ada", true}};
+  auto added = store.AddFromDirectoryHit(hit);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+  EXPECT_TRUE(added->local.display_name.empty());
+  EXPECT_TRUE(added->display_name.empty());
+  EXPECT_EQ(ContactEffectiveTitle(*added), "Ada");
+
+  // A later nickname change shows through, because no remark pins the old one.
+  hit.nickname = "Ada Lovelace";
+  auto renamed = store.ApplyRemoteSnapshot(added->id, hit, 0);
+  ASSERT_TRUE(static_cast<bool>(renamed)) << renamed.error().message;
+  EXPECT_EQ(ContactEffectiveTitle(*renamed), "Ada Lovelace");
+}
+
+// Older builds copied the nickname into the remark when a contact was added. The first load of such a file
+// clears those copies once; remarks the user wrote are kept, including one written afterwards that happens
+// to equal the nickname.
+TEST_F(ContactsStoreTest, SeededRemarksAreClearedOnceOnLoad) {
+  std::filesystem::create_directories(data_dir_);
+  auto make = [](const std::string& id, const std::string& remark, const std::string& nickname) {
+    Contact c;
+    c.id = id;
+    c.local.display_name = remark;
+    c.remote.nickname = nickname;
+    c.remote.ids = {{mesh::ContactIdKind::Account, "account:" + id, true}};
+    SyncContactMirrors(c);
+    return ObjectValue(ContactToJson(c));
+  };
+  {
+    Object root;
+    root.set("schema_version", static_cast<int64_t>(1));
+    root.set("contacts", ArrayValue({make("seeded", "Ada", "Ada"), make("own", "Ada-work", "Ada"),
+                                     make("bare", "", "Bob")}));
+    std::ofstream out(data_dir_ / "contacts.json");
+    ASSERT_TRUE(static_cast<bool>(out));
+    out << DumpJson(root, 2);
+  }
+
+  {
+    ContactsStore store(data_dir_.string());
+    auto seeded = store.Get("seeded");
+    ASSERT_TRUE(static_cast<bool>(seeded) && seeded->has_value());
+    EXPECT_TRUE((*seeded)->local.display_name.empty());
+    EXPECT_TRUE((*seeded)->display_name.empty());
+    EXPECT_EQ(ContactEffectiveTitle(**seeded), "Ada");
+    auto own = store.Get("own");
+    ASSERT_TRUE(own->has_value());
+    EXPECT_EQ((*own)->local.display_name, "Ada-work");
+    EXPECT_EQ(ContactEffectiveTitle(**own), "Ada-work");
+
+    // The user now writes a remark equal to the nickname: it must survive the next load.
+    Contact edited = **own;
+    edited.local.display_name = "Ada";
+    SyncContactMirrors(edited);
+    ASSERT_TRUE(static_cast<bool>(store.Upsert(edited)));
+    store.Flush();
+  }
+
+  ContactsStore reloaded(data_dir_.string());
+  auto again = reloaded.Get("own");
+  ASSERT_TRUE(static_cast<bool>(again) && again->has_value());
+  EXPECT_EQ((*again)->local.display_name, "Ada");
+  auto cleared = reloaded.Get("seeded");
+  ASSERT_TRUE(cleared->has_value());
+  EXPECT_TRUE((*cleared)->local.display_name.empty());
+
+  // The cleanup was written back with the new version, so it does not run again.
+  std::ifstream in(data_dir_ / "contacts.json");
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  auto root = TryParseObject(ss.str());
+  ASSERT_TRUE(static_cast<bool>(root));
+  EXPECT_EQ(static_cast<int>(root->getIf<int64_t>("schema_version").value_or(-1)), ContactsStore::kSchemaVersion);
+}
+
+TEST(SupportContactTest, NewSupportContactHasNoRemarkAndIsNamedByNickname) {
+  const Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
+  EXPECT_TRUE(contact.local.display_name.empty());
+  EXPECT_EQ(contact.remote.nickname, "PP Support");
+  EXPECT_EQ(contact.server_nickname, "PP Support");
+  EXPECT_EQ(ContactEffectiveTitle(contact), "PP Support");
+}
+
+TEST(SupportContactTest, OpeningTheEntryKeepsAUserRemarkAndRefreshesTheTitle) {
+  Contact contact = MakeSupportContact("c1", "account:support", "Old title");
+  contact.local.display_name = "My helper";
+  SyncContactMirrors(contact);
+  EXPECT_TRUE(ApplySupportTitle(contact, "PP Support"));
+  EXPECT_EQ(contact.local.display_name, "My helper");
+  EXPECT_EQ(contact.display_name, "My helper");
+  EXPECT_EQ(contact.remote.nickname, "PP Support");
+  EXPECT_EQ(ContactEffectiveTitle(contact), "My helper");
+  EXPECT_FALSE(ApplySupportTitle(contact, "PP Support"));
+}
+
+TEST(SupportContactTest, ACopyOfTheTitleLeftByOlderBuildsIsCleared) {
+  Contact contact = MakeSupportContact("c1", "account:support", "PP Support");
+  contact.local.display_name = "PP Support";
+  SyncContactMirrors(contact);
+  EXPECT_TRUE(ApplySupportTitle(contact, "PP Support"));
+  EXPECT_TRUE(contact.local.display_name.empty());
+  EXPECT_EQ(ContactEffectiveTitle(contact), "PP Support");
+}
+
+} // namespace

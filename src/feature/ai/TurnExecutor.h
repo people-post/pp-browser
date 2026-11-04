@@ -9,6 +9,7 @@
 #include "lib/people/ContactTypes.h"
 #include "common/thread/ThreadTypes.h"
 
+#include <atomic>
 #include <functional>
 #include <optional>
 #include <string>
@@ -45,6 +46,8 @@ struct TurnExecutionOptions {
    * rows of known contacts take remark + nickname from here, so the remark is shown but never leaves the device.
    */
   std::function<std::vector<LocalPlanContact>()> local_contacts;
+  /** The turn's stop flag: a tool waiting for another app action or for the UI thread gives up when it is set. */
+  const std::atomic<bool>* cancel = nullptr;
 };
 
 class TurnExecutor {

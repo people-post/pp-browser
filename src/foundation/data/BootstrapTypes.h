@@ -19,6 +19,8 @@ struct BootstrapResult {
   std::string data_dir;
   std::string profile_data_dir;
   std::string config_path;
+  /** BackendProfileKey of the backend this run talks to. */
+  std::string backend_key;
 };
 
 struct BootstrapOptions {

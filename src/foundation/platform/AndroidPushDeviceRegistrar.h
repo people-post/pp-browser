@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

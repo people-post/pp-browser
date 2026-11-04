@@ -5,8 +5,8 @@
 #include "lib/media/MediaDeviceArbiter.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "mesh/host/MeshHost.h"
-#include "lib/messaging/SqlitePskSessionStore.h"
-#include "lib/messaging/SqliteThreadStore.h"
+#include "lib/storage/SqlitePeerSessionStore.h"
+#include "lib/storage/SqliteThreadStore.h"
 #include "lib/people/ContactsStore.h"
 #include "lib/people/IdentityStore.h"
 #include "common/chat/SystemControl.h"
@@ -165,7 +165,7 @@ private:
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
   uint64_t RxAudioFrames() const;
   /** Decoded RX per remote publisher stream. */
-  std::vector<CallMediaStreamHealth> RxStreams() const;
+  std::vector<MediaStreamHealth> RxStreams() const;
   /** Accept the top pending invite once `accept_delay_ms_` passed since it showed; its call id. */
   void PublishAddressDisclosure();
   std::optional<std::string> MaybeAcceptPendingInvite(std::optional<std::chrono::steady_clock::time_point>& first_seen);
@@ -179,7 +179,7 @@ private:
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
-  std::unique_ptr<SqlitePskSessionStore> psk_;
+  std::unique_ptr<SqlitePeerSessionStore> psk_;
   AppConfig app_config_;
   // Outlives the call stack and broadcast (they borrow its objects).
   std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;

@@ -4,12 +4,12 @@
 #include "gui/CallMetricsTracker.h"
 #include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
-#include "lib/media/CallRingtone.h"
+#include "lib/call_audio/CallRingtone.h"
 #include "lib/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
-#include "feature/calls/CallPresenter.h"
-#include "feature/calls/CallSystemUiBridge.h"
+#include "feature/presenters/CallPresenter.h"
+#include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
@@ -23,7 +23,7 @@
 
 namespace pbr {
 
-class CallMediaEngine;
+class IMediaView;
 class CallUiBackend;
 
 /**
@@ -106,7 +106,7 @@ private:
   /** Hide in-call bar without clearing active_call_id_ (conflict ring). */
   void HideInCallChrome();
   void ApplyChromeModeToState(CallInProgressState& in_call);
-  void ApplyAudioLevels(CallMediaEngine& media);
+  void ApplyAudioLevels(IMediaView& media);
   void RefreshCallLevels();
   void SyncRingtone();
   /**
@@ -116,9 +116,8 @@ private:
    * ringback never Deactivates twice.
    */
   void StopRingback(CallUiBackend* backend);
-  void ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend, bool media_reconnect);
-  CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
-                                           bool media_reconnect) const;
+  void ApplyMediaHealth(IMediaView& media, CallUiBackend* backend, bool media_reconnect);
+  CallMediaHealthView BuildMediaHealthView(IMediaView& media, CallUiBackend* backend, bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
   static std::string FormatElapsed(int64_t connected_at_ms);
   static std::string FormatMinSec(int64_t seconds);

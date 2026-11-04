@@ -3,7 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/Platform.h"
 #include "common/runtime/AppRuntime.h"
-#include "lib/media/VoiceSupport.h"
+#include "lib/voice/VoiceSupport.h"
 
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
@@ -184,7 +184,18 @@ void VoiceComposer::StartRecording() {
   config.max_seconds = max_seconds_;
   config.out_dir = ports_.out_dir();
   std::error_code ec;
-  std::filesystem::remove_all(config.out_dir, ec); // nothing from an earlier recording is left to be sent by mistake
+  // Nothing from an earlier recording is left to be sent by mistake; a failed one that waits for Retry stays.
+  const std::string keep = ports_.keep_file ? ports_.keep_file() : std::string();
+  if (keep.empty()) {
+    std::filesystem::remove_all(config.out_dir, ec);
+  } else {
+    const std::filesystem::path keep_path = std::filesystem::path(keep).lexically_normal();
+    for (const auto& entry : std::filesystem::directory_iterator(config.out_dir, ec)) {
+      if (entry.path().lexically_normal() != keep_path) {
+        std::filesystem::remove_all(entry.path(), ec);
+      }
+    }
+  }
 
   const auto alive = alive_;
   const int generation = generation_;
@@ -234,6 +245,7 @@ void VoiceComposer::StartRecording() {
 
 void VoiceComposer::EndWithoutRecorder() {
   in_flight_ = false;
+  ShowFinishing(false);
   ShowRecording(false);
   if (!user_cancelled_) {
     Say(Tr("chat.voice.too_short"));
@@ -255,11 +267,13 @@ void VoiceComposer::Apply(const VoiceGesture::Action action) {
     user_ended_ = true;
     recorder_->Finish();
     ShowRecording(false);
+    ShowFinishing(true); // the encoder is still writing the file: say so until the upload takes over
   } else if (action == VoiceGesture::Action::Cancel) {
     user_ended_ = true;
     user_cancelled_ = true;
     recorder_->Cancel();
     ShowRecording(false);
+    ShowFinishing(false);
   }
 }
 
@@ -296,6 +310,7 @@ void VoiceComposer::DiscardAll() {
     CancelRecorder();
     ShowRecording(false);
   }
+  ShowFinishing(false);
 }
 
 bool VoiceComposer::HoldFingerGone() const {
@@ -386,6 +401,16 @@ void VoiceComposer::ShowRecording(const bool on) {
   SetHint();
 }
 
+void VoiceComposer::ShowFinishing(const bool on) {
+  if (state_.voice_finishing == on) {
+    return;
+  }
+  state_.voice_finishing = on;
+  if (ports_.dirty) {
+    ports_.dirty();
+  }
+}
+
 void VoiceComposer::SetHint() {
   std::string hint;
   if (state_.voice_recording) {
@@ -405,10 +430,13 @@ void VoiceComposer::SetHint() {
 }
 
 void VoiceComposer::OnProgress(const int generation, const int64_t elapsed_ms) {
-  if (generation != generation_ || !state_.voice_recording) {
+  if (generation != generation_ || !in_flight_ || !state_.voice_recording) {
     return;
   }
   elapsed_ms_ = elapsed_ms;
+  if (!user_ended_ && elapsed_ms >= static_cast<int64_t>(max_seconds_) * 1000) {
+    ShowFinishing(true); // the recorder ends itself at the limit, not through Apply
+  }
   state_.voice_timer = ElapsedText(elapsed_ms).c_str();
   state_.voice_countdown = static_cast<int64_t>(max_seconds_) * 1000 - elapsed_ms <= kCountdownMs;
   SetHint();
@@ -420,6 +448,7 @@ void VoiceComposer::OnFinished(const int generation, VoiceRecording recording) {
     return;
   }
   in_flight_ = false;
+  ShowFinishing(false);
   const bool self_ended = !user_ended_;
   if (self_ended) {
     // The limit, a call, or a failure ended it while a finger may still be down: swallow the rest of that press.

@@ -16,7 +16,7 @@
 
 | Piece | Path |
 |-------|------|
-| Types / caps / heartbeat constants | `src/lib/broadcast/PeerAnnounceTypes.h` |
+| Types / caps / heartbeat constants | `capabilities/broadcast/src/lib/broadcast/PeerAnnounceTypes.h` |
 | Topic id, canonical sign bytes, JSON, **ML-DSA-65** sign/verify, heartbeat timing | `PeerAnnounceCodec.*` |
 | In-memory verify + seq/epoch dedup feed | `PeerAnnounceFeed.*` |
 | Local publisher (seq/epoch, go-live/end, live heartbeat) | `PeerAnnouncePublisher.*` |
@@ -38,7 +38,7 @@
 | Piece | Path |
 |-------|------|
 | Join ticket types + mint/verify/JSON | `BroadcastJoinTicket.*` |
-| Extract media key (memory only; no `CallMediaKeyStore`) | `ExtractBroadcastMediaKey` |
+| Extract media key (memory only; no `ICallMediaKeyStore`) | `ExtractBroadcastMediaKey` |
 | Tests | `broadcast_join_ticket_test.cpp` |
 | Recursive ladder discovery (spec) | [MEDIA_TREE.md § B007](MEDIA_TREE.md#recursive-ladder-discovery-b007), [DECISIONS B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) |
 

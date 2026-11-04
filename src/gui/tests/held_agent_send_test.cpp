@@ -10,67 +10,85 @@ using Clock = std::chrono::steady_clock;
 const Clock::time_point kT0 = Clock::time_point{} + std::chrono::hours(1);
 
 TEST(HeldAgentSendTest, NothingHeldIsIdle) {
-  HeldAgentSend slot;
-  EXPECT_FALSE(slot.Holding());
-  HeldAgentSend::Send out;
-  EXPECT_EQ(slot.Poll(/*agent_ready=*/true, kT0, out), HeldAgentSend::Step::Idle);
+  HeldAgentSend held;
+  EXPECT_FALSE(held.Holding());
+  const auto polled = held.Poll(/*agent_ready=*/true, kT0);
+  EXPECT_TRUE(polled.ready.empty());
+  EXPECT_EQ(polled.expired, 0u);
 }
 
 // A tap while the assistant is still connecting waits; it goes out once the assistant is ready.
 TEST(HeldAgentSendTest, SendGoesOutOnceTheAgentIsReady) {
-  HeldAgentSend slot;
-  slot.Hold({.text = "latest briefs", .payload = "{\"kind\":\"articles\"}", .from_home_chip = true, .thread_id = "t1"},
+  HeldAgentSend held;
+  held.Hold({.text = "latest briefs", .payload = "{\"kind\":\"articles\"}", .from_home_chip = true, .thread_id = "t1"},
             kT0);
-  ASSERT_TRUE(slot.Holding());
+  ASSERT_TRUE(held.Holding("t1"));
 
-  HeldAgentSend::Send out;
-  EXPECT_EQ(slot.Poll(false, kT0 + std::chrono::seconds(1), out), HeldAgentSend::Step::Wait);
-  EXPECT_TRUE(slot.Holding());
+  EXPECT_TRUE(held.Poll(false, kT0 + std::chrono::seconds(1)).ready.empty());
+  EXPECT_TRUE(held.Holding());
 
-  EXPECT_EQ(slot.Poll(true, kT0 + std::chrono::seconds(2), out), HeldAgentSend::Step::Send);
+  const auto polled = held.Poll(true, kT0 + std::chrono::seconds(2));
+  ASSERT_EQ(polled.ready.size(), 1u);
+  const HeldAgentSend::Send& out = polled.ready.front();
   EXPECT_EQ(out.text, "latest briefs");
   ASSERT_TRUE(out.payload.has_value());
   EXPECT_EQ(*out.payload, "{\"kind\":\"articles\"}");
   EXPECT_TRUE(out.from_home_chip);
   EXPECT_EQ(out.thread_id, "t1");
-  EXPECT_FALSE(slot.Holding()); // sent once, never twice
-  EXPECT_EQ(slot.Poll(true, kT0 + std::chrono::seconds(3), out), HeldAgentSend::Step::Idle);
+  EXPECT_FALSE(held.Holding()); // sent once, never twice
+  EXPECT_TRUE(held.Poll(true, kT0 + std::chrono::seconds(3)).ready.empty());
 }
 
-// Only one send is held: a later tap replaces the earlier one and restarts the wait.
-TEST(HeldAgentSendTest, LaterTapReplacesTheHeldOne) {
-  HeldAgentSend slot;
-  slot.Hold({.text = "first", .thread_id = "t1"}, kT0);
-  slot.Hold({.text = "second", .thread_id = "t2"}, kT0 + std::chrono::seconds(10));
+// One send per thread: a later tap in the same thread replaces the earlier one and restarts its wait.
+TEST(HeldAgentSendTest, LaterTapInTheSameThreadReplacesTheHeldOne) {
+  HeldAgentSend held;
+  held.Hold({.text = "first", .thread_id = "t1"}, kT0);
+  held.Hold({.text = "second", .thread_id = "t1"}, kT0 + std::chrono::seconds(10));
 
-  HeldAgentSend::Send out;
-  EXPECT_EQ(slot.Poll(false, kT0 + kHeldAgentSendTimeout, out), HeldAgentSend::Step::Wait);
-  EXPECT_EQ(slot.Poll(true, kT0 + kHeldAgentSendTimeout + std::chrono::seconds(1), out), HeldAgentSend::Step::Send);
-  EXPECT_EQ(out.text, "second");
-  EXPECT_EQ(out.thread_id, "t2");
-  EXPECT_FALSE(out.payload.has_value());
+  EXPECT_EQ(held.Poll(false, kT0 + kHeldAgentSendTimeout).expired, 0u);
+  const auto polled = held.Poll(true, kT0 + kHeldAgentSendTimeout + std::chrono::seconds(1));
+  ASSERT_EQ(polled.ready.size(), 1u);
+  EXPECT_EQ(polled.ready.front().text, "second");
+  EXPECT_FALSE(polled.ready.front().payload.has_value());
 }
 
-// The wait is bounded: if the assistant never gets ready the send is dropped once, with Expired.
+// Sends of different threads are held side by side and leave in the order they were made.
+TEST(HeldAgentSendTest, EachThreadKeepsItsOwnSend) {
+  HeldAgentSend held;
+  held.Hold({.text = "a", .thread_id = "t1"}, kT0);
+  held.Hold({.text = "b", .thread_id = "t2"}, kT0 + std::chrono::seconds(1));
+  EXPECT_TRUE(held.Holding("t1"));
+  EXPECT_TRUE(held.Holding("t2"));
+  EXPECT_FALSE(held.Holding("t3"));
+
+  const auto polled = held.Poll(true, kT0 + std::chrono::seconds(2));
+  ASSERT_EQ(polled.ready.size(), 2u);
+  EXPECT_EQ(polled.ready[0].thread_id, "t1");
+  EXPECT_EQ(polled.ready[1].thread_id, "t2");
+}
+
+// The wait is bounded: if the assistant never gets ready each send is given up once, at its own deadline.
 TEST(HeldAgentSendTest, WaitIsBounded) {
-  HeldAgentSend slot;
-  slot.Hold({.text = "hi"}, kT0);
+  HeldAgentSend held;
+  held.Hold({.text = "hi", .thread_id = "t1"}, kT0);
+  held.Hold({.text = "later", .thread_id = "t2"}, kT0 + std::chrono::seconds(5));
 
-  HeldAgentSend::Send out;
-  EXPECT_EQ(slot.Poll(false, kT0 + kHeldAgentSendTimeout - std::chrono::milliseconds(1), out),
-            HeldAgentSend::Step::Wait);
-  EXPECT_EQ(slot.Poll(false, kT0 + kHeldAgentSendTimeout, out), HeldAgentSend::Step::Expired);
-  EXPECT_FALSE(slot.Holding());
-  EXPECT_EQ(slot.Poll(true, kT0 + kHeldAgentSendTimeout + std::chrono::seconds(1), out), HeldAgentSend::Step::Idle);
+  EXPECT_EQ(held.Poll(false, kT0 + kHeldAgentSendTimeout - std::chrono::milliseconds(1)).expired, 0u);
+  EXPECT_EQ(held.Poll(false, kT0 + kHeldAgentSendTimeout).expired, 1u);
+  EXPECT_FALSE(held.Holding("t1"));
+  EXPECT_TRUE(held.Holding("t2"));
+  EXPECT_EQ(held.Poll(false, kT0 + kHeldAgentSendTimeout + std::chrono::seconds(5)).expired, 1u);
+  EXPECT_FALSE(held.Holding());
+  EXPECT_TRUE(held.Poll(true, kT0 + kHeldAgentSendTimeout + std::chrono::seconds(6)).ready.empty());
 }
 
-TEST(HeldAgentSendTest, ClearDropsTheHeldSend) {
-  HeldAgentSend slot;
-  slot.Hold({.text = "hi"}, kT0);
-  slot.Clear();
-  EXPECT_FALSE(slot.Holding());
-  HeldAgentSend::Send out;
-  EXPECT_EQ(slot.Poll(true, kT0, out), HeldAgentSend::Step::Idle);
+TEST(HeldAgentSendTest, ClearDropsTheHeldSends) {
+  HeldAgentSend held;
+  held.Hold({.text = "hi", .thread_id = "t1"}, kT0);
+  held.Hold({.text = "ho", .thread_id = "t2"}, kT0);
+  held.Clear();
+  EXPECT_FALSE(held.Holding());
+  EXPECT_TRUE(held.Poll(true, kT0).ready.empty());
 }
 
 } // namespace

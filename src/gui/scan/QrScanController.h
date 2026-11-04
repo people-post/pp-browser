@@ -3,16 +3,21 @@
 #include "gui/scan/ScanPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
-#include "lib/media/QrScanner.h"
+#include "lib/scan/QrScanner.h"
 #include "foundation/runtime/AppLifecycle.h"
 
+#include <ui/base/ObserverPtr.h>
 #include <ui/base/Types.h>
+#include <ui/dom/Element.h>
 
 namespace ui {
 class Context;
 }
 
 namespace pbr {
+
+/** The locale key of the hint for a failed scan, chosen from the scanner's error kind. */
+const char* ScanErrorTextKey(QrScanner::ErrorKind kind);
 
 /** Presents a scanner and returns one QR text after closing. Callers own the next action. */
 class QrScanController {
@@ -36,12 +41,14 @@ private:
   void BeginCapture();
   void OnDismissed();
   void Dirty();
+  void FindPreview();
 
   QrScanner scanner_;
   ShellNavigationPorts navigation_;
   FlowCoordinatorPorts flow_;
   QrScanResultCallback on_result_;
   ui::Context* context_ = nullptr;
+  ui::ObserverPtr<ui::Element> preview_;
   int layer_id_ = -1;
   ui::String status_;
   bool failed_ = false;

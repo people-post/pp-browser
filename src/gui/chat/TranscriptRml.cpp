@@ -3,21 +3,21 @@
 #include "gui/chat/ChatActionLabel.h"
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/MessageTimeLabel.h"
-#include "feature/conversations/GroupEventText.h"
+#include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
-#include "lib/media/VoiceFile.h"
+#include "lib/voice/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 
 #include "lib/ai/StructuredTextParser.h"
 #include "lib/calls/CallControlFamily.h"
 #include "lib/messaging/AttachmentCache.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/PlainTextLinks.h"
-#include "lib/messaging/PskRotateCodec.h"
+#include "lib/delivery/PskRotateCodec.h"
 #include "lib/messaging/QuoteReply.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/ui/ChatFormHelper.h"
 #include "common/chat/MessagingJson.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -131,6 +131,36 @@ std::optional<std::string> ReceiveFailureLine(const ThreadMessage& message) {
   return ReceiveFailureText(*reason, detail->getString("sender").value_or(""), detail->getString("family").value_or(""));
 }
 
+/** The words of a call summary row: the duration, or the outcome's word; a group call says so first. */
+std::string CallSummaryRowText(const CallSummaryRow& row) {
+  using Outcome = CallSummaryRow::Outcome;
+  std::string outcome;
+  switch (row.outcome) {
+  case Outcome::Connected:
+    outcome = row.duration;
+    break;
+  case Outcome::NoAnswer:
+    outcome = Tr("call.row.no_answer");
+    break;
+  case Outcome::Missed:
+    outcome = Tr("call.row.missed");
+    break;
+  case Outcome::Cancelled:
+    outcome = Tr("call.row.cancelled");
+    break;
+  case Outcome::Declined:
+    outcome = Tr("call.row.declined");
+    break;
+  case Outcome::DeclinedByPeer:
+    outcome = Tr("call.row.declined_by_peer");
+    break;
+  case Outcome::Failed:
+    outcome = Tr("call.row.failed");
+    break;
+  }
+  return row.group ? Tr("call.row.group") + " · " + outcome : outcome;
+}
+
 /** A call summary: icon + duration / outcome in a small pill on the starter's side (Kenneth 2026-10-23). */
 std::string CallRowRml(const CallSummaryRow& row) {
   std::string html = "<div class=\"chat-call-row";
@@ -139,7 +169,7 @@ std::string CallRowRml(const CallSummaryRow& row) {
   }
   html += "\"><svg class=\"chat-call-row-icon\" src=\"";
   html += row.video ? "../icons/video.svg" : "../icons/phone.svg";
-  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(row.text) + "</span></div>";
+  html += "\"></svg><span class=\"chat-call-row-text\">" + StructuredTextParser::EscapeText(CallSummaryRowText(row)) + "</span></div>";
   return html;
 }
 
@@ -210,7 +240,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     return SystemLineRml(*failure);
   }
   if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
-    return SystemLineRml("They're using only this device for new messages.");
+    return SystemLineRml(Tr("chat.psk_rotate_notice"));
   }
   return SystemLineRml(message.text);
 }
@@ -218,7 +248,7 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
 std::string ContactCardRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
   const std::string name =
-      fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
+      fields ? fields->display_name : (message.text.empty() ? Tr("chat.card.contact_fallback") : message.text);
   // The person's own name and Account ID, from the card (checked before *Add*; shown escaped).
   std::string nickname;
   std::string account_id;
@@ -242,7 +272,7 @@ std::string ContactCardRml(const ThreadMessage& message) {
 
 std::string CryptoTxRml(const ThreadMessage& message) {
   auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json);
-  const std::string summary = message.text.empty() ? "Transaction" : message.text;
+  const std::string summary = message.text.empty() ? Tr("chat.card.transaction_fallback") : message.text;
   std::string html = "<div class=\"chat-card chat-tx-card\"><h3 class=\"heading-3\">" +
                      StructuredTextParser::EscapeText(summary) + "</h3>";
   if (fields) {
@@ -250,7 +280,9 @@ std::string CryptoTxRml(const ThreadMessage& message) {
             StructuredTextParser::EscapeText(fields->amount) + " · " +
             StructuredTextParser::EscapeText(fields->direction) + "</p>";
     if (!fields->status.empty()) {
-      html += "<p class=\"text muted\">Status: " + StructuredTextParser::EscapeText(fields->status) + "</p>";
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(Tr("chat.card.transaction_status", {{"status", fields->status}})) +
+              "</p>";
     }
   }
   html += "</div>";
@@ -261,7 +293,7 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
   const std::string label = fields && !fields->filename.empty()
                                 ? fields->filename
-                                : (message.text.empty() ? "Attachment" : message.text);
+                                : (message.text.empty() ? Tr("chat.card.attachment_fallback") : message.text);
 
   const TranscriptAttachmentView view =
       fields && facts.attachment ? facts.attachment(message) : TranscriptAttachmentView{};
@@ -281,7 +313,9 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty() && view.inline_image_ok) {
-    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
+    // A tap opens the full picture in the system viewer (zoomable): the bubble shows it at most 240 dp high.
+    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) +
+            "\" data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"/>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;
@@ -289,7 +323,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
       html += "<img class=\"chat-attachment-video-poster\" src=\"" +
               StructuredTextParser::EscapeText(poster_path) + "\"/>";
     } else {
-      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
+      html += "<div class=\"chat-attachment-video-badge\">" +
+              StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
       html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
     }
     if (fields->byte_length > 0) {
@@ -335,8 +370,8 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
 }
 
 std::string UnsupportedRml() {
-  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">Update to view this "
-         "message.</p></div>";
+  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">" +
+         StructuredTextParser::EscapeText(Tr("chat.card.unsupported")) + "</p></div>";
 }
 
 /** One tappable or highlighted piece of a message's text: a link, or a mention the roster allows. */
@@ -529,7 +564,8 @@ MessageDisplayRow OrphanAnnotationRow(const TranscriptRow& entry, const Transcri
   row.sender_label = facts.sender_label ? facts.sender_label(annotation.sender_contact_id).c_str() : "";
   const std::string text = annotation.text.empty() ? "?" : annotation.text;
   row.content_rml = ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +
-                     StructuredTextParser::EscapeText(text) + "</span> <span class=\"text-xs\">(unlinked)</span></div>")
+                     StructuredTextParser::EscapeText(text) + "</span> <span class=\"text-xs\">" +
+                     StructuredTextParser::EscapeText(Tr("chat.annotation.unlinked")) + "</span></div>")
                         .c_str();
   row.row_class = "message-row-annotation-orphan";
   row.has_content = true;

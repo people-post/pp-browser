@@ -4,6 +4,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/LlmPreset.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "feature/settings/SettingsUiState.h"
 
 #include "common/PbrCompat.h"
@@ -59,17 +60,27 @@ AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUi
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state) {
   AppConfig config = base;
   const AppConfig defaults = Config::DefaultAppConfig();
-  config.relay.base_url =
-      state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
-  config.directory.base_url =
-      state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
-  // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
-  // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
-  config.directory.providers.clear();
-  config.directory.transport = "http";
-  config.registration.base_url = state.registration_base_url.empty()
-                                     ? defaults.registration.base_url
-                                     : state.registration_base_url;
+  if (!state.backend_env.empty()) {
+    config.backend.env = BackendEnvName(ParseBackendEnv(state.backend_env));
+  }
+  // The URL fields are the custom backend's; prod / qa derive theirs from the origin and leave them alone.
+  if (state.backend_env.empty() || state.backend_env == "custom") {
+    // When an origin replaced the loaded URLs, the saved copies are what the fields show and what a save writes.
+    ServiceEndpointConfig& relay = config.backend.has_saved_urls ? config.backend.saved_relay : config.relay;
+    DirectoryConfig& directory =
+        config.backend.has_saved_urls ? config.backend.saved_directory : config.directory;
+    ServiceEndpointConfig& registration =
+        config.backend.has_saved_urls ? config.backend.saved_registration : config.registration;
+    relay.base_url = state.relay_base_url.empty() ? defaults.relay.base_url : state.relay_base_url;
+    directory.base_url =
+        state.directory_base_url.empty() ? defaults.directory.base_url : state.directory_base_url;
+    // Settings UI edits the primary URL only; clear providers so EffectiveDirectoryProviders
+    // follows base_url (N029 nd3). Advanced providers[] remain config.json / ops.
+    directory.providers.clear();
+    directory.transport = "http";
+    registration.base_url = state.registration_base_url.empty() ? defaults.registration.base_url
+                                                                : state.registration_base_url;
+  }
   config.mesh.node_enabled = (state.node_enabled != "off");
   config.mesh.capabilities.circuit_relay = (state.circuit_relay_enabled == "on");
   config.mesh.capabilities.media_relay = (state.media_relay_enabled == "on");

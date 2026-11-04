@@ -14,7 +14,7 @@ Decentralized **PeerId → multiaddr** lookup for pp-browser mesh when contacts 
 | pp-ledger fleet (beacon/relay/miner) | Curated config multiaddrs (AMP) |
 | pp-browser / pp-node mesh | Contacts → directory → org seed → **optional DHT** |
 
-DHT **feeds candidates** only. [`MeshHopPolicy`](../../src/base/people/MeshHopPolicy.h) and relay scope (N020/N023) still gate dial and hop selection.
+DHT **feeds candidates** only. [`MeshHopPolicy`](../../capabilities/people/src/lib/people/MeshHopPolicy.h) and relay scope (N020/N023) still gate dial and hop selection.
 
 ## Participation rules
 

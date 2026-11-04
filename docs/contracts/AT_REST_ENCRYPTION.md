@@ -85,7 +85,7 @@ Default PIN is intentionally weak — offline disk theft with `pin_is_default` t
 
 ### DEK consumers
 
-[`ProfileSecretsEngine`](../../src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePskSessionStore`, `SqliteThreadStore`, `CallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
+[`ProfileSecretsEngine`](../../capabilities/base/src/foundation/crypto/ProfileSecretsEngine.h) owns the vault and fans out the unlocked DEK to registered [`IDekConsumer`](../../capabilities/base/src/foundation/crypto/IDekConsumer.h) stores (`SetDek` / `ClearDek`). Today: `IdentityStore`, `SqlitePeerSessionStore`, `SqliteThreadStore`, `ICallMediaKeyStore`, `AttachmentFetchWorkflow`, `Libp2pChatBlobService` (registered from `ConversationsHub`). To add a new encrypted store:
 
 1. Implement `IDekConsumer`; encrypt with `FileCipher` and a unique AAD purpose (`purpose|profile_id|schema`).
 2. Register via `ProfileSecretsEngine::RegisterDekConsumer` during init (typically from the feature that owns the store).
@@ -113,7 +113,7 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 | Sidebar preview | `transcript-preview\|{profile_id}\|{thread_id}\|1` |
 | Thread memory value | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
-Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`, optional `working_set_json`, optional `ai_image_json` = reference `{content_hash, mime, width, height}` to the private-CAS image of an AI question). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
+Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`, optional `working_set_json`, optional `ai_image_json` = reference `{content_hash, mime, width, height}` to the private-CAS image of an AI question). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `capabilities/messaging/src/lib/messaging/`.
 
 ### Attachment blob AEAD (a5 / C007 / C011)
 
@@ -138,7 +138,7 @@ The key never sits next to the ciphertext in the clear. Plaintext of a sent or r
 
 ## Test fixtures
 
-Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
+Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePeerSessionStore::SetDek` / `SqliteThreadStore::SetDek` with a fixed DEK, or pass `--pin` / `PP_BROWSER_PIN`. New `IDekConsumer` stores should accept the same direct `SetDek` injection in tests.
 
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).

@@ -50,6 +50,8 @@ public:
 
   std::string Tr(std::string_view key) const;
   std::string Tr(std::string_view key, const std::map<std::string, std::string>& args) const;
+  /** `from` reads as `to` (a platform's own text for a shared key: common/Localized.h kPlatformNetworkHintKey). */
+  void SetKeyAlias(std::string from, std::string to);
 
   std::vector<LocaleInfo> AvailableLocales() const;
 
@@ -84,6 +86,8 @@ private:
   std::vector<LocaleInfo> available_;
   std::vector<std::function<void(const std::string&)>> listeners_;
   std::vector<std::string> system_locales_override_;
+  mutable std::mutex aliases_mutex_;
+  std::unordered_map<std::string, std::string> aliases_;
   bool use_system_locales_override_ = false;
 };
 

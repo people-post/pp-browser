@@ -6,11 +6,11 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 
 **Related:** [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
-**C++ wire profile:** [Serialize.hpp](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
+**C++ wire profile:** [Serialize.hpp](../../capabilities/base/src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`); [Binary Wire Profile (D088)](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088).
 
 ## Overview
 
-- **256-bit pre-shared key (PSK)** per `ChatTargetKey` on direct tiers (`e2e`, `e2e_public`).
+- **256-bit pre-shared key (PSK)** per `PeerSessionKey` on direct tiers (`e2e`, `e2e_public`).
 - **Private direct (`e2e`):** PSK distributed out-of-band with mandatory fingerprint verification (E011).
 - **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024); encapsulate to the recipient **account** ML-KEM-768 (**M015**).
 - **Peer keys** (signing and KEM) come from **account cards** that prove themselves against the Account ID ([ACCOUNT_CARD.md](ACCOUNT_CARD.md), E028): the card store, the peer's own devices, the relay directory when one is configured, the chain `[later]`. No source is trusted; none is required.
@@ -48,7 +48,7 @@ Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript
 
 - 32 bytes from CSPRNG; fingerprint = BLAKE2b-256(PSK) as grouped hex.
 - Initial setup (E011): either peer generates; export raw base64 + fingerprint OOB; peer imports; both confirm fingerprint before first send (`psk_verified_at` on `chat_targets`). Rotation: export/import `pp-browser-psk-bundle-v1` JSON (see project DESIGN).
-- **Public direct (`e2e_public`):** a session is between **two devices** ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)): a message goes as one copy per device on the recipient's account card, each opened by encapsulating to **that device's** ML-KEM-768 and numbered in that device pair (`ChatTargetKey.peer_device`; the session's epoch, our own `sender_seq` there). While the sender knows none of the recipient's devices (a first contact) it goes as one **account copy**, encapsulated to the recipient **account** ML-KEM-768 (E024 / M015) and numbered by the sending device's account copies; every device of the account reads it. → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it, with the sender's account card in `body.e2e.sender_card` ([ACCOUNT_CARD.md](ACCOUNT_CARD.md)) so the peer can verify the sending device and answer every device of the account without any lookup. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. A device that got its sessions back without its message numbering (*Reset chats*) holds them `restart_pending`: its next send in the pair moves to `session_epoch + 1` from `sender_seq` 1 under a fresh session (`key_init`), the old master kept as retired for the old epoch. A receiver reading a `key_init` at a higher epoch than its own retires its master at its epoch and moves to the new epoch and session; an envelope at a lower epoch than the stored session leaves the session alone. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
+- **Public direct (`e2e_public`):** a session is between **two devices** ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)): a message goes as one copy per device on the recipient's account card, each opened by encapsulating to **that device's** ML-KEM-768 and numbered in that device pair (`PeerSessionKey.peer_device`; the session's epoch, our own `sender_seq` there). While the sender knows none of the recipient's devices (a first contact) it goes as one **account copy**, encapsulated to the recipient **account** ML-KEM-768 (E024 / M015) and numbered by the sending device's account copies; every device of the account reads it. → `master_psk` via HKDF `info = "auto-key-v1|channel:e2e_public"`. A session already open is used as stored: the peer's KEM key (a directory lookup when it is not kept) is asked for only to open one (`EnsureE2ePublicMasterPsk`). `body.e2e.key_init_b64` on every message under a session the sender opened until the peer has been heard under it, with the sender's account card in `body.e2e.sender_card` ([ACCOUNT_CARD.md](ACCOUNT_CARD.md)) so the peer can verify the sending device and answer every device of the account without any lookup. **Pair convergence** (`ReconcileE2ePublicSession`, after the envelope signature verifies): the receiver reads under its stored session for the epoch, else under the session the envelope's `key_init` opens (encapsulated to its own account KEM, so only the peer could have made it). Read under the stored one: a session we opened is confirmed (stop attaching `key_init`), and the envelope's signed timestamp is remembered as the latest the peer wrote under it. Read under the `key_init`: the peer is on that session and we move to it — unless both opened at once and ours, unconfirmed, has the lower session id (`AutoKeySessionId` = BLAKE2b-256 of the `key_init`), in which case the peer moves to ours; or unless the envelope was signed no later than the peer's latest write under our session (a late or replayed opener: the peer has since moved on; both timestamps are the peer's clock). On the control lane this runs after the freshness and first-sight checks. A lost first message, both sides opening at once, and one side starting over (reinstall) all converge instead of locking the pair out. A device that got its sessions back without its message numbering (*Reset chats*) holds them `restart_pending`: its next send in the pair moves to `session_epoch + 1` from `sender_seq` 1 under a fresh session (`key_init`), the old master kept as retired for the old epoch. A receiver reading a `key_init` at a higher epoch than its own retires its master at its epoch and moves to the new epoch and session; an envelope at a lower epoch than the stored session leaves the session alone. Linked devices share that account KEM so any of them can open account-scope `key_init`. Device-lock rekey (**E027**): system `control_type=psk_rotate`; new PSK in `key_init_b64` wrapped to account KEM or conversation KEM (never under the old PSK); `detail` binds `key_init_hash`. Account-scope chats do not auto-`rotate_psk`. Quiet auto-rekey only when both sides are device-bound. Relay must not learn `master_psk`. Private (`e2e`) does not use this handshake.
 
 ### Session key (HKDF — E015)
 
@@ -174,16 +174,22 @@ Peer verify keys: `PeerSigningKeyStore` / `PeerKemKeyStore`, filled from account
 
 Outbound HKDF uses `chat_targets.session_epoch`; inbound uses `envelope.session_epoch` (E019).
 
-## `base/crypto` module (target)
+## Code
 
-| Component | Role |
-|-----------|------|
-| `SessionKeyDeriver` | HKDF-SHA256 |
-| `CanonicalAad` | Build/parse AAD |
-| `MessageCipher` | AEAD encrypt/decrypt |
-| `EncryptedPayload` | Blob codec + base64 |
-| `ReplayWindow` | Seq acceptance helper (D013 classifier is authoritative); in memory, so the classifier starts it at the persisted `contiguous_peer_seq` (`CatchUpTo`) |
-| `IPskSessionStore` | PSK + retired epochs + public `key_scope` / conversation KEM on `chat_targets` |
+The message formats are the delivery capability's (`capabilities/delivery/src/lib/delivery/`, capability-repos CR020, CR022); the AEAD blob both
+messages and the at-rest store use is the base's (`capabilities/base/src/foundation/crypto/`); generic pieces are pp-cpp-crypto's.
+
+| Component | Where | Role |
+|-----------|-------|------|
+| `SessionKeyDeriver` | `lib/delivery` | HKDF-SHA256 |
+| `CanonicalAad` | `lib/delivery` | Build/parse AAD |
+| `PskBundleCodec`, `PskFingerprint`, `AutoKeyEstablishment` | `lib/delivery` | PSK bundles, their fingerprints, `key_init` |
+| `IPeerSessionStore` | `lib/delivery` (SQLite: `lib/storage/SqlitePeerSessionStore`) | PSK + retired epochs + public `key_scope` / conversation KEM on `chat_targets` |
+| `AttachmentContentCipher` | `lib/delivery` | Per-file attachment key and AEAD |
+| `MediaKeyWrap` | `lib/calls` | A call's or a broadcast's media key wrapped for a peer |
+| `MessageCipher` | `foundation/crypto` | AEAD encrypt/decrypt |
+| `EncryptedPayload` | `foundation/crypto` | Blob codec + base64 |
+| `ReplayWindow` | pp-cpp-crypto (`crypto/ReplayWindow.h`) | Seq acceptance helper (D013 classifier is authoritative); in memory, so the classifier starts it at the persisted `contiguous_peer_seq` (`CatchUpTo`) |
 
 Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-message-crypto/PHASES.md) phase c1.
 

@@ -1,0 +1,44 @@
+#pragma once
+
+#include "domain/call_media/ICallMediaTransport.h"
+#include "mesh/reach/PeerReachCoordinator.h"
+#include "lib/calls/CallPathPolicy.h"
+#include "feature/calls/CallConnectDiag.h"
+#include "feature/calls/CallHopRelayDeps.h"
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
+
+namespace pbr {
+
+/**
+ * What the 1:1 path runs on, handed to the device (CallDevice builds each call's path from it) when mesh media is
+ * wired: the call-media transport and the mesh reach it dials through (not owned), the rendezvous
+ * seed hooks, and this pair's path policy.
+ */
+struct CallDirectPathDeps {
+  ICallMediaTransport* transport = nullptr;
+  mesh::IDialRegistry* dial = nullptr;
+  mesh::ICircuitHopReach* circuit_reach = nullptr;
+  /** Where reach runs: the mesh's io lane (a test's lane on the test path). */
+  std::shared_ptr<pp::SerialExecutor> lane;
+  /** This node's listen multiaddrs, read on the lane (reach dials a same-LAN peer before the seed park). */
+  std::function<std::vector<std::string>()> local_listen_addrs;
+  std::function<void()> seed_warm;
+  std::function<void()> seed_reserve;
+  std::function<void(std::function<void(bool)> done, int timeout_ms)> seed_park_await;
+  std::function<CallPathPolicy(const std::string& call_id)> path_policy;
+  /** Read by the connect sequence's Diag lines on the calls owner (this device and the mesh as it stands). */
+  CallConnectEnvProbe diag_env;
+  /** H013: the relays the call's answerer said it is parked on (its CallAccept); the caller tries them first. */
+  std::function<std::vector<std::string>(const std::string& call_id)> advertised_relays;
+
+  bool IsUsable() const { return transport && dial; }
+  mesh::PeerReachPorts Reach() const { return {dial, circuit_reach, lane, local_listen_addrs}; }
+};
+
+} // namespace pbr

@@ -2,10 +2,10 @@
 
 #include "gui/chat/ChatScreenState.h"
 #include "lib/media/MediaDeviceArbiter.h"
-#include "lib/media/VoiceGesture.h"
+#include "lib/voice/VoiceGesture.h"
 #include "lib/media/MicPermission.h"
-#include "lib/media/VoiceRecorder.h"
-#include "lib/media/VoiceTouchHold.h"
+#include "lib/voice/VoiceRecorder.h"
+#include "lib/voice/VoiceTouchHold.h"
 #include "lib/messaging/AttachmentLimits.h"
 
 #include <ui/dom/EventListener.h>
@@ -34,6 +34,8 @@ struct VoiceComposerPorts {
   std::function<AttachmentLimits()> limits;
   /** Where the temporary recording goes (`.../blobs_view/voice-rec`). */
   std::function<std::string()> out_dir;
+  /** A failed recording that waits for Retry (a file inside `out_dir`): a new recording does not wipe it. Optional. */
+  std::function<std::string()> keep_file;
   /** The chat that is open now. Read once, when a recording starts: that chat gets the message, whatever is open later. */
   std::function<std::string()> thread_id;
   /** A finished recording to send to `thread_id` as an attachment. The owner deletes the file when it is done with it. */
@@ -105,6 +107,7 @@ public:
   void ProcessEvent(ui::Event& event) override;
 
 private:
+  friend struct VoiceComposerTestAccess; // tests inject a late progress tick
   void StartRecording();
   void LaunchRecorder(int generation, const VoiceRecorderConfig& config);
   void Apply(VoiceGesture::Action action);
@@ -113,6 +116,8 @@ private:
   void EndWithoutRecorder();
   void CancelRecorder();
   void ShowRecording(bool on);
+  /** The recording was handed over (or ran out) and its file is not ready yet: "Sending…". */
+  void ShowFinishing(bool on);
   void SetHint();
   void AttachDocument(ui::ElementDocument* doc);
   void DetachDocument();

@@ -40,7 +40,7 @@ Expected layout: [DATA_LAYOUT.md](DATA_LAYOUT.md).
 
 ### Dev wipe after Brief PQ / Account ID hard cut
 
-When Brief drops classical `relay_users` (ML-DSA-only register), **or** after the client **m2b** wire cut (`ChatTargetKey` / envelopes → Account ID), **or** after the **libp2p-pq-transport** device-key hard cut (`identity.enc` schema **3** — ML-DSA-65 PeerId + `/noise-mlkem768/1.0.0`), wipe local profiles so clients re-mint keys, re-register, and rebuild PeerId/endpoints:
+When Brief drops classical `relay_users` (ML-DSA-only register), **or** after the client **m2b** wire cut (`PeerSessionKey` / envelopes → Account ID), **or** after the **libp2p-pq-transport** device-key hard cut (`identity.enc` schema **3** — ML-DSA-65 PeerId + `/noise-mlkem768/1.0.0`), wipe local profiles so clients re-mint keys, re-register, and rebuild PeerId/endpoints:
 
 | Platform | Script |
 |----------|--------|
@@ -86,6 +86,9 @@ Taken whole, with no old/new bridge: every app updates.
 |--------|-----------|
 | Account card v2 — the device list with each device's keys ([ACCOUNT_CARD.md](ACCOUNT_CARD.md), M021 d1) | Cards between apps before and after it are refused (card exchange over Amp, contact cards, roster cards): a contact added across the line has keys only once both update. |
 | Envelope v2 / sign v3 — one record per account with a copy per device, device signatures, sessions per device pair ([WIRE_SCHEMAS.md](WIRE_SCHEMAS.md), M021 d2 / M022) | Messages, group copies and call signaling between apps before and after it are refused (unknown `envelope_version`). Sessions with a peer's devices start fresh; account-level sessions are kept. Needs the relay that accepts an account's records to itself (messenger, M022) — deployed first. |
+| Amp wire v2 — sealed packets, an 8 B association id, a 1232 B datagram ([ADP.md](ADP.md), [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1; pp-cpp-amp v4.0.0) | No Amp link between an app or node before it and one after it: each refuses the other's packets (version byte), so chat, sync, calls and the mesh itself need both ends updated. Apps and pp-node ship it together. |
+| One media frame, an 18 B header and a derived nonce ([WIRE_SCHEMAS § Media frames](WIRE_SCHEMAS.md#media-frames), [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2; pp-cpp-mesh v5.0.0) | No call or broadcast media between an app before it and one after it: each refuses the other's frames (version), and a hop before it drops them. Apps and pp-node ship it with amp wire v2. |
+| Call audio in 40 ms Opus packets ([CALLS.md § Audio packets](../architecture/CALLS.md), [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) step 1) | An app before it hears nothing from an app after it: it decodes every packet into a 20 ms buffer, which a 40 ms packet does not fit. An app after it plays both, so it hears an older peer. Calls, group calls and broadcasts alike. |
 
 ### HTTP / libp2p
 

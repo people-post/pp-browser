@@ -1,0 +1,27 @@
+#include "lib/media/MediaEngine.h"
+
+#include <gtest/gtest.h>
+
+namespace pbr {
+namespace {
+
+// M5 (final-review): SetSkipDeviceOpenForTest(true) must short-circuit OpenAudioDevices()
+// before it ever touches VoiceProcessingIo::Open() or an SDL device (constructed here in
+// capabilities/calls/src/lib/media/tests because pp_lib_media — and so pp_browser_media_test — already
+// links MediaEngine.cpp; no real mic/speaker is opened).
+TEST(MediaEngineHealthTest, SkipDeviceOpenReportsNoAudioIo) {
+  MediaEngine engine;
+  engine.SetSkipDeviceOpenForTest(true);
+
+  auto started = engine.StartDuplex("skip-device-open-test-call", [](const MediaEngine::MediaPacket&) {});
+  ASSERT_TRUE(started) << (started ? "" : started.error().message);
+
+  const auto health = engine.HealthSnapshot();
+  EXPECT_EQ(health.audio_io, "none");
+  EXPECT_EQ(health.io_underruns, 0u);
+
+  engine.Stop();
+}
+
+}  // namespace
+}  // namespace pbr

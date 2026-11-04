@@ -47,26 +47,31 @@ EXCEPTIONS = {
 
 fail = 0
 counts = {}
+# src/ and the capability folders, which mirror it (capabilities/<name>/src, CR022).
+SOURCE_ROOTS = [root / "src", *sorted((root / "capabilities").glob("*/src"))]
 for tree, (runner, ui_edge) in TREES.items():
-    base = root / "src" / tree
-    for path in sorted(base.rglob("*")):
-        if path.suffix not in (".h", ".cpp") or "tests" in path.relative_to(base).parts:
+    for src in SOURCE_ROOTS:
+        base = src / tree
+        if not base.is_dir():
             continue
-        if path.stem in runner:
-            continue
-        rel = path.relative_to(root / "src").as_posix()
-        for n, line in enumerate(path.read_text().splitlines(), 1):
-            code = line.split("//", 1)[0]
-            hit = FORBIDDEN.search(code)
-            if not hit and path.stem not in ui_edge:
-                hit = UI_POST.search(code)
-            if not hit:
+        for path in sorted(base.rglob("*")):
+            if path.suffix not in (".h", ".cpp") or "tests" in path.relative_to(base).parts:
                 continue
-            counts[rel] = counts.get(rel, 0) + 1
-            if rel not in EXCEPTIONS:
-                print(f"FAIL: src/{rel}:{n}: {hit.group(0)} — only the tree's runner posts / schedules / waits;"
-                      " report through the component's OwnerOutbox instead")
-                fail = 1
+            if path.stem in runner:
+                continue
+            rel = path.relative_to(src).as_posix()
+            for n, line in enumerate(path.read_text().splitlines(), 1):
+                code = line.split("//", 1)[0]
+                hit = FORBIDDEN.search(code)
+                if not hit and path.stem not in ui_edge:
+                    hit = UI_POST.search(code)
+                if not hit:
+                    continue
+                counts[rel] = counts.get(rel, 0) + 1
+                if rel not in EXCEPTIONS:
+                    print(f"FAIL: src/{rel}:{n}: {hit.group(0)} — only the tree's runner posts / schedules / waits;"
+                          " report through the component's OwnerOutbox instead")
+                    fail = 1
 
 for rel, (expected, why) in EXCEPTIONS.items():
     got = counts.get(rel, 0)

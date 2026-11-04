@@ -324,10 +324,10 @@ std::string ShellLayoutRml::PinGate() const {
       << "</button>";
   out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow\" "
-         "data-value=\"pin_gate_link_payload\" placeholder=\""
+         "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.link_paste_placeholder") << "\"></textarea>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
-         "data-value=\"pin_gate_link_payload\" placeholder=\""
+         "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
   out << "<p class=\"text muted shell-pin-gate-note\" "
          "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && pin_gate_saved_copy_name != ''\">"

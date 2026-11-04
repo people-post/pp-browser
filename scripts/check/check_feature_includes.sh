@@ -3,15 +3,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/check/source_trees.sh
+source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 check_absent() {
   local label="$1"
   local pattern="$2"
   local path="$3"
-  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "$ROOT/$path" 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "${trees[@]}" 2>/dev/null; then
     echo "FAIL: $label"
-    rg --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "$ROOT/$path" || true
+    rg --glob '*.{h,hpp,c,cc,cpp,cxx}' "$pattern" "${trees[@]}" || true
     FAIL=1
   fi
 }
@@ -48,6 +53,11 @@ check_absent "conversations must not include feature/calls|broadcast|product/ or
 for module in calls broadcast settings ai; do
   check_absent "$module must not include feature/product/ (only app/ and gui/ compose it)" \
     '#include "feature/product/' "src/feature/$module"
+done
+# The presenters are the app's (capability-repos CR019): only app/ and gui/ (and pp-app-probe) read them.
+for module in conversations calls broadcast settings ai product; do
+  check_absent "$module must not include feature/presenters/ (only app/ and gui/ use them)" \
+    '#include "feature/presenters/' "src/feature/$module"
 done
 
 check_absent "calls must not include conversations/" \

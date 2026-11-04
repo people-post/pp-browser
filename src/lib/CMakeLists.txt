@@ -1,9 +1,6 @@
 include(PpBrowserBase)
 
-# Lib peers (strict independence).
-add_subdirectory(people)
-# net is available in headless too (pp-node uses HTTP helpers).
-add_subdirectory(net)
+# Lib peers (strict independence). people, net, social, delivery, pricing, media, messaging, calls and broadcast are capability folders (capabilities/, CR022), added first.
 
 set(_pp_lib_peers
   pp_lib_people
@@ -11,30 +8,32 @@ set(_pp_lib_peers
 )
 
 if(NOT PP_BROWSER_HEADLESS)
-  add_subdirectory(messaging)
-  add_subdirectory(calls)
-  add_subdirectory(broadcast)
-  add_subdirectory(pricing)
-  add_subdirectory(content)
-  add_subdirectory(posts)
   add_subdirectory(ai)
-  add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
+  # The app's storage: the profile database and the SQLite stores behind the capabilities' ports (CR024).
+  add_subdirectory(storage)
+  # QR scanning for the scan feature, on the media capability's camera.
+  add_subdirectory(scan)
   list(APPEND _pp_lib_peers
-    pp_lib_people_cards
+    pp_lib_delivery
     pp_lib_messaging
     pp_lib_calls
     pp_lib_broadcast
     pp_lib_pricing
     pp_lib_content
     pp_lib_posts
+    pp_common_ui
     pp_lib_ai
     pp_lib_ai_conversation
     pp_lib_ai_mcp
     pp_lib_ai_tools
     pp_lib_media
+    pp_lib_call_audio
+    pp_lib_voice
+    pp_lib_scan
     pp_lib_ui
+    pp_lib_storage
   )
 endif()
 

@@ -3,6 +3,7 @@
 #include "app/CrashReportUpload.h"
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
@@ -15,8 +16,8 @@
 #include "foundation/platform/PlatformStartupHints.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
-#include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/AppVersion.h"
+#include "foundation/product/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
 
@@ -65,8 +66,6 @@ int main(int argc, char** argv) {
       debug_mode = true;
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
       startup_timing = true;
-    } else if (std::strcmp(argv[i], "--sandbox") == 0) {
-      // Handled by ResolveSandboxModeFromLaunch below.
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[i + 1];
       ++i;
@@ -88,8 +87,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
-
   auto root = pbr::logging::getRootLogger();
   const auto default_level = pbr::DefaultRootLogLevel(debug_mode);
   root.setLevel(default_level);
@@ -105,10 +102,6 @@ int main(int argc, char** argv) {
   root.info << "Logging level set to " << LevelName(root.getLevel())
             << " emit_floor=" << LevelName(pbr::logging::getEmitFloor())
             << (startup_timing ? " (startup timing enabled)" : "");
-  if (pbr::SandboxMode()) {
-    root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()
-                 << ", product dir " << pbr::ProductDirBasename();
-  }
 
   if (!pbr::Platform::EarlyInit()) {
     root.error << "Platform early init failed";
@@ -123,7 +116,7 @@ int main(int argc, char** argv) {
   pbr::PlatformHooks::Register();
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
-  pbr::CrashDump::Install(pbr::AppPaths::DataDir());
+  pbr::CrashDump::Install(pbr::AppPaths::DataDir(), {pbr::kProductSlug, pbr::AppVersionString()});
 
   if (log_file_enabled) {
     const std::string log_path = pbr::LogFile::Install(
@@ -167,17 +160,22 @@ int main(int argc, char** argv) {
   }
   pbr::StartupMark("after_session_store");
 
-  pbr::MaybeUploadPendingCrashReport(app.Store().Snapshot().data_dir,
-                                     app.Store().Snapshot().profile_data_dir,
-                                     app.Store().Snapshot().profile_prefs.crash_reports_enabled,
-                                     app.Store().Snapshot().config.relay.base_url);
-
   if (![&] {
         pbr::StartupPhase phase("Application::Initialize");
         return app.Initialize(pbr::kProductName);
       }()) {
     root.error << pbr::kProductName << ": failed to initialize." << pbr::InitFailureHint();
     return 1;
+  }
+  // The upload is a blocking HTTP POST (up to 30 s): off the main thread, so a bad network after a crash
+  // cannot hold the window back. The pending dump is cleared only after the worker's upload succeeds.
+  {
+    const auto& snapshot = app.Store().Snapshot();
+    pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
+                                           enabled = snapshot.profile_prefs.crash_reports_enabled,
+                                           base_url = snapshot.config.relay.base_url]() {
+      pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+    });
   }
   pbr::StartupMark("enter_Application::Run");
   app.Run();

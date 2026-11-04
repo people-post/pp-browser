@@ -5,6 +5,10 @@
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "common/ProtocolIds.h"
 #include "mesh/discovery/AmpDirectoryProtocol.h"
+#include "mesh/discovery/NameDirectory.h"
+#include "common/runtime/AppRuntime.h"
+
+#include <filesystem>
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
 
@@ -28,10 +32,10 @@ std::string AmpDirectoryPeerKeyFromBaseUrl(const std::string& base_url) {
 }
 
 /** The directory's query peers: the Amp providers the config names, then the seeds; deduped. */
-std::vector<std::string> DirectoryQueryKeys(const AppConfig& config, const MeshConfig& mesh_cfg) {
+std::vector<std::string> DirectoryQueryKeys(const DirectoryConfig& directory, const MeshConfig& mesh_cfg) {
   std::vector<std::string> keys;
   std::unordered_set<std::string> seen;
-  DirectoryConfig dir_cfg = config.directory;
+  DirectoryConfig dir_cfg = directory;
   NormalizeDirectoryConfig(dir_cfg);
   for (const ServiceEndpointConfig& provider : EffectiveDirectoryProviders(dir_cfg)) {
     const std::string transport = provider.transport.empty() ? "http" : provider.transport;
@@ -77,11 +81,18 @@ mesh::MeshNodeHit NodeHitFromDirectoryRow(const mesh::MeshDirectoryNode& row) {
 
 } // namespace
 
-ProductMesh::ProductMesh() {
+ProductMesh::ProductMesh()
+    : connectivity_(std::make_unique<mesh::MeshConnectivity>()),
+      media_relay_(std::make_unique<mesh::MeshMediaRelay>(*connectivity_)),
+      hop_feed_(std::make_unique<MeshHopPolicyFeed>(*connectivity_)) {
   redirectLogger("ProductMesh");
 }
 
 ProductMesh::~ProductMesh() {
+  StayReachable(false);
+  StopDirectoryCache();
+  StopLanDiscovery();
+  StopWatchingNetwork();
   Stop();
   Release();
 }
@@ -93,7 +104,7 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   if (request.identity == nullptr) {
     return Error("no identity for the mesh");
   }
-  MeshConfig product_mesh_cfg = request.config.mesh;
+  MeshConfig product_mesh_cfg = request.mesh;
   NormalizeMeshConfig(product_mesh_cfg);
   const bool node = ResolveMeshRole(product_mesh_cfg) == MeshRole::Node;
 
@@ -104,7 +115,7 @@ Roe<mesh::MeshHost*> ProductMesh::Start(StartRequest request) {
   if (auto pub = request.identity->GetDeviceMlDsaPublicKey()) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  ApplyNodeHosting(mesh_cfg, request.config.mesh, node);
+  ApplyNodeHosting(mesh_cfg, request.mesh, node);
   // Skip the blocking UPnP / seed probe when the app is already quitting.
   mesh_cfg.start_reachability_probe = node && !request.stopping;
   if (node) {
@@ -135,7 +146,7 @@ void ProductMesh::ConfigureQueries(const QueryInputs& inputs) {
   if (!mesh_ || !mesh_->Amp() || inputs.identity == nullptr) {
     return;
   }
-  const bool node = ResolveMeshRole(inputs.config.mesh) == MeshRole::Node;
+  const bool node = ResolveMeshRole(inputs.mesh) == MeshRole::Node;
   ConfigureDht(inputs, node);
   ConfigureDirectory(inputs, node);
 }
@@ -144,12 +155,12 @@ void ProductMesh::ConfigureDht(const QueryInputs& inputs, const bool node_role) 
   if (!mesh_->AmpDht()) {
     return;
   }
-  MeshConfig mesh_cfg = inputs.config.mesh;
+  MeshConfig mesh_cfg = inputs.mesh;
   NormalizeMeshConfig(mesh_cfg);
   const std::vector<mesh::MeshDirectoryNode> directory_nodes =
       inputs.directory_nodes ? inputs.directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5).
-  ConfigureNodeAmpDht(*mesh_, *inputs.identity, inputs.config.mesh, node_role,
+  ConfigureNodeAmpDht(*mesh_, *inputs.identity, inputs.mesh, node_role,
                       CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes), inputs.reach_held_down);
 }
 
@@ -157,11 +168,11 @@ void ProductMesh::ConfigureDirectory(const QueryInputs& inputs, const bool node_
   if (!mesh_->AmpDirectory()) {
     return;
   }
-  MeshConfig mesh_cfg = inputs.config.mesh;
+  MeshConfig mesh_cfg = inputs.mesh;
   NormalizeMeshConfig(mesh_cfg);
   // A refresh asks a couple of providers that are up or answered lately — not every one, and not
   // one the mesh found gone (pp-cpp-mesh docs/PEER_REACH.md, § 5).
-  ConfigureNodeAmpDirectory(*mesh_, node_role, DirectoryQueryKeys(inputs.config, mesh_cfg),
+  ConfigureNodeAmpDirectory(*mesh_, node_role, DirectoryQueryKeys(inputs.directory, mesh_cfg),
                             inputs.choose_directory_peers);
   if (!node_role) {
     return;
@@ -204,6 +215,187 @@ void ProductMesh::Stop() {
 
 void ProductMesh::Release() {
   mesh_.reset();
+}
+
+void ProductMesh::WatchNetwork(std::function<void(const NetworkChange&)> on_change) {
+  if (network_monitor_) {
+    return;
+  }
+  network_monitor_ = std::make_unique<NetworkMonitor>();
+  if (!network_monitor_->Start(std::move(on_change))) {
+    log().info << "network monitor unavailable on this platform";
+  }
+}
+
+void ProductMesh::StopWatchingNetwork() {
+  if (network_monitor_) {
+    network_monitor_->Stop();
+    network_monitor_.reset();
+  }
+}
+
+void ProductMesh::StartLanDiscovery(std::function<void(const mesh::LanMdnsDiscoveredPeer&)> on_peer) {
+  StopLanDiscovery();
+  lan_mdns_ = std::make_unique<mesh::LanMdnsDiscovery>();
+  lan_mdns_->SetOnDiscovered(std::move(on_peer));
+  if (auto started = lan_mdns_->Start(); !started) {
+    log().warning << "LAN mDNS discovery unavailable: " << started.error().message;
+  }
+}
+
+void ProductMesh::AdvertiseOnLan(const std::string& peer_id, const int amp_udp_port) {
+  if (!lan_mdns_ || !lan_mdns_->IsRunning()) {
+    return;
+  }
+  // Empty host_ips → LanMdnsDiscovery enumerates LAN IFs (Amp typically binds 0.0.0.0).
+  lan_mdns_->SetAdvertisement(peer_id, amp_udp_port, {});
+}
+
+std::string MeshDirectoryNodesPath(const std::string& profile_data_dir) {
+  return (std::filesystem::path(profile_data_dir) / "mesh_directory_nodes.json").string();
+}
+
+void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
+                                      std::function<void()> on_updated) {
+  StopDirectoryCache();
+  mesh::IDirectoryClient* client = &directory;
+  directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([client]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
+    // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
+    mesh::DirectoryClientNameDirectory names(*client);
+    auto records = names.ListService("mesh_node");
+    if (!records) {
+      return records.error();
+    }
+    return mesh::MeshDirectoryNodesFromNameRecords(*records);
+  }, AppRuntimeMeshExecutors().blocking);
+  directory_cache_->SetPersistPath(MeshDirectoryNodesPath(profile_data_dir));
+  directory_cache_->LoadPersisted();
+  // N029 nd4: the Amp directory twin first (no worker park), then HTTP on Normal.
+  directory_cache_->SetAsyncFetcher([this, client](std::function<void(Roe<std::vector<mesh::MeshDirectoryNode>>)> done) {
+    auto fetch_http = [client, done]() {
+      AppRuntime::PostWorkerNormal([client, done]() {
+        mesh::DirectoryClientNameDirectory names(*client);
+        auto records = names.ListService("mesh_node");
+        if (!records) {
+          done(records.error());
+          return;
+        }
+        done(mesh::MeshDirectoryNodesFromNameRecords(*records));
+      });
+    };
+    if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+      mesh_->AmpDirectory()->ListMeshNodesAsync([done, fetch_http](mesh::AmpDirectoryProtocol::ListRoe amp_nodes) {
+        if (amp_nodes) {
+          auto rows = mesh::MeshDirectoryNodesFromHits(*amp_nodes);
+          if (!rows.empty()) {
+            done(std::move(rows));
+            return;
+          }
+        }
+        fetch_http();
+      });
+      return;
+    }
+    fetch_http();
+  });
+  directory_cache_->SetOnUpdated(std::move(on_updated));
+  directory_cache_->RequestRefresh();
+}
+
+std::vector<mesh::MeshDirectoryNode> ProductMesh::DirectoryNodesSnapshot() const {
+  return directory_cache_ ? directory_cache_->Snapshot() : std::vector<mesh::MeshDirectoryNode>{};
+}
+
+void ProductMesh::RefreshDirectory() {
+  if (directory_cache_) {
+    directory_cache_->RequestRefresh();
+  }
+}
+
+void ProductMesh::MaybeRefreshDirectory() {
+  if (directory_cache_) {
+    directory_cache_->MaybeRefresh();
+  }
+}
+
+void ProductMesh::StopDirectoryCache() {
+  directory_cache_.reset();
+}
+
+void ProductMesh::StopLanDiscovery() {
+  if (lan_mdns_) {
+    lan_mdns_->Stop();
+    lan_mdns_.reset();
+  }
+}
+
+void ProductMesh::SetMeshInputs(const MeshConnectivityWiringInputs& inputs) {
+  connectivity_->SetDeps(MakeMeshConnectivityDeps(inputs));
+  hop_feed_->SetInputs(inputs);
+}
+
+void ProductMesh::WireMeshObjects() {
+  hop_feed_->Start();  // the policy is in before connectivity wires
+  connectivity_->Wire();
+  media_relay_->Wire();
+}
+
+void ProductMesh::DetachMeshObjects() {
+  media_relay_->ResetRelayClient();
+  connectivity_->ResetDialRegistry();
+}
+
+void ProductMesh::BeginMeshStop() {
+  hop_feed_->Stop();  // its inputs read the mesh
+  connectivity_->InvalidateAsyncOps();
+}
+
+void ProductMesh::DropMediaRelayClient() {
+  media_relay_->ResetRelayClient();
+}
+
+void ProductMesh::EndMeshStop() {
+  connectivity_->ResetAfterMeshStop();
+}
+
+void ProductMesh::RefreshMeshView() {
+  connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
+  hop_feed_->PushSoon();              // seed reachability gates the rendezvous surface
+}
+
+void ProductMesh::PushHopPolicySoon() {
+  hop_feed_->PushSoon();
+}
+
+void ProductMesh::StayReachable(const bool want) {
+  if (!want) {
+    if (stay_reachable_timer_ != 0) {
+      AppRuntime::CancelCoordinatorTimer(stay_reachable_timer_);
+      stay_reachable_timer_ = 0;
+    }
+    return;
+  }
+  if (stay_reachable_timer_ != 0) {
+    return;
+  }
+  // A seed reservation lasts about 30 s; renewing every 20 s keeps contacts able to reach this device by its
+  // PeerId through a seed, with no relay (docs/contracts/ACCOUNT_CARD.md).
+  const auto renew = [this]() {
+    AppRuntime::PostUI([this]() {
+      if (stay_reachable_timer_ != 0 && mesh_) {
+        connectivity_->Rendezvous().ReserveOnBootstrapSeeds();
+      }
+    });
+  };
+  renew();
+  stay_reachable_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::seconds(20), renew);
+}
+
+void ProductMesh::ClearMeshObjects() {
+  StayReachable(false);
+  media_relay_->Clear();
+  hop_feed_->Stop();
+  connectivity_->Clear();
 }
 
 } // namespace pbr

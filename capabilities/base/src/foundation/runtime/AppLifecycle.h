@@ -1,0 +1,77 @@
+#pragma once
+
+#include "common/Logger.h"
+#include "common/PbrCompat.h"
+
+#include <chrono>
+#include <cstdint>
+#include <functional>
+
+namespace pbr {
+
+enum class AppLifecycleState { Foreground, Background };
+
+class AppLifecycle {
+public:
+  /** A listener's handle; RemoveListener takes it back (each owner removes only its own). */
+  using ListenerId = uint64_t;
+  /** Bind `Runtime.Lifecycle`. Idempotent. Called from AppRuntime::Initialize. */
+  static void InitLogging();
+  static logging::Logger& logger();
+
+  static AppLifecycleState Current();
+  static bool IsForeground();
+
+  /**
+   * True when the user is actively attending to the app UI.
+   * Desktop: input-focused and not minimized (clicking another app counts as inattentive).
+   * Mobile: same as IsForeground() (desktop focus/minimize hooks are unused).
+   */
+  static bool IsUserAttentive();
+
+  /** UI/SDL thread only — tracks desktop focus independent of minimize/lifecycle. */
+  static void SetDesktopInputFocused(bool focused);
+  static void SetDesktopMinimized(bool minimized);
+  /**
+   * A desktop window minimized / restored. Minimized is not attentive (alerts notify) but the app
+   * keeps working: calls ring and messages arrive, as in any desktop messenger. Background (paused
+   * work) is the mobile OS's state, not a window's.
+   */
+  static void OnDesktopMinimized();
+  static void OnDesktopRestored();
+
+  /**
+   * P011 — stay connected in the background (opt-in): entering the background then keeps the
+   * app's work running (it still reads not attentive, so alerts notify). Listeners are told on a
+   * change (the Android foreground service follows it).
+   */
+  static void SetStayConnected(bool on);
+  static bool StaysConnected();
+  static ListenerId AddStayConnectedListener(std::function<void(bool)> listener);
+
+  /**
+   * A live session is on (a call ringing or in progress). In the background the app's work keeps
+   * running meanwhile, so the session goes on: a hang-up, a network move, a ring answered from the
+   * phone's own call screen. When it ends there, the work runs kLiveSessionEndGraceMs more (its last
+   * signaling goes out), then pauses again (push only, P010). Any thread.
+   */
+  static void SetLiveSessionOn(bool on);
+  static bool LiveSessionOn();
+  static constexpr std::chrono::milliseconds kLiveSessionEndGraceMs{5000};
+
+  /**
+   * A push woke the app: in the background its work runs for `window` (a newer wake extends it),
+   * long enough to fetch the inbox and ring (P010). Any thread.
+   */
+  static void OpenWakeWindow(std::chrono::milliseconds window);
+
+  static void OnWillEnterBackground();
+  static void OnDidEnterForeground();
+  static void OnLowMemory();
+
+  static ListenerId AddBackgroundListener(std::function<void()> listener);
+  static ListenerId AddForegroundListener(std::function<void()> listener);
+  static void RemoveListener(ListenerId id);
+};
+
+} // namespace pbr

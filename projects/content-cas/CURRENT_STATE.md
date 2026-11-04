@@ -16,8 +16,8 @@
 
 | Piece | Path |
 |-------|------|
-| Types / realms | `src/lib/content/CasTypes.h` |
-| Index | `ObjectIndex.*` → `{profile}/object_index.db` |
+| Types / realms | `capabilities/social/src/lib/content/CasTypes.h` |
+| Index | `IObjectIndex.h` (port); `src/lib/storage/SqliteObjectIndex.*` → `{profile}/object_index.db` (CR024) |
 | Store | `CasStore.*` → `cas/{private\|public}/blocks/{aa}/{bb}/{content_id_hex}` (C010) |
 | Tests | `tests/cas_store_test.cpp` (5 cases) |
 
@@ -46,7 +46,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 
 | Now | Later |
 |-----|-------|
-| Store in `src/lib/content/` (`CasStore`, `ObjectIndex`, `CasLibrary`, `PrivateContent`); chat attachment policy in `src/lib/messaging/` (`AttachmentCache`, `AttachmentPlaintextMemoryCache`) | Peeled 2026-10-20 (C012 update); features wire the two |
+| Store in `capabilities/social/src/lib/content/` (`CasStore`, `IObjectIndex`, `CasLibrary`, `PrivateContent`; one `CasStore` per profile, owned by the conversations hub); chat attachment policy in `capabilities/messaging/src/lib/messaging/` (`AttachmentCache`, `AttachmentPlaintextMemoryCache`) | Peeled 2026-10-20 (C012 update); features wire the two |
 | Chat-specific download/suppression/responders stay messaging/feature | Feature wires `common` contracts across peers |
 
 ## Pin / share / discovery (C013)
@@ -55,7 +55,7 @@ Private blocks: PPBA + `FileCipher` under profile DEK (AAD `cas-private\|{profil
 |-------|--------|
 | Use cases U1–U11 | [USE_CASES.md](USE_CASES.md) |
 | Pin defaults + share modes A–D | Locked in [DECISIONS](DECISIONS.md#c013--pin-defaults-share-modes-directory-vs-catalog) |
-| `ObjectIndex::List` | **Done** |
+| `IObjectIndex::List` | **Done** |
 | `CasStore::PublishFromPrivate` / `Unpublish` | **Done** |
 | `CasLibrary` helper | **Done** — domain tip/store/index; see `CasLibrary.h` (not signatures here) |
 | Settings orchestration | **Done** — `src/feature/settings/CasLibraryCommands.*`; app wires readiness only |

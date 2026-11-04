@@ -6,9 +6,9 @@
 
 #include "gui/BadgeAggregator.h"
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/PskFingerprint.h"
+#include "lib/delivery/PskFingerprint.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/messaging/DirectChatTargetFromContact.h"
+#include "lib/delivery/DirectChatTargetFromContact.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"
@@ -508,7 +508,6 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("find_someone", &ContactsController::FindSomeoneCallback);
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
-    ctor.BindEventCallback("set_trust", &ContactsController::SetTrustCallback);
     ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
     ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
     ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
@@ -701,14 +700,6 @@ void ContactsController::ShareContactCallback(ui::DataModelHandle /*model*/, ui:
   Instance().OnShareContact(MenuPositionBelowEvent(ev));
 }
 
-void ContactsController::SetTrustCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                          const ui::VariantList& args) {
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OnSetTrust(std::string(args[0].Get<ui::String>().c_str()));
-}
-
 void ContactsController::RemoveContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                                const ui::VariantList& /*args*/) {
   Instance().OnRemoveContact();
@@ -752,6 +743,9 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
     return;
   }
   MaybeRefreshContactCard(contact_id);
+  if (contacts_ports_.refresh_contact_profile) {
+    contacts_ports_.refresh_contact_profile(contact_id); // a changed photo or name shows up; silent when fresh
+  }
 
   OpenContactDetailPane();
   DirtyAll();

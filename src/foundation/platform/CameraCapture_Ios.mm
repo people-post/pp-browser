@@ -20,6 +20,7 @@
 @interface PPCameraDelegate : NSObject <UIImagePickerControllerDelegate, UINavigationControllerDelegate> {
 @public
   pbr::CameraCaptureCallback callback;
+  std::function<void(const std::string& name)> preparing; // a video was accepted and is being copied (may be empty)
 }
 @end
 
@@ -41,6 +42,7 @@ bool ForcedVideoCleanFailure() {
 void Finish(PPCameraDelegate* delegate, CameraCaptureOutcome outcome, std::vector<std::string> paths) {
   pbr::CameraCaptureCallback callback = std::move(delegate->callback);
   delegate->callback = nullptr;
+  delegate->preparing = nullptr;
   if (ActivePicker() == delegate) {
     SetActivePicker(nil);
     [delegate release];
@@ -131,6 +133,10 @@ void ExportCleanVideo(AVAsset* asset, NSString* dir, bool mpeg4, void (^done)(NS
   NSString* media_type = info[UIImagePickerControllerMediaType];
   [self retain]; // until the file has been written
   if ([media_type isEqualToString:UTTypeMovie.identifier]) {
+    // The export below takes a while on a long clip: let the caller show "Sending…" meanwhile.
+    if (preparing) {
+      preparing(std::string()); // the camera has no file name yet
+    }
     [self finishVideo:info[UIImagePickerControllerMediaURL]];
   } else {
     [self finishPhoto:info[UIImagePickerControllerOriginalImage]];
@@ -254,8 +260,8 @@ void PresentCamera(SDL_Window* window, PPCameraDelegate* delegate, pbr::CameraCa
 
 namespace pbr {
 
-void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video_seconds,
-                       uint64_t /*max_video_bytes*/, CameraCaptureCallback callback) {
+void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video_seconds, uint64_t /*max_video_bytes*/,
+                       CameraCaptureCallback callback, std::function<void(const std::string& name)> on_preparing) {
   if (!callback) {
     return;
   }
@@ -263,7 +269,7 @@ void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video
   // small, and the caller checks the size again.
   if (![NSThread isMainThread]) {
     dispatch_async(dispatch_get_main_queue(), ^{
-      ShowCameraCapture(window, kind, max_video_seconds, 0, callback);
+      ShowCameraCapture(window, kind, max_video_seconds, 0, callback, on_preparing);
     });
     return;
   }
@@ -285,6 +291,7 @@ void ShowCameraCapture(SDL_Window* window, CameraCaptureKind kind, int max_video
     ClearLeftoversOnce();
     PPCameraDelegate* delegate = [[PPCameraDelegate alloc] init]; // released in Finish
     delegate->callback = std::move(callback);
+    delegate->preparing = std::move(on_preparing);
     SetActivePicker(delegate); // held for the permission prompt too
     if (status == AVAuthorizationStatusAuthorized) {
       PresentCamera(window, delegate, kind, max_video_seconds);

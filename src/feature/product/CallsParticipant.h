@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/calls/CallStack.h"
+#include "feature/product/ProductMesh.h"
 #include "feature/conversations/HubParticipant.h"
 #include "common/thread/ThreadTypes.h"
 
@@ -17,6 +18,8 @@ namespace pbr {
  */
 class CallsParticipant : public HubParticipant {
 public:
+  /** `mesh` lends the neutral mesh objects (reach, the media relay client); it outlives the participant. */
+  explicit CallsParticipant(ProductMesh& mesh) : mesh_(mesh) {}
   CallStack& Stack() { return stack_; }
   /** Whether the active local call is this thread's (origin / peer / group). UI thread. */
   bool ThreadInActiveCall(const Thread& thread);
@@ -37,11 +40,13 @@ public:
   void OnMeshStopping(const std::function<void()>& abort_circuits) override;
   void OnMeshStopped() override;
   void OnObservedAddressChanged() override;
+  void OnGroupRosterChanged(const GroupRosterChange& change) override;
   void OnLocalNetworkChanged(const NetworkChange& change, const mesh::LocalNetworkChange* local) override;
   void OnShutdownRequested() override;
   bool WantsEphemeralListen() const override;
 
 private:
+  ProductMesh& mesh_;
   CallStack stack_;
 };
 

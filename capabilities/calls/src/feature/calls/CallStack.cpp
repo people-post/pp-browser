@@ -1,0 +1,799 @@
+#include "feature/calls/CallStack.h"
+#include "lib/calls/CallControlFamily.h"
+
+#include "common/MeshConfig.h"
+#include "lib/calls/CallTypes.h"
+#include "lib/calls/PeerCapsLogic.h"
+#include "foundation/runtime/AppLifecycle.h"
+#include "common/runtime/AppRuntime.h"
+#include "common/media/MediaSessionsOwner.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/reachability/AmpObservedAddrs.h"
+#include "feature/calls/CallDirectPath.h"
+#include "lib/calls/CallLifecycleTypes.h"
+
+#include <functional>
+#include <optional>
+#include <type_traits>
+#include <variant>
+#include <vector>
+#include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
+
+namespace pbr {
+
+CallStack::CallStack() {
+  redirectLogger("CallStack");
+  media_plane_ = std::make_unique<CallMediaPlane>();
+  publish_hook_ = executor_.AddAfterTaskHook([this]() { PublishUiState(); });
+}
+
+CallStack::~CallStack() {
+  chrome_self_.Invalidate();
+  Shutdown();
+  // Last, on the owner: nothing queued or enqueued during Shutdown runs after this (refs held
+  // elsewhere go quiet), and no hook or event is mid-flight while the members are destroyed.
+  executor_.RunAndWait([this]() {
+    loop_.Close();
+    executor_.RemoveAfterTaskHook(publish_hook_);
+  });
+}
+
+// --- hub-facing lifecycle edges: run on the calls owner, the caller waits (t2b-3) ---------------
+
+void CallStack::BuildSessions(const CallStackDeps& deps) {
+  executor_.RunAndWait([&]() { BuildSessionsOnOwner(deps); });
+}
+
+void CallStack::OnMeshServicesStarted() {
+  executor_.RunAndWait([this]() { OnMeshServicesStartedOnOwner(); });
+}
+
+void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+  executor_.RunAndWait([&]() { PrepareForMeshStopOnOwner(abort_inflight_circuit); });
+}
+
+void CallStack::FinishMeshStop() {
+  executor_.RunAndWait([this]() { FinishMeshStopOnOwner(); });
+}
+
+// --- edge adapters: other threads enqueue; Dispatch routes on the owner ------------------------------
+
+void CallStack::OnLocalNetwork(const MobilityAttachment& attachment, const bool changed, const bool moved) {
+  loop_.Enqueue(calls_event::LocalNetworkChanged{attachment, changed, moved});
+}
+
+void CallStack::OnObservedAddressChanged() {
+  loop_.Enqueue(calls_event::ObservedAddressChanged{});
+}
+
+void CallStack::OnGroupMembersGone(const std::string& group_id, std::optional<std::string> identity) {
+  loop_.Enqueue(calls_event::GroupMembersGone{group_id, std::move(identity)});
+}
+
+void CallStack::ReloadMobilityOverride() {
+  loop_.Enqueue(calls_event::MobilityOverrideChanged{});
+}
+
+void CallStack::Dispatch(CallStackEvent& event) {
+  const auto now = CallPathMobility::Clock::now();
+  std::visit(
+      [this, now](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, calls_event::LocalNetworkChanged>) {
+          last_attachment_ = e.attachment;
+          attachment_known_ = true;
+          AfterMobilityEvent(mobility_.OnAttachment(e.attachment, e.changed, now));
+          if (e.moved && call_sessions_) {
+            call_device_->OnLocalNetworkMoved();
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::ObservedAddressChanged>) {
+          AfterMobilityEvent(mobility_.OnObservedAddressChanged(now));
+        } else if constexpr (std::is_same_v<E, calls_event::MobilityOverrideChanged>) {
+          ApplyMobilityOverrideOnOwner();
+        } else if constexpr (std::is_same_v<E, calls_event::MobilityWake>) {
+          mobility_wake_.Fired();
+          AfterMobilityEvent(mobility_.OnWake(now));
+        } else if constexpr (std::is_same_v<E, calls_event::CallControlReceived>) {
+          if (!call_sessions_) {
+            return;
+          }
+          if (auto applied = call_sessions_->ApplyInboundControl(e.message, e.sender_identity, e.relay_created_at_ms,
+                                                                 e.relay_server_time_ms);
+              !applied) {
+            log().warning << "inbound call control failed message_id=" << e.message.id
+                          << " err=" << applied.error().message;
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::RelayChosen>) {
+          if (call_sessions_) {
+            call_device_->ReachSignals().AnnounceCircuitR1(e.circuit_r1);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::MeshPeerIdLearned>) {
+          if (call_sessions_) {
+            call_device_->NoteMeshPeerIdForRelay(e.account_identity, e.peer_id);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::GroupMembersGone>) {
+          if (call_sessions_) {
+            call_device_->Workflow().OnGroupMembersGone(e.group_id, e.identity);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::SessionsCommand>) {
+          e.run(call_sessions_.get());
+        } else if constexpr (std::is_same_v<E, calls_event::ForSessions>) {
+          if (call_sessions_ && e.generation == sessions_generation_) {
+            call_device_->Handle(e.event);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::SignalingPunchRequested>) {
+          if (!call_sessions_) {
+            e.done(Error("Calls unavailable"));
+            return;
+          }
+          call_device_->ReachSignals().RequestSignalingPunch(e.target_peer_id, e.my_addrs, std::move(e.done));
+        } else {
+          static_assert(!sizeof(E), "route every CallStackEvent");
+        }
+      },
+      event);
+}
+
+void CallStack::ApplyMobilityOverrideOnOwner() {
+  const auto cfg = mesh_config();
+  const auto pinned = ResolveMobilityOverride(cfg ? cfg->mobility : std::string("auto"));
+  AfterMobilityEvent(mobility_.SetOverride(pinned, CallPathMobility::Clock::now()));
+}
+
+void CallStack::AfterMobilityEvent(const bool local_class_changed) {
+  mobility_wake_.ArmAt(mobility_.NextWakeAt(CallPathMobility::Clock::now()));
+  if (!local_class_changed || !call_sessions_) {
+    return;
+  }
+  // Our class flipped mid-call: tell the peer (caps_update) and re-plan the live call.
+  if (auto active = reads_->ActiveLocalCall(); active && active->has_value()) {
+    call_device_->ReachSignals().AnnounceCapsUpdate();
+    NotifyPathPolicyChangedOnOwner((*active)->call_id);
+  }
+}
+
+void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
+  if (call_sessions_) {
+    call_device_->OnPathPolicyChanged(call_id);
+  }
+}
+
+void CallStack::SetInboundCallAudience(const mesh::InboundAudience audience) {
+  inbound_call_audience_.store(audience, std::memory_order_relaxed);
+  executor_.RunAndWait([this, audience]() {
+    if (call_sessions_) {
+      call_sessions_->SetInboundCallAudience(audience);
+    }
+  });
+}
+
+CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
+  const CallPathPolicy policy = mobility_.PolicyFor(call_id);
+  if (!deps_.address_disclosure) {
+    return policy;
+  }
+  const auto disclosure = deps_.address_disclosure->Snapshot();
+  const LiveCall* call = call_sessions_ ? call_device_->Live().Find(call_id) : nullptr;
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == mesh::DirectAudience::Everyone) {
+    return policy;
+  }
+  // Outside the audience — or, with a narrower audience, a peer not known yet: disclosure is the risk.
+  return RelayOnlyPolicy(policy);
+}
+
+void CallStack::DetachMeshMedia() {
+  executor_.RunAndWait([this]() { DetachMeshMediaOnOwner(); });
+}
+
+void CallStack::RebindMeshMedia() {
+  executor_.RunAndWait([this]() { RebindMeshMediaOnOwner(); });
+}
+
+void CallStack::ResetSessions() {
+  executor_.RunAndWait([this]() { ResetSessionsOnOwner(); });
+}
+
+void CallStack::AbortCallMediaForShutdown() {
+  executor_.RunAndWait([this]() { AbortCallMediaForShutdownOnOwner(); });
+}
+
+void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
+                                                 const std::vector<std::string>& multiaddrs) {
+  executor_.RunAndWait([&]() { RegisterCallPeerListenMultiaddrsOnOwner(identity, multiaddrs); });
+}
+
+void CallStack::PostToSessions(std::function<void(CallSessionManager* calls)> run) {
+  loop_.Enqueue(calls_event::SessionsCommand{std::move(run)});
+}
+
+void CallStack::RunOnOwner(const std::function<void(CallDevice&)>& op) {
+  executor_.RunAndWait([&]() {
+    if (call_device_) {
+      op(*call_device_);
+    }
+  });
+}
+
+void CallStack::PublishUiState() {
+  CallUiState state;
+  if (call_sessions_) {
+    // What the calls show (V037), projected from the calls this device has.
+    const LiveCalls& live = call_device_->Live();
+    state.phase = live.Phase();
+    state.media_status = live.Status();
+    state.media_path = live.Path();
+    if (const LiveCall* shown = live.Shown()) {
+      state.active_call_id = shown->Id();
+      state.live_since_ms = shown->MediaProgress().live_since_ms;
+      state.alone_until_ms = call_device_->AloneUntilMs(shown->Id());
+      state.media_activity = shown->Activity();
+    }
+    state.accepting_call_id = call_device_->AcceptingCallId();
+    if (const LiveCall* ring = live.TheRing()) {
+      state.last_ring_call_id = ring->Id();
+    }
+    state.last_error = call_device_->LastError();
+    if (const LiveCall* ended = call_device_->Live().LastEndedByPeer()) {
+      state.remote_ended_call_id = ended->Id();
+      state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
+    }
+    state.recovery = call_device_->Recovery();
+    state.direct_connect_failed = call_device_->IsDirectConnectFailed();
+    state.direct_connect_missing_mic = call_device_->DirectConnectMissingMic();
+    state.direct_connect_seed_unreachable = call_device_->DirectConnectSeedUnreachable();
+    state.last_media_error = call_device_->PeekLastMediaError();
+    state.hop_health = call_device_->HopHealth();
+    state.media_path_kind = call_device_->MediaPathKind();
+    state.media_link = call_device_->MediaLinkCounters();
+  }
+  state.want_ephemeral_listen = want_ephemeral_listen_;
+  state.connect_in_flight = call_sessions_ && call_device_->IsDirectConnectInFlight();
+  state.sessions_identity = call_sessions_.get();
+  state.available = call_sessions_ != nullptr;
+  ui_state_.Set(std::move(state));
+}
+
+std::shared_ptr<const MeshConfig> CallStack::mesh_config() const {
+  auto cfg = deps_.mesh_config ? deps_.mesh_config() : nullptr;
+  return cfg ? cfg : std::make_shared<const MeshConfig>();
+}
+
+void CallStack::SyncMediaPlaneDeps() {
+  if (!media_plane_) {
+    return;
+  }
+  CallMediaPlaneDeps plane_deps;
+  plane_deps.mesh = deps_.mesh;
+  plane_deps.mesh_config = deps_.mesh_config;
+  plane_deps.list_directory_nodes = deps_.list_directory_nodes;
+  plane_deps.list_dht_nodes = deps_.list_dht_nodes;
+  plane_deps.seed_dial_ok = deps_.seed_dial_ok;
+  plane_deps.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
+  plane_deps.peer_has_media_relay = [this](const std::string& peer_id) {
+    if (call_sessions_ && call_device_->PeerHasMediaRelayCap(peer_id)) {
+      return true;
+    }
+    // Mesh directory / DHT ads — SoftMigrate must not wait for Invite/Accept caps (V030).
+    if (deps_.list_directory_nodes &&
+        PeerHasMediaRelayInDirectory(peer_id, deps_.list_directory_nodes())) {
+      return true;
+    }
+    if (deps_.list_dht_nodes && PeerHasMediaRelayInDirectory(peer_id, deps_.list_dht_nodes())) {
+      return true;
+    }
+    return false;
+  };
+  plane_deps.list_media_relay_peers = [this]() {
+    std::vector<std::string> from_caps;
+    if (call_sessions_) {
+      from_caps = call_device_->ListMediaRelayCapablePeerIds();
+    }
+    const std::vector<mesh::MeshDirectoryNode> directory =
+        deps_.list_directory_nodes ? deps_.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+    const std::vector<mesh::MeshDirectoryNode> dht =
+        deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+    return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
+  };
+  plane_deps.note_mesh_peer_id_for_relay = [loop = loop_.Share()](const std::string& account,
+                                                                   const std::string& peer_id) {
+    loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
+  };
+  media_plane_->SetDeps(std::move(plane_deps));
+  media_plane_->SetMesh(connectivity(), media_relay());
+  BindMeshMediaHooks();
+}
+
+void CallStack::BindMeshMediaHooks() {
+  mesh::MeshConnectivity* shared = connectivity();
+  if (!shared) {
+    return;
+  }
+  // Connectivity runs these on its owner / Amp IO: hop to the calls owner.
+  // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
+  // The hooks hold the loop's ref, not the stack: connectivity outlives it.
+  shared->SetOnRelayChosen(
+      [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
+  // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
+  shared->SetSignalingPunch([loop = loop_.Share()](const std::string& target_peer_id,
+                                                   const std::vector<std::string>& my_addrs,
+                                                   std::function<void(Roe<void>)> on_done) {
+    loop.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
+  });
+}
+
+void CallStack::DetachMeshMediaOnOwner() {
+  if (call_sessions_) {
+    call_device_->SetMediaRelayDeps({});
+    call_device_->DetachDirectPathReach();
+  }
+}
+
+void CallStack::RebindMeshMediaOnOwner() {
+  SyncMediaPlaneDeps();
+  BindMediaProducts();
+  ApplyMobilityOverrideOnOwner();
+}
+
+void CallStack::BindMediaProducts() {
+  if (!media_plane_ || !call_sessions_ || !call_session_store_ || !call_media_keys_ ||
+      !call_media_engine_) {
+    return;
+  }
+  CallDirectPathDeps direct = media_plane_->DirectPathDeps();
+  direct.path_policy = [this](const std::string& call_id) { return PathPolicyFor(call_id); };
+  if (direct.diag_env) {
+    // The attachment is the stack's (the mesh knows nothing of cellular); both are read on the owner.
+    direct.diag_env = [this, mesh_env = std::move(direct.diag_env)](const std::string& peer_key) {
+      CallConnectEnv env = mesh_env(peer_key);
+      env.attachment_known = attachment_known_;
+      env.attachment = last_attachment_;
+      return env;
+    };
+  }
+  direct.advertised_relays = [this](const std::string& call_id) {
+    return peer_parked_.call_id == call_id ? peer_parked_.relays : std::vector<std::string>{};
+  };
+  call_device_->AttachDirectPath(std::move(direct));
+  call_device_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
+  // Call state ports (mesh stop cleared them): one bind point with BuildSessions.
+  BindCallState();
+  PublishUiState();
+}
+
+Roe<void> CallStack::InitializeStores(CallStores stores) {
+  Roe<void> result;
+  executor_.RunAndWait([&]() { result = InitializeStoresOnOwner(std::move(stores)); });
+  return result;
+}
+
+Roe<void> CallStack::InitializeStoresOnOwner(CallStores stores) {
+  if (!stores.sessions || !stores.media_keys) {
+    return Error("Call stores missing");
+  }
+  call_session_store_ = std::move(stores.sessions);
+  call_media_keys_ = std::move(stores.media_keys);
+  at_rest_ = std::move(stores.at_rest);
+  call_media_engine_ = std::make_unique<MediaEngine>();
+  if (!media_plane_) {
+    media_plane_ = std::make_unique<CallMediaPlane>();
+  }
+  return {};
+}
+
+void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  if (call_sessions_) {
+    // The manager holds every live call's state (ringing, accepting, media): rebuilding it ended
+    // a call already ringing or in progress. Its ports reach the owner's current objects.
+    log().info << "BuildSessions: sessions already built; kept";
+    return;
+  }
+  deps_ = deps;
+  reads_ = std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads,
+                                       deps_.delivery.group_members, deps_.initiation_billing);
+  call_device_ = std::make_unique<CallDevice>(*deps_.threads, *deps_.transcript, *deps_.contacts, *deps_.account,
+                                              *call_session_store_, *reads_, *call_media_keys_, deps_.delivery,
+                                              *call_media_engine_);
+  call_sessions_ = std::make_unique<CallSessionManager>(*call_device_);
+  call_device_->SetInitiationBillingStore(deps_.initiation_billing);
+  BindSessionOutbox();
+  BindCallControlInbound();
+  // No manager tracks the calls left open in the store (a previous run, or one reset since).
+  call_sessions_->AbandonOrphanedCallsAfterRestart();
+  call_device_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
+  call_device_->SetMeshGlue(MakeMeshGlue());
+  call_sessions_->SetInboundCallAudience(
+      inbound_call_audience_.load(std::memory_order_relaxed)); // a rebuilt session manager keeps the choice
+  BindSessionMeshReach();
+  BindCallState();
+  RebindMeshMedia();
+}
+
+void CallStack::BindSessionOutbox() {
+  // The manager's events come back through the queue; one from a manager since rebuilt is dropped.
+  // Copies travel into completions other owners hold (park, attach, quote): they keep the loop's
+  // ref, never the stack, so a late one after teardown is a no-op.
+  const uint64_t generation = ++sessions_generation_;
+  OwnerOutbox<SessionEvent>::Sink sink;
+  sink.emit = [loop = loop_.Share(), generation](SessionEvent event) {
+    loop.Enqueue(calls_event::ForSessions{generation, std::move(event)});
+  };
+  sink.after = [loop = loop_.Share(), generation](std::chrono::milliseconds delay, SessionEvent event) {
+    return loop.After(delay, calls_event::ForSessions{generation, std::move(event)});
+  };
+  sink.cancel = [loop = loop_.Share()](OwnerExecutor::TimerId id) { loop.Cancel(id); };
+  call_device_->SetOutbox(OwnerOutbox<SessionEvent>(std::move(sink)));
+}
+
+void CallStack::BindCallControlInbound() {
+  if (!deps_.system_controls) {
+    return;
+  }
+  CallControlFamilyPorts inbound;
+  // Receive threads hand call control to the calls owner (thread-ownership t2a, T003): fire and
+  // forget with a copy — ApplyInboundControl only reads the message; failures are logged there.
+  inbound.receive = [loop = loop_.Share()](const ThreadMessage& message, const SystemControlContext& context) {
+    loop.Enqueue(calls_event::CallControlReceived{message, context.sender_identity, context.relay_created_at_ms,
+                                                  context.relay_server_time_ms});
+  };
+  inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
+  deps_.system_controls->Bind(MakeCallControlFamily(std::move(inbound)));
+}
+
+/** What the sessions read about this node: listen addrs, mesh PeerId, caps; and where peers' addrs go. */
+CallMeshGlue CallStack::MakeMeshGlue() {
+  CallMeshGlue glue;
+  glue.note_peer_device = deps_.note_peer_device;
+  glue.prefetch_peer_reach = [prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
+    // Warm only (async association / DHT lookup) — on the hub's thread, which owns what it reads.
+    // Captures the hub's port, not this stack: a teardown may race the post.
+    if (prefetch) {
+      AppRuntime::PostUI([prefetch, identity]() { prefetch(identity); });
+    }
+  };
+  glue.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
+  glue.address_disclosure = deps_.address_disclosure;
+  // Providers read the connectivity owner's published view of this node's mesh (never the
+  // MeshHost the hub may be tearing down under a running call flow).
+  glue.local_mesh_peer_id = [this]() -> std::string { return LocalMeshView()->local_peer_id; };
+  glue.on_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+    if (mobility_.NoteRemote(call_id, caps.mobility)) {
+      NotifyPathPolicyChangedOnOwner(call_id);
+    }
+  };
+  glue.local_peer_caps = [this]() { return LocalPeerCaps(); };
+  // H013: what our CallAccept advertises (the published view, never the MeshHost) and what the
+  // answerer's advertised (kept for the call our reach is for: one 1:1 call reaches at a time).
+  glue.parked_relays = [this]() { return LocalMeshView()->parked_relays; };
+  glue.on_peer_parked_relays = [this](const std::string& call_id, const std::vector<std::string>& relays) {
+    peer_parked_ = PeerParkedRelays{call_id, relays};
+  };
+  glue.register_peer_listen_multiaddrs = [this](const std::string& identity,
+                                                const std::vector<std::string>& multiaddrs) {
+    RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
+  };
+  // Connectivity: park on org hops so this peer is ServeDial-reachable.
+  glue.ensure_circuit_ready = [this]() {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
+      shared->Rendezvous().ReserveOnBootstrapSeeds();
+    }
+  };
+  // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
+  glue.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
+      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
+    } else {
+      done(false);
+    }
+  };
+  return glue;
+}
+
+/** This node's caps for invite / accept / caps update (V030, k6). */
+CallPeerCaps CallStack::LocalPeerCaps() const {
+  CallPeerCaps caps;
+  caps.v = kCallPeerCapsVersion;
+  caps.present = true;
+  caps.mobility = LocalMobility();
+  // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
+  const auto view = LocalMeshView();
+  const auto cfg = mesh_config();
+  caps.media_relay = MeshRoleOf(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up &&
+                     view->media_relay_started;
+  return caps;
+}
+
+/** Connectivity for the sessions: circuit readiness / park, and the reach signals' mesh side. */
+void CallStack::BindSessionMeshReach() {
+  CallReachSignals::MeshPorts reach;
+  reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
+      shared->Rendezvous().PreferLateReserve(relay_peer_id);
+    }
+  };
+  reach.local_punch_addrs = [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; };
+  reach.punch_burst = [this](const std::vector<std::string>& peer_addrs, int window_ms,
+                             std::function<void(Roe<void>)> on_done) {
+    mesh::MeshConnectivity* shared = connectivity();
+    if (!shared) {
+      if (on_done) {
+        on_done(Error("amp punch unavailable"));
+      }
+      return;
+    }
+    shared->SignalingPunchBurstAsync(peer_addrs, window_ms, std::move(on_done));
+  };
+  call_device_->ReachSignals().SetMeshPorts(std::move(reach));
+}
+
+void CallStack::OnMeshServicesStartedOnOwner() {
+  SyncMediaPlaneDeps();
+  if (media_plane_) {
+    media_plane_->OnMeshStarted();
+  }
+  BindMediaProducts();
+  ApplyMobilityOverrideOnOwner();
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial) {
+  BindTestMediaPath(transport, dial, nullptr);
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                  mesh::ICircuitHopReach* circuit_reach) {
+  BindTestMediaPath(transport, dial, circuit_reach, nullptr);
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                  mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay) {
+  executor_.RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach, relay); });
+}
+
+void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                         mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay) {
+  SyncMediaPlaneDeps();
+  DetachMeshMedia();
+  if (media_plane_) {
+    media_plane_->BindTestMediaPath(transport);
+  }
+  if (mesh::MeshConnectivity* shared = connectivity()) {
+    // Reach runs on a lane of its own, as on the mesh's io lane; Manual runtimes drain it with the owners.
+    if (!test_lane_) {
+      test_lane_ = AppRuntime::MakeLaneForTesting();
+    }
+    shared->BindTestPath(dial, circuit_reach, test_lane_);
+  }
+  if (mesh::MeshMediaRelay* relay_host = media_relay()) {
+    relay_host->BindTestRelay(relay);
+  }
+  BindMediaProducts();
+}
+
+bool CallStack::HasActiveLocalCall() {
+  // Any thread (hub, receive paths, shutdown marks): the owner's snapshot, then the durable store.
+  if (UiState()->want_ephemeral_listen) {
+    return true;
+  }
+  const CallReads* reads = Reads();
+  if (!reads) {
+    return false;
+  }
+  auto active = reads->ActiveLocalCall();
+  return active && active->has_value();
+}
+
+bool CallStack::WantEphemeralListen() const {
+  if (executor_.IsCurrent()) {
+    return want_ephemeral_listen_;
+  }
+  return UiState()->want_ephemeral_listen;
+}
+
+void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  DetachMeshMedia();
+  // The 1:1 path lets go of its streams between two circuit aborts, then the transport stops.
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
+  if (call_sessions_) {
+    call_device_->PrepareDirectPathForStop();
+  }
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
+  if (media_plane_) {
+    media_plane_->StopTransport();
+  }
+}
+
+void CallStack::FinishMeshStopOnOwner() {
+  if (call_sessions_) {
+    call_device_->DropDirectPath(); // before its transport goes
+  }
+  if (media_plane_) {
+    media_plane_->FinishMeshStop();
+  }
+}
+
+void CallStack::AbortCallMediaForShutdownOnOwner() {
+  // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
+  if (mesh::MeshHost* m = mesh()) {
+    m->AbortInflightCircuitRequests();
+  }
+  // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
+  if (media_plane_) {
+    media_plane_->DetachRelayClient();
+  }
+  // Tell the peer the call ended (fire-and-forget relay Critical send) so they StopMedia /
+  // leave Connecting instead of sitting on a half-open stream after we detach.
+  if (call_sessions_) {
+    if (auto active = reads_->ActiveLocalCall(); active && active->has_value()) {
+      log().info << "AbortCallMediaForShutdown LeaveCall call_id=" << (*active)->call_id;
+      (void)call_sessions_->LeaveCall((*active)->call_id, LiveCallEndReason::Shutdown);
+    }
+  }
+  if (call_sessions_) {
+    call_device_->PrepareDirectPathForStop();
+  }
+  if (media_plane_) {
+    media_plane_->DetachTransport();
+  }
+}
+
+bool CallStack::IsConnectWorkerInflight() const {
+  return UiState()->connect_in_flight;
+}
+
+std::shared_ptr<const mesh::MeshLocalView> CallStack::LocalMeshView() const {
+  mesh::MeshConnectivity* shared = connectivity();
+  return shared ? shared->LocalView() : std::make_shared<const mesh::MeshLocalView>();
+}
+
+std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
+  const auto view = LocalMeshView();
+  const bool amp_up = view->amp_up && !view->amp_listen_multiaddr.empty();
+  if (!amp_up) {
+    return {};
+  }
+
+  const bool listening =
+      MeshRoleOf(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
+  if (!listening) {
+    return {};
+  }
+
+  std::vector<std::string> addrs = view->advertised_listen_multiaddrs;
+  if (addrs.empty()) {
+    addrs.push_back(view->amp_listen_multiaddr);
+  }
+  // B40: a peer dialed our 169.254.x link-local address first. Never advertise addresses the
+  // peer cannot dial (link-local, wildcard, loopback) in call signaling.
+  std::erase_if(addrs, [](const std::string& ma) { return !mesh::IsUsableAdpListen(ma); });
+  return mesh::RankAmpDialMultiaddrs(std::move(addrs));
+}
+
+void CallStack::RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
+                                                 const std::vector<std::string>& multiaddrs) {
+  if (media_plane_) {
+    media_plane_->RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
+  }
+}
+
+CallSessionManager* CallStack::Calls() {
+  return call_sessions_.get();
+}
+
+CallDevice* CallStack::Device() {
+  return call_device_.get();
+}
+
+void CallStack::BindCallState() {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  if (!call_sessions_) {
+    return;
+  }
+  call_state_binds_.fetch_add(1, std::memory_order_relaxed);
+  call_device_->SetOnCallStateChanged([this]() { OnCallStateChangedOnOwner(); });
+  OnCallStateChangedOnOwner();
+}
+
+void CallStack::SetOnChromeRefresh(std::function<void()> fn) {
+  executor_.RunAndWait([this, &fn]() { on_chrome_refresh_ = std::move(fn); });
+}
+
+void CallStack::OnCallStateChangedOnOwner() {
+  const bool want = call_sessions_ && call_device_->Live().Phase() != CallPhase::Idle;
+  // A call keeps the app working in the background (its signaling goes on).
+  AppLifecycle::SetLiveSessionOn(want);
+  if (want != want_ephemeral_listen_) {
+    want_ephemeral_listen_ = want;
+    log().info << "WantEphemeralListen=" << (want ? 1 : 0)
+               << " phase=" << CallPhaseName(call_sessions_ ? call_device_->Live().Phase() : CallPhase::Idle);
+    SyncHubEphemeralListen();
+  }
+  // GUI boundary: the chrome refresh runs on UI.
+  if (!on_chrome_refresh_) {
+    return;
+  }
+  AppRuntime::PostUI(chrome_self_.Bind([refresh = on_chrome_refresh_]() { refresh(); }));
+}
+
+void CallStack::SyncHubEphemeralListen() {
+  if (!deps_.sync_mobile_ephemeral_listen) {
+    return;
+  }
+  // The hub reads WantEphemeralListen from the snapshot: publish before it looks.
+  if (executor_.IsCurrent()) {
+    PublishUiState();
+  }
+  if (AppRuntime::CurrentlyOnUI()) {
+    deps_.sync_mobile_ephemeral_listen();
+    return;
+  }
+  // Owner / receive threads: the hub (N025 listen) runs on UI.
+  AppRuntime::PostUI([sync = deps_.sync_mobile_ephemeral_listen]() { sync(); });
+}
+
+void CallStack::ResetSessionsOnOwner() {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  if (deps_.system_controls) {
+    deps_.system_controls->Unbind("call");
+  }
+  call_sessions_.reset();
+  call_device_.reset();
+  reads_.reset();
+  ++sessions_generation_;       // its events still queued go nowhere
+  chrome_self_.Invalidate();    // refreshes queued for the dropped sessions (a later bind posts fresh ones)
+  OnCallStateChangedOnOwner();  // nothing is shown any more
+  PublishUiState();
+}
+
+void CallStack::Shutdown() {
+  executor_.RunAndWait([this]() {
+    if (call_sessions_) {
+      call_device_->DropFollowUps();
+      call_device_->SetOnCallStateChanged({});
+    }
+    chrome_self_.Invalidate();  // no chrome refresh after shutdown
+  });
+  // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live. From the
+  // caller, not the owner: the drain pumps UI and the owners.
+  if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
+    log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
+  }
+  executor_.RunAndWait([this]() { ReleaseOnOwner(); });
+}
+
+void CallStack::ReleaseOnOwner() {
+  PP_ASSERT_ON_OWNER(kMediaSessionsOwner);
+  mobility_wake_.Disarm();
+  DetachMeshMedia();
+  if (mesh::MeshConnectivity* shared = connectivity()) {
+    shared->SetOnRelayChosen({});
+    shared->SetSignalingPunch({});
+  }
+  // Capture / receive threads call into the bridge (send callback): stop them before it goes.
+  if (call_media_engine_ && (call_media_engine_->IsActive() || call_media_engine_->IsPacketMode())) {
+    call_media_engine_->Stop();
+  }
+  if (call_sessions_) {
+    call_device_->DropDirectPath(); // before its transport goes with the plane
+  }
+  if (media_plane_) {
+    media_plane_->Clear();
+  }
+  call_sessions_.reset();
+  call_device_.reset();
+  reads_.reset();
+  call_media_engine_.reset();
+  at_rest_.clear();
+  call_media_keys_.reset();
+  call_session_store_.reset();
+  PublishUiState();
+}
+
+
+} // namespace pbr

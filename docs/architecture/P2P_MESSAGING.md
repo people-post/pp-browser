@@ -2,13 +2,13 @@
 
 **Tier:** architecture
 
-Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI sessions, direct, and group threads; local persistence as source of truth; HTTP relay/directory/registration transport against Brief by default (`https://www.brief.global/api/relay`).
+Person-to-person chat in pp-browser uses a **foundation-first** architecture: one `ThreadMessage` model for AI sessions, direct, and group threads; local persistence as source of truth; HTTP relay/directory/registration transport against the configured backend origin (`https://backend.example.test/api/relay`).
 
 **Normative wire shapes:** [WIRE_SCHEMAS.md](../contracts/WIRE_SCHEMAS.md). **E2E crypto:** [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md). **Compatibility:** [COMPATIBILITY.md](../contracts/COMPATIBILITY.md).
 
 ## Service resolution
 
-The conversations hub (`ConversationsHub`) builds the HTTP clients from the configured `base_url`s: the relay's message client is messaging's ([`lib/messaging/HttpRelayClient`](../../src/lib/messaging/HttpRelayClient.h), behind the [`IRelayClient`](../../src/lib/messaging/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
+The conversations hub (`ConversationsHub`) holds the backend's clients (`lib/delivery/BackendClientSet`, built from the configured `base_url`s, the app's platform defaults filling empty ones): the relay's message client is delivery's ([`lib/delivery/HttpRelayClient`](../../capabilities/delivery/src/lib/delivery/HttpRelayClient.h), behind the [`IRelayClient`](../../capabilities/delivery/src/lib/delivery/RelayClients.h) port, signing with `RelayMessageSignPayload` on the relay API header); directory, registration, push and blobs are net's (`lib/net`). An empty `base_url` leaves the client unset (production defaults always fill it).
 
 Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always calls `IRelayClient` / `IDirectoryClient` / `IRegistrationClient`, never an implementation. See [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 
@@ -23,7 +23,7 @@ Native messaging code (`MeshDeliveryOrchestrator`, `MessagingTools`) always call
 | `PP_BROWSER_RELAY_INTEGRATION_PEER` | Peer `relay_user_id` for history query |
 | `PP_BROWSER_RELAY_INTEGRATION_SIGN_KEY_HEX` | Ed25519 seed (hex) for relay API signing |
 
-CI constructs `MockRelayClient` (`lib/messaging/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
+CI constructs `MockRelayClient` (`lib/delivery/testing`) in unit tests; `pp_browser_relay_live_integration_test` skips when env is unset.
 
 ## Data model
 
@@ -69,9 +69,9 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
 ```json
 {
   "data_dir": "~/.local/share/pp-browser",
-  "relay": { "base_url": "https://www.brief.global/api/relay" },
-  "directory": { "base_url": "https://www.brief.global/api/relay" },
-  "registration": { "base_url": "https://www.brief.global/api/relay" },
+  "relay": { "base_url": "https://backend.example.test/api/relay" },
+  "directory": { "base_url": "https://backend.example.test/api/relay" },
+  "registration": { "base_url": "https://backend.example.test/api/relay" },
   "libp2p": {
     "node_enabled": true,
     "mesh_enabled": true,
@@ -117,7 +117,7 @@ Full spec: [WIRE_SCHEMAS § RelayEnvelope](../contracts/WIRE_SCHEMAS.md#relayenv
 
 **AEAD plaintext** is binary **ChatPayload** (D087/D090) — not JSON `body.content`. See [MESSAGE_ENCRYPTION.md](../contracts/MESSAGE_ENCRYPTION.md).
 
-Inbound routing: `ChatTargetKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
+Inbound routing: `PeerSessionKey { peer_identity_kind, peer_identity_value: sender_contact_id, channel }` → local thread lookup (**private `e2e`:** find-only, D062; **`e2e_public`:** auto-create after decrypt, D080).
 
 **Signature verify (E014, E016):** Inbound messages are verified with **`EnvelopeSigner::Verify`** using the sender's Ed25519 public key from **`PeerSigningKeyStore`** (directory at add-contact; lazy `GET /v1/users/{relay_user_id}` on cache miss). See [e2e DECISIONS E016](../../projects/e2e-message-crypto/DECISIONS.md#e016--peer-signing-keys-relay-directory-source-local-cache-oob-fingerprint-at-add).
 
@@ -232,27 +232,27 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 | Path | Role |
 |------|------|
-| `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
+| `capabilities/messaging/src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost`; calls and broadcast ride it as `HubParticipant`s (`feature/product/ProductStack`) |
 | pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
-| `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
-| `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
-| `src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
+| `capabilities/calls/src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
+| `capabilities/messaging/src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
+| `capabilities/messaging/src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
+| `capabilities/messaging/src/lib/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
 | `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
-| `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
-| `src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
-| `src/lib/messaging/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
-| `src/lib/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
-| `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
-| `src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
-| `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
-| `src/feature/conversations/MessageRouter.*` | Composer routing |
-| `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
+| `capabilities/messaging/src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
+| `capabilities/messaging/src/lib/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
+| `capabilities/delivery/src/lib/delivery/DeliveryNotice.*` | What a failed send, a relay fallback, a partial group send or an unreadable message tells the user — as kinds (`SendFailure`, `ReceiveFailure`); the only place transport error text is read. The GUI words them (`gui/chat/DeliveryNoticeText`); a local receive-failure line stores its reason, not words |
+| `capabilities/delivery/src/lib/delivery/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
+| `capabilities/messaging/src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
+| `capabilities/messaging/src/feature/conversations/Libp2pDirectChatService.*` | `/pp/rpc/chat/1.0.0` push |
+| `capabilities/messaging/src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
+| `capabilities/messaging/src/lib/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
+| `capabilities/messaging/src/feature/conversations/MessageRouter.*` | Composer routing |
+| `capabilities/messaging/src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/product/MessagingTools.*` | Agent tool definitions (messaging meets AI in the product composition) |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
-| `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
+| `src/base/messaging/DirectChatTarget.*` | Contact → `PeerSessionKey` identity (relay preferred, peer fallback) |
 
 ## System-control families
 
@@ -297,11 +297,20 @@ ordered chat stream:
   account pair's AutoKey session, the one media keys are wrapped under; no thread. Its own relay
   stream (`v1:control:…`), so it never shows up as a gap in the chat stream or in history sync.
   Built by `BuildControlLaneEnvelope`; sent by `MeshDeliveryOrchestrator::SendControl` on the
-  critical worker lane — relay when a route is known (retried for two minutes), else Amp.
+  critical worker lane — relay when a route is known, plus a copy over a live link at once
+  (`ControlAlsoGoesDirect`), else Amp. Signaling is live: a failed relay send goes again on a short
+  backoff (1 s, doubling to 16 s — `ControlRetryAfter`) while it is fresh (two minutes), not on the
+  next inbox wake. No acks: a family that must know its peer has a message resends it itself (a
+  call's media keys).
+- **To many** (`ControlLane::SendToMany`): each recipient resolved (route, maybe a directory lookup;
+  the pair's session, maybe opened) and sealed for its pair on the workers, in parallel, never on the
+  caller's thread; one result per recipient. Live signaling (a call's) resolves on the critical lane;
+  what can wait (a group's roster check, the device list to every contact) on a lower one. There is no group copy: a group's signaling is
+  pairwise like its chat (no group key; the relay does not know groups).
 - **Receive** (`RelayReceivePipeline::ProcessControlEnvelope`): signature, decrypt, a bound family
   that sends this message on the lane, **fresh** (sender's signed time within an hour of ours;
   through the relay, waited no longer than the family's `lane_max_age_ms` on the relay's clock — no
-  skew between devices), **first seen** (`ControlLaneSeenStore`, `control_lane_seen` in profile.db,
+  skew between devices), **first seen** (`SqliteControlLaneSeenStore`, `control_lane_seen` in profile.db,
   per sender and id, kept three hours), then the family's `apply`. Never stored, never a transcript
   row, no inbox chrome.
 

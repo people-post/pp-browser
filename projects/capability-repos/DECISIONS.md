@@ -36,7 +36,7 @@ stay in apps. Owner threads become registered by apps and capabilities instead o
 
 **Date:** 2026-10-29  
 **Status:** accepted; amended by CR006 — "realtime" is the calls and broadcast targets of the one capabilities
-repo, still with no cycle between them
+repo, still with no cycle between them; amended by CR020 (realtime rides delivery, not messaging)
 
 **Context:** They share `lib/media`, have a cycle between them (broadcast → calls 7 include sites, calls → broadcast 2),
 and broadcast alone is 5.6k lines.
@@ -100,7 +100,7 @@ text) declare ports the app implements. Only generic tool / MCP plumbing may lea
 ## CR008 — Identity is people; the backend client is net; pricing is part of messaging
 
 **Date:** 2026-10-30  
-**Status:** accepted; amends DESIGN's identity (people + net + pricing)
+**Status:** accepted; amends DESIGN's identity (people + net + pricing); its "pricing is part of messaging" amended by CR020 (pricing and delivery sit below messaging and calls)
 
 **Context:** The planned identity repo held three different things. People (keys, cards, contacts, devices,
 the locker format) is identity. Net is the Brief backend client (registration, directory, blobs, push):
@@ -185,3 +185,331 @@ capability the ban still keeps engines single-purpose.
 `lib/messaging`; `PeerDisplaySources` into `feature/conversations`, `PeopleDiscoveryContactAdapt` into
 `feature/ai`.
 
+
+## CR014 — The composition layer: capabilities declare, `feature/product` composes
+
+**Date:** 2026-11-01  
+**Status:** draft; describes the pattern P1's cuts used (PR #443)
+
+**Context:** Three of P1's hardest cuts ended in `feature/product`: the people picker's ports
+(`MessagingPeoplePickerPorts`), messaging's AI tools (`MessagingTools`) and the mesh (`ProductMesh`, lent to
+the conversations hub through `HubMeshOwner`). The smaller ones followed the same shape: `ChatPresenter`
+takes the preview line's prose from its binder instead of naming AI's parser. The design names the
+capabilities and the order but not the place where they meet.
+
+**Decision:** Rule 7: a capability declares what it needs from a peer as a port or an owner interface, in its
+own vocabulary (V048); the composition layer (`feature/product`, then `app/` and `gui/`) builds the peers and
+wires them. A capability never constructs another capability's root (a hub, a mesh, a stack).
+
+**Consequences:** `feature/product` is the app's composition root below the GUI, and in the capability map
+it is the app's. A second app writes its own composition; it does not reuse `feature/product`.
+
+## CR015 — P2 is gated like P1: the product's base is the apps'
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** P1 worked because the gate counted sites and the allowlist only shrank. P2 ("capabilities stop
+reading `Config`, `UserPreferences`, `MeshRole`, platform hooks, `Tr()`") was a checklist with no count.
+Mapped as a group, the product's base starts at 7 edges / 85 sites: messaging 52, calls 20, people 5,
+base 3, node 2, net 2, broadcast 1. Seventeen of them are pricing DTOs that only sit in `foundation/data`.
+
+**Decision:** `foundation/data`, `foundation/platform` and `foundation/i18n` form the gate group **product**
+(rule 1: config and its format, data paths, platform hooks, user-facing text). It may include the base; only
+the apps (`app`, `node_app`) may include it. Today's sites go in the allowlist, which only shrinks.
+
+**Consequences:** P2 has a number. Misplaced DTOs leave first; the rest is ports and values the app passes in
+(CR014). Platform mechanisms a capability truly needs (time, secure storage) move to the base with a narrow
+interface rather than staying behind the product's.
+
+**First mechanism moved (2026-11-01, Hongwei):** the per-OS TLS trust for curl leaves `foundation/platform` for
+its own base module, `foundation/tls` (`pp_foundation_tls`).
+
+**The hub and calls take values (2026-11-01):** the conversations hub takes `HubSettings` (the mesh slice, the
+endpoints, the initiation floor, the app's data directory, the profile's policies) instead of `AppConfig`, the
+session store and the preferences file; `feature/product/HubSettingsProjection` projects them. The phone rule is
+a value (`ConversationsHub::Host`, `EffectiveMeshConfig` / `MeshRoleOf` in `common/MeshConfig.h`): the hub
+publishes the mesh config as it applies on the device, and calls read that. The seed merge
+(`EffectiveBootstrapPeers`) is pure on the normalized config the app hands over. The Brief LLM key rotation takes
+the service's URL from the app.
+
+**Platform mechanisms (2026-11-01):** pure or POSIX mechanisms into the base (`common/ImageMetadata`,
+`foundation/diagnostics/OsPeakRss`); the push registrar's interface and registry into `common/` (the platform
+implements it); the attachment cache's quarantine mark and video posters behind `lib/messaging/AttachmentPlatform`,
+which `ProductStack` installs; the profile icon is prepared by the app and uploaded by the hub; the ring sound's path
+is handed to `CallRingtone`; broadcast takes the phone flag as a value; `CallSystemUiBridge` is a presenter
+(`feature/presenters`, CR019).
+
+**Text (2026-11-01):** capabilities and the base ask for user-facing text by catalog key through a port in the base
+(`common/Localized.h`: `Localized(key, args)`); the app's `LocalizationService` registers as its translator once
+its catalogs load, and aliases the shared platform-tip key to its platform's. The catalogs and the text stay the
+app's. Still a step short of the plan's "error codes, text in the app": capabilities name keys and some strings
+(call statuses, thread previews, call rows) are rendered at write time. Turning those into codes the app renders is
+per-surface follow-up work. The config-secrets store moved to `foundation/data` (the app's config). With these,
+the gate's product edges are all cut.
+
+**Codes where they pay (2026-11-01):** call history rows are codes now (`CallSummaryRow::Outcome` and the
+duration; the GUI says the words). Kept on keys, on purpose: thread previews (stored as text when written — a
+code would change what the store holds, and old rows are text), and call statuses / errors (strings through
+`SetMediaActivity` / `SetLastMediaError` and `CallMediaErrorText`'s mapping of raw errors; codes there are a
+redesign of the call error path). With no capability depending on the app's i18n, the port is the boundary.
+
+## CR016 — The gate covers links, not only includes
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The include gate missed stale links: `pp_feature_conversations` linked `pp_lib_calls` and
+`pp_lib_media` with no include left, and `pp_domain_peers` linked `pp_lib_messaging` until PR #443. A repo
+split follows the link graph, so a link against the order is the same defect as an include.
+
+**Decision:** `check_capability_edges.py` also reads the libraries the CMake files declare
+(`pp_browser_add_*_library(... PUBLIC_LIBS ...)` and `target_link_libraries`), maps each target to its
+folder's capability, and fails on a link against the order the same way it fails on an include.
+
+## CR017 — pp-node is an app; the node capability is `domain/node`
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** The map put `app/node` (pp-node's main, bootstrap, status HTTP) in the node capability, so node
+counted the config reads an app is meant to make: 9 of node's files read `Config`, most of them pp-node's.
+
+**Decision:** `app/node` is its own group, **node_app**: an app that may include the product's base and the
+capabilities it picks (people, net, node), and nothing above them. The node capability is `domain/node`.
+
+## CR018 — The hub's shell thins before messaging can move
+
+**Date:** 2026-11-01  
+**Status:** draft; implementation started
+
+**Context:** With every edge cut, the unit a second app would reuse is still `ConversationsHub`: ~3.5k
+lines tied to `AppConfig`. It builds its own backend clients from URLs and runs mesh glue no messaging needs:
+LAN mDNS, the OS network monitor, the address-disclosure policy, seed-reservation renewal, the mesh
+directory cache.
+
+**Decision:** The hub keeps messaging (stores, workflows, delivery, participants). The mesh glue joins the
+mesh's owner (`ProductMesh`), which tells the hub what it needs through `HubMeshOwner`; the backend clients are
+built by the composition (net's factory) and handed to the hub. Step by step, one concern per change.
+
+**Step 1 (2026-11-01):** the OS network monitor is the mesh owner's: `HubMeshOwner::WatchNetwork` /
+`StopWatchingNetwork`, called where the hub started and stopped its monitor (timing unchanged); the network's
+value types (`NetworkTransport`, `NetworkState`, `NetworkChange`) are the base's (`common/NetworkChange.h`), so
+the hub, `HubParticipant` and the calls stack no longer include the platform's monitor.
+
+**Step 2 (2026-11-01):** LAN mDNS is the mesh owner's: `StartLanDiscovery` / `AdvertiseOnLan` /
+`StopLanDiscovery`. The hub keeps the decisions — which discovered peers are contacts (their endpoints go to
+delivery), and whether to announce at all (the node role, or a call on a phone).
+
+**Step 3 (2026-11-01):** the mesh directory cache is the mesh owner's (`StartDirectoryCache` with the hub's
+directory client and the config; its disk path from the app's data directory). The hub reads the nodes and is told
+when they change. A fetch with no directory configured now fails and keeps the last nodes instead of clearing
+them. The seed-reservation renewal stays with the hub's `MeshConnectivity` (the neutral mesh object participants
+borrow) and moves when that does.
+
+**Step 5 (2026-11-01):** the neutral mesh objects — `MeshConnectivity`, `MeshMediaRelay`, the hop policy feed —
+and the seed-reservation renewal are the mesh owner's. The hub tells it where the mesh is in its life
+(`SetMeshInputs`, `WireMeshObjects`, `DetachMeshObjects`, `BeginMeshStop` / `DropMediaRelayClient` /
+`EndMeshStop`, `RefreshMeshView`, `StayReachable`, `ClearMeshObjects`), in the order it used to run them itself, and
+reaches peers through `Connectivity()`. Calls and broadcast get the objects from `ProductMesh`, not the hub; the
+hub names no media relay.
+
+**Step 4 (2026-11-01):** the backend's clients are a delivery-level set (`lib/delivery/BackendClientSet`: the
+relay's message and push-device clients, client compat, the directory, registration, blobs, the locker), built
+from the config's endpoints, kept while an endpoint is unchanged, signing with the profile's identity. The
+platform's default endpoints are the app's: `ProductStack` hands them to the hub (`SetBackendDefaults`).
+
+## CR019 — Presenters are the app's
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); implementation started
+
+**Context:** `ChatPresenter` (the chats list's order, unread, pin, mute, archive and its buttons) and parts of
+`InboxController` sit in messaging. They are UI decisions shaped like `CallPresenter`; they are why messaging
+had to take the preview line's prose from its binder. Another app would bring its own list.
+
+**Decision:** Presenters move to the app side (`gui/` or a presenter folder the app owns);
+messaging exposes the facade they read. Calls' presenter follows the same rule.
+
+**Done (2026-11-01):** `feature/presenters` (`pp_feature_presenters`, mapped to the app) holds `ChatPresenter`,
+`CallPresenter` and the chats list's text (`SessionListText`, `SessionMenu`, `GroupEventText`) with their tests; no
+feature module includes it (`check_feature_includes.sh`). `GroupMentions` stays messaging's (the facade uses it).
+
+## CR020 — Secure delivery below messaging and realtime
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); amends CR003 / CR008's split; implementation started
+
+**Context:** Calls include messaging at 26 sites and broadcast at 8, all narrow: thread record types and the
+store port (call history), `SendRelayOptions`, the pairwise PSK session store, pairwise fanout, system
+controls, the E2E public session logic, `IDirectMessageClient`. What realtime rides is sessions, envelopes, the
+control lane and the outbox — not chat threads, groups or the inbox.
+
+**Decision:** A **delivery** capability under both messaging and realtime: pairwise sessions,
+envelopes and their signing, the control lane, the outbox, the relay and Amp transports. Chat (threads,
+groups, inbox, attachments, pricing) stays messaging. Call history reaches the thread store through a port.
+
+**Consequences:** An app could take secure delivery without chat (a VPN client's control channel, pp-node
+services). Costs a re-map and a few seams; worth settling before anything moves, since it changes what the
+first capabilities repo holds.
+
+**First cut (2026-11-01):** the gate maps **delivery** (`lib/delivery`, `common/chat`, `common/thread`,
+`domain/delivery`) and **pricing** (`lib/pricing`, its own capability, since calls bill too) below messaging
+and calls; calls and broadcast may no longer include messaging, and include it nowhere. Moved into
+`lib/delivery`: the PSK and E2E-public session logic and stores, envelope signing and the wire / payload
+codecs, the control lane's envelopes, `OutboundMessage`, `DeliveryNotice`, `PeerRequestAuth`,
+`PeerBriefRoute`, `DirectChatTargetFromContact`, `TextSpans`, `ReactionTypes`, the relay's message client and
+ports with their mocks, `LocalKeys`. Up into messaging: `PeerTransports` and the chat history transport
+(`feature/conversations`), `AttachmentDownloadPolicy`; `PeopleDiscoveryBlocks` to `common/directory`.
+`ControlLane` takes the direct-chat client as a getter, `PeerRouteBook` the sender's verification as a bool.
+Tests that round-trip through messaging's SQLite store stay messaging's.
+
+## CR021 — pp-browser's crypto formats are delivery's; pp-cpp-crypto takes only generic pieces
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); amends P2's "crypto additions into pp-cpp-crypto"
+
+**Context:** P2 planned to move "the crypto capabilities add" — message and attachment ciphers, the PSK session
+store — into pp-cpp-crypto. Most of it is pp-browser's wire format (payload encoding, AAD, HKDF info strings, PSK
+bundles, the KEM binding domain, `account:` IDs); pp-cpp-crypto's own rule keeps product wire formats in the apps,
+and the ledger apps share it. Since CR020 those message formats are what the delivery capability defines.
+
+**Decision:** pp-cpp-crypto takes the generic pieces only: base64url, BLAKE2b-256 and `ReplayWindow` (v1.1.0);
+`foundation/crypto/CryptoUtil.h` names pp-cpp-crypto's helpers. The message formats move to `lib/delivery`
+(`SessionKeyDeriver`, `CanonicalAad`, `PskBundleCodec`, `PskFingerprint`, `AutoKeyEstablishment`, `IPskSessionStore`,
+`AttachmentContentCipher`) and `MediaKeyWrap` to `lib/calls`. The AEAD blob both messages and the at-rest store use
+(`MessageCipher`, `EncryptedPayload`) stays in the base, with the identity formats people uses (`HybridKem`,
+`KemKeyBinding`, `MlDsa`'s `account:` ID, recovery) and the profile's at-rest crypto (vault, PIN, `FileCipher`).
+
+
+## CR022 — Capabilities move into `capabilities/<name>/` before any repo split
+
+**Date:** 2026-11-01  
+**Status:** accepted (Hongwei, 2026-11-01); implemented 2026-11-01 — all nine folders; current state in
+[SRC_LAYOUT § Capability folders](../../docs/architecture/SRC_LAYOUT.md#capability-folders)
+
+**Context:** P0–P2 made the capabilities clean in place, but they are still paths scattered under `src/`, held apart
+by a script. Moving one into a repo (CR005 / CR006) would be a large change in one step, and pp-browser's CI runs
+every capability's unit tests on every PR whatever it touched. `third_party/` was considered and rejected: it means
+external code nobody edits, which the checks, formatting and lint skip.
+
+**Decision:**
+- Each capability gets a top-level folder, `capabilities/<name>/`, whose `src/` mirrors the tree it came from
+  (`capabilities/people/src/lib/people/…`), so include paths do not change. Its `CMakeLists.txt` adds that `src/`
+  as an include root of its own targets and is added from `src/CMakeLists.txt` before the libs that use it.
+- The capability gate reads every capability folder too, and fails when a folder holds another capability's paths.
+  Once every capability has moved out of `src/`, a capability's targets see only the include roots below it, and the
+  compiler enforces the order as well.
+- A capability's tests carry the CTest label `capability:<name>` (set once by the folder). CI's changes filter has an
+  output per moved capability that is true when the folder or anything below it changes (the base, `cmake/`,
+  `third_party/`); a PR whose filter is false skips those tests (`ctest -LE`). Pushes to develop and main run every
+  test.
+- A later split of a capability into the capabilities repo is a `git subtree split capabilities/<name>`.
+
+**Order:** people, net, social, delivery, pricing, messaging, calls, broadcast, node — one change each, as in P1.
+
+**Notes (implementation):**
+- Feature modules linked the app's bundles (`pp_base`; their tests `pp_feature`) through the feature helper, which the
+  gate, reading named links, did not see. In a capability folder they link only what they name (Hongwei chose this
+  over moving them as they were). It surfaced one hidden edge, the hub's `SDL_GetTicks`, now `steady_clock`.
+- `src/` stays an include root of every target, so an app path still compiles in a capability; the gate stops it.
+  Capability roots come only through links, so the compiler stops a capability including one above or beside it.
+
+## CR023 — Calls becomes repo-ready first
+
+**Date:** 2026-11-02  
+**Status:** accepted (Hongwei, 2026-11-02); steps 1–3 done. Step 2 amended (2026-11-02, below): voice messages go to messaging's `lib/voice`, the engine is renamed `MediaEngine`
+
+**Context:** Every capability has its folder (CR022), but none yet behaves like a repo of its own: building,
+testing and documenting itself with only what is below it. Calls is the first to try (measured 2026-11-02):
+its includes are clean (people, delivery, pricing, the base, pp-cpp-*), but 18 of its composed tests lived in
+the app's `feature/product/tests`, `lib/media` mixed four owners (devices, the call engine, voice messages, QR
+scanning), it reached three app concepts in `foundation/runtime` (branding, lifecycle, `ProductOwners`), it
+called the app's Android activity by method name, and `src/` (the app) stays an include root of its targets.
+
+**Decision:** calls is made repo-ready in steps, one PR each:
+1. Calls owns its tests: the call tests move into the calls folder, with delivery's in-memory stores in place
+   of messaging's SQLite ones (CR024); tests that check the app's wording stay with the app.
+2. `lib/media` splits by owner: devices and codecs into a `media` capability below calls (broadcast and voice
+   messages use it too), voice messages to the app's messaging side, QR scanning to the app's scan feature.
+3. The base gets its own folder, so `src/` stops being an include root of capabilities; calls takes branding,
+   lifecycle and owners as values or ports.
+4. A standalone build of calls with what is below it, and a CI job that builds and tests only that.
+5. A host contract (audio route, call system UI, the Android hooks) as ports the app fills; calls gets a README
+   and `docs/` (CALLS.md and its wire schemas).
+
+Namespaces and an `include/` split wait for an actual repo split (CR022).
+
+**Step 2, as done (2026-11-02):**
+- **`media`** (`capabilities/media`, on the base only): devices (`MediaDeviceArbiter`, the SDL3 backend, the OS
+  audio session), hardware codecs (`GuardedVideoCodec` over the platform's), and the engine — renamed
+  `CallMediaEngine` → **`MediaEngine`**, since broadcast runs on it too (Hongwei). Its `common/media_engine` holds
+  what the engine reports and is told (`MediaEngineHealth`, `MediaTargets`), headers only (`pp_media_common`).
+- Three calls concepts the engine reached are cut: it applies neutral **`MediaTargets`** (calls' `CallMediaAdaptation`,
+  now in `lib/calls`, turns its V024 decision into them and answers "may the camera go on" from the engine's path
+  pressure and uplink quote); the ringback's hold on the phone's audio session is a **tone hold** in
+  `CallAudioSession` that the engine waits for; its health type is media's.
+- **Voice messages → messaging's `lib/voice`** (`pp_lib_voice`), not the app (amends the decision; Hongwei): they
+  are a messaging idea, and messaging may sit on media.
+- **QR scanning → the app's `lib/scan`** (`pp_lib_scan`); **the call's sounds → calls' `lib/call_audio`**
+  (`pp_lib_call_audio`), so `pp_lib_calls` stays pure logic without SDL.
+- The gate's map, CI's path filters (`media`, and calls / broadcast / messaging on it) and the test labels follow.
+
+**Step 3, as done (2026-11-02):**
+- **The base has its folder:** `capabilities/base/src/` (`common/` except the app's `common/ui`; foundation's
+  runtime, TLS, error, diagnostics, crypto, identity), with its own label and CI filter. `src/foundation/` keeps
+  the product's base (`data`, `platform`, `i18n` and the new `product`).
+- **`src/` is no include root of a capability:** the helpers give a capability's targets its own `src/` only
+  (`pp_browser_own_include_root`); everything else comes by link. All capability sources compile so: the compiler
+  now holds what the gate checks.
+- **App concepts became values:** calls names its owner thread (`common/media/MediaSessionsOwner.h`) and the app
+  registers it (`feature/product/ProductOwners`); the product's name and version are the product's
+  (`foundation/product`): the crash dump takes a `CrashIdentity`, text gets `product.name` / `{product}` from the
+  app's translator, net's upgrade fallback is passed in. `AppLifecycle`, background activity / sync and diagnostics
+  stay base mechanisms.
+
+## CR024 — Capabilities own ideas; the app owns the database
+
+**Date:** 2026-11-02  
+**Status:** accepted (Hongwei, 2026-11-02); done (stages 1–4) — the rule is in [SRC_LAYOUT § Capability folders](../../docs/architecture/SRC_LAYOUT.md#capability-folders)
+
+**Context:** Moving calls' tests out of the app (CR023 step 1) showed delivery's PSK store writing into
+`chat_targets`, a table only messaging's schema creates: delivery could not keep a session key without
+messaging's store having opened the database first. The gate does not see it — it is a table name in SQL, not
+an include. Each capability also carried at-rest encryption (the profile DEK) inside its SQLite stores.
+
+**Decision:**
+- A capability ships its records, its logic and the ports it needs to keep them, and an in-memory implementation
+  for tests — no SQL. The app owns the database file, every schema and migration, at-rest encryption, and the
+  SQLite implementations of the capabilities' ports, in one storage module (`src/lib/storage`).
+- Logic stays in the capability above a thin port: delivery's `IPeerSessionStore` keeps `Load` / `List` / `Save`
+  / `AllocateSenderSeq` (atomic) as the port, and resolving an epoch's key, verifying, exporting and importing a
+  key bundle on top of them, in delivery.
+- Delivery's session idea is renamed for what it is: `ChatTargetKey` / `PskSessionRecord` / `IPskSessionStore`
+  become `PeerSessionKey` / `PeerSessionRecord` / `IPeerSessionStore` (the key moves from `foundation/crypto` into
+  delivery). The SQL table keeps its name, `chat_targets`: a stored name, which a rename would only migrate (Hongwei,
+  2026-11-02; a rename shipped briefly in stage 2b and was undone before it left the branch).
+
+**Stages:**
+1. Delivery's ideas: the rename; the thin port with delivery's logic on top; a port for the control lane's seen
+   ids; one in-memory store for delivery's ports (`InMemoryDeliveryStore`: the threads and the peer sessions over
+   shared rows, as in SQLite) and in-memory seen ids. Calls takes the ports, and its tests run in memory.
+2. Storage, in two commits. (a) Messaging's stores become ports in place — `IGroupRosterStore`,
+   `IThreadLocalPrefsStore`, `IThreadMentionsStore` — with in-memory implementations (`lib/messaging/testing`; the
+   roster shares each group's send target with `InMemoryDeliveryStore`, as SQLite's roster and thread store share
+   `group_targets`) and a contract test that runs every case on both. (b) `src/lib/storage` takes the SQLite side
+   together — the profile database and its schema, the thread store, rosters, thread prefs, mentions, the
+   peer-session and control-lane stores (they share rows, so they move as one) — handed to the hub by the app.
+   Messaging's SQLite tests go with them; its logic tests run in memory.
+3. Calls: `CallSessionStore` and `CallMediaKeyStore` become ports with in-memory implementations; the SQLite ones
+   move to storage (calls drops its at-rest crypto includes).
+4. People and social: `PeerCardStore`, `PostStore` and `ObjectIndex` the same way.
+
+**Notes (stage 4, content):** `CasStore` was opened by path wherever it was used (about ten places, each reopening
+the index). It is now one per profile, built by the hub on an `IObjectIndex` from the app
+(`ConversationsHub::SetContentStorage`, not `ProfileStores`: messaging's lib stays off content, C012) and lent as a
+`shared_ptr` to the attachment workflow, the blob transport and Me → Storage. The blocks and their encryption stay
+content's: they are the format, not a database. The blob port lost `SetProfileId`; the transport now gets the store
+from `PeerTransports`, which keeps it across a re-attach (the id was lost on one before).
+
+**Notes (stage 1):** the hub's two accessors for the session store became one, `PeerSessions()` (the port).

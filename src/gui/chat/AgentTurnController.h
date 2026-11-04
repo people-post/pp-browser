@@ -64,6 +64,8 @@ public:
   virtual QueuedSendOutcome RunQueuedAgentSend(const QueuedAgentSend& item) = 0;
   /** Unsent text goes back to the composer of the conversation it was typed in (not the open one, if different). */
   virtual void PutBackDraft(const std::string& thread_id, const std::string& text) = 0;
+  /** A turn of `thread_id` ended: what it stored (the answer) is in the thread now. */
+  virtual void OnAgentTurnEnded(const std::string& thread_id) { (void)thread_id; }
 };
 
 /**
@@ -138,24 +140,34 @@ public:
                             ResponseGoal response_goal = ResponseGoal::General,
                             RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
                             const std::vector<BriefAiSource>& sources = {});
-  /** The stop key / a double Escape: stops the turn only if it runs in the open thread. */
+  /** The stop key / a double Escape: stops the turn of the open thread only. */
   void OnStopTurn();
+  /**
+   * The Home composer's question (no messaging router): busy in `thread_id` once the session took it; if it did
+   * not (its turn still runs), the text goes back to that composer.
+   */
+  void SubmitHomeQuestion(const std::string& thread_id, const std::string& text, std::optional<std::string> payload);
 
-  // --- one turn at a time, "busy" per thread, a queue for the others (B112) -----------------------
+  // --- several turns at once, "busy" per thread, a queue once the sessions are full (B112) -------
   const AgentBusyState& Busy() const { return busy_; }
+  /**
+   * May an AI send start in `thread_id` now: BusyHere while the screen shows a turn there, else the sessions' answer
+   * (the mock assistant answers one at a time).
+   */
+  TurnStart CanStart(const std::string& thread_id) const;
   /** A send was handed to the AI for `thread_id`: busy now, before LoadingChanged comes back. */
   void MarkAgentBusy(const std::string& thread_id);
-  void MarkAgentIdle();
+  void MarkAgentIdle(const std::string& thread_id);
   /** Recompute what the open thread shows: thinking + stop key, the queued bubble, the status bar activity. */
   void RefreshBusyForActiveThread();
   bool HasQueued(const std::string& thread_id) const { return queue_.Has(thread_id); }
   bool QueueSend(QueuedAgentSend item);
   std::optional<QueuedAgentSend> TakeQueued(const std::string& thread_id);
-  /** The AI is free: hand over queued sends until one starts a turn (one that does not is skipped). */
+  /** A turn ended: hand over queued sends, in order, while the sessions can start them. */
   void DrainQueue();
   size_t QueuedCount() const { return queue_.Size(); }
 
-  /** Stop a turn in flight (pause, a new chat). */
+  /** Stop every turn in flight (the app pauses). */
   void Cancel();
   /**
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
@@ -163,7 +175,7 @@ public:
    */
   void CloseApprovalCard(const std::string& thread_id, const std::string& entry_id, ApprovalOutcome outcome,
                          const std::string& approval_id = {});
-  /** A send made while the agent was still (re)configuring: sent once it is, or given up. */
+  /** A send made while the agent was still (re)configuring: sent once it is, or given up. One per thread. */
   void HoldSend(HeldAgentSend::Send send) { held_agent_send_.Hold(std::move(send), std::chrono::steady_clock::now()); }
   void SendChatAction(const std::string& entry_id, int action_index);
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
@@ -171,6 +183,14 @@ public:
   void Reset();
 
   // --- an image for the AI ---------------------------------------------------------------------
+  /** The prepared image waiting in the composer for its question. */
+  struct PendingAiImage {
+    BriefAiImage image;
+    std::string name;      // shown on the chip only; never logged
+    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
+    int width = 0;         // pixels of the prepared image
+    int height = 0;
+  };
   void OnAttachAiImage();
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
@@ -185,6 +205,12 @@ public:
   bool HasPendingImage() const { return pending_image_.has_value(); }
   /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
   bool SendImageQuestion(const std::string& text);
+  /**
+   * The image is stored (or failed to be): hand the question to the session. If it does not take it, the picture
+   * and `text` go back to `thread_id`'s composer and "busy" there ends. Public for tests.
+   */
+  void SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text, const std::string& question,
+                                 const std::string& message_id, PendingAiImage image, std::string ai_image_json);
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
 
   // --- the agent's forms and calendars ---------------------------------------------------------
@@ -192,20 +218,16 @@ public:
   void CalendarPrev(const std::string& entry_id);
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
-  std::string HydrateAssistantRml(const TranscriptEntry& entry) const;
-  bool IsFormEditable(const std::string& entry_id, const std::string& form_id) const;
-  void InitializeWidgetState(const std::string& entry_id, const std::vector<WidgetInit>& inits);
-  void MergeWidgetStateIntoRow(const std::string& entry_id, TranscriptDisplayRow& row) const;
-  TurnWidgetState* FindWidgetState(const std::string& entry_id);
-  const TurnWidgetState* FindWidgetState(const std::string& entry_id) const;
-  void ClearFormState();
 
 private:
   /** A people list's "show more": `step` more rows of `blocks[block_index]` of that stored reply, in place. */
   void ShowMoreRows(const std::string& entry_id, size_t block_index, size_t step);
   void OnAssistantDelta(const AgentEvent& event);
+  /** Renders the streamed rows (each at most every 100 ms) and puts the open thread's in its messages. */
   void FlushStreamingRow();
-  void ClearStreamingRow();
+  void ClearStreamingRow(const std::string& thread_id);
+  /** The thread an event belongs to: its own, or (none: the Home session's) the chat the Home question came from. */
+  std::string EventThread(const AgentEvent& event) const;
   /** Sends the held send once the agent is configured, or gives it up after kHeldAgentSendTimeout. Per frame. */
   void FlushHeldAgentSend();
 
@@ -223,27 +245,34 @@ private:
   bool brief_guest_mint_attempted_ = false;
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
-  HeldAgentSend held_agent_send_; // a send made while the agent was still (re)configuring
-  AgentBusyState busy_;           // the one running turn and its thread (B112)
-  AgentSendQueue queue_;          // AI sends of other threads, waiting for it
+  HeldAgentSend held_agent_send_; // sends made while the agent was still (re)configuring, one per thread
+  AgentBusyState busy_;           // the threads whose turn runs (B112)
+  AgentSendQueue queue_;          // AI sends waiting for a free turn
   bool draining_ = false;
-  /** When the UI was busy but the session not: after kBusyRecoveryDelay the UI stops waiting for an end it missed. */
-  std::optional<std::chrono::steady_clock::time_point> busy_without_session_since_;
+  /** The queue's head was last kept waiting (logged once until something is handed over). */
+  bool queue_held_ = false;
+  /** The last step label ("Searching the web…") of each running turn, shown in its own thread. */
+  std::map<std::string, std::string> step_status_;
+  /**
+   * Per thread: when the UI was busy there but the session not. After kBusyRecoveryDelay the UI stops waiting for an
+   * end it missed.
+   */
+  std::map<std::string, std::chrono::steady_clock::time_point> busy_without_session_since_;
   void RecoverMissedTurnEnd();
+  /** The queue is not empty and nothing is marked busy: DrainQueue again, at most once a second. */
+  void RetryQueueDrain();
+  std::optional<std::chrono::steady_clock::time_point> last_drain_retry_;
+  /**
+   * The chat a Home composer's turn (SubmitHomeQuestion) shows in: stop and recovery ask the Home session, and its
+   * events (which carry no thread) belong there.
+   */
+  std::optional<std::string> home_turn_thread_;
 
-  /** The prepared image waiting in the composer for its question. */
-  struct PendingAiImage {
-    BriefAiImage image;
-    std::string name;      // shown on the chip only; never logged
-    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
-    int width = 0;         // pixels of the prepared image
-    int height = 0;
-  };
   std::optional<PendingAiImage> pending_image_;
   std::map<std::string, PendingAiImage> stashed_images_; // per conversation, while another one is shown
   uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
 
-  /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
+  /** An in-flight streamed answer: shown as a synthetic last row of its thread until AssistantReady replaces it. */
   struct StreamingRow {
     std::string row_id; // "streaming-<user message id>"; also the __ENTRY__ of its links
     std::string thread_id;
@@ -252,7 +281,7 @@ private:
     bool dirty = false;
     std::optional<std::chrono::steady_clock::time_point> last_render;
   };
-  std::optional<StreamingRow> streaming_;
+  std::map<std::string, StreamingRow> streaming_; // by thread
 };
 
 } // namespace pbr

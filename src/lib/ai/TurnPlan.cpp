@@ -110,6 +110,7 @@ Roe<TurnPlan> ParseTurnPlanJson(const Object& doc, const TurnPlanSource source) 
   plan.source = source;
   plan.response_goal = ParseResponseGoal(JsonStringOrDefault(doc, "response_goal", "general"));
   plan.render_mode = ParseRenderMode(JsonStringOrDefault(doc, "render_mode", "blocks"));
+  plan.render_mode_explicit = doc.getString("render_mode").has_value();
   plan.synthesis_hints = JsonStringOrDefault(doc, "synthesis_hints");
   plan.user_request = JsonStringOrDefault(doc, "user_request");
 
@@ -160,8 +161,11 @@ Roe<TurnPlan> ValidateTurnPlan(TurnPlan plan, const std::vector<std::string>& al
       std::all_of(plan.tools.begin(), plan.tools.end(), [](const PlannedToolCall& call) {
         return call.name == "search_people" || call.name == "list_contacts";
       });
-  if (people_only && (plan.response_goal == ResponseGoal::General ||
-                      plan.response_goal == ResponseGoal::PeopleDiscovery)) {
+  // A General plan that only lists contacts may be a count or a yes/no question; the planner says so by
+  // naming a non-list render_mode. Silence means "show the people" and PeopleDiscovery is always a list.
+  const bool planner_chose_other = plan.render_mode_explicit && plan.render_mode != RenderMode::PeopleList;
+  if (people_only && (plan.response_goal == ResponseGoal::PeopleDiscovery ||
+                      (plan.response_goal == ResponseGoal::General && !planner_chose_other))) {
     plan.render_mode = RenderMode::PeopleList;
   }
 

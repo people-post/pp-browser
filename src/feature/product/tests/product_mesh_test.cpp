@@ -3,7 +3,7 @@
 #include "common/Utilities.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
 
@@ -47,11 +47,11 @@ protected:
   /** Starts the mesh on an ephemeral UDP port with no seeds: `node` with a circuit relay, no media relay. */
   mesh::MeshHost* Start(bool node) {
     HubMeshOwner::StartRequest request;
-    request.config.mesh.mesh_enabled = true;
-    request.config.mesh.amp_udp_port = 0;
-    request.config.mesh.node_enabled = node;
-    request.config.mesh.capabilities.circuit_relay = true;
-    request.config.mesh.capabilities.media_relay = false;
+    request.mesh.mesh_enabled = true;
+    request.mesh.amp_udp_port = 0;
+    request.mesh.node_enabled = node;
+    request.mesh.capabilities.circuit_relay = true;
+    request.mesh.capabilities.media_relay = false;
     request.identity = identity_.get();
     request.address_disclosure = &disclosure_;
     auto started = mesh_.Start(std::move(request));
@@ -108,4 +108,17 @@ TEST_F(ProductMeshTest, OneMeshAtATimeAndAStopFreesItForTheNext) {
 }
 
 } // namespace
+} // namespace pbr
+
+namespace pbr {
+
+// The last-good directory nodes of one backend must never seed another's: the file lives in the profile.
+TEST(ProductMeshPathTest, DirectoryNodesFileIsPerProfile) {
+  const std::filesystem::path a = MeshDirectoryNodesPath("data/profiles/prod");
+  const std::filesystem::path b = MeshDirectoryNodesPath("data/profiles/qa");
+  EXPECT_EQ(a.filename(), "mesh_directory_nodes.json");
+  EXPECT_EQ(a.parent_path(), std::filesystem::path("data/profiles/prod"));
+  EXPECT_NE(a, b);
+}
+
 } // namespace pbr

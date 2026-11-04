@@ -1,0 +1,392 @@
+#include "lib/content/testing/InMemoryObjectIndex.h"
+#include "foundation/crypto/AttachmentContentHash.h"
+#include "domain/attachments/AttachmentContent.h"
+#include "foundation/crypto/CryptoConstants.h"
+#include "lib/messaging/AttachmentCache.h"
+#include "lib/messaging/AttachmentPlatform.h"
+#include "lib/messaging/AttachmentPlaintextMemoryCache.h"
+
+#include <filesystem>
+#include <fstream>
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <vector>
+
+namespace pbr {
+namespace {
+
+class AttachmentCacheAtRestTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    AttachmentPlaintextMemoryCache::Instance().Clear();
+    dir_ = std::filesystem::temp_directory_path() /
+           ("pp_att_at_rest_" + std::to_string(::testing::UnitTest::GetInstance()->random_seed()) + "_" +
+            std::to_string(reinterpret_cast<uintptr_t>(this)));
+    std::filesystem::remove_all(dir_);
+    std::filesystem::create_directories(dir_);
+    profile_dir_ = dir_.string();
+    content_ = MakeInMemoryIndexedCasStore(profile_dir_, profile_id_);
+  }
+
+  void TearDown() override {
+    content_.reset();
+    SetAttachmentPlatform({});
+    AttachmentPlaintextMemoryCache::Instance().Clear();
+    std::filesystem::remove_all(dir_);
+  }
+
+  ByteVector MakeDek(uint8_t fill) const { return ByteVector(kDataEncryptionKeySize, fill); }
+
+  std::filesystem::path dir_;
+  std::string profile_dir_;
+  const std::string thread_id_ = "thread-a";
+  const std::string profile_id_ = "profile-a";
+  const ByteVector plain_{'h', 'e', 'l', 'l', 'o', '-', 'b', 'l', 'o', 'b'};
+  std::shared_ptr<CasStore> content_;
+};
+
+// That a view is marked as downloaded: AttachmentPlatformTest (lib/messaging, through the platform hook); that
+// the OS marker sets the quarantine attribute: OsDownloadMarkTest (foundation/platform).
+
+TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x42);
+
+  auto saved = SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek);
+  ASSERT_TRUE(saved) << saved.error().message;
+
+  std::ifstream in(*saved, std::ios::binary);
+  ASSERT_TRUE(static_cast<bool>(in));
+  char magic[4] = {};
+  in.read(magic, 4);
+  ASSERT_EQ(in.gcount(), 4);
+  EXPECT_EQ(std::string(magic, 4), "PPBA");
+  // generic_string() uses '/' on all platforms (Windows CI returns '\' from native paths).
+  const std::string generic = std::filesystem::path(*saved).generic_string();
+  EXPECT_NE(generic.find("/cas/private/blocks/"), std::string::npos);
+  EXPECT_EQ(generic.find("/blobs/"), std::string::npos);
+  EXPECT_TRUE(AttachmentBlobExists(*content_, *hash));
+
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, dek);
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain_);
+}
+
+TEST_F(AttachmentCacheAtRestTest, WrongDekFailsDecrypt) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x11);
+  const auto wrong = MakeDek(0x22);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek));
+
+  // RAM cache is DEK-session scoped (wiped on ClearDek); drop it so this checks CAS decrypt.
+  AttachmentPlaintextMemoryCache::Instance().Clear();
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, wrong);
+  EXPECT_FALSE(static_cast<bool>(loaded));
+}
+
+TEST_F(AttachmentCacheAtRestTest, EnsureAttachmentViewPathMaterializesBlobsView) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x33);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek));
+  EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt").empty());
+
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "text/plain", "note.txt", dek);
+  ASSERT_TRUE(view) << view.error().message;
+  EXPECT_NE(view->find("blobs_view"), std::string::npos);
+  ASSERT_TRUE(std::filesystem::exists(*view));
+
+  std::ifstream in(*view, std::ios::binary);
+  const ByteVector roundtrip((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  EXPECT_EQ(roundtrip, plain_);
+
+  EXPECT_EQ(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "text/plain", "note.txt"), *view);
+}
+
+TEST_F(AttachmentCacheAtRestTest, AttachmentPosterPathUsesBlobsViewHash) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const std::string path = AttachmentPosterPath(profile_dir_, thread_id_, *hash);
+  EXPECT_NE(path.find("blobs_view"), std::string::npos);
+  EXPECT_NE(path.find(AttachmentHashHex(*hash) + ".poster.jpg"), std::string::npos);
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+}
+
+TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnViewWipe) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x55);
+
+  auto saved = SaveAttachmentPlaintext(*content_, *hash, "text/plain", plain_, "note.txt", dek);
+  ASSERT_TRUE(saved) << saved.error().message;
+  EXPECT_GE(AttachmentPlaintextMemoryCache::Instance().EntryCountForTest(), 1u);
+
+  auto loaded = LoadAttachmentPlaintext(*content_, *hash, dek);
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain_);
+
+  std::error_code ec;
+  std::filesystem::remove(*saved, ec);
+  ASSERT_FALSE(ec) << ec.message();
+  EXPECT_FALSE(AttachmentBlobExists(*content_, *hash));
+
+  auto from_ram = LoadAttachmentPlaintext(*content_, *hash, dek);
+  ASSERT_TRUE(from_ram) << from_ram.error().message;
+  EXPECT_EQ(*from_ram, plain_);
+
+  ASSERT_TRUE(WipeAllAttachmentViewCaches(profile_dir_));
+  EXPECT_EQ(AttachmentPlaintextMemoryCache::Instance().EntryCountForTest(), 0u);
+
+  auto after_wipe =
+      LoadAttachmentPlaintext(*content_, *hash, dek);
+  EXPECT_FALSE(static_cast<bool>(after_wipe));
+}
+
+TEST_F(AttachmentCacheAtRestTest, InlinePrivateViewGateSkipsLargeVideo) {
+  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("image/png", 50ull * 1024ull * 1024ull, kLimit));
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", 0, kLimit));
+  EXPECT_TRUE(AttachmentAllowsInlinePrivateView("video/mp4", kLimit, kLimit));
+  EXPECT_FALSE(AttachmentAllowsInlinePrivateView("video/mp4", kLimit + 1, kLimit));
+}
+
+TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutViewFile) {
+  constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
+  ByteVector big(static_cast<size_t>(kLimit) + 16, 0xab);
+  auto hash = AttachmentContentHash(big);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x66);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "video/mp4", big, "clip.mp4", dek));
+
+  // The platform's stand-in poster (the app installs it); the video itself is never decoded here.
+  SetAttachmentPlatform({.soft_poster_jpeg = [](int) -> Roe<std::vector<uint8_t>> {
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
+  auto poster = EnsureAttachmentPosterFromContent(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4",
+                                                  dek, big.size(), kLimit);
+  ASSERT_TRUE(poster) << poster.error().message;
+  EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());
+}
+
+namespace {
+
+/** Every file under `root` (none when it does not exist). */
+std::vector<std::filesystem::path> FilesUnder(const std::filesystem::path& root) {
+  std::vector<std::filesystem::path> files;
+  std::error_code ec;
+  for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+    if (it->is_regular_file()) {
+      files.push_back(it->path());
+    }
+  }
+  return files;
+}
+
+} // namespace
+
+TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailIsMadeFromBytesInMemoryAndOnlyTheThumbnailIsWritten) {
+  ByteVector big(5 * 1024 * 1024, 0x5a);
+  auto hash = AttachmentContentHash(big);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x31);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
+
+  bool same_bytes = false;
+  int seen_dimension = 0;
+  std::vector<std::filesystem::path> files_while_running{std::filesystem::path("not looked")};
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir_, thread_id_));
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>& bytes, int max_dimension)
+                                                     -> Roe<std::vector<uint8_t>> {
+    same_bytes = bytes == big;
+    seen_dimension = max_dimension;
+    files_while_running = FilesUnder(view_root); // no plaintext copy on disk while it runs
+    return std::vector<uint8_t>{0xff, 0xd8, 0xff, 0xd9};
+  }});
+  auto thumb = EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek);
+  ASSERT_TRUE(thumb) << thumb.error().message;
+  EXPECT_EQ(*thumb, AttachmentPosterPath(profile_dir_, thread_id_, *hash));
+  EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  EXPECT_TRUE(same_bytes) << "the hook gets the decrypted picture itself";
+  EXPECT_EQ(seen_dimension, 480);
+  EXPECT_TRUE(files_while_running.empty()) << "nothing was written for the hook";
+  EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "image/png", "pic.png").empty())
+      << "no plaintext view is left behind";
+  const auto files = FilesUnder(view_root);
+  ASSERT_EQ(files.size(), 1u) << "only the thumbnail";
+  EXPECT_EQ(files[0].string(), *thumb);
+
+  // The bytes the caller holds already (a download, a send) make it the same way.
+  ASSERT_TRUE(WipeThreadAttachmentBlobs(profile_dir_, thread_id_));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash)) << "the view cache's wipe takes it too";
+  same_bytes = false;
+  ASSERT_TRUE(EnsureAttachmentImageThumbnail(profile_dir_, thread_id_, *hash, "image/png", big));
+  EXPECT_TRUE(same_bytes);
+  EXPECT_EQ(FilesUnder(view_root).size(), 1u);
+}
+
+TEST_F(AttachmentCacheAtRestTest, LargeImageThumbnailFailsCleanlyWithoutAHookOrWhenTheHookFails) {
+  ByteVector big(5 * 1024 * 1024, 0x6b);
+  auto hash = AttachmentContentHash(big);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x32);
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", big, "pic.png", dek));
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(profile_dir_, thread_id_));
+
+  SetAttachmentPlatform({});
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek));
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+
+  bool called = false;
+  SetAttachmentPlatform({.image_thumbnail_jpeg = [&](const std::vector<uint8_t>&, int) -> Roe<std::vector<uint8_t>> {
+    called = true;
+    return Error("too many pixels");
+  }});
+  EXPECT_FALSE(EnsureAttachmentImageThumbnailFromContent(profile_dir_, *content_, thread_id_, *hash, "image/png", dek));
+  EXPECT_TRUE(called);
+  EXPECT_FALSE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
+  EXPECT_TRUE(FilesUnder(view_root).empty()) << "nothing is written when it fails";
+}
+
+TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {
+  // A malicious peer can send any filename; the on-disk extension must come only from the
+  // mime whitelist, never from that filename (otherwise "image/png" + "x.exe" would save an
+  // .exe that an image-mime open path runs without confirmation).
+  EXPECT_EQ(AttachmentExtensionFromMime("image/png", "x.exe"), "png");
+  EXPECT_EQ(AttachmentExtensionFromMime("video/mp4", "clip.bat"), "mp4");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "x.exe"), "");
+}
+
+// Review (#238): mimes outside the fixed map (docx / zip / audio …) open through the OS after the
+// confirm dialog, which dispatches on the extension — so an inert filename extension is kept,
+// lower-cased; an executable or script one never is, and image / video mimes never take one.
+TEST_F(AttachmentCacheAtRestTest, ExtensionKeepsInertFilenameExtensionForConfirmedOpens) {
+  EXPECT_EQ(AttachmentExtensionFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "Report.DOCX"),
+            "docx");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "photos.zip"), "zip");
+  EXPECT_EQ(AttachmentExtensionFromMime("audio/mpeg", "song.mp3"), "mp3");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "setup.msi"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "run.ps1"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("text/html", "page.html"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "noext"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("image/heic", "x.zip"), "") << "auto-opened mimes never take a filename ext";
+  EXPECT_EQ(AttachmentExtensionFromMime("application/pdf", "x.exe"), "pdf") << "mapped mimes ignore the filename";
+}
+
+namespace {
+std::vector<uint8_t> PendingHash(const uint8_t seed) {
+  std::vector<uint8_t> hash(kAttachmentContentHashSize, 0);
+  hash[0] = seed;
+  hash[1] = static_cast<uint8_t>(seed >> 1);
+  return hash;
+}
+} // namespace
+
+// Review (#238): pushes with no matching message yet (orphans) are bounded — 64 per thread — but
+// blobs the thread's messages name are real attachments (maybe left unopened because auto-download
+// deferred them) and neither count nor get refused.
+TEST_F(AttachmentCacheAtRestTest, PendingCapBoundsOrphansOnly) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  for (int i = 0; i < 64; ++i) {
+    ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(static_cast<uint8_t>(i)), blob));
+  }
+  EXPECT_FALSE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(200), blob)) << "orphan cap";
+  const auto referenced = PendingHash(201);
+  EXPECT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, referenced, blob,
+                                              {AttachmentHashHex(referenced)}))
+      << "a referenced attachment is accepted past the orphan cap";
+}
+
+// Only orphans expire: an unopened referenced attachment outlives the 24 h orphan TTL.
+TEST_F(AttachmentCacheAtRestTest, PendingTtlPrunesOrphansNotReferencedBlobs) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  const auto orphan = PendingHash(1);
+  const auto kept = PendingHash(2);
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, orphan, blob));
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, kept, blob));
+  const auto root = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir_, thread_id_));
+  const auto two_days_ago = std::filesystem::file_time_type::clock::now() - std::chrono::hours(48);
+  std::filesystem::last_write_time(root / AttachmentHashHex(orphan), two_days_ago);
+  std::filesystem::last_write_time(root / AttachmentHashHex(kept), two_days_ago);
+
+  // The next push prunes, with `kept` named by a thread message.
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(3), blob,
+                                              {AttachmentHashHex(kept)}));
+  EXPECT_FALSE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, orphan)) << "expired orphan pruned";
+  EXPECT_TRUE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, kept)) << "referenced blob kept";
+}
+
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x77);
+
+  // Plain text bytes saved under a video/mp4 mime: the sender lied to reach the
+  // no-confirm-on-open path for images/videos.
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "video/mp4", plain_, "clip.mp4", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+  EXPECT_TRUE(AttachmentContentMatchesMime(*view, "text/plain"));
+}
+
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeRejectsMzPolyglot) {
+  // "MZ" + "ftyp" at offset 4 would otherwise pass a naive video/mp4 signature check.
+  const ByteVector polyglot{'M', 'Z', 0x00, 0x00, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+  auto hash = AttachmentContentHash(polyglot);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x88);
+
+  ASSERT_TRUE(
+      SaveAttachmentPlaintext(*content_, *hash, "video/mp4", polyglot, "clip.mp4", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "video/mp4", "clip.mp4", dek);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+}
+
+TEST_F(AttachmentCacheAtRestTest, SafeToAutoOpenRequiresWhitelistedExtensionAndContent) {
+  const ByteVector png{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'r', 'e', 's', 't'};
+  auto hash = AttachmentContentHash(png);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x99);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(*content_, *hash, "image/png", png, "photo.png", dek));
+  auto view = EnsureAttachmentView(profile_dir_, *content_, thread_id_, *hash, "image/png", "photo.png", dek);
+  ASSERT_TRUE(view) << view.error().message;
+
+  // Extension, mime and content all agree: safe.
+  EXPECT_TRUE(AttachmentSafeToAutoOpen(*view, "image/png"));
+  // Mime not in the extension whitelist (e.g. SVG): never safe, regardless of content.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "image/svg+xml"));
+  // Mismatched extension on disk vs. what the mime maps to: never safe.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "video/mp4"));
+  EXPECT_FALSE(AttachmentSafeToAutoOpen("", "image/png"));
+}
+
+} // namespace
+TEST(AttachmentPlaintextMemoryCacheTest, EraseDropsOneEntryOnly) {
+  auto& cache = AttachmentPlaintextMemoryCache::Instance();
+  cache.Clear();
+  cache.Put("aa", ByteVector{1, 2, 3});
+  cache.Put("bb", ByteVector{4, 5});
+  ASSERT_EQ(cache.EntryCountForTest(), 2u);
+  cache.Erase("aa");
+  cache.Erase("missing");
+  EXPECT_EQ(cache.EntryCountForTest(), 1u);
+  EXPECT_EQ(cache.TotalBytesForTest(), 2u);
+  ByteVector out;
+  EXPECT_FALSE(cache.TryGet("aa", out));
+  EXPECT_TRUE(cache.TryGet("bb", out));
+  cache.Clear();
+}
+
+} // namespace pbr

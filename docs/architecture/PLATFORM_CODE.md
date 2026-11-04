@@ -22,10 +22,10 @@ Do **not** move media codecs, camera, or call audio-session backends into `found
 
 Hard rules:
 
-1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
-2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
+1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`MediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
+2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `IVideoCodec`, `AudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
-4. **Process runtime** lives in pp-cpp-common (`common/runtime/`: threads, coordinator, owners); lifecycle, the product's owners, branding and version in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
+4. **Process runtime** lives in pp-cpp-common (`common/runtime/`: threads, coordinator, owners); lifecycle, the product's owners, branding and version in [`capabilities/base/src/foundation/runtime/`](../../capabilities/base/src/foundation/runtime/) — not here.
 5. **Public headers must not expose OS types** (`SOCKET`, `HANDLE`, `NativeSocket`). Hide them in the `.cpp` or a private impl header.
 6. **`common/` CRT shims** — thread naming (`WorkerPool`) and civil-time (`CivilTime`) may use CRT/pthread `#ifdef`s. New OS behavior does not belong in `common/` beyond that.
 
@@ -38,16 +38,18 @@ Hard rules:
 | `foundation/platform/PlatformHooks.*` | Registers Android/iOS/desktop implementations at startup |
 | `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
 | `foundation/platform/ui/` | `RmlUi_Backend.h`, `BrowserHost`, overlays, desktop window chrome, navigation-via-Backend |
-| `foundation/platform/os/` | Low-level OS primitives (`OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
+| `foundation/platform/os/` | Low-level OS primitives (`OsProcess`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
+| `foundation/tls/` | The platform's TLS trust for curl (`ApplyCurlSslDefaults`; `OsTlsPlatformCurl_{Ios,Android,Default}`, `OsTlsCaPath_*`): a base mechanism net and the AI clients use, outside the product's platform layer (capability-repos CR015) |
+| Base mechanisms and ports capabilities use (CR015) | Pure or POSIX code in the base: image headers (`common/ImageMetadata`), peak RSS (`foundation/diagnostics/OsPeakRss_*`), background time to finish a transfer (`foundation/runtime/BackgroundActivity_{Ios,Default}`); ports the platform implements: the push registrar (`common/IPushDeviceRegistrar`); hooks the app installs: the attachment cache's quarantine mark and video posters (`lib/messaging/AttachmentPlatform`, set by `ProductStack`). Capabilities include nothing under `foundation/platform` |
 | `foundation/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `foundation/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `foundation/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |
 | `foundation/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
-| `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
+| `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()`. Capabilities name the shared key (`common/Localized.h` `kPlatformNetworkHintKey`), which the app aliases to its platform's (`LocalizationService::SetKeyAlias`) |
 | `foundation/platform/NetworkMonitor.*` + `NetworkMonitor_{Linux,Darwin,Win32,Android}` | OS network-change events (portable core de-duplicates; `NetworkMonitorBackend.h` private); Android side `PpNetworkMonitor.java` |
 | `lib/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
-| `lib/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
+| `lib/media/AudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
 | `lib/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |
 | `lib/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
 | pp-cpp-mesh `reachability/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
@@ -75,7 +77,7 @@ New product tips use keys. `InitFailureHint()` remains a rare English string_vie
 | OS primitive | `os/OsProcess.h`, `os/OsProcess_Win32.cpp`, `os/OsProcess_Posix.cpp` (atomic file replace: pp-cpp-common `AtomicFileWrite`) |
 | Desktop per-OS | `desktop/PathProvider_Win32.cpp`, `desktop/LocalNotifier_Linux.cpp` |
 | Facade | `DesktopPathProvider.cpp` delegates to `desktop::*Impl()` |
-| Domain backend | `VideoCodec_Win32.cpp`, `LanMdnsSocket_Posix.cpp`, `CallAudioSession_Android.cpp` |
+| Domain backend | `VideoCodec_Win32.cpp`, `LanMdnsSocket_Posix.cpp`, `AudioSession_Android.cpp` |
 
 CMake **source-selects** the matching backend (do not compile MediaCodec TUs on Linux). File-level `#if defined(...)` guards may remain as belt-and-suspenders.
 
@@ -86,13 +88,11 @@ Regressions are caught by [`scripts/check/check_platform_ifdefs.sh`](../../scrip
 Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
-- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/lib/media/` (and in pp-cpp-mesh `src/reachability/`)
-- `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
+- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `capabilities/media/src/lib/media/` (and in pp-cpp-mesh `src/reachability/`)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)
-- `src/lib/libp2p/` (upstream; not product policy)
 
-**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/foundation/data/`, `src/base/net/`, `src/base/ai/`, portable TUs such as `CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
+**Not allowed:** `src/feature/`, `src/app/` (except tests), `src/foundation/data/`, `capabilities/net/src/lib/net/`, `src/lib/ai/`, portable TUs such as `MediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`.
 
 ## Adding new platform behavior
 

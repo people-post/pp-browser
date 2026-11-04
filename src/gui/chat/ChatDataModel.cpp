@@ -1,6 +1,6 @@
 #include "gui/chat/ChatDataModel.h"
 
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 
 #include "gui/shell/DataModelHost.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
@@ -16,6 +16,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("has_queued", &state.has_queued);
   ctor.Bind("busy_elsewhere", &state.busy_elsewhere);
   ctor.Bind("queued_text", &state.queued_text);
+  ctor.Bind("queued_note", &state.queued_note);
   ctor.Bind("has_turns", &state.has_turns);
   ctor.Bind("turns", &state.turns);
   ctor.Bind("messages", &state.messages);
@@ -57,6 +58,9 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_voice", &state.show_voice);
   ctor.Bind("voice_blocked", &state.voice_blocked);
   ctor.Bind("voice_recording", &state.voice_recording);
+  ctor.Bind("voice_finishing", &state.voice_finishing);
+  ctor.Bind("attachment_preparing", &state.attachment_preparing);
+  ctor.Bind("attachment_here", &state.attachment_here);
   ctor.Bind("voice_mode", &state.voice_mode);
   ctor.Bind("voice_click_mode", &state.voice_click_mode);
   ctor.Bind("voice_cancel_zone", &state.voice_cancel_zone);
@@ -71,6 +75,14 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_forget_memory", &state.show_forget_memory);
   ctor.Bind("show_sync_with_peer", &state.show_sync_with_peer);
   ctor.Bind("show_thread_menu", &state.show_thread_menu);
+  ctor.Bind("show_search", &state.show_search);
+  ctor.Bind("search_open", &state.search_open);
+  ctor.Bind("search_indexing", &state.search_indexing);
+  ctor.Bind("search_query", &state.search_query);
+  ctor.Bind("search_count_label", &state.search_count_label);
+  ctor.Bind("search_has_hits", &state.search_has_hits);
+  ctor.Bind("search_can_older", &state.search_can_older);
+  ctor.Bind("search_can_newer", &state.search_can_newer);
   ctor.Bind("show_gap_banner", &state.show_gap_banner);
   ctor.Bind("show_compromised_banner", &state.show_compromised_banner);
   ctor.Bind("show_locked_out_banner", &state.show_locked_out_banner);
@@ -129,6 +141,7 @@ void DirtyChatChrome() {
   DataModelHost::Instance().Dirty("chat", "has_queued");
   DataModelHost::Instance().Dirty("chat", "busy_elsewhere");
   DataModelHost::Instance().Dirty("chat", "queued_text");
+  DataModelHost::Instance().Dirty("chat", "queued_note");
   DataModelHost::Instance().Dirty("chat", "has_turns");
 }
 
@@ -168,6 +181,9 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_voice");
   DataModelHost::Instance().Dirty("chat", "voice_blocked");
   DataModelHost::Instance().Dirty("chat", "voice_recording");
+  DataModelHost::Instance().Dirty("chat", "voice_finishing");
+  DataModelHost::Instance().Dirty("chat", "attachment_preparing");
+  DataModelHost::Instance().Dirty("chat", "attachment_here");
   DataModelHost::Instance().Dirty("chat", "voice_mode");
   DataModelHost::Instance().Dirty("chat", "voice_click_mode");
   DataModelHost::Instance().Dirty("chat", "voice_cancel_zone");
@@ -187,6 +203,7 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_forget_memory");
   DataModelHost::Instance().Dirty("chat", "show_sync_with_peer");
   DataModelHost::Instance().Dirty("chat", "show_thread_menu");
+  DataModelHost::Instance().Dirty("chat", "show_search");
   DataModelHost::Instance().Dirty("chat", "show_gap_banner");
   DataModelHost::Instance().Dirty("chat", "show_compromised_banner");
   DataModelHost::Instance().Dirty("chat", "show_locked_out_banner");

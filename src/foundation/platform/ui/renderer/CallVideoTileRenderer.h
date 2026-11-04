@@ -24,7 +24,7 @@ public:
     int width = 0;
     int height = 0;
     uint64_t seq = 0;
-    /** Premultiplied RGBA8 (matches CallMediaEngine::VideoTileFrame). */
+    /** Premultiplied RGBA8 (matches MediaEngine::VideoTileFrame). */
     std::vector<uint8_t> rgba;
   };
 

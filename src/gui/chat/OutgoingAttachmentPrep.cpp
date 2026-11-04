@@ -2,7 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AiImagePrep.h"
-#include "foundation/platform/ImageMetadata.h"
+#include "common/ImageMetadata.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/AttachmentCache.h"
 

@@ -10,15 +10,20 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/check/source_trees.sh
+source "$ROOT/scripts/check/source_trees.sh"
 FAIL=0
 
 check_absent() {
   local label="$1"
   local pattern="$2"
   local path="$3"
-  if rg -q "$pattern" "$ROOT/$path" 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q "$pattern" "${trees[@]}" 2>/dev/null; then
     echo "FAIL: $label"
-    rg -n "$pattern" "$ROOT/$path" || true
+    rg -n "$pattern" "${trees[@]}" || true
     FAIL=1
   fi
 }
@@ -28,9 +33,12 @@ check_absent_prod() {
   local label="$1"
   local pattern="$2"
   local path="$3"
-  if rg -q "$pattern" "$ROOT/$path" -g '!**/tests/**' 2>/dev/null; then
+  local trees=() tree
+  while IFS= read -r tree; do trees+=("$tree"); done < <(src_trees "$path")
+  [[ ${#trees[@]} -gt 0 ]] || return 0
+  if rg -q "$pattern" "${trees[@]}" -g '!**/tests/**' 2>/dev/null; then
     echo "FAIL: $label"
-    rg -n "$pattern" "$ROOT/$path" -g '!**/tests/**' || true
+    rg -n "$pattern" "${trees[@]}" -g '!**/tests/**' || true
     FAIL=1
   fi
 }
@@ -65,7 +73,7 @@ is_allowed_lib_edge() {
   printf '%s\n' "$ALLOWED_LIB_EDGES" | grep -qx "$edge"
 }
 
-# Scan production sources under src/lib for lib→lib includes.
+# Scan production sources under a lib/ tree for lib→lib includes.
 scan_lib_peer_includes() {
   local root_dir="$1"
   while IFS= read -r -d '' file; do
@@ -73,7 +81,7 @@ scan_lib_peer_includes() {
     from=""
     for d in "${DOMAIN_MODULES[@]}"; do
       case "$rel" in
-        src/lib/"$d"/*) from="$d"; break ;;
+        src/lib/"$d"/* | capabilities/*/src/lib/"$d"/*) from="$d"; break ;;
       esac
     done
     [[ -n "$from" ]] || continue
@@ -105,10 +113,10 @@ scan_lib_peer_includes() {
     ! -path '*/tests/*' -print0)
 }
 
-# Lib peers live under src/lib/.
-if [[ -d "$ROOT/src/lib" ]]; then
-  scan_lib_peer_includes "$ROOT/src/lib"
-fi
+# Lib peers live under src/lib/ and capabilities/*/src/lib/.
+while IFS= read -r lib_tree; do
+  scan_lib_peer_includes "$lib_tree"
+done < <(src_trees src/lib)
 
 check_absent "common must not include lib/" \
   '#include "lib/' src/common
@@ -118,8 +126,9 @@ check_absent "must not include lib/mesh/ (moved to pp-cpp-mesh: mesh/…)" \
 
 # The app's lower layers may embed the mesh vocabulary (pp_mesh_types: pp-cpp-common only), never the
 # mesh itself, which sits on Amp: that is feature/ and app/'s to compose.
-lower_mesh=$(rg -n -g '*.h' -g '*.cpp' -g '*.mm' '#include "mesh/' \
-  "$ROOT/src/common" "$ROOT/src/foundation" "$ROOT/src/lib" 2>/dev/null \
+lower_trees=()
+while IFS= read -r tree; do lower_trees+=("$tree"); done < <(src_trees src/common; src_trees src/foundation; src_trees src/lib)
+lower_mesh=$(rg -n -g '*.h' -g '*.cpp' -g '*.mm' '#include "mesh/' "${lower_trees[@]}" 2>/dev/null \
   | grep -v '#include "mesh/types/' || true)
 if [[ -n "$lower_mesh" ]]; then
   echo "FAIL: common/ foundation/ lib/ may include mesh/types/ only (pp-cpp-mesh's vocabulary):"
@@ -179,11 +188,11 @@ check_absent "net must not include messaging/MessagingJson.h (use common/chat/)"
 check_absent "net must not include base/messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
   '#include "base/messaging/EnvelopeSigner.h"' src/lib/net
 check_absent "net must not include messaging/EnvelopeSigner.h (inject BuildSignBytes from messaging tests)" \
-  '#include "lib/messaging/EnvelopeSigner.h"' src/lib/net
+  '#include "lib/delivery/EnvelopeSigner.h"' src/lib/net
 check_absent "net must not include base/messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
   '#include "base/messaging/RelayWirePayload.h"' src/lib/net
 check_absent "net must not include messaging/RelayWirePayload.h (use common/chat or messaging tests)" \
-  '#include "lib/messaging/RelayWirePayload.h"' src/lib/net
+  '#include "lib/delivery/RelayWirePayload.h"' src/lib/net
 # messaging -> people and net -> people are down the capability order: the lib peer check below governs them (CR013).
 check_absent "must not include base/people/ (moved to lib/people/)" \
   '#include "base/people/' src
@@ -236,7 +245,7 @@ for shim in \
   src/foundation/data/MeshConfigTypes.h \
   src/lib/messaging/PeopleDiscoveryBlocks.h
 do
-  if [[ -e "$ROOT/$shim" ]]; then
+  if [[ -n "$(src_trees "$shim")" ]]; then
     echo "FAIL: shim path still exists: $shim"
     FAIL=1
   fi

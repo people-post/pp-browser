@@ -29,7 +29,7 @@ Do **not** conflate:
 ## Joint model with pp-ledger
 
 ```text
-brief.global / L0 seed / optional fog
+default backend / L0 seed / optional fog
         │
         ├─► Comms phone book  →  mesh_nodes (circuit, media, DHT)
         │

@@ -2,12 +2,12 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
-#include "feature/conversations/SessionMenu.h"
+#include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "gui/UserFeedback.h"
-#include "lib/messaging/SendRelayOptions.h"
+#include "lib/delivery/SendRelayOptions.h"
 
 #include <ui/base/SystemInterface.h>
 #include <ui/dom/Context.h>
@@ -384,6 +384,16 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
   const ui::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
 
   std::vector<ContextMenuAction> actions;
+  // Not while a voice message is being recorded (its bar holds the composer's place).
+  if (chat_.show_search && !chat_.voice_recording) {
+    actions.push_back({
+        "search",
+        Tr("chat.search.menu"),
+        nullptr,
+        [this]() { host_.OnOpenSearch(); },
+        "../icons/search.svg",
+    });
+  }
   ConversationsFacade* facade = host_.Facade();
   if (chat_.thread_is_public && host_.MessagingIsReady() && facade) {
     auto can_lock = facade->CanLockPublicToThisDevice(host_.ActiveThreadId());

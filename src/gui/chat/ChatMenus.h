@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/EmojiPickerNotifyPorts.h"
@@ -47,6 +47,8 @@ public:
   virtual void OnLockPublicToThisDevice() = 0;
   virtual void OnSyncWithPeer() = 0;
   virtual void OnForgetMemory() = 0;
+  /** "Search": search inside the open chat. */
+  virtual void OnOpenSearch() = 0;
   virtual void ToggleReaction(const std::string& message_id, const std::string& emoji) = 0;
   virtual void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) = 0;
   virtual void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) = 0;
@@ -83,7 +85,7 @@ public:
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);
-  /** The open chat's "⋯": lock to this device, sync, clear history, forget AI memory. */
+  /** The open chat's "⋯": search, lock to this device, sync, clear history, forget AI memory. */
   void OpenThreadActions(ui::Event& ev);
   /** Call button: joins a call that goes on, else voice / video (straight to voice without video). */
   void StartCall(ui::Event& ev);

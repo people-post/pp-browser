@@ -8,7 +8,7 @@
 #include "foundation/platform/IosCallSystemUi.h"
 
 #include "foundation/platform/CallSystemUi.h"
-#include "foundation/platform/IPushDeviceRegistrar.h"
+#include "common/IPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -146,7 +146,7 @@ public:
       pending_ = [uuid retain];
       ArmPendingTimer(kPendingRingNs);
     }
-    BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+    BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
 
   // --- CXProviderDelegate ----------------------------------------------------------------------

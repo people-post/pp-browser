@@ -119,6 +119,10 @@ private:
     ui::String dht_enabled = "off";
     bool show_dht_toggle = false;
     ui::String prefer_contacts_for_routing = "on";
+    ui::String backend_env = "prod";
+    ui::String backend_label;
+    bool backend_restart_pending = false;
+    bool backend_is_custom = false;
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";
@@ -127,7 +131,6 @@ private:
     ui::String profile_nickname;
     ui::String profile_peer_id;
     ui::String profile_relay_id;
-    ui::String profile_public_key;
     ui::String profile_registered = "no";
     ui::String profile_registration_status = "not registered";
     ui::String profile_registration_expires;
@@ -165,6 +168,10 @@ private:
     ui::String attachment_cache_size_label;
     ui::String attachment_download_policy = "smart";
     ui::String attachment_download_policy_label;
+    ui::String attachment_auto_on_wifi = "on";
+    ui::String attachment_auto_on_cellular = "off";
+    /** Phone and "everything" chosen: the Wi-Fi / mobile-network ticks show. */
+    bool attachment_auto_toggles_visible = false;
     ui::String pin_protection_status;
     bool pin_protection_is_default = false;
     bool pin_protection_not_setup = false;
@@ -256,13 +263,16 @@ private:
   void OnChooseLanguage(ui::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(ui::Event& ev);
+  void OnChooseBackend(ui::Event& ev);
   void OnChooseDirectConnections(ui::Event& ev);
   void OnChooseCallInvitePolicy(ui::Event& ev);
   void ApplyCallInvitePolicyChoice(const std::string& policy);
+  void ApplyBackendChoice(const std::string& env);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
+  void ToggleAttachmentAutoNetwork(bool cellular);
   void OnDrainPendingAttachmentMedia();
   void OnClearDownloadedAttachments();
   void PerformClearDownloadedAttachments();

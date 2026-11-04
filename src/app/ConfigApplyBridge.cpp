@@ -1,5 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
+#include "feature/product/HubSettingsProjection.h"
+
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "lib/ui/Theme.h"
@@ -25,9 +27,9 @@ void ConfigApplyBridge::InstallListeners() {
   }
 
   const BootstrapResult& snap = store_->Snapshot();
-  last_network_ = ConversationsHub::ProjectNetwork(snap.config);
-  last_policy_ = ConversationsHub::ProjectPolicy(snap.profile_prefs);
-  last_notifications_ = ConversationsHub::ProjectNotifications(snap.profile_prefs);
+  last_network_ = ProjectNetwork(snap.config);
+  last_policy_ = ProjectPolicy(snap.profile_prefs);
+  last_notifications_ = ProjectNotifications(snap.profile_prefs);
   messaging_->Apply(*last_notifications_);  // stay connected (P011) holds from unlock
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
   last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
@@ -41,7 +43,7 @@ void ConfigApplyBridge::OnConfig(const AppConfig& config) {
   if (!messaging_) {
     return;
   }
-  const ConversationsHub::NetworkConfig network = ConversationsHub::ProjectNetwork(config);
+  const ConversationsHub::NetworkConfig network = ProjectNetwork(config);
   if (!last_network_ || network != *last_network_) {
     last_network_ = network;
     messaging_->Apply(network);
@@ -61,13 +63,13 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
     return;
   }
 
-  const ConversationsHub::PolicyPrefs policy = ConversationsHub::ProjectPolicy(prefs);
+  const ConversationsHub::PolicyPrefs policy = ProjectPolicy(prefs);
   if (!last_policy_ || policy != *last_policy_) {
     last_policy_ = policy;
     messaging_->Apply(policy);
   }
 
-  const ConversationsHub::NotificationPrefs notifications = ConversationsHub::ProjectNotifications(prefs);
+  const ConversationsHub::NotificationPrefs notifications = ProjectNotifications(prefs);
   if (!last_notifications_ || notifications != *last_notifications_) {
     last_notifications_ = notifications;
     messaging_->Apply(notifications);

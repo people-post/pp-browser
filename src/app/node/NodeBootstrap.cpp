@@ -9,10 +9,10 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
 #include "domain/node/NodeMeshServices.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
 #include <cstdlib>
@@ -51,7 +51,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   const std::string profile_data_dir = registry->ActiveProfileDataDir();
   AppPaths::EnsureDirs(profile_data_dir);
 
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_data_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_data_dir); !manifest) {
     return manifest.error();
   }
 
@@ -91,7 +91,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return loaded.error();
   }
 
-  AppRuntimeConfig runtime = ProductRuntimeConfig();
+  AppRuntimeConfig runtime = AppRuntimeConfig{};
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
 
@@ -128,7 +128,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       return Error(mesh->AmpLastError().empty() ? "amp stack failed" : mesh->AmpLastError());
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
-    StartOrgSeedServices(*mesh, *identity, config->mesh);
+    StartOrgSeedServices(*mesh, *identity, config->mesh, ResolveMeshRole(config->mesh) == MeshRole::Node);
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }

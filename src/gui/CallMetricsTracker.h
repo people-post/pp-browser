@@ -13,7 +13,7 @@ namespace pbr {
 
 // Fixed vocabularies for Pick (constexpr: see ShareableLine::Pick).
 inline constexpr ShareWord kCallRoles[] = {"caller", "callee"};
-/** CallMediaBridge::MediaPathKind. */
+/** CallDirectPath::MediaPathKind. */
 inline constexpr ShareWord kCallPaths[] = {"direct", "punched", "circuit"};
 inline constexpr ShareWord kAudioIo[] = {"vpio", "sdl", "none"};
 
@@ -38,9 +38,9 @@ public:
 
   struct MediaTick {
     bool connected = false;
-    std::string path;  // CallMediaBridge::MediaPathKind: direct / punched / circuit
+    std::string path; // CallDirectPath::MediaPathKind: direct / punched / circuit
     CallPathQuality quality = CallPathQuality::Good;
-    CallMediaEngineHealth health;
+    MediaEngineHealth health;
   };
 
   /** Placing a call. Returns the previous call's final line if one was still tracked. */
@@ -86,7 +86,7 @@ public:
       return out;
     }
     NoteVitals(vitals, out);
-    const CallMediaEngineHealth& h = tick.health;
+    const MediaEngineHealth& h = tick.health;
     if (!call_.have_base) {
       call_.base = h;
       call_.have_base = true;
@@ -125,7 +125,12 @@ public:
     call_.jb_target_max_ms = std::max(call_.jb_target_max_ms, h.jitter_target_ms);
     call_.jb_target_sum_ms += h.jitter_target_ms;
     ++call_.jb_samples;
-    call_.last = h;
+    // A sample from a stopped engine (reconnect, teardown) is all zeros: keep the last running one.
+    if (h.engine_running) {
+      call_.last = h;
+      call_.have_running_sample = true;
+    }
+    call_.last_sample_stopped = !h.engine_running;
     return out;
   }
 
@@ -137,8 +142,7 @@ public:
     }
     ++call_.stalls;
     call_.stall_max_ms = std::max(call_.stall_max_ms, latency_ms);
-    out.push_back(
-        MetricsLine("ui.stall").Call("call", call_.id).Add("stuck_ms", latency_ms));
+    out.push_back(MetricsLine("ui.stall").RandomId("call", call_.id).Add("stuck_ms", latency_ms));
     return out;
   }
 
@@ -191,8 +195,11 @@ private:
     int stalls = 0;
     int64_t stall_max_ms = 0;
     bool have_base = false;
-    CallMediaEngineHealth base;
-    CallMediaEngineHealth last;
+    MediaEngineHealth base;
+    /** The last sample taken while the engine ran (the summary's audio fields). */
+    MediaEngineHealth last;
+    bool have_running_sample = false;
+    bool last_sample_stopped = false;
     DeviceVitals vitals_start;
     int thermal_max = -1;
     int thermal_last = -1;
@@ -222,7 +229,7 @@ private:
       return;
     }
     out.push_back(MetricsLine("device.thermal")
-                      .Call("call", call_.id)
+                      .RandomId("call", call_.id)
                       .Add("state", ThermalStateName(vitals.thermal))
                       .Add("from", ThermalStateName(call_.thermal_last)));
     call_.thermal_last = vitals.thermal;
@@ -231,7 +238,10 @@ private:
 
   ShareableLine SetupLine(const ShareWord result, int64_t now_ms) const {
     MetricsLine line("call.setup");
-    line.Call("call", call_.id).Pick("role", call_.role, kCallRoles).Add("video", call_.video).Add("result", result);
+    line.RandomId("call", call_.id)
+        .Pick("role", call_.role, kCallRoles)
+        .Add("video", call_.video)
+        .Add("result", result);
     if (call_.ring_ms && call_.accept_ms) {
       line.Add("answer_ms", call_.accept_ms - call_.ring_ms);
     }
@@ -264,8 +274,8 @@ private:
     if (call_.connected_ms == 0) {
       return SetupLine(UnconnectedResult(), end_ms);
     }
-    const CallMediaEngineHealth& b = call_.base;
-    const CallMediaEngineHealth& l = call_.last;
+    const MediaEngineHealth& b = call_.base;
+    const MediaEngineHealth& l = call_.last;
     const int64_t duration_ms = std::max<int64_t>(end_ms - call_.connected_ms, 1);
     int64_t quality_total = 0;
     for (const int64_t ms : call_.quality_ms) {
@@ -274,7 +284,7 @@ private:
     auto pct = [&](int64_t ms) { return quality_total > 0 ? static_cast<int64_t>(ms * 100 / quality_total) : 0; };
     const double secs = static_cast<double>(duration_ms) / 1000.0;
     MetricsLine line("call.summary");
-    line.Call("call", call_.id)
+    line.RandomId("call", call_.id)
         .Pick("role", call_.role, kCallRoles)
         .Add("video", call_.video)
         .Add("duration_s", secs)
@@ -291,8 +301,8 @@ private:
         .Add("fec", Delta(l.fec_frames, b.fec_frames))
         .Add("jb_target_avg_ms", call_.jb_samples ? call_.jb_target_sum_ms / call_.jb_samples : int64_t{0})
         .Add("jb_target_max_ms", call_.jb_target_max_ms)
-        .Add("jb_drops", Delta(l.jitter_silence_drops + l.jitter_speech_drops,
-                               b.jitter_silence_drops + b.jitter_speech_drops))
+        .Add("jb_drops",
+             Delta(l.jitter_silence_drops + l.jitter_speech_drops, b.jitter_silence_drops + b.jitter_speech_drops))
         .Add("rx_fps", static_cast<double>(Delta(l.rx_video_frames, b.rx_video_frames)) / secs)
         .Add("tx_fps", static_cast<double>(Delta(l.tx_video_frames, b.tx_video_frames)) / secs)
         .Add("q_excellent_pct", pct(call_.quality_ms[0]))
@@ -304,6 +314,9 @@ private:
         .Add("no_audio_s", static_cast<double>(call_.no_audio_ms) / 1000.0)
         .Add("ui_stalls", call_.stalls)
         .Add("ui_stall_max_ms", call_.stall_max_ms);
+    if (call_.have_running_sample && call_.last_sample_stopped) {
+      line.Add("ended_with_engine_stopped", 1);
+    }
     if (call_.vitals_start.cpu_s >= 0 && vitals.cpu_s >= 0) {
       // Whole process, from ring / dial to the end — the call's power-use proxy.
       line.Add("cpu_s", vitals.cpu_s - call_.vitals_start.cpu_s);

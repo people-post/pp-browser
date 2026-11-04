@@ -1,7 +1,7 @@
 # Capability repos — current state
 
 **Updated:** 2026-11-01  
-**Phase:** P0 and P1 done (no edge against the order); P2's runtime core done
+**Phase:** P0, P1 and P2 done; P3: every capability in its folder (CR022); calls repo-ready (CR023) in progress, steps 1–3 of 5 done; storage in the app (CR024) done
 
 ## Done
 
@@ -38,10 +38,110 @@
   serving, DHT and directory, its own directory row) and lends it to the hub (`HubMeshOwner`: start,
   configure queries, apply serving, stop, release). `MeshExecutors` moved to pp-cpp-mesh's `mesh/types/`
   (v3.0.0), so `AppRuntimeMeshExecutors` lives in `foundation/runtime`. The allowlist is empty.
+- **P2 gated (CR014 – CR020 drafted):** the product's base (`foundation/data`, `platform`, `i18n`) is the gate group
+  **product**, apps only; pp-node is the app **node_app**; the gate counts CMake links. Pricing DTOs moved to
+  `lib/pricing` and five stale links dropped — 68 include / 14 link sites left.
+- **P2, people and node off the product's base:** the config slices they take as values (`MeshConfig`,
+  `ServiceEndpoints`) and the mechanisms parked there (`SchemaVersion`, `DialWorthyMultiaddrs`) into `common/`;
+  the profile manifest stays the product's (`ProfileManifest`); the secure-blob port into `common/` with the OS
+  store in `foundation/platform`, which the app hands to the retired-Keychain cleanup it now runs; pp-node
+  passes the org seed's role in; net's client factory takes endpoints — 60 include / 10 link sites left.
+- **CR020, delivery:** accepted and mapped — `lib/delivery` (sessions, envelopes, codecs, the relay client),
+  `common/chat` + `common/thread` (the records and store ports) and `domain/delivery` sit below messaging and
+  calls, with pricing as its own capability; calls and broadcast use no messaging — 60 include / 9 link sites
+  against the product's base left, no other edge.
+- **TLS, CR019, CR018 step 1:** the per-OS TLS trust is `foundation/tls`; the presenters are
+  `feature/presenters` (the app's); the OS network monitor is the mesh owner's, its value types the base's —
+  51 include / 8 link sites against the product's base left.
+- **CR018 steps 2–4:** LAN mDNS and the mesh directory cache are the mesh owner's; the backend's clients are
+  `lib/delivery/BackendClientSet`, the platform defaults handed in by `ProductStack` — 49 include / 8 link sites
+  left. The seed-reservation renewal waits for `MeshConnectivity` to move.
+- **P2, the hub and calls take values:** `HubSettings` (projected in `feature/product`), the device's role as a
+  value, the effective mesh config published to calls — 24 include / 6 link sites left (messaging 11, calls 9,
+  base 3, broadcast 1): `Tr()` (9) and platform mechanisms (push registrar, call system UI, user hints, media and
+  file helpers, assets), plus config secrets in the base.
+- **P2, platform mechanisms:** into the base, behind ports, or to the app (see CR015's notes) — 14 include / 4 link
+  sites left: `Tr()` (messaging 4, calls 4, base 2), the platform's user-hint keys (calls 2), config secrets (base 1).
+- **P2, text and the rest:** `Tr()` replaced by the base's `Localized(key)` port (the app's catalogs answer), the
+  platform tip key aliased by the app, the config-secrets store in `foundation/data` — 0 include / 0 link sites: the
+  allowlist is empty.
+- **Codes and CR018 step 5:** call history rows are codes the GUI words; the neutral mesh objects and the seed
+  reservation are `ProductMesh`'s — the hub owns no mesh object.
+- **P2, crypto (CR021):** pp-cpp-crypto v1.1.0 (base64url, BLAKE2b-256, `ReplayWindow`) pinned; delivery's crypto
+  formats in `lib/delivery`, `MediaKeyWrap` in `lib/calls`. P2 is done.
 - **P2, runtime core:** in pp-cpp-common v1.3.0 (`common/runtime/`), owners registered by the app
   (`foundation/runtime/ProductOwners.h`).
 
+- **P3, capability folders (CR022):** people in `capabilities/people/src/` (`lib/people`, `domain/peers`,
+  `common/directory` → `pp_people_common`); the gate and include checks read the folders
+  (`scripts/check/source_trees.sh`) and the gate fails on a foreign path; its 137 tests are labelled
+  `capability:people`, and a PR that touches neither the folder nor the base skips them.
+- **P3, net's folder:** `lib/net` and `domain/registration` in `capabilities/net/src/`; a folder's
+  `CMakeLists.txt` calls `pp_browser_capability(<name>)`, which makes its `src/` an include root of the targets the
+  helpers make there. CI's filters chain (net's is people's plus its folder); 81 tests labelled `capability:net`.
+- **P3, social's folder:** `lib/posts` and `lib/content` in `capabilities/social/src/` (29 tests).
+- **P3, delivery's folder:** `lib/delivery`, `domain/delivery` and its records (`common/chat`, `common/thread` →
+  `pp_delivery_common`, which ai, ui, calls, pricing and broadcast link for the record types) in
+  `capabilities/delivery/src/` (63 tests).
+- **P3, pricing's folder:** `lib/pricing` in `capabilities/pricing/src/`.
+- **P3, messaging's folder:** `lib/messaging`, `domain/attachments`, `feature/conversations` in
+  `capabilities/messaging/src/` (484 tests). A feature module in a capability folder links only what it names (no
+  `pp_base`, no `pp_feature` in its tests); that dropped the hub's one hidden UI edge (`SDL_GetTicks` for the
+  reachability banner's timer → `steady_clock`).
+- **P3, calls' folder:** `lib/calls`, `lib/media`, `common/media` (→ `pp_calls_common`), `domain/call_media` (still
+  in headless configures, for pp-call-probe) and `feature/calls` in `capabilities/calls/src/` (594 tests); no hidden
+  link to remove. `lib/media` keeps SDL3 and Opus as its own third-party links.
+- **P3, broadcast's folder:** `lib/broadcast` and `feature/broadcast` in `capabilities/broadcast/src/` (94 tests). The
+  call probe (an app tool) had reached the product's base through the feature bundles; it names
+  `pp_foundation_platform` and `pp_foundation_data` itself now.
+- **P3, node's folder:** `domain/node` in `capabilities/node/src/` (6 tests); `src/domain/` keeps only the app's
+  aggregate. Every capability is in its folder: 1521 of 2910 tests carry a capability label; the rest are the base's
+  and the app's. Every capability target's link closure holds only what is below it (checked with CMake's link graph).
+
+- **CR023 step 1 and CR024 stage 1:** calls owns its tests (17 composed call tests out of `feature/product`, 808
+  labelled); the one checking the app's wording of call lines stays with the app. Delivery's session idea is
+  `PeerSessionKey` / `PeerSessionRecord` / `IPeerSessionStore` (a thin port; an epoch's key, verification and key
+  bundles are delivery's on top), the control lane's seen ids a port, and `InMemoryDeliveryStore` keeps threads and
+  peer sessions on shared rows for tests — found on the way: delivery's SQLite PSK store wrote into messaging's
+  `chat_targets` table and shared its epoch with the thread store.
+- **CR024 stage 2a:** messaging's stores are ports (`IGroupRosterStore`, `IThreadLocalPrefsStore`,
+  `IThreadMentionsStore`; the SQLite ones `Sqlite*`) with in-memory ones in `lib/messaging/testing`; a contract test
+  runs every case on both.
+- **CR024 stage 2b:** `src/lib/storage` (the app) holds the profile database and every SQLite store of delivery and
+  messaging; `ProductStack` hands `OpenSqliteProfileStores` to the hub (`ConversationsHub::SetStorage`, the ports in
+  `lib/messaging/ProfileStores.h`). Delivery and
+  messaging hold no SQL; their tests run in memory — the in-memory thread store learned what messaging relies on
+  (the catalog row an append moves, the outbox, seq ranges) and "delete for me" became the port's own. The SQLite
+  behaviours (schema, restart, transactions, many connections) are storage's tests. The tables keep their names
+  (`chat_targets` included).
+- **CR024 stage 3:** calls' stores are ports (`ICallSessionStore`, `ICallMediaKeyStore`; a fresh key and its wrap
+  are calls', on the port) handed to `CallStack::InitializeStores` as `CallStores`, which `CallsParticipant` opens
+  through storage (`OpenSqliteCallStores`); in-memory ones in `lib/calls/testing`, a contract test on both. Calls
+  holds no SQL and no at-rest encryption.
+- **CR024 stage 4, people and posts:** `PeerCardStore` is people's `PeerCards` (the checks, the merge, the floors)
+  over an `IPeerCardStore` port, from `ProfileStores`; `PostStore` is social's `IPostStore` (`AddEntry` on the port).
+  Their SQLite ones are storage's, in-memory ones in each capability's `testing/`, contract tests on both. People and
+  posts hold no SQL; `pp_lib_people_cards` is gone (the cards are plain people code, headless too).
+- **CR024 stage 4, content (CR024 done):** `ObjectIndex` is content's `IObjectIndex` port; `SqliteObjectIndex` is
+  storage's (`object_index.db`, unchanged), `InMemoryObjectIndex` in `lib/content/testing`, a contract test on both.
+  `CasStore` is one per profile, built by the hub on the index the app opens (`SetContentStorage`) and shared with
+  the attachment workflow, the blob transport and Me → Storage; content's functions take it instead of a path. No
+  capability holds SQL now.
+
+- **CR023 step 2, the media split:** `capabilities/media` (devices, hardware codecs, `MediaEngine` — renamed from
+  `CallMediaEngine`; `common/media_engine`) on the base only; calls' adaptation policy to `lib/calls` (the engine
+  applies `MediaTargets`), the call's sounds to `lib/call_audio`, voice messages to messaging's `lib/voice`, QR
+  scanning to the app's `lib/scan`. The ringback's audio-session hold is a `CallAudioSession` tone hold. Gate map,
+  CI filters and labels updated.
+
+- **CR023 step 3, the base's folder:** `capabilities/base/src` (common, foundation's runtime / TLS / error /
+  diagnostics / crypto / identity); `src/foundation` keeps the product's base (+ `product`: name, version). No
+  capability target has `src/` as an include root any more (all 563 capability sources compile without it). Calls
+  names its owner thread and the app registers it; the crash dump, the text layer and net take the product's identity
+  as values.
+
 ## Next
 
-1. P2: `foundation/data` / `platform` / `Tr()` out of capability code; crypto additions into pp-cpp-crypto.
+1. CR023 steps 4–5 for calls (a standalone build and its CI job, the host contract).
 2. Contracts repo (CR010) when convenient.
+3. P3's namespaces when a second app needs a capability.

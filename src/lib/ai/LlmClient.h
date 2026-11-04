@@ -45,6 +45,12 @@ struct ChatCompletionResponse {
 /** Which limit a 429 from the AI gateway hit; picks the words the user reads. */
 enum class LlmLimitKind { GuestDaily, PerMinute, Other };
 
+/**
+ * brief_AI as a whole is busy (contract section 8), in a 429 body's `code` or an SSE `error` event's: retried once
+ * by BriefTurnRunner. Every other 429 (the gateway's user_concurrency / rate_limited, or no code) is not.
+ */
+inline constexpr const char* kServerBusyCode = "server_busy";
+
 class LlmClient : public Module {
 public:
   explicit LlmClient(LlmConfig config);
@@ -53,7 +59,8 @@ public:
   Roe<std::string> Complete(const std::string& system_prompt, const std::string& user_prompt) const;
   Roe<ChatCompletionResponse> Complete(const ChatCompletionRequest& request) const;
 
-  // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient).
+  // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient). A 429 whose `code` (top level,
+  // or the error object's) is kServerBusyCode is Err::Auth::ServerBusy; any other 429 is RateLimited.
   static Error MapHttpError(long http_code, const std::string& response_body);
 
   // Which limit a 429 hit, from the gateway's message (its code is the same for every limit).

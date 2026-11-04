@@ -1,10 +1,14 @@
 #include "lib/ai/BriefTurnRunner.h"
 
 #include "foundation/error/AppError.h"
+#include "lib/ai/LlmClient.h"
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -203,4 +207,212 @@ TEST(BriefTurnRunnerTest, StreamFailureIsRetryableOnlyForNetworkErrors) {
     ASSERT_TRUE(retryable.has_value());
     EXPECT_EQ(*retryable, expect_retryable) << error.message;
   }
+}
+
+// --- brief_AI busy (contract section 8): one retry within the turn for server_busy only ----------------------
+
+namespace {
+
+BriefAiEvent ErrorEvent(const std::string& code, const std::string& message = "服务器繁忙，请稍后重试") {
+  BriefAiEvent event;
+  event.type = BriefAiEvent::Type::Error;
+  event.code = code;
+  event.message = message;
+  event.retryable = true;
+  return event;
+}
+
+/** A stream answering each call with the next script entry: an HTTP error, or events then an outcome. */
+struct ScriptedStream {
+  struct Step {
+    std::optional<pbr::Error> http_error;
+    std::vector<BriefAiEvent> events;
+    BriefAiOutcome outcome = BriefAiOutcome::Done;
+  };
+  std::vector<Step> steps;
+  int calls = 0;
+
+  pbr::BriefAiStreamFn Fn() {
+    return [this](const pbr::BriefAiRequest&, const std::function<void(const BriefAiEvent&)>& on_event,
+                  const std::atomic<bool>&) -> pbr::Roe<BriefAiOutcome> {
+      const Step& step = steps.at(static_cast<size_t>(calls++));
+      if (step.http_error) {
+        return *step.http_error;
+      }
+      for (const BriefAiEvent& event : step.events) {
+        on_event(event);
+      }
+      return step.outcome;
+    };
+  }
+};
+
+constexpr std::chrono::milliseconds kShortWait{30};
+const std::string kServerBusyBody = R"({"detail":"too_many_requests","code":"server_busy"})";
+
+/** What MapHttpError makes of a 429 with this body: ServerBusy (retried once) or RateLimited (never). */
+pbr::Err::Auth KindOf429(const std::string& body) {
+  return static_cast<pbr::Err::Auth>(pbr::LlmClient::MapHttpError(429, body).code);
+}
+
+ScriptedStream::Step Http429(const std::string& body) {
+  ScriptedStream::Step step;
+  step.http_error = pbr::LlmClient::MapHttpError(429, body);
+  return step;
+}
+
+ScriptedStream::Step Answer(const std::string& text) {
+  ScriptedStream::Step step;
+  step.events = {Token(text), Done(text)};
+  return step;
+}
+
+ScriptedStream::Step BusyEvent(std::vector<BriefAiEvent> before) {
+  ScriptedStream::Step step;
+  step.events = std::move(before);
+  step.events.push_back(ErrorEvent(pbr::kServerBusyCode));
+  step.outcome = BriefAiOutcome::Error;
+  return step;
+}
+
+} // namespace
+
+TEST(BriefTurnRunnerBusyTest, ServerBusy429RetriesOnceThenSucceeds) {
+  ScriptedStream stream;
+  stream.steps = {Http429(kServerBusyBody), Answer("hello")};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  const auto started = std::chrono::steady_clock::now();
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_GE(std::chrono::steady_clock::now() - started, kShortWait) << "it waited before asking again";
+  EXPECT_EQ(stream.calls, 2);
+  EXPECT_EQ(rec.Terminals(), 1);
+  EXPECT_EQ(rec.done, 1);
+  EXPECT_EQ(rec.response, "hello");
+}
+
+TEST(BriefTurnRunnerBusyTest, ServerBusy429TwiceShowsTheBusyError) {
+  ScriptedStream stream;
+  stream.steps = {Http429(kServerBusyBody), Http429(kServerBusyBody)};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 2) << "once, never more";
+  EXPECT_EQ(rec.error, 1);
+  EXPECT_EQ(rec.Terminals(), 1);
+  EXPECT_EQ(rec.error_message, pbr::AppError::Display(pbr::LlmClient::MapHttpError(429, kServerBusyBody)));
+}
+
+TEST(BriefTurnRunnerBusyTest, ServerBusyEventBeforeAnyTokenRetriesOnce) {
+  ScriptedStream stream;
+  stream.steps = {BusyEvent({Status("search_web", "tool")}), Answer("hi")};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 2);
+  EXPECT_EQ(rec.error, 0) << "the busy event before the answer is not shown";
+  EXPECT_EQ(rec.done, 1);
+  EXPECT_EQ(rec.response, "hi");
+}
+
+TEST(BriefTurnRunnerBusyTest, ServerBusyEventAfterTokensIsNotRetried) {
+  ScriptedStream stream;
+  stream.steps = {BusyEvent({Token("Hel")})};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 1);
+  EXPECT_EQ(rec.error, 1);
+  EXPECT_EQ(rec.partial, "Hel") << "the text already shown stays";
+}
+
+TEST(BriefTurnRunnerBusyTest, UserConcurrencyIsNotRetried) {
+  const std::string body = R"({"error":{"message":"Too many concurrent AI turns","code":"user_concurrency"}})";
+  EXPECT_EQ(KindOf429(body), pbr::Err::Auth::RateLimited);
+  ScriptedStream stream;
+  stream.steps = {Http429(body)};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 1);
+  EXPECT_EQ(rec.error, 1);
+  EXPECT_FALSE(rec.retryable);
+}
+
+TEST(BriefTurnRunnerBusyTest, RateLimitedIsNotRetried) {
+  const std::string body = R"({"detail":"too_many_requests","code":"rate_limited"})";
+  EXPECT_EQ(KindOf429(body), pbr::Err::Auth::RateLimited);
+  ScriptedStream stream;
+  stream.steps = {Http429(body)};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 1);
+  EXPECT_EQ(rec.error, 1);
+  EXPECT_FALSE(rec.retryable);
+}
+
+TEST(BriefTurnRunnerBusyTest, A429WithoutCodeIsRateLimited) {
+  // The gateway's 429s today: its own message and rate_limit_error, none of the three codes.
+  const std::string gateway =
+      R"({"error":{"message":"Per-user Brief LLM rate limit exceeded","code":"rate_limit_error"}})";
+  EXPECT_EQ(KindOf429(gateway), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429(R"({"detail":"too_many_requests"})"), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429("not json"), pbr::Err::Auth::RateLimited);
+  EXPECT_EQ(KindOf429(kServerBusyBody), pbr::Err::Auth::ServerBusy);
+  EXPECT_EQ(KindOf429(R"({"error":{"message":"busy","code":"server_busy"}})"), pbr::Err::Auth::ServerBusy);
+
+  ScriptedStream stream;
+  stream.steps = {Http429(gateway)};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(stream.calls, 1);
+  EXPECT_EQ(rec.error, 1);
+  EXPECT_EQ(rec.error_message, pbr::AppError::Display(pbr::LlmClient::MapHttpError(429, gateway)))
+      << "the existing words for the limit that was hit";
+}
+
+TEST(BriefTurnRunnerBusyTest, StopDuringTheWaitEndsTheTurnAsCancelled) {
+  ScriptedStream stream;
+  stream.steps = {Http429(kServerBusyBody), Answer("never")};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  std::thread stopper([&cancel] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    cancel = true;
+  });
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), std::chrono::seconds(5));
+  stopper.join();
+  EXPECT_EQ(stream.calls, 1);
+  EXPECT_EQ(rec.cancelled, 1);
+  EXPECT_EQ(rec.Terminals(), 1);
+}
+
+TEST(BriefTurnRunnerBusyTest, AStepShownBeforeABusyEventIsNotShownAgainByTheRetry) {
+  ScriptedStream stream;
+  ScriptedStream::Step retry;
+  retry.events = {Status("search_web", "tool"), Status("read_url", "tool"), Token("hi"), Done("hi")};
+  stream.steps = {BusyEvent({Status("search_web", "tool")}), retry};
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream.Fn(), pbr::BriefAiRequest{}, cancel, rec.Sinks(), kShortWait);
+  EXPECT_EQ(rec.statuses, (std::vector<std::string>{"search_web:tool", "read_url:tool"}))
+      << "the step reaches the sink exactly once; the retry's new step still shows";
+  EXPECT_EQ(rec.done, 1);
+}
+
+TEST(BriefTurnRunnerTest, ARepeatedStepWithoutARetryStillShowsEachTime) {
+  const pbr::BriefAiStreamFn stream = [](const pbr::BriefAiRequest&,
+                                         const std::function<void(const BriefAiEvent&)>& on_event,
+                                         const std::atomic<bool>&) -> pbr::Roe<BriefAiOutcome> {
+    on_event(Status("search_web", "tool"));
+    on_event(Status("search_web", "tool"));
+    on_event(Done("x"));
+    return BriefAiOutcome::Done;
+  };
+  Recorder rec;
+  std::atomic<bool> cancel{false};
+  pbr::BriefTurnRunner::Run(stream, pbr::BriefAiRequest{}, cancel, rec.Sinks());
+  EXPECT_EQ(rec.statuses.size(), 2u);
 }

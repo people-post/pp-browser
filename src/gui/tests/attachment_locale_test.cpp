@@ -9,7 +9,7 @@ namespace pbr {
 namespace {
 
 // Every string the attachment limits and status table show must exist in both language files, with the
-// same {{placeholders}}, and (a missing key answers with the key itself) must not fall back to the key.
+// same {placeholders}, and (a missing key answers with the key itself) must not fall back to the key.
 struct Key {
   const char* key;
   std::vector<std::string> placeholders;
@@ -28,21 +28,23 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.attach.camera_unavailable", {}},
       {"chat.attach.video_needs_microphone", {}},
       {"chat.attach.video_unprocessable", {}},
-      {"chat.attachment.video_too_large", {"{{limit}}"}},
-      {"chat.attachment.too_large", {"{{limit}}"}},
+      {"chat.attachment.video_too_large", {"{limit}"}},
+      {"chat.attachment.too_large", {"{limit}"}},
       {"chat.attachment.too_large_receive", {}},
       {"chat.attachment.sending_too_fast", {}},
       {"chat.attachment.read_failed", {}},
       {"chat.attachment.image_unprocessable", {}},
-      {"chat.attachment.uploading_percent", {"{{percent}}"}},
-      {"chat.attachment.uploading_stay", {"{{percent}}"}},
-      {"chat.attachment.downloading_percent", {"{{percent}}"}},
+      {"chat.attachment.sending", {}},
+      {"chat.attachment.uploading", {}},
+      {"chat.attachment.uploading_percent", {"{percent}"}},
+      {"chat.attachment.uploading_stay", {"{percent}"}},
+      {"chat.attachment.downloading_percent", {"{percent}"}},
       {"chat.attachment.send_failed", {}},
       {"chat.attachment.pick_again", {}},
       {"chat.attachment.retry", {}},
       {"chat.attachment.opening", {}},
       {"chat.attachment.video_unplayable", {}},
-      {"chat.attachment.space_warning", {"{{percent}}"}},
+      {"chat.attachment.space_warning", {"{percent}"}},
       {"chat.voice.title", {}},
       {"chat.voice.title_call", {}},
       {"chat.voice.hold_to_talk", {}},
@@ -66,7 +68,7 @@ const std::vector<Key>& AttachmentKeys() {
       {"chat.voice.cannot_play", {}},
       {"chat.voice.play_in_call", {}},
       {"chat.voice.no_speaker", {}},
-      {"chat.voice.countdown", {"{{seconds}}"}},
+      {"chat.voice.countdown", {"{seconds}"}},
       {"errors.blob.not_configured", {}},
       {"errors.blob.upload_rejected", {}},
       {"errors.blob.expired", {}},
@@ -74,9 +76,8 @@ const std::vector<Key>& AttachmentKeys() {
       {"errors.blob.unavailable", {}},
       {"errors.blob.rate_limited", {}},
       {"errors.blob.quota_exceeded", {}},
-      {"blob.quota.message", {"{{usage}}", "{{detail}}"}},
-      {"blob.quota.usage_files", {"{{used}}", "{{total}}"}},
-      {"blob.quota.usage_bytes", {"{{used}}", "{{total}}"}},
+      {"blob.quota.message", {"{usage}", "{detail}"}},
+      {"blob.quota.usage_bytes", {"{used}", "{total}"}},
   };
   return keys;
 }
@@ -94,6 +95,15 @@ TEST_P(AttachmentLocaleTest, EveryKeyIsTranslatedWithItsPlaceholders) {
     for (const std::string& placeholder : key.placeholders) {
       EXPECT_NE(text.find(placeholder), std::string::npos) << GetParam() << " " << key.key << " lacks " << placeholder;
     }
+  }
+}
+
+TEST_P(AttachmentLocaleTest, TheUploadLinesShowTheNumberAndNoBrace) {
+  LocalizationService::Instance().SetPreferredLanguage(GetParam());
+  for (const char* key : {"chat.attachment.uploading_percent", "chat.attachment.uploading_stay"}) {
+    const std::string text = LocalizationService::Instance().Tr(key, {{"percent", "7"}});
+    EXPECT_NE(text.find("7%"), std::string::npos) << text;
+    EXPECT_EQ(text.find_first_of("{}"), std::string::npos) << text;
   }
 }
 

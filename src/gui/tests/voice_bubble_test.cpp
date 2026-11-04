@@ -1,7 +1,7 @@
 #include "feature/conversations/InboxController.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/VoiceBubble.h"
-#include "lib/messaging/ChatPayloadCodec.h"
+#include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/messaging/TranscriptAssembly.h"
 
 #include <gtest/gtest.h>
@@ -67,6 +67,13 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
   EXPECT_NE(row.find("voice-4200.ogg"), std::string::npos); // the file row names the file
 }
 
+// Kenneth 2026-11-03: a blurry picture in the chat could not be enlarged — tapping it did nothing.
+TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
+  const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
+  EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('p1')\""), std::string::npos) << rml;
+}
+
 TEST(VoiceBubbleRender, NothingToPlayUntilItHasBeenDownloaded) {
   const auto pending = Facts(true, AttachmentFetchWorkflow::DownloadState::Pending);
   EXPECT_FALSE(IsBubble(Render(Attachment("m", "voice-4200.ogg", "audio/ogg", 25000), pending)));
@@ -114,6 +121,23 @@ TEST(VoiceBubbleRender, TimeLineAndFill) {
   paused.duration_ms = 120000;
   EXPECT_EQ(VoiceBubbleTimeText(paused, 120000), "1:05 / 2:00");
   EXPECT_EQ(VoiceBubbleFillPercent(paused), 54);
+}
+
+// A large picture whose thumbnail is ready (the view carries the thumbnail path, on_demand set) is drawn as an inline
+// image, not a file card.
+TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.on_demand = true;
+    view.local_path = "/tmp/thumb.poster.jpg";
+    view.inline_image_ok = true;
+    return view;
+  };
+  const std::string rml = Render(Attachment("m9", "big.jpg", "image/jpeg", 6u * 1024 * 1024), facts);
+  EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
 }
 
 } // namespace

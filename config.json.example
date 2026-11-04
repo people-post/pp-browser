@@ -2,7 +2,7 @@
   "config_version": 1,
   "llm": {
     "preset": "brief",
-    "base_url": "https://www.brief.global/api/llm/v1",
+    "base_url": "https://backend.example.test/api/llm/v1",
     "model": "xai",
     "require_api_key": false
   },
@@ -26,16 +26,16 @@
     "require_api_key": true
   },
   "promoted_mcp": {
-    "url": "https://www.brief.global/mcp"
+    "url": "https://backend.example.test/mcp"
   },
   "relay": {
-    "base_url": "https://www.brief.global/api/relay"
+    "base_url": "https://backend.example.test/api/relay"
   },
   "directory": {
-    "base_url": "https://www.brief.global/api/relay"
+    "base_url": "https://backend.example.test/api/relay"
   },
   "registration": {
-    "base_url": "https://www.brief.global/api/relay"
+    "base_url": "https://backend.example.test/api/relay"
   },
   "mesh": {
     "node_enabled": true,

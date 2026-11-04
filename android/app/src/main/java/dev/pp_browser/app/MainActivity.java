@@ -11,6 +11,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.annotation.TargetApi;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceInfo;
 import android.media.AudioFocusRequest;
@@ -566,19 +567,19 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} when a VoIP call starts/ends.
+     * Called from native {@code AudioSession} when a VoIP call starts/ends.
      * Phones: {@link AudioManager#MODE_IN_COMMUNICATION} for earpiece/speaker routing.
      * Speaker-only tablets (no earpiece): stay in {@link AudioManager#MODE_NORMAL} so
      * SDL AAudio MEDIA streams are not ducked (API &lt; 28 cannot set
      * {@code AAUDIO_USAGE_VOICE_COMMUNICATION} — SM-T380 whisper-quiet dogfood).
      */
-    public void setCallAudioSessionActive(boolean active) {
+    public void setAudioSessionActive(boolean active) {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return;
         }
         if (active) {
-            final boolean speakerOnly = !hasCallEarpieceRoute();
+            final boolean speakerOnly = !hasEarpieceRoute();
             if (speakerOnly) {
                 am.setMode(AudioManager.MODE_NORMAL);
                 am.setSpeakerphoneOn(true);
@@ -601,11 +602,11 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession.SupportsSpeakerToggle}.
+     * Called from native {@code AudioSession.SupportsSpeakerToggle}.
      * Phones expose {@link AudioDeviceInfo#TYPE_BUILTIN_EARPIECE}; tablets (e.g. SM-T380)
      * only have the loudspeaker, so FORCE_SPEAKER vs FORCE_NONE is inaudible.
      */
-    public boolean hasCallEarpieceRoute() {
+    public boolean hasEarpieceRoute() {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return false;
@@ -622,16 +623,16 @@ public class MainActivity extends SDLActivity {
     }
 
     /**
-     * Called from native {@code CallAudioSession} for in-call speaker / earpiece.
+     * Called from native {@code AudioSession} for in-call speaker / earpiece.
      * Synchronous: ToggleSpeaker reopens SDL capture immediately after this returns.
      */
-    public void setCallSpeakerphoneOn(boolean on) {
+    public void setVoipSpeakerphoneOn(boolean on) {
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (am == null) {
             return;
         }
-        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setCallAudioSessionActive).
-        if (!hasCallEarpieceRoute()) {
+        // Speaker-only tablets: no earpiece route; keep MODE_NORMAL (see setAudioSessionActive).
+        if (!hasEarpieceRoute()) {
             am.setSpeakerphoneOn(true);
             ensureStreamVolumeFloor(am, AudioManager.STREAM_MUSIC);
             return;
@@ -642,6 +643,15 @@ public class MainActivity extends SDLActivity {
         if (!wasInComm) {
             am.setMode(AudioManager.MODE_IN_COMMUNICATION);
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // One communication device. setSpeakerphoneOn is mapped onto it there, so calling it after
+            // setCommunicationDevice would undo a headset choice.
+            setCommunicationRoute(am, on);
+            if (on) {
+                ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
+            }
+            return;
+        }
         // No-op when already on the requested route in communication mode. Re-applying
         // setSpeakerphoneOn(true) during SoftMigrate/reopen retriggers OEM device changes
         // (Moto MotSpeakerHelper) and races AAudio capture open → mic never comes back.
@@ -650,9 +660,6 @@ public class MainActivity extends SDLActivity {
                 ensureStreamVolumeFloor(am, AudioManager.STREAM_VOICE_CALL);
             }
             return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            setCommunicationRoute(am, on);
         }
         am.setSpeakerphoneOn(on);
         if (on) {
@@ -701,20 +708,60 @@ public class MainActivity extends SDLActivity {
         }
     }
 
-    /** API 31+: prefer explicit communication device over deprecated speakerphone flag alone. */
+    /**
+     * API 31+: the call's communication device — the loudspeaker when chosen, else a connected
+     * headset, else the earpiece, as the phone's own calls do. A no-op when already there:
+     * re-applying a route retriggers OEM device changes (Moto MotSpeakerHelper, see
+     * setVoipSpeakerphoneOn).
+     */
+    @TargetApi(Build.VERSION_CODES.S)
     private void setCommunicationRoute(AudioManager am, boolean speakerOn) {
-        final int wantType = speakerOn
-                ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
-        for (AudioDeviceInfo device : am.getAvailableCommunicationDevices()) {
-            if (device.getType() == wantType) {
-                if (!am.setCommunicationDevice(device)) {
-                    Log.w(TAG, "setCommunicationDevice failed type=" + wantType);
+        // When several headsets are connected, the first type here wins.
+        final int[] headsetTypes = {
+            AudioDeviceInfo.TYPE_HEARING_AID,
+            AudioDeviceInfo.TYPE_WIRED_HEADSET,
+            AudioDeviceInfo.TYPE_USB_HEADSET,
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+            AudioDeviceInfo.TYPE_BLE_HEADSET,
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        };
+        final List<AudioDeviceInfo> devices = am.getAvailableCommunicationDevices();
+        AudioDeviceInfo want = null;
+        if (speakerOn) {
+            want = findDeviceOfType(devices, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+        } else {
+            for (int type : headsetTypes) {
+                want = findDeviceOfType(devices, type);
+                if (want != null) {
+                    break;
                 }
-                return;
+            }
+            if (want == null) {
+                want = findDeviceOfType(devices, AudioDeviceInfo.TYPE_BUILTIN_EARPIECE);
             }
         }
-        Log.w(TAG, "No communication device for type=" + wantType);
+        if (want == null) {
+            Log.w(TAG, "No communication device speaker=" + speakerOn);
+            return;
+        }
+        final AudioDeviceInfo current = am.getCommunicationDevice();
+        if (current != null && current.getId() == want.getId()) {
+            return;
+        }
+        if (am.setCommunicationDevice(want)) {
+            Log.i(TAG, "Call audio route type=" + want.getType());
+        } else {
+            Log.w(TAG, "setCommunicationDevice failed type=" + want.getType());
+        }
+    }
+
+    private static AudioDeviceInfo findDeviceOfType(List<AudioDeviceInfo> devices, int type) {
+        for (AudioDeviceInfo device : devices) {
+            if (device.getType() == type) {
+                return device;
+            }
+        }
+        return null;
     }
 
     /**

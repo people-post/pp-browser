@@ -166,6 +166,69 @@ select selectbox option {
   min-width: 0;
 }
 
+/* Search inside the chat: one row in the title row's place — box, count, older / newer, Cancel. On a narrow
+   screen the box gives way first (down to its minimum), then the count is cut with an ellipsis. */
+.chat-search-bar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+}
+
+.chat-search-input {
+  flex: 1 1 0;
+  min-width: 72dp;
+  width: auto;
+  margin-bottom: 0;
+}
+
+.chat-search-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 13dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A thin chevron, no background of its own. */
+.chat-search-step {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28dp;
+  height: 28dp;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.chat-search-step:disabled {
+  opacity: 0.35;
+  cursor: auto;
+}
+
+.chat-search-cancel {
+  flex-shrink: 0;
+  padding: 6dp 8dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 14dp;
+  white-space: nowrap;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+/* A search match in a message (colours in colors-*.rcss); like the mention chip, it stays inline. */
+.search-mark {
+  padding: 0 1dp;
+  border-radius: 3dp;
+}
+
 .chat-header-meta-row {
   display: flex;
   flex-direction: row;
@@ -3318,6 +3381,14 @@ input.checkbox {
   padding-left: 48dp;
 }
 
+/* The row a jump landed on (a tapped quote's original, a search hit, a mention): tinted for a moment. Two classes,
+   so it wins over a row's own tint (.message-row-mentions-me in colors-*.rcss); see-through, so it reads on
+   either theme. */
+.message-row.message-row-jump-target {
+  background-color: rgba(255, 196, 0, 0.22);
+  border-radius: 8dp;
+}
+
 /* A peer's message that mentions this account (group-chat G015): the row is tinted (colors-*.rcss). */
 .message-row-mentions-me {
   padding: 4dp 8dp;
@@ -3655,6 +3726,13 @@ input.checkbox {
   max-width: 320dp;
 }
 
+/* Own pictures, files and voice notes sit on the right like own text bubbles: the cards are blocks, which
+   the row's text-align does not move. */
+.message-row-user .chat-attachment-card,
+.message-row-user .chat-voice-card {
+  margin-left: auto;
+}
+
 /* A voice message: play / pause, a progress line, the length. */
 .chat-voice-card {
   display: flex;
@@ -3717,6 +3795,7 @@ input.checkbox {
 
 .chat-attachment-image {
   display: block;
+  cursor: pointer;
   max-width: 100%;
   max-height: 240dp;
   border-radius: 8dp;
@@ -3952,6 +4031,11 @@ input.checkbox {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 160dp;
+}
+
+/* A value that names a whole rule ("4 MB 以下自动（默认）") instead of one word. */
+.settings-choice-value-text--wide {
+  max-width: 240dp;
 }
 
 .settings-help {

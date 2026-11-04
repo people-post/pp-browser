@@ -13,7 +13,7 @@ P2 complete: request and response bodies now fail closed at their shared platfor
 | Timeout | 120 s only |
 | Parse | Parses only the bounded response body. |
 
-## HTTP client (`src/lib/net/HttpClient.cpp`)
+## HTTP client (`capabilities/net/src/lib/net/HttpClient.cpp`)
 
 | Item | Status |
 |-------|--------|

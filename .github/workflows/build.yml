@@ -44,6 +44,8 @@ jobs:
       src: ${{ steps.filter.outputs.src }}
       apple: ${{ steps.filter.outputs.apple }}
       android: ${{ steps.filter.outputs.android }}
+      # The filters that matched, as a JSON list: the Test step reads the capability folders' from it.
+      changes: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -54,6 +56,7 @@ jobs:
           filters: |
             src:
               - 'src/**'
+              - 'capabilities/**'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
@@ -68,6 +71,11 @@ jobs:
               - 'src/**/*_Apple.*'
               - 'src/**/*.mm'
               - 'src/**/CMakeLists.txt'
+              - 'capabilities/**/*_Darwin.*'
+              - 'capabilities/**/*_Ios.*'
+              - 'capabilities/**/*_Apple.*'
+              - 'capabilities/**/*.mm'
+              - 'capabilities/**/CMakeLists.txt'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
@@ -77,10 +85,55 @@ jobs:
             android:
               - 'android/**'
               - 'src/**'
+              - 'capabilities/**'
               - 'cmake/**'
               - 'CMakeLists.txt'
               - 'third_party/**'
               - '.github/workflows/build.yml'
+            # A moved capability's tests (CTest label capability:<name>) run on a PR only when its folder or
+            # something below it changed: the base (capabilities/base), cmake/, third_party/ and the
+            # capabilities before it (projects/capability-repos CR022). Each filter is the one below it plus its
+            # folder; the Test step lists the folders.
+            base: &capability_base
+              - 'capabilities/base/**'
+              - 'src/CMakeLists.txt'
+              - 'cmake/**'
+              - 'CMakeLists.txt'
+              - 'third_party/**'
+              - '.github/workflows/build.yml'
+            people: &people
+              - *capability_base
+              - 'capabilities/people/**'
+            net: &net
+              - *people
+              - 'capabilities/net/**'
+            social: &social
+              - *people
+              - 'capabilities/social/**'
+            delivery: &delivery
+              - *net
+              - 'capabilities/delivery/**'
+            pricing: &pricing
+              - *delivery
+              - 'capabilities/pricing/**'
+            media: &media
+              - *capability_base
+              - 'capabilities/media/**'
+            messaging: &messaging
+              - *pricing
+              - *social
+              - *media
+              - 'capabilities/messaging/**'
+            calls: &calls
+              - *pricing
+              - *media
+              - 'capabilities/calls/**'
+            broadcast: &broadcast
+              - *calls
+              - 'capabilities/broadcast/**'
+            node: &node
+              - *net
+              - 'capabilities/node/**'
 
   lint:
     needs: changes
@@ -218,7 +271,25 @@ jobs:
         shell: bash
         env:
           TRACE_DEBUG: "1"
-        run: ctest --test-dir build -C Release --output-on-failure
+          # A PR skips the tests of the capability folders it does not touch (CR022); pushes run every test.
+          PP_IS_PR: ${{ github.event_name == 'pull_request' }}
+          PP_CHANGED_FILTERS: ${{ needs.changes.outputs.changes }}
+        run: |
+          skip=()
+          if [ "$PP_IS_PR" = true ]; then
+            for capability in base people net social delivery pricing media messaging calls broadcast node; do
+              case "$PP_CHANGED_FILTERS" in
+                *"\"$capability\""*) ;;
+                *) skip+=("$capability") ;;
+              esac
+            done
+          fi
+          if [ ${#skip[@]} -gt 0 ]; then
+            echo "Unchanged capabilities, tests skipped: ${skip[*]}"
+            ctest --test-dir build -C Release --output-on-failure -LE "^capability:($(IFS='|'; echo "${skip[*]}"))\$"
+          else
+            ctest --test-dir build -C Release --output-on-failure
+          fi
 
       - name: Smoke run (Linux)
         if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Linux')

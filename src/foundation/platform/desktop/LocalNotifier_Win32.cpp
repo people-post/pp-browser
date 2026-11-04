@@ -2,7 +2,7 @@
 
 #include "foundation/platform/desktop/LocalNotifierImpl.h"
 
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/ProductBranding.h"
 #include "common/Logger.h"
 
 #ifndef WIN32_LEAN_AND_MEAN

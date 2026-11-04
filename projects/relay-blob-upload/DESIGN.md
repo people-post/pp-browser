@@ -1,7 +1,7 @@
 # Relay blob upload — design
 
 **Status:** a1–a6 + a5 landed (icons, attachments, peer-first, DEK-wrap, video poster).  
-**Server spec:** [www relay blob design](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)  
+**Server spec:** owned by the relay gateway  
 **HTTP contract:** [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md) (relay blobs section).
 
 ---
@@ -36,7 +36,7 @@ Brief www exposes relay blob upload (presigned S3 PUT, retain, profile icon atta
 
 ## 3. Server API (client consumption)
 
-Base: `{registration.base_url}` → `https://www.brief.global/api/relay/v1`
+Base: `{registration.base_url}` → `https://backend.example.test/api/relay/v1`
 
 | Endpoint | Purpose |
 |----------|---------|

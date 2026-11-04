@@ -36,7 +36,7 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& path)> upload_profile_icon_file;
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
-  std::function<Roe<void>(const std::string& blob_id)> delete_relay_blob;
+  BlobQuotaFreeSlot delete_relay_file;
   std::function<void()> drain_pending_attachment_media;
   std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */
@@ -57,6 +57,8 @@ struct SettingsCommands {
   std::function<Roe<void>()> reset_active_profile;
   /** Wipe the profile's chat data only (account, keys, contacts, settings stay) — app owns that lifecycle. */
   std::function<Roe<void>()> reset_chat_data;
+  /** Whether the saved backend differs from the running one (push is unbound from the running backend meanwhile). */
+  std::function<void(bool pending)> set_backend_switch_pending;
   /** Display label for a language pref (`system` or BCP-47 tag). App → LocalizationService. */
   std::function<std::string(const std::string& language_pref)> language_display_label;
   std::function<std::vector<LocaleInfo>()> available_locales;

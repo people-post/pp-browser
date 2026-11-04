@@ -10,8 +10,8 @@ L2 **AMP Session** replaces Noise-on-TCP as the product mesh security layer:
 
 - Authenticate remote **PeerId** (ML-DSA-65)
 - Provide **forward secrecy** (ML-KEM-768 ephemeral exchange)
-- **Encrypt all L3+ payloads** (session profile **full** only)
-- Derive **K_assoc** for ADP L1 HMAC binding
+- **Encrypt all L3+ payloads** (session profile **full** only): the session seals each packet, L1 carries it ([ADP.md](ADP.md))
+- Derive **K_assoc** for ADP L1 HMAC binding of handshake and control packets
 
 L4 application E2E (chat `payload_b64`, call-media AEAD) is unchanged and complementary.
 
@@ -21,10 +21,10 @@ L4 application E2E (chat `payload_b64`, call-media AEAD) is unchanged and comple
 |-----------|--------------|
 | Impersonate PeerId | ML-DSA identity binding in MSH Finished |
 | Harvest-now-decrypt-later on session keys | ML-KEM ephemeral in MSH |
-| Inject / alter L3+ payloads | Session AEAD + AAD |
-| Replay across sessions | `session_epoch` in AAD; L1 seq per datagram |
-| Cross-channel confusion | `channel_id` in AAD |
-| UDP inject without membership | L1 HMAC with `K_assoc` from MSH |
+| Inject / alter L3+ payloads | Session AEAD; the packet's clear header is its associated data |
+| Replay | Per-space replay windows on packet numbers, under keys fresh per session and epoch |
+| Cross-channel confusion | The frame (channel id, seq) travels sealed |
+| UDP inject without membership | Sealed packets: the AEAD tag; handshake and control packets: L1 HMAC (`K_assoc` once established) |
 
 PQ bar aligns with [libp2p-pq-transport P001](../../projects/libp2p-pq-transport/DECISIONS.md#p001--full-pq-threat-bar-transport-secrecy--peeridauth) — transport semantics move from Noise-on-TCP to **MSH-on-ADP**.
 
@@ -35,7 +35,7 @@ PQ bar aligns with [libp2p-pq-transport P001](../../projects/libp2p-pq-transport
 | Handshake | **MSH v1** — message-native ordered Reliable ADP messages |
 | KEM | ML-KEM-768 (encaps/decaps on handshake tokens) |
 | Identity | ML-DSA-65 device key; PeerId = multihash of marshalled pubkey (KeyType wire `4`) |
-| Session AEAD | XChaCha20-Poly1305 (or ChaCha20-Poly1305 with unique nonce discipline) |
+| Session AEAD | XChaCha20-Poly1305, the nonce derived from the packet number (§ Sealing packets) |
 | KDF | HKDF-SHA256 from handshake transcript hash |
 
 Semantic reference for KEM token order: [libp2p-pq-transport DESIGN](../projects/libp2p-pq-transport/DESIGN.md) (XXkem message order); MSH encodes the same semantics as **discrete messages**, not a byte pipe.
@@ -89,20 +89,25 @@ On **rekey**, increment `session_epoch` and derive new **directional** keys (`k_
 | `k_send` / `k_recv` | Directional AEAD keys |
 | `state` | `Handshaking` → `Established` → `Rekeying` → `Closed` |
 
-## Sealing L3 payloads
+## Sealing packets
+
+The session seals and opens its link's packets ([A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1). L1 (and a carrier-backed link, for its inner packets) hands it the packet's clear header, packet space and number:
 
 ```text
-wire = AEAD.Seal(
-  key = k_send,
-  nonce = f(session_epoch, channel_id, channel_seq, direction),
-  aad = session_epoch || channel_id || channel_seq || direction,
-  plaintext = L3_frame_bytes
-)
+nonce (24 B) = direction (u8) || packet space (u8) || session_epoch (u32 LE) || packet number (u32 LE) || 14 zero bytes
+sealed       = XChaCha20-Poly1305(key = k_send, nonce, aad = the clear header, plaintext = the L3 frame)
 ```
 
-ADP carries `wire` as opaque payload (Reliable or BestEffort per channel policy).
+| Space | Value | Numbered by |
+|-------|-------|-------------|
+| BestEffort | 0 | L1, best-effort data |
+| Reliable | 1 | L1, reliable data |
+| CarrierBestEffort | 2 | a carrier-backed link, best-effort inner packets |
+| CarrierReliable | 3 | a carrier-backed link, reliable inner packets |
 
-**Open** verifies AAD + decrypts; failure → drop datagram (count metric); do not propagate garbage to L3.
+The nonce is never sent. It is unique per key because a (space, number) seals one plaintext: a number is taken once, and a resend seals the same bytes again (the same ciphertext, which leaks nothing). `k_send` and `k_recv` are already per direction and per epoch; both are in the nonce anyway. **Open** verifies the tag (header included) and decrypts; failure → drop the packet (count it); nothing reaches L3. In a rekey's grace window a packet that fails under the current key is tried under the previous one.
+
+Fixed known answers: `PacketCryptoTest.KnownAnswer` (pp-cpp-amp), cross-checked against libsodium.
 
 ## Rekey
 
@@ -119,7 +124,7 @@ Triggers (policy, configurable):
 | `1` | `SessionRekeyRequest` + `u32` LE `target_epoch` (= local epoch + 1) |
 | `2` | `SessionRekeyAck` + same `target_epoch` |
 
-Responder sends **Ack at the current epoch**, then both sides call `ApplyRekey`. Receive path keeps the previous `k_recv` for **`kSessionRekeyGraceMs` (1000 ms)** so in-flight epoch-*N* ciphertext still opens.
+Responder sends **Ack at the current epoch**, then both sides call `ApplyRekey`. Receive path keeps the previous `k_recv` for **`kSessionRekeyGraceMs` (1000 ms)** so in-flight epoch-*N* ciphertext still opens. A reliable resend is resealed under the current key, so it never depends on the grace window.
 
 **Invariant:** channels stay open across rekey; only keys and `session_epoch` change. After the grace window, stale epochs fail closed.
 

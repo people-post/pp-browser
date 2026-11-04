@@ -16,6 +16,14 @@ def ppBrowserCmakeArgs = [
     "-DPP_BROWSER_RELEASE_VERSION=${ppBrowserReleaseVersion}",
     "-DPP_BROWSER_COMPILER_CACHE=${ppBrowserCompilerCache}",
 ]
+def ppApiUrlProd = System.getenv('PP_API_URL_PROD') ?: ''
+if (ppApiUrlProd) {
+    ppBrowserCmakeArgs += ["-DPP_API_URL_PROD=${ppApiUrlProd}"]
+}
+def ppApiUrlQa = System.getenv('PP_API_URL_QA') ?: ''
+if (ppApiUrlQa) {
+    ppBrowserCmakeArgs += ["-DPP_API_URL_QA=${ppApiUrlQa}"]
+}
 if (ppBrowserCompilerCache == 'ON') {
     ppBrowserCmakeArgs += [
         "-DCMAKE_C_COMPILER_LAUNCHER=ccache",

@@ -28,9 +28,14 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
     call_probe/ProductStackHarness.cpp
   )
   target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  # The harness builds what the app does (the profile's mesh config, the OS network monitor); the feature modules it
+  # links name only their capability's needs (CR022), so it names the product's base itself.
   target_link_libraries(pp-call-probe PRIVATE
     ${_pp_probe_libs}
     pp_foundation_platform_core
+    pp_foundation_platform
+    pp_foundation_data
+    pp_lib_storage
     pp_domain_call_media
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
@@ -41,7 +46,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
   else()
     target_sources(pp-call-probe PRIVATE
-      ${CMAKE_SOURCE_DIR}/src/domain/delivery/AmpDirectChatTransport.cpp)
+      ${CMAKE_SOURCE_DIR}/capabilities/delivery/src/domain/delivery/AmpDirectChatTransport.cpp)
     target_link_libraries(pp-call-probe PRIVATE pp_lib_messaging pp_lib_calls pp_lib_broadcast pp_lib_pricing)
   endif()
   pp_browser_apply_warnings(pp-call-probe)
@@ -58,6 +63,9 @@ if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
     target_link_libraries(pp_browser_call_probe_test PRIVATE
       ${_pp_probe_libs}
       pp_foundation_platform_core
+      pp_foundation_platform
+      pp_foundation_data
+      pp_lib_storage
       pp_feature_calls
       pp_feature_broadcast
       pp_feature_conversations

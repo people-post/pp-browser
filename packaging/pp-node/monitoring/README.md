@@ -12,8 +12,7 @@ python3 packaging/pp-node/monitoring/gen_grafana_dashboard.py > packaging/pp-nod
 
 pp-node serves Prometheus text at `GET /metrics` (status port, default 18518);
 an OpenTelemetry Collector on the same host scrapes it and remote-writes to a
-Prometheus-compatible store (our deployment: `nfsc-brief-web3/infra-ansible`
-`roles/otelcol` → Amazon Managed Prometheus). The dashboard expects the labels
+Prometheus-compatible store (for example an Ansible-managed `otelcol` role writing to Amazon Managed Prometheus). The dashboard expects the labels
 that collector adds:
 
 | Label | Meaning |

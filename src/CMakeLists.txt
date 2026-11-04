@@ -1,8 +1,39 @@
 # Source layers: common → foundation → lib → domain → feature → gui → app.
-# Convenience INTERFACE `pp_base` = foundation + Amp + mesh + lib (feature/app link).
-add_subdirectory(common)
+# Convenience INTERFACEs `pp_foundation` and `pp_base` = foundation + Amp + mesh + lib: the app's and its tools'
+# (capabilities name what they link; check_capability_edges.py, CR016).
+# The base (capabilities/base, CR023 step 3), then the app's own common layer and the product's base.
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/base ${CMAKE_BINARY_DIR}/capabilities/base)
+add_subdirectory(common/ui)
 add_subdirectory(foundation)
+# Capabilities moved out of src/ (projects/capability-repos CR022), in the capability order.
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/people ${CMAKE_BINARY_DIR}/capabilities/people)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/net ${CMAKE_BINARY_DIR}/capabilities/net)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/social ${CMAKE_BINARY_DIR}/capabilities/social)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/delivery ${CMAKE_BINARY_DIR}/capabilities/delivery)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/pricing ${CMAKE_BINARY_DIR}/capabilities/pricing)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/media ${CMAKE_BINARY_DIR}/capabilities/media)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/messaging ${CMAKE_BINARY_DIR}/capabilities/messaging)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/calls ${CMAKE_BINARY_DIR}/capabilities/calls)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/broadcast ${CMAKE_BINARY_DIR}/capabilities/broadcast)
+add_subdirectory(${CMAKE_SOURCE_DIR}/capabilities/node ${CMAKE_BINARY_DIR}/capabilities/node)
 add_subdirectory(lib)
+
+# Convenience INTERFACE: all foundation modules, the base's and the product's (not Amp — Amp is FetchContent lib).
+add_library(pp_foundation INTERFACE)
+target_link_libraries(pp_foundation INTERFACE
+  pp_foundation_error
+  pp_foundation_runtime_core
+  pp_foundation_runtime
+  pp_foundation_platform_core
+  pp_foundation_tls
+  pp_foundation_platform
+  pp_foundation_data
+  pp_foundation_diagnostics
+  pp_foundation_i18n
+  pp_foundation_crypto
+  pp_foundation_identity
+  pp_foundation_product
+)
 
 # Product-stack convenience (legacy name). Prefer linking specific pp_foundation_* /
 # pp_lib_* / pp_amp_* / pp_mesh_* targets when a narrower dependency is enough.

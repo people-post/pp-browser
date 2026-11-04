@@ -6,7 +6,7 @@
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
 #include "foundation/i18n/LocalizationService.h"
-#include "foundation/platform/CurlSsl.h"
+#include "foundation/tls/CurlSsl.h"
 
 #include <curl/curl.h>
 #include "common/PbrCompat.h"
@@ -154,7 +154,9 @@ LlmLimitKind LlmClient::ClassifyLimit(const std::string& api_message) {
 Error LlmClient::MapHttpError(long http_code, const std::string& response_body) {
   std::string api_message;
   std::string api_code;
+  std::string top_code; // brief_AI's 429: {"detail":"too_many_requests","code":"server_busy"}
   if (auto json = TryParseObject(response_body)) {
+    top_code = json->getString("code").value_or("");
     // OpenAI shape: {"error":{...}} — or FastAPI wrap: {"detail":{"error":{...}}}
     if (auto err_slot = json->fields().tryGet("error")) {
       ReadOpenAiErrorField(err_slot->get(), api_message, api_code);
@@ -177,6 +179,9 @@ Error LlmClient::MapHttpError(long http_code, const std::string& response_body) 
                                  : ("LLM HTTP " + std::to_string(http_code));
 
   if (http_code == 429) {
+    if (top_code == kServerBusyCode || api_code == kServerBusyCode) {
+      return AppError::Auth(Err::Auth::ServerBusy, detail); // the catalog's "service is busy"
+    }
     auto err = AppError::Auth(Err::Auth::RateLimited, detail);
     // The gateway's own text is English; the user reads our wording for the limit that was hit.
     // Other limits keep the catalog's "service is busy".
@@ -260,6 +265,9 @@ std::vector<ChatMessage> LlmClient::CoalesceLeadingSystemMessages(std::vector<Ch
 Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& request) const {
   if (config_.require_api_key && config_.api_key.empty()) {
     return AppError::Config(Err::Config::MissingKey, "LLM API key not configured");
+  }
+  if (config_.base_url.empty()) {
+    return AppError::Config(Err::Config::Invalid, "LLM base URL not configured");
   }
   if (!config_.api_key.empty() && !BearerAllowedOnUrl(config_.base_url)) {
     return AppError::Config(Err::Config::Invalid,

@@ -1,17 +1,20 @@
 pp_browser_add_foundation_library(pp_foundation_data
   SOURCES
     AppPaths.cpp
+    BackendProfile.cpp
     Config.cpp
     ConfigJson.cpp
+    ConfigSecretsStore.cpp
     MeshRole.cpp
     LlmPreset.cpp
     PlatformDefaults.cpp
     ProfileRegistry.cpp
-    SchemaVersion.cpp
+    ProfileManifest.cpp
     SessionStore.cpp
     UserPreferences.cpp
   PUBLIC_LIBS
-    pp_foundation_platform_core)
+    pp_foundation_platform_core
+    pp_foundation_crypto)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

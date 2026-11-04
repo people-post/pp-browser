@@ -137,7 +137,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
       on_activity(call.name, "running");
     }
 
-    auto tool_result = tools.Execute(call.name, call.arguments);
+    auto tool_result = tools.Execute(call.name, call.arguments, options.cancel);
     if (!tool_result) {
       if (on_activity) {
         on_activity(call.name, "error");
@@ -185,7 +185,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     PeopleDiscoveryBuildOptions people_options;
     // Silent local lookup so directory rows can show "In contacts" and prefer Message.
     if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
-      auto local = tools.Execute("list_contacts", Object{});
+      auto local = tools.Execute("list_contacts", Object{}, options.cancel);
       if (local) {
         std::vector<mesh::DirectoryHit> ignored_hits;
         ParsePeopleToolJson(*local, ignored_hits, contacts);

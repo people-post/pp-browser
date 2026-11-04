@@ -164,6 +164,8 @@ jobs:
         env:
           PP_BROWSER_VERSION: ${{ steps.ver.outputs.marketing }}
           PP_BROWSER_BUILD_NUMBER: ${{ steps.ver.outputs.build }}
+          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
         run: |
           set -euo pipefail
           ./scripts/platform/ios_build.sh ipa

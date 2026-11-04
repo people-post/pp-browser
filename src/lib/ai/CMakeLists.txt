@@ -23,9 +23,14 @@ pp_browser_add_lib_library(pp_lib_ai
     TurnTrace.cpp
     WorkingSetPolicy.cpp
   PUBLIC_LIBS
+    pp_common_ui
+    pp_people_common
+    pp_delivery_common
     pp_foundation_crypto
     pp_foundation_error
     pp_foundation_platform_core
+    pp_foundation_tls
+    pp_foundation_i18n
     CURL::libcurl)
 
 if(PP_BROWSER_BUILD_TESTS)

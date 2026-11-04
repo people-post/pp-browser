@@ -307,6 +307,27 @@ select selectbox option:hover {
   border-left: 3dp #f59e0b;
 }
 
+/* Search inside the chat: the matching text is marked, pale yellow; the hit the search is on, deeper. */
+.search-mark {
+  background-color: #6b5a14;
+}
+
+.search-mark-current {
+  background-color: #a67c00;
+}
+
+.chat-search-cancel {
+  color: #f9fafb;
+}
+
+.chat-search-count {
+  color: #9ca3af;
+}
+
+.chat-search-step svg {
+  image-color: #9ca3af;
+}
+
 /* On the tinted row the text sits on the tint: no bubble of its own. */
 .message-row-mentions-me .bubble-assistant {
   background-color: transparent;
@@ -494,6 +515,11 @@ select selectbox option:hover {
 
 .shell-titlebar-btn--traffic svg {
   image-color: #4d0000;
+}
+
+/* White on the green zoom dot (the close and minimize dots keep the dark macOS glyphs). */
+.shell-titlebar-btn--traffic-zoom svg {
+  image-color: #ffffff;
 }
 
 .shell-banner {
@@ -1517,13 +1543,14 @@ select selectbox option:hover {
   background-color: #22c55e;
 }
 
-.chat-header-call-btn--join svg {
-  image-color: #ffffff;
-}
-
 .chat-header-call-btn svg,
 .chat-header-more-btn svg {
   image-color: #f9fafb;
+}
+
+/* After the plain call button's rule (same specificity): white on the green join button. */
+.chat-header-call-btn--join svg {
+  image-color: #ffffff;
 }
 
 .context-menu-panel {

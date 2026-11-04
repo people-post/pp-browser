@@ -22,62 +22,34 @@ namespace pbr {
 
 namespace {
 
-void ApplySandboxBriefUrlRewrites(AppConfig& config) {
-  if (!SandboxMode()) {
-    return;
+// Prod / qa (and PP_BROWSER_ORIGIN) replace the saved backend URLs with ones derived from the origin;
+// the saved values are kept so a save does not overwrite the custom URLs. A custom LLM endpoint is left alone.
+void ApplyBackendOverride(AppConfig& config) {
+  config.backend.saved_relay = config.relay;
+  config.backend.saved_directory = config.directory;
+  config.backend.saved_registration = config.registration;
+  config.backend.has_saved_urls = true;
+  if (config.llm.preset.empty() || config.llm.preset == "brief") {
+    config.llm.base_url = BriefLlmBaseUrl();
   }
-  config.llm.base_url = RewriteBriefOriginUrl(config.llm.base_url);
-  config.promoted_mcp.url = RewriteBriefOriginUrl(config.promoted_mcp.url);
-  config.relay.base_url = RewriteBriefOriginUrl(config.relay.base_url);
-  config.directory.base_url = RewriteBriefOriginUrl(config.directory.base_url);
-  for (ServiceEndpointConfig& provider : config.directory.providers) {
-    provider.base_url = RewriteBriefOriginUrl(provider.base_url);
-  }
-  config.registration.base_url = RewriteBriefOriginUrl(config.registration.base_url);
+  config.promoted_mcp.url = BriefMcpUrl();
+  config.relay.base_url = BriefRelayBaseUrl();
+  config.directory.base_url = BriefRelayBaseUrl();
+  config.registration.base_url = BriefRelayBaseUrl();
+}
+
+// A file written before `backend.env` existed whose saved URLs differ from the defaults was pointing at its own backend.
+bool HasLegacyCustomUrls(const AppConfig& config, const AppConfig& defaults) {
+  const auto differs = [](const std::string& saved, const std::string& fallback) {
+    return !saved.empty() && saved != fallback;
+  };
+  return differs(config.relay.base_url, defaults.relay.base_url) ||
+         differs(config.directory.base_url, defaults.directory.base_url) ||
+         differs(config.registration.base_url, defaults.registration.base_url);
 }
 
 } // namespace
 
-std::vector<ServiceEndpointConfig> EffectiveDirectoryProviders(const DirectoryConfig& config) {
-  if (!config.providers.empty()) {
-    std::vector<ServiceEndpointConfig> out;
-    out.reserve(config.providers.size());
-    for (const ServiceEndpointConfig& provider : config.providers) {
-      if (provider.base_url.empty()) {
-        continue;
-      }
-      ServiceEndpointConfig row = provider;
-      if (row.transport.empty()) {
-        row.transport = "http";
-      }
-      out.push_back(std::move(row));
-    }
-    return out;
-  }
-  if (config.base_url.empty()) {
-    return {};
-  }
-  ServiceEndpointConfig row;
-  row.base_url = config.base_url;
-  row.transport = config.transport.empty() ? "http" : config.transport;
-  return {std::move(row)};
-}
-
-void NormalizeDirectoryConfig(DirectoryConfig& config) {
-  if (config.base_url.empty() && !config.providers.empty()) {
-    for (const ServiceEndpointConfig& provider : config.providers) {
-      if (provider.base_url.empty()) {
-        continue;
-      }
-      config.base_url = provider.base_url;
-      config.transport = provider.transport.empty() ? "http" : provider.transport;
-      break;
-    }
-  }
-  if (config.transport.empty()) {
-    config.transport = "http";
-  }
-}
 McpConfig ResolvePromotedMcp(const AppConfig& config, const AppConfig& defaults) {
   if (config.promoted_mcp.IsConfigured()) {
     return config.promoted_mcp;
@@ -171,7 +143,16 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   }
 
   AppConfig config = MergeConfig(DefaultAppConfig(), *root);
-  ApplySandboxBriefUrlRewrites(config);
+  if (root->getObject("backend") == nullptr && HasLegacyCustomUrls(config, DefaultAppConfig())) {
+    config.backend.env = BackendEnvName(BackendEnv::Custom);
+  }
+  if (ParseBackendEnv(config.backend.env) == BackendEnv::Qa && !QaBackendAvailable()) {
+    config.backend.env = BackendEnvName(BackendEnv::Prod);
+  }
+  LatchActiveBackend(ParseBackendEnv(config.backend.env));
+  if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
+    ApplyBackendOverride(config);
+  }
   const AppConfig defaults = DefaultAppConfig();
   if (config.relay.base_url.empty()) {
     config.relay.base_url = defaults.relay.base_url;

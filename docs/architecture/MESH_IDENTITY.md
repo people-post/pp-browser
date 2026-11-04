@@ -31,7 +31,7 @@ control), so the format does not change.
 |-------|--------|
 | pp-cpp-crypto `crypto/PeerId.h` | `pp::PeerIdFromMlDsaPublicKey()` |
 | pp-cpp-amp `amp/link/PeerId.h` | `pp::amp::PeerIdFromIdentityKey` (for `PeerLinkConfig::peer_id_from_identity`), `pp::amp::PeerIdFromMultiaddr` |
-| pp-browser `foundation/identity/MultiaddrPeerId.h` | `PeerIdFromMultiaddr` for product and config code (foundation does not depend on pp-cpp-amp) |
+| pp-browser `common/MultiaddrPeerId.h` | `PeerIdFromMultiaddr` for product and config code (foundation does not depend on pp-cpp-amp) |
 
 ## Golden vectors
 

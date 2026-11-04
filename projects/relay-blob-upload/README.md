@@ -3,7 +3,7 @@
 **Status:** **Done / archived** (a1–a6 + a5) — see [projects/README.md](../README.md)  
 **Owner:** Hongwei + agents  
 
-**Server contract (www):** [`web2/www/Plans/2026-08-24-relay-blob-upload-design.md`](../../../web2/www/Plans/2026-08-24-relay-blob-upload-design.md)  
+**Server contract (www):** owned by the relay gateway  
 **Stable refs (client):** [SERVICE_ENDPOINTS.md](../../docs/contracts/SERVICE_ENDPOINTS.md), [WIRE_SCHEMAS.md](../../docs/contracts/WIRE_SCHEMAS.md), [MESSAGE_ENCRYPTION.md](../../docs/contracts/MESSAGE_ENCRYPTION.md), [DATA_LAYOUT.md](../../docs/contracts/DATA_LAYOUT.md), [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md)  
 **Related:** [multi-device-account](../multi-device-account/) (M006 one relay per account), [e2e-message-crypto](../e2e-message-crypto/) (tier keys), [chat-storage-and-memory](../chat-storage-and-memory/) (D075 blobs layout), [at-rest-crypto](../at-rest-crypto/) (DEK-wrapped disk), [P2P_MESSAGING.md](../../docs/architecture/P2P_MESSAGING.md) (direct-first / history sync)
 

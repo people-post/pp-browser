@@ -38,19 +38,46 @@ One PR per edge, lowering its allowlist line ([DESIGN § Edges against the order
 
 ## P2 — Thin the base (in-repo, then pp-cpp-common / pp-cpp-crypto)
 
-- [ ] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
-      `foundation/platform`: the app passes values and ports in.
-- [ ] `Tr()` out of capability code (calls and messaging): error codes, text in the app.
+- [x] Gated (CR015 – CR017): `foundation/data`, `foundation/platform`, `foundation/i18n` are the group
+      **product**, only the apps (`app`, `node_app`) may use it; the gate counts CMake links too. Baseline
+      68 include / 14 link sites (`capability_edges_allowlist.txt`). Pricing DTOs into `lib/pricing` (17 sites);
+      stale links dropped (conversations → calls / media, calls → broadcast, delivery tests → node,
+      content → data).
+- [x] Capabilities stop reading `foundation/data` (`Config`, `UserPreferences`, `MeshRole`) and
+      `foundation/platform`: the app passes values and ports in (`HubSettings`, `HubMeshOwner`,
+      `AttachmentPlatform`, the push registrar port, `MeshRoleOf`). People and node done (the config slices
+      `MeshConfig` and `ServiceEndpoints`, `SchemaVersion`, `DialWorthyMultiaddrs` and the secure-blob port into
+      `common/`; the OS store in `foundation/platform`, handed in by the app); net has `CurlSsl` left.
+- [x] The hub's shell thins (CR018): mesh glue, the neutral mesh objects and the seed reservation into
+      `ProductMesh`; backend clients a delivery-level set handed in.
+- [x] Delivery below messaging and realtime (CR020): the gate maps delivery and pricing; calls and broadcast
+      no longer include or link messaging.
+- [x] `Tr()` out of capability code: text by key through `common/Localized.h`, the app's catalogs answer.
+- [x] Codes where they pay: call history rows (`CallSummaryRow::Outcome`). Stored previews and call statuses stay on
+      keys through the port (CR015's note).
 - [x] Runtime core into pp-cpp-common v1.3.0 ([DESIGN § Runtime](DESIGN.md#runtime-core--pp-cpp-common)):
       registered owners instead of `OwnerThreadId::MediaSessions`, no product version defines.
-- [ ] The crypto capabilities add today (message and attachment ciphers, PSK session store) into pp-cpp-crypto.
+- [x] The crypto pp-browser adds: generic pieces into pp-cpp-crypto v1.1.0 (base64url, BLAKE2b-256, `ReplayWindow`;
+      `CryptoUtil` now names pp-cpp-crypto's); pp-browser's message formats into delivery (`lib/delivery`:
+      session keys, AAD, PSK bundles / fingerprints, `key_init`, the PSK store port, the attachment cipher;
+      `MediaKeyWrap` into `lib/calls`). pp-cpp-crypto keeps its rule: no product wire formats.
 
 ## P3 — Capability targets (in-repo)
 
-- [ ] Each capability builds as its own CMake target set and links only what is below it (the gate's
-      allowlist now empty).
+- [x] Each capability builds as its own CMake target set and links only what is below it — its folder's targets
+      (CR022), whose link closures hold nothing above them.
 - [ ] The namespace and include-path scheme for capabilities ([DESIGN § Open questions](DESIGN.md#open-questions)),
       renamed in-repo.
+- [x] Capability folders (CR022), one change each, in the order: people, net, social, delivery,
+      pricing, messaging, calls, broadcast, node. Each: `git mv` into `capabilities/<name>/src/`,
+      its `CMakeLists.txt` with the CTest label, a changes-filter output and its `-LE` skip in `build.yml`.
+
+- [ ] Calls repo-ready (CR023): [x] owns its tests, [x] `media` split, [x] base folder, [ ] standalone build + CI,
+      [ ] host contract + README / docs.
+- [x] Ideas in capabilities, the database in the app (CR024): [x] delivery's ports and in-memory stores,
+      [x] messaging's store ports and in-memory stores (contract-tested against SQLite),
+      [x] `src/lib/storage` with the SQLite stores and the profile database, [x] calls' stores,
+      [x] people's and social's stores (peer cards, posts, content's object index).
 
 ## Contracts repo (any time, CR010)
 

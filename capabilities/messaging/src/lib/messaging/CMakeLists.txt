@@ -1,0 +1,57 @@
+pp_browser_add_lib_library(pp_lib_messaging
+  SOURCES
+    AttachmentCache.cpp
+    AttachmentDownloadPolicy.cpp
+    AttachmentPlatform.cpp
+    AttachmentLimits.cpp
+    AttachmentPlaintextMemoryCache.cpp
+    AttachmentSuppressionStore.cpp
+    ChatAttachmentPrepare.cpp
+    AtAiParser.cpp
+    ChatBlobResponder.cpp
+    ChatHistoryResponder.cpp
+    PeerThreadLogic.cpp
+    GroupInviteGate.cpp
+    RelayReceivePipeline.cpp
+    ChatSyncLogic.cpp
+    ConversationSummaryCodec.cpp
+    EpochBumpCoordinator.cpp
+    GroupE2ePayloadCodec.cpp
+    GroupMembershipApply.cpp
+    GroupMembershipCodec.cpp
+    GroupRosterStatement.cpp
+    GroupRosterSync.cpp
+    GroupRosterSyncCodec.cpp
+    GroupRosterSyncFamily.cpp
+    MentionAlert.cpp
+    IGroupRosterStore.cpp
+    GroupTypes.cpp
+    SentCopy.cpp
+    CopyAsk.cpp
+    CardAsk.cpp
+    ContactLocator.cpp
+    TranscriptBodyCodec.cpp
+    TranscriptAssembly.cpp
+    TranscriptCipher.cpp
+    SyncStateCodec.cpp
+    ModelFacingJson.cpp
+    PeerDisplayResolver.cpp
+  PUBLIC_LIBS
+    pp_lib_delivery
+    pp_lib_people
+    pp_lib_net
+    pp_foundation_error
+    pp_foundation_crypto
+    pp_foundation_identity
+    sodium)
+
+if(PP_BROWSER_BUILD_TESTS)
+  # Messaging's stores in memory (rosters, thread prefs, mentions): test binaries only, never linked into the app.
+  pp_browser_add_lib_library(pp_lib_messaging_testing
+    SOURCES
+      testing/InMemoryMessagingStores.cpp
+    PUBLIC_LIBS
+      pp_lib_messaging
+      pp_lib_delivery_testing)
+  add_subdirectory(tests)
+endif()

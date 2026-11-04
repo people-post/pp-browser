@@ -45,7 +45,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux, Androi
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
-RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). libp2p is **hard-forked** under `src/lib/libp2p/` (not in `third_party/`).
+RmlUi is **hard-forked** in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui). The in-tree libp2p fork is retired ([LIBP2P_UPSTREAM.md](../architecture/LIBP2P_UPSTREAM.md)).
 
 If base `third_party/` trees are missing, run `./scripts/vendor/vendor_import.sh` from the repo root.
 
@@ -66,7 +66,7 @@ cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-First-party targets (`src/common`, `src/base`, `src/feature`, `src/app`, and render/libp2p integration glue) compile with `-Wall -Wextra` (MSVC `/W4`) and treat warnings as errors by default (`PP_BROWSER_WARNINGS_AS_ERRORS=ON`). On GCC/Clang, `-Wmissing-field-initializers` and `-Wunused-parameter` are suppressed (noisy with aggregate init and interface overrides). On MSVC, `_CRT_SECURE_NO_WARNINGS`, `/wd4100` (unused parameter), and `/wd4458` (member shadowing; GCC has no `-Wshadow` by default) are applied for the same reasons. Disable the whole policy with `-DPP_BROWSER_WARNINGS_AS_ERRORS=OFF` if you need a temporary escape hatch. Vendored `third_party/` and the RmlUi / libp2p forks keep their own warning settings.
+First-party targets (everything under `capabilities/*/src` and `src/`, plus integration glue) compile with `-Wall -Wextra` (MSVC `/W4`) and treat warnings as errors by default (`PP_BROWSER_WARNINGS_AS_ERRORS=ON`). On GCC/Clang, `-Wmissing-field-initializers` and `-Wunused-parameter` are suppressed (noisy with aggregate init and interface overrides). On MSVC, `_CRT_SECURE_NO_WARNINGS`, `/wd4100` (unused parameter), and `/wd4458` (member shadowing; GCC has no `-Wshadow` by default) are applied for the same reasons. Disable the whole policy with `-DPP_BROWSER_WARNINGS_AS_ERRORS=OFF` if you need a temporary escape hatch. Vendored `third_party/` and the RmlUi fork keeps their own warning settings.
 
 Configure should print `pp-browser: SDL audio backends — PulseAudio + ALSA (dev packages found)` on Linux when voice deps are installed. If you install `libpulse-dev` / `libasound2-dev` after an older configure, wipe the SDL build tree and reconfigure so drivers are not stuck on dummy:
 
@@ -180,20 +180,19 @@ See [INPUT.md](../ui/INPUT.md) for behavior details.
 
 ### Brief LLM (default)
 
-First launch uses Brief defaults (`https://www.brief.global/api/llm/v1`, model `xai` — Brief provider id; upstream Grok version is configured on the Brief AI side). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
+First launch uses Brief defaults (`<origin>/api/llm/v1`, model `xai` — Brief provider id; upstream Grok version is configured on the Brief AI side). **Register your identity** in Me → Profile — finish registration automatically issues a Brief API key (stored in the profile vault). Until registered, switch to **Cloud** / **Custom** with a key or **Ollama**. Use **Renew registration** near expiry (or with auto-renew on). Rotate the key anytime with **Rotate Brief API key** under Profile while registration is active.
 
 Override the default model with `PP_BROWSER_LLM_MODEL` when no config file exists.
 
-### Sandbox backend (dogfood)
+### Backend origin
 
-Point relay, directory, registration, LLM, and promoted MCP at the PeoplePost sandbox (`https://www-en.qa.peoplepost.org`) and keep profile data separate from production:
+The client ships with no backend origin. Every backend URL (LLM, relay, directory, registration, promoted MCP, diagnostics) is derived from one origin; while it is empty those features are disabled and the app still starts. An origin is `scheme://host[:port]` only: no path (the client appends its own), and a trailing slash is stripped.
 
-```bash
-pp-browser --sandbox
-# or: PP_BROWSER_SANDBOX=1 pp-browser
-```
+- Compile time, two origins: `cmake -B build -S . -DPP_API_URL_PROD=https://backend.example.test -DPP_API_URL_QA=https://qa.backend.example.test`. `PP_API_URL_QA` is optional; when empty the QA choice is not offered in Me → Network.
+- CI: `PP_API_URL_PROD` and `PP_API_URL_QA` are repository secrets of the same names, passed to `release.yml` (desktop and Android), `ios-testflight.yml` and `release-pp-node.yml`; `scripts/platform/ios_build.sh`, `android_build.sh` and `pp_node_package_linux.sh` read the environment variables of those names. A tagged pp-node release fails when `PP_API_URL_PROD` is empty: the node's registration URL derives from it, and a node that publishes itself to the mesh directory (`mesh_publish`, with the opt-in heartbeat) cannot register without one ("mesh_publish requires registration.base_url"). A dogfood build only warns; such a node needs `registration.base_url` in its config or `PP_NODE_REGISTRATION_BASE_URL`.
+- Runtime override: `PP_BROWSER_ORIGIN=https://backend.example.test pp-browser` (wins over everything below). It selects a `custom-<hash>` profile, so the same install launched with and without it has two separate identities.
 
-Uses config/data under `pp-browser-sandbox` (e.g. `~/.config/pp-browser-sandbox`, `~/.local/share/pp-browser-sandbox` on Linux). Register a **new identity** on the sandbox — production relay IDs and Brief API keys do not carry over. Stale `www.brief.global` URLs in an existing sandbox config file are rewritten on load.
+Precedence: `PP_BROWSER_ORIGIN` > the backend picked in Me → Network (`backend.env` in the config file: `prod` → `PP_API_URL_PROD`, `qa` → `PP_API_URL_QA`, `custom` → the relay / directory / registration URLs saved in the config file). Each backend has its own local profile, so switching never mixes identities ([DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md#per-backend-profiles)). `XDG_DATA_HOME` / `--config` still keep whole data sets apart.
 
 ### Cloud LLM (optional)
 
@@ -257,7 +256,7 @@ ctest --test-dir build -R ClickRouting --output-on-failure
 To run a subset of pp-browser GoogleTest suites by name:
 
 ```bash
-ctest --test-dir build -R "BindingsManifestTest|TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure
+ctest --test-dir build -R "TurnPlanTest|ConfigJsonTest|SchemaVersionTest" --output-on-failure
 ```
 
 ## Android (local)

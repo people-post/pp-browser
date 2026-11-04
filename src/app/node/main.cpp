@@ -66,7 +66,6 @@ void PrintUsage(const char* argv0) {
       << "  --ledger-dir <path>   Its work directory: config.json, keys, data (or PP_NODE_LEDGER_DIR;\n"
       << "                        default <profile data dir>/ledger)\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
-      << "  --sandbox             Use sandbox backend (www-en.qa.peoplepost.org)\n"
       << "  --log-level <level>   debug|info|warning|error (or PP_NODE_LOG_LEVEL; default info)\n"
       << "  --debug               Verbose logging (--log-level debug)\n"
       << "  --help                Show this help\n"
@@ -274,8 +273,6 @@ int main(int argc, char** argv) {
     }
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
-    } else if (std::strcmp(argv[i], "--sandbox") == 0) {
-      // Handled by ResolveSandboxModeFromLaunch below.
     } else if (std::strcmp(argv[i], "--status") == 0) {
       print_status = true;
     } else if (std::strcmp(argv[i], "--status-addr") == 0 && i + 1 < argc) {
@@ -312,15 +309,9 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
-
   auto root = pbr::logging::getRootLogger();
   root.setLevel(*level);
   pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
-  if (pbr::SandboxMode()) {
-    root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()
-                 << ", product dir " << pbr::ProductDirBasename();
-  }
 
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);

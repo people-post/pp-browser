@@ -16,10 +16,16 @@ root = Path(sys.argv[1])
 lib_peers = {
     "pp_lib_people",
     "pp_lib_media",
+    "pp_lib_voice",
+    "pp_lib_call_audio",
+    "pp_lib_scan",
     "pp_lib_net",
+    "pp_lib_delivery",
     "pp_lib_messaging",
+    "pp_lib_pricing",
     "pp_lib_ai",
     "pp_lib_ui",
+    "pp_lib_storage",
 }
 # lib/<a> -> lib/<b> pairs the capability order allows (different capabilities, downward).
 allowed = {
@@ -41,8 +47,9 @@ def peer_of(lib):
 fail = 0
 # Every pp_lib_* name in a peer's (non-test) CMake — helper PUBLIC_LIBS, variables, raw
 # target_link_libraries — must belong to that peer. Sub-libraries count as their peer.
-lib_root = root / "src" / "lib"
-for peer_dir in sorted(p for p in lib_root.iterdir() if p.is_dir()):
+# src/lib and the capability folders' lib/ (capabilities/<name>/src mirrors src/, CR022).
+lib_roots = [root / "src" / "lib", *sorted((root / "capabilities").glob("*/src/lib"))]
+for peer_dir in sorted(p for lib_root in lib_roots for p in lib_root.iterdir() if p.is_dir()):
     owner = f"pp_lib_{peer_dir.name}"
     if owner not in lib_peers:
         continue

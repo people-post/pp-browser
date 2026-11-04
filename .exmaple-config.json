@@ -5,7 +5,7 @@
         "require_api_key": false
     },
     "mcp": {
-        "url": "https://www.brief.global/mcp"
+        "url": "https://backend.example.test/mcp"
     },
     "search": {
         "provider": "duckduckgo"

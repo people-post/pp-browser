@@ -74,7 +74,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   config.mesh.capabilities.dht = false;
   config.mesh.capabilities.ledger_gateway = false;
   config.mesh.mesh_publish = false;
-  config.registration.base_url = "https://www.brief.global/api/relay";
+  config.registration.base_url = "https://backend.example.test/api/relay";
 
   SetEnv("PP_NODE_DATA_DIR", "/var/lib/pp-node");
   SetEnv("PP_NODE_BOOTSTRAP_PEERS",
@@ -85,7 +85,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   SetEnv("PP_NODE_CAP_DHT", "yes");
   SetEnv("PP_NODE_CAP_LEDGER_GATEWAY", "1");
   SetEnv("PP_NODE_ADVERTISE_MULTIADDRS", "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
-  SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://www-en.qa.peoplepost.org/api/relay");
+  SetEnv("PP_NODE_REGISTRATION_BASE_URL", "https://backend.example.test/api/relay");
   SetEnv("PP_NODE_DHT_K", "3");
 
   pbr::ApplyPpNodeConfigEnvOverlays(config);
@@ -102,7 +102,7 @@ TEST(NodeEnvOverlayTest, AppliesConfigEnvOverlays) {
   EXPECT_EQ(config.mesh.advertise_multiaddrs[0], "/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/seed");
   EXPECT_TRUE(config.mesh.mesh_publish);
   EXPECT_FALSE(config.mesh.mesh_heartbeat) << "publishing does not turn the heartbeat on (P011)";
-  EXPECT_EQ(config.registration.base_url, "https://www-en.qa.peoplepost.org/api/relay");
+  EXPECT_EQ(config.registration.base_url, "https://backend.example.test/api/relay");
   EXPECT_EQ(config.mesh.dht.k_bucket_size, 3);
 }
 

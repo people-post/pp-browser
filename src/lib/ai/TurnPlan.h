@@ -39,6 +39,8 @@ struct TurnPlan {
   ResponseGoal response_goal = ResponseGoal::General;
   std::vector<PlannedToolCall> tools;
   RenderMode render_mode = RenderMode::Blocks;
+  /** The planner named render_mode itself (parse only; never serialized). Unset means the Blocks above is a default. */
+  bool render_mode_explicit = false;
   std::string synthesis_hints;
   std::string user_request;
   /**

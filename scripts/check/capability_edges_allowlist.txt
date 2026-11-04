@@ -1,5 +1,7 @@
-# Include edges against the capability order, still to be cut (projects/capability-repos PHASES § P1).
+# Include and link edges against the capability order, still to be cut (projects/capability-repos PHASES).
 # check_capability_edges.py fails when one appears, grows or shrinks: lower a count when you cut sites.
-# Format: from -> to <include sites>, tests included (a capability's tests move with it).
+# Format: [link] from -> to <sites>. Include sites count tests (a capability's tests move with it); link sites
+# count the pp-browser targets a folder's CMakeLists.txt names (CR016).
 #
-# Empty: every edge is cut (P1). A new edge against the order fails the gate; fix it, do not list it.
+# Empty: P1 (the capability order) and P2's gate (CR015: the product's base — foundation/data, platform, i18n —
+# is the apps' alone) are both done. A new edge against the order fails the gate; fix it, do not list it.

@@ -13,7 +13,7 @@ How to resolve, edit, and verify machine/profile settings. Normative disk layout
 
 There is **no** CWD `config.json` discovery. For local dev: `pp-browser --config config.json.example`.
 
-**Sandbox backend:** pass `--sandbox` (or set `PP_BROWSER_SANDBOX=1`; a dev build can force it at compile time with CMake `-DPP_BROWSER_DEV_SANDBOX=ON` / the `PP_BROWSER_DEV_SANDBOX` define, so a phone opened from its icon still uses QA — never for a release build) to point Brief services at `https://www-en.qa.peoplepost.org` and use isolated config/data dirs (`pp-browser-sandbox` under XDG paths). Not persisted — production builds ignore it unless the flag/env is set.
+**Backend origin:** set `PP_BROWSER_ORIGIN` at runtime, or build with CMake `-DPP_API_URL_PROD=…` (and optionally `-DPP_API_URL_QA=…`) and pick the backend in Me → Network (see [BUILD.md](BUILD.md#backend-origin)). With none of them, backend URLs are empty and backend-dependent features are disabled.
 
 Layering: `PlatformDefaults` → user config file → field-level merge (partial JSON is valid). Serialization lives in `src/foundation/data/ConfigJson.*` (`Object` encode/decode with `DeepMergeObject`).
 
@@ -39,7 +39,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
 | `PP_NODE_MESH_PUBLISH` | `libp2p.mesh_publish` | Register/renew as `entity_kind=mesh_node` (N027). Default on when advertise list is non-empty |
 | `PP_NODE_MESH_HEARTBEAT` | `libp2p.mesh_heartbeat` | Signed liveness heartbeat to the directory every 5 min (needs mesh publish). Default **off**: opt-in for org seeds (privacy P011) |
-| `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. sandbox `https://www-en.qa.peoplepost.org/api/relay`) |
+| `PP_NODE_REGISTRATION_BASE_URL` | `registration.base_url` | Mesh directory register/renew HTTP base (e.g. `https://backend.example.test/api/relay`) |
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
@@ -75,7 +75,7 @@ After bootstrap, [`Application`](../../src/app/Application.h) owns the live [`Se
 | `ProfilePreferences` | `ShellHost::ProjectChrome` | `ShellHost::ChromePrefs` | Theme + `ShellHost::Apply` (materials) |
 | `ProfilePreferences` | `ConfigApplyBridge` (`Prefs{.language=…}`) | `LocalizationService::Prefs` | `LocalizationService::Apply` (UI chrome via language listeners) |
 
-Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../src/lib/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
+Slice types are **nested on the owning service class**. Settings section flush only writes disk DTOs. Cross-module access (session store, identity, locales, appearance, reachability, PIN status, register / rotate / UPnP / clear undelivered / reset profile) uses [`SettingsCommands`](../../src/feature/settings/SettingsCommands.h) / [`ProfileIdentityView`](../../capabilities/people/src/lib/people/ProfileIdentityView.h) / [`SettingsPortsViews`](../../src/feature/settings/SettingsPortsViews.h) — ports filled via `SettingsController::BindCommands` from `Application` (implementations call [`ConversationsHub`](../../capabilities/messaging/src/feature/conversations/ConversationsHub.h), `SessionStore`, etc.); UI re-syncs `SettingsUiState` after commands. Settings does **not** hold a messaging pointer (`BindMessaging` / `Hub()` removed).
 
 | SessionStore listener | Used by |
 |-----------------------|---------|
@@ -141,7 +141,7 @@ Open **Me** from the nav rail (person icon). The Me tab shows an **identity card
 | Profile (Me card) | `identity.enc` (+ `vault.bin`) | profile |
 | Assistant | `config.json` | machine |
 | Integrations | `config.json` | machine |
-| Network | `config.json` | machine |
+| Network | `config.json` (`backend.env`, custom URLs, mesh) | machine |
 | Appearance | `preferences.json` (`appearance`, `language`) | profile |
 | Security | `vault.bin` + `preferences.json` (`pin_is_default`) | profile |
 | Storage | paths + profile size; reset wipes profile dir | — |
@@ -154,18 +154,19 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 {
   "llm": {
     "preset": "brief",
-    "base_url": "https://www.brief.global/api/llm/v1",
+    "base_url": "https://backend.example.test/api/llm/v1",
     "model": "xai",
     "require_api_key": false
   },
-  "promoted_mcp": { "url": "https://www.brief.global/mcp" },
+  "promoted_mcp": { "url": "https://backend.example.test/mcp" },
   "mcp_servers": [
     { "id": "my-tooling", "url": "https://example.com/mcp", "enabled": true }
   ],
   "search": { "provider": "duckduckgo" },
-  "relay": { "base_url": "https://www.brief.global/api/relay" },
-  "directory": { "base_url": "https://www.brief.global/api/relay" },
-  "registration": { "base_url": "https://www.brief.global/api/relay" },
+  "backend": { "env": "prod" },
+  "relay": { "base_url": "https://backend.example.test/api/relay" },
+  "directory": { "base_url": "https://backend.example.test/api/relay" },
+  "registration": { "base_url": "https://backend.example.test/api/relay" },
   "libp2p": {
     "node_enabled": true,
     "mesh_enabled": true,
@@ -186,7 +187,8 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 - **`llm`** — default preset is **Brief** (API key issued on Profile registration, stored in `identity.enc`). **Cloud**, **Ollama**, and **Custom** remain available in Me → Assistant.
 - **`promoted_mcp`** — primary MCP endpoint (feeds, promoted infra tools). Blank URL uses [`PlatformDefaults`](../../src/foundation/data/PlatformDefaults.cpp).
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
-- **`relay` / `directory` / `registration`** — HTTP endpoints; platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
+- **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. Saving the switch also unbinds this device's push token from the running backend (best effort); switching back before the restart registers it again. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
+- **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/1.0.0/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
 
 ### Mesh DHT (n2)
@@ -270,7 +272,7 @@ Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, n
 
 These two files and the pending crash record are all that Me → Security → Send diagnostics sends: [DIAGNOSTICS.md](../contracts/DIAGNOSTICS.md).
 
-The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
+The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `XDG_DATA_HOME`.
 
 Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps, tees non-logger console output to `logs/console.log`, and on a crash keeps `diagnostics/crash-<stamp>.{txt,log}` plus a symbolized backtrace (`crash-<stamp>-symbolized.txt`, using the dump's `image_base=`).
 
@@ -279,11 +281,12 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | Variable | Purpose |
 |----------|---------|
 | `PP_BROWSER_CONFIG` | Explicit config file path |
-| `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
+| `PP_BROWSER_ORIGIN` | Backend origin (`scheme://host`); overrides the compile-time default and saved backend URLs |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
-| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<brief origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
+| `PP_BROWSER_DIAGNOSTICS_URL` | Dev only (local knob, not remote config): full URL that replaces the "Send diagnostics" upload endpoint (`<origin>/api/support/diagnostics`), e.g. `DEV/tools/fake_diagnostics.py` |
 | `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
+| `PP_BROWSER_STARTUP_TIMING` | Truthy: log `[startup]` timing marks during launch (same as `--startup-timing`) |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 

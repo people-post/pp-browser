@@ -33,7 +33,8 @@ Destroy on the **owner’s thread**:
 
 | Kind | Typical owner affinity |
 |------|------------------------|
-| Rml / SDL / `CallMediaEngine` device teardown | UI |
+| Rml / SDL teardown | UI |
+| `MediaEngine` `Stop` | Calls owner; devices and threads are released on the session's own retirement thread |
 | `ChannelSession` / mux / PeerLink | IO (`MeshPump`) |
 | SQLite stores | whatever opened them — close store before wiping files |
 
@@ -73,7 +74,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 
 Do **not** destroy (or `unique_ptr::reset`) an object while a detached / still-running worker may touch it — on join timeout, **leak until process exit** (`release()`), matching `MeshHost` / `ThreadRuntime` shutdown.
 
-Primary owners: `CallStack`/`CallMediaBridge`, `ConversationsHub` (borrows the `MeshHost` its owner `ProductMesh` builds), `AppRuntime`, LAN mDNS, `ILocalNotifier`, `CallRingtone`.
+Primary owners: `CallStack`/`CallDirectPath`, `ConversationsHub` (borrows the `MeshHost` its owner `ProductMesh` builds), `AppRuntime`, LAN mDNS, `ILocalNotifier`, `CallRingtone`.
 
 ## Lifetime (ticket + Invalidate)
 

@@ -7,7 +7,7 @@
 
 **Related:** [MESSAGE_ENCRYPTION.md](MESSAGE_ENCRYPTION.md) (AAD, ciphertext, signing), [P2P_MESSAGING.md](../architecture/P2P_MESSAGING.md), [COMPATIBILITY.md](COMPATIBILITY.md), [e2e DESIGN](../../projects/e2e-message-crypto/DESIGN.md) (planning), [chat-storage CURRENT_STATE](../../projects/chat-storage-and-memory/CURRENT_STATE.md).
 
-**C++ reference:** [`src/common/Serialize.hpp`](../../src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`src/common/BinaryPack.hpp`](../../src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
+**C++ reference:** [`capabilities/base/src/common/Serialize.hpp`](../../capabilities/base/src/common/Serialize.hpp) (`WireLenUtf8`, `WireLenBytes`, `OutputArchive` / `InputArchive`); [`capabilities/base/src/common/BinaryPack.hpp`](../../capabilities/base/src/common/BinaryPack.hpp) (`binaryPack` / `binaryUnpack`).
 
 **Three tiers (D089/D090):** Direct chat uses **`e2e`** and **`e2e_public` only** — both E2E via **`body.e2e.payload_b64`**. Reject **`public_relay`** and **`body.content_b64`**.
 
@@ -323,7 +323,7 @@ Top-level `text` is the display glyph for `reaction` (may be empty for `reaction
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `url` | **LenUtf8** — CDN `public_url` of ciphertext blob; **empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
+| `url` | **LenUtf8** — relay file share link of the ciphertext, `<origin>/api/relay/v1/files/<blob_id>/download?t=<token>` ([SERVICE_ENDPOINTS § HTTP relay files](SERVICE_ENDPOINTS.md#http-relay-files-chat-attachments)); the token is the download credential (7 days, 10 downloads), so the link is never logged whole. **Empty** when the file was pushed peer-direct only (no server copy; the receiver uses the pushed ciphertext or fetches from the sender) |
 | `mime` | **LenUtf8** — logical type, chosen from the file extension: `image/png`, `image/jpeg`, `image/webp`, `image/gif`, `application/pdf`, `text/plain`, `video/mp4`, `video/webm`, `video/quicktime` (.mov), `audio/mpeg` (.mp3), `audio/mp4` (.m4a), `audio/wav`, `audio/ogg`; any other extension is `application/octet-stream`. Table only, nothing is transcoded; receivers must also accept mimes they do not know. |
 | `filename` | **LenUtf8** — original filename |
 | `byte_length` | `u64` BE — plaintext size |
@@ -392,7 +392,7 @@ Example libp2p / client JSON:
 | `requester_identity_kind` | string | yes | Authenticated caller identity kind |
 | `requester_identity_value` | string | yes | Authenticated caller identity value |
 | `peer_identity_kind` | string | yes | Other party identity kind |
-| `peer_identity_value` | string | yes | Other party (`ChatTargetKey.peer_identity_value`) |
+| `peer_identity_value` | string | yes | Other party (`PeerSessionKey.peer_identity_value`) |
 | `channel` | string | yes | `e2e` \| `e2e_public` |
 | `session_epoch` | integer | yes | Required for both direct tiers |
 | `min_sender_seq` | integer | no | Inclusive lower bound — mapped to relay `min_index_key` in v1 |
@@ -478,7 +478,7 @@ Chat-shaped response (libp2p / documentation):
 
 ## `PeerAnnounceTip` (`/pp/rpc/peer-announce/1.0.0`, `schema_version: 1`)
 
-A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/lib/broadcast/PeerAnnounceCodec.cpp`.
+A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `capabilities/broadcast/src/lib/broadcast/PeerAnnounceCodec.cpp`.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -510,9 +510,24 @@ JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies ca
 | `attach` | client → relay | `session_token`, `call_id`, `auth` |
 | `subscribe`, `unsubscribe`, `detach` | client → relay | stream / channel selection |
 
-**Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
+**Data frames** (not JSON): the [media frame](#media-frames) below. They travel on the participant's **data lane** (`/pp-mesh/media-relay-data/1.0.0`, opened by the client on the same link once attached; BestEffort, the oldest dropped). The relay binds the lane to the participant by the link's peer and fans out on it. A loss costs one frame, never a stall, and there are no acknowledgements. Without a lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) the control channel carries them, and the relay still accepts them there. `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
 
-**Call-media** (`/pp/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
+**Call-media** (`/pp/realtime/1.0.0`, a 1:1 call) sends the same media frame, one per L3 message (no length prefix).
+
+### Media frames
+
+One frame for every path a call's or broadcast's media takes: through a hop's fan-out, straight to the 1:1 peer, and from a broadcaster to its viewers (pp-cpp-mesh `mesh/l4/shared/MediaFrame.h`, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H2). Big endian:
+
+| Bytes | Field |
+|-------|-------|
+| 1 | version `3` (high nibble), `channel_type` << 2 (`0` ReliableOrdered: audio, `1` LatestLossy: video, `2` BestEffort), `mark` (bit 0: a keyframe) |
+| 1 | `channel` ([MEDIA_CHANNELS](MEDIA_CHANNELS.md): audio `0x00`, video `0x10 \| level`) |
+| 4 | `stream_id`: the sender's (`PublisherStreamIdForIdentity`; `0` on a 1:1 call) |
+| 4 | `seq`: per sender instance and channel, from 1, only increasing |
+| 8 | `instance`: random and nonzero, drawn where the sender's counters start |
+| n + 16 | the payload sealed with the media key (XChaCha20-Poly1305), then its tag |
+
+The 18 B header is in the clear, so a hop routes and drops stale video without the key, and it is the seal's associated data together with a context: `call-media-sfu|<call_id>` through a hop, `call-media|<call_id>` on a 1:1 call, `broadcast-media|<program_id>|<join_handle>` for a broadcast. A frame never opens under another path, call or feature. The 24 B nonce is derived, never sent: `channel` (1), `stream_id` (4), `instance` (8), `seq` (4), the key epoch (4), three zero bytes. A sender refuses to seal a `seq` that did not move forward on its channel under one instance and epoch (`MediaFrameSendGuard`), so a bug drops a frame instead of repeating a nonce. A receiver refuses any other version (the relay frame v1 and the end-to-end body v2 before it).
 
 ## Versioning matrix
 

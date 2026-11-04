@@ -29,6 +29,8 @@ public:
 
   ConversationsHub& Hub() { return *hub_; }
   CallsParticipant& Calls() { return calls_; }
+  /** The app's mesh and its neutral objects (reach, the media relay client). */
+  ProductMesh& Mesh() { return mesh_; }
   BroadcastParticipant& Broadcast() { return broadcast_; }
 
   /** Let the facade answer call questions about threads. */

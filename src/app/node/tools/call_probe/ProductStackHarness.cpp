@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "lib/storage/ProfileStorage.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "lib/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
@@ -20,7 +21,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "common/media/MediaSessionsOwner.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "lib/people/MeshHopPolicy.h"
 #include "mesh/dht/AmpDhtProtocol.h"
@@ -91,7 +92,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   if (!clock) {
     return Error("null Amp clock");
   }
-  AppRuntime::Initialize(ProductRuntimeConfig());
+  AppRuntime::Initialize(MediaSessionsRuntimeConfig());
   AppRuntime::InitializeUI();
 
   auto harness = std::unique_ptr<ProductStackHarness>(new ProductStackHarness());
@@ -151,7 +152,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   }
   local_account_ = loaded->account_id;
 
-  psk_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), "call-probe");
+  psk_ = std::make_unique<SqlitePeerSessionStore>(store_->ProfileDbPath(), "call-probe");
   if (auto psk_dek = psk_->SetDek(ProbeDek()); !psk_dek) {
     return psk_dek.error();
   }
@@ -182,11 +183,17 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   mesh_media_relay_ = std::make_unique<mesh::MeshMediaRelay>(*mesh_connectivity_);
   hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
-  if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
-    return stores.error();
+  auto call_stores = OpenSqliteCallStores(store_->ProfileDbPath(), "call-probe");
+  if (!call_stores) {
+    return call_stores.error();
   }
-  if (auto mk = stack_->MediaKeys()->SetDek(ProbeDek()); !mk) {
-    return mk.error();
+  for (IDekConsumer* at_rest : call_stores->at_rest) {
+    if (auto keyed = at_rest->SetDek(ProbeDek()); !keyed) {
+      return keyed.error();
+    }
+  }
+  if (auto stores = stack_->InitializeStores(std::move(*call_stores)); !stores) {
+    return stores.error();
   }
 
   ui_ = std::make_unique<CallUiBackend>(*stack_);
@@ -194,10 +201,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   PublishAddressDisclosure();
   CallStackDeps deps;
   deps.address_disclosure = &address_disclosure_;
-  deps.store = store_.get();
+  deps.threads = store_.get();
+  deps.transcript = store_.get();
   deps.contacts = contacts_.get();
-  deps.identity = identity_.get();
-  deps.psk = psk_.get();
+  deps.account = identity_.get();
   // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
   deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
   deps.mesh = [this]() -> mesh::MeshHost* { return host_.get(); };
@@ -212,8 +219,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     out.session_key = shared_session_key_;
     return out;
   };
-  deps.delivery.register_peer_direct_endpoint = [this](const std::string& identity,
-                                                      const std::string& multiaddr) {
+  // Reach registers a peer's dialable listen address on the harness's Amp links.
+  auto register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (!host_ || !host_->Amp()) {
       return;
     }
@@ -240,15 +247,16 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
     return {};
   };
+  deps.delivery.send_control_to_many = ControlSendsOneByOne(deps.delivery.send_control);
   deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;
-  reach.contacts = deps.contacts;
+  reach.contacts = contacts_.get();
   reach.mesh_config = deps.mesh_config;
   reach.list_directory_nodes = deps.list_directory_nodes;
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
-  reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  reach.register_direct_endpoint = register_direct_endpoint;
   mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
   hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
@@ -260,9 +268,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   }
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
   // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
-  stack_->RunOnOwner([this](CallSessionManager& calls) {
-    calls.SetRegisterPeerListenMultiaddrs(
-        [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
+  stack_->RunOnOwner([this](CallDevice& calls) {
+    calls.MeshGlue().register_peer_listen_multiaddrs =
+        ([this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
           std::vector<std::string> dialable;
           dialable.reserve(multiaddrs.size());
           for (const std::string& ma : multiaddrs) {
@@ -419,9 +427,7 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
     hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
   LearnAccountPeerId(account_id, peer_id);
   // Dual-SNAT: do not RegisterEndpoint private advertise MAs — that poisons dial book and
@@ -551,9 +557,7 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
   }
   account_to_peer_id_[account_id] = peer_id;
   if (stack_) {
-    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
-      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
-    });
+    stack_->RunOnOwner([account_id, peer_id](CallDevice& calls) { calls.NoteMeshPeerIdForRelay(account_id, peer_id); });
   }
 }
 
@@ -838,14 +842,14 @@ public:
   std::chrono::steady_clock::time_point MetAt() const { return met_at_; }
   const std::string& Last() const { return last_; }
 
-  void Tick(const std::vector<CallMediaStreamHealth>& streams) {
+  void Tick(const std::vector<MediaStreamHealth>& streams) {
     const auto now = std::chrono::steady_clock::now();
     if (!Enabled() || met_ || now < next_sample_) {
       return;
     }
     next_sample_ = now + std::chrono::milliseconds(250);
     Sample sample{now, {}};
-    for (const CallMediaStreamHealth& s : streams) {
+    for (const MediaStreamHealth& s : streams) {
       sample.rx[s.stream_id] = s.rx_frames;
     }
     samples_.push_back(std::move(sample));
@@ -895,11 +899,11 @@ private:
 
 } // namespace
 
-std::vector<CallMediaStreamHealth> ProductStackHarness::RxStreams() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+std::vector<MediaStreamHealth> ProductStackHarness::RxStreams() const {
+  if (!stack_ || !stack_->Engine()) {
     return {};
   }
-  return stack_->MediaEngine()->HealthSnapshot().streams;
+  return stack_->Engine()->HealthSnapshot().streams;
 }
 
 std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
@@ -933,24 +937,24 @@ std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
   std::cout << "ok  product-stack AcceptClicked call_id=" << call_id << "\n";
-  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartSfu first, inbound
+  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartDuplex first, inbound
   // hello lands on a pending bundle (offerer=0) and the PeerLink is torn down (HL004 race).
   std::this_thread::sleep_for(std::chrono::milliseconds(150));
   return call_id;
 }
 
 uint64_t ProductStackHarness::TxAudioFrames() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+  if (!stack_ || !stack_->Engine()) {
     return 0;
   }
-  return stack_->MediaEngine()->HealthSnapshot().tx_audio_frames;
+  return stack_->Engine()->HealthSnapshot().tx_audio_frames;
 }
 
 uint64_t ProductStackHarness::RxAudioFrames() const {
-  if (!stack_ || !stack_->MediaEngine()) {
+  if (!stack_ || !stack_->Engine()) {
     return 0;
   }
-  return stack_->MediaEngine()->HealthSnapshot().rx_audio_frames;
+  return stack_->Engine()->HealthSnapshot().rx_audio_frames;
 }
 
 int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
@@ -1132,8 +1136,7 @@ void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   const bool flushed = PumpUntil(
       [this, sends_before]() {
-        return ui_->Phase() == CallPhase::Idle &&
-               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive()) &&
+        return ui_->Phase() == CallPhase::Idle && (!stack_->Engine() || !stack_->Engine()->IsActive()) &&
                control_sends_.load(std::memory_order_acquire) > sends_before;
       },
       8000);

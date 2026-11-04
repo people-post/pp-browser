@@ -36,9 +36,9 @@ u64 BE   target count (≤ 8), then per target: LenUtf8 url (https, ≤ 256 byte
 ## 2. Relay post API (`post_relay`)
 
 HTTP under the target's base URL; JSON bodies; binary fields base64; failures as `{ "error": code,
-"message" }`. The service is [app-posts](https://github.com/nfsc-brief-web3/app-posts) (deployable on its
+"message" }`. The service is app-posts (deployable on its
 own, base URL = its root); the default relay forwards `…/api/relay/v1/posts/*` to it, so the default
-target is `https://www.brief.global/api/relay/v1`.
+target is `https://backend.example.test/api/relay/v1`.
 
 ### Writes — authenticated by the author's own signatures (S018)
 
@@ -69,7 +69,7 @@ target is `https://www.brief.global/api/relay/v1`.
   LenUtf8 note ‖ i64 BE issued_at` (fresh within 5 minutes). Reasons: `illegal`, `sexual`, `violence`,
   `harassment`, `spam`, `other`; the note is ≤ 1 KiB. An anonymous report omits `reporter`. The relay
   rate-limits reports by network address and by reporter, and may weigh signed ones more.
-- **Cross-implementation vectors:** `src/lib/posts/tests/data/post_vectors.json` — entries of every kind,
+- **Cross-implementation vectors:** `capabilities/social/src/lib/posts/tests/data/post_vectors.json` — entries of every kind,
   a head, a media presign and a report, signed by `lib/posts`; every implementation (the relay) must parse,
   hash and verify them alike.
 - The relay enforces the protocol limits (S014) and **its quotas per author**, stated in its `post_relay`
@@ -194,6 +194,6 @@ compose → media into the public CAS realm (content ids) → PostAuthor.Append(
 
 | Side | Work |
 |------|------|
-| Relay ([app-posts](https://github.com/nfsc-brief-web3/app-posts), behind the app-static-api route; merged and deployed first) | the API of § 2: verify entries and heads (ML-DSA, limits, quotas), store with forks and stubs, media presign and serve; only served authors (`not_served`), refusal codes, withheld stubs, the scan step before media is served, reports |
+| Relay (app-posts, behind the app-static-api route; merged and deployed first) | the API of § 2: verify entries and heads (ML-DSA, limits, quotas), store with forks and stubs, media presign and serve; only served authors (`not_served`), refusal codes, withheld stubs, the scan step before media is served, reports |
 | Client | head targets; the publish outbox (§ 5); `/pp/posts/1.0.0` (§ 3); head discovery and refresh (§ 4, § 6); follow list; compose with text and images; a minimal feed showing *claimed* time |
 | Lab | a scenario: Alice posts with an image; Bob follows her through her invite, refreshes, verifies and sees it; a delete reaches him as a stub |

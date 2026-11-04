@@ -96,7 +96,7 @@ bool IsCallWake(NSDictionary* userInfo) {
     type = (NSString*)raw;
   }
   if ([type isEqualToString:@"call_wake"]) {
-    pbr::BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+    pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     // inbox_wake or unknown opaque wake — force inbox sync.
     pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
@@ -113,7 +113,7 @@ bool IsCallWake(NSDictionary* userInfo) {
          withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
   (void)center;
   if (IsCallWake(notification.request.content.userInfo)) {
-    pbr::BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+    pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
   completionHandler(UNNotificationPresentationOptionNone);
 }
@@ -125,7 +125,7 @@ bool IsCallWake(NSDictionary* userInfo) {
   (void)center;
   NSDictionary* userInfo = response.notification.request.content.userInfo;
   if (IsCallWake(userInfo)) {
-    pbr::BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+    pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
     if ([thread isKindOfClass:[NSString class]] && [(NSString*)thread length] > 0) {

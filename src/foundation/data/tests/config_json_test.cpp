@@ -49,12 +49,12 @@ TEST(ConfigJsonTest, EmitsModernConfigKeys) {
 
 TEST(ConfigJsonTest, ResolvesPromotedMcpFallbacks) {
   pbr::AppConfig defaults;
-  defaults.promoted_mcp.url = "https://www.brief.global/mcp";
+  defaults.promoted_mcp.url = "https://backend.example.test/mcp";
 
-  EXPECT_EQ(pbr::ResolvePromotedMcp(defaults, defaults).url, "https://www.brief.global/mcp");
+  EXPECT_EQ(pbr::ResolvePromotedMcp(defaults, defaults).url, "https://backend.example.test/mcp");
 
   pbr::AppConfig empty_promoted;
-  EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://www.brief.global/mcp");
+  EXPECT_EQ(pbr::ResolvePromotedMcp(empty_promoted, defaults).url, "https://backend.example.test/mcp");
 }
 
 TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
@@ -179,6 +179,32 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_TRUE(parsed.sidebar_collapsed);
   EXPECT_EQ(parsed.auxiliary_width_dp, 400);
   EXPECT_TRUE(parsed.show_advanced_settings);
+}
+
+TEST(ConfigJsonTest, AttachmentAutoNetworkFlagsDefaultRoundTripAndNormalize) {
+  auto legacy = pbr::TryParseObject(R"({ "schema_version": 14, "attachment_download_policy": "always_auto" })");
+  ASSERT_TRUE(legacy.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.attachment_auto_on_wifi = false;
+  loaded.attachment_auto_on_cellular = true;
+  pbr::ProfilePrefsFromObject(*legacy, loaded);
+  EXPECT_EQ(loaded.attachment_download_policy, "always_auto");
+  EXPECT_TRUE(loaded.attachment_auto_on_wifi);
+  EXPECT_FALSE(loaded.attachment_auto_on_cellular);
+
+  pbr::ProfilePreferences edited;
+  edited.attachment_download_policy = "always_auto";
+  edited.attachment_auto_on_wifi = false;
+  edited.attachment_auto_on_cellular = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.attachment_download_policy, "always_auto");
+  EXPECT_FALSE(parsed.attachment_auto_on_wifi);
+  EXPECT_TRUE(parsed.attachment_auto_on_cellular);
+
+  edited.attachment_auto_on_cellular = false;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.attachment_download_policy, "smart") << "all automatic with no network ticked is the default";
 }
 
 TEST(ConfigJsonTest, NotificationPreviewDefaultsToShownWhenAbsentAndRoundTrips) {

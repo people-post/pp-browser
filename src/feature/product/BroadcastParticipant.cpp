@@ -1,4 +1,5 @@
 #include "feature/product/BroadcastParticipant.h"
+#include "foundation/platform/Platform.h"
 
 #include "lib/broadcast/PeerAnnouncePublisher.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -30,7 +31,7 @@ Roe<void> Unavailable() {
 
 } // namespace
 
-BroadcastParticipant::BroadcastParticipant(ConversationsHub& hub) : hub_(hub) {}
+BroadcastParticipant::BroadcastParticipant(ConversationsHub& hub, ProductMesh& mesh) : hub_(hub), mesh_(mesh) {}
 
 BroadcastParticipant::~BroadcastParticipant() {
   Reset();
@@ -114,10 +115,11 @@ void BroadcastParticipant::Rebuild(ConversationsHub& hub) {
     return;
   }
   BroadcastMeshDeps deps;
+  deps.mobile = Platform::IsMobile();
   deps.links = &chat->links;
   deps.io = chat->io;
-  deps.relay = hub.MediaRelay().RelayAttachPorts();
-  deps.lane = hub.Connectivity().Lane();
+  deps.relay = mesh_.MediaRelay().RelayAttachPorts();
+  deps.lane = mesh_.Connectivity().Lane();
   deps.publisher_key = [&hub](const std::string& peer_id) { return PublisherKey(hub, peer_id); };
   deps.put_program_key = [services](const std::string& program_id, const std::string& join_handle,
                                     BroadcastProgramKey key) {

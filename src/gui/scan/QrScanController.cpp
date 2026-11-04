@@ -6,10 +6,19 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/media/CameraCaptureOrientation.h"
 
+#include "common/Logger.h"
+
 #include <ui/dom/Context.h>
 #include <ui/dom/ElementDocument.h>
 
 namespace pbr {
+
+namespace {
+logging::Logger& ScanLog() {
+  static logging::Logger log = logging::getLogger("Gui.QrScan");
+  return log;
+}
+} // namespace
 
 QrScanController::QrScanController(MediaDeviceArbiter& devices) : scanner_(devices) {
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { Close(); });
@@ -42,7 +51,16 @@ bool QrScanController::RegisterModel(ui::Context* context) {
 
 void QrScanController::Open(QrScanResultCallback on_result) {
   Close();
-  if (!navigation_.push_layer || !on_result || !AppLifecycle::IsForeground()) {
+  if (!navigation_.push_layer) {
+    ScanLog().warning << "Open ignored: push_layer is not bound";
+    return;
+  }
+  if (!on_result) {
+    ScanLog().warning << "Open ignored: empty result callback";
+    return;
+  }
+  if (!AppLifecycle::IsForeground()) {
+    ScanLog().warning << "Open ignored: app is not in the foreground";
     return;
   }
   PaneSpec spec;
@@ -51,6 +69,7 @@ void QrScanController::Open(QrScanResultCallback on_result) {
   spec.role = PaneRole::Transient;
   layer_id_ = navigation_.push_layer(spec);
   if (!IsOpen()) {
+    ScanLog().warning << "Open ignored: push_layer returned no layer";
     return;
   }
   on_result_ = std::move(on_result);
@@ -69,13 +88,28 @@ void QrScanController::BeginCapture() {
   Dirty();
 }
 
+const char* ScanErrorTextKey(const QrScanner::ErrorKind kind) {
+  switch (kind) {
+    case QrScanner::ErrorKind::PermissionDenied:
+      return "scan.camera_denied";
+    case QrScanner::ErrorKind::CameraBusy:
+      return "scan.camera_busy";
+    case QrScanner::ErrorKind::None:
+    case QrScanner::ErrorKind::Other:
+      break;
+  }
+  return "scan.camera_error";
+}
+
 void QrScanController::OnDismissed() {
+  preview_ = nullptr;
   layer_id_ = -1;
   scanner_.Stop();
   on_result_ = nullptr;
 }
 
 void QrScanController::Close() {
+  preview_ = nullptr;
   scanner_.Stop();
   on_result_ = nullptr;
   const int layer = layer_id_;
@@ -104,9 +138,7 @@ void QrScanController::Tick() {
   auto update = scanner_.Poll();
   if (!update.error.empty()) {
     // Hint from the diagnosed cause, never a blanket "check permissions".
-    const bool denied = update.error.find("permission denied") != std::string::npos;
-    const bool held = update.error.find("held by") != std::string::npos;
-    status_ = Tr(denied ? "scan.camera_denied" : held ? "scan.camera_busy" : "scan.camera_error");
+    status_ = Tr(ScanErrorTextKey(update.error_kind));
     failed_ = true;
     Dirty();
   }
@@ -120,18 +152,31 @@ void QrScanController::Tick() {
   }
   if (update.preview && context_) {
     status_ = Tr("scan.hint");
-    for (int i = 0; i < context_->GetNumDocuments(); ++i) {
-      auto* document = context_->GetDocument(i);
-      if (!document) {
-        continue;
-      }
-      auto* element = document->GetElementById("qr-scan-preview");
-      if (auto* preview = dynamic_cast<ElementScanPreview*>(element)) {
-        preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
-        break;
-      }
+    if (!preview_) {
+      FindPreview();
+    }
+    auto* preview = dynamic_cast<ElementScanPreview*>(preview_.get());
+    if (!preview && preview_) {
+      preview_ = nullptr;  // the id now names something else: look again
+      FindPreview();
+      preview = dynamic_cast<ElementScanPreview*>(preview_.get());
+    }
+    if (preview) {
+      preview->SetFrame(update.preview->width, update.preview->height, std::move(update.preview->rgba));
     }
     Dirty();
+  }
+}
+
+// Looked up once per scan surface; the observer pointer empties itself when the element goes away.
+void QrScanController::FindPreview() {
+  for (int i = 0; i < context_->GetNumDocuments(); ++i) {
+    auto* document = context_->GetDocument(i);
+    auto* element = document ? document->GetElementById("qr-scan-preview") : nullptr;
+    if (dynamic_cast<ElementScanPreview*>(element)) {
+      preview_ = element->GetObserverPtr();
+      return;
+    }
   }
 }
 

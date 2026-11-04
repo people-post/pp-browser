@@ -49,7 +49,8 @@
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
 //   state                               the call surface + media counters (joined participants,
-//                                       per-stream rx frames)
+//                                       per-stream rx frames, video tx / rx and how each video stream's
+//                                       frames arrived: gaps, stalls, bunched, lost)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
@@ -57,30 +58,35 @@
 //
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 // --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
+// --synthetic-video: a camera and an H.264 stand-in with real frame sizes (SyntheticVideo): video calls run in a
+//   container with no camera or GPU, for measuring how video travels.
 
 #include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/directory/DirectoryJson.h"
-#include "lib/messaging/TextSpans.h"
+#include "lib/delivery/TextSpans.h"
 #include "lib/messaging/MentionAlert.h"
-#include "lib/messaging/PeerRequestAuth.h"
+#include "lib/delivery/PeerRequestAuth.h"
 #include "feature/conversations/ContactCardExchange.h"
 #include "common/chat/MessagingJson.h"
 #include "lib/calls/CallLifecycleTypes.h"
-#include "lib/media/CallMediaEngine.h"
+#include "lib/media/IMediaView.h"
+#include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/SyntheticVideo.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
-#include "feature/calls/CallPresenter.h"
-#include "feature/conversations/ChatPresenter.h"
+#include "feature/presenters/CallPresenter.h"
+#include "feature/presenters/ChatPresenter.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/product/ProductStack.h"
+#include "feature/product/HubSettingsProjection.h"
 #include "lib/ai/StructuredTextParser.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
@@ -92,7 +98,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "foundation/runtime/FramePacing.h"
 
 #include <SDL3/SDL_hints.h>
@@ -159,7 +165,6 @@ class Probe {
 public:
   Probe() {
     product_ = std::make_unique<ProductStack>();
-    product_->Hub().BindSessionStore(store_);
     product_->Hub().BindSecrets(secrets_);
     facade_ = std::make_unique<ConversationsFacade>(product_->Hub());
     product_->BindFacade(*facade_);
@@ -312,21 +317,38 @@ public:
     out.set("show_invite", screen.show_invite);
     out.set("group", screen.group);
     if (calls_->Available()) {
-      if (CallMediaEngine* media = product_->Calls().Stack().MediaEngine()) {
-        const auto health = media->HealthSnapshot();
-        out.set("media_active", media->IsActive());
-        out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
-        out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
-        out.set("sfu_mode", health.sfu_mode);
-        std::vector<Value> streams;
-        for (const CallMediaStreamHealth& stream : health.streams) {
-          Object row;
-          row.set("stream_id", static_cast<int64_t>(stream.stream_id));
-          row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
-          streams.push_back(ObjectValue(std::move(row)));
-        }
-        out.set("streams", ArrayValue(std::move(streams)));
+      IMediaView& media = calls_->Media();
+      const auto health = media.HealthSnapshot();
+      out.set("media_active", media.IsActive());
+      out.set("rx_audio_frames", static_cast<uint64_t>(health.rx_audio_frames));
+      out.set("tx_audio_frames", static_cast<uint64_t>(health.tx_audio_frames));
+      out.set("sfu_mode", health.packet_mode);
+      out.set("path", CallMediaPathName(calls_->MediaPath()));
+      std::vector<Value> streams;
+      for (const MediaStreamHealth& stream : health.streams) {
+        Object row;
+        row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+        row.set("rx_frames", static_cast<uint64_t>(stream.rx_frames));
+        streams.push_back(ObjectValue(std::move(row)));
       }
+      out.set("streams", ArrayValue(std::move(streams)));
+      out.set("tx_video_frames", static_cast<uint64_t>(health.tx_video_frames));
+      out.set("rx_video_frames", static_cast<uint64_t>(health.rx_video_frames));
+      std::vector<Value> video;
+      for (const VideoStreamArrival& stream : health.video_arrivals) {
+        const VideoArrivalSummary& a = stream.arrival;
+        Object row;
+        row.set("stream_id", static_cast<int64_t>(stream.stream_id));
+        row.set("frames", static_cast<uint64_t>(a.frames));
+        row.set("lost", static_cast<uint64_t>(a.lost));
+        row.set("gap_p50_ms", a.gap_p50_ms);
+        row.set("gap_p95_ms", a.gap_p95_ms);
+        row.set("gap_max_ms", a.gap_max_ms);
+        row.set("stalls", static_cast<uint64_t>(a.stalls));
+        row.set("bunched", static_cast<uint64_t>(a.bunched));
+        video.push_back(ObjectValue(std::move(row)));
+      }
+      out.set("video_arrivals", ArrayValue(std::move(video)));
       std::vector<Value> joined;
       if (!last_call_id_.empty()) {
         if (auto participants = calls_->ListJoinedParticipants(last_call_id_)) {
@@ -671,7 +693,7 @@ public:
           out.set("owner", *owner);
         }
         // G013: a restored group's member check (active / checking / removed) and the roster epoch.
-        if (GroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
+        if (IGroupRosterStore* rosters = Hub().GroupRosterOrNull()) {
           if (auto metadata = rosters->LoadMetadata(request->getString("group_id").value_or(""));
               metadata && *metadata) {
             out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));
@@ -892,21 +914,21 @@ public:
       if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
         ReplyError(id, saved.error().message);
       } else {
-        Hub().Apply(ConversationsHub::ProjectNotifications(prefs));
+        Hub().Apply(ProjectNotifications(prefs));
         Object out = Reply(id, true);
         out.set("stay_connected", AppLifecycle::StaysConnected());
         Emit(out);
       }
     } else if (cmd == "push_wake") {
-      // A call push arrived (PushWakeJni: FCM → RequestCallWakeSync).
-      BackgroundSyncScheduler::Instance().RequestCallWakeSync();
+      // A call push arrived (PushWakeJni: FCM → RequestUrgentWakeSync).
+      BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
       Emit(Reply(id, true));
     } else if (cmd == "warm_seeds") {
       if (!Hub().IsMeshReady()) {
         ReplyError(id, "mesh not ready");
         return;
       }
-      Hub().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
+      product_->Mesh().Connectivity().Rendezvous().WarmBootstrapSeedSessions();
       Emit(Reply(id, true));
     } else if (cmd == "quit") {
       Emit(Reply(id, true));
@@ -1305,6 +1327,7 @@ int main(int argc, char** argv) {
   std::string log_file;
   std::string restore_phrase_file;
   std::string restore_saved_copy;
+  bool synthetic_video = false;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
@@ -1314,17 +1337,26 @@ int main(int argc, char** argv) {
       restore_phrase_file = argv[++i];
     } else if (std::strcmp(argv[i], "--restore-saved-copy") == 0 && i + 1 < argc) {
       restore_saved_copy = argv[++i];
+    } else if (std::strcmp(argv[i], "--synthetic-video") == 0) {
+      synthetic_video = true;
     }
   }
   if (pin.empty()) {
-    std::fprintf(stderr, "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
-                         "[--restore-saved-copy FILE]\n");
+    std::fprintf(stderr,
+                 "usage: pp-app-probe --config FILE --pin PIN [--log-file FILE] [--restore-phrase-file FILE] "
+                 "[--restore-saved-copy FILE] [--synthetic-video]\n");
     return 2;
   }
   // No sound card in the lab: SDL's dummy driver plays into nothing and records silence, so the
   // real device path still runs.
   // (An SDL_AUDIO_DRIVER in the environment still wins over this hint.)
   SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+  if (synthetic_video) {
+    // Before anything makes a codec or opens a device: every one from now on is the stand-in.
+    pbr::SetPlatformVideoCodecOverride([]() { return pbr::SyntheticVideo::CreateCodec(); });
+    (void)pbr::MediaDeviceArbiter::SetDefaultBackendFactory(
+        []() { return pbr::SyntheticVideo::WithCamera(pbr::CreateSdlMediaDeviceBackend()); });
+  }
 
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::logging::Level::INFO);
@@ -1385,10 +1417,10 @@ int main(int argc, char** argv) {
     pbr::Emit(out);
   }
   // Frames as the app runs them (Application's loop, BrowserHost's power save): at once when UI
-  // work is posted, else after kCallChromeFrameIntervalSec while a ring / call panel shows, or
+  // work is posted, else after kLiveChromeFrameIntervalSec while a ring / call panel shows, or
   // kIdleFrameMaxWaitSec when idle. Each frame runs the UI tasks, then ticks (CallController::Tick).
   while (!probe->QuitRequested() && !stdin_closed) {
-    const double wait_sec = probe->CallShown() ? pbr::kCallChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
+    const double wait_sec = probe->CallShown() ? pbr::kLiveChromeFrameIntervalSec : pbr::kIdleFrameMaxWaitSec;
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(static_cast<int64_t>(wait_sec * 1000.0));
     while (!pbr::AppRuntime::HasPendingUITasks() && std::chrono::steady_clock::now() < deadline &&

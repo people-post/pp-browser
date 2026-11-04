@@ -31,6 +31,9 @@ Environment:
   PP_NODE_BUILD_DIR   build tree (default: ./build-pp-node)
   PP_NODE_OUT_DIR     output dir (default: ./dist/pp-node)
   PP_NODE_JOBS        parallel compile jobs
+  PP_API_URL_PROD     prod backend origin compiled in (registration / directory URLs derive
+                      from it; empty = none, so set it or the node's config / env for a release)
+  PP_API_URL_QA       QA backend origin compiled in (empty = none)
 EOF
 }
 
@@ -54,7 +57,9 @@ do_configure() {
     -DPP_BROWSER_BUILD_TESTS=OFF \
     -DPP_BROWSER_COMPILER_CACHE=ON \
     -DPP_BROWSER_VERSION="${PROJECT_VERSION}" \
-    -DPP_BROWSER_RELEASE_VERSION="${RELEASE_VERSION}"
+    -DPP_BROWSER_RELEASE_VERSION="${RELEASE_VERSION}" \
+    -DPP_API_URL_PROD="${PP_API_URL_PROD:-}" \
+    -DPP_API_URL_QA="${PP_API_URL_QA:-}"
 }
 
 do_build() {

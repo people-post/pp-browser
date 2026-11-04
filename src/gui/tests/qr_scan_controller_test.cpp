@@ -58,6 +58,13 @@ TEST(QrScanControllerTest, EnteringBackgroundCancelsCaptureWithoutDeliveringText
   AppLifecycle::OnDidEnterForeground();
 }
 
+TEST(QrScanControllerTest, TheHintFollowsTheErrorKindNotTheErrorText) {
+  EXPECT_STREQ(ScanErrorTextKey(QrScanner::ErrorKind::PermissionDenied), "scan.camera_denied");
+  EXPECT_STREQ(ScanErrorTextKey(QrScanner::ErrorKind::CameraBusy), "scan.camera_busy");
+  EXPECT_STREQ(ScanErrorTextKey(QrScanner::ErrorKind::Other), "scan.camera_error");
+  EXPECT_STREQ(ScanErrorTextKey(QrScanner::ErrorKind::None), "scan.camera_error");
+}
+
 TEST(ContactQrScanTest, FriendLocatorRequiresConfirmationBeforeSaving) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   ContactsController contacts;

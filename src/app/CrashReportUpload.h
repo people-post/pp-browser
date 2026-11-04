@@ -9,6 +9,7 @@ namespace pbr {
  * fingerprint envelope to the org crash ingest URL (relay `/v1/crash-reports`,
  * or client-compat `crash_reports_url` override). Clears the file on success.
  * When consent is off, leaves the file for a later opt-in restart.
+ * Blocks on HTTP (up to 30 s): call it from a worker, never the main thread.
  */
 void MaybeUploadPendingCrashReport(const std::string& data_dir,
                                    const std::string& profile_data_dir,

@@ -28,7 +28,7 @@ Every line in those files is a `ShareableLine`: `event=<name> k=v k=v…`. Its b
 | A number, bool, duration | `Add(key, n)` | `n`, `1`/`0`, whole ms |
 | A runtime string from a fixed list | `Pick(key, value, kWords)` with `constexpr ShareWord kWords[] = {"a", "b"}` (a braced list at the call is refused: MSVC cannot build it, C7595) | the listed word, `other`, or `-` when empty |
 | An id (account, device, peer, relay user, thread) | `Ref(key, id)` | 8 hex of a keyed hash; the key is random per process and kept in memory only, so refs join lines of one run and nothing else |
-| A random call id | `Call(key, call_id)` | its first 8 hex (both sides log the same, to join them) |
+| A random id (a call's) | `RandomId(key, id)` | its first 8 hex (every device that has it logs the same, to join them) |
 | An error | `Fail(key, error)` | `category.code` — never the message |
 
 There is no method that takes free text, so a name, a message, a search query, a path or an error message cannot be written into these files: the code does not compile. Event names and keys are literals too. Streaming into the channel loggers directly (`DiagLog().info << …`, `getLogger("Diag")`) is refused by `scripts/check/check_shareable_channels.sh` in CI.
@@ -60,6 +60,9 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `call.reach` | `call`, `role`, `attempt`, `ok`; ok: `kind` (`direct` / `punched` / `relayed`), `family` (4 / 6 / 0: the dial book's preferred endpoint, best effort), `reused`; failed: `err` (`ReachErrWord`), `why` (`ReachWhyWord`: a fixed list classified from the failure chain); `ms` since the connect started | `CallMediaConnectCoordinator::OnLinkReady` |
 | `call.relay` | `call`, `dir` (`out` / `in`), `relay` (ref: the relay the circuit chose / the peer announced) | `CallReachSignals` |
 | `call.punch` | `call`, `phase` (`offer_out` / `offer_in` / `answer_out` / `answer_in` / `burst_start` / `burst_ok` / `burst_fail`), `window_ms`, `addrs` (count), `ms` | `CallReachSignals` (the signalling punch) |
+| `media.device_stuck` | `kind` (`mic` / `speaker` / `camera`), `op` (`open` / `close` / `reopen`), `ms` — a device operation past its budget; that device family refuses requests until it returns ([L016](../../projects/media-client-layers/DECISIONS.md#l016--no-control-thread-waits-on-hardware-per-session-media-a-background-cleanup-devices-with-budgets)) | `MediaDeviceArbiter` (once per stuck operation) |
+| `media.device_back` | `kind`, `op`, `ms` (how long it took) — a stuck device operation returned; the family takes requests again | `MediaDeviceArbiter` |
+| `media.codec_stuck` | `role` (`encoder` / `decoder`), `op` (`create` / `configure_encoder` / `configure_decoder` / `encode` / `decode` / `set_bitrate` / `reset`), `ms` (the budget) — a hardware codec call past its budget; the codec is dropped and replaced | `GuardedVideoCodec` |
 | `call.result` | `call`, `role`, `ok`, `attempts`, `ms`, `kind`, `family`; on a give-up also `err` (`MediaErrWord`), `reach_err`, `why`, `relays`, `relays_up`, `peer_state`, `peer_fail`, `peer_fails` | `CallMediaConnectCoordinator::Finish` |
 
 Call events are capped at 8 lines per event and call (`CallDiagBudget`), and a call's `call` value is the same on both devices, so a caller's and a callee's lines join on it. `relay` and every other ref join only within one device's run. Not visible from here (inside pp-cpp-mesh / pp-cpp-amp): each direct dial and circuit attempt (which relay, in what order, its own outcome), the Amp punch's start and outcome, how many relays hold our reservation.

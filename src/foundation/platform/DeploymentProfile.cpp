@@ -1,39 +1,106 @@
 #include "foundation/platform/DeploymentProfile.h"
 
 #include <cstdlib>
-#include <cstring>
+#include <optional>
+
+#ifndef PP_API_URL_PROD
+#define PP_API_URL_PROD ""
+#endif
 
 namespace pbr {
 
+#ifndef PP_API_URL_QA
+#define PP_API_URL_QA ""
+#endif
+
 namespace {
 
-bool g_sandbox_mode = false;
+std::optional<BackendEnv>& Latched() {
+  static std::optional<BackendEnv> latched;
+  return latched;
+}
 
-bool EnvTruthy(const char* name) {
-  const char* value = std::getenv(name);
-  if (value == nullptr || value[0] == '\0') {
-    return false;
-  }
-  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
-         std::strcmp(value, "FALSE") != 0;
+std::string Derive(const char* path) {
+  const std::string origin = BriefOrigin();
+  return origin.empty() ? std::string() : origin + path;
 }
 
 } // namespace
 
-void SetSandboxMode(const bool enabled) {
-  g_sandbox_mode = enabled;
+const char* CompiledDefaultOrigin() {
+  return PP_API_URL_PROD;
 }
 
-bool SandboxMode() {
-  return g_sandbox_mode;
+const char* CompiledQaOrigin() {
+  return PP_API_URL_QA;
 }
 
-const char* BriefOrigin() {
-  return g_sandbox_mode ? kSandboxBriefOrigin : kProductionBriefOrigin;
+BackendEnv ParseBackendEnv(const std::string_view name) {
+  if (name == "qa") {
+    return BackendEnv::Qa;
+  }
+  if (name == "custom") {
+    return BackendEnv::Custom;
+  }
+  return BackendEnv::Prod;
+}
+
+const char* BackendEnvName(const BackendEnv env) {
+  switch (env) {
+  case BackendEnv::Qa:
+    return "qa";
+  case BackendEnv::Custom:
+    return "custom";
+  case BackendEnv::Prod:
+    break;
+  }
+  return "prod";
+}
+
+BackendEnv ActiveBackend() {
+  return Latched().value_or(BackendEnv::Prod);
+}
+
+void LatchActiveBackend(BackendEnv requested) {
+  if (Latched()) {
+    return;
+  }
+  if (requested == BackendEnv::Qa && !QaBackendAvailable()) {
+    requested = BackendEnv::Prod;
+  }
+  Latched() = requested;
+}
+
+bool ActiveBackendLatched() {
+  return Latched().has_value();
+}
+
+void ResetActiveBackendForTest() {
+  Latched().reset();
+}
+
+bool OriginEnvOverrideActive() {
+  const char* env = std::getenv("PP_BROWSER_ORIGIN");
+  return env != nullptr && *env != '\0';
+}
+
+std::string BriefOrigin() {
+  std::string origin;
+  if (const char* env = std::getenv("PP_BROWSER_ORIGIN"); env && *env) {
+    origin = env;
+  } else if (ActiveBackend() == BackendEnv::Qa) {
+    origin = CompiledQaOrigin();
+  } else {
+    origin = CompiledDefaultOrigin();
+  }
+  while (!origin.empty() && origin.back() == '/') {
+    origin.pop_back();
+  }
+  return origin;
 }
 
 std::string BriefLlmBaseUrl() {
-  return std::string(BriefOrigin()) + "/api/llm/v1";
+  return Derive("/api/llm/v1");
 }
 
 std::string BriefStreamUrlOverride() {
@@ -45,46 +112,19 @@ std::string DiagnosticsUploadUrl() {
   if (const char* value = std::getenv("PP_BROWSER_DIAGNOSTICS_URL"); value && *value) {
     return value;
   }
-  return std::string(BriefOrigin()) + "/api/support/diagnostics";
+  return Derive("/api/support/diagnostics");
 }
 
 std::string BriefRelayBaseUrl() {
-  return std::string(BriefOrigin()) + "/api/relay";
+  return Derive("/api/relay");
 }
 
 std::string BriefMcpUrl() {
-  return std::string(BriefOrigin()) + "/mcp";
+  return Derive("/mcp");
 }
 
 const char* ProductDirBasename() {
-  return g_sandbox_mode ? kSandboxProductDirName : kProductDirName;
-}
-
-std::string RewriteBriefOriginUrl(std::string url) {
-  if (!g_sandbox_mode || url.empty()) {
-    return url;
-  }
-  const std::string production_prefix = kProductionBriefOrigin;
-  if (url.rfind(production_prefix, 0) == 0) {
-    url.replace(0, production_prefix.size(), kSandboxBriefOrigin);
-  }
-  return url;
-}
-
-bool ResolveSandboxModeFromLaunch(const int argc, char** argv) {
-#ifdef PP_BROWSER_DEV_SANDBOX
-  // Dev builds only (like PP_BROWSER_DEV_PIN): the sandbox backend without a launch flag, so an
-  // iPhone opened from its icon still talks to QA. Never set for a release build.
-  return true;
-#endif
-  if (argv != nullptr) {
-    for (int i = 1; i < argc; ++i) {
-      if (std::strcmp(argv[i], "--sandbox") == 0) {
-        return true;
-      }
-    }
-  }
-  return EnvTruthy("PP_BROWSER_SANDBOX");
+  return kProductDirName;
 }
 
 } // namespace pbr

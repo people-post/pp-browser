@@ -21,7 +21,7 @@ struct LlmPresetSpec {
   bool clears_inline_key;
 };
 
-// Brief /v1/chat/completions treats `model` as a provider id (xai, nfscbrief, …),
+// Brief /v1/chat/completions treats `model` as a provider id (xai, …),
 // not an upstream slug. Upstream model (e.g. grok-4.3) is configured server-side.
 constexpr LlmPresetSpec kLlmPresets[] = {
     {"brief", "", "xai", true, true},
@@ -135,6 +135,17 @@ void ResolveLlmAuthRequirements(AppConfig& config) {
   if (preset != "cloud") {
     config.llm.require_api_key = false;
   }
+}
+
+std::string BriefLlmServiceBaseUrl(const AppConfig& config) {
+  std::string base_url = config.llm.base_url;
+  if (ResolvePreset(config) != "brief" || base_url.empty()) {
+    base_url = BriefLlmBaseUrl();
+  }
+  while (!base_url.empty() && base_url.back() == '/') {
+    base_url.pop_back();
+  }
+  return base_url;
 }
 
 } // namespace pbr

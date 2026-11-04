@@ -1049,7 +1049,7 @@ Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `asyn
 ## V042 — CallDirectMediaPorts / CSM without CallMediaBridge*
 
 **Date:** 2026-09-17  
-**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table); the "no standing pointer to an owned child" rule withdrawn by [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device)  
 **Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** via private `CallStack::MakeDirectMediaPorts()` (wraps `CallDirectPath` + bridge ops). Port struct lives on the consumer header (`CallSessionManager.h`).
 
 ### Ports (representative)
@@ -1071,7 +1071,7 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 ## V043 — CallSessionLifecyclePorts + CallMediaSeatPorts
 
 **Date:** 2026-09-17  
-**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table); amended by [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device) (owners hold what they own; owned parts report events)  
 **Decision:** `CallSessionManager` must not hold standing `CallLifecycle*` or `CallMediaSeat*` sibling facets. Stack installs **`CallSessionLifecyclePorts`** and **`CallMediaSeatPorts`**. Owned child `CallTopologyController` still receives seat/lifecycle via **`WireTopologySeat` / `WireTopologyLifecycle`** (composition, not peer live-refs).
 
 ### Lifecycle ports (representative)
@@ -1167,7 +1167,7 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 ## V047 — CallHopMigrateWorkflow owns clusters (no friend)
 
 **Date:** 2026-09-17  
-**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Status:** Superseded by [V057](#v057--the-calls-media-is-the-paths-only-way-to-the-engine-parts-report-events) 6 (2026-11-02): the topology and the migrate workflow are one `CallHopPath` again — the split had cut one state in two and joined it through three port structs and a TopologyOps bundle.  
 **Decision:** Finish Topology ↔ SoftMigrate composition independence: **`CallHopMigrateWorkflow` owns** SoftMigrate/attach race clusters and takes **Host / Lifecycle / Seat ports + TopologyOps**. Drop **`friend class CallHopMigrateWorkflow`** and all private `topo_` field poke. Topology remains the Hop planner façade; it holds **references** into Workflow-owned clusters for local control paths and binds Ops/ports at construction / `Set*`.
 
 ### Rules
@@ -1186,7 +1186,7 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 ## V048 — Composition vocabulary (no upward concepts)
 
 **Date:** 2026-09-18  
-**Status:** Accepted — project guideline; first code follow-up in [PHASES.md](PHASES.md#ha--hop-arming-vocabulary-v048)  
+**Status:** Accepted — project guideline; first code follow-up in [PHASES.md](PHASES.md#ha--hop-arming-vocabulary-v048). Amended by [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device): owned parts report to their owner as events, not through port bags; the vocabulary rule stands  
 **Decision:** Adopt a **repo-wide** composition rule: lower peers must not embed **codes, calls, or concepts** from higher peers. Ports that smuggle a sibling’s domain model (enums, chrome status writers) are upward coupling even when raw pointers are gone. Canonical write-up: [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md).
 
 Ownership stays under composition roots (`Application`, `CallStack`, …). **Dependency of meaning** points downward or sideways via narrow ports that speak the **consumer’s needs**; the root **projects** outcomes upward.
@@ -1332,3 +1332,76 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Later:** a desktop Node in the call offers itself (first in its `reachable_hops`) for a small all-LAN call; load / RTT hints among durable relays.
 
 **Alternatives rejected:** keep the deferral with a timeout (every phone-owned group call waits it out); let a Node host whenever it can (a second picker).
+
+---
+
+## V055 — Call model first: one owner per fact, calls down / events up, one media call per device
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02); decision 3 amended by [V056](#v056--device-level-and-call-level-the-media-paths-are-per-call-objects). Amends [V042](#v042--calldirectmediaports--csm-without-callmediabridge), [V043](#v043--callsessionlifecycleports--callmediaseatports) and, for owned parts, [V048](#v048--composition-vocabulary-no-upward-concepts); the rule is [COMPOSITION_VOCABULARY.md § Ports](../../docs/architecture/COMPOSITION_VOCABULARY.md#ports). Work: [PHASES § cm](PHASES.md#cm--call-model-v055).
+**Context:** A survey of calls (2026-11-02) found the rules "hold no pointer to a sibling" (V042 / V043) and "ports in the consumer's vocabulary" (V048) were met by adding ports, not by deciding who owns what: about 200 `std::function`s across 20 port structs, plus a 12-virtual host and 14 callback members on the session manager; the same few session-manager effects reached through four or five port shapes; ports that loop back into their owner (topology → "leave call" → session manager → seat → topology). Meanwhile the same fact had many writers: the active call in about 8 places, the media path in 7, failure details in 4 classes, the session rows written by 5 classes; the seat kept a media state nobody read. The ports hid types but encapsulated nothing.
+**Decision:**
+1. **One owner per fact.** Each fact about a call has one writer; the rest read it or send that owner events. `LiveCall` owns call state, media status, path, failure and recovery reason (CALLS.md § Call state: one owner); the session workflow is the one writer of the session rows; the seat is the exclusive lock only.
+2. **Calls down, events up.** An owner calls what it owns directly (it may hold it: V042's and V043's "no standing pointer" rule is withdrawn for owned children). An owned part reports to its owner as events on the owner's queue (`OwnerOutbox` / `CallSessionEvents`), never through a port bag that calls back into the owner. `std::function` ports stay at a capability's edges (the app, delivery, mesh) and between siblings that do not own each other. V048's vocabulary rule stands: what a part reports is in its own terms.
+3. **One media call per device.** Calls may ring several at once; only one call has media. The active call's media runs in one per-call session object created when its media starts and destroyed when it stops, owning one path strategy at a time (direct or hop) behind one interface; only it touches the media engine. Path drivers keep no process-wide "current call".
+4. **Narrow interfaces from below.** Calls takes role interfaces sized to what it uses (contacts it lists and finds, the local identity it reads, the transcript it writes a summary to, billing), not the lower capabilities' concrete stores; it uses delivery's and pricing's own APIs rather than repeating their logic; the app sees media through a read-only view, not the engine.
+**Rationale:** Encapsulation comes from one writer per fact; the ports came from forbidding the pointer, not from deciding the owner. Events up remove the cycles and most callbacks; one media session per call removes the stale call-id fields and the duplicated 1:1 / group machinery.
+**Consequence:** Phased refactor, one PR each (PHASES § cm): hygiene; narrow interfaces below; one owner per fact; the per-call media session with direct / hop strategies; a thin session manager; call concepts out of the layers below. Behaviour is kept except where a phase fixes a defect it finds; each phase is checked by the compose tests and the call lab scenarios.
+
+## V056 — Device level and call level: the media paths are per-call objects
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02). Amends [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device) decision 3; the model is [CALLS.md § Device level and call level](../../docs/architecture/CALLS.md#device-level-and-call-level).
+**Context:** V055 decision 3 had the per-call media session "created when its media starts and destroyed when it stops", with path strategies behind it. Read that way, the 1:1 bridge and the hop topology had to split into a long-lived service plus per-call state: a failed call stays open (its path must outlive its media), and an inbound 1:1 hello can arrive before the call's media starts. Both paths mixed device-level parts with about 20 (bridge) and six clusters (hop) of per-call fields, each with its own call id and "is this still my call" checks.
+**Decision:**
+1. **Two levels.** *Device level* — one of each, long-lived, never a "current call": the media engine and the seat (one call has media), the mesh services (connectivity / reach, relay client), the hop service (relay deps, hop ranking, hop planning — it runs before a call has media), a doorway for inbound call media (hands a hello to the call it names, holding it while that call is not there yet), and `LiveCalls`. A device-level part may hold a call id only as an index. *Call level* — one per open call, alive from admission to close: `LiveCall` (its facts) and the call's media session, which holds at most one path.
+2. **The paths are whole per-call objects.** The 1:1 path (today's bridge) and the group path (today's topology + migrate workflow) are built for one call and know it; they report to their session (V055 events, the call implied). Direct → Hop is a hand-off, never back: the session holds both paths while the 1:1 leg keeps the link until the others are heard on the hop (#431), then releases the 1:1 leg. A call's paths share one flag, "the hop carries this call's media" (the hop path writes it, the 1:1 path reads it on transport I/O).
+3. **The session lives with the call** (admission to close), not with its media: a failed, open call keeps its path for Retry and the peer's reconnect.
+4. **Facts the paths kept about the call move to `LiveCall`** (media attempted, failed but open).
+**Rationale:** The split service / per-call-state shape would keep two objects per path and a routing layer between them; per-call objects remove the current-call fields, the generation stamps and the call-id checks outright, and make the session the only thing that touches the engine.
+**Consequence:** cm3 runs as: the inbound doorway and the facts onto `LiveCall` (cm3a); the bridge per call (cm3b); the hop path per call with a small device-level hop service (cm3c); the session holds one path behind one interface and the session manager's call-id routing goes (cm3d).
+
+## V057 — The call's media is the paths' only way to the engine; parts report events
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02). Builds on [V055](#v055--call-model-first-one-owner-per-fact-calls-down--events-up-one-media-call-per-device) and [V056](#v056--device-level-and-call-level-the-media-paths-are-per-call-objects). Work: [PHASES § cn](PHASES.md#cn--call-model-second-pass-v057).
+
+**Context:** After cm0–cm5 the paths are per call and the session manager is a router over `CallDevice`, but the paths still read the engine directly (about 87 uses, 66 of them "does the engine run my call?" from its session id and packet mode), so each path guesses who holds the media — the "current call" back through the engine; one guard built that way (`media_active_mesh_for_call`) can never be true. `CallDevice` still builds about 118 `std::function` ports and a 13-method host for the parts, some looping back into their owner; three per-call screen facts (the activity line, the media error, the failed accept) sit on the device; inbound control is split between the router and the workflow; the group path's state is shared by reference between topology and the migrate workflow; and the names still say bridge / topology / P2P.
+
+**Decision:**
+1. **One engine handle per call.** `CallMedia` owns a `CallEngine` for its call and lends it to its paths: whether the engine runs this call and on which path (set by `CallMedia::StartEngine`, cleared on stop), and the data plane (inbound packets, drops, pressure, targets, health). Paths never read the engine's session id and never start or stop it; another call's leftover media is the device's to stop (the seat, `LiveCallMedia`).
+2. **Parts report events.** Host and port callbacks that tell the owner something become events on the owner's queue (V055 2); what remains are queries and the capability edges.
+3. **Per-call screen facts on `LiveCall`:** the activity line ("Switching media path…"), which the snapshot reads from the shown call. The two error values (`last_error`: a failed accept, "That call has ended"; the media error) are not call facts but one-shot notices the screen shows once — they outlive the call they came from — and stay the device's.
+4. **Inbound call control is a table in the router:** each control type → who may send it → its handler (the workflow or the call's media). The sender gates are the edge's, the durable steps the workflow's.
+5. **Names say what they are:** `CallDirectPath` / `CallHopPath`; no `P2p` prefixes.
+6. **The group path is one object** (`CallHopPath`): the planner, the move to the hop, the attach and the guest reattach over one hop state it alone writes. Supersedes V047's split (the topology and the migrate workflow shared that state by reference and joined through three port structs and a TopologyOps bundle). Its hop media data plane — frames, keys, publisher streams, with their own state and threads — may become its own object (PHASES § cn6b).
+
+**Rationale:** The engine handle makes "who carries this call's media" one fact with one writer, which is what the per-call model promised; events finish V055's "calls down, events up"; the rest are the owners V055 named but the code had not reached.
+
+**Consequence:** Phased (PHASES § cn), one commit per step, compose tests and the call lab each time.
+
+## V058 — Call control is live on the control lane; group calls ride the group's roster
+
+**Date:** 2026-11-02
+**Status:** Accepted (Hongwei, 2026-11-02). Work: [PHASES § cl](PHASES.md#cl--call-control-on-a-live-lane-v058).
+
+**Context:** Call control was meant to reuse messaging, live instead of stored. It does: it rides the control lane ([P2P_MESSAGING § The control lane](../../docs/architecture/P2P_MESSAGING.md#the-control-lane)) — E2E per pair, unsequenced, never stored, relay first plus a copy over a live link. Three things fell short of "live" or of "reuse":
+
+- A relay send that failed was retried only on the next inbox wake, and a quiet inbox may not wake for a long time.
+- A group call fans its control out by hand. Calls loop over members in four places (`FanOutToJoined`, its ringing variant, `InviteAll`, which stops at the first failure, and `SendToEveryoneOffered`), and group membership has its own `FanOutPairwise`.
+- A group call learns who left its group by reading the roster every second (`DropWhoLeftTheGroup`), not from the group's own events.
+
+**Decision:**
+1. **Prompt retries, no wire change.** A failed control-lane relay send goes again on a short backoff (1 s, doubling to 16 s) while it is fresh (two minutes), not on the next inbox wake (`ControlRetryAfter`, `DeliveryOutbox`).
+2. **One multi-recipient control send in delivery** (`ControlLane::SendToMany`). It resolves each recipient (its route, maybe a directory lookup; the pair's session, maybe opened) and seals its copy on the critical workers, in parallel, and gives one result per recipient. Today each of those ran serially on the caller's thread, which for calls is the calls loop. The users:
+   - **Calls' fire-and-forget fan-outs** (roster, attach, ended, join requests): `CallControlClient::SendToEach`.
+   - **Group membership's roster check**, and the device-list notice to contacts.
+   - **Not group membership's member events.** They ride the stored, ordered chat stream (G016's pending sends depend on it), not the control lane.
+   - **Not invites.** They stay synchronous on the calls loop, because an accept must find its invite recorded. They become best-effort: whoever can be invited rings, and a start fails only when nobody could be (it used to stop at the first failure, after earlier invitees had rung).
+3. **Group roster changes are events.** Messaging publishes them (a member left or was removed, the group dissolved). Calls subscribes and drops the one-second poll.
+4. **Acks are deferred.** A control ack could only say "queued". The call family's apply is asynchronous (queued on the calls loop), so the ack cannot say "applied". The family that must know its peer has a message, media keys, already resends it (#381), and that resend also covers a key the peer cannot open yet. Latency is the relay's delivery time, which an ack does not shorten. What an ack would catch, a message the relay took that was lost before it was applied, is rare. Revisit if the lab shows such losses.
+5. **Send-once group control is a design note, not work.** One copy for the group would need one of three things: a group key (groups have none: [group-chat](../group-chat/DESIGN.md) is pairwise, N ciphertexts per message), relay fan-out (the relay does not know groups), or the hop carrying control. Each is a wire and trust change. At ≤ 50 members (G014), parallel pairwise copies (2) are enough.
+
+**Rationale:** Control already reuses messaging. What it lacked was the "live" part (1) and a group-shaped edge onto it (2, 3), and none of that needs a wire change. Acks and a group key would cost a protocol for problems the call family already covers or that the size limit keeps small.
+
+**Consequence:** Phased (PHASES § cl), one commit per step.

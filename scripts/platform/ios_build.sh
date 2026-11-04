@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# Sync with pbr::kProductBundleName in src/foundation/runtime/ProductBranding.h
+# Sync with pbr::kProductBundleName in src/foundation/product/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
 # All local iOS intermediates live under out-ios/ (gitignored). Override with IOS_OUT_DIR.
@@ -52,6 +52,8 @@ Environment:
   PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
   PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
+  PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
+  PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -128,6 +130,12 @@ common_cmake_args() {
   )
   if [[ -n "${PP_BROWSER_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_VERSION="${PP_BROWSER_VERSION}")
+  fi
+  if [[ -n "${PP_API_URL_PROD:-}" ]]; then
+    args+=(-DPP_API_URL_PROD="${PP_API_URL_PROD}")
+  fi
+  if [[ -n "${PP_API_URL_QA:-}" ]]; then
+    args+=(-DPP_API_URL_QA="${PP_API_URL_QA}")
   fi
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION}")

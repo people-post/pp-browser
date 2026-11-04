@@ -1,6 +1,6 @@
-#include "foundation/platform/ImageMetadata.h"
+#include "common/ImageMetadata.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
-#include "lib/media/VoiceFile.h"
+#include "lib/voice/VoiceFile.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3_image/SDL_image.h>

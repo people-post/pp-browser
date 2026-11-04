@@ -3,7 +3,6 @@
 # is ifstream-only; mobile packaged reads use SDL (linked onto core below).
 set(_pp_platform_core_sources
   DeploymentProfile.cpp
-  ImageMetadata.cpp
   PickedFileName.cpp
   Platform.cpp
   PlatformLogDefaults.cpp
@@ -16,7 +15,6 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
-  CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -33,7 +31,6 @@ set(_pp_platform_gui_sources
   IncomingLink.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
-  IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
@@ -44,7 +41,6 @@ set(_pp_platform_gui_sources
   VideoPosterExtractor_Common.cpp
   PlatformLogSink.cpp
   PlatformOpenUrl.cpp
-  PlatformOpenFile.cpp
   PlatformHooks.cpp
   PlatformStartupHints.cpp
   PlatformUserHints.cpp
@@ -54,24 +50,15 @@ set(_pp_platform_gui_sources
   AndroidLocalNotifier.cpp
   AndroidPushDeviceRegistrar.cpp
   AndroidSystemChrome.cpp
-  os/OsTlsCaPath_Android.cpp
-  os/OsTlsCaPath_Default.cpp
 )
 
-# CurlSsl + ApplyPlatformCurlSsl live in platform_core so ai/net can use TLS
-# defaults without linking the SDL/Rml GUI platform lib.
-if(PP_BROWSER_IS_ANDROID)
-  list(APPEND _pp_platform_core_sources
-    os/OsTlsPlatformCurl_Android.cpp
-    os/OsTlsCaPath_Android.cpp
-  )
-elseif(PP_BROWSER_IS_IOS)
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp IosBackupExclusion_Ios.mm)
-else()
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
+# The platform's TLS trust for curl is a base mechanism: foundation/tls (CR015).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources IosBackupExclusion_Ios.mm)
 endif()
 
-# Uninstall-surviving blob store (lib/people SecureBlobStore): iOS Keychain; everywhere else a stub.
+# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; else a stub.
+list(APPEND _pp_platform_core_sources OsSecureBlobStore.cpp)
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
 else()
@@ -86,7 +73,6 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsExecutablePath_Win32.cpp
     os/OsDownloadMark_Win32.cpp
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
   )
@@ -94,16 +80,17 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     desktop/LocalNotifier_Win32.cpp
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
+    ImageThumbnail_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
     CameraCapture_Default.cpp
+    PlatformOpenFile.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
     os/OsLocale_Darwin.mm
     os/OsProcessStats_Default.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
@@ -116,29 +103,31 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
     NetworkMonitor_Darwin.mm
+    ImageThumbnail_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
-         NativeFileDialog_Default.cpp CameraCapture_Default.cpp)
+         NativeFileDialog_Default.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
   else()
     # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
-         NativeFileDialog_Ios.mm CameraCapture_Ios.mm)
+         NativeFileDialog_Ios.mm CameraCapture_Ios.mm PlatformOpenFile_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
     os/OsDownloadMark_Default.cpp
     os/OsProcessStats_Linux.cpp
-    os/OsPeakRss_Posix.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
+    ImageThumbnail_Default.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
+    PlatformOpenFile.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -159,6 +148,7 @@ pp_browser_add_foundation_library(pp_foundation_platform_core
     ${_pp_platform_core_sources}
   PUBLIC_LIBS
     CURL::libcurl
+    pp_foundation_product
 )
 
 # Mobile packaged AssetIO uses SDL_IOFromFile; pp-node is desktop-only so this
@@ -181,11 +171,18 @@ else()
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 endif()
 
-# Dev only (like PP_BROWSER_DEV_PIN): force the sandbox (QA) backend as if launched with --sandbox,
-# so a phone opened from its icon still talks to QA. Never for a release build.
-set(PP_BROWSER_DEV_SANDBOX OFF CACHE BOOL "Dev only: force the sandbox backend at compile time")
-if(PP_BROWSER_DEV_SANDBOX)
-  target_compile_definitions(pp_foundation_platform_core PRIVATE PP_BROWSER_DEV_SANDBOX=1)
+# Compile-time backend origins (scheme://host, no path); PP_BROWSER_ORIGIN overrides them at runtime.
+# Empty by default: backend-dependent features stay disabled until a prod origin is supplied;
+# an empty QA origin hides the QA backend option.
+set(PP_API_URL_PROD "" CACHE STRING "Prod backend origin compiled into the client")
+set(PP_API_URL_QA "" CACHE STRING "QA backend origin compiled into the client")
+if(NOT PP_API_URL_PROD STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_API_URL_PROD="${PP_API_URL_PROD}")
+endif()
+if(NOT PP_API_URL_QA STREQUAL "")
+  target_compile_definitions(pp_foundation_platform_core PRIVATE
+    PP_API_URL_QA="${PP_API_URL_QA}")
 endif()
 
 if(PP_BROWSER_HEADLESS)
@@ -252,8 +249,8 @@ if(ANDROID)
   target_link_libraries(pp_foundation_platform PUBLIC log GLESv3 EGL)
 endif()
 
-# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios (in platform_core) installs a SecTrust
-# verify callback — OpenSSL headers/libs must be on the *core* target that compiles it (B8).
+# iOS: curl uses BoringSSL (the SecTrust verify callback is foundation/tls's now, B8); the platform libs keep
+# the same links for their own Keychain / curl users.
 if(PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform_core PUBLIC
     CURL::libcurl
@@ -302,6 +299,7 @@ if(PP_BROWSER_IS_IOS)
     "-framework UserNotifications"
     "-framework UIKit"
     "-framework PhotosUI"
+    "-framework QuickLook"
     "-framework UniformTypeIdentifiers")
 endif()
 
@@ -330,9 +328,10 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   target_link_libraries(pp_foundation_platform PRIVATE mfplat mfreadwrite mfuuid iphlpapi ws2_32)
 endif()
 
-# NetworkMonitor_Darwin: NWPathMonitor (macOS and iOS).
+# NetworkMonitor_Darwin: NWPathMonitor (macOS and iOS). ImageThumbnail_Darwin: ImageIO downsampled decode.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
-  target_link_libraries(pp_foundation_platform PUBLIC "-framework Network")
+  target_link_libraries(pp_foundation_platform PUBLIC "-framework Network" "-framework ImageIO"
+                        "-framework CoreGraphics" "-framework CoreFoundation")
 endif()
 
 # Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.

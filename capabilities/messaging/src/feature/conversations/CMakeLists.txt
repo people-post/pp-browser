@@ -1,0 +1,44 @@
+pp_browser_add_feature_library(pp_feature_conversations
+  SOURCES
+    GroupMentions.cpp
+    ChatSyncWorkflow.cpp
+    ContactActionDispatcher.cpp
+    ContactCardExchange.cpp
+    ContactProfileRefresh.cpp
+    GroupInviteBatch.cpp
+    GroupMembershipWorkflow.cpp
+    AccountLockerWorkflow.cpp
+    InboxController.cpp
+    MessageRouter.cpp
+    ConversationsHub.cpp
+    MessagingContactsPorts.cpp
+    ConversationsFacade.cpp
+    PeopleSearch.cpp
+    MessagingShellPorts.cpp
+    MessagingCompatPorts.cpp
+    MeshDeliveryOrchestrator.cpp
+    PeerTransports.cpp
+    AmpChatHistoryTransport.cpp
+    MeshConnectivityWiring.cpp
+    PushDeviceCoordinator.cpp
+    MeshNetworkReaction.cpp
+  PUBLIC_LIBS
+    pp_domain_registration
+    pp_domain_peers
+    pp_domain_attachments
+    pp_domain_delivery
+    pp_foundation_crypto
+    pp_lib_messaging
+    pp_lib_content
+    pp_lib_pricing
+    pp_amp_link
+    pp_mesh
+    pp_lib_net
+    pp_lib_people
+    pp_foundation_runtime_core
+    pp_foundation_runtime
+    CURL::libcurl)
+
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()

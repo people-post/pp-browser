@@ -36,7 +36,7 @@
 |-----|---------|
 | `BRF_WWW_FCM_*` | Android FCM HTTP v1 |
 | `BRF_WWW_APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `BUNDLE_ID` | iOS APNs token auth |
-| `BRF_WWW_APNS_USE_SANDBOX` | USB/dev tokens only (`api.sandbox.push.apple.com`) |
+| `BRF_WWW_APNS_USE_SANDBOX` | USB/dev tokens only (`api.sandbox.push.apple.com`); unset on hosted relays, which then reach TestFlight / App Store builds only |
 
 ## Follow-ups
 

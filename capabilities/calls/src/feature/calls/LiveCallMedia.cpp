@@ -1,0 +1,115 @@
+#include "feature/calls/LiveCallMedia.h"
+
+#include "common/Logger.h"
+
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+logging::Logger& LiveCallMediaLog() {
+  static logging::Logger logger = logging::getLogger("LiveCall");
+  return logger;
+}
+
+} // namespace
+
+void LiveCallMedia::BindMediaResources(MediaEngine* engine, CallMediaSeat* seat) {
+  resources_.engine = engine;
+  resources_.seat = seat;
+}
+
+CallMedia* LiveCallMedia::Find(const std::string& call_id) {
+  Sweep();
+  auto it = media_.find(call_id);
+  return it == media_.end() ? nullptr : it->second.media.get();
+}
+
+const CallMedia* LiveCallMedia::Peek(const std::string& call_id) const {
+  auto it = media_.find(call_id);
+  return it == media_.end() ? nullptr : it->second.media.get();
+}
+
+void LiveCallMedia::DropDirectPaths() {
+  for (auto& [id, entry] : media_) {
+    if (entry.media) {
+      entry.media->DropDirect();
+    }
+  }
+}
+
+void LiveCallMedia::ForEachHopPath(const std::function<void(CallHopDriver&)>& fn) {
+  for (auto& [id, entry] : media_) {
+    if (CallHopDriver* hop = entry.media ? entry.media->HopIfBuilt() : nullptr) {
+      fn(*hop);
+    }
+  }
+}
+
+void LiveCallMedia::ForEachDirectPath(const std::function<void(CallDirectDriver&)>& fn) {
+  for (auto& [id, entry] : media_) {
+    if (CallDirectDriver* direct = entry.media ? entry.media->DirectIfBuilt() : nullptr) {
+      fn(*direct);
+    }
+  }
+}
+
+CallMedia* LiveCallMedia::Media(const std::string& call_id) {
+  Sweep();
+  const LiveCall* call = live_.Find(call_id);
+  if (!call) {
+    LiveCallMediaLog().warning << "media for a call not admitted here call_id=" << call_id;
+    return nullptr;
+  }
+  Entry& entry = media_[call_id];  // Sweep dropped an earlier admission's
+  entry.instance = call->Instance();
+  if (!entry.media && resources_.engine) {
+    entry.media = std::make_unique<CallMedia>(call_id, resources_);
+  }
+  return entry.media.get();
+}
+
+void LiveCallMedia::StopMedia(const std::string& call_id) {
+  if (resources_.seat) {
+    resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
+    return;
+  }
+  if (CallMedia* call = Find(call_id)) {
+    call->OnMediaStopped();
+    call->StopMedia();
+  } else if (resources_.engine && (resources_.engine->IsActive() || resources_.engine->IsPacketMode())) {
+    resources_.engine->Stop(); // a leftover with no live call here
+  }
+}
+
+bool LiveCallMedia::MediaRunning() const {
+  return resources_.engine && resources_.engine->IsActive();
+}
+
+std::string LiveCallMedia::MediaRunningCallId() const {
+  return resources_.engine ? resources_.engine->ActiveSessionId() : std::string{};
+}
+
+void LiveCallMedia::StopMediaExcept(const std::string& keep_call_id) {
+  MediaEngine* engine = resources_.engine;
+  if (!engine || (!engine->IsActive() && !engine->IsPacketMode())) {
+    return;
+  }
+  const std::string leftover = engine->ActiveSessionId();
+  if (!leftover.empty() && leftover != keep_call_id) {
+    LiveCallMediaLog().info << "stopping leftover media call_id=" << leftover << " for=" << keep_call_id;
+    StopMedia(leftover);
+  } else if (leftover.empty()) {
+    LiveCallMediaLog().info << "stopping zombie engine (no call id) for=" << keep_call_id;
+    StopMedia({});
+  }
+}
+
+void LiveCallMedia::Sweep() {
+  for (auto it = media_.begin(); it != media_.end();) {
+    const LiveCall* call = live_.Find(it->first);
+    it = (!call || call->Instance() != it->second.instance) ? media_.erase(it) : std::next(it);
+  }
+}
+
+} // namespace pbr

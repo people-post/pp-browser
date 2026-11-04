@@ -1,12 +1,12 @@
 #include "foundation/platform/PlatformLogSink.h"
 
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/ProductBranding.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
 #include <filesystem>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -27,8 +27,9 @@ namespace pbr {
 
 namespace {
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
 std::mutex g_file_mu;
-FILE* g_env_log_file = nullptr;
+FILE* g_log_file = nullptr;
 
 const char* LevelTag(logging::Level level) {
   switch (level) {
@@ -45,22 +46,6 @@ const char* LevelTag(logging::Level level) {
   return "I";
 }
 
-/** Optional desktop/file sink when PP_BROWSER_LOG_FILE is set (run-pp-browser.bat). */
-class EnvFileLogHandler : public logging::Handler {
-public:
-  void emit(logging::Level level, const std::string& /*loggerName*/, const std::string& message) override {
-    if (level < level_ || !g_env_log_file) {
-      return;
-    }
-    std::lock_guard<std::mutex> lock(g_file_mu);
-    if (!g_env_log_file) {
-      return;
-    }
-    std::fprintf(g_env_log_file, "[%s] %s\n", LevelTag(level), message.c_str());
-    std::fflush(g_env_log_file);
-  }
-};
-
 // Log files carry ids and addresses: owner-only like the main log (PB-062). No-op on Windows ACLs.
 void MakeOwnerOnly(const std::string& path) {
   std::error_code ec;
@@ -68,27 +53,21 @@ void MakeOwnerOnly(const std::string& path) {
                                std::filesystem::perm_options::replace, ec);
 }
 
-bool TryOpenEnvLogFile() {
-  const char* path = std::getenv("PP_BROWSER_LOG_FILE");
-  if (path == nullptr || path[0] == '\0') {
-    return false;
-  }
-  std::lock_guard<std::mutex> lock(g_file_mu);
-  if (g_env_log_file) {
-    return true;
-  }
-  g_env_log_file = std::fopen(path, "a");
-  if (!g_env_log_file) {
-    return false;
-  }
-  MakeOwnerOnly(path);
-  std::fprintf(g_env_log_file, "---- pp-browser log open path=%s ----\n", path);
-  std::fflush(g_env_log_file);
-  return true;
-}
+/** A debug log from earlier launches above this size moves to `pp-browser-debug.1.log` (one kept). */
+constexpr std::uintmax_t kIosLogRotateBytes = 2 * 1024 * 1024;
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
-FILE* g_log_file = nullptr;
+void RotateIosLogIfLarge(const std::string& path) {
+  std::error_code ec;
+  const std::uintmax_t size = std::filesystem::file_size(path, ec);
+  if (ec || size <= kIosLogRotateBytes) {
+    return;
+  }
+  const std::string rotated = path.substr(0, path.size() - 4) + ".1.log"; // path ends in ".log"
+  std::filesystem::rename(path, rotated, ec);
+  if (ec) {
+    std::filesystem::remove(path, ec);
+  }
+}
 
 void EnsureIosLogFile() {
   if (g_log_file) {
@@ -97,6 +76,7 @@ void EnsureIosLogFile() {
   if (char* pref = SDL_GetPrefPath("dev.pp-browser", "pp-browser")) {
     const std::string path = std::string(pref) + "pp-browser-debug.log";
     SDL_free(pref);
+    RotateIosLogIfLarge(path);
     g_log_file = std::fopen(path.c_str(), "a");
     if (g_log_file) {
       MakeOwnerOnly(path);
@@ -177,15 +157,6 @@ void InstallPlatformLogSink() {
     return;
   }
   installed = true;
-
-  // Desktop dogfood: PP_BROWSER_LOG_FILE (set by run-pp-browser.bat) — GUI apps often
-  // have no usable stdout/stderr, so open the file sink ourselves.
-  if (TryOpenEnvLogFile()) {
-    logging::getRootLogger().addHandler(std::make_shared<EnvFileLogHandler>());
-    if (const char* path = std::getenv("PP_BROWSER_LOG_FILE"); path && path[0]) {
-      logging::getRootLogger().info << "Desktop process log file=" << path;
-    }
-  }
 
   // Mobile: add a platform handler (logcat / os_log + file).
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)

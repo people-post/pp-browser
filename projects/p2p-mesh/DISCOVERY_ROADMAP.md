@@ -115,8 +115,8 @@ Do **not** start n2-core until n-dir is wired and stable in hop policy.
 ### Estimated touchpoints
 
 - `src/base/people/MeshHopPolicy.{h,cpp}`
-- `src/feature/conversations/ConversationsHub.cpp`
-- `src/feature/conversations/CallStack.cpp`, `CallTopologyController.cpp`
+- `capabilities/messaging/src/feature/conversations/ConversationsHub.cpp`
+- `capabilities/messaging/src/feature/conversations/CallStack.cpp`, `CallTopologyController.cpp`
 - `src/base/net/OrgBackendClients*`
 - New: `src/lib/mesh/discovery/MeshDirectoryCache.{h,cpp}`
 - Tests: `mesh_hop_policy_test`, new `mesh_directory_cache_test`

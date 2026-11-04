@@ -8,7 +8,7 @@ namespace pbr {
 
 struct LlmConfig {
   SecretText api_key;
-  std::string base_url = "https://www.brief.global/api/llm/v1";
+  std::string base_url;
   std::string model = "xai";
   std::string preset = "brief";
   bool require_api_key = true;

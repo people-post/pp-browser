@@ -1,9 +1,10 @@
 #include "foundation/data/ProfileRegistry.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
+#include "foundation/data/ProfileManifest.h"
 
 #include "common/AtomicFileWrite.h"
-#include "foundation/data/SchemaVersion.h"
+#include "common/SchemaVersion.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>
@@ -188,9 +189,67 @@ Roe<void> ProfileRegistry::EnsureDefaultProfile() {
   return {};
 }
 
+std::string ProfileRegistry::ProfileDataDir(const std::string& id) const {
+  return (std::filesystem::path(data_dir_) / "profiles" / id).string();
+}
+
 std::string ProfileRegistry::ActiveProfileDataDir() const {
-  const std::string& active = session_override_.empty() ? active_profile_id_ : session_override_;
-  return (std::filesystem::path(data_dir_) / "profiles" / active).string();
+  return ProfileDataDir(session_override_.empty() ? active_profile_id_ : session_override_);
+}
+
+Roe<void> ProfileRegistry::SelectProfileForBackend(const std::string& backend_key) {
+  if (!session_override_.empty()) {
+    return {};
+  }
+  if (!IsValidProfileId(backend_key)) {
+    return Error("invalid backend profile key: " + backend_key);
+  }
+
+  const std::string active_dir = ActiveProfileDataDir();
+  std::string recorded = ReadProfileBackend(active_dir);
+  if (recorded.empty()) {
+    recorded = backend_key == "qa" ? "prod" : backend_key;
+    if (auto ensured = EnsureProfileManifest(active_dir); !ensured) {
+      return ensured;
+    }
+    if (auto adopted = AdoptProfileBackend(active_dir, recorded); !adopted) {
+      return adopted;
+    }
+  }
+  if (recorded == backend_key) {
+    return {};
+  }
+
+  std::string target;
+  for (const ProfileEntry& entry : profiles_) {
+    if (entry.id == active_profile_id_) {
+      continue;
+    }
+    const std::string dir = ProfileDataDir(entry.id);
+    if (ReadProfileBackend(dir) == backend_key) {
+      target = entry.id;
+      break;
+    }
+    if (entry.id == backend_key && ReadProfileBackend(dir).empty() && std::filesystem::exists(dir)) {
+      if (auto adopted = AdoptProfileBackend(dir, backend_key); !adopted) {
+        return adopted;
+      }
+      target = entry.id;
+      break;
+    }
+  }
+  if (target.empty()) {
+    if (std::filesystem::exists(ProfileDataDir(backend_key))) {
+      return Error("profile id already used by another backend: " + backend_key);
+    }
+    profiles_.push_back({backend_key, backend_key});
+    if (auto created = EnsureProfileManifest(ProfileDataDir(backend_key), backend_key); !created) {
+      return created;
+    }
+    target = backend_key;
+  }
+  active_profile_id_ = target;
+  return Save(data_dir_, *this);
 }
 
 } // namespace pbr

@@ -19,13 +19,16 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
+class AiTurnPool;
 class Conversation;
 class IThreadStore;
 
@@ -61,6 +64,7 @@ struct AgentEvent {
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
   /** AssistantReady: false only for blocks the host built itself; the GUI filters privileged payloads of the rest (PB-007). */
   bool from_model = true;
+  /** Error: `thread_id` / `entry_id` name the turn it ended (Home's turn: no thread); both empty outside a turn. */
   bool retryable = false;             // Error
   /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
   std::string error_kind;
@@ -81,9 +85,36 @@ struct AgentImageTurn {
   std::string ai_image_json;
 };
 
+/** What a Submit* did with the question. */
+enum class SubmitOutcome {
+  Started,  // the turn runs (or starts as soon as this session finishes configuring)
+  Full,     // AgentSessions: as many thread turns run as allowed; nothing was taken, the UI queues it
+  BusyHere, // a turn already runs in this session (this thread); nothing was taken
+  Ignored,  // nothing to run (empty text, a button tool outside the whitelist); logged
+};
+
+/**
+ * What the sessions of one AgentSessions share: the threads their turns run on, the queue the UI polls their events
+ * from (events carry their thread) and, per chat, the brief_AI role that answered its last turn (memory only). A
+ * lone AgentSession has its own.
+ */
+struct AgentSessionShared {
+  /**
+   * Where turns run when `own_threads` (AgentSessions' pool, owned there: a turn never keeps it alive, so it is
+   * never destroyed on one of its own threads; gone, a step is dropped). A lone session: the app's worker pool.
+   */
+  bool own_threads = false;
+  std::weak_ptr<AiTurnPool> turn_pool;
+  std::mutex event_mutex;
+  std::vector<AgentEvent> pending_events;
+  std::mutex last_role_mutex;
+  std::unordered_map<std::string, std::string> last_role_by_thread;
+};
+
 class AgentSession {
 public:
   AgentSession();
+  explicit AgentSession(std::shared_ptr<AgentSessionShared> shared);
   ~AgentSession();
 
   AgentSession(const AgentSession&) = delete;
@@ -92,8 +123,8 @@ public:
   void Configure(const AppConfig& config);
   void SetToolRegistrationHook(ToolRegistrationHook hook);
   void SetToolPermissions(ToolPermissionsPrefs permissions);
+  /** "Always allow" on a permission card saves through `saver` on the UI thread (posted there). */
   void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
-  McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
@@ -115,45 +146,57 @@ public:
    * ignored with a warning. `user_text` is the button's label (stored as the user's turn in an AI thread).
    * `in_peer_chat`: the button sits in a person-to-person chat; the answer stays on this device there, like "@ai".
    */
-  void SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
-                         Object args, bool in_peer_chat = false);
+  SubmitOutcome SubmitLocalAction(const std::string& thread_id, const std::string& user_text, const std::string& tool,
+                                  Object args, bool in_peer_chat = false);
+  /** A tool SubmitLocalAction runs (its whitelist). */
+  static bool IsLocalActionTool(const std::string& tool);
   /**
    * Brief preset only: does `text` ask to operate the app (the wordlist hits a declared tool)? A shared "@ai+" /
    * "@ai++" with such a request is answered on the device and never relayed. Safe from the UI thread.
    */
   bool IsAppActionRequest(const std::string& text) const;
-  void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
+  SubmitOutcome Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
    * The thread stores the question as kAiImageTurnMarker + text, never the bytes.
    */
-  void SubmitToThread(const std::string& thread_id, const std::string& user_text,
-                      std::optional<std::string> user_payload = std::nullopt,
-                      std::optional<AgentImageTurn> image = std::nullopt);
-  void SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
-                          std::optional<std::string> user_payload = std::nullopt,
-                          AtAiMode mode = AtAiMode::Local);
+  SubmitOutcome SubmitToThread(const std::string& thread_id, const std::string& user_text,
+                               std::optional<std::string> user_payload = std::nullopt,
+                               std::optional<AgentImageTurn> image = std::nullopt);
+  SubmitOutcome SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
+                                   std::optional<std::string> user_payload = std::nullopt,
+                                   AtAiMode mode = AtAiMode::Local);
   /**
    * Resume a parked tool-permission confirm from an in-chat choice payload.
    * decision: allow_once | allow_always | deny
    */
   Roe<void> ResumeToolPermission(const std::string& approval_id, const std::string& decision,
                                  const std::string& decision_label = {});
+  /** The permission card waiting here (pending or being resumed) has this id. */
+  bool HoldsApproval(const std::string& approval_id) const;
+  /**
+   * Closing this session loses nothing: no turn, no configure in flight, no permission card waiting and no
+   * unexpired question the app asked back. UI thread.
+   */
+  bool CanClose() const;
   void PollEvents(std::vector<AgentEvent>& out);
   void Cancel();
-  /** A turn is running (any thread). The UI checks it before routing an AI send so nothing is dropped (B112). */
+  /** A turn runs in this session. */
   bool IsBusy() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
-  void StartNewConversation();
-  /** The thread was cleared or deleted: forget the brief_AI role that answered its last turn. Any thread. */
+  /**
+   * The thread was cleared or deleted: forget the brief_AI role that answered its last turn, and (no turn running)
+   * this session's permission card and question asked back in that thread. UI thread.
+   */
   void ForgetThread(const std::string& thread_id);
 
   bool IsConfigured() const;
   const Conversation& conversation() const;
 
-  TranscriptEntry& AppendUserMessage(const std::string& user_text,
-                                     std::optional<std::string> user_payload = std::nullopt);
+  /** Tests: runs on the turn's thread the instant a turn releases "busy" (nullptr: none). */
+  static void SetTurnReleasedHookForTests(std::function<void()> hook);
+
   bool CompleteAssistantMessage(const std::string& entry_id, const std::string& assistant_raw);
   bool SetAssistantDisplay(const std::string& entry_id, const std::string& assistant_rml,
                            std::vector<TranscriptChatAction> chat_actions);
@@ -162,6 +205,8 @@ private:
   struct Impl;
 
   void BeginStreamTurn();
+  /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
+  static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   /** Submit worker: true to start the turn now; false when ConfigureOnIO will start it, or (configure failed) it ended. */
   static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
@@ -246,6 +291,12 @@ private:
   static ApprovalResumeError ValidateParkedResume(const std::optional<ParkedApproval>& park,
                                                   const std::string& approval_id, bool busy);
 
+  /**
+   * The step running on this thread belongs to a turn that was stopped (Cancel) and replaced by a newer Submit:
+   * it must not touch the session's turn state, which is the newer turn's now. Logged with `where`. Outside a
+   * turn step (UI thread, configure): false.
+   */
+  static bool StaleStep(const std::shared_ptr<Impl>& state, const char* where);
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   /** `thread_id`: the turn's thread (an ended turn passes it explicitly: pending_thread_id is cleared by then). */
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading, const std::string& thread_id = {});

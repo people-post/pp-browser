@@ -1,6 +1,6 @@
 # ADP — Association Datagram Protocol
 
-**Status:** Foundation (v1). Normative wire for `pp_base_adp`.
+**Status:** Wire v2 (pp-cpp-amp v4.0.0, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1). Normative wire for amp L1. A peer on wire v1 is refused (version byte); there is no bridge.
 
 **AMP stack (L2–L4):** [AMP-SESSION.md](AMP-SESSION.md), [AMP-CHANNEL.md](AMP-CHANNEL.md), [projects/adp/STACK.md](../../projects/adp/STACK.md).
 
@@ -8,22 +8,40 @@
 
 ## Role
 
-L1 message-oriented UDP **connection** with HMAC sender-binding and path migration. Payload is opaque (L2 crypto elsewhere). Asio-free.
+L1 message-oriented UDP **connection**: best-effort and reliable delivery, path migration, and one packet per datagram. Once the handshake gives the session its keys, L1 seals data packets through the session (`IPacketProtection`; it never holds the keys). Before that, and for control packets, an HMAC binds the sender. Asio-free.
 
-## Wire v1 (little-endian)
+## Wire v2 (little-endian)
+
+The first byte is the version (high nibble, `2`) and the type (low nibble). The association id follows: 8 B, chosen by the dialer (CSPRNG); the responder refuses an id already in use.
+
+**Sealed data** (`DataBestEffort=0`, `DataReliable=1`), once the session has keys:
 
 | Field | Size |
 |-------|------|
-| version | 1 (`1`) |
-| flags | 1 (packet type) |
-| assoc_id | 16 |
-| seq | 4 (per QoS × direction; starts at 1) |
-| timestamp_ms | 4 (truncated epoch ms) |
-| payload_len | 2 (max 1200) |
-| payload | N |
-| hmac | 16 (HMAC-SHA256 truncated over preceding bytes) |
+| version / type | 1 |
+| assoc_id | 8 |
+| packet number | 4 (per space × direction; starts at 1) |
+| ciphertext | N (the L3 frame, [AMP-CHANNEL.md](AMP-CHANNEL.md)) |
+| tag | 16 |
 
-**Types:** `DataBestEffort=0`, `DataReliable=1`, `Ack=2`, `Close=3`.
+29 B around the frame. The clear header is the AEAD's associated data and the packet number is its nonce ([AMP-SESSION.md § Sealing packets](AMP-SESSION.md#sealing-packets)): no timestamp, no length field (UDP has it), no HMAC. A sealed packet is opened before anything trusts it: the replay window, liveness and a path move follow only a packet that opened. A sealed packet for an unknown association id is dropped; a new association starts only from a plain handshake packet.
+
+**HMAC packets** (`Ack=2`, `Close=3`, `Keepalive=4`, `PlainBestEffort=5`, `PlainReliable=6`):
+
+| Field | Size |
+|-------|------|
+| version / type | 1 |
+| assoc_id | 8 |
+| seq | 4 (data: per space × direction, starts at 1; Ack: the acked seq; else 0) |
+| timestamp_ms | 4 (truncated epoch ms; ±60 s skew) |
+| payload | N |
+| hmac | 16 (HMAC-SHA256 truncated, over the preceding bytes) |
+
+33 B around the payload. Plain data is the handshake, under the well-known pre-session key; after the handshake the HMAC key is `K_assoc`. Once the session has keys, plain data is refused, except that a duplicate of the handshake's reliable packets is acked so its sender stops resending. Control packets have no replay window; a timestamp newer than any seen is their freshness.
+
+**Sizes:** a datagram is at most **1232 B**, IPv6's smallest MTU (1280) less the IPv6 and UDP headers, so it crosses any path whole. A sealed packet carries up to 1203 B, an HMAC packet up to 1199 B (`kMaxPayload`).
+
+**Numbers:** best-effort and reliable packets are numbered apart (two spaces), so the space is part of the nonce. A resend goes as it first went (plain or sealed) under its own number, resealed under the current key: the same bytes unless a rekey came between. A number space that runs out (2³²) fails the association; the link redials with new keys.
 
 ## Delivery
 

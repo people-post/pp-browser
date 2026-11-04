@@ -24,6 +24,12 @@ struct SettingsUiState {
   std::string promoted_mcp_url;
   std::string search_provider = "duckduckgo";
   std::vector<McpServerUiState> mcp_servers;
+  /** Backend picked in Me -> Network: prod | qa | custom (config `backend.env`). */
+  std::string backend_env = "prod";
+  /** False when the build has no QA origin: the QA choice is not offered. */
+  bool backend_qa_available = false;
+  /** The pick differs from the backend this run started with; applies after a restart. */
+  bool backend_restart_pending = false;
   std::string relay_base_url;
   std::string directory_base_url;
   std::string registration_base_url;
@@ -61,7 +67,6 @@ struct SettingsUiState {
   std::string profile_contact_locator;
   /** Account id for avatar tone seed; not shown in RML. */
   std::string profile_account_id;
-  std::string profile_public_key;
   std::string profile_registered = "no";
   std::string profile_registration_status = "not registered";
   std::string profile_registration_expires;
@@ -106,6 +111,9 @@ struct SettingsUiState {
   /** R021 — smart | always_auto | on_demand */
   std::string attachment_download_policy = "smart";
   std::string attachment_download_policy_label;
+  /** "on" / "off": with always_auto, download everything on Wi-Fi / on the mobile network. */
+  std::string attachment_auto_on_wifi = "on";
+  std::string attachment_auto_on_cellular = "off";
   std::string pin_protection_status;
   /** Language-independent flags for pin_protection_status (the text is localized). */
   bool pin_protection_is_default = false;

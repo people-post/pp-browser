@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
@@ -620,9 +621,14 @@ Object AppConfigToObject(const AppConfig& config) {
   object.set("llm", llm);
   object.set("search", SearchConfigToObject(config.search));
   object.set("context", ContextBudgetToObject(config.context));
-  object.set("relay", ServiceEndpointToObject(config.relay));
-  object.set("directory", DirectoryConfigToObject(config.directory));
-  object.set("registration", ServiceEndpointToObject(config.registration));
+  Object backend;
+  backend.set("env", config.backend.env);
+  object.set("backend", backend);
+  const bool saved = config.backend.has_saved_urls;
+  object.set("relay", ServiceEndpointToObject(saved ? config.backend.saved_relay : config.relay));
+  object.set("directory", DirectoryConfigToObject(saved ? config.backend.saved_directory : config.directory));
+  object.set("registration",
+             ServiceEndpointToObject(saved ? config.backend.saved_registration : config.registration));
   object.set("mesh", MeshConfigToObject(config.mesh));
   object.set("initiation_floor", config.initiation_floor);
   if (!config.data_dir.empty()) {
@@ -680,6 +686,11 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (auto data_dir = object.getString("data_dir")) {
     config.data_dir = *data_dir;
+  }
+  if (const Object* backend = object.getObject("backend")) {
+    if (auto env = backend->getString("env")) {
+      config.backend.env = BackendEnvName(ParseBackendEnv(*env));
+    }
   }
   if (const Object* relay = object.getObject("relay")) {
     ServiceEndpointFromObject(*relay, config.relay);
@@ -750,6 +761,8 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("group_invite_policy", prefs.group_invite_policy);
   object.set("call_invite_policy", prefs.call_invite_policy);
   object.set("attachment_download_policy", prefs.attachment_download_policy);
+  object.set("attachment_auto_on_wifi", prefs.attachment_auto_on_wifi);
+  object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
   object.set("reduce_transparency", prefs.reduce_transparency);
@@ -816,6 +829,12 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;
   } else {
+    prefs.attachment_download_policy = "smart";
+  }
+  prefs.attachment_auto_on_wifi = object.getIf<bool>("attachment_auto_on_wifi").value_or(true);
+  prefs.attachment_auto_on_cellular = object.getIf<bool>("attachment_auto_on_cellular").value_or(false);
+  if (prefs.attachment_download_policy == "always_auto" && !prefs.attachment_auto_on_wifi &&
+      !prefs.attachment_auto_on_cellular) {
     prefs.attachment_download_policy = "smart";
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);

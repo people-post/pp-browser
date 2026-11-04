@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/chat/ChatTranscriptScroller.h"
+#include "gui/chat/ChatSearchRows.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "common/chat/MessagingLimits.h"
@@ -23,6 +24,29 @@ void ChatTranscriptScroller::BindConversationsFacade(ConversationsFacade* facade
 ChatTranscriptScroller::ChatTranscriptScroller(ui::Context*& context, View view, bool& messaging_ready)
     : context_(context), view_(view), messaging_ready_(messaging_ready) {}
 
+std::vector<MessageDisplayRow> ChatTranscriptScroller::Rows(const std::string& thread_id,
+                                                            const std::optional<int64_t> oldest_inclusive,
+                                                            const std::optional<int64_t> newest_inclusive) const {
+  std::vector<MessageDisplayRow> rows =
+      rows_ ? rows_(thread_id, oldest_inclusive, newest_inclusive) : std::vector<MessageDisplayRow>{};
+  if (decorator_) {
+    decorator_(rows);
+  }
+  return rows;
+}
+
+void ChatTranscriptScroller::Redecorate() {
+  for (MessageDisplayRow& row : view_.messages) {
+    ClearSearchMarks(row);
+  }
+  if (decorator_) {
+    decorator_(view_.messages);
+  }
+  if (dirty_turns_) {
+    dirty_turns_();
+  }
+}
+
 void ChatTranscriptScroller::Reset() {
   pinned_to_bottom_ = true;
   last_client_height_ = 0.f;
@@ -41,6 +65,7 @@ void ChatTranscriptScroller::Reset() {
   last_messages_scroll_height_ = 0.f;
   unread_while_scrolled_ = 0;
   pending_jump_id_.clear();
+  flash_id_.clear();  // the rows it named are gone
   view_.show_jump_to_latest = false;
   view_.jump_to_latest_label = "";
 }
@@ -55,7 +80,7 @@ ui::Element* ChatTranscriptScroller::FindMessagesScrollElement() const {
 void ChatTranscriptScroller::UpdateJumpToLatestLabel() {
   if (unread_while_scrolled_ > 0) {
     view_.jump_to_latest_label =
-        (std::to_string(unread_while_scrolled_) + " new · Latest").c_str();
+        Tr("chat.new_while_scrolled", {{"count", std::to_string(unread_while_scrolled_)}}).c_str();
   } else {
     view_.jump_to_latest_label = Tr("chat.jump_to_latest").c_str();
   }
@@ -128,6 +153,7 @@ void ChatTranscriptScroller::ApplyPolicy() {
     last_messages_scroll_height_ = el->GetScrollHeight();
   }
 
+  KeepJumpFlash();
   if (ApplyPendingJump(el)) {
     return;
   }
@@ -264,15 +290,13 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
       facade_ &&
       facade_->HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
 
-  view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                            : std::vector<MessageDisplayRow>{};
+  view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
   if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
                     loaded_max_display_order_, has_more_local_history_)) {
     pinned_to_bottom_ = false;
     SetShowJumpToLatest(true);
     // Rebuild with new max bound so store sync stays coherent.
-    view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                              : std::vector<MessageDisplayRow>{};
+    view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
   }
   view_.has_turns = !view_.messages.empty();
   if (dirty_turns_) {
@@ -308,7 +332,7 @@ void ChatTranscriptScroller::OnJumpToLatest() {
   if (facade_) {
     const std::string thread_id = facade_->ActiveThreadId();
     if (!thread_id.empty()) {
-      view_.messages = rows_ ? rows_(thread_id, std::nullopt, std::nullopt) : std::vector<MessageDisplayRow>{};
+      view_.messages = Rows(thread_id, std::nullopt, std::nullopt);
       view_.has_turns = !view_.messages.empty();
       if (!view_.messages.empty()) {
         loaded_min_display_order_ = view_.messages.front().display_order;
@@ -324,25 +348,39 @@ void ChatTranscriptScroller::OnJumpToLatest() {
   ScrollMessagesToBottom();
 }
 
-bool ChatTranscriptScroller::JumpToMessage(const std::string& message_id) {
+ChatTranscriptScroller::JumpWindow ChatTranscriptScroller::WindowForJump(const int64_t order,
+                                                                         const std::optional<int64_t> loaded_min,
+                                                                         const std::optional<int64_t> loaded_max) {
+  const bool older = !loaded_min || order < *loaded_min;
+  const bool newer = loaded_max && order > *loaded_max;
+  if (!older && !newer) {
+    return {false, loaded_min, loaded_max};
+  }
+  // Drawn from the message on (the newest dropped when it gets too long, as when paging up).
+  return {true, order, std::nullopt};
+}
+
+ChatTranscriptScroller::JumpResult ChatTranscriptScroller::JumpToMessage(const std::string& message_id) {
   const std::string thread_id = facade_ ? facade_->ActiveThreadId() : std::string{};
   if (thread_id.empty() || message_id.empty()) {
-    return false;
+    return JumpResult::Unavailable;
   }
   auto message = facade_->GetMessage(thread_id, message_id);
-  if (!message || !*message) {
-    return false;
+  if (!message) {
+    return JumpResult::Unavailable; // the store did not answer: not the same as "no such message"
+  }
+  if (!*message) {
+    return JumpResult::NotFound;
   }
   const int64_t order = (*message)->display_order;
-  if (!loaded_min_display_order_ || order < *loaded_min_display_order_) {
-    // Widen the window back to the message (newest dropped when it gets too long, as when paging up).
-    loaded_min_display_order_ = order;
-    loaded_max_display_order_.reset();
-    view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, std::nullopt) : std::vector<MessageDisplayRow>{};
+  const JumpWindow window = WindowForJump(order, loaded_min_display_order_, loaded_max_display_order_);
+  if (window.refetch) {
+    loaded_min_display_order_ = window.loaded_min;
+    loaded_max_display_order_ = window.loaded_max;
+    view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
     if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
                       loaded_max_display_order_, has_more_local_history_)) {
-      view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                             : std::vector<MessageDisplayRow>{};
+      view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
     }
     if (!view_.messages.empty()) {
       loaded_min_display_order_ = view_.messages.front().display_order;
@@ -361,7 +399,7 @@ bool ChatTranscriptScroller::JumpToMessage(const std::string& message_id) {
   pending_jump_last_top_ = -1.f;
   const bool is_tail = !view_.messages.empty() && view_.messages.back().message_id == message_id.c_str();
   SetShowJumpToLatest(!is_tail || loaded_max_display_order_.has_value());
-  return true;
+  return JumpResult::Jumped;
 }
 
 bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
@@ -377,6 +415,14 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
   if (!row) {
     return true; // not mounted yet (a remount is coming)
   }
+  if (flash_id_ != pending_jump_id_) {
+    ClearJumpFlash();
+  }
+  // Where the jump landed is tinted for a moment (a quote's original, a search hit, a mention): until 1.5 s
+  // after its place stops moving.
+  flash_id_ = pending_jump_id_;
+  flash_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(1500);
+  row->SetClass("message-row-jump-target", true);
   suppress_scroll_handler_ = true;
   row->ScrollIntoView(true);
   suppress_scroll_handler_ = false;
@@ -389,6 +435,35 @@ bool ChatTranscriptScroller::ApplyPendingJump(ui::Element* el) {
     pending_jump_id_.clear();
   }
   return true;
+}
+
+void ChatTranscriptScroller::KeepJumpFlash() {
+  if (flash_id_.empty()) {
+    return;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (now >= flash_until_ || !context_ || context_->GetNumDocuments() == 0) {
+    ClearJumpFlash();
+    return;
+  }
+  // A rebuilt row (new message, download state, remount) comes back without the class: put it on again.
+  if (ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + flash_id_ + "\"]").c_str())) {
+    row->SetClass("message-row-jump-target", true);
+  }
+  // An idle chat draws no frames: wake once more when the tint is due to go.
+  context_->RequestNextUpdate(std::chrono::duration<double>(flash_until_ - now).count());
+}
+
+void ChatTranscriptScroller::ClearJumpFlash() {
+  if (flash_id_.empty()) {
+    return;
+  }
+  if (context_ && context_->GetNumDocuments() > 0) {
+    if (ui::Element* row = context_->GetDocument(0)->QuerySelector(("[message-id=\"" + flash_id_ + "\"]").c_str())) {
+      row->SetClass("message-row-jump-target", false);
+    }
+  }
+  flash_id_.clear();
 }
 
 void ChatTranscriptScroller::OnShellRemounted() {
@@ -406,6 +481,7 @@ bool ChatTranscriptScroller::BeginDisplaySync(const std::string& thread_id) {
   const bool thread_changed = thread_id != scroll_thread_id_;
   if (thread_changed) {
     pending_jump_id_.clear();
+    flash_id_.clear();  // another chat's rows
     scroll_thread_id_ = thread_id;
     loaded_min_display_order_.reset();
     loaded_max_display_order_.reset();
@@ -422,8 +498,7 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
                       has_more_local_history_)) {
       if (pinned_to_bottom_ && facade_) {
         const std::string thread_id = facade_->ActiveThreadId();
-        view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                               : std::vector<MessageDisplayRow>{};
+        view_.messages = Rows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
         view_.has_turns = !view_.messages.empty();
       } else if (!pinned_to_bottom_) {
         SetShowJumpToLatest(true);

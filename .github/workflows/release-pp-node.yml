@@ -115,7 +115,21 @@ jobs:
         env:
           PP_BROWSER_VERSION: ${{ steps.version.outputs.project_version }}
           PP_BROWSER_RELEASE_VERSION: ${{ steps.version.outputs.release_version }}
-        run: bash scripts/platform/pp_node_package_linux.sh all
+          # The backend origin is compiled in (no built-in default since the per-backend profiles):
+          # a node's registration / directory URLs derive from it.
+          PP_API_URL_PROD: ${{ secrets.PP_API_URL_PROD }}
+          PP_API_URL_QA: ${{ secrets.PP_API_URL_QA }}
+          PUBLISH_RELEASE: ${{ steps.version.outputs.publish_github_release }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PP_API_URL_PROD}" ]]; then
+            if [[ "${PUBLISH_RELEASE}" == "true" ]]; then
+              echo "::error::PP_API_URL_PROD secret is empty: a released node would have no registration URL (a publishing node could not register)."
+              exit 1
+            fi
+            echo "::warning::PP_API_URL_PROD is empty: a publishing dogfood node needs registration.base_url in its config or PP_NODE_REGISTRATION_BASE_URL."
+          fi
+          bash scripts/platform/pp_node_package_linux.sh all
 
       - name: ccache stats (post-build)
         if: always()

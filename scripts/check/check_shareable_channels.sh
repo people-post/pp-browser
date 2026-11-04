@@ -15,11 +15,11 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 ALLOWED = {
-    "src/common/Diag.h",
-    "src/common/Metrics.h",
-    "src/common/ShareableLine.h",
-    "src/common/ShareableLine.cpp",
-    "src/foundation/diagnostics/LogFile.cpp",
+    "capabilities/base/src/common/Diag.h",
+    "capabilities/base/src/common/Metrics.h",
+    "capabilities/base/src/common/ShareableLine.h",
+    "capabilities/base/src/common/ShareableLine.cpp",
+    "capabilities/base/src/foundation/diagnostics/LogFile.cpp",
 }
 # The channel loggers themselves, or a logger named after a shareable channel.
 FORBIDDEN = re.compile(
@@ -28,7 +28,8 @@ FORBIDDEN = re.compile(
 )
 
 bad = []
-for path in sorted((root / "src").rglob("*")):
+# src/ and the capability folders (capabilities/<name>/src mirrors src/, CR022).
+for path in sorted([*(root / "src").rglob("*"), *(root / "capabilities").rglob("*")]):
     if path.suffix not in {".h", ".hpp", ".cpp", ".cc", ".mm", ".inc"}:
         continue
     rel = path.relative_to(root).as_posix()

@@ -5,9 +5,9 @@
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
 #include "foundation/error/CurlNetworkError.h"
-#include "foundation/platform/CurlSsl.h"
-#include "foundation/runtime/AppVersion.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/tls/CurlSsl.h"
+#include "foundation/product/AppVersion.h"
+#include "foundation/product/ProductBranding.h"
 
 #include <curl/curl.h>
 #include "common/ValueJson.h"

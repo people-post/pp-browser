@@ -464,3 +464,13 @@ TEST(BriefAiClientTest, RequestOnTheWireCarriesBearerPathAndBody) {
   EXPECT_NE(seen.find(R"("app":"pp")"), std::string::npos);
   EXPECT_NE(seen.find(R"("message":"hi")"), std::string::npos);
 }
+
+TEST(BriefAiClientTest, EmptyBaseUrlFailsWithoutRequest) {
+  pbr::LlmConfig config;
+  std::atomic<bool> cancel{false};
+  bool called = false;
+  auto result = pbr::BriefAiClient(config).Stream(
+      pbr::BriefAiRequest{"hi"}, [&](const BriefAiEvent&) { called = true; }, cancel);
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_FALSE(called);
+}

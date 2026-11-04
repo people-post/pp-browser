@@ -6,10 +6,15 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 #include "app/DiagnosticsUpload.h"
+#include "feature/product/HubSettingsProjection.h"
+#include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/platform/ProfileIconImagePrep.h"
+#include "foundation/platform/PlatformUserHints.h"
+#include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
 
-#include "foundation/crypto/ConfigSecretsStore.h"
+#include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
 #include "foundation/platform/PlatformShare.h"
@@ -22,17 +27,19 @@
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
-#include "foundation/data/SchemaVersion.h"
+#include "foundation/data/ProfileManifest.h"
+#include "foundation/platform/OsSecureBlobStore.h"
+#include "lib/people/RetiredKeychainBackup.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
-#include "lib/messaging/ChatPayloadValidator.h"
-#include "lib/messaging/SqliteThreadSchema.h"
+#include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "foundation/product/ProductBranding.h"
 #include "lib/ui/InputCoordinator.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/ViewCatalog.h"
@@ -40,7 +47,7 @@
 #include "feature/product/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
 #include "common/runtime/AppRuntime.h"
-#include "foundation/runtime/ProductOwners.h"
+#include "feature/product/ProductOwners.h"
 #include "foundation/platform/IAssetLocator.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPathProvider.h"
@@ -283,7 +290,6 @@ Application::Application() {
   });
   product_ = std::make_unique<ProductStack>();
   messaging_ = &product_->Hub();
-  messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
   product_->BindFacade(*messaging_facade_);
@@ -381,7 +387,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
 
   AppPaths::EnsureDirs(profile_dir);
-  if (auto manifest = SchemaVersion::EnsureProfileManifest(profile_dir); !manifest) {
+  if (auto manifest = EnsureProfileManifest(profile_dir); !manifest) {
     return manifest.error();
   }
 
@@ -390,7 +396,7 @@ Roe<void> Application::ResetActiveProfile() {
   }
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -418,11 +424,11 @@ Roe<void> Application::ResetChatData() {
 
   // Public sessions outlive a chat reset: their epoch is what lets each pair start its next one
   // instead of this device rewinding its numbering where the peer still holds the old messages (D014, #378).
-  std::vector<PskSessionRecord> kept_sessions;
+  std::vector<PeerSessionRecord> kept_sessions;
   if (messaging_ && messaging_->IsInitialized()) {
-    if (IPskSessionStore* psk = messaging_->PskStore()) {
+    if (IPeerSessionStore* psk = messaging_->PeerSessions()) {
       if (auto listed = psk->List()) {
-        for (PskSessionRecord& record : *listed) {
+        for (PeerSessionRecord& record : *listed) {
           if (record.key.channel == CryptoChannel::E2ePublic && record.master_psk_b64) {
             kept_sessions.push_back(std::move(record));
           }
@@ -446,7 +452,7 @@ Roe<void> Application::ResetChatData() {
     return AppError::Storage(Err::Storage::Failed, "Failed to delete chat data: " + ec.message());
   }
 
-  if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
+  if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
     return hub.error();
   }
   WireHubCallbacks();
@@ -456,11 +462,11 @@ Roe<void> Application::ResetChatData() {
   // The vault is still open: bring messaging back now rather than at the next send — then put the kept
   // sessions back (the stores encrypt them under the DEK they get at unlock), each pair marked to restart.
   unlock_gate_->EnsureUnlocked([this, kept = std::move(kept_sessions)](const bool unlocked) mutable {
-    IPskSessionStore* psk = messaging_ ? messaging_->PskStore() : nullptr;
+    IPeerSessionStore* psk = messaging_ ? messaging_->PeerSessions() : nullptr;
     if (!unlocked || !psk) {
       return;
     }
-    for (PskSessionRecord& record : kept) {
+    for (PeerSessionRecord& record : kept) {
       record.restart_pending = true;
       if (auto saved = psk->Save(record); !saved) {
         log().warning << "chat reset: a public session not kept: " << saved.error().message;
@@ -471,6 +477,10 @@ Roe<void> Application::ResetChatData() {
 }
 
 Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
+  // AI turns run on threads of their own, which the runtime's quiesce does not wait for, and read the thread store.
+  if (agent_sessions_ && !agent_sessions_->StopTurnsAndWait(kProfileResetQuiesceBudget)) {
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
   qr_scan_->Close();
   if (messaging_) {
     messaging_->RequestShutdown();
@@ -561,6 +571,8 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
 
   {
     StartupPhase phase("Localization::LoadFromAssets");
+    // The platform's own network tip for the key capabilities use (common/Localized.h).
+    LocalizationService::Instance().SetKeyAlias(kPlatformNetworkHintKey, std::string(PlatformUserHints::P2pNetworkHintKey()));
     if (auto loaded = LocalizationService::Instance().LoadFromAssets(IPathProvider::Instance().BundleAssetsDir());
         !loaded) {
       log().warning << "Localization catalogs failed to load: " << loaded.error().message;
@@ -620,23 +632,44 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       });
     });
   };
-  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) {
-    return facade.UploadProfileIconFromPath(path);
+  settings_commands.upload_profile_icon_file = [&facade](const std::string& path) -> Roe<void> {
+    // The image is the app's to decode and size; the hub uploads what comes out.
+    auto encoded = PrepareProfileIconFromFile(path);
+    if (!encoded) {
+      return encoded.error();
+    }
+    PreparedProfileIcon prepared;
+    prepared.bytes = std::move(encoded->bytes);
+    prepared.content_type = std::move(encoded->content_type);
+    prepared.kind = std::move(encoded->kind);
+    prepared.file_extension = std::move(encoded->file_extension);
+    return facade.UploadProfileIcon(prepared);
   };
   settings_commands.clear_profile_icon = [&facade]() { return facade.ClearProfileIcon(); };
   settings_commands.plan_relay_quota_recovery = [&facade](const Error& quota_error) {
     return facade.PlanRelayQuotaRecovery(quota_error);
   };
-  settings_commands.delete_relay_blob = [&facade](const std::string& blob_id) { return facade.DeleteRelayBlobById(blob_id); };
+  settings_commands.delete_relay_file = [&facade](const std::string& blob_id) {
+    return facade.DeleteRelayFileById(blob_id);
+  };
   settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
   settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
-  settings_commands.list_cas_library = [this](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
-    if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
-    }
-    return ListCasLibraryForSettings(secrets_->ProfileDataDir(), std::move(filter));
+  // Me → Storage works on the hub's content store: open from messaging's Initialize to its teardown.
+  const auto content_store = [this]() -> std::shared_ptr<CasStore> {
+    return messaging_ != nullptr ? messaging_->Content() : nullptr;
   };
-  settings_commands.share_cas_publicly = [this](const std::string& private_content_id_hex) -> Roe<void> {
+  settings_commands.list_cas_library = [content_store](std::string filter) -> Roe<std::vector<CasLibraryItemView>> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
+    }
+    return ListCasLibraryForSettings(*content, std::move(filter));
+  };
+  settings_commands.share_cas_publicly = [this, content_store](const std::string& private_content_id_hex) -> Roe<void> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
+    }
     if (!secrets_ || !secrets_->IsUnlocked()) {
       return Error("Unlock your profile to share publicly");
     }
@@ -648,14 +681,14 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!dek) {
       return dek.error();
     }
-    return ShareCasPubliclyForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *dek,
-                                       private_content_id_hex);
+    return ShareCasPubliclyForSettings(*content, *dek, private_content_id_hex);
   };
-  settings_commands.unpublish_cas = [this](const std::string& public_content_id_hex) -> Roe<void> {
-    if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
+  settings_commands.unpublish_cas = [content_store](const std::string& public_content_id_hex) -> Roe<void> {
+    const auto content = content_store();
+    if (!content) {
+      return Error("Messaging is not ready");
     }
-    return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
+    return UnpublishCasForSettings(*content, public_content_id_hex);
   };
 
   settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_relay_user_id,
@@ -679,7 +712,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       return;
     }
     // The fetch rides the mesh (never parks UI); its answer comes back to UI.
-    FetchCasPublicTipForSettingsAsync(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+    FetchCasPublicTipForSettingsAsync(messaging_->Content(), *blob,
                                       local->relay_user_id, tip, peer_relay_user_id,
                                       [on_done = std::move(on_done)](Roe<void> fetched) {
                                         AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
@@ -693,7 +726,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return result;
   };
   settings_commands.rotate_brief_llm_key = [this, &facade]() {
-    auto result = facade.RotateBriefLlmKey();
+    auto result = facade.RotateBriefLlmKey(BriefLlmServiceBaseUrl(store_.Snapshot().config));
     if (result) {
       chat_->ReloadAgentConfig();
     }
@@ -713,6 +746,9 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   };
   settings_commands.try_upnp_port_mapping = [&facade]() { facade.TryUpnpPortMapping(); };
   settings_commands.reset_active_profile = [this]() { return ResetActiveProfile(); };
+  settings_commands.set_backend_switch_pending = [&facade](const bool pending) {
+    facade.SetBackendSwitchPending(pending);
+  };
   settings_commands.reset_chat_data = [this]() { return ResetChatData(); };
   settings_commands.language_display_label = [](const std::string& pref) {
     return LocalizationService::Instance().LanguageDisplayLabel(pref);
@@ -1334,28 +1370,37 @@ void Application::WireAgentAndConfig() {
   ConversationsHub& messaging = Conversations();
   config_apply_->Bind(messaging, store_, *shell_, *chat_, [](const std::string& relative) { return AssetsPath(relative); });
 
-  agent_session_.emplace();
-  chat_->BindAgentPorts(MakeAgentUiPorts(*agent_session_));
+  agent_sessions_.emplace();
+  chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
   if (messaging_facade_) {
-    AgentInboundPorts inbound;
-    inbound.submit_scoped_assist = [this](const std::string& thread_id, const std::string& prompt,
-                                          std::optional<std::string> user_payload, AtAiMode mode) {
-      if (agent_session_) {
-        agent_session_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode);
+    // MessageRouter checks is_busy before it routes, so these start; anything else would be a send that slipped past.
+    const auto log_not_started = [this](const SubmitOutcome outcome) {
+      if (outcome != SubmitOutcome::Started) {
+        log().warning << "AI question from the router not started (outcome " << static_cast<int>(outcome) << ")";
       }
     };
-    inbound.is_busy = [this]() { return agent_session_ && agent_session_->IsBusy(); };
-    inbound.submit_to_thread = [this](const std::string& thread_id, const std::string& user_text,
-                                      std::optional<std::string> user_payload) {
-      if (agent_session_) {
-        agent_session_->SubmitToThread(thread_id, user_text, std::move(user_payload));
+    AgentInboundPorts inbound;
+    inbound.submit_scoped_assist = [this, log_not_started](const std::string& thread_id, const std::string& prompt,
+                                          std::optional<std::string> user_payload, AtAiMode mode) {
+      if (agent_sessions_) {
+        log_not_started(agent_sessions_->SubmitScopedAssist(thread_id, prompt, std::move(user_payload), mode));
+      }
+    };
+    // Asked before anything is stored or sent: a turn already runs in that thread, or as many as allowed run.
+    inbound.is_busy = [this](const std::string& thread_id) {
+      return agent_sessions_ && agent_sessions_->CanStart(thread_id) != TurnStart::Yes;
+    };
+    inbound.submit_to_thread = [this, log_not_started](const std::string& thread_id, const std::string& user_text,
+                                                       std::optional<std::string> user_payload) {
+      if (agent_sessions_) {
+        log_not_started(agent_sessions_->SubmitToThread(thread_id, user_text, std::move(user_payload)));
       }
     };
     // Buttons of the on-device app-action flow ({"type":"local_action",...}) run in the session, no model.
-    inbound.submit_local_action = [this](const std::string& thread_id, const std::string& text,
-                                         const std::string& payload, const bool in_peer_chat) {
+    inbound.submit_local_action = [this, log_not_started](const std::string& thread_id, const std::string& text,
+                                                          const std::string& payload, const bool in_peer_chat) {
       const auto doc = TryParseObject(payload);
-      if (!agent_session_ || !doc) {
+      if (!agent_sessions_ || !doc) {
         return;
       }
       Object args;
@@ -1364,17 +1409,17 @@ void Application::WireAgentAndConfig() {
           args.set(key, value);
         }
       }
-      agent_session_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""), std::move(args),
-                                        in_peer_chat);
+      log_not_started(agent_sessions_->SubmitLocalAction(thread_id, text, doc->getString("tool").value_or(""),
+                                                       std::move(args), in_peer_chat));
     };
     inbound.is_app_action_request = [this](const std::string& text) {
-      return agent_session_ && agent_session_->IsAppActionRequest(text);
+      return agent_sessions_ && agent_sessions_->IsAppActionRequest(text);
     };
     messaging_facade_->BindAgentInbound(std::move(inbound));
 
     // The planner matches names against the user's remark and the other side's nickname, on the device only.
     // Called on a worker (like the messaging tools): the contacts store and the thread store lock themselves.
-    agent_session_->SetLocalContactsSource([this]() {
+    agent_sessions_->SetLocalContactsSource([this]() {
       std::vector<LocalPlanContact> out;
       if (!messaging_facade_) {
         return out;
@@ -1403,17 +1448,17 @@ void Application::WireAgentAndConfig() {
       return out;
     });
   }
-  if (agent_session_) {
-    agent_session_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
-    agent_session_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
+  if (agent_sessions_) {
+    agent_sessions_->SetToolPermissions(store_.Snapshot().profile_prefs.tool_permissions);
+    agent_sessions_->SetToolPermissionsSaver([this](const ToolPermissionsPrefs& permissions) -> Roe<void> {
       ProfilePreferences prefs = store_.Snapshot().profile_prefs;
       prefs.tool_permissions = permissions;
       prefs.schema_version = ProfilePreferences::kSchemaVersion;
       return store_.SaveProfilePrefs(prefs);
     });
     store_.AddProfilePrefsListener([this](const ProfilePreferences& prefs) {
-      if (agent_session_) {
-        agent_session_->SetToolPermissions(prefs.tool_permissions);
+      if (agent_sessions_) {
+        agent_sessions_->SetToolPermissions(prefs.tool_permissions);
       }
     });
   }
@@ -1480,6 +1525,11 @@ bool Application::MountPresenters(ui::Context* context) {
     emoji_picker_->OpenReact(message_id, [this, message_id](std::string emoji) {
       chat_->ReactWithEmoji(message_id, emoji);
     });
+  };
+  emoji_notify.close_if_open = [this]() {
+    if (emoji_picker_->IsOpen()) {
+      emoji_picker_->Close();
+    }
   };
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
@@ -1593,7 +1643,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (unlock_gate_) {
       unlock_gate_->BindPorts({});
     }
-    agent_session_.reset();
+    agent_sessions_.reset();
     ui::RemoveContext("main");
     ui::Shutdown();
     Backend::Shutdown();
@@ -1605,6 +1655,12 @@ bool Application::MountPresenters(ui::Context* context) {
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
   messaging.SetOnMessagingReady([this]() {
+    // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
+    AppRuntime::PostWorkerNormal([this]() {
+      if (auto removed = RemoveRetiredKeychainBackup(OsSecureBlobStore()); !removed) {
+        log().warning << "Retired Keychain backup not removed: " << removed.error().message;
+      }
+    });
     chat_->OnMessagingReady();
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
@@ -2054,7 +2110,7 @@ void Application::Shutdown() {
       StartupPhase phase("Shutdown::ChatController");
       chat_->Shutdown();
     }
-    agent_session_.reset();
+    agent_sessions_.reset();
 
     // Join ringtone before AbortCallMedia / SDL_Quit — accept-dialog quit left the playback
     // worker holding the device (async Stop is Accept-safe and does not join).
