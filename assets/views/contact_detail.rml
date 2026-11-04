@@ -57,6 +57,13 @@
           <svg class="cd-act-icon" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
           <p class="cd-act-label">{{i18n:contacts.message}}</p>
         </button>
+        <!-- 常用联系人 (Kenneth 2026-11-04): first on Home's Favorites and in New chat's frequent group; device-only. -->
+        <button class="cd-act" type="button" data-event-click="toggle_star()">
+          <svg class="cd-act-icon" src="../icons/v2/star.svg" width="24" height="24" data-if="!selected.starred"></svg>
+          <svg class="cd-act-icon" src="../icons/v2/star-fill.svg" width="24" height="24" data-if="selected.starred"></svg>
+          <p class="cd-act-label" data-if="!selected.starred">{{i18n:contacts.star}}</p>
+          <p class="cd-act-label" data-if="selected.starred">{{i18n:contacts.starred}}</p>
+        </button>
       </div>
       <p class="cd-footnote" data-if="!selected.can_message">{{selected.message_hint}}</p>
 

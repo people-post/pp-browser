@@ -70,6 +70,13 @@ TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
   ASSERT_TRUE(static_cast<bool>(with_widgets));
   EXPECT_EQ(with_widgets->home_widgets_hidden, std::vector<std::string>{"brief"});
 
+  // A starred contact stays starred after a restart (device-only, in preferences.json).
+  prefs.starred_contacts = {"contact-7"};
+  EXPECT_TRUE(store.SaveProfilePrefs(prefs));
+  auto with_star = pbr::UserPreferences::LoadProfile(profile_dir);
+  ASSERT_TRUE(static_cast<bool>(with_star));
+  EXPECT_EQ(with_star->starred_contacts, std::vector<std::string>{"contact-7"});
+
   prefs.appearance = "light";
   EXPECT_TRUE(pbr::UserPreferences::SaveProfile(profile_dir, prefs));
   EXPECT_TRUE(store.ReloadProfilePrefs());

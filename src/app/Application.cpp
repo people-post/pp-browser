@@ -1047,6 +1047,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   settings_->BindShellNavigation(shell_navigation);
 
   chat_->BindSessionStore(store_);
+  contacts_->BindSessionStore(&store_);
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
@@ -1643,6 +1644,7 @@ bool Application::MountPresenters(ui::Context* context) {
       contacts_shell_bridge_->Clear();
     }
     contacts_->BindContactsPorts({});
+    contacts_->BindSessionStore(nullptr);
     settings_->BindOpenHomeEdit({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});

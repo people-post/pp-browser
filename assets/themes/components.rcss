@@ -6837,6 +6837,23 @@ input.checkbox {
   font-weight: bold;
 }
 
+/* A starred contact (常用联系人): a small star right after the name; the badges still go to the row's end. */
+.contacts-row-star {
+  display: none;
+}
+
+.shell-layer-compact .contacts-row-title--starred {
+  flex: 0 1 auto;
+}
+
+.shell-layer-compact .contacts-row-star {
+  display: block;
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: auto;
+}
+
 .shell-layer-compact .contacts-row-subtitle--phone {
   display: block;
   font-size: 15dp;

@@ -191,6 +191,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `ai_dot_left` | `preferences.json` | boolean, optional; default false (right edge). The side the phone AI dot rests on, written after a drag |
 | `ai_dot_y_permille` | `preferences.json` | integer 0–1000, optional; default 600. How far down its band (under the navigation bar, above the tab bar) the dot rests |
 | `home_widgets_hidden` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (all shown). Phone Home widgets switched off in Edit Home: `messages` \| `new_people` \| `brief`; unknown ids are ignored. A hidden `brief` is not fetched. Device-only, never synced (like `thread_local_prefs`) |
+| `starred_contacts` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty. Contact ids starred on the contact page ("Add to Favorites"), in the order they were starred; empty ids and repeats are dropped on read, an id with no contact is ignored. They come first in the phone Home Favorites widget and the New chat page's frequent group. Device-only, never synced or sent (like `thread_local_prefs`) |
 
 `tool_permissions` shape:
 

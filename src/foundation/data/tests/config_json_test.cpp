@@ -197,6 +197,28 @@ TEST(ConfigJsonTest, ProfilePrefsHomeWidgetsHiddenDefaultsEmptyAndRoundTrips) {
   EXPECT_EQ(parsed.home_widgets_hidden, (std::vector<std::string>{"brief", "new_people"}));
 }
 
+TEST(ConfigJsonTest, ProfilePrefsStarredContactsRoundTripInStarOrder) {
+  // Starred contacts (常用联系人) are kept in the order they were starred; absent reads back as none, a repeat once.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.starred_contacts = {"stale"};
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_TRUE(loaded.starred_contacts.empty());
+
+  pbr::ProfilePreferences edited;
+  edited.starred_contacts = {"c-2", "c-1"};
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_EQ(parsed.starred_contacts, (std::vector<std::string>{"c-2", "c-1"}));
+
+  auto repeated = pbr::TryParseObject(R"({ "starred_contacts": ["a", "", "b", "a", 3] })");
+  ASSERT_TRUE(repeated.has_value());
+  pbr::ProfilePreferences cleaned;
+  pbr::ProfilePrefsFromObject(*repeated, cleaned);
+  EXPECT_EQ(cleaned.starred_contacts, (std::vector<std::string>{"a", "b"}));
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

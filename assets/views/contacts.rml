@@ -52,7 +52,9 @@
           </div>
           <div class="contacts-row-body">
             <div class="contacts-row-title-line row">
-              <p class="contacts-row-title">{{contact.title}}</p>
+              <p class="contacts-row-title" data-class-contacts-row-title--starred="contact.starred">{{contact.title}}</p>
+              <svg class="contacts-row-star" src="../icons/v2/star-fill.svg" width="14" height="14"
+                   data-if="contact.starred"></svg>
               <span class="contacts-trust-badge contacts-trust-badge--friendly"
                     data-if="contact.trust == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
               <span class="contacts-trust-badge contacts-trust-badge--blocked"

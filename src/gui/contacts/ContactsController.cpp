@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/contacts/ContactsController.h"
+#include "foundation/data/SessionStore.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/product/DevTools.h"
 #include "common/ContactLimits.h"
@@ -464,6 +465,14 @@ void ContactsController::BindAccountPorts(ContactsAccountPorts ports) {
   account_ports_ = std::move(ports);
 }
 
+void ContactsController::BindSessionStore(SessionStore* store) {
+  session_store_ = store;
+}
+
+std::vector<std::string> ContactsController::Starred() const {
+  return session_store_ ? session_store_->Snapshot().profile_prefs.starred_contacts : std::vector<std::string>{};
+}
+
 ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
   return shell_navigation_.snapshot ? shell_navigation_.snapshot() : ShellChromeSnapshot{};
 }
@@ -531,6 +540,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       list_handle.RegisterMember("icon_src", &ContactListRow::icon_src);
       list_handle.RegisterMember("avatar_letter", &ContactListRow::avatar_letter);
       list_handle.RegisterMember("avatar_tone", &ContactListRow::avatar_tone);
+      list_handle.RegisterMember("starred", &ContactListRow::starred);
     }
     if (auto identity_handle = ctor.RegisterStruct<ContactIdentityRow>()) {
       identity_handle.RegisterMember("label", &ContactIdentityRow::label);
@@ -595,6 +605,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("identities", &ContactDetail::identities);
       detail_handle.RegisterMember("threads", &ContactDetail::threads);
       detail_handle.RegisterMember("member_preview", &ContactDetail::member_preview);
+      detail_handle.RegisterMember("starred", &ContactDetail::starred);
     }
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("contact_sections", &controller.contact_sections_);
@@ -633,6 +644,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
     ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+    ctor.BindEventCallback("toggle_star", DataEvent<>([this]() { OnToggleStar(); }));
     ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
     ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
     ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
@@ -737,11 +749,13 @@ void ContactsController::SyncFromStore() {
     return;
   }
 
+  const std::vector<std::string> starred = Starred();
   std::vector<ContactListRow> rows;
   rows.reserve(stored->size());
   for (const Contact& contact : *stored) {
     if (ContactMatchesQuery(contact, query)) {
       rows.push_back(ToContactListRow(contact, contacts_ports_));
+      rows.back().starred = StarRank(starred, contact.id) >= 0;
     }
   }
   contact_sections_ = ContactSections(std::move(rows));
@@ -1026,6 +1040,7 @@ void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
     return;
   }
   selected_ = ToContactDetail(**contact, contacts_ports_);
+  selected_.starred = StarRank(Starred(), contact_id) >= 0;
   ApplyMessagingEligibility(selected_, **contact, contacts_ports_);
 }
 
@@ -1347,11 +1362,13 @@ void ContactsController::SyncNewChat() {
   if (!stored) {
     return;
   }
+  const std::vector<std::string> starred = Starred();
   std::vector<NewChatContact> input;
   std::vector<ContactListRow> rows;
   for (const Contact& contact : *stored) {
     ContactListRow row = ToContactListRow(contact, contacts_ports_);
-    input.push_back({contact.id, row.title.c_str(), contact.trust == TrustLevel::Blocked});
+    row.starred = StarRank(starred, contact.id) >= 0;
+    input.push_back({contact.id, row.title.c_str(), contact.trust == TrustLevel::Blocked, StarRank(starred, contact.id)});
     rows.push_back(std::move(row));
   }
   std::vector<NewChatDirectChat> chats;
@@ -2001,6 +2018,29 @@ bool ContactsController::SetContactTrust(const std::string& contact_id, const st
     return false;
   }
   return true;
+}
+
+void ContactsController::OnToggleStar() {
+  const std::string contact_id = selected_.id.c_str();
+  if (!session_store_ || contact_id.empty() || selected_.member_preview) {
+    return;
+  }
+  // Kept on this device only (preferences.json), like the chats' pin / mute: never synced or sent.
+  ProfilePreferences prefs = session_store_->Snapshot().profile_prefs;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  prefs.starred_contacts = ToggleStarred(prefs.starred_contacts, contact_id);
+  if (auto saved = session_store_->SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Contact star not saved: " << saved.error().message;
+    ShowToast(UserFeedback::FailFrom(saved.error()));
+    return;
+  }
+  selected_.starred = StarRank(prefs.starred_contacts, contact_id) >= 0;
+  SyncFromStore(); // the list's star
+  if (new_chat_open_) {
+    SyncNewChat();
+    DirtyNewChat();
+  }
+  DirtyAll();
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {

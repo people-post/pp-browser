@@ -461,6 +461,8 @@
     "new_chat.add": "Add contact",
     "new_chat.frequent": "Frequent",
     "contacts.message": "Message",
+    "contacts.star": "Favorite",
+    "contacts.starred": "Favorited",
     "contacts.account_short": "Account",
     "contacts.empty": "No contacts yet",
     "contacts.search_placeholder": "Search contacts",

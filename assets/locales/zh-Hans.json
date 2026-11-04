@@ -452,6 +452,8 @@
     "new_chat.add": "添加联系人",
     "new_chat.frequent": "常用联系人",
     "contacts.message": "发消息",
+    "contacts.star": "设为常用",
+    "contacts.starred": "已设为常用",
     "contacts.account_short": "账号",
     "contacts.empty": "暂无联系人",
     "contacts.search_placeholder": "搜索联系人",

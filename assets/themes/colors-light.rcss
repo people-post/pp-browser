@@ -1745,6 +1745,10 @@ input.checkbox:checked {
   image-color: #007aff;
 }
 
+.contacts-row-star {
+  image-color: #ff9500;
+}
+
 .cd-act-label {
   color: #007aff;
 }

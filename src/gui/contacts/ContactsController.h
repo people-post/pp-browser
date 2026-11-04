@@ -33,6 +33,7 @@ class Context;
 namespace pbr {
 
 struct Contact;
+class SessionStore;
 
 /**
  * The pill after the remark auto-saved (Kenneth 2026-11-04: "保存成功……保存不成功，都给他个提示"): once per edit, not
@@ -75,6 +76,8 @@ public:
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
   void BindScanPorts(ScanPorts ports);
   void BindAccountPorts(ContactsAccountPorts ports);
+  /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
+  void BindSessionStore(SessionStore* store);
 
   struct ContactListRow {
     ui::String id;
@@ -89,6 +92,8 @@ public:
     ui::String icon_src;
     ui::String avatar_letter = "?";
     int avatar_tone = 0;
+    /** Starred as a favourite: the phone Contacts list shows a small star after the name. */
+    bool starred = false;
   };
 
   /** One lettered group of a contact list: the phone "New chat" page, the Contacts tab. */
@@ -161,6 +166,8 @@ public:
     bool member_preview = false;
     /** That member's account id (what Add contact looks up). */
     ui::String member_account;
+    /** Starred as a favourite (the phone page's star button reads "Favorite" and is filled). */
+    bool starred = false;
   };
 
   bool RegisterModel(ui::Context* context);
@@ -196,6 +203,12 @@ public:
   void OnGroupAdminRemove();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
+  /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */
+  void OnToggleStar();
+  /** The stored star order (ProfilePreferences::starred_contacts); empty without a store. */
+  std::vector<std::string> Starred() const;
+  /** The contact shown is starred (tests). */
+  bool SelectedStarred() const { return selected_.starred; }
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
   void OpenNewChatPage();
@@ -424,6 +437,7 @@ private:
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
   ContactsAccountPorts account_ports_;
+  SessionStore* session_store_ = nullptr;
 
   static ContactsController* installed_instance_;
 };

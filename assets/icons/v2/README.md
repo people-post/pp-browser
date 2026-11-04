@@ -43,6 +43,7 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | sparkle-fill | 02-chatlist, 03-home, 05-Wide, 05-WideChats (+4 more); §8.14 | drawn | `sparkle.svg` |
 | speaker | 06-CallGroupVideo, 06-CallGroupVoice, 06-CallVideo, 06-CallVoice; §8.12 | drawn | `speaker.svg` |
 | star | 03-home-edit | drawn | - |
+| star-fill | contact page star (starred), phone Contacts row, Home Favorites widget | drawn (star, filled) | - |
 | sun | 07-Me | drawn | - |
 | tab-chats | 02-chatlist, 03-home, 03-home-edit, 04-contact-detail (+10 more); §8.2 | drawn | `message.svg` |
 | tab-chats-fill | 02-chatlist, 05-WideChats, WideChats; §8.2 | drawn (selected tab) | - |

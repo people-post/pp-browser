@@ -113,6 +113,11 @@ struct ProfilePreferences {
    * Device-only, like thread_local_prefs: never synced.
    */
   std::vector<std::string> home_widgets_hidden;
+  /**
+   * Contacts starred as favourites ("常用联系人"; contact ids, in the order they were starred): first in Home's
+   * Favourites widget and the New chat page's frequent group. Device-only, like thread_local_prefs: never synced.
+   */
+  std::vector<std::string> starred_contacts;
 };
 
 class UserPreferences {
