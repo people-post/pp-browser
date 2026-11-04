@@ -1841,12 +1841,16 @@ void ShellHost::SyncLayout() {
   splitter_drag_.Detach();
   aux_splitter_drag_.Detach();
   large_title_scroll_.Detach();
+  nav_bar_scroll_.Detach();
   session_swipe_.Detach();
   RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
   AttachSplitterDrag();
   AttachLargeTitleScroll();
+  if (state_.layout_mode == LayoutMode::Compact && context_->GetNumDocuments() > 0) {
+    nav_bar_scroll_.Attach(context_->GetDocument(0));
+  }
   remount_call_chrome_pending_ = false;
   remount_dialog_chrome_pending_ = false;
   remount_pin_gate_chrome_pending_ = false;

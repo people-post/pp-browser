@@ -737,6 +737,19 @@ select selectbox option:hover {
   background-color: {{x-bar-blur}};
 }
 
+/* Collapsed (reading older history), the frosted chat bar is a thinner material; solid stays solid. */
+.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome.surface-chrome--frost {
+  background-color: {{x-bar-blur-thin}};
+}
+
+.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome.surface-chrome--frost .bar-fade {
+  decorator: linear-gradient(to bottom, {{x-bar-blur-thin}}, {{x-bar-fade}});
+}
+
+.shell-chat-overlay .chat-header-compact-title {
+  color: {{label}};
+}
+
 /* Phone bars: no hairlines; a fade from the bar colour to clear under a top bar, and over the tab bar and the
    composer. Solid bars fade from x-bar, frosted ones from x-bar-blur. */
 .bar-fade {

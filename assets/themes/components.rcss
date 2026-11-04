@@ -3365,7 +3365,7 @@ select selectbox option {
 .shell-chat-overlay--dragging {
 }
 
-/* Phone chat: ONE 44dp nav bar (DESIGN-pp-ui 8.1). This row is the bar's material and the back button;
+/* Phone chat: ONE nav bar (DESIGN-pp-ui 8.1), 56dp at rest. This row is the bar's material and the back button;
    the chat pane's own header row is lifted onto it, right of the button (see .chat-header below). */
 .shell-chat-overlay-chrome {
   position: absolute;
@@ -3375,7 +3375,7 @@ select selectbox option {
   z-index: 2;
   flex-shrink: 0;
   align-items: center;
-  height: 44dp;
+  height: 56dp;
   padding: 0;
   box-sizing: border-box;
 }
@@ -3391,7 +3391,7 @@ select selectbox option {
 .shell-chat-overlay .shell-pane-body {
   flex: 1;
   min-height: 0;
-  padding-top: 44dp;
+  padding-top: 56dp;
   box-sizing: border-box;
 }
 
@@ -3403,8 +3403,8 @@ select selectbox option {
 .shell-chat-overlay .chat-header {
   position: relative;
   z-index: 3;
-  height: 43dp;
-  margin: -44dp -12dp 8dp 32dp;
+  height: 55dp;
+  margin: -56dp -12dp 8dp 32dp;
   padding: 0 8dp 0 0;
   border-radius: 0;
   border-left-width: 0;
@@ -3432,25 +3432,25 @@ select selectbox option {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  border-radius: 18dp;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
   overflow: hidden;
 }
 
 .shell-chat-overlay .chat-header-avatar .avatar-photo {
-  width: 36dp;
-  height: 36dp;
+  width: 40dp;
+  height: 40dp;
 }
 
 .shell-chat-overlay .chat-header-avatar .chat-row-avatar-letter {
-  font-size: 16dp;
-  line-height: 20dp;
+  font-size: 17dp;
+  line-height: 22dp;
 }
 
 .shell-chat-overlay .chat-header-avatar .chat-row-avatar-icon {
-  width: 20dp;
-  height: 20dp;
+  width: 22dp;
+  height: 22dp;
 }
 
 .shell-chat-overlay .chat-header-title {
@@ -3505,8 +3505,81 @@ select selectbox option {
 }
 
 .chat-header-avatar,
-.chat-header-phone-subtitle {
+.chat-header-phone-subtitle,
+.chat-header-compact-title {
   display: none;
+}
+
+/* Phone chat header collapsing (Kenneth 2026-11-04, PLAN-ui-refresh-impl 原话 71; NavBarCollapseModel): 56dp at rest
+   with the 40dp avatar, the name and the subtitle; scrolled into older history it shrinks to a 44dp bar with the back
+   arrow and the name centred, so more of the transcript shows. Nothing is laid out again: the bar keeps its 56dp box
+   and slides 12dp up under the screen edge (the overlay clips it), the back arrow, the header row, a call bar and
+   banners move with it, and the avatar, name and subtitle cross-fade with the small name. The transcript runs under
+   the bar either way, so its scroll position stays where it is. ShellNavBarScroll sets .chat-bar-compact. */
+.shell-chat-overlay-chrome {
+  transition: transform 0.2s cubic-out, background-color 0.2s cubic-out;
+}
+
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-chat-overlay .chat-header,
+.shell-chat-overlay .chat-call-bar,
+.shell-chat-overlay .chat-gap-banner {
+  transition: transform 0.2s cubic-out;
+}
+
+.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome,
+.shell-chat-overlay.chat-bar-compact .chat-call-bar,
+.shell-chat-overlay.chat-bar-compact .chat-gap-banner {
+  transform: translateY(-12dp);
+}
+
+/* The bar's middle moves 6dp up (28dp to 22dp from the top): the header row 6dp, the back arrow 12dp less 6dp. */
+.shell-chat-overlay.chat-bar-compact .chat-header {
+  transform: translateY(-6dp);
+}
+
+.shell-chat-overlay.chat-bar-compact .shell-chat-overlay-chrome .shell-back-btn {
+  transform: translateY(6dp);
+}
+
+.shell-chat-overlay .chat-header-main {
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-chat-overlay.chat-bar-compact .chat-header-main {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Centred on the screen: the header row starts 32dp in, so 64dp from its left and 96dp from its right (clear of the
+   back arrow and the call / more buttons). */
+.shell-chat-overlay .chat-header-compact-title {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 64dp;
+  right: 96dp;
+  height: 55dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  font-size: 15dp;
+  line-height: 55dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-chat-overlay.chat-bar-compact .chat-header-compact-title {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 /* Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4). A 44dp bar under the header: a dot, what
@@ -8736,12 +8809,13 @@ input.checkbox {
   padding-right: 10dp;
 }
 
-/* The transcript runs up under the header bar (the wrap starts 51dp down: the 44dp bar, the header row's 8dp margin
+/* The transcript runs up under the header bar (the wrap starts 63dp down: the 56dp bar, the header row's 8dp margin
    less the 1dp it overlaps) and ends at the composer, fading into it; its padding keeps the first and last bubbles
-   clear at rest. A banner between header and transcript covers what runs under it. */
+   clear at rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner
+   between header and transcript covers what runs under it. */
 .shell-chat-overlay .chat-messages-wrap .messages {
-  top: -51dp;
-  padding-top: 51dp;
+  top: -63dp;
+  padding-top: 63dp;
   padding-bottom: 12dp;
 }
 

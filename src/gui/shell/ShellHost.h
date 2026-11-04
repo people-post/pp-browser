@@ -15,6 +15,7 @@
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellLargeTitleScroll.h"
+#include "gui/shell/ShellNavBarScroll.h"
 #include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/SessionSwipeGesture.h"
 #include "gui/shell/ShellPageSheetGesture.h"
@@ -388,6 +389,8 @@ private:
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;
   ShellLargeTitleScroll large_title_scroll_;
+  /** Phone chat header and pushed pages: their bars collapse while the content scrolls. */
+  ShellNavBarScroll nav_bar_scroll_;
   SessionSwipeGesture session_swipe_;
   SessionSwipeGesture::ActionCallback on_session_swipe_action_;
   std::function<void(const std::string&)> on_before_transient_mount_;

@@ -83,6 +83,11 @@
       </div>
       </div>
     </div>
+    <!-- Phones: the collapsed header's centred name (the bar shrinks while the user reads older history); a tap does
+         what a tap on the full title does. -->
+    <button class="chat-header-compact-title" type="button" data-if="!search_open && show_peer_sheet"
+            data-event-click="open_peer_sheet()">{{thread_title}}</button>
+    <p class="chat-header-compact-title" data-if="!search_open && !show_peer_sheet">{{thread_title}}</p>
     <div class="chat-header-actions row" data-if="!search_open">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"
               data-class-chat-header-call-btn--join="call_joinable"
