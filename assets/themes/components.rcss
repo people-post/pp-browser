@@ -7083,10 +7083,13 @@ input.checkbox {
   padding-bottom: 0;
 }
 
+/* Text and caret centred in the 44dp box (Kenneth 2026-11-04: the note sat at the top): the engine draws them one
+   line tall at the top of the content box, so the box is a 22dp line with 11dp above and below, as the search fields. */
 .shell-layer-compact .cd-field {
   margin: 0 0 10dp 0;
-  padding: 0 12dp;
+  padding: 11dp 12dp;
   border-radius: 10dp;
+  line-height: 22dp;
 }
 
 .shell-layer-compact .cd-row--field .group-field-hint {
@@ -7961,12 +7964,13 @@ input.checkbox {
   min-height: 44dp;
   max-height: 44dp;
   margin: 0 0 10dp 0;
-  padding: 0 12dp;
+  /* A 22dp line between 11dp paddings: text and a line-tall caret in the middle (a 44dp line drew a full-height caret). */
+  padding: 11dp 12dp;
   border: 0;
   border-radius: 10dp;
   box-sizing: border-box;
   font-size: 17dp;
-  line-height: 44dp;
+  line-height: 22dp;
   text-align: left;
 }
 
