@@ -236,7 +236,6 @@ private:
   // SettingsHost
   SessionStore& Store() override;
   void ShowStatus(const std::string& status) override;
-  void ShowResult(const std::string& message, bool failed = false) override;
   void Resync(bool include_profile_nickname) override;
   SettingsUiState& UiState() override;
   void PullFromView() override;

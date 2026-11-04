@@ -8,6 +8,7 @@
 #include "common/PbrCompat.h"
 #include "gui/AccountInvite.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
+#include "gui/UserFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ui/DataEvent.h"
 #include "lib/ui/QrSvg.h"
@@ -90,7 +91,7 @@ void SettingsProfileActions::Register() {
     const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
     host_.Resync();
     host_.ShowStatus(message);
-    host_.ShowResult(message);
+    UserFeedback::Ok(message);
   });
 }
 
@@ -108,7 +109,7 @@ void SettingsProfileActions::RotateBriefLlmKey() {
     }
     host_.Resync();
     host_.ShowStatus(Tr("settings.llm.brief_key_rotated"));
-    host_.ShowResult(Tr("settings.llm.brief_key_rotated"));
+    UserFeedback::Ok(Tr("settings.llm.brief_key_rotated"));
   });
 }
 
@@ -116,13 +117,13 @@ void SettingsProfileActions::CopyId() {
   host_.PullFromView();
   const std::string& peer_id = host_.UiState().profile_peer_id;
   if (peer_id.empty()) {
-    host_.ShowResult(Tr("settings.profile.no_peer_id"), /*failed=*/true);
+    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(peer_id.c_str());
   }
-  host_.ShowResult(Tr("settings.profile.peer_id_copied"));
+  UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
 }
 
 void SettingsProfileActions::PickIcon() {
@@ -196,7 +197,7 @@ void SettingsProfileActions::AfterIconChange(const Roe<void>& result, const std:
     host_.ReportFailure(result.error());
     return;
   }
-  host_.ShowResult(done_message);
+  UserFeedback::Ok(done_message);
 }
 
 void SettingsProfileActions::Share(const ShareAnchor anchor) {
@@ -204,7 +205,7 @@ void SettingsProfileActions::Share(const ShareAnchor anchor) {
   host_.PullFromView();
   const SettingsUiState& state = host_.UiState();
   if (state.profile_relay_id.empty()) {
-    host_.ShowResult(Tr("settings.profile.no_peer_id"), /*failed=*/true);
+    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   ShareInviteOrCopy(

@@ -139,6 +139,20 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ShellFeedback::ExpireToasts(toast_state, 5000.f);
   EXPECT_TRUE(toast_state.toasts.empty());
 
+  // Desktop keeps 3 s (Short) / 6 s (Long); phones: 2 s for both, and a new pill replaces the old one.
+  ShellState desk_toasts{};
+  ShellFeedback::ShowToast(desk_toasts, "Desk", ToastDuration::Short, 1000.f);
+  EXPECT_FLOAT_EQ(desk_toasts.toasts.back().expires_at_ms, 4000.f);
+  ShellFeedback::ShowToast(desk_toasts, "Desk long", ToastDuration::Long, 1000.f);
+  EXPECT_FLOAT_EQ(desk_toasts.toasts.back().expires_at_ms, 7000.f);
+  ShellState phone_toasts{};
+  phone_toasts.layout_mode = LayoutMode::Compact;
+  ShellFeedback::ShowToast(phone_toasts, "One", ToastDuration::Long, 1000.f);
+  EXPECT_FLOAT_EQ(phone_toasts.toasts.back().expires_at_ms, 3000.f);
+  ShellFeedback::ShowToast(phone_toasts, "Two", ToastDuration::Short, 2500.f);
+  ASSERT_EQ(phone_toasts.toasts.size(), 1U);
+  EXPECT_FLOAT_EQ(phone_toasts.toasts.back().expires_at_ms, 4500.f);
+
   ShellFeedback::ShowBanner(toast_state, "Offline");
   EXPECT_FALSE(toast_state.banner_message.empty());
   ShellFeedback::DismissBanner(toast_state);

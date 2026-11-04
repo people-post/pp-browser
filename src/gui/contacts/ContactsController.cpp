@@ -558,9 +558,6 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("nc_sections", &controller.new_chat_sections_);
     ctor.Bind("nc_query", &controller.new_chat_query_);
     ctor.Bind("blocked_rows", &controller.blocked_rows_);
-    ctor.Bind("blocked_status", &controller.blocked_status_);
-    ctor.Bind("detail_status", &controller.detail_status_);
-    ctor.Bind("detail_status_spot", &controller.detail_status_spot_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
     ctor.Bind("advanced", &controller.advanced_);
     ctor.Bind("selected", &controller.selected_);
@@ -613,8 +610,6 @@ void ContactsController::DirtyAll() {
   host.Dirty("contacts", "compact_layout");
   host.Dirty("contacts", "advanced");
   host.Dirty("contacts", "selected");
-  host.Dirty("contacts", "detail_status");
-  host.Dirty("contacts", "detail_status_spot");
 }
 
 void ContactsController::SyncLayoutMode() {
@@ -937,7 +932,6 @@ void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
   FlushPending();
-  detail_status_ = "";
   LoadSelectedDetail(contact_id);
   if (selected_.id.empty()) {
     return;
@@ -1019,7 +1013,6 @@ bool ContactsController::CloseContactDetailPane() {
 void ContactsController::OnDetailDismissed() {
   FlushPending();
   selected_ = {};
-  detail_status_ = "";
   contact_dirty_ = false;
   debounce_deadline_ms_ = 0;
   DirtyAll();
@@ -1230,15 +1223,8 @@ bool ContactsController::FlushSelectedContact() {
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
   if (!contacts_ports_.upsert_contact(updated)) {
-    if (compact_layout_) {
-      ShowDetailResult(Tr("contacts.err.save"), "name");
-    } else {
-      UserFeedback::Fail(Tr("contacts.err.save"));
-    }
+    UserFeedback::Fail(Tr("contacts.err.save"));
     return false;
-  }
-  if (compact_layout_) {
-    ShowDetailResult(Tr("contacts.status.saved"), "name"); // the name field is on the page: "Saved" under it
   }
 
   if (contacts_ports_.register_contact_direct_endpoints) {
@@ -1628,13 +1614,13 @@ void ContactsController::OnCopyId() {
     label = Tr("contacts.id_kind.generic");
   }
   if (value.empty()) {
-    ShowDetailResult(Tr("contacts.toast.no_id"), "id");
+    ShowToast(Tr("contacts.toast.no_id"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
-  ShowDetailResult(Tr("contacts.toast.id_copied", {{"label", label}}), "id");
+  ShowToast(Tr("contacts.toast.id_copied", {{"label", label}}));
 }
 
 // Share: the contact's card into one of your chats (ACCOUNT_CARD.md) — the person can add them with no
@@ -1747,7 +1733,6 @@ bool ContactsController::SetContactTrust(const std::string& contact_id, const st
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
-  const bool was_blocked = selected_.trust_key == "blocked";
   if (!SetContactTrust(selected_.id.c_str(), trust)) {
     return;
   }
@@ -1758,29 +1743,11 @@ void ContactsController::OnSetTrust(const std::string& trust) {
     DirtyBlocked();
   }
   DirtyAll();
-  // Kenneth 2026-11-04: say what happened where it happened (the line under Block / Unblock), not in a toast.
-  if (trust == "blocked") {
-    ShowDetailResult(Tr("contacts.status.blocked"), "block");
-  } else if (was_blocked) {
-    ShowDetailResult(Tr("contacts.status.unblocked"), "block");
-  } else if (!compact_layout_) {
-    ShowToast(Tr("contacts.toast.trust_updated")); // phones: the switch moving says it
-  }
+  ShowToast(Tr("contacts.toast.trust_updated"));
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed(); // the Chats list marks (or unmarks) the person's chat
   }
   NotifySurfaceChanged();
-}
-
-void ContactsController::ShowDetailResult(const std::string& message, const char* spot) {
-  if (!compact_layout_) {
-    ShowToast(message);
-    return;
-  }
-  detail_status_ = message.c_str();
-  detail_status_spot_ = spot;
-  DataModelHost::Instance().Dirty("contacts", "detail_status");
-  DataModelHost::Instance().Dirty("contacts", "detail_status_spot");
 }
 
 std::vector<Contact> BlockedContactsByName(const std::vector<Contact>& contacts) {
@@ -1812,7 +1779,6 @@ void ContactsController::SyncBlocked() {
 
 void ContactsController::DirtyBlocked() {
   DataModelHost::Instance().Dirty("contacts", "blocked_rows");
-  DataModelHost::Instance().Dirty("contacts", "blocked_status");
 }
 
 int ContactsController::BlockedCount() const {
@@ -1829,7 +1795,6 @@ void ContactsController::OpenBlockedPeople() {
   }
   FlushPending();
   SyncBlocked();
-  blocked_status_ = "";
   blocked_open_ = true;
   DirtyBlocked();
   PaneSpec spec;
@@ -1839,7 +1804,6 @@ void ContactsController::OpenBlockedPeople() {
 
 void ContactsController::OnBlockedPeopleDismissed() {
   blocked_open_ = false;
-  blocked_status_ = "";
   blocked_rows_.clear();
 }
 
@@ -1853,10 +1817,10 @@ void ContactsController::OnUnblockListed(const std::string& contact_id) {
   if (name.empty() || !SetContactTrust(contact_id, "unknown")) {
     return;
   }
-  // The row goes and the line under the list says who was unblocked (Kenneth 2026-11-04: inline, not a toast).
+  // The row goes in place and the bottom pill says who was unblocked.
   SyncBlocked();
-  blocked_status_ = Tr("contacts.blocked.unblocked", {{"name", name}}).c_str();
   DirtyBlocked();
+  ShowToast(Tr("contacts.blocked.unblocked", {{"name", name}}));
   SyncFromStore();
   DirtyAll();
   if (contacts_ports_.notify_thread_changed) {
@@ -1867,7 +1831,6 @@ void ContactsController::OnUnblockListed(const std::string& contact_id) {
 
 void ContactsController::OnOpenBlockedContact(const std::string& contact_id) {
   FlushPending();
-  detail_status_ = "";
   LoadSelectedDetail(contact_id);
   if (selected_.id.empty() || !shell_navigation_.push_transient) {
     return;
@@ -1917,7 +1880,7 @@ void ContactsController::OnSyncRemote() {
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShowDetailResult(Tr("contacts.toast.synced"), "id");
+  ShowToast(Tr("contacts.toast.synced"));
   NotifySurfaceChanged();
 }
 

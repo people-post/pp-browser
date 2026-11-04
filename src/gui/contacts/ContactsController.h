@@ -240,8 +240,6 @@ private:
   void DirtyBlocked();
   void OnUnblockListed(const std::string& contact_id);
   void OnOpenBlockedContact(const std::string& contact_id);
-  /** The contact page's result: inline under the page on phones, a toast on desktop. */
-  void ShowDetailResult(const std::string& message, const char* spot);
   void OnRemoveContact();
   void OnOpenThread(const std::string& thread_id);
   void OnSearchChanged();
@@ -268,14 +266,9 @@ private:
   std::vector<NewChatSectionRow> new_chat_sections_;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
-  /** Blocked people, by name (OpenBlockedPeople), and the result line under the list after an unblock. */
+  /** Blocked people, by name (OpenBlockedPeople). */
   std::vector<ContactListRow> blocked_rows_;
-  ui::String blocked_status_;
   bool blocked_open_ = false;
-  /** Phones: the result of an action on the contact page (block, unblock, copy, ...) shown under it, not a toast. */
-  ui::String detail_status_;
-  /** Where on the contact page that line sits: "name" (the name card), "id" (the ID card) or "block". */
-  ui::String detail_status_spot_;
   /** The New chat sheet's overlay layer (-1: not open). */
   int new_chat_layer_id_ = -1;
   ui::String search_query_;

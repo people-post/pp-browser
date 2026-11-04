@@ -32,6 +32,9 @@ float DurationMs(ToastDuration duration) {
   return duration == ToastDuration::Long ? 6000.f : 3000.f;
 }
 
+/** Phones: every pill is gone after two seconds, Short or Long (Kenneth 2026-11-04). */
+constexpr float kCompactToastMs = 2000.f;
+
 /** Default ShowToast now_ms is 0; treat that as "use wall clock" so callers that omit
  *  timing still expire correctly under power-save (idle frames can be seconds apart). */
 float ResolveNowMs(float now_ms) {
@@ -45,7 +48,11 @@ void ShellFeedback::ShowToast(ShellState& state, const std::string& message, Toa
   ToastEntry entry;
   entry.id = NextToastId(state);
   entry.message = ui::String(message.c_str());
-  entry.expires_at_ms = ResolveNowMs(now_ms) + DurationMs(duration);
+  const bool compact = state.layout_mode == LayoutMode::Compact;
+  entry.expires_at_ms = ResolveNowMs(now_ms) + (compact ? kCompactToastMs : DurationMs(duration));
+  if (compact) {
+    state.toasts.clear(); // one pill at a time: a new one replaces the old and restarts the clock
+  }
   state.toasts.push_back(std::move(entry));
   while (state.toasts.size() > config.max_toasts) {
     state.toasts.erase(state.toasts.begin());

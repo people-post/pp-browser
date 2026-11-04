@@ -1093,7 +1093,7 @@ void SettingsController::MaybeShowSaveToast(const std::string& section_id) {
   }
   last_toast_section_ = section_id;
   last_toast_at_ms_ = now;
-  ShowResult(Tr("settings.saved"));
+  UserFeedback::Ok(Tr("settings.saved"));
 }
 
 void SettingsController::ReportFailure(const Error& err) {
@@ -1675,7 +1675,7 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
     return;
   }
   commands_.drain_pending_attachment_media();
-  ShowResult(Tr("settings.storage.pending_media_started"));
+  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
 }
 
 void SettingsController::OnClearDownloadedAttachments() {
@@ -1704,7 +1704,7 @@ void SettingsController::PerformClearDownloadedAttachments() {
   }
   SyncBindingsFromSession();
   DirtyAll();
-  ShowResult(Tr("settings.storage.clear_attachments_done"));
+  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {
@@ -2075,18 +2075,6 @@ void SettingsController::OnRemoveMcpServer(const int index) {
 void SettingsController::ShowStatus(const std::string& status) {
   status_ = status.c_str();
   DataModelHost::Instance().Dirty("settings", "status");
-}
-
-void SettingsController::ShowResult(const std::string& message, const bool failed) {
-  if (compact_layout_ && show_detail_) {
-    ShowStatus(message);
-    return;
-  }
-  if (failed) {
-    UserFeedback::Fail(message);
-  } else {
-    UserFeedback::Ok(message);
-  }
 }
 
 void SettingsController::Resync(const bool include_profile_nickname) {

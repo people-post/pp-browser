@@ -3254,6 +3254,11 @@ call-video-tile {
   display: none;
 }
 
+/* Phones, ringing: the wide Cancel is the one way to hang up, so the small round End goes. */
+.shell-body--compact .shell-call-leave--ringing {
+  display: none;
+}
+
 .shell-body--compact .shell-call-cancel-row {
   display: flex;
   flex-direction: row;

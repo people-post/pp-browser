@@ -62,6 +62,8 @@ TEST(ShellCallChromeRmlTest, ARingingOutgoingCallHasALabelledCancelThatEndsIt) {
     ASSERT_NE(row, std::string::npos);
     EXPECT_NE(rml.find("class=\"shell-call-cancel\" type=\"button\" data-event-click=\"call_leave()\"", row),
               std::string::npos);
+    // The small round End hides while the wide Cancel shows, and comes back once the call connects.
+    EXPECT_NE(rml.find("data-class-shell-call-leave--ringing=\"call_in_progress_calling\""), std::string::npos);
   }
 }
 

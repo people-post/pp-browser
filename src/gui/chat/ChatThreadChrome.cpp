@@ -67,13 +67,6 @@ void ShowConfirmWithCheckbox(const ShellFeedbackPorts& ports, const std::string&
   }
 }
 
-void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
-               std::function<void()> on_ok) {
-  if (ports.show_alert) {
-    ports.show_alert(title, message, std::move(on_ok), {});
-  }
-}
-
 bool PortsMessagingReady(ConversationsFacade* facade) {
   return facade && facade->Snapshot().messaging_ready;
 }
@@ -833,10 +826,9 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(*bundle);
         }
-        ShowAlert(
-            shell_feedback_, Tr("chat.psk.rotated_title"),
-            Tr("chat.psk.rotated_body"),
-            {});
+        if (shell_feedback_.show_toast) {
+          shell_feedback_.show_toast(Tr("chat.psk.rotated_title"), ToastDuration::Short); // the line below says what to do next
+        }
         view_.status = Tr("chat.psk.rotated").c_str();
         if (refresh_) {
           refresh_();

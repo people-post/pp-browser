@@ -18,11 +18,6 @@ public:
   virtual void ReportFailure(const Error& err) = 0;
   /** The status line under the open section ("" clears it). */
   virtual void ShowStatus(const std::string& status) = 0;
-  /**
-   * A finished action's result where it happened (Kenneth 2026-11-04): on phones with a section open, the status
-   * line under it; otherwise the toast (a failure stays up longer).
-   */
-  virtual void ShowResult(const std::string& message, bool failed = false) = 0;
   /** Settings read again from the session, every field redrawn (after a reset, a PIN change). */
   virtual void Resync(bool include_profile_nickname = true) = 0;
   /** What the settings show, as last taken from the view (PullFromView) or the session. */

@@ -51,8 +51,8 @@ TEST(BlockedPeopleTest, EachRowUnblocksInPlaceAndOpensThePersonOnTap) {
   EXPECT_NE(rml.find("data-for=\"row : blocked_rows\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"blocked_unblock(row.id)\""), std::string::npos);
   EXPECT_NE(rml.find("data-event-click=\"blocked_open_contact(row.id)\""), std::string::npos);
-  // The result shows under the list, not as a toast.
-  EXPECT_NE(rml.find("data-if=\"blocked_status != ''\""), std::string::npos);
+  // The result is the bottom pill, not an inline line.
+  EXPECT_EQ(rml.find("blocked_status"), std::string::npos);
   EXPECT_NE(rml.find("{{i18n:contacts.blocked.empty}}"), std::string::npos);
   // The Unblock tap must not also open the person: it is not inside the element that opens them.
   const size_t unblock = rml.find("blocked_unblock(row.id)");

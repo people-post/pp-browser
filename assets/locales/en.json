@@ -527,9 +527,6 @@
     "contacts.share.not_yet": "Can't share this contact right now. Try again later.",
     "contacts.toast.trust_updated": "Trust updated",
     "contacts.toast.synced": "Contact synced",
-    "contacts.status.blocked": "Blocked.",
-    "contacts.status.unblocked": "Unblocked.",
-    "contacts.status.saved": "Saved.",
     "contacts.blocked.title": "Blocked",
     "contacts.blocked.help": "Blocked people can't message or call you, and they aren't told.",
     "contacts.blocked.empty": "You haven't blocked anyone.",
@@ -1035,7 +1032,6 @@
     "chat.psk.rotate_body":
         "A new safety code is created; unsent messages are cancelled. Give the new code to your contact another way.",
     "chat.psk.rotated_title": "New safety code copied",
-    "chat.psk.rotated_body": "The new safety code is on your clipboard. Send it to your contact securely.",
     "chat.psk.rotated": "Safety code changed. Send it to your contact.",
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.ended_couldnt_connect": "Couldn't connect to the call, hung up automatically",

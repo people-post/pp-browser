@@ -23,5 +23,4 @@
     </div>
   </div>
   <p class="cd-footnote blocked-empty" data-if="blocked_rows.size == 0">{{i18n:contacts.blocked.empty}}</p>
-  <p class="cd-footnote cd-status" data-if="blocked_status != ''">{{blocked_status}}</p>
 </div>
