@@ -245,7 +245,7 @@ Relay hosts `/pp-mesh/circuit/1.0.0`. After a JSON bridge handshake, the relay *
   "op": "bridge",
   "timeout_ms": 8000,
   "target_peer_id": "<base58>",
-  "target_multiaddr": "/ip4/.../udp/.../adp/1.0.0/p2p/...",
+  "target_multiaddr": "/ip4/.../udp/.../adp/2/p2p/...",
   "target_protocol": "/pp/realtime/1.0.0"
 }
 ```

@@ -55,6 +55,16 @@ The first byte is the version (high nibble, `2`) and the type (low nibble). The 
 
 **Numbers:** best-effort and reliable packets are numbered apart (two spaces), so the space is part of the nonce. A resend goes as it first went (plain or sealed) under its own number, resealed under the current key: the same bytes unless a rekey came between. A number space that runs out (2³²) fails the association; the link redials with new keys.
 
+## Addresses
+
+`/ip4|ip6|dns|dns4|dns6/<host>/udp/<port>/adp/<wire>/p2p/<PeerId>` (pp-cpp-amp v5.0.0, [N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes) item 3). `<wire>` is the wire version the address speaks (`2`); a node writes its own. Wherever an address comes from (the directory, a contact, mDNS, a seed list, channel 0), a reader:
+
+- **our version:** dials it;
+- **legacy `1.0.0`:** an address that says no version (stored before item 3, or built from an mDNS browse whose TXT record says none). Dialed, and version negotiation decides;
+- **another version:** refuses it at parse (`ParseAdpMultiaddr`), so it is skipped like an unparsable address and never dialed.
+
+A reader on pp-cpp-amp before v5.0.0 refuses `/adp/2/`.
+
 ## Delivery
 
 - **BestEffort** — no retransmit
