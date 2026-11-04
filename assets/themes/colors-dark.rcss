@@ -1758,6 +1758,23 @@ input.checkbox:checked {
   background-color: #000000;
 }
 
+/* New chat is a sheet: in dark its page and rows were black under the sheet's raised header. The sheet's colours, as
+   in light (the card colour, the band one step up). */
+.shell-page-sheet--new_chat .nc-page,
+.shell-page-sheet--new_chat .nc-action,
+.shell-page-sheet--new_chat .contacts-row,
+.shell-page-sheet--new_chat .contacts-row.contacts-row--active {
+  background-color: #1c1c1e;
+}
+
+.shell-page-sheet--new_chat .nc-section-header {
+  background-color: #2c2c2e;
+}
+
+.shell-page-sheet--new_chat .nc-action:active {
+  background-color: #7878803d;
+}
+
 .contacts-index-letter {
   color: #ebebf54c;
 }
@@ -1830,6 +1847,39 @@ input.checkbox:checked {
 .shell-page-sheet.shell-page-sheet--home_edit,
 .shell-page-sheet.shell-page-sheet--contact_detail {
   background-color: #000000;
+}
+
+/* In dark the grouped background is black, so these sheets melted into the dimmed page behind them. Raised a step, as
+   iOS does for sheets: the sheet takes the card colour, its cards the next one up, the fields in them one more. */
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--home_edit,
+.shell-page-sheet.shell-page-sheet--contact_detail,
+.shell-page-sheet.shell-page-sheet--group_info .contact-detail-panel,
+.shell-page-sheet.shell-page-sheet--group_leave .contact-detail-panel,
+.shell-page-sheet.shell-page-sheet--contact_detail .contact-detail-panel {
+  background-color: #1c1c1e;
+}
+
+.shell-page-sheet.shell-page-sheet--group_info .cd-card,
+.shell-page-sheet.shell-page-sheet--group_leave .cd-card,
+.shell-page-sheet.shell-page-sheet--contact_detail .cd-card,
+.shell-page-sheet.shell-page-sheet--group_info .group-card,
+.shell-page-sheet.shell-page-sheet--group_leave .group-card,
+.shell-page-sheet.shell-page-sheet--home_edit .group-card,
+.shell-page-sheet.shell-page-sheet--contact_detail .group-card,
+.shell-page-sheet.shell-page-sheet--home_edit .home-edit-row--lifted,
+.shell-page-sheet.shell-page-sheet--home_edit .home-edit-card--dragging .home-edit-row--lifted:active {
+  background-color: #2c2c2e;
+}
+
+.shell-page-sheet.shell-page-sheet--group_info .cd-field,
+.shell-page-sheet.shell-page-sheet--group_leave .cd-field,
+.shell-page-sheet.shell-page-sheet--contact_detail .cd-field,
+.shell-page-sheet.shell-page-sheet--group_info .group-card .field,
+.shell-page-sheet.shell-page-sheet--group_leave .group-card .field,
+.shell-page-sheet.shell-page-sheet--contact_detail .group-card .field {
+  background-color: #3a3a3c;
 }
 
 .cd-act-icon,
@@ -2340,6 +2390,17 @@ input.checkbox:checked {
   background-color: #1c1c1e;
 }
 
+/* Raised a step in dark, like the grouped page sheets: black melted into the dimmed page behind it. */
+.context-menu-sheet {
+  background-color: #1c1c1e;
+}
+
+.context-menu-sheet-list,
+.context-menu-sheet-quick,
+.context-menu-sheet-expand {
+  background-color: #2c2c2e;
+}
+
 .context-menu-sheet-list .context-menu-item-body {
   border-top: 1dp #7878803d;
 }
@@ -2510,6 +2571,9 @@ input.checkbox:checked {
 .chat-group-name--5 { color: #30b0c7; }
 .chat-group-name--6 { color: #5856d6; }
 .chat-group-name--7 { color: #a2845e; }
+
+/* The indigo name was 2.5:1 on a dark bubble; iOS's lighter indigo for dark text. */
+.chat-group-name--6 { color: #7d7aff; }
 
 .prompt-composer-label {
   color: #ebebf54c;

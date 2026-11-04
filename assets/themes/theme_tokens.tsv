@@ -90,3 +90,5 @@ x-call-danger	#ff453a	#ff453a	extra: phone call page danger (dark value)
 x-call-end	#ff3b30	#ff3b30	extra: phone call page hang-up and decline buttons
 x-call-accept	#34c759	#34c759	extra: phone call page answer buttons
 x-call-accent	#0a84ff	#0a84ff	extra: phone call page primary pill (Try again)
+x-card-3	-	#3a3a3c	extra: dark only, a field inside a card inside a raised (dark) sheet
+x-name-indigo	-	#7d7aff	extra: dark only, indigo group sender name (avatar-6 is 2.5:1 on a dark bubble)

@@ -1759,6 +1759,7 @@ input.checkbox:checked {
   background-color: #f2f2f7;
 }
 
+
 .contacts-index-letter {
   color: #3c3c434c;
 }
@@ -1832,6 +1833,7 @@ input.checkbox:checked {
 .shell-page-sheet.shell-page-sheet--contact_detail {
   background-color: #f2f2f7;
 }
+
 
 .cd-act-icon,
 .cd-icon {
@@ -2341,6 +2343,7 @@ input.checkbox:checked {
   background-color: #ffffff;
 }
 
+
 .context-menu-sheet-list .context-menu-item-body {
   border-top: 1dp #7878801f;
 }
@@ -2511,6 +2514,7 @@ input.checkbox:checked {
 .chat-group-name--5 { color: #30b0c7; }
 .chat-group-name--6 { color: #5856d6; }
 .chat-group-name--7 { color: #a2845e; }
+
 
 .prompt-composer-label {
   color: #3c3c434c;
