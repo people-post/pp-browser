@@ -664,6 +664,12 @@ select selectbox option {
   height: 18dp;
 }
 
+/* The phone's microphone at the row's end and Home's camera (the phone rules below show them); hidden elsewhere. */
+.prompt-voice-toggle-btn--end,
+.prompt-capture-btn--home {
+  display: none;
+}
+
 /* Reply / Ask AI in progress: the quoted message, one line, above the composer box. */
 .prompt-quote {
   flex-shrink: 0;
@@ -3001,75 +3007,6 @@ select selectbox option {
   align-items: flex-end;
   flex-shrink: 0;
   padding: 8dp 16dp 0 16dp;
-}
-
-.ask-ai-pill {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  min-height: 44dp;
-  padding: 0 14dp;
-  border-radius: 22dp;
-  box-sizing: border-box;
-}
-
-.ask-ai-input {
-  display: block;
-  width: 100%;
-  padding: 11dp 0;
-  border: 0;
-  font-size: 17dp;
-  line-height: 22dp;
-}
-
-.ask-ai-placeholder {
-  position: absolute;
-  top: 0;
-  left: 14dp;
-  height: 44dp;
-  margin: 0;
-  font-size: 17dp;
-  line-height: 44dp;
-  pointer-events: none;
-}
-
-.ask-ai-send {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
-  margin-left: 8dp;
-  padding: 0;
-  border: 0;
-  border-radius: 22dp;
-}
-
-.ask-ai-send svg {
-  width: 16dp;
-  height: 16dp;
-}
-
-/* The camera and attachment buttons left of the input: plain icons, 44dp targets. */
-.ask-ai-tool {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
-  margin: 0 2dp 0 0;
-  padding: 0;
-  border: 0;
-  border-radius: 22dp;
-}
-
-.ask-ai-tool svg {
-  width: 24dp;
-  height: 24dp;
 }
 
 /* The picture waiting to be sent: a thumbnail and an X. */
@@ -7444,21 +7381,25 @@ input.checkbox {
   right: -8dp;
 }
 
-/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. */
+/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. The
+   ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
 .shell-chat-overlay .prompt-composer-pill,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+.shell-layer-compact .home-composer-mount .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
   min-height: 36dp;
   padding: 0 4dp 0 12dp;
   border-radius: 18dp;
 }
 
 .shell-chat-overlay .prompt-composer-input,
-.shell-layer-compact .home-composer-mount .prompt-composer-input {
+.shell-layer-compact .home-composer-mount .prompt-composer-input,
+.ask-ai .prompt-composer-input {
   padding: 7dp 0;
 }
 
 .shell-chat-overlay .prompt-composer-label,
-.shell-layer-compact .home-composer-mount .prompt-composer-label {
+.shell-layer-compact .home-composer-mount .prompt-composer-label,
+.ask-ai .prompt-composer-label {
   display: block;
   position: absolute;
   top: 2dp;
@@ -7470,6 +7411,8 @@ input.checkbox {
   pointer-events: none;
 }
 
+/* Every button is a 44dp target round its 20dp icon; -4dp above and below keeps the one-line row at the pill's 36dp
+   (the buttons stay on the last line while the text grows). */
 .shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
@@ -7479,17 +7422,58 @@ input.checkbox {
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn,
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn,
 .shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-capture-btn {
-  margin-bottom: 2dp;
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-capture-btn,
+.ask-ai .prompt-composer-row .prompt-send-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-capture-btn {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: -4dp 0;
+  border-radius: 22dp;
+}
+
+/* Send: a clear 44dp target round a 32dp accent disc (colors-*.rcss); the desktop's button is the disc itself. */
+.shell-chat-overlay .prompt-send-disc,
+.shell-layer-compact .home-composer-mount .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+/* WhatsApp's row on phones: emoji, the pill, then the microphone where Send shows once there is text. */
+.shell-chat-overlay .prompt-voice-toggle-btn--start {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn--end {
+  display: flex;
+}
+
+/* Home is an entry to the ask-AI panel: its row looks like the panel's (the pill with the paperclip and the camera),
+   no emoji, no microphone; a tap anywhere opens the panel. */
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn,
+.shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-capture-btn--home {
+  display: flex;
 }
 
 .shell-chat-overlay .prompt-icon-classic,
-.shell-layer-compact .home-composer-mount .prompt-icon-classic {
+.shell-layer-compact .home-composer-mount .prompt-icon-classic,
+.ask-ai .prompt-icon-classic {
   display: none;
 }
 
 .shell-chat-overlay .prompt-icon-v2,
-.shell-layer-compact .home-composer-mount .prompt-icon-v2 {
+.shell-layer-compact .home-composer-mount .prompt-icon-v2,
+.ask-ai .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
   width: 20dp;

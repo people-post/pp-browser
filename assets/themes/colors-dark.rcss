@@ -903,8 +903,7 @@ select selectbox option:hover {
 }
 
 /* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
-.ask-ai-intro-body,
-.ask-ai-input {
+.ask-ai-intro-body {
   color: #ffffff;
 }
 
@@ -915,10 +914,6 @@ select selectbox option:hover {
 .ask-ai-empty,
 .ask-ai-error {
   color: #ebebf599;
-}
-
-.ask-ai-placeholder {
-  color: #ebebf54c;
 }
 
 .ask-ai-open-chat,
@@ -937,14 +932,8 @@ select selectbox option:hover {
 }
 
 .ask-ai-intro,
-.ask-ai-pill,
 .ask-ai .bubble-assistant {
   background-color: #2c2c2e;
-}
-
-.ask-ai-input,
-.ask-ai-input:focus {
-  background-color: transparent;
 }
 
 .ask-ai-support,
@@ -953,17 +942,6 @@ select selectbox option:hover {
 .ask-ai-support:active {
   color: #0a84ff;
   background-color: #0a84ff2e;
-}
-
-.ask-ai-send,
-.ask-ai-send:hover,
-.ask-ai-send:focus,
-.ask-ai-send:active {
-  background-color: #0a84ff;
-}
-
-.ask-ai-send svg {
-  image-color: #ffffff;
 }
 
 /* Phone AI dot and the Me → AI assistant look previews: full-colour art, drawn as it is (the dot's soft shadow, the
@@ -990,19 +968,11 @@ select selectbox option:hover {
   color: #0a84ff;
 }
 
-.ask-ai-tool,
-.ask-ai-tool:hover,
-.ask-ai-tool:focus,
-.ask-ai-tool:active,
 .ask-ai-picture-remove,
 .ask-ai-picture-remove:hover,
 .ask-ai-picture-remove:focus,
 .ask-ai-picture-remove:active {
   background-color: transparent;
-}
-
-.ask-ai-tool svg {
-  image-color: #ebebf599;
 }
 
 .ask-ai-picture-box {
@@ -2332,14 +2302,29 @@ input.checkbox:checked {
 }
 
 .shell-chat-overlay .shell-composer-mount .prompt-composer-pill,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+.shell-layer-compact .home-composer-mount .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
   background-color: #1c1c1e;
   border: 1dp #54545899;
   box-shadow: none;
 }
 
+/* Phones: Send is a clear 44dp target round its 32dp accent disc (components.rcss). */
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn,
+.ask-ai .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-chat-overlay .prompt-send-disc,
+.shell-layer-compact .home-composer-mount .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  background-color: #0a84ff;
+}
+
 .shell-chat-overlay .prompt-icon-v2,
-.shell-layer-compact .home-composer-mount .prompt-icon-v2 {
+.shell-layer-compact .home-composer-mount .prompt-icon-v2,
+.ask-ai .prompt-icon-v2 {
   image-color: #ebebf599;
 }
 

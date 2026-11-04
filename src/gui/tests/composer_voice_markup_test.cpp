@@ -13,6 +13,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -63,7 +64,8 @@ protected:
     body << file.rdbuf();
     const auto localized = LocalizationService::Instance().LocalizeText(body.str());
     document = context->LoadDocumentFromMemory("<rml><head><style>" + ReadAll(std::string(PP_BROWSER_ASSETS_DIR) + "/themes/components.rcss") +
-                                              "</style></head><body>" + localized + "</body></rml>");
+                                              "</style></head><body>" + wrap_open_ + localized + wrap_close_ +
+                                              "</body></rml>");
     ASSERT_NE(document, nullptr);
     document->Show();
   }
@@ -130,6 +132,36 @@ protected:
     ui::Element* input = document->GetElementById("draft-input");
     return input && input->IsVisible(true);
   }
+  /** The classes of the composer row's shown buttons and fields, left to right. */
+  std::vector<std::string> RowOrder() {
+    std::vector<std::string> order;
+    ui::ElementList rows;
+    document->GetElementsByClassName(rows, "prompt-composer-row");
+    if (rows.empty()) {
+      return order;
+    }
+    for (int i = 0; i < rows.front()->GetNumChildren(); ++i) {
+      ui::Element* child = rows.front()->GetChild(i);
+      if (child->IsVisible(true)) {
+        order.emplace_back(child->GetClassNames().c_str());
+      }
+    }
+    return order;
+  }
+  /** The border-box size of the shown element with `cls`. */
+  ui::Vector2f SizeOf(const char* cls) {
+    ui::ElementList found;
+    document->GetElementsByClassName(found, cls);
+    for (ui::Element* element : found) {
+      if (element->IsVisible(true)) {
+        return element->GetBox().GetSize(ui::BoxArea::Border);
+      }
+    }
+    return {};
+  }
+  /** Wraps the composer, e.g. in the phone chat window's class (the phone rules of components.rcss). */
+  std::string wrap_open_;
+  std::string wrap_close_;
   NullRender renderer;
   bool initialized = false;
   ui::Context* context = nullptr;
@@ -137,8 +169,8 @@ protected:
   ChatScreenState state;
 };
 
-// Layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice mode
-// [toggle] [bar]; a status row above the pill only when something needs saying.
+// Desktop layout (Kenneth 2026-10-31): [toggle] [emoji] [pill: input | clip | camera] [send, only with text]; voice
+// mode [toggle] [bar]; a status row above the pill only when something needs saying. Phones: see ComposerPhoneRowTest.
 TEST_F(ComposerVoiceMarkupTest, TextModeWithoutADraftShowsTheToggleThePillAndNoSend) {
   state.show_voice = true;
   state.show_attach_button = true;
@@ -403,6 +435,115 @@ TEST_F(ComposerVoiceMarkupTest, TheToggleKeepsItsSizeWhileTypingALongDraftAndAft
   Apply();
   EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
   EXPECT_FLOAT_EQ(toggle_width(), before);
+}
+
+// Phones (Kenneth 2026-11-04, WhatsApp style, the same row as the ask-AI panel's): [emoji] [pill: input | clip |
+// camera] [microphone], the microphone giving its place to Send once there is text; voice mode [bar] [keyboard]. Every
+// button a 44dp target on the pill's 36dp line.
+class ComposerPhoneRowTest : public ComposerVoiceMarkupTest {
+protected:
+  ComposerPhoneRowTest() {
+    wrap_open_ = "<div class=\"shell-chat-overlay\">";
+    wrap_close_ = "</div>";
+  }
+};
+
+bool Has(const std::string& classes, const char* cls) {
+  return (" " + classes + " ").find(std::string(" ") + cls + " ") != std::string::npos;
+}
+
+TEST_F(ComposerPhoneRowTest, WithoutTextTheMicrophoneEndsTheRow) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[0], "prompt-emoji-btn"));
+  EXPECT_TRUE(Has(order[1], "prompt-composer-pill"));
+  EXPECT_TRUE(Has(order[2], "prompt-voice-toggle-btn--end")) << "the microphone is on the right";
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn--start"), 0) << "no microphone on the left";
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 1);
+  EXPECT_EQ(Shown("prompt-send-btn"), 0);
+}
+
+TEST_F(ComposerPhoneRowTest, TextTurnsTheMicrophoneIntoSendInTheSameSpot) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.draft = "hello";
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 3u);
+  EXPECT_TRUE(Has(order[2], "prompt-send-btn"));
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0);
+  state.draft = "";
+  Apply();
+  EXPECT_TRUE(Has(RowOrder().back(), "prompt-voice-toggle-btn--end")) << "cleared: the microphone is back";
+}
+
+TEST_F(ComposerPhoneRowTest, VoiceModeShowsTheBarAndTheKeyboardKeyAtTheEnd) {
+  state.show_voice = true;
+  state.voice_mode = true;
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 2u);
+  EXPECT_TRUE(Has(order[0], "prompt-voice-bar")) << "the hold-to-talk bar keeps the pill's place";
+  EXPECT_TRUE(Has(order[1], "prompt-voice-toggle-btn--end"));
+  state.voice_recording = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn"), 0) << "while recording the bar has the row";
+}
+
+TEST_F(ComposerPhoneRowTest, EveryButtonIsA44dpTargetOnThePills36dpLine) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  state.show_capture = true;
+  Apply();
+  for (const char* cls : {"prompt-emoji-btn", "prompt-attach-btn", "prompt-capture-btn", "prompt-voice-toggle-btn"}) {
+    EXPECT_FLOAT_EQ(SizeOf(cls).x, 44.f) << cls;
+    EXPECT_FLOAT_EQ(SizeOf(cls).y, 44.f) << cls;
+  }
+  // The buttons' -4dp above and below: the row is as tall as the pill's one line, not the 44dp targets.
+  const float line = SizeOf("prompt-composer-pill").y;
+  EXPECT_LT(line, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line);
+  state.draft = "hello";
+  Apply();
+  EXPECT_FLOAT_EQ(SizeOf("prompt-send-btn").x, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-send-btn").y, 44.f);
+  EXPECT_FLOAT_EQ(SizeOf("prompt-send-disc").x, 32.f) << "the accent disc inside the target";
+  EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
+}
+
+// Home on phones is the ask-AI panel's entry: its row looks like the panel's, no emoji and no microphone.
+class ComposerPhoneHomeTest : public ComposerVoiceMarkupTest {
+protected:
+  ComposerPhoneHomeTest() {
+    wrap_open_ = "<div class=\"shell-layer-compact\"><div class=\"home-composer-mount\">";
+    wrap_close_ = "</div></div>";
+  }
+};
+
+TEST_F(ComposerPhoneHomeTest, HomeIsThePillWithThePaperclipAndTheCamera) {
+  state.show_voice = true; // even so
+  state.show_attach_button = true;
+  state.show_capture = false; // an AI composer
+  Apply();
+  const std::vector<std::string> order = RowOrder();
+  ASSERT_EQ(order.size(), 1u);
+  EXPECT_TRUE(Has(order[0], "prompt-composer-pill"));
+  EXPECT_EQ(Shown("prompt-attach-btn"), 1);
+  EXPECT_EQ(Shown("prompt-capture-btn--home"), 1);
+  EXPECT_EQ(Shown("prompt-ask-ai-catcher"), 1) << "a tap anywhere opens the panel";
+}
+
+TEST_F(ComposerVoiceMarkupTest, TheDesktopKeepsTheMicrophoneOnTheLeftAndNoHomeCamera) {
+  state.show_voice = true;
+  state.show_attach_button = true;
+  Apply();
+  EXPECT_TRUE(Has(RowOrder().front(), "prompt-voice-toggle-btn--start"));
+  EXPECT_EQ(Shown("prompt-voice-toggle-btn--end"), 0);
+  EXPECT_EQ(Shown("prompt-capture-btn--home"), 0);
 }
 
 // The cause of the missing microphone on devices: the markup above is fine, but `show_voice` is only set by
