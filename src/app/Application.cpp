@@ -1770,7 +1770,7 @@ bool Application::MountPresenters(ui::Context* context) {
 namespace {
 
 /** UI demo app only: fixed fake data, written once per process before any controller reads the stores. */
-bool SeedUiDemoDataOnce(ConversationsHub& messaging) {
+bool SeedUiDemoDataOnce(ConversationsHub& messaging, SessionStore& store) {
   static DemoDataSeeder seeder;
   auto log = logging::getLogger("Application");
   auto deps = MakeDemoSeedDeps(messaging);
@@ -1778,6 +1778,20 @@ bool SeedUiDemoDataOnce(ConversationsHub& messaging) {
     log.error << "Demo data not written: " << deps.error().message;
     return false;
   }
+  // Home's widgets: missed calls in profile.db, and a couple of starred contacts when none is starred.
+  const SqliteCallSessionStore calls(messaging.ProfileDbPath());
+  deps->calls = &calls;
+  deps->star_contacts = [&store, &log](const std::vector<std::string>& ids) {
+    ProfilePreferences prefs = store.Snapshot().profile_prefs;
+    if (!prefs.starred_contacts.empty()) {
+      return;
+    }
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    prefs.starred_contacts = ids;
+    if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
+      log.warning << "Demo stars not saved: " << saved.error().message;
+    }
+  };
   auto seeded = seeder.SeedOnce(*deps);
   if (!seeded) {
     log.error << "Demo data not written: " << seeded.error().message;
@@ -1789,7 +1803,7 @@ bool SeedUiDemoDataOnce(ConversationsHub& messaging) {
 } // namespace
 
 void Application::SeedAndRefreshUiDemo() {
-  if (!SeedUiDemoDataOnce(Conversations())) {
+  if (!SeedUiDemoDataOnce(Conversations(), store_)) {
     return;  // already seeded, or failed (logged as an error by the seeder wrapper)
   }
   // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.

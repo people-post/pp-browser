@@ -8,7 +8,10 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/content/testing/InMemoryObjectIndex.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/calls/CallSessionQueries.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
+#include "lib/storage/SqliteThreadMentionsStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "lib/storage/SqliteThreadStore.h"
 
@@ -186,6 +189,41 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
     hashes.insert(fields->content_hash);
   }
   EXPECT_EQ(hashes.size(), 2u);
+}
+
+TEST_F(DemoDataSeederTest, HomeWidgetsGetTwoMissedCallsAMentionAndTwoStars) {
+  const std::string db = SqliteThreadProfileDbFile(dir_.string());
+  SqliteCallSessionStore calls(db);
+  SqliteThreadMentionsStore mentions(db);
+  std::vector<std::string> starred;
+  DemoSeedDeps deps = Deps();
+  deps.calls = &calls;
+  deps.mentions = &mentions;
+  deps.local_account_id = "demo-me";
+  deps.star_contacts = [&starred](const std::vector<std::string>& ids) { starred = ids; };
+  DemoDataSeeder seeder;
+  auto seeded = seeder.SeedOnce(deps);
+  ASSERT_TRUE(seeded) << seeded.error().message;
+
+  const std::vector<call_queries::RecentCall> recent = call_queries::RecentCalls(calls, "demo-me", 10);
+  ASSERT_EQ(recent.size(), 3u);
+  EXPECT_EQ(std::count_if(recent.begin(), recent.end(), [](const auto& c) { return c.missed; }), 2);
+  EXPECT_EQ(recent.front().call_id, "demo-call-3") << "the newest: one we made";
+  EXPECT_FALSE(recent.front().incoming);
+  for (const call_queries::RecentCall& call : recent) {
+    EXPECT_EQ(call.thread_id.rfind("demo-thread-0", 0), 0u) << "each in its direct chat";
+    EXPECT_GT(call.at_ms, 0);
+  }
+
+  auto counts = mentions.Counts();
+  ASSERT_TRUE(counts);
+  EXPECT_EQ(*counts, (std::map<std::string, int>{{"demo-thread-group-2", 1}}));
+  auto message = threads_->GetMessage("demo-thread-group-2", "demo-msg-g2-8");
+  ASSERT_TRUE(message && message->has_value());
+  EXPECT_EQ((*message)->text.rfind("@", 0), 0u) << "the line that mentions everyone";
+
+  EXPECT_EQ(starred, DemoStarredContacts());
+  EXPECT_EQ(starred.size(), 2u);
 }
 
 TEST_F(DemoDataSeederTest, FirstGroupShowsReactionsPicturesAFileAVideoAndANonContact) {

@@ -3,8 +3,10 @@
 #include "common/Error.h"
 #include "common/thread/IThreadStore.h"
 #include "foundation/crypto/CryptoTypes.h"
+#include "lib/calls/ICallSessionStore.h"
 #include "lib/content/CasStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "lib/people/ContactsStore.h"
 #include "mesh/types/DirectoryTypes.h"
 
@@ -55,10 +57,21 @@ struct DemoSeedDeps {
    * memory only. Unset: the chat shows the bare id.
    */
   std::function<void(const mesh::DirectoryHit&)> put_directory_hit;
+  /** Home's Mentions widget: the unread-mention marker of the group line that mentions everyone. Unset: none. */
+  const IThreadMentionsStore* mentions = nullptr;
+  /** Home's Calls widget: two missed calls and one we made today go here (profile.db). Unset: no calls. */
+  const ICallSessionStore* calls = nullptr;
+  /** This account's id (its own row in those calls); empty: no calls written. */
+  std::string local_account_id;
+  /** Home's Favorites: stars these contacts when none is starred yet (the profile preferences). Unset: none. */
+  std::function<void(const std::vector<std::string>& contact_ids)> star_contacts;
 };
 
 /** Reads `relative` through IAssetLocator (the app bundle on iOS, the APK on Android). */
 Roe<ByteVector> ReadDemoAsset(const std::string& relative);
+
+/** The contacts the demo stars for Home's Favorites (DemoSeedDeps::star_contacts). */
+std::vector<std::string> DemoStarredContacts();
 
 class DemoDataSeeder {
 public:

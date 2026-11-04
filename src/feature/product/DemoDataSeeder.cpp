@@ -210,7 +210,7 @@ const std::vector<DemoGroup>& Groups() {
        "demo-group-2",
        "Project Sync 项目讨论",
        {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-       3,
+       4,
        {
            {Who::Them, "Kickoff notes are in the shared folder.", {2, 10, 0}, Pic::None, 2},
            {Who::Them, "收到，我先看一下需求部分", {2, 10, 12}, Pic::None, 1},
@@ -219,6 +219,8 @@ const std::vector<DemoGroup>& Groups() {
            {Who::Them, "同意，我来排一下时间", {0, 9, 30}, Pic::None, 10},
            {Who::Them, "Meeting moved to 3pm, same link.", {0, 9, 45}, Pic::None, 7},
            {Who::Them, "大家今天辛苦了", {0, 9, 50}, Pic::None, 4},
+           // Mentions everyone (G015): Home's Mentions widget counts it (kMentionLine).
+           {Who::Them, "@所有人 下午的评审改到四点，记得带上设计稿", {0, 9, 55}, Pic::None, 3},
        },
        {},
        {}},
@@ -249,6 +251,26 @@ std::string ThreadIdForDirect(const int index) {
 }
 
 constexpr const char* kAiThreadId = "demo-thread-ai";
+
+/** The group line that mentions everyone: group 2's 8th line. */
+constexpr const char* kMentionThreadId = "demo-thread-group-2";
+constexpr const char* kMentionMessageId = "demo-msg-g2-8";
+
+/** Calls for Home's Calls widget: who (index into kContacts, the direct chat with the same index), when, how. */
+struct DemoCall {
+  const char* call_id;
+  int contact;
+  At at;
+  bool video;
+  /** They called and nobody answered here; else we called them and talked. */
+  bool missed;
+};
+
+constexpr std::array<DemoCall, 3> kCalls = {{
+    {"demo-call-1", 0, {0, 7, 55}, false, true},
+    {"demo-call-2", 1, {0, 8, 40}, true, true},
+    {"demo-call-3", 2, {0, 9, 20}, false, false},
+}};
 
 /** A direct chat with someone who is not a contact, unread: Home's "New people" widget shows it. */
 constexpr const char* kStrangerThreadId = "demo-thread-stranger";
@@ -632,11 +654,53 @@ Roe<bool> DemoDataSeeder::SeedOnce(const DemoSeedDeps& deps) {
     }
   }
 
+  if (deps.mentions) {
+    const std::vector<Line>& lines = Groups()[1].lines;
+    if (auto put = deps.mentions->Add(kMentionThreadId, kMentionMessageId, TimeOf(deps, lines.back().at)); !put) {
+      return put.error();
+    }
+  }
+  if (deps.calls && !deps.local_account_id.empty()) {
+    for (const DemoCall& call : kCalls) {
+      const std::string peer = DemoAccountId(kContacts[static_cast<size_t>(call.contact)].id);
+      CallSession session;
+      session.call_id = call.call_id;
+      session.origin_thread_id = ThreadIdForDirect(call.contact);
+      session.initiator_identity = call.missed ? peer : deps.local_account_id;
+      session.media_mode = call.video ? CallMediaMode::Video : CallMediaMode::Voice;
+      session.video_allowed = call.video;
+      session.state = CallSessionState::Ended;
+      session.created_at = TimeOf(deps, call.at);
+      session.ended_at = session.created_at + (call.missed ? 30 : 151) * 1000;
+      if (auto put = deps.calls->UpsertSession(session); !put) {
+        return put.error();
+      }
+      CallParticipant self;
+      self.call_id = call.call_id;
+      self.identity = deps.local_account_id;
+      self.state = call.missed ? CallParticipantState::Missed : CallParticipantState::Left;
+      if (!call.missed) {
+        self.joined_at = session.created_at;
+        self.left_at = session.ended_at;
+      }
+      if (auto put = deps.calls->UpsertParticipant(self); !put) {
+        return put.error();
+      }
+    }
+  }
+  if (deps.star_contacts) {
+    deps.star_contacts(DemoStarredContacts());
+  }
+
   deps.threads.Flush();
   done_ = true;
   log().info << "Demo data written: " << kContacts.size() << " contacts, " << directs.size() << " direct chats, "
              << Groups().size() << " groups, 1 AI chat";
   return true;
+}
+
+std::vector<std::string> DemoStarredContacts() {
+  return {kContacts[1].id, kContacts[4].id};  // Emma, and 陈老师 (no recent chat: shows the star brings them up)
 }
 
 Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
@@ -663,7 +727,10 @@ Roe<DemoSeedDeps> MakeDemoSeedDeps(ConversationsHub& hub) {
                       LocalMidnightMs(now_ms),
                       now_ms,
                       ReadDemoAsset,
-                      [&hub](const mesh::DirectoryHit& hit) { hub.DirectoryShadows().Put(hit); }};
+                      [&hub](const mesh::DirectoryHit& hit) { hub.DirectoryShadows().Put(hit); },
+                      hub.ThreadMentions(),
+                      nullptr,
+                      identity->account_id};
 }
 
 std::string DemoAskAiAnswer(const std::string& question) {
