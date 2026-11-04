@@ -3495,8 +3495,6 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("send_suggestion_in_chat", DataEvent<std::string>([this](const std::string& text) {
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
         }));
-        // Phones: a tap on Home's ask-AI field opens the panel, the cursor in its input (the field is covered).
-        ctor.BindEventCallback("open_ask_ai_panel", DataEvent([this] { (void)ask_ai_.Open(AskAiEntry::HomeInput); }));
         ctor.BindEventCallback("send_example", DataEvent<std::string>([this](const std::string& text) {
           // Inside an open thread: send there, never re-target to a chip's own thread.
           SendUserText(text, std::nullopt, /*from_home_chip=*/false);

@@ -515,35 +515,12 @@ TEST_F(ComposerPhoneRowTest, EveryButtonIsA44dpTargetOnThePills36dpLine) {
   EXPECT_FLOAT_EQ(SizeOf("prompt-composer-row").y, line) << "Send does not grow the row";
 }
 
-// Home on phones is the ask-AI panel's entry: its row looks like the panel's, no emoji and no microphone.
-class ComposerPhoneHomeTest : public ComposerVoiceMarkupTest {
-protected:
-  ComposerPhoneHomeTest() {
-    wrap_open_ = "<div class=\"shell-layer-compact\"><div class=\"home-composer-mount\">";
-    wrap_close_ = "</div></div>";
-  }
-};
-
-TEST_F(ComposerPhoneHomeTest, HomeIsThePillWithThePaperclipAndTheCamera) {
-  state.show_voice = true; // even so
-  state.show_attach_button = true;
-  state.show_capture = false; // an AI composer
-  Apply();
-  const std::vector<std::string> order = RowOrder();
-  ASSERT_EQ(order.size(), 1u);
-  EXPECT_TRUE(Has(order[0], "prompt-composer-pill"));
-  EXPECT_EQ(Shown("prompt-attach-btn"), 1);
-  EXPECT_EQ(Shown("prompt-capture-btn--home"), 1);
-  EXPECT_EQ(Shown("prompt-ask-ai-catcher"), 1) << "a tap anywhere opens the panel";
-}
-
-TEST_F(ComposerVoiceMarkupTest, TheDesktopKeepsTheMicrophoneOnTheLeftAndNoHomeCamera) {
+TEST_F(ComposerVoiceMarkupTest, TheDesktopKeepsTheMicrophoneOnTheLeft) {
   state.show_voice = true;
   state.show_attach_button = true;
   Apply();
   EXPECT_TRUE(Has(RowOrder().front(), "prompt-voice-toggle-btn--start"));
   EXPECT_EQ(Shown("prompt-voice-toggle-btn--end"), 0);
-  EXPECT_EQ(Shown("prompt-capture-btn--home"), 0);
 }
 
 // The cause of the missing microphone on devices: the markup above is fine, but `show_voice` is only set by

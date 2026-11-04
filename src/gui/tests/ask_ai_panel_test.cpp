@@ -248,15 +248,14 @@ protected:
 // --- the entries -----------------------------------------------------------------------------------
 
 TEST_F(AskAiPanelTest, EveryEntryOpensAPlainPageSheet) {
-  // Every sheet opens at 4/5 (Kenneth 2026-11-04): the panel asks for no height of its own, the Home field included
-  // (its keyboard takes the sheet to full height).
+  // Every sheet opens at 4/5 (Kenneth 2026-11-04): the panel asks for no height of its own.
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   ASSERT_EQ(panel_host_.sheets.size(), 1u);
   EXPECT_TRUE(panel_host_.sheets[0].page_sheet);
   EXPECT_EQ(panel_host_.sheets[0].key, "ask_ai");
   panel_host_.AskAiCloseSheet(0);
 
-  ASSERT_TRUE(panel_.Open(AskAiEntry::HomeInput));
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
   panel_host_.AskAiCloseSheet(0);
   ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "你能做什么？"));
   panel_host_.AskAiCloseSheet(0);

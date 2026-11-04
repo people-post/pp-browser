@@ -664,9 +664,8 @@ select selectbox option {
   height: 18dp;
 }
 
-/* The phone's microphone at the row's end and Home's camera (the phone rules below show them); hidden elsewhere. */
-.prompt-voice-toggle-btn--end,
-.prompt-capture-btn--home {
+/* The phone's microphone at the row's end (the phone rules below show it); hidden elsewhere. */
+.prompt-voice-toggle-btn--end {
   display: none;
 }
 
@@ -3293,25 +3292,6 @@ select selectbox option {
   font-size: 12dp;
   line-height: 16dp;
   text-align: center;
-}
-
-/* Phones, Home: the ask-AI field opens the panel; a clear button over the pill takes the tap (hidden elsewhere). */
-.prompt-ask-ai-catcher {
-  display: none;
-}
-
-.shell-layer-compact .home-composer-mount .prompt-ask-ai-catcher {
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 2;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 18dp;
 }
 
 /* New chat in a sheet (Kenneth 2026-11-04): the sheets' title row, the rows edge to edge (the rows pad themselves, so
@@ -7928,7 +7908,6 @@ input.checkbox {
 /* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. The
    ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
 .shell-chat-overlay .prompt-composer-pill,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill,
 .ask-ai .prompt-composer-pill {
   min-height: 36dp;
   padding: 0 4dp 0 12dp;
@@ -7936,13 +7915,11 @@ input.checkbox {
 }
 
 .shell-chat-overlay .prompt-composer-input,
-.shell-layer-compact .home-composer-mount .prompt-composer-input,
 .ask-ai .prompt-composer-input {
   padding: 7dp 0;
 }
 
 .shell-chat-overlay .prompt-composer-label,
-.shell-layer-compact .home-composer-mount .prompt-composer-label,
 .ask-ai .prompt-composer-label {
   display: block;
   position: absolute;
@@ -7962,11 +7939,6 @@ input.checkbox {
 .shell-chat-overlay .prompt-composer-row .prompt-send-btn,
 .shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
 .shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-voice-toggle-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn,
-.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-capture-btn,
 .ask-ai .prompt-composer-row .prompt-send-btn,
 .ask-ai .prompt-composer-pill .prompt-attach-btn,
 .ask-ai .prompt-composer-pill .prompt-capture-btn {
@@ -7979,7 +7951,6 @@ input.checkbox {
 
 /* Send: a clear 44dp target round a 32dp accent disc (colors-*.rcss); the desktop's button is the disc itself. */
 .shell-chat-overlay .prompt-send-disc,
-.shell-layer-compact .home-composer-mount .prompt-send-disc,
 .ask-ai .prompt-send-disc {
   display: flex;
   align-items: center;
@@ -7998,25 +7969,12 @@ input.checkbox {
   display: flex;
 }
 
-/* Home is an entry to the ask-AI panel: its row looks like the panel's (the pill with the paperclip and the camera),
-   no emoji, no microphone; a tap anywhere opens the panel. */
-.shell-layer-compact .home-composer-mount .prompt-emoji-btn,
-.shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {
-  display: none;
-}
-
-.shell-layer-compact .home-composer-mount .prompt-capture-btn--home {
-  display: flex;
-}
-
 .shell-chat-overlay .prompt-icon-classic,
-.shell-layer-compact .home-composer-mount .prompt-icon-classic,
 .ask-ai .prompt-icon-classic {
   display: none;
 }
 
 .shell-chat-overlay .prompt-icon-v2,
-.shell-layer-compact .home-composer-mount .prompt-icon-v2,
 .ask-ai .prompt-icon-v2 {
   display: block;
   flex-shrink: 0;
@@ -8752,7 +8710,7 @@ textarea:composing ~ .prompt-composer-label,
   font-size: 17dp;
 }
 
-/* The ask-AI block is pinned above the tab bar and does not scroll with the widgets. */
+/* The chips row is pinned above the tab bar and does not scroll with the widgets. */
 .shell-layer-compact .home-landing {
   position: relative;
   flex: none;
@@ -8799,8 +8757,9 @@ textarea:composing ~ .prompt-composer-label,
   gap: 8dp;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-composer {
-  margin: 0 16dp;
+/* Phones have no ask-AI field on Home, only the chips (Kenneth 2026-11-04); the AI dot opens the panel. */
+.shell-layer-compact .home-composer-mount {
+  display: none;
 }
 
 .shell-layer-compact .home-suggestions {

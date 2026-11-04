@@ -66,9 +66,6 @@
       <!-- Phones: the engine draws no placeholder, so a label sits over the empty input (hidden on the desktop). -->
       <p class="prompt-composer-label" data-if="draft == '' && thread_is_ai">{{draft_placeholder}}</p>
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
-      <!-- Phones, Home only (components.rcss): the field opens the ask-AI panel instead of taking the text here. -->
-      <button class="prompt-ask-ai-catcher" type="button" data-event-click="open_ask_ai_panel()"
-              title="{{i18n:ask_ai.title}}"></button>
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach_file}}">
@@ -79,12 +76,6 @@
               data-event-click="attach_capture()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach.capture}}">
         <svg class="prompt-icon-classic" src="../icons/camera.svg" width="18" height="18" crop-to-content="true"></svg>
-        <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
-      </button>
-      <!-- Phones, Home only (components.rcss): the camera of the ask-AI panel's row, so Home's field looks like it; a
-           tap anywhere on the field opens the panel. -->
-      <button class="prompt-capture-btn prompt-capture-btn--home" type="button" data-if="!show_capture"
-              data-event-click="open_ask_ai_panel()" title="{{i18n:ask_ai.title}}">
         <svg class="prompt-icon-v2" src="../icons/v2/camera.svg" width="20" height="20"></svg>
       </button>
     </div>

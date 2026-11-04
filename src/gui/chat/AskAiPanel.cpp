@@ -27,7 +27,6 @@ logging::Logger& log() {
 }
 
 constexpr const char* kModel = "ask_ai";
-constexpr const char* kInputId = "ask-ai-input";
 constexpr const char* kScrollId = "ask-ai-scroll";
 constexpr const char* kStreamRowId = "ask-ai-stream";
 /** New content is scrolled into view over several frames (the rows lay out a frame or two after they change). */
@@ -142,7 +141,7 @@ void AskAiPanel::SwitchMode(const bool once) {
   SyncPictureView();
 }
 
-bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
+bool AskAiPanel::Show(const AskAiEntry /*entry*/, const bool once) {
   if (!host_.AskAiCompact()) {
     return false;
   }
@@ -151,17 +150,14 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
     shared_thread_ = host_.AskAiSharedThread(/*create=*/false);
   }
   view_.show_intro = !host_.AskAiIntroSeen();
-  focus_pending_ = entry == AskAiEntry::HomeInput;
   if (!IsOpen()) {
     PaneSpec spec;
     spec.key = "ask_ai";
-    // Opens at the height every sheet opens at (Kenneth 2026-11-04); the Home field's cursor brings the keyboard
-    // up at once, and the sheet goes full height with it.
+    // Opens at the height every sheet opens at (Kenneth 2026-11-04).
     spec.page_sheet = true;
     layer_id_ = host_.AskAiPushSheet(spec, [this]() {
       // Closed by the X, the scrim or a swipe: the draft stays, a running answer goes on where it belongs.
       layer_id_ = -1;
-      focus_pending_ = false;
     });
     if (layer_id_ < 0) {
       return false;
@@ -745,12 +741,6 @@ void AskAiPanel::Tick() {
     return;
   }
   ui::ElementDocument* doc = context_->GetDocument(0);
-  if (focus_pending_) {
-    if (ui::Element* input = doc->GetElementById(kInputId)) {
-      input->Focus();
-      focus_pending_ = false;
-    }
-  }
   if (scroll_frames_ > 0) {
     --scroll_frames_;
     if (ui::Element* scroll = doc->GetElementById(kScrollId)) {

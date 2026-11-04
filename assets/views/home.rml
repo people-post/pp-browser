@@ -11,7 +11,7 @@
     </div>
   </div>
   <!-- Phone only (hidden on the desktop): date line, large title and the widgets. A widget with nothing to show is
-       not drawn; with none, the title sits above the ask-AI block and nothing else. -->
+       not drawn; with none, the title sits above the chips and nothing else. -->
   <div class="home-scroll root-scroll" data-model="shell">
     <p class="home-date">{{home_date_label}}</p>
     <p class="large-title">{{i18n:home.title}}</p>
@@ -81,6 +81,7 @@
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
     <div class="home-landing-inner stack">
+      <!-- The desktop's ask-AI field; phones have only the chips below (Kenneth 2026-11-04). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"

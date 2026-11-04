@@ -33,7 +33,6 @@ struct AskAiImagePorts {
 
 /** Where the ask-AI panel was opened from (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
 enum class AskAiEntry {
-  HomeInput,   // the Home ask-AI field: opens full height, the cursor in the panel's input
   HomeChip,    // a Home chip: its question is asked at once
   ChatMenu,    // a chat's "⋯ → Ask AI": nothing of the chat goes along
   SettingHelp, // a setting's "?": a one-off question (AskAiPanel::OpenOnce)
@@ -240,7 +239,6 @@ private:
   std::vector<AskAiRow> base_rows_;
   std::string streamed_text_;
   std::optional<std::chrono::steady_clock::time_point> last_stream_render_;
-  bool focus_pending_ = false;
   int scroll_frames_ = 0;
 };
 
