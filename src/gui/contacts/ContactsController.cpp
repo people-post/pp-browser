@@ -208,6 +208,30 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
 
 } // namespace
 
+bool ContactMatchesQuery(const Contact& contact, const std::string& query) {
+  if (query.empty()) {
+    return true;
+  }
+  if (TextMatchesQuery(ContactEffectiveTitle(contact), query) || TextMatchesQuery(contact.display_name, query) ||
+      TextMatchesQuery(contact.server_nickname, query)) {
+    return true;
+  }
+  // Account IDs match as plain text (a fragment of the ID), not by initials.
+  const auto lower = [](std::string text) {
+    for (char& c : text) {
+      c = (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+    }
+    return text;
+  };
+  const std::string needle = lower(query);
+  for (const mesh::ContactId& id : contact.ids) {
+    if (lower(id.value).find(needle) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports) {
   ContactsController::ContactDetail detail;
   detail.id = contact.id.c_str();
@@ -653,14 +677,10 @@ void ContactsController::SyncFromStore() {
     return;
   }
 
-  const std::string query = search_query_.c_str();
-  Roe<std::vector<Contact>> stored = query.empty()
-                                          ? (contacts_ports_.list_contacts ? contacts_ports_.list_contacts()
-                                                                           : Roe<std::vector<Contact>>::error(
-                                                                                 Error("contacts port unavailable")))
-                                          : (contacts_ports_.search_contacts
-                                                 ? contacts_ports_.search_contacts(query)
-                                                 : Roe<std::vector<Contact>>::error(Error("contacts port unavailable")));
+  const std::string query = util::Trim(search_query_.c_str());
+  Roe<std::vector<Contact>> stored = contacts_ports_.list_contacts
+                                         ? contacts_ports_.list_contacts()
+                                         : Roe<std::vector<Contact>>::error(Error("contacts port unavailable"));
   if (!stored) {
     return;
   }
@@ -668,7 +688,9 @@ void ContactsController::SyncFromStore() {
   std::vector<ContactListRow> rows;
   rows.reserve(stored->size());
   for (const Contact& contact : *stored) {
-    rows.push_back(ToContactListRow(contact, contacts_ports_));
+    if (ContactMatchesQuery(contact, query)) {
+      rows.push_back(ToContactListRow(contact, contacts_ports_));
+    }
   }
   contact_sections_ = ContactSections(std::move(rows));
   contact_index_ = ContactIndexLetters(contact_sections_);
@@ -909,9 +931,36 @@ void ContactsController::OpenThreadCallback(ui::DataModelHandle /*model*/, ui::E
   Instance().OnOpenThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ContactsController::OnSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+namespace {
+/** The keyboard's search / return key arrives as a change event with linebreak set: it only dismisses the keyboard. */
+void DismissKeyboardOnReturn(ui::Event& ev) {
+  if (!ev.GetParameter<bool>("linebreak", false)) {
+    return;
+  }
+  if (ui::Element* target = ev.GetTargetElement()) {
+    target->Blur();
+  }
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+    system->DeactivateKeyboard();
+  }
+}
+
+// A change event runs before data-value has copied the field into the model, so the model still holds the text from one
+// keystroke ago (Kenneth 2026-11-04: "输入了以后没什么反应"). The event carries the new text: take it from there.
+void TakeEventValue(ui::Event& ev, ui::String& field) {
+  const ui::String value = ev.GetParameter<ui::String>("value", field);
+  if (value != field) {
+    field = value;
+  }
+}
+} // namespace
+
+void ContactsController::OnSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                  const ui::VariantList& /*args*/) {
-  Instance().OnSearchChanged();
+  auto& controller = Instance();
+  TakeEventValue(ev, controller.search_query_);
+  controller.OnSearchChanged();
+  DismissKeyboardOnReturn(ev);
 }
 
 void ContactsController::LoadSelectedDetail(const std::string& contact_id) {
@@ -1037,11 +1086,13 @@ void ContactsController::NewChatActionCallback(ui::DataModelHandle /*model*/, ui
   Instance().OnNewChatAction(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void ContactsController::NewChatSearchCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                const ui::VariantList& /*args*/) {
   auto& controller = Instance();
+  TakeEventValue(ev, controller.new_chat_query_);
   controller.SyncNewChat();
   controller.DirtyNewChat();
+  DismissKeyboardOnReturn(ev);
 }
 
 void ContactsController::OpenNewChatPage() {
@@ -1945,10 +1996,16 @@ void ContactsController::OnOpenThread(const std::string& thread_id) {
   }
 }
 
+// The phone list renders contact_sections and the index strip, not `contacts`: all of them change with the filter.
 void ContactsController::OnSearchChanged() {
   SyncFromStore();
-  DataModelHost::Instance().Dirty("contacts", "contacts");
-  DataModelHost::Instance().Dirty("contacts", "search_query");
+  auto& host = DataModelHost::Instance();
+  host.Dirty("contacts", "contacts");
+  host.Dirty("contacts", "contact_sections");
+  host.Dirty("contacts", "contact_index");
+  host.Dirty("contacts", "contact_index_bubble");
+  host.Dirty("contacts", "search_query");
 }
+
 
 } // namespace pbr

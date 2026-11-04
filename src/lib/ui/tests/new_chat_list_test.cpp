@@ -67,6 +67,22 @@ TEST(NewChatListTest, ChineseNamesGoUnderTheirPinyinInitialDigitsAndSymbolsUnder
   EXPECT_EQ(list.sections[3].contacts.size(), 2u);
 }
 
+TEST(NewChatListTest, AQueryAlsoMatchesChineseNamesByPinyinInitials) {
+  const std::vector<NewChatContact> contacts = {C("1", "张伟"), C("2", "王芳"), C("3", "Zoe")};
+  EXPECT_EQ(Ids(contacts, BuildNewChatList(contacts, {}, "zw").sections[0].contacts), (std::vector<std::string>{"1"}));
+  NewChatList z = BuildNewChatList(contacts, {}, "Z");
+  size_t found = 0;
+  for (const NewChatSection& section : z.sections) {
+    found += section.contacts.size();
+  }
+  EXPECT_EQ(found, 2u) << "Zoe and 张伟";
+  size_t all = 0;
+  for (const NewChatSection& section : BuildNewChatList(contacts, {}, "").sections) {
+    all += section.contacts.size();
+  }
+  EXPECT_EQ(all, 3u) << "clearing restores the full list";
+}
+
 TEST(NewChatListTest, BlockedContactsAreNotListed) {
   const std::vector<NewChatContact> contacts = {C("1", "Amy", true), C("2", "Ann")};
   const NewChatList list = BuildNewChatList(contacts, {{"1", 5}});

@@ -187,5 +187,48 @@ TEST_F(ContactsPhoneTest, ShareFailureMessageIsLocalized) {
   EXPECT_NE(zh, "contacts.share.not_yet");
 }
 
+
+// Kenneth 2026-11-04: "我输一个字母，他就直接都筛选了" - the Contacts search matches name, remark, nickname and account ID.
+Contact MakeContact(const std::string& display_name, const std::string& nickname, const std::string& account_id) {
+  Contact contact;
+  contact.id = "c-" + display_name;
+  contact.local.display_name = display_name;
+  contact.remote.nickname = nickname;
+  mesh::ContactId id;
+  id.kind = mesh::ContactIdKind::Account;
+  id.value = account_id;
+  id.primary = true;
+  contact.remote.ids.push_back(id);
+  SyncContactMirrors(contact);
+  return contact;
+}
+
+TEST_F(ContactsPhoneTest, ContactSearchMatchesNameRemarkNicknameAndIdFragment) {
+  const Contact zhang = MakeContact("张伟", "Wei Z", "account:AbC123xyz");
+  const Contact bob = MakeContact("Bob Chen", "", "account:Q9q9q9");
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "")) << "an empty query shows everyone (clearing restores the list)";
+  EXPECT_TRUE(ContactMatchesQuery(bob, ""));
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "张"));
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "wei z")) << "the nickname, case-blind";
+  EXPECT_TRUE(ContactMatchesQuery(bob, "BOB"));
+  EXPECT_TRUE(ContactMatchesQuery(bob, "chen"));
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "abc12")) << "a fragment of the account ID, case-blind";
+  EXPECT_FALSE(ContactMatchesQuery(bob, "abc12"));
+  EXPECT_FALSE(ContactMatchesQuery(bob, "zzz"));
+}
+
+TEST_F(ContactsPhoneTest, ContactSearchMatchesChineseNamesByPinyinInitials) {
+  const Contact zhang = MakeContact("张伟", "", "account:a1");
+  const Contact wang = MakeContact("王芳", "", "account:a2");
+  const Contact zoe = MakeContact("Zoe", "", "account:a3");
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "zw"));
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "ZW"));
+  EXPECT_FALSE(ContactMatchesQuery(wang, "zw"));
+  EXPECT_TRUE(ContactMatchesQuery(zhang, "z")) << "z: everyone whose name starts with Z";
+  EXPECT_TRUE(ContactMatchesQuery(zoe, "z"));
+  EXPECT_FALSE(ContactMatchesQuery(wang, "z"));
+  EXPECT_TRUE(ContactMatchesQuery(wang, "wf"));
+}
+
 } // namespace
 } // namespace pbr

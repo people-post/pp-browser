@@ -59,7 +59,7 @@ inline std::string NewChatLetter(const std::string& name) { return std::string(1
  * The page's rows. Blocked contacts are never listed. Without a query: "frequent" is up to five contacts
  * with a direct chat, most recently active first (no activity time, no place), and every contact is also
  * in the lettered sections, sorted by name (A-Z case-blind, Chinese by pinyin initial, then "#"; NameIndexLess).
- * With a query: no frequent group; the sections hold the contacts whose name contains it (case-blind).
+ * With a query: no frequent group; the sections hold the contacts whose name contains it (case-blind) or whose pinyin initials start with it.
  */
 inline NewChatList BuildNewChatList(const std::vector<NewChatContact>& contacts,
                                     const std::vector<NewChatDirectChat>& chats, const std::string& query = {}) {
@@ -98,10 +98,7 @@ inline NewChatList BuildNewChatList(const std::vector<NewChatContact>& contacts,
     out.frequent = std::move(recent);
   } else {
     order.erase(std::remove_if(order.begin(), order.end(),
-                               [&](const size_t i) {
-                                 return new_chat_detail::LowerAscii(contacts[i].name).find(needle) ==
-                                        std::string::npos;
-                               }),
+                               [&](const size_t i) { return !TextMatchesQuery(contacts[i].name, query); }),
                 order.end());
   }
 

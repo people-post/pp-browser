@@ -41,5 +41,23 @@ TEST(NameIndexTest, ContactsSortByLetterThenByInitialsWithHashLast) {
                                              "123"}));
 }
 
+TEST(NameIndexTest, InitialsAreLatinLettersAndPinyinInitials) {
+  EXPECT_EQ(NameInitials("张伟"), "zw");
+  EXPECT_EQ(NameInitials("Bob Chen"), "bobchen");
+  EXPECT_EQ(NameInitials("David 陈大卫"), "davidcdw");
+  EXPECT_EQ(NameInitials("123 @"), "");
+}
+
+TEST(NameIndexTest, QueryMatchesTextCaseBlindOrByInitialsPrefix) {
+  EXPECT_TRUE(TextMatchesQuery("张伟", ""));
+  EXPECT_TRUE(TextMatchesQuery("张伟", "zw"));
+  EXPECT_TRUE(TextMatchesQuery("张伟", "ZW"));
+  EXPECT_TRUE(TextMatchesQuery("张伟", "z"));
+  EXPECT_FALSE(TextMatchesQuery("张伟", "w")) << "initials match from the start";
+  EXPECT_TRUE(TextMatchesQuery("张伟", "伟"));
+  EXPECT_TRUE(TextMatchesQuery("Emma Johnson", "JOHN"));
+  EXPECT_FALSE(TextMatchesQuery("Emma Johnson", "xyz"));
+}
+
 } // namespace
 } // namespace pbr

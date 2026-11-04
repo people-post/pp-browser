@@ -291,6 +291,9 @@ private:
   static ContactsController* installed_instance_;
 };
 
+/** Whether a contact shows for a Contacts search: name, remark, nickname (case-blind or by pinyin initials) or part of an ID. */
+bool ContactMatchesQuery(const Contact& contact, const std::string& query);
+
 /** Detail form for a contact (title, remark, their nickname, ...). Exposed for tests. */
 ContactsController::ContactDetail ToContactDetail(const Contact& contact, const MessagingContactsPorts& ports);
 /** The page of a group member who is not a contact: name (else "Unnamed"), photo, last six of the account id. */

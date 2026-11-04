@@ -25,4 +25,16 @@ std::string NameSortKey(std::string_view name);
 /** Contact-list order: A-Z then '#', and by NameSortKey inside a letter. */
 bool NameIndexLess(std::string_view a, std::string_view b);
 
+/**
+ * The pinyin initials of a name, lower-case: a Latin letter stands for itself, a Chinese character with a known
+ * reading for its initial (张伟 -> "zw"); digits, symbols and spaces are skipped.
+ */
+std::string NameInitials(std::string_view name);
+
+/**
+ * Whether a contact field matches a search: the query (case-blind) is inside the text, or it is the start of the
+ * text's initials ("zw" finds 张伟, "z" every name starting with Z). An empty query matches everything.
+ */
+bool TextMatchesQuery(std::string_view text, std::string_view query);
+
 } // namespace pbr

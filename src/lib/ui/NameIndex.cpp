@@ -98,6 +98,43 @@ std::string NameSortKey(const std::string_view name) {
   return key;
 }
 
+std::string NameInitials(const std::string_view name) {
+  std::string initials;
+  size_t pos = 0;
+  while (pos < name.size()) {
+    const char letter = LetterOf(NextCodePoint(name, pos));
+    if (letter != kNameIndexOther) {
+      initials.push_back(static_cast<char>(letter - 'A' + 'a'));
+    }
+  }
+  return initials;
+}
+
+namespace {
+
+std::string LowerAscii(const std::string_view text) {
+  std::string out(text);
+  for (char& c : out) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return out;
+}
+
+} // namespace
+
+bool TextMatchesQuery(const std::string_view text, const std::string_view query) {
+  if (query.empty()) {
+    return true;
+  }
+  const std::string needle = LowerAscii(query);
+  if (LowerAscii(text).find(needle) != std::string::npos) {
+    return true;
+  }
+  return NameInitials(text).rfind(needle, 0) == 0;
+}
+
 bool NameIndexLess(const std::string_view a, const std::string_view b) {
   const char la = NameIndexLetter(a);
   const char lb = NameIndexLetter(b);
