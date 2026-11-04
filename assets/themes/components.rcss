@@ -6269,7 +6269,7 @@ input.checkbox {
 }
 
 /* Phone Add contact sheet (Kenneth 2026-11-04): a search field, my account card (avatar, name, account id, quiet copy and
-   share buttons of 44dp), then a card of 50dp rows with an icon on the left. Colours: colors.rcss.tmpl. */
+   share buttons of 44dp), then four big tiles. Colours: colors.rcss.tmpl. */
 .shell-layer-compact .ac-page,
 .shell-layer-compact .qr-page {
   height: 100%;
@@ -6351,27 +6351,54 @@ input.checkbox {
   cursor: pointer;
 }
 
-.shell-layer-compact .ac-row {
+/* Scan, My QR code, Invite and New group as four big tiles, two to a row with an even 12dp gap, the rows lined up
+   with the account card (Kenneth 2026-11-04: "直接用大图标大按钮"). The whole tile is the button. */
+.shell-layer-compact .ac-tiles {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12dp;
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-layer-compact .ac-tile {
+  flex: 1 1 40%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14dp;
-  height: 50dp;
-  padding: 0 16dp;
+  justify-content: center;
+  min-height: 104dp;
+  padding: 12dp 8dp;
+  border-radius: 14dp;
   box-sizing: border-box;
   cursor: pointer;
 }
 
-.shell-layer-compact .ac-row-icon {
-  flex-shrink: 0;
-  width: 22dp;
-  height: 22dp;
+.shell-layer-compact .ac-tile:active {
+  opacity: 0.6;
 }
 
-.shell-layer-compact .ac-row-label {
-  margin: 0;
-  font-size: 17dp;
-  line-height: 22dp;
+.shell-layer-compact .ac-tile-disc {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.shell-layer-compact .ac-tile-icon {
+  flex-shrink: 0;
+  width: 28dp;
+  height: 28dp;
+}
+
+.shell-layer-compact .ac-tile-label {
+  margin: 8dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
 }
 
 .shell-layer-compact .ac-results {

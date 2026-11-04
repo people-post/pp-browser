@@ -232,7 +232,7 @@ std::string ReadAsset(const std::string& relative) {
   return buffer.str();
 }
 
-TEST_F(ContactsPhoneTest, AddContactSheetHasSearchAccountCardAndFourRows) {
+TEST_F(ContactsPhoneTest, AddContactSheetHasSearchAccountCardAndFourTiles) {
   EXPECT_EQ(ViewCatalog::ResolvePath("add_contact"), "views/add_contact.rml");
   EXPECT_EQ(ViewCatalog::ResolvePath("my_qr"), "views/my_qr.rml");
   const std::string rml = ReadAsset("views/add_contact.rml");
@@ -251,6 +251,14 @@ TEST_F(ContactsPhoneTest, AddContactSheetHasSearchAccountCardAndFourRows) {
   EXPECT_LT(rml.find("add_action('qr')"), rml.find("add_action('invite')"));
   EXPECT_LT(rml.find("add_action('invite')"), rml.find("add_action('group')"));
   EXPECT_NE(rml.find("data-if=\"my_has_account\" data-event-click=\"add_copy_id()\""), std::string::npos);
+  // The four actions are big tiles (a disc with the icon, a label under it), each tile the button itself.
+  size_t tiles = 0;
+  for (size_t at = rml.find("class=\"ac-tile\""); at != std::string::npos; at = rml.find("class=\"ac-tile\"", at + 1)) {
+    ++tiles;
+    EXPECT_LT(rml.find("add_action('", at), rml.find('>', at)) << "tile " << tiles << " is not tappable";
+  }
+  EXPECT_EQ(tiles, 4u);
+  EXPECT_EQ(rml.find("ac-row"), std::string::npos);
 }
 
 TEST_F(ContactsPhoneTest, AddContactSheetStringsAreTranslated) {

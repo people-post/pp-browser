@@ -1537,7 +1537,7 @@ input.checkbox:checked {
 }
 
 .ac-account-name,
-.ac-row-label,
+.ac-tile-label,
 .qr-name {
   color: #ffffff;
 }
@@ -1560,16 +1560,16 @@ input.checkbox:checked {
   background-color: #7878803d;
 }
 
-.ac-row-icon {
+.ac-tile {
+  background-color: #2c2c2e;
+}
+
+.ac-tile-disc {
+  background-color: #0a84ff2e;
+}
+
+.ac-tile-icon {
   image-color: #0a84ff;
-}
-
-.ac-row:active {
-  background-color: #7878803d;
-}
-
-.ac-row + .ac-row {
-  border-top: 1dp #54545899;
 }
 
 .qr-card {

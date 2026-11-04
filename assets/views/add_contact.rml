@@ -38,22 +38,23 @@
         </button>
       </div>
 
-      <div class="ac-card ac-group">
-        <div class="ac-row" data-if="can_scan" data-event-click="add_action('scan')">
-          <svg class="ac-row-icon" src="../icons/v2/camera.svg" width="22" height="22"></svg>
-          <p class="ac-row-label">{{i18n:scan.title}}</p>
+      <!-- Four big tiles, two to a row (Kenneth 2026-11-04: the thin rows looked "小气"). -->
+      <div class="ac-tiles">
+        <div class="ac-tile" data-if="can_scan" data-event-click="add_action('scan')">
+          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/camera.svg" width="28" height="28"></svg></div>
+          <p class="ac-tile-label">{{i18n:scan.title}}</p>
         </div>
-        <div class="ac-row" data-event-click="add_action('qr')">
-          <svg class="ac-row-icon" src="../icons/v2/qr-code.svg" width="22" height="22"></svg>
-          <p class="ac-row-label">{{i18n:contacts.my_qr}}</p>
+        <div class="ac-tile" data-event-click="add_action('qr')">
+          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/qr-code.svg" width="28" height="28"></svg></div>
+          <p class="ac-tile-label">{{i18n:contacts.my_qr}}</p>
         </div>
-        <div class="ac-row" data-event-click="add_action('invite')">
-          <svg class="ac-row-icon" src="../icons/v2/user-plus.svg" width="22" height="22"></svg>
-          <p class="ac-row-label">{{i18n:contacts.invite_friends}}</p>
+        <div class="ac-tile" data-event-click="add_action('invite')">
+          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/user-plus.svg" width="28" height="28"></svg></div>
+          <p class="ac-tile-label">{{i18n:contacts.invite_friends}}</p>
         </div>
-        <div class="ac-row" data-if="can_new_group" data-event-click="add_action('group')">
-          <svg class="ac-row-icon" src="../icons/v2/group.svg" width="22" height="22"></svg>
-          <p class="ac-row-label">{{i18n:contacts.new_group}}</p>
+        <div class="ac-tile" data-if="can_new_group" data-event-click="add_action('group')">
+          <div class="ac-tile-disc"><svg class="ac-tile-icon" src="../icons/v2/group.svg" width="28" height="28"></svg></div>
+          <p class="ac-tile-label">{{i18n:contacts.new_group}}</p>
         </div>
       </div>
     </div>
