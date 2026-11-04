@@ -61,6 +61,12 @@ public:
 
   void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
+  /**
+   * The phone message sheet's "+" (Kenneth 2026-11-04: not a full-screen window, the sheet itself grows, like
+   * WhatsApp): the same picker, mounted into `mount` (the sheet's body) instead of a layer of its own. A pick reacts
+   * through `on_pick`; the sheet closes itself, so no layer or modal flow is opened here.
+   */
+  void OpenReactIn(ui::Element* mount, std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
   /** Shown as an overlay or as the keyboard-area panel. */
   bool IsOpen() const { return layer_id_ >= 0 || bottom_chrome_mode_; }
@@ -101,6 +107,8 @@ private:
   Mode mode_ = Mode::Insert;
   /** True when Insert used mobile/compact bottom-chrome (IME slot) presentation. */
   bool bottom_chrome_mode_ = false;
+  /** Shown inside another surface (the phone message sheet, OpenReactIn): no layer and no modal flow of its own. */
+  bool embedded_ = false;
   std::string react_message_id_;
   std::function<void(std::string, bool)> on_insert_pick_;
   std::function<void(std::string)> on_react_pick_;

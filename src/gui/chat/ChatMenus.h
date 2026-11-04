@@ -52,6 +52,10 @@ public:
   /** "Search": search inside the open chat. */
   virtual void OnOpenSearch() = 0;
   virtual void ToggleReaction(const std::string& message_id, const std::string& emoji) = 0;
+  /** The emoji the user used last, most recent first (the profile's list; reactions and the emoji picker share it). */
+  virtual std::vector<std::string> RecentEmojis() const = 0;
+  /** Puts `emoji` first in that list. */
+  virtual void RememberEmoji(const std::string& emoji) = 0;
   virtual void InsertEmojiIntoDraft(const std::string& emoji, bool restore_composer_focus = true) = 0;
   virtual void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {}) = 0;
   virtual void DeleteMessageForMe(const std::string& message_id) = 0;

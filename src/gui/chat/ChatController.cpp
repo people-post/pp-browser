@@ -24,6 +24,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "lib/ui/ShellLayout.h"
+#include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
@@ -2436,6 +2437,24 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
   }
   SyncDisplayFromThread();
   NotifySurfaceChanged();
+}
+
+std::vector<std::string> ChatController::RecentEmojis() const {
+  return session_store_ ? session_store_->Snapshot().profile_prefs.recent_emojis : std::vector<std::string>{};
+}
+
+void ChatController::RememberEmoji(const std::string& emoji) {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = session_store_->Snapshot().profile_prefs;
+  const std::vector<std::string> before = prefs.recent_emojis;
+  EmojiCatalog::TouchRecent(prefs.recent_emojis, emoji);
+  if (prefs.recent_emojis == before) {
+    return;  // already first: nothing to write
+  }
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  (void)session_store_->SaveProfilePrefs(prefs);
 }
 
 void ChatController::DeleteMessageForMe(const std::string& message_id) {

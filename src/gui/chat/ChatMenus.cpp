@@ -2,6 +2,7 @@
 
 #include "common/Utilities.h"
 #include "common/thread/ThreadTypes.h"
+#include "feature/presenters/QuickReactions.h"
 #include "feature/presenters/SessionMenu.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
@@ -21,8 +22,6 @@
 namespace pbr {
 
 namespace {
-
-const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
 
 /** The element's nearest ancestor carrying `attribute` (sidebar.rml sets `session-id`, rows `message-id`), or empty. */
 std::string FindAttributeUp(ui::Element* element, const char* attribute) {
@@ -99,15 +98,23 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   if (message_id.empty() || host_.IsDeletedMessage(message_id)) {
     return actions; // a deleted message takes no reaction, reply, copy or second delete
   }
-  // Reactions sit in the row above the message, the rest in the list below it.
-  for (const char* emoji : kReactionPresets) {
-    ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr,
-                            [this, message_id, emoji]() { host_.ToggleReaction(message_id, emoji); }};
+  // Reactions sit in the row above the message, the rest in the list below it: the user's last-used first.
+  for (const std::string& emoji : QuickReactions(host_.RecentEmojis())) {
+    ContextMenuAction react{"react_" + emoji, emoji, nullptr, [this, message_id, emoji]() {
+                              host_.ToggleReaction(message_id, emoji);
+                              host_.RememberEmoji(emoji);
+                            }};
     react.quick = true;
     actions.push_back(std::move(react));
   }
   ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
   more.quick = true;
+  if (emoji_picker_notify_.open_react_in) {
+    // The phone sheet grows in place to every emoji (the desktop menu still opens the picker window).
+    more.expand = [this, message_id](ui::Element* mount, std::function<void()> done) {
+      emoji_picker_notify_.open_react_in(mount, message_id, std::move(done));
+    };
+  }
   actions.push_back(std::move(more));
 
   // A contact card: its person can be added (the card is checked first).
@@ -567,9 +574,9 @@ void ChatMenus::OpenEmojiInsert(ui::Event* ev) {
   // Fallback when picker is not wired (tests / headless): keep preset strip.
   const ui::Vector2i position = ev ? MenuPositionBelowEvent(*ev) : ui::Vector2i(120, 120);
   std::vector<ContextMenuAction> actions;
-  for (const char* emoji : kReactionPresets) {
+  for (const std::string& emoji : DefaultQuickReactions()) {
     actions.push_back({
-        std::string("insert_") + emoji,
+        "insert_" + emoji,
         emoji,
         nullptr,
         [this, emoji]() { host_.InsertEmojiIntoDraft(emoji); },

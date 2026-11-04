@@ -6,6 +6,8 @@
 #include "lib/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
 #include "gui/shell/DataModelHost.h"
+#include "gui/shell/RmlMount.h"
+#include "lib/ui/ViewCatalog.h"
 
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
@@ -105,6 +107,7 @@ void EmojiPickerController::OpenInsert(
     Close();
   }
   mode_ = Mode::Insert;
+  embedded_ = false;  // a message sheet closed without a pick leaves no trace here
   react_message_id_.clear();
   on_insert_pick_ = std::move(on_pick);
   on_react_pick_ = nullptr;
@@ -133,6 +136,7 @@ void EmojiPickerController::OpenReact(std::string message_id,
     Close();
   }
   mode_ = Mode::React;
+  embedded_ = false;
   react_message_id_ = std::move(message_id);
   on_react_pick_ = std::move(on_pick);
   on_insert_pick_ = nullptr;
@@ -141,6 +145,26 @@ void EmojiPickerController::OpenReact(std::string message_id,
   RebuildModel();
   DirtyAll();
   OpenOverlayPresentation();
+}
+
+void EmojiPickerController::OpenReactIn(ui::Element* mount, std::string message_id,
+                                        std::function<void(std::string emoji)> on_pick) {
+  if (!mount) {
+    return;
+  }
+  if (IsBottomChromeEmojiOpen() || layer_id_ >= 0) {
+    Close();
+  }
+  mode_ = Mode::React;
+  embedded_ = true;
+  react_message_id_ = std::move(message_id);
+  on_react_pick_ = std::move(on_pick);
+  on_insert_pick_ = nullptr;
+  title_ = Tr("chat.react").c_str();
+  active_category_.clear();
+  RebuildModel();
+  DirtyAll();
+  RmlMount::MountInner(mount, ViewCatalog::LoadBody("emoji_picker"));
 }
 
 bool EmojiPickerController::IsBottomChromeEmojiOpen() const {
@@ -188,13 +212,15 @@ void EmojiPickerController::OnFlowDismissed() {
 
 void EmojiPickerController::Close() {
   const bool was_bottom = bottom_chrome_mode_;
+  const bool was_embedded = embedded_;
   const int closing_id = layer_id_;
   layer_id_ = -1;
   ResetState();
   if (was_bottom && shell_navigation_.clear_bottom_chrome) {
     shell_navigation_.clear_bottom_chrome();
   }
-  if (flow_coordinator_.end_modal) {
+  // Embedded in the message sheet: no modal flow was begun, and the sheet takes its body away itself.
+  if (!was_embedded && flow_coordinator_.end_modal) {
     flow_coordinator_.end_modal();
   }
   if (closing_id >= 0 && shell_navigation_.close_layer) {
@@ -207,6 +233,7 @@ void EmojiPickerController::ResetState() {
   on_insert_pick_ = nullptr;
   on_react_pick_ = nullptr;
   bottom_chrome_mode_ = false;
+  embedded_ = false;
   react_message_id_.clear();
   rail_tabs_.clear();
   sections_.clear();

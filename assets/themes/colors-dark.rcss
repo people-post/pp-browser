@@ -2240,7 +2240,8 @@ input.checkbox:checked {
 }
 
 .context-menu-sheet-list,
-.context-menu-sheet-quick {
+.context-menu-sheet-quick,
+.context-menu-sheet-expand {
   background-color: #1c1c1e;
 }
 

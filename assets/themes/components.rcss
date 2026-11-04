@@ -6166,15 +6166,97 @@ input.checkbox {
   border-radius: 15dp;
 }
 
-/* Reactions over a chat message: one card row of emoji above the actions. */
+/* Reactions over a chat message: one card row of emoji above the actions, the user's last-used first; it scrolls
+   sideways when they do not all fit, the "+" stays at the right end. */
 .context-menu-sheet-quick {
   display: flex;
   flex-direction: row;
-  justify-content: space-around;
+  align-items: center;
   margin: 4dp 0 8dp 0;
   padding: 4dp;
   border-radius: 12dp;
   box-sizing: border-box;
+}
+
+.context-menu-sheet-quick-scroll {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: row;
+  gap: 4dp;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.context-menu-sheet-quick .context-menu-item {
+  flex-shrink: 0;
+}
+
+/* Scrolled by touch: no room kept for the engine's 16dp scrollbars (the row would grow and the emoji ride high). */
+.context-menu-sheet-quick-scroll scrollbarhorizontal,
+.context-menu-sheet-expand .emoji-picker-rail scrollbarhorizontal {
+  height: 0dp;
+}
+
+.context-menu-sheet-expand .emoji-picker-body scrollbarvertical {
+  width: 0dp;
+}
+
+/* The "+" grew the sheet (ContextMenuHost::ExpandSheet sets its height, the large stop): the reactions and the rows
+   give way to every emoji, category tabs along the top and the grid scrolling below (Kenneth 2026-11-04, WhatsApp). */
+.context-menu-sheet--expanded {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-sheet-header {
+  flex-shrink: 0;
+}
+
+.context-menu-sheet-expand,
+.context-menu-sheet--expanded .context-menu-sheet-quick,
+.context-menu-sheet--expanded .context-menu-sheet-list {
+  display: none;
+}
+
+.context-menu-sheet--expanded .context-menu-sheet-expand {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin: 4dp 0 0 0;
+  border-radius: 12dp;
+  overflow: hidden;
+  clip: always;
+}
+
+.context-menu-sheet-expand .emoji-picker {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  gap: 0;
+}
+
+.context-menu-sheet-expand .emoji-picker-header {
+  display: none;
+}
+
+.context-menu-sheet-expand .emoji-picker-main.row {
+  flex-direction: column;
+}
+
+.context-menu-sheet-expand .emoji-picker-rail {
+  flex-direction: row;
+  width: auto;
+  height: 52dp;
+  padding: 4dp 4dp;
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-expand .emoji-picker-body {
+  padding: 0 4dp 12dp 4dp;
 }
 
 .context-menu-sheet-quick .context-menu-item {

@@ -8,6 +8,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     ChatPresenter.cpp
     GroupEventText.cpp
     HomeToday.cpp
+    QuickReactions.cpp
     ThreadSearch.cpp
     ThreadSearchSession.cpp
   PUBLIC_LIBS

@@ -228,6 +228,8 @@ private:
   void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
                     bool from_home_chip = false) override;
   void ToggleReaction(const std::string& message_id, const std::string& emoji) override;
+  std::vector<std::string> RecentEmojis() const override;
+  void RememberEmoji(const std::string& emoji) override;
   void OnAttachFile(ui::Event* ev = nullptr);
   /** The camera icon: iOS opens the system camera at once; Android first asks "Take a photo / Record a video". */
   void OnAttachCapture(ui::Event* ev = nullptr);

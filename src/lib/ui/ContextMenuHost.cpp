@@ -89,6 +89,8 @@ constexpr float kPopoverEdgeDp = 8.f;
 // stay around a third of the screen; a long one (the message menu with its reactions) may grow to half so its last,
 // red row is not hidden below a scroll; anything longer scrolls inside.
 constexpr float kSheetMaxShare = 0.5f;
+/// The page sheets' large stop (about 4/5 of the screen): how tall the sheet grows for an `expand` action.
+constexpr float kSheetLargeShare = 0.8f;
 constexpr float kSheetBottomGapDp = 8.f;
 constexpr int kSheetIconDp = 18;
 constexpr int kSheetDeadzonePx = 8;
@@ -208,11 +210,15 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
 // label colour, a very faint hairline inset 16dp on both sides between rows, red text and icon for a destructive row.
 // Quick actions (reactions) are a row of their own above the card. A plain Cancel row is left out: the close disc
 // stands for it.
-void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuAction>& actions, const bool quick) {
+// `expanders`: of the quick actions, only those that grow the sheet (the reactions row's "+", kept at its right end
+// outside the row's sideways scroll) or only the others.
+void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuAction>& actions, const bool quick,
+                     const bool expanders = false) {
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
     const bool enabled = !action.enabled || action.enabled();
-    if (!enabled || action.quick != quick || (!quick && action.cancel)) {
+    if (!enabled || action.quick != quick || (!quick && action.cancel) ||
+        (quick && static_cast<bool>(action.expand) != expanders)) {
       continue;
     }
     out << "<button class=\"context-menu-item";
@@ -633,13 +639,17 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     if (std::any_of(actions.begin(), actions.end(), [](const ContextMenuAction& a) {
           return a.quick && (!a.enabled || a.enabled());
         })) {
-      out << "<div class=\"context-menu-sheet-quick\">";
+      // The reactions scroll sideways when there are more than fit; the "+" stays at the right end.
+      out << "<div class=\"context-menu-sheet-quick\"><div class=\"context-menu-sheet-quick-scroll\">";
       AppendSheetRows(out, actions, /*quick=*/true);
+      out << "</div>";
+      AppendSheetRows(out, actions, /*quick=*/true, /*expanders=*/true);
       out << "</div>";
     }
     out << "<div class=\"context-menu-sheet-list\" id=\"context-menu-sheet-list\">";
     AppendSheetRows(out, actions, /*quick=*/false);
     out << "</div>";
+    out << "<div class=\"context-menu-sheet-expand\" id=\"context-menu-sheet-expand\"></div>";
     out << "</div>";
   } else {
     const bool anchored = presentation == Presentation::Float && menu_anchor_;
@@ -838,6 +848,7 @@ void ContextMenuHost::Dismiss() {
   EndSheetDrag();
   sheet_swallow_click_ = false;
   sheet_press_target_ = nullptr;
+  sheet_expanded_ = false;
   title_.clear();
   layer_ = nullptr;
   panel_ = nullptr;
@@ -948,6 +959,29 @@ void ContextMenuHost::HandleMenuAction(int index) {
       selection->OnPointerUp();
     }
   }
+}
+
+void ContextMenuHost::ExpandSheet(const int index) {
+  if (index < 0 || index >= static_cast<int>(active_actions_.size()) || !panel_ || !context_ || sheet_expanded_) {
+    return;
+  }
+  ui::Element* mount = panel_->GetElementById("context-menu-sheet-expand");
+  const auto expand = active_actions_[static_cast<size_t>(index)].expand;
+  if (!mount || !expand) {
+    return;
+  }
+  sheet_expanded_ = true;
+  // The rows and the reactions give way to the action's body; the sheet stands at the large stop, its top edge where
+  // a page sheet's is.
+  panel_->SetClass("context-menu-sheet--expanded", true);
+  const ui::Vector2i dims = context_->GetDimensions();
+  char height_buf[32];
+  std::snprintf(height_buf, sizeof(height_buf), "%.0fpx", std::max(0.f, dims.y * kSheetLargeShare - BottomInsetPx()));
+  panel_->SetProperty("height", height_buf);
+  expand(mount, [this]() {
+    on_dismissed_ = nullptr;  // chosen, not dismissed
+    RequestDismiss();
+  });
 }
 
 void ContextMenuHost::EndSheetDrag() {
@@ -1076,9 +1110,15 @@ bool ContextMenuHost::HandleSheetEvent(ui::Event& event) {
       if (node->GetId() == "context-menu-cancel") {
         return false;
       }
+      if (node->GetId() == "context-menu-sheet-expand") {
+        return true;  // the expanded body's own buttons take their clicks
+      }
     }
     const int index = FindMenuItemIndex(target);
-    if (index >= 0) {
+    if (index >= 0 && index < static_cast<int>(active_actions_.size()) &&
+        active_actions_[static_cast<size_t>(index)].expand) {
+      ExpandSheet(index);
+    } else if (index >= 0) {
       HandleMenuAction(index);
     }
     event.StopPropagation();

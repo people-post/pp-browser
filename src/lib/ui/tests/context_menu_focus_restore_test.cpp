@@ -6,6 +6,7 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -322,6 +323,82 @@ TEST_F(ContextMenuSheetTest, ALongPressMenuOnThePhoneIsTheSheetWithItsTitleAndRe
   ContextMenuHost::Instance().Dismiss();
   ContextMenuHost::Instance().SetTitleResolver({});
   ContextMenuHost::Instance().SetAnchorResolver({});
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.7): the reactions scroll sideways, and "+" grows the same sheet to
+// every emoji instead of opening a full-screen window.
+TEST_F(ContextMenuSheetTest, ThePlusGrowsTheSheetAndHandsItsBodyOver) {
+  static ui::Element* handed = nullptr;
+  static std::function<void()> close_sheet;
+  static int ran_plus = 0;
+  handed = nullptr;
+  close_sheet = nullptr;
+  ran_plus = 0;
+  std::vector<ContextMenuAction> actions;
+  for (const char* emoji : {"A", "B", "C"}) {
+    ContextMenuAction react;
+    react.id = emoji;
+    react.label = emoji;
+    react.quick = true;
+    react.run = [] {};
+    actions.push_back(react);
+  }
+  ContextMenuAction more;
+  more.id = "more";
+  more.label = "+";
+  more.quick = true;
+  more.run = [] { ++ran_plus; };
+  more.expand = [](ui::Element* mount, std::function<void()> done) {
+    handed = mount;
+    close_sheet = std::move(done);
+    mount->SetInnerRML("<button id='pick'>X</button>");
+  };
+  actions.push_back(more);
+  ContextMenuAction reply;
+  reply.id = "reply";
+  reply.label = "Reply";
+  reply.run = [] {};
+  actions.push_back(reply);
+
+  bool dismissed = false;
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  ContextMenuHost::Instance().ShowActions({10, 10}, std::move(actions), [&dismissed] { dismissed = true; }, "Message");
+  context_->Update();
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  ui::ElementList scrolls;
+  layer->GetElementsByClassName(scrolls, "context-menu-sheet-quick-scroll");
+  ASSERT_EQ(scrolls.size(), 1u);
+  EXPECT_EQ(scrolls[0]->GetNumChildren(), 3) << "the reactions scroll";
+  ui::Element* quick = scrolls[0]->GetParentNode();
+  ASSERT_EQ(quick->GetNumChildren(), 2);
+  ui::Element* plus = quick->GetChild(1);
+  EXPECT_EQ(plus->GetInnerRML().find("+") != ui::String::npos, true) << "the + sits outside the scroll, at the end";
+
+  plus->DispatchEvent(ui::EventId::Mousedown, Pointer(380, 300));
+  plus->DispatchEvent(ui::EventId::Mouseup, Pointer(380, 300));
+  plus->DispatchEvent(ui::EventId::Click, Pointer(380, 300));
+  ContextMenuHost::Instance().Update();
+  EXPECT_TRUE(ContextMenuHost::Instance().IsOpen()) << "the sheet stays, grown";
+  EXPECT_EQ(ran_plus, 0) << "the + does not run on the phone";
+  ui::Element* panel = document_->GetElementById("context-menu-panel");
+  ASSERT_NE(panel, nullptr);
+  EXPECT_TRUE(panel->IsClassSet("context-menu-sheet--expanded"));
+  ASSERT_NE(handed, nullptr);
+  EXPECT_EQ(handed->GetId(), "context-menu-sheet-expand");
+  ASSERT_NE(document_->GetElementById("pick"), nullptr);
+
+  // A click inside the body reaches its own button and does not close the sheet by itself.
+  document_->GetElementById("pick")->DispatchEvent(ui::EventId::Click, Pointer(200, 300));
+  ContextMenuHost::Instance().Update();
+  EXPECT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ASSERT_TRUE(close_sheet);
+  close_sheet();  // the body's pick
+  ContextMenuHost::Instance().Update();
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  EXPECT_FALSE(dismissed) << "a pick is a choice, not a dismissal";
+  close_sheet = nullptr;
   ContextMenuHost::Instance().SetCompactLayout(false);
 }
 

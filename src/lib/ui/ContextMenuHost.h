@@ -35,6 +35,11 @@ struct ContextMenuAction {
   bool quick = false;
   /// A plain "Cancel" row: the phone sheet leaves it out (its close disc, the scrim and a drag down cancel there).
   bool cancel = false;
+  /// Phone sheet only: a tap on this action does not run it; the sheet grows to its large stop and hands its body
+  /// (`mount`, emptied of the rows) to be filled, e.g. every emoji under the reactions row's "+" (Kenneth 2026-11-04:
+  /// "全部展现在这个小范围内……可以学下 whatsup"). `done` closes the sheet once something there was chosen.
+  /// Elsewhere (the desktop menu) the action runs as usual.
+  std::function<void(ui::Element* mount, std::function<void()> done)> expand;
 };
 
 struct ContextMenuRequest {
@@ -124,6 +129,8 @@ private:
   float BottomInsetPx() const;
   int FindMenuItemIndex(ui::Element* target) const;
   void HandleMenuAction(int index);
+  /// The phone sheet grows for its `expand` action at `index` (see ContextMenuAction::expand).
+  void ExpandSheet(int index);
   void RequestDismiss(bool restore_focus = false);
 
   ui::Context* context_ = nullptr;
@@ -180,6 +187,8 @@ private:
   int sheet_prev_y_ = 0;
   std::chrono::steady_clock::time_point sheet_last_at_{};
   std::chrono::steady_clock::time_point sheet_prev_at_{};
+  /// The open sheet has grown for an `expand` action: its body is that action's.
+  bool sheet_expanded_ = false;
   /// The click that ends a drag or a scroll must not run the row it lands on.
   bool sheet_swallow_click_ = false;
   std::chrono::steady_clock::time_point sheet_swallow_since_{};
