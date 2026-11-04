@@ -38,6 +38,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -324,12 +325,16 @@ void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id,
 }
 
 void AgentTurnController::OnAttachAiImage() {
-  NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+  PickAiImage([this](std::string path) { StartAiImagePrepare(std::move(path)); });
+}
+
+void AgentTurnController::PickAiImage(std::function<void(std::string path)> picked) {
+  NativeFileDialogCallback on_picked = [picked = std::move(picked)](std::vector<std::string> paths) {
+    AppRuntime::PostUI([picked, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         return;
       }
-      StartAiImagePrepare(std::move(paths.front()));
+      picked(std::move(paths.front()));
     });
   };
   if (!Platform::IsMobile()) {
@@ -339,6 +344,59 @@ void AgentTurnController::OnAttachAiImage() {
   // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
   host_.ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
                    [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+}
+
+void AgentTurnController::CaptureAiPhoto(std::function<void(std::string path)> picked) {
+  ShowCameraCapture(Backend::GetWindow(), CameraCaptureKind::Photo, 0, 0,
+                    [picked = std::move(picked)](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+                      AppRuntime::PostUI([picked, outcome, paths = std::move(paths)]() mutable {
+                        if (outcome == CameraCaptureOutcome::Picked && !paths.empty()) {
+                          picked(std::move(paths.front()));
+                        } else if (outcome == CameraCaptureOutcome::Unavailable ||
+                                   outcome == CameraCaptureOutcome::Unprocessable) {
+                          UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
+                        }
+                      });
+                    });
+}
+
+void AgentTurnController::PrepareAiImage(std::string path, std::function<void(Roe<PendingAiImage>)> done) {
+  const std::string profile_dir = host_.Facade() ? host_.Facade()->ProfileDataDir() : std::string();
+  AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, done = std::move(done)]() mutable {
+    Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    ReleasePickedFile(path); // the draft keeps its own copy
+    AppRuntime::PostUI([this, result = std::move(result), done = std::move(done)]() mutable {
+      if (!result) {
+        // Sizes and kinds only in the log: no file name, no path.
+        log().warning << "AI image not prepared: kind=" << result.error().code;
+        done(result.error());
+        return;
+      }
+      log().info << "AI image ready: " << result->image.data.size() << " bytes";
+      done(PendingAiImage{.image = std::move(result->image),
+                          .name = {},
+                          .file_path = std::move(result->file_path),
+                          .width = result->width,
+                          .height = result->height});
+    });
+  });
+}
+
+void AgentTurnController::DropAiImage(const PendingAiImage& image) {
+  RemoveSessionFile(image.file_path);
+}
+
+AgentTurnController::ImageSend AgentTurnController::SendAiImageTo(const std::string& thread_id,
+                                                                  const std::string& text, PendingAiImage image) {
+  if (thread_id.empty() || !host_.MessagingIsReady() || !host_.Facade() || !agent_ports_.submit_image_to_thread ||
+      !AgentCloudReady()) {
+    return ImageSend::Unavailable;
+  }
+  if (const TurnStart start = CanStart(thread_id); start != TurnStart::Yes) {
+    return start == TurnStart::Full ? ImageSend::Full : ImageSend::BusyHere;
+  }
+  StartPreparedImageSend(thread_id, text, std::move(image));
+  return ImageSend::Started;
 }
 
 void AgentTurnController::StartAiImagePrepare(std::string path) {
@@ -491,8 +549,12 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   chat_.image_thumb_ready = false;
   chat_.image_thumb_src = "";
   chat_.image_draft_name = "";
+  StartPreparedImageSend(host_.ActiveThreadId(), text, std::move(image));
+  return true;
+}
 
-  const std::string thread_id = host_.ActiveThreadId();
+void AgentTurnController::StartPreparedImageSend(const std::string& thread_id, const std::string& text,
+                                                 PendingAiImage image) {
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
   const std::string message_id = util::GenerateUuid();
   widgets_.ExpireOpenForms();
@@ -525,7 +587,6 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
       SubmitStoredImageQuestion(thread_id, text, question, message_id, std::move(image), std::move(ai_image_json));
     });
   });
-  return true;
 }
 
 void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text,
@@ -572,13 +633,21 @@ void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id
   UserFeedback::Fail(Tr(outcome == SubmitOutcome::Full ? "chat.ai_queue.image_busy" : "chat.ai_queue.image_busy_here"));
 }
 
-void AgentTurnController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
+void AgentTurnController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows,
+                                              const std::string& thread_id) const {
   // Only the user's own questions in an AI thread carry the marker; a peer's or the AI's text that
   // happens to start with it is left alone.
   if (!host_.Facade()) {
     return;
   }
-  auto thread = host_.Facade()->GetActiveThread();
+  std::optional<Thread> thread;
+  if (thread_id.empty()) {
+    if (auto active = host_.Facade()->GetActiveThread()) {
+      thread = *active;
+    }
+  } else if (auto found = host_.Facade()->GetThread(thread_id); found && *found) {
+    thread = **found;
+  }
   if (!thread || thread->kind != ThreadKind::Ai) {
     return;
   }

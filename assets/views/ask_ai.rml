@@ -31,14 +31,42 @@
     <button class="ask-ai-support" type="button" data-if="show_support"
             data-event-click="ask_ai_support()">{{i18n:ask_ai.ask_support}}</button>
   </div>
+  <!-- The picture waiting for its question: a small thumbnail and an X (a 44dp target). -->
+  <div class="ask-ai-picture" data-if="has_picture">
+    <div class="ask-ai-picture-box">
+      <img class="ask-ai-picture-img" data-if="!picture_preparing && picture_src != ''" data-attr-src="picture_src"/>
+    </div>
+    <p class="ask-ai-picture-note" data-if="picture_preparing">{{i18n:chat.image.preparing}}</p>
+    <button class="ask-ai-picture-remove" type="button" data-event-click="ask_ai_remove_picture()"
+            title="{{i18n:chat.image.remove}}">
+      <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
+    </button>
+  </div>
+  <!-- Each tap on the microphone says how to start the keyboard's dictation, for about 3 seconds. -->
+  <p class="ask-ai-mic-hint" data-if="mic_hint != ''">{{mic_hint}}</p>
   <div class="ask-ai-input-row">
+    <!-- A setting's "?" is explanation only: no camera, no attachment. -->
+    <button class="ask-ai-tool" type="button" data-if="show_media" data-event-click="ask_ai_camera()"
+            title="{{i18n:chat.attach.capture_photo}}">
+      <svg src="../icons/v2/camera.svg" width="24" height="24"></svg>
+    </button>
+    <button class="ask-ai-tool" type="button" data-if="show_media" data-event-click="ask_ai_attach()"
+            title="{{i18n:chat.attach_file}}">
+      <svg src="../icons/v2/paperclip.svg" width="24" height="24"></svg>
+    </button>
     <div class="ask-ai-pill">
       <textarea id="ask-ai-input" class="ask-ai-input" rows="1" max-rows="4" maxlength="4000"
                 data-value="draft"></textarea>
       <!-- The engine draws no placeholder on phones: a label over the empty input. -->
       <p class="ask-ai-placeholder" data-if="draft == ''">{{i18n:chat.ai_thread.placeholder}}</p>
     </div>
-    <button class="ask-ai-send" type="button" data-if="draft != ''" data-attrif-disabled="thinking"
+    <!-- The microphone swaps to Send once there is text or a picture. -->
+    <button class="ask-ai-send ask-ai-mic" type="button" data-if="show_mic && draft == '' && !has_picture"
+            data-event-click="ask_ai_mic()" title="{{i18n:ask_ai.mic}}">
+      <svg src="../icons/v2/mic.svg" width="22" height="22"></svg>
+    </button>
+    <button class="ask-ai-send" type="button" data-if="draft != '' || has_picture"
+            data-attrif-disabled="thinking || picture_preparing"
             data-event-click="ask_ai_send()" title="{{i18n:ask_ai.send}}">
       <svg src="../icons/send.svg" width="16" height="16" crop-to-content="true"></svg>
     </button>

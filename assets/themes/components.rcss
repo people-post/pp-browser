@@ -2949,6 +2949,86 @@ select selectbox option {
   height: 16dp;
 }
 
+/* The camera and attachment buttons left of the input: plain icons, 44dp targets. */
+.ask-ai-tool {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0 2dp 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.ask-ai-tool svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.ask-ai-mic svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+/* The microphone's 3-second hint, above the input. */
+.ask-ai-mic-hint {
+  flex-shrink: 0;
+  margin: 6dp 20dp 0 20dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+/* The picture waiting to be sent: a thumbnail and an X. */
+.ask-ai-picture {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8dp 16dp 0 16dp;
+}
+
+.ask-ai-picture-box {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.ask-ai-picture-img {
+  display: block;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 10dp;
+}
+
+.ask-ai-picture-note {
+  margin: 0 0 0 12dp;
+  font-size: 13dp;
+}
+
+.ask-ai-picture-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 0 0 4dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.ask-ai-picture-remove svg {
+  width: 14dp;
+  height: 14dp;
+}
+
 .ask-ai-reminder {
   flex-shrink: 0;
   margin: 6dp 16dp 6dp 16dp;

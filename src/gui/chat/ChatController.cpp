@@ -1798,7 +1798,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
-  agent_.DecorateAiImageRows(rows);
+  agent_.DecorateAiImageRows(rows, thread_id);
   return rows;
 }
 

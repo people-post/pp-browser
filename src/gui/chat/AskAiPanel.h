@@ -1,6 +1,7 @@
 #pragma once
 
 #include "feature/ai/AgentSession.h"
+#include "gui/chat/AgentTurnController.h"
 #include "gui/chat/AgentBusyRules.h"
 #include "lib/ui/ShellTypes.h"
 
@@ -19,7 +20,25 @@ class Context;
 
 namespace pbr {
 
-class AgentTurnController;
+/** Which speech-to-text the microphone points the person to (the input method's own; the app has none). */
+enum class AskAiMicKind { Phone, Android, Mac, Windows, None /* Linux: no microphone shown */ };
+
+/** The platform this runs on. */
+AskAiMicKind DetectAskAiMicKind();
+
+/** Locale key of the hint line the microphone shows; nullptr for None. */
+const char* AskAiMicHintKey(AskAiMicKind kind);
+
+/** How the panel picks, prepares and sends a picture; the defaults are the agent controller's (the chat's path). */
+struct AskAiImagePorts {
+  std::function<void(std::function<void(std::string path)>)> pick;
+  std::function<void(std::function<void(std::string path)>)> capture;
+  std::function<void(std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)>)> prepare;
+  std::function<AgentTurnController::ImageSend(const std::string& thread_id, const std::string& text,
+                                               AgentTurnController::PendingAiImage image)>
+      send;
+  std::function<void(const AgentTurnController::PendingAiImage&)> drop;
+};
 
 /** Where the ask-AI panel was opened from (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
 enum class AskAiEntry {
@@ -51,6 +70,15 @@ struct AskAiView {
   bool show_support = false;
   /** The unsent text of the mode shown; kept when the panel closes. */
   ui::String draft;
+  /** Camera and attachment buttons (the shared conversation only; a setting's "?" is explanation only). */
+  bool show_media = true;
+  /** The microphone shows (not on Linux), and the hint line above the input for the 3 s after a tap. */
+  bool show_mic = true;
+  ui::String mic_hint;
+  /** The picture waiting for its question (being prepared, or ready with its thumbnail). */
+  bool has_picture = false;
+  bool picture_preparing = false;
+  ui::String picture_src;
 };
 
 /** What the panel needs from the chat screen (ChatController). UI thread. */
@@ -132,6 +160,11 @@ public:
   void Close();
   void RunAction(const std::string& entry_id, int action_index);
   void OpenLink(const std::string& entry_id, int link_index);
+  /** The microphone: the cursor goes into the input, the keyboard comes up, and the platform's dictation hint shows. */
+  void Mic();
+  /** The camera / the attachment button: one picture for the next question. */
+  void PickPicture(bool camera);
+  void RemovePicture();
 
   // --- from the chat screen -------------------------------------------------------------------------
   /** Per frame: the streamed answer, a one-off waiting for the Home session, the demo's answers, focus, scroll. */
@@ -147,6 +180,12 @@ public:
   const AskAiView& View() const { return view_; }
   /** The UI demo app (no AI backend): answers come from `answer` ("" = it fails), streamed in small steps. */
   void SetFakeAnswers(std::function<std::string(const std::string& question)> answer) { fake_answer_ = std::move(answer); }
+  /** How long the microphone's hint stays. */
+  static constexpr std::chrono::milliseconds kMicHintFor{3000};
+  /** Hides the microphone hint once its time is up (per frame). */
+  void ExpireMicHint(std::chrono::steady_clock::time_point now);
+  void SetMicKind(AskAiMicKind kind);
+  AskAiImagePorts& ImagePorts() { return image_ports_; }
   /** Tests: the panel's draft as if typed. */
   void SetDraftForTest(const std::string& text) { view_.draft = text.c_str(); }
 
@@ -167,6 +206,10 @@ private:
   bool Show(AskAiEntry entry, bool once);
   void SwitchMode(bool once);
   void SendShared(const std::string& text);
+  void SendPicture(const std::string& text);
+  void PreparePicture(std::string path);
+  void DropPicture();
+  void SyncPictureView();
   void AskOnce(const std::string& text, bool fresh);
   bool TryStartOnce();
   void StartFake(const std::string& thread_id, const std::string& question);
@@ -183,6 +226,13 @@ private:
   ui::Context* context_ = nullptr;
   AskAiView view_;
   int layer_id_ = -1;
+
+  AskAiMicKind mic_kind_ = DetectAskAiMicKind();
+  std::optional<std::chrono::steady_clock::time_point> mic_hint_until_;
+  AskAiImagePorts image_ports_;
+  std::optional<AgentTurnController::PendingAiImage> picture_;
+  bool picture_preparing_ = false;
+  uint64_t picture_generation_ = 0;
 
   std::string shared_thread_;
   std::string shared_draft_;

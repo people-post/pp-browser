@@ -234,7 +234,21 @@ public:
    */
   void SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text, const std::string& question,
                                  const std::string& message_id, PendingAiImage image, std::string ai_image_json);
-  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
+  /** `thread_id` empty: the open thread (the chat page); the ask-AI panel names its own. */
+  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows, const std::string& thread_id = {}) const;
+
+  // --- the ask-AI panel's picture (DEV/PLAN-ui-batch5-ask-ai.md 5b): the same path, its own state ---------
+  /** The photo library / file picker (images only); `picked` runs on the UI thread with one file, or not at all. */
+  void PickAiImage(std::function<void(std::string path)> picked);
+  /** The system camera, photo only; `picked` as above. Tells the person when the camera is unavailable. */
+  void CaptureAiPhoto(std::function<void(std::string path)> picked);
+  /** PrepareAiImageFromFile (<= 1.5 MB, metadata stripped) + a session thumbnail, off the UI thread; `done` on it. */
+  void PrepareAiImage(std::string path, std::function<void(Roe<PendingAiImage>)> done);
+  /** Removes the picture's session thumbnail file. */
+  void DropAiImage(const PendingAiImage& image);
+  enum class ImageSend { Started, Full, BusyHere, Unavailable };
+  /** Stores the picture in `thread_id` and starts its question there (not queued: the picture lives in the panel). */
+  ImageSend SendAiImageTo(const std::string& thread_id, const std::string& text, PendingAiImage image);
 
   // --- the agent's forms and calendars ---------------------------------------------------------
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
@@ -243,6 +257,8 @@ public:
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
 
 private:
+  /** The tail of SendImageQuestion: names the thread, marks it busy, stores the picture, hands the question over. */
+  void StartPreparedImageSend(const std::string& thread_id, const std::string& text, PendingAiImage image);
   /** A people list's "show more": `step` more rows of `blocks[block_index]` of that stored reply, in place. */
   void ShowMoreRows(const std::string& entry_id, size_t block_index, size_t step);
   void OnAssistantDelta(const AgentEvent& event);

@@ -3,6 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/i18n/ScriptLanguageDetector.h"
 #include "gui/chat/AgentTurnController.h"
+#include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/ai/StructuredTextParser.h"
@@ -10,6 +11,9 @@
 #include "lib/ui/DataEvent.h"
 #include "common/Logger.h"
 #include "common/Utilities.h"
+#include "foundation/platform/Platform.h"
+
+#include <SDL3/SDL_platform.h>
 
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Context.h>
@@ -65,7 +69,59 @@ AgentEvent Event(const AgentEventType type, const std::string& thread_id) {
 
 } // namespace
 
-AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {}
+AskAiMicKind DetectAskAiMicKind() {
+  switch (Platform::Detect()) {
+  case PlatformKind::IOS:
+    return AskAiMicKind::Phone;
+  case PlatformKind::Android:
+    return AskAiMicKind::Android;
+  case PlatformKind::Desktop:
+    break;
+  }
+  const std::string os = SDL_GetPlatform();
+  if (os == "macOS") {
+    return AskAiMicKind::Mac;
+  }
+  if (os == "Windows") {
+    return AskAiMicKind::Windows;
+  }
+  return AskAiMicKind::None;
+}
+
+const char* AskAiMicHintKey(const AskAiMicKind kind) {
+  switch (kind) {
+  case AskAiMicKind::Phone:
+    return "ask_ai.mic_hint.ios";
+  case AskAiMicKind::Android:
+    return "ask_ai.mic_hint.android";
+  case AskAiMicKind::Mac:
+    return "ask_ai.mic_hint.mac";
+  case AskAiMicKind::Windows:
+    return "ask_ai.mic_hint.windows";
+  case AskAiMicKind::None:
+    break;
+  }
+  return nullptr;
+}
+
+AskAiPanel::AskAiPanel(AskAiPanelHost& host, AgentTurnController& agent) : host_(host), agent_(agent) {
+  view_.show_mic = mic_kind_ != AskAiMicKind::None;
+  image_ports_.pick = [this](std::function<void(std::string)> picked) { agent_.PickAiImage(std::move(picked)); };
+  image_ports_.capture = [this](std::function<void(std::string)> picked) { agent_.CaptureAiPhoto(std::move(picked)); };
+  image_ports_.prepare = [this](std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)> done) {
+    agent_.PrepareAiImage(std::move(path), std::move(done));
+  };
+  image_ports_.send = [this](const std::string& thread_id, const std::string& text,
+                             AgentTurnController::PendingAiImage image) {
+    return agent_.SendAiImageTo(thread_id, text, std::move(image));
+  };
+  image_ports_.drop = [this](const AgentTurnController::PendingAiImage& image) { agent_.DropAiImage(image); };
+}
+
+void AskAiPanel::SetMicKind(const AskAiMicKind kind) {
+  mic_kind_ = kind;
+  view_.show_mic = kind != AskAiMicKind::None;
+}
 
 bool AskAiPanel::Register(ui::Context* context) {
   context_ = context;
@@ -84,6 +140,16 @@ bool AskAiPanel::Register(ui::Context* context) {
     ctor.Bind("error", &view_.error);
     ctor.Bind("show_support", &view_.show_support);
     ctor.Bind("draft", &view_.draft);
+    ctor.Bind("show_media", &view_.show_media);
+    ctor.Bind("show_mic", &view_.show_mic);
+    ctor.Bind("mic_hint", &view_.mic_hint);
+    ctor.Bind("has_picture", &view_.has_picture);
+    ctor.Bind("picture_preparing", &view_.picture_preparing);
+    ctor.Bind("picture_src", &view_.picture_src);
+    ctor.BindEventCallback("ask_ai_mic", DataEvent([this] { Mic(); }));
+    ctor.BindEventCallback("ask_ai_camera", DataEvent([this] { PickPicture(/*camera=*/true); }));
+    ctor.BindEventCallback("ask_ai_attach", DataEvent([this] { PickPicture(/*camera=*/false); }));
+    ctor.BindEventCallback("ask_ai_remove_picture", DataEvent([this] { RemovePicture(); }));
     ctor.BindEventCallback("ask_ai_send", DataEvent([this] { Send(); }));
     ctor.BindEventCallback("ask_ai_intro_seen", DataEvent([this] { DismissIntro(); }));
     ctor.BindEventCallback("ask_ai_support", DataEvent([this] { AskSupport(); }));
@@ -119,6 +185,8 @@ void AskAiPanel::SwitchMode(const bool once) {
   (view_.once ? once_draft_ : shared_draft_) = view_.draft.c_str();
   view_.once = once;
   view_.draft = (once ? once_draft_ : shared_draft_).c_str();
+  view_.show_media = !once;
+  SyncPictureView();
 }
 
 bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
@@ -141,6 +209,8 @@ bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
       // Closed by the X, the scrim or a swipe: the draft stays, a running answer goes on where it belongs.
       layer_id_ = -1;
       focus_pending_ = false;
+      mic_hint_until_.reset();
+      view_.mic_hint = "";
     });
     if (layer_id_ < 0) {
       return false;
@@ -188,7 +258,12 @@ bool AskAiPanel::OpenOnce(const std::string& question) {
 
 void AskAiPanel::Send() {
   const std::string text = util::Trim(view_.draft.c_str());
-  if (text.empty() || view_.thinking) {
+  const bool picture = !view_.once && picture_.has_value();
+  if ((text.empty() && !picture) || view_.thinking) {
+    return;
+  }
+  if (picture) {
+    SendPicture(text);
     return;
   }
   if (view_.once && once_pending_) {
@@ -202,6 +277,141 @@ void AskAiPanel::Send() {
   } else {
     SendShared(text);
   }
+}
+
+void AskAiPanel::Mic() {
+  const char* key = AskAiMicHintKey(mic_kind_);
+  if (!key) {
+    return;
+  }
+  // The input method's own dictation does the listening: the cursor goes into the field (the keyboard comes up) and
+  // a line says how to start it. Every tap says it again.
+  focus_pending_ = true;
+  view_.mic_hint = Tr(key).c_str();
+  mic_hint_until_ = std::chrono::steady_clock::now() + kMicHintFor;
+  Dirty("mic_hint");
+}
+
+void AskAiPanel::ExpireMicHint(const std::chrono::steady_clock::time_point now) {
+  if (mic_hint_until_ && now >= *mic_hint_until_) {
+    mic_hint_until_.reset();
+    view_.mic_hint = "";
+    Dirty("mic_hint");
+  }
+}
+
+// --- the picture (camera / attachment), the chat's own path ----------------------------------------------------
+
+void AskAiPanel::SyncPictureView() {
+  const bool shown = !view_.once && (picture_.has_value() || picture_preparing_);
+  view_.has_picture = shown;
+  view_.picture_preparing = shown && picture_preparing_;
+  view_.picture_src = shown && picture_ ? picture_->file_path.c_str() : "";
+  Dirty("has_picture");
+  Dirty("picture_preparing");
+  Dirty("picture_src");
+}
+
+void AskAiPanel::DropPicture() {
+  ++picture_generation_; // a picture still being prepared is dropped when it arrives
+  picture_preparing_ = false;
+  if (picture_) {
+    if (image_ports_.drop) {
+      image_ports_.drop(*picture_);
+    }
+    picture_.reset();
+  }
+}
+
+void AskAiPanel::RemovePicture() {
+  DropPicture();
+  SyncPictureView();
+}
+
+void AskAiPanel::PickPicture(const bool camera) {
+  if (view_.once) {
+    return;
+  }
+  auto& pick = camera ? image_ports_.capture : image_ports_.pick;
+  if (pick) {
+    pick([this](std::string path) { PreparePicture(std::move(path)); });
+  }
+}
+
+void AskAiPanel::PreparePicture(std::string path) {
+  DropPicture();
+  const uint64_t generation = ++picture_generation_;
+  picture_preparing_ = true;
+  SyncPictureView();
+  image_ports_.prepare(std::move(path), [this, generation](Roe<AgentTurnController::PendingAiImage> result) {
+    if (generation != picture_generation_) {
+      if (result && image_ports_.drop) {
+        image_ports_.drop(*result); // removed or replaced while it was being prepared
+      }
+      return;
+    }
+    picture_preparing_ = false;
+    if (result) {
+      picture_ = std::move(*result);
+    } else {
+      // The cause decides the wording: not an image, too large (the 1.5 MB cap), unreadable.
+      host_.AskAiToast(Tr(AiImagePrepErrorKey(AiImagePrepErrorOf(result.error()))));
+    }
+    SyncPictureView();
+  });
+}
+
+void AskAiPanel::SendPicture(const std::string& text) {
+  if (!picture_) {
+    return; // still being prepared
+  }
+  const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
+  const std::string thread_id = host_.AskAiSharedThread(/*create=*/true);
+  if (thread_id.empty()) {
+    FailShared(question);
+    Refresh();
+    return;
+  }
+  shared_thread_ = thread_id;
+  shared_failed_ = false;
+  if (!agent_.UseLlm()) {
+    // The demo app: no AI, made-up answers.
+    if (!fake_answer_ || host_.AskAiStoreQuestion(thread_id, std::string(kAiImageTurnMarker) + question).empty()) {
+      FailShared(question);
+    } else {
+      StartFake(thread_id, question);
+      view_.draft = "";
+      Dirty("draft");
+      DropPicture();
+    }
+    Refresh();
+    SyncPictureView();
+    return;
+  }
+  // The picture is not queued (it lives in this panel only): with every turn taken it stays, with the text.
+  switch (image_ports_.send(thread_id, text, *picture_)) {
+  case AgentTurnController::ImageSend::Started:
+    awaiting_answer_ = true;
+    asked_question_ = question;
+    view_.draft = "";
+    Dirty("draft");
+    picture_preparing_ = false;
+    ++picture_generation_;
+    picture_.reset(); // the thread's own copy takes over; the controller removes the preview file
+    break;
+  case AgentTurnController::ImageSend::Full:
+    host_.AskAiToast(Tr("chat.ai_queue.image_busy"));
+    break;
+  case AgentTurnController::ImageSend::BusyHere:
+    host_.AskAiToast(Tr("chat.ai_queue.image_busy_here"));
+    break;
+  case AgentTurnController::ImageSend::Unavailable:
+    FailShared(question);
+    break;
+  }
+  Refresh();
+  SyncPictureView();
+  scroll_frames_ = kScrollFrames;
 }
 
 void AskAiPanel::DismissIntro() {
@@ -593,6 +803,7 @@ void AskAiPanel::Tick() {
   if (!IsOpen()) {
     return;
   }
+  ExpireMicHint(std::chrono::steady_clock::now());
   // "Thinking", the queue and the streamed text follow the conversation shown.
   if (!view_.once) {
     const ui::String queued = shared_thread_.empty() ? "" : agent_.QueuedText(shared_thread_).c_str();

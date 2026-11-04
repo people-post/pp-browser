@@ -10,6 +10,7 @@
 #include "gui/chat/AgentTurnController.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/AiImagePrep.h"
 
 #include <gtest/gtest.h>
 
@@ -646,6 +647,228 @@ TEST(AskAiPanelSourceTest, OpenInAiChatIsAnIconInTheSheetHeader) {
   EXPECT_NE(tag.find("title=\"{{i18n:ask_ai.open_in_chat}}\""), std::string::npos);
   EXPECT_NE(tag.find("../icons/v2/arrow-up-right.svg"), std::string::npos);
   EXPECT_EQ(tag.find(">{{i18n:ask_ai.open_in_chat}}<"), std::string::npos) << "no text link any more";
+}
+
+// --- the input row (5b): microphone, camera, attachment ------------------------------------------------------------
+
+/** The panel's picture ports replaced by recorders: a pick/capture hands over "pick.jpg" at once, prepare answers at once. */
+class AskAiInputRowTest : public AskAiPanelTest {
+protected:
+  AskAiInputRowTest() {
+    AskAiImagePorts& ports = panel_.ImagePorts();
+    ports.pick = [this](std::function<void(std::string)> picked) {
+      ++picks_;
+      picked("pick.jpg");
+    };
+    ports.capture = [this](std::function<void(std::string)> picked) {
+      ++captures_;
+      picked("shot.jpg");
+    };
+    ports.prepare = [this](std::string path, std::function<void(Roe<AgentTurnController::PendingAiImage>)> done) {
+      prepared_paths_.push_back(path);
+      if (prepare_error_) {
+        done(Error(static_cast<int32_t>(*prepare_error_), "x"));
+        return;
+      }
+      AgentTurnController::PendingAiImage image;
+      image.image.mime = "image/jpeg";
+      image.image.data = {1, 2, 3};
+      image.file_path = "thumb-" + std::to_string(prepared_paths_.size()) + ".jpg";
+      done(std::move(image));
+    };
+    ports.send = [this](const std::string& thread_id, const std::string& text, AgentTurnController::PendingAiImage image) {
+      sends_.push_back({thread_id, text, image.file_path});
+      return send_result_;
+    };
+    ports.drop = [this](const AgentTurnController::PendingAiImage& image) { dropped_.push_back(image.file_path); };
+  }
+
+  struct Send {
+    std::string thread_id, text, file;
+  };
+  int picks_ = 0;
+  int captures_ = 0;
+  std::vector<std::string> prepared_paths_;
+  std::optional<AiImagePrepError> prepare_error_;
+  std::vector<Send> sends_;
+  std::vector<std::string> dropped_;
+  AgentTurnController::ImageSend send_result_ = AgentTurnController::ImageSend::Started;
+};
+
+TEST_F(AskAiInputRowTest, TheMicrophoneHintShowsOnEveryTapPerPlatform) {
+  struct Case {
+    AskAiMicKind kind;
+    const char* key;
+    const char* zh_part;
+  };
+  const Case cases[] = {
+      {AskAiMicKind::Phone, "ask_ai.mic_hint.ios", "设置 → 通用 → 键盘"},
+      {AskAiMicKind::Android, "ask_ai.mic_hint.android", "点输入法上的麦克风说话"},
+      {AskAiMicKind::Mac, "ask_ai.mic_hint.mac", "按两下 Fn"},
+      {AskAiMicKind::Windows, "ask_ai.mic_hint.windows", "Win + H"},
+  };
+  for (const Case& c : cases) {
+    SCOPED_TRACE(c.key);
+    panel_.SetMicKind(c.kind);
+    ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+    EXPECT_TRUE(panel_.View().show_mic);
+    EXPECT_EQ(std::string(AskAiMicHintKey(c.kind)), c.key);
+    EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty()) << "no hint until the microphone is tapped";
+    for (int tap = 0; tap < 2; ++tap) {
+      panel_.Mic();
+      EXPECT_EQ(std::string(panel_.View().mic_hint.c_str()), Tr(c.key)) << "every tap shows it again";
+      EXPECT_NE(Tr(c.key), c.key) << "the key is in the locale files";
+      panel_.ExpireMicHint(std::chrono::steady_clock::now() + AskAiPanel::kMicHintFor + std::chrono::milliseconds(50));
+      EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty()) << "gone after about 3 s";
+    }
+    panel_host_.AskAiCloseSheet(0);
+  }
+}
+
+TEST_F(AskAiInputRowTest, TheHintStaysUntilItsTimeIsUp) {
+  panel_.SetMicKind(AskAiMicKind::Mac);
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.Mic();
+  panel_.ExpireMicHint(std::chrono::steady_clock::now() + std::chrono::milliseconds(1500));
+  EXPECT_FALSE(std::string(panel_.View().mic_hint.c_str()).empty());
+}
+
+TEST_F(AskAiInputRowTest, LinuxHasNoMicrophone) {
+  panel_.SetMicKind(AskAiMicKind::None);
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  EXPECT_FALSE(panel_.View().show_mic);
+  panel_.Mic();
+  EXPECT_TRUE(std::string(panel_.View().mic_hint.c_str()).empty());
+  EXPECT_EQ(AskAiMicHintKey(AskAiMicKind::None), nullptr);
+}
+
+TEST_F(AskAiInputRowTest, APickedPictureShowsAThumbnailThatCanBeRemoved) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  EXPECT_TRUE(panel_.View().show_media);
+  EXPECT_FALSE(panel_.View().has_picture);
+  panel_.PickPicture(/*camera=*/false);
+  EXPECT_EQ(picks_, 1);
+  EXPECT_EQ(prepared_paths_, std::vector<std::string>{"pick.jpg"});
+  EXPECT_TRUE(panel_.View().has_picture);
+  EXPECT_FALSE(panel_.View().picture_preparing);
+  EXPECT_EQ(std::string(panel_.View().picture_src.c_str()), "thumb-1.jpg");
+  // A second pick replaces the first (its thumbnail file goes).
+  panel_.PickPicture(/*camera=*/true);
+  EXPECT_EQ(captures_, 1);
+  EXPECT_EQ(dropped_, std::vector<std::string>{"thumb-1.jpg"});
+  EXPECT_EQ(std::string(panel_.View().picture_src.c_str()), "thumb-2.jpg");
+  panel_.RemovePicture();
+  EXPECT_FALSE(panel_.View().has_picture);
+  EXPECT_TRUE(std::string(panel_.View().picture_src.c_str()).empty());
+  EXPECT_EQ(dropped_.back(), "thumb-2.jpg");
+  panel_.Send();
+  EXPECT_TRUE(sends_.empty()) << "nothing to send";
+}
+
+TEST_F(AskAiInputRowTest, ANonImageOrTooLargePictureSaysWhyAndShowsNoThumbnail) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  prepare_error_ = AiImagePrepError::TooLarge; // the existing 1.5 MB path refused it
+  panel_.PickPicture(false);
+  EXPECT_FALSE(panel_.View().has_picture);
+  ASSERT_EQ(panel_host_.toasts.size(), 1u);
+  EXPECT_EQ(panel_host_.toasts[0], Tr("chat.image.too_large"));
+  prepare_error_ = AiImagePrepError::NotAnImage;
+  panel_.PickPicture(false);
+  EXPECT_EQ(panel_host_.toasts.back(), Tr("chat.image.not_supported"));
+}
+
+TEST_F(AskAiInputRowTest, APictureQuestionGoesToTheSharedThread) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.PickPicture(false);
+  panel_.SetDraftForTest("What is this?");
+  panel_.Send();
+  ASSERT_EQ(sends_.size(), 1u);
+  EXPECT_EQ(sends_[0].thread_id, "ai-used-last");
+  EXPECT_EQ(sends_[0].text, "What is this?");
+  EXPECT_EQ(sends_[0].file, "thumb-1.jpg");
+  EXPECT_TRUE(panel_host_.sent.empty()) << "the picture path, not the text queue";
+  EXPECT_FALSE(panel_.View().has_picture);
+  EXPECT_TRUE(std::string(panel_.View().draft.c_str()).empty());
+}
+
+TEST_F(AskAiInputRowTest, APictureAloneIsSentWithoutText) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.PickPicture(true);
+  panel_.Send();
+  ASSERT_EQ(sends_.size(), 1u);
+  EXPECT_TRUE(sends_[0].text.empty()) << "the controller puts the default question in";
+}
+
+TEST_F(AskAiInputRowTest, AFullOrBusyThreadKeepsThePictureAndTheText) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.PickPicture(false);
+  panel_.SetDraftForTest("again");
+  send_result_ = AgentTurnController::ImageSend::Full;
+  panel_.Send();
+  EXPECT_TRUE(panel_.View().has_picture);
+  EXPECT_EQ(std::string(panel_.View().draft.c_str()), "again");
+  EXPECT_EQ(panel_host_.toasts.back(), Tr("chat.ai_queue.image_busy"));
+  send_result_ = AgentTurnController::ImageSend::BusyHere;
+  panel_.Send();
+  EXPECT_EQ(panel_host_.toasts.back(), Tr("chat.ai_queue.image_busy_here"));
+  send_result_ = AgentTurnController::ImageSend::Unavailable;
+  panel_.Send();
+  EXPECT_TRUE(panel_.View().error) << "no assistant: the error state and the support button";
+  EXPECT_TRUE(panel_.View().has_picture) << "the buttons stay";
+}
+
+TEST_F(AskAiInputRowTest, TheSettingsQuestionMarkHasNoCameraNorAttachmentAndNoPicture) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  panel_.PickPicture(false);
+  ASSERT_TRUE(panel_.View().has_picture);
+  ASSERT_TRUE(panel_.OpenOnce("「发送崩溃报告」是什么意思？"));
+  EXPECT_FALSE(panel_.View().show_media);
+  EXPECT_FALSE(panel_.View().has_picture) << "a picture waiting in the shared mode is not shown here";
+  panel_.PickPicture(true);
+  EXPECT_EQ(captures_, 0);
+  panel_.SetDraftForTest("and more?");
+  panel_.Send();
+  EXPECT_TRUE(sends_.empty()) << "a one-off is words only";
+  panel_host_.AskAiCloseSheet(0);
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  EXPECT_TRUE(panel_.View().show_media);
+  EXPECT_TRUE(panel_.View().has_picture) << "the shared mode's picture is still waiting";
+}
+
+TEST_F(AskAiInputRowTest, ThePanelPreparesThroughTheChatsOneAndAHalfMegabytePath) {
+  // The panel adds no size rule of its own: it prepares with PrepareAiImageFromFile's defaults (<= 1.5 MB, long edge
+  // 2048, metadata dropped) through AgentTurnController::PrepareAiImage.
+  const std::string header = ReadSource("src/foundation/platform/AiImagePrep.h");
+  EXPECT_NE(header.find("size_t max_bytes = 1536u * 1024u"), std::string::npos);
+  const std::string controller = ReadSource("src/gui/chat/AgentTurnController.cpp");
+  EXPECT_NE(Body(controller, "Roe<PreparedDraft> PrepareAiImageDraft(").find("PrepareAiImageFromFile(path)"),
+            std::string::npos);
+  EXPECT_NE(Body(controller, "void AgentTurnController::PrepareAiImage(").find("PrepareAiImageDraft(path"),
+            std::string::npos);
+  const std::string panel = ReadSource("src/gui/chat/AskAiPanel.cpp");
+  EXPECT_EQ(panel.find("1536"), std::string::npos);
+}
+
+TEST(AskAiInputRowSourceTest, TheRowIsCameraAttachmentInputMicrophone) {
+  const std::string rml = ReadSource("assets/views/ask_ai.rml");
+  const size_t camera = rml.find("ask_ai_camera()");
+  const size_t attach = rml.find("ask_ai_attach()");
+  const size_t input = rml.find("id=\"ask-ai-input\"");
+  const size_t mic = rml.find("ask_ai_mic()");
+  ASSERT_NE(camera, std::string::npos);
+  ASSERT_NE(attach, std::string::npos);
+  ASSERT_NE(input, std::string::npos);
+  ASSERT_NE(mic, std::string::npos);
+  EXPECT_LT(camera, attach);
+  EXPECT_LT(attach, input);
+  EXPECT_LT(input, mic);
+  // Camera and attachment only where media shows; the microphone gives way to Send once there is something to send.
+  EXPECT_NE(rml.substr(rml.rfind("<button", camera), camera - rml.rfind("<button", camera)).find("data-if=\"show_media\""),
+            std::string::npos);
+  EXPECT_NE(rml.substr(rml.rfind("<button", mic), mic - rml.rfind("<button", mic)).find("show_mic"), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"draft != '' || has_picture\""), std::string::npos);
+  const std::string rcss = ReadSource("assets/themes/components.rcss");
+  EXPECT_NE(rcss.find(".ask-ai-send {"), std::string::npos);
 }
 
 // A permission card tapped in the panel belongs to the panel's AI chat: a stale one is rewritten there, never in the
