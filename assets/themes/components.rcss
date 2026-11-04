@@ -9358,6 +9358,7 @@ input.checkbox {
 /* Pushed pages (Kenneth 2026-11-04/05, PLAN-ui-refresh-impl 原话 71, 78, 80; NavBarCollapseModel): a settings page,
    a pushed page over it (Change PIN, a choice page) and the blocked list open with a 28dp title at the top of their
    content, under a slim, clear bar (back arrow, "?"); the title scrolls with the content (no small title in the bar).
+   The contact / member page has no title at all (原话 80): its bar holds only the back arrow.
    Scrolled away from the top the bar slides up out of view, back towards the top it slides back
    (.nav-bar-hidden on the page, .nav-bar-host); shown over content (.nav-bar-scrolled) it has its material and fade.
    Page sheets keep their centred title row (the large title shows only on the pushed page). */
