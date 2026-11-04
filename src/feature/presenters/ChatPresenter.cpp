@@ -910,6 +910,55 @@ CloseChatPlan ChatPresenter::PlanClose(const std::string& thread_id) {
   return plan;
 }
 
+OwnerLeaveSheet BuildOwnerLeaveSheet(const std::string& thread_id, const CloseChatPlan& plan,
+                                     const std::function<std::string(const std::string&)>& name_of) {
+  OwnerLeaveSheet sheet;
+  if (plan.kind != CloseChatPlan::Kind::LeaveAsOwner && plan.kind != CloseChatPlan::Kind::Dissolve) {
+    return sheet;
+  }
+  sheet.thread_id = thread_id;
+  sheet.group_id = plan.group_id;
+  for (const std::string& identity : plan.successors) {
+    std::string name = name_of ? name_of(identity) : std::string();
+    sheet.candidates.push_back({identity, name.empty() ? ShortRelayId(identity) : name});
+  }
+  std::stable_sort(sheet.candidates.begin(), sheet.candidates.end(),
+                   [](const OwnerLeaveCandidate& a, const OwnerLeaveCandidate& b) { return a.name < b.name; });
+  return sheet;
+}
+
+std::string HandOverConfirmText(const std::string& name) {
+  return Tr("group_leave.confirm", {{"name", name}});
+}
+
+std::string HandOverGoneText(const std::string& name) {
+  return Tr("group_leave.gone", {{"name", name}});
+}
+
+bool HandOverStillPossible(const CloseChatPlan& plan, const std::string& successor) {
+  return plan.kind == CloseChatPlan::Kind::LeaveAsOwner &&
+         std::find(plan.successors.begin(), plan.successors.end(), successor) != plan.successors.end();
+}
+
+OwnerLeaveSheet ChatPresenter::OwnerLeaveSheetOf(const std::string& thread_id) {
+  if (!facade_) {
+    return {};
+  }
+  return BuildOwnerLeaveSheet(thread_id, PlanClose(thread_id), [this](const std::string& identity) {
+    // The name the member list shows: the contact's, else the nickname on their card.
+    if (auto contact = facade_->FindContactByIdentity(identity, mesh::ContactIdKind::Account); contact && *contact) {
+      if (std::string title = FormatContactTitle(**contact); !title.empty()) {
+        return title;
+      }
+    }
+    return facade_->KeptCardNickname(identity);
+  });
+}
+
+bool ChatPresenter::CanHandOverTo(const std::string& thread_id, const std::string& successor) {
+  return facade_ && HandOverStillPossible(PlanClose(thread_id), successor);
+}
+
 Roe<void> ChatPresenter::CloseThread(const std::string& thread_id) {
   if (!facade_) {
     return Error("Messaging not ready");

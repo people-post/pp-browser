@@ -86,6 +86,36 @@ struct CloseChatPlan {
 };
 const char* CloseChatPlanKindName(CloseChatPlan::Kind kind);
 
+/** Someone the owner may hand the group to when leaving (reachable, on the roster, not this device). */
+struct OwnerLeaveCandidate {
+  std::string identity;
+  std::string name;
+
+  bool operator==(const OwnerLeaveCandidate&) const = default;
+};
+
+/**
+ * The phone's "choose a new owner" sheet (DEV/PLAN-ui-batch8-group-pages.md 3). Empty `thread_id`: the owner is not
+ * leaving this chat (not a group, not the owner, dissolved). No candidates: nobody can take over now, so the sheet
+ * offers only Dissolve.
+ */
+struct OwnerLeaveSheet {
+  std::string thread_id;
+  std::string group_id;
+  std::vector<OwnerLeaveCandidate> candidates;
+
+  bool operator==(const OwnerLeaveSheet&) const = default;
+};
+/** From the close plan (LeaveAsOwner or Dissolve), each successor named by `name_of`, sorted by name. */
+OwnerLeaveSheet BuildOwnerLeaveSheet(const std::string& thread_id, const CloseChatPlan& plan,
+                                     const std::function<std::string(const std::string& identity)>& name_of);
+/** The confirm, asked once after a pick: "Make {name} the owner and exit the group?". */
+std::string HandOverConfirmText(const std::string& name);
+/** The one picked left or went out of reach meanwhile: "{name} is no longer in the group. Choose someone else." */
+std::string HandOverGoneText(const std::string& name);
+/** `successor` can still take the group over, by a close plan read now. */
+bool HandOverStillPossible(const CloseChatPlan& plan, const std::string& successor);
+
 /** A group's side of the open chat's peer sheet. */
 struct ChatGroupSheet {
   /** This device owns the group. */
@@ -291,6 +321,10 @@ public:
   /** G016: the owner dissolves the group for everyone. The chat stays (read-only), so nothing is closed. */
   Roe<void> DissolveGroup(const std::string& group_id);
   Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
+  /** The owner's "choose a new owner" sheet for `thread_id`, read now (BuildOwnerLeaveSheet). */
+  OwnerLeaveSheet OwnerLeaveSheetOf(const std::string& thread_id);
+  /** `successor` can still take `thread_id`'s group over (asked again right before handing it over). */
+  bool CanHandOverTo(const std::string& thread_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
   std::optional<ThreadLocalPrefs> PrefsOf(const std::string& thread_id);

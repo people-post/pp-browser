@@ -23,6 +23,7 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/GroupInfoSheet.h"
+#include "gui/chat/GroupLeaveSheet.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/chat/HeldAgentSend.h"
@@ -80,7 +81,8 @@ class ChatController : public Module,
                        private AgentTurnHost,
                        private ChatMenusHost,
                        private AskAiPanelHost,
-                       private GroupInfoSheetHost {
+                       private GroupInfoSheetHost,
+                       private GroupLeaveSheetHost {
 public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
@@ -432,6 +434,19 @@ private:
   void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) override;
   void GroupInfoLeave(const std::string& thread_id) override;
   void GroupInfoDissolve(const std::string& group_id) override;
+  // The owner's "choose a new owner" sheet (GroupLeaveSheetHost).
+  OwnerLeaveSheet GroupLeaveRead(const std::string& thread_id) override { return presenter_.OwnerLeaveSheetOf(thread_id); }
+  int GroupLeavePushSheet(const PaneSpec& spec) override { return GroupInfoPushSheet(spec); }
+  void GroupLeaveCloseSheet(int layer_id) override { GroupInfoCloseSheet(layer_id); }
+  bool GroupLeaveSheetOpen(int layer_id) const override { return GroupInfoSheetOpen(layer_id); }
+  void GroupLeaveConfirm(const std::string& message, std::function<void(bool ok)> done) override;
+  bool GroupLeaveStillPossible(const std::string& thread_id, const std::string& identity) override {
+    return presenter_.CanHandOverTo(thread_id, identity);
+  }
+  void GroupLeaveHandOver(const std::string& thread_id, const std::string& group_id,
+                          const std::string& identity) override;
+  void GroupLeaveDissolve(const std::string& group_id) override { DissolveGroupAfterConfirm(group_id); }
+  void GroupLeaveToast(const std::string& text) override { ShowToast(text); }
   void WireMessagingBindings();
   void WithSecrets(std::function<void()> action);
 
@@ -507,6 +522,8 @@ private:
   ChatPeerSheet peer_sheet_{*this, presenter_, chat_, contacts_notify_, people_picker_notify_};
   /** The phone's group info sheet over a group chat (DEV/PLAN-ui-batch8-group-pages.md 1). */
   GroupInfoSheet group_info_{*this};
+  /** The owner leaving a group on a phone: choose a new owner (DEV/PLAN-ui-batch8-group-pages.md 3). */
+  GroupLeaveSheet group_leave_{*this};
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
   /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */

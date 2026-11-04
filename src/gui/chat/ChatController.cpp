@@ -826,6 +826,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     });
     return;
   case CloseChatPlan::Kind::Dissolve:
+    // Phones: the owner's sheet says nobody can take over and offers Dissolve (with its own confirm).
+    if (AskAiCompact() && group_leave_.Open(thread_id)) {
+      return;
+    }
     DissolveGroupAfterConfirm(group_id);
     return;
   case CloseChatPlan::Kind::Leave:
@@ -834,6 +838,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     });
     return;
   case CloseChatPlan::Kind::LeaveAsOwner:
+    // Phones: choose the new owner in a sheet; the one confirm comes after the pick, naming them.
+    if (AskAiCompact() && group_leave_.Open(thread_id)) {
+      return;
+    }
     confirm_then("chat.group.leave_title", "chat.group.leave_owner_confirm",
                  [this, thread_id, group_id, successors = plan.successors]() {
                    std::vector<ContextMenuAction> actions;
@@ -3508,6 +3516,9 @@ bool ChatController::Setup(ui::Context* context) {
   if (!group_info_.Register(context)) {
     return false;
   }
+  if (!group_leave_.Register(context)) {
+    return false;
+  }
   if constexpr (kUiDemoBuild) {
     ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
   }
@@ -3682,6 +3693,7 @@ void ChatController::Update() {
   agent_.Tick();  // the streamed row, a held send, the agent's events
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
+  group_leave_.Tick(std::chrono::steady_clock::now());
 
   if (search_.view().open) {
     const auto search_now = std::chrono::steady_clock::now();
@@ -4138,6 +4150,17 @@ void ChatController::GroupInfoLeave(const std::string& thread_id) {
 
 void ChatController::GroupInfoDissolve(const std::string& group_id) {
   DissolveGroupAfterConfirm(group_id);
+}
+
+void ChatController::GroupLeaveConfirm(const std::string& message, std::function<void(bool ok)> done) {
+  ShowConfirm(Tr("chat.group.leave_title"), message, std::move(done), /*destructive=*/true);
+}
+
+void ChatController::GroupLeaveHandOver(const std::string& thread_id, const std::string& group_id,
+                                        const std::string& identity) {
+  CloseChatWith(
+      thread_id, [this, thread_id, group_id, identity]() { return presenter_.HandOverAndClose(thread_id, group_id, identity); },
+      /*show_error_text=*/true);
 }
 
 void ChatController::ShowThreadInChat(const std::string& thread_id) {

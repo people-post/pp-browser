@@ -27,6 +27,7 @@ pp_browser_add_feature_library(pp_gui
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
     chat/GroupInfoSheet.cpp
+    chat/GroupLeaveSheet.cpp
     chat/WorkingSetController.cpp
     ClientCompatController.cpp
     contacts/ContactsChromeSync.cpp
