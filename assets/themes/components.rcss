@@ -7868,11 +7868,20 @@ input.checkbox {
   border-radius: 12dp;
 }
 
-/* Inline, so the card's shrink-to-fit width counts it (a block picture counted as 0 and spilled out of its frame);
-   the engine keeps its ratio under max-width / max-height. */
-.shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
+/* The engine does not round an <img> itself, so the picture sits in a clip box (size set inline from the fitted size)
+   whose rounded corners and overflow:hidden cut it: 12dp frame minus the 3dp padding = 9dp. The box is inline, so the
+   card's shrink-to-fit width counts it (a block one counted as 0 and spilled out of its frame). */
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip {
   display: inline-block;
   vertical-align: top;
+  max-width: 200dp;
+  max-height: 240dp;
+  overflow: hidden;
+  border-radius: 9dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
+  display: block;
   max-width: 200dp;
   max-height: 240dp;
   margin: 0;

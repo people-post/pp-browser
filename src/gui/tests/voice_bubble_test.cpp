@@ -182,6 +182,11 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
   };
   const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
   EXPECT_NE(rml.find("width=\"180\" height=\"240\""), std::string::npos) << rml;
+  // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:180dp;height:240dp\"><img "),
+            std::string::npos)
+      << rml;
+  EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
   // Without a known size the picture is left to the stylesheet's limits.
   const std::string unknown = Render(Attachment("p4", "x.jpg", "image/jpeg", 50000), Facts(true));
   EXPECT_NE(unknown.find("class=\"chat-attachment-image\" src=\"/tmp/x\" data-event-click="), std::string::npos)

@@ -329,12 +329,18 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   if (inline_image) {
     // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
-    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
-    if (const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height); fit.width_dp > 0) {
+    // The engine does not round an <img>, so a clip box with the same size and rounded corners holds it.
+    const PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
+    html += "<div class=\"chat-attachment-clip\"";
+    if (fit.width_dp > 0) {
+      html += " style=\"width:" + std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\"";
+    }
+    html += "><img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"";
+    if (fit.width_dp > 0) {
       html += " width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"";
     }
     html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
-            "')\"/>";
+            "')\"/></div>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;
