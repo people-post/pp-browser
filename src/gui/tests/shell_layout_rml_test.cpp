@@ -1,4 +1,5 @@
 #include "gui/shell/ShellLayoutRml.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
@@ -115,6 +116,9 @@ TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoo
 }
 
 TEST(ShellLayoutRmlTest, ADestructiveConfirmCarriesTheDangerClassAndASplitButtonPair) {
+  // The buttons' default labels are words ("OK", "Cancel"); with no strings loaded they would be the long keys and
+  // stack, so the result would depend on which test loaded the strings first.
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.dialog.active = true;
   state.dialog.kind = OverlayKind::Confirm;
