@@ -211,6 +211,9 @@ std::string ShellLayoutRml::TransientLayer() const {
       << "\" id=\"shell-transient-layer\" data-model=\"window\">";
   out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
+  if (titled) {
+    out << "<div class=\"nav-bar-bg\"></div>";
+  }
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
          "<svg src=\"../icons/v2/back.svg\"></svg>"
          "</button>";

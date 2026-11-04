@@ -9443,11 +9443,6 @@ input.checkbox {
   padding-top: 48dp;
 }
 
-.shell-layer-compact .nav-title-host .settings-detail-header,
-.shell-layer-transient.nav-title-host .shell-transient-chrome {
-  transition: background-color 0.2s cubic-out;
-}
-
 .shell-layer-compact .nav-title-host .settings-header-title,
 .shell-layer-compact .nav-title-host .settings-detail-header .bar-fade,
 .shell-layer-transient.nav-title-host .shell-transient-title,
@@ -9463,15 +9458,43 @@ input.checkbox {
   opacity: 1;
 }
 
-/* Frosted only once the bar shows (at rest it is clear, nothing is under it). */
+/* The bar's material is its own first child (.nav-bar-bg), like the tab pages' .pane-nav-bg: it fades in once the
+   large title has gone and is frosted only then. The engine draws no backdrop blur for a bar that carries a z-index and
+   children itself, so the bar stays clear and the child carries colour and blur. */
+.nav-bar-bg {
+  display: none;
+}
+
 .shell-nav-page--frost .nav-title-host .settings-detail-header,
 .shell-layer-transient.nav-title-host .shell-transient-chrome.surface-chrome--frost {
   backdrop-filter: none;
 }
 
-.shell-nav-page--frost .nav-title-host.nav-title-collapsed .settings-detail-header,
-.shell-layer-transient.nav-title-host.nav-title-collapsed .shell-transient-chrome.surface-chrome--frost {
+.shell-layer-compact .nav-title-host .nav-bar-bg,
+.shell-layer-compact.nav-title-host .nav-bar-bg {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-layer-compact .nav-title-host.nav-title-collapsed .nav-bar-bg,
+.shell-layer-compact.nav-title-host.nav-title-collapsed .nav-bar-bg {
+  opacity: 1;
+}
+
+.shell-nav-page--frost .nav-title-host.nav-title-collapsed .nav-bar-bg,
+.shell-layer-transient.nav-title-host.nav-title-collapsed .surface-chrome--frost .nav-bar-bg {
   backdrop-filter: blur(20px);
+}
+
+/* Above the material (a static button would paint under the positioned child). */
+.shell-layer-transient.nav-title-host .shell-transient-chrome .shell-back-btn {
+  position: relative;
 }
 
 .shell-layer-compact .settings-section {
@@ -9906,6 +9929,8 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .settings-section--grouped .group-actions {
   display: flex;
   flex-direction: row;
+  /* Not .settings-toggle-row's 100%: with the 16dp margins the row ran 32dp past the screen and cut off its "?". */
+  width: auto;
   margin: 16dp 16dp 0 16dp;
   gap: 8dp;
 }

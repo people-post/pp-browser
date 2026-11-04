@@ -778,20 +778,19 @@ select selectbox option:hover {
   background-color: {{x-bar-blur}};
 }
 
-/* A pushed page with a large title: its bar is clear at rest (the bar colour at 0%, so the fade-in has no grey cast)
-   and takes the bar colour once the large title has scrolled under it; solid with Transparency off. */
+/* A pushed page with a large title: the bar itself is clear; its material child (.nav-bar-bg, faded in once the large
+   title has scrolled under the bar) is the bar colour, frosted with Transparency on, solid with it off. */
 .shell-layer-compact .nav-title-host .settings-detail-header,
 .shell-layer-transient.shell-layer-compact.nav-title-host .shell-transient-chrome {
-  background-color: {{x-bar-fade}};
+  background-color: transparent;
 }
 
-.shell-layer-compact .nav-title-host.nav-title-collapsed .settings-detail-header,
-.shell-layer-transient.shell-layer-compact.nav-title-host.nav-title-collapsed .shell-transient-chrome {
+.nav-bar-bg {
   background-color: {{x-bar}};
 }
 
-.shell-nav-page--frost .nav-title-host.nav-title-collapsed .settings-detail-header,
-.shell-layer-transient.shell-layer-compact.nav-title-host.nav-title-collapsed .shell-transient-chrome.surface-chrome--frost {
+.shell-nav-page--frost .nav-title-host .nav-bar-bg,
+.shell-layer-transient.nav-title-host .surface-chrome--frost .nav-bar-bg {
   background-color: {{x-bar-blur}};
 }
 

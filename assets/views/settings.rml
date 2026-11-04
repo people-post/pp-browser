@@ -169,6 +169,7 @@
        bar (nav-title-*, ShellNavBarScroll). -->
   <div data-if="show_detail" class="settings-detail-view nav-title-host stack" id="settings-detail-view">
     <div class="settings-detail-header row">
+      <div class="nav-bar-bg"></div>
       <button class="settings-back-btn" type="button" data-event-click="back_to_list()">
         <svg class="settings-back-old" src="../icons/back.svg" width="18" height="18"></svg>
         <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
@@ -189,6 +190,7 @@
   <div data-if="show_detail && security_page != ''" class="settings-detail-view settings-subpage-view nav-title-host stack"
        id="settings-subpage-view">
     <div class="settings-detail-header row">
+      <div class="nav-bar-bg"></div>
       <button class="settings-back-btn" type="button" data-event-click="close_security_page()">
         <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
       </button>
