@@ -345,15 +345,18 @@ jobs:
         run: |
           cmake -B build -S . -DCMAKE_BUILD_TYPE=Release \
             -DPP_BROWSER_COMPILER_CACHE=ON \
-            -DPP_BROWSER_PACKAGED_BUILD=ON \
-            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/stage/pp-browser-linux-x86_64"
+            -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
         run: cmake --build build --target pp-browser -j 4
 
       - name: Install and pack
         run: |
-          cmake --install build --strip
+          # `cmake --install` also runs the dependencies' install rules, whose libraries this job does not build.
+          dest=stage/pp-browser-linux-x86_64
+          install -D -s build/src/app/pp-browser "$dest/bin/pp-browser"
+          mkdir -p "$dest/share/pp-browser"
+          cp -r assets "$dest/share/pp-browser/assets"
           tar -C stage -czf "pp-browser-linux-x86_64-${GITHUB_SHA::8}.tar.gz" pp-browser-linux-x86_64
 
       - name: Upload artifact
