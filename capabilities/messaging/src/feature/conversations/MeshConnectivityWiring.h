@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/people/RelaySetRules.h"
 #include "common/Lifetime.h"
 #include "mesh/types/MeshHopTypes.h"
 #include "mesh/connectivity/MeshConnectivity.h"
@@ -28,6 +29,10 @@ struct MeshConnectivityWiringInputs {
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** False once a seed dial failed: the rendezvous surface and the park skip org seeds. */
   std::function<bool()> seed_dial_ok;
+  /** N032: this profile's verdicts on mesh nodes (the current profile's; never null when set). */
+  std::function<std::shared_ptr<MeshNodeReputation>()> node_reputation;
+  /** N032: what was seen of a node itself (its channel-0 extension, a dial that met another wire version). */
+  std::function<ObservedNode(const std::string& peer_id)> observe_node;
   std::function<void(const std::string& peer_id)> note_lan_peer_id;
   std::function<void(const std::string& key, const std::string& multiaddr)> register_direct_endpoint;
 };

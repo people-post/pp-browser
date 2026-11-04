@@ -215,6 +215,10 @@ Enter an **API key** directly in Me → Assistant (kept in the profile's `secret
 
 Who may connect to this device directly and so learn its IP address: `everyone` | `contacts` (default) | `friendly` | `nobody` (always relay). Blocked contacts never; the Node role is always `everyone`. Me → Network → **Direct connections**; the settings assistant's `set_mesh_capabilities` takes it too. Applies at once (no mesh restart). Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy). The hard-lab call probe discloses to `everyone` unless `PP_PROBE_DIRECT_CONNECTIONS` says otherwise.
 
+### Preferred minimum node version (`mesh.preferred_min_node_version`)
+
+Default empty (no floor). A relay whose directory row says it runs an older pp-node than this, or says nothing, is tried after the others for parking, circuits and call media hops — never dropped ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)). Compared on `MAJOR.MINOR.PATCH`; a pre-release suffix is ignored. Raise it as a node rollout progresses. Behaviour: [NETWORKING § Relay choice](../architecture/NETWORKING.md).
+
 ### Trusted relays only (`mesh.trusted_relays_only`)
 
 Default `false`. When `true`, only the configured org seeds (`bootstrap_peers` after normalization, not directory nodes merged into them) and Friendly contacts' nodes relay, park, introduce punches or carry call media for this device. Me → Network → **Trusted relays only**; `set_mesh_capabilities` takes it too. Changing it rewires the mesh. Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy).

@@ -264,9 +264,25 @@ std::string MeshDirectoryNodesPath(const std::string& profile_data_dir) {
   return (std::filesystem::path(profile_data_dir) / "mesh_directory_nodes.json").string();
 }
 
+std::string MeshNodeReputationPath(const std::string& profile_data_dir) {
+  return (std::filesystem::path(profile_data_dir) / "mesh_node_reputation.json").string();
+}
+
+std::shared_ptr<MeshNodeReputation> ProductMesh::NodeReputation() const {
+  std::lock_guard lock(reputation_mu_);
+  return node_reputation_;
+}
+
 void ProductMesh::StartDirectoryCache(mesh::IDirectoryClient& directory, const std::string& profile_data_dir,
                                       std::function<void()> on_updated) {
   StopDirectoryCache();
+  {
+    auto reputation = std::make_shared<MeshNodeReputation>();
+    reputation->SetPersistPath(MeshNodeReputationPath(profile_data_dir));
+    reputation->Load();
+    std::lock_guard lock(reputation_mu_);
+    node_reputation_ = std::move(reputation);
+  }
   mesh::IDirectoryClient* client = &directory;
   directory_cache_ = std::make_unique<mesh::MeshDirectoryCache>([client]() -> Roe<std::vector<mesh::MeshDirectoryNode>> {
     // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
@@ -329,6 +345,8 @@ void ProductMesh::MaybeRefreshDirectory() {
 
 void ProductMesh::StopDirectoryCache() {
   directory_cache_.reset();
+  std::lock_guard lock(reputation_mu_);
+  node_reputation_ = std::make_shared<MeshNodeReputation>(); // the closed profile's stays on its disk
 }
 
 void ProductMesh::StopLanDiscovery() {
