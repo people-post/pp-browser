@@ -524,3 +524,61 @@ See [V027](../p2p-av-calls/DECISIONS.md#v027--mobile-call-scoped-listen-on-wi-fi
 **Rationale:** Reporting liveness to one server makes it the authority on which nodes exist, hands it every node's uptime and egress address, and drops healthy nodes that cannot reach it — the opposite of N029, where the HTTP directory is an interim phone book and the chain the final authority. A self-proving record (the account-card pattern) can be served by any directory, checked by any client, and later anchored in the chain without change.
 
 **Alternatives rejected:** Heartbeat to every configured directory provider (multiplies the exposure); the directory probing nodes (better than pings, but liveness still lives in one place); liveness in the DHT (N028 keeps the DHT to PeerId → address).
+
+## N032 — Node versions: claims only exclude, verification promotes
+
+**Date:** 2026-11-04  
+**Status:** Accepted (design), not started. Until built, [SERVICE_ENDPOINTS § Directory and profile](../../docs/contracts/SERVICE_ENDPOINTS.md#directory-and-profile) stands: no version in the directory.  
+**Amends:** N027 (a `mesh_node` row carries its wire and node versions); N031 (the signed node record carries them too).  
+**Cross-link:** [A029](../adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) (wire v2 is the first break with nodes of both versions live).
+
+**Context:** Wire breaks will recur, and so will a mesh with nodes of two versions. Today nothing says a node's version before a link exists:
+- a `mesh_node` registration and `/v1/mesh/nodes` row carry `entity_kind` and four capability flags (`MeshCapabilitiesAd`);
+- channel 0's `CapabilityPayload` carries the peer id, listen addresses and protocol ids;
+- amp drops a packet of an unknown wire version silently (`WireCodec::PeekType`).
+
+So a client dials an incompatible node and learns only when its handshake times out: about 6 s, as a v4.0.0 node did against the v3.2.0 seeds (2026-11-03).
+
+Versions and features are a node's own claims, and a dishonest node gains by looking compatible and new: that gets it dialed. So the client never takes a claim as a reason to prefer a node.
+
+**Decision:**
+
+*What a node says:*
+1. **A node advertises `amp_wire` (integer), `node_version` (semver) and `features` (strings: what it serves, such as `hop_data_lane`)** in its registration and `/v1/mesh/nodes` row, in its signed node record once N031 ships, and in channel 0's `CapabilityPayload` (a new codec version). A row without them is "unknown" and is dialed as today.
+2. **A version negotiation packet.** A node that receives a first packet in a wire version it does not speak answers with one small packet listing the versions it does (QUIC's model).
+   - Its format is fixed across every future wire version: a reserved first byte, the dialer's association id, then the versions.
+   - It is sent only in reply to a datagram at least as large, and rate-limited, so it amplifies nothing.
+   - It is unauthenticated, so it can only mean "stop dialing": the dialer fails at once with `VersionMismatch`, and the dial book skips that peer until its listing changes. A build speaks one wire version, so there is nothing to downgrade to.
+   - Specified in pp-cpp-amp, and shipped before the next wire break.
+3. **At the next wire break, addresses carry the wire version** (`/udp/<port>/adp/<wire>/p2p/<id>`). Every address source then filters itself: the directory, contacts, mDNS, built-in seeds, channel-0 listen addresses. Amp already skips an address it cannot parse.
+
+*How a client uses it:*
+
+4. **Claims only exclude.** A claimed version or feature may remove a node from the candidates, for a wire mismatch or a missing feature the path needs. It never ranks a node higher.
+5. **Only verification promotes.**
+   - A completed handshake proves the wire version.
+   - Channel 0's protocol list confirms what the node offers.
+   - A feature counts once it worked in use; the hop data lane, for example, must open.
+   - Preference comes from those verified facts plus measured quality: handshake success, round trip, relay success, media delivered. `node_version` is a demotion below a preferred floor (`preferred_min_node_version`, from config or the directory, raised as a rollout progresses), applied after reachability, scope and quality — never a newest-first sort, which would pile every client onto the first upgraded node (RELAY_SCOPE's concentration rule).
+6. **A contradicted claim costs its claimant.** A row saying `amp_wire 2` whose handshake fails on version, or a listed feature whose protocol is missing or fails, demotes that node identity and its operator account for a long time. A buggy honest node gets the same treatment.
+7. **Diversity against fake identities and eclipse.**
+   - Nodes count by operator (`account_id`): at most one relay per account in a set of relays or parking spots.
+   - Every set keeps an anchor: an org seed or a contact's node.
+   - Unknown public nodes fill at most part of a set, so any number of fake nodes cannot surround a client.
+8. **Reputation stays local.** Each profile scores node identities from outcomes it saw itself. Bad outcomes decay slowly and good ones need repeats. Scores are not shared between clients: shared reputation is its own target, for fake ratings.
+
+**Rationale:**
+- What a fake node can do: lie about version, features or capacity; register many identities, since registration is a free signed challenge; drop or degrade what it carries; watch metadata.
+- What it cannot do: read or change content (sealed end to end), pass as another node (the handshake proves the PeerId's key), or fake the wire version (the handshake proves it).
+- So claims are safe as a filter, where lying upward gets nothing, and verified facts are safe as a preference. Advertising versions before a link is what lets a client skip incompatible nodes without paying a handshake timeout for each.
+
+**Alternatives rejected:**
+- Trusting directory claims for ranking: the first fake node claiming the newest version would draw the traffic.
+- Versions in channel 0 only: too late, as the dial has already been paid for.
+- Newest-first ranking: a stampede onto the first upgraded nodes during every rollout.
+- Shared reputation: a new target, for fake ratings.
+
+**Follow-ups:**
+- Limiting what a chosen bad node learns: random per-call stream ids (a privacy decision; A029 put it on hold).
+- Per-hop timeouts and leaving an underperforming path, already in call-path-resilience for calls, extended to the other relay uses.
+- An org-signed "verified" mark: the directory or the seeds dial a node before listing it, and attest its reachability and wire version. Clients would weigh it above the node's own claim; nothing above depends on it.
