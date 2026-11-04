@@ -214,22 +214,20 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
           ? (now_ms - v.engine.last_rx_audio_ms)
           : -1;
   std::ostringstream out;
-  out << "media_health call=" << call_id << " path=" << v.path_kind
-      << " quality=" << static_cast<int>(v.quality) << " asymmetry=" << static_cast<int>(v.asymmetry)
-      << " streams=" << v.engine.stream_count << " rx_frames=" << v.engine.rx_audio_frames
-      << " tx_frames=" << v.engine.tx_audio_frames << " rx_video=" << v.engine.rx_video_frames
-      << " tx_video=" << v.engine.tx_video_frames << " video_bps=" << v.engine.video_target_bps
-      << " underrun=" << v.engine.playout_underruns
-      << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
+  out << "media_health call=" << call_id << " path=" << v.path_kind << " quality=" << static_cast<int>(v.quality)
+      << " asymmetry=" << static_cast<int>(v.asymmetry) << " streams=" << v.engine.stream_count
+      << " rx_frames=" << v.engine.rx_audio_frames << " tx_frames=" << v.engine.tx_audio_frames
+      << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
+      << " preview=" << v.engine.preview_frames << " enc_ms=" << static_cast<int64_t>(v.engine.encode_ms_avg) << "/"
+      << static_cast<int64_t>(v.engine.encode_ms_max) << " video_bps=" << v.engine.video_target_bps
+      << " underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
       << " audio_io=" << v.engine.audio_io << " io_underrun=" << v.engine.io_underruns
       << " jb_target_ms=" << v.engine.jitter_target_ms << " jb_depth_ms=" << v.engine.jitter_depth_ms
-      << " jb_silence_drops=" << v.engine.jitter_silence_drops
-      << " jb_speech_drops=" << v.engine.jitter_speech_drops
-      << " pressure=" << v.engine.path_pressure
-      << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
-      << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
-      << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
-      << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level
+      << " jb_silence_drops=" << v.engine.jitter_silence_drops << " jb_speech_drops=" << v.engine.jitter_speech_drops
+      << " pressure=" << v.engine.path_pressure << " hop_pressure=" << v.hop.path_pressure
+      << " opus_bps=" << v.engine.opus_target_bps << " tx_drops=" << v.engine.outbound_drops
+      << " hop_drops_rate=" << v.hop.drops_rate << " hop_drops_queue=" << v.hop.drops_queue
+      << " hop_drops_ceiling=" << v.hop.drops_ceiling << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level
       << " peer_lvl=" << v.engine.remote_level;
   if (v.link.available) {
     out << " link_rtt_ms=" << v.link.rtt_ms << " link_resend_pct=" << v.link.resend_pct;
