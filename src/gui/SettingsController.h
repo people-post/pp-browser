@@ -6,6 +6,7 @@
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
 #include "gui/SettingsCasLibrary.h"
+#include "gui/SettingsChoicePage.h"
 #include "gui/SettingsHost.h"
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsOwnDevices.h"
@@ -284,6 +285,14 @@ private:
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
+  /**
+   * A row that picks one value: on a phone the choice page (SettingsChoicePage, pushed like Security's pages), on the
+   * desktop the float menu under the row as before. `apply` is the same path for both.
+   */
+  void ShowChoice(ui::Event& ev, const std::string& kind, const std::string& title, const std::string& foot,
+                  const std::string& help_topic, std::vector<SettingsChoicePage::Option> options,
+                  std::function<void(const std::string&)> apply);
+  void OnPickChoice(const std::string& id);
   void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(ui::Event& ev);
@@ -311,9 +320,17 @@ private:
   ui::String selected_id_;
   ui::String selected_title_;
   bool show_detail_ = false;
-  /** Phones: the Security page pushed over the section ("" none, "change_pin", "transfer") and its title. */
+  /**
+   * Phones: the page pushed over the section ("" none; Security's "change_pin", "transfer"; "choice", a pick-one-value
+   * page of any section) and its title.
+   */
   ui::String security_page_;
   ui::String security_page_title_;
+  SettingsChoicePage choice_page_;
+  ui::String choice_foot_;
+  ui::String choice_help_topic_;
+  /** Each pick schedules the page's way back; an older schedule finding a newer pick (or another page) does nothing. */
+  uint64_t choice_pop_generation_ = 0;
   /** Security's "Blocked" row: how many people are blocked (0: no number shown). */
   int blocked_count_ = 0;
   /** Me → AI assistant (phones): the AI dot's switch and its look. */

@@ -2190,6 +2190,10 @@ input.checkbox:checked {
   image-color: #0a84ff;
 }
 
+.settings-choice-check {
+  image-color: #0a84ff;
+}
+
 .context-menu-panel {
   background-color: #1c1c1e;
   border: 1dp #54545899;

@@ -41,6 +41,9 @@
 #include <ui/dom/ElementDocument.h>
 #include <ui/dom/Event.h>
 #include <ui/base/SystemInterface.h>
+
+#include <chrono>
+#include <thread>
 #include <SDL3/SDL.h>
 
 #include <filesystem>
@@ -499,6 +502,12 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       mcp_handle.RegisterMember("args_text", &McpServerRow::args_text);
       mcp_handle.RegisterMember("enabled", &McpServerRow::enabled);
     }
+    if (auto option_handle = ctor.RegisterStruct<SettingsChoicePage::Option>()) {
+      option_handle.RegisterMember("id", &SettingsChoicePage::Option::id);
+      option_handle.RegisterMember("label", &SettingsChoicePage::Option::label);
+      option_handle.RegisterMember("selected", &SettingsChoicePage::Option::selected);
+    }
+    ctor.RegisterArray<std::vector<SettingsChoicePage::Option>>();
     ctor.RegisterArray<std::vector<SectionListRow>>();
     ctor.RegisterArray<std::vector<McpServerRow>>();
     ctor.Bind("sections", &controller.sections_);
@@ -507,6 +516,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("show_detail", &controller.show_detail_);
     ctor.Bind("security_page", &controller.security_page_);
     ctor.Bind("security_page_title", &controller.security_page_title_);
+    ctor.Bind("choice_options", &controller.choice_page_.Options());
+    ctor.Bind("choice_foot", &controller.choice_foot_);
+    ctor.Bind("choice_help_topic", &controller.choice_help_topic_);
     ctor.Bind("blocked_count", &controller.blocked_count_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
@@ -616,6 +628,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("open_security_page",
                            DataEvent<std::string>([this](const std::string& page) { OpenSecurityPage(page); }));
     ctor.BindEventCallback("close_security_page", DataEvent<>([this]() { OnCloseSecurityPage(); }));
+    ctor.BindEventCallback("pick_choice", DataEvent<std::string>([this](const std::string& id) { OnPickChoice(id); }));
     ctor.BindEventCallback("open_blocked_people", DataEvent<>([this]() {
       if (commands_.open_blocked_people) {
         commands_.open_blocked_people();
@@ -692,6 +705,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "show_detail");
   host.Dirty("settings", "security_page");
   host.Dirty("settings", "security_page_title");
+  host.Dirty("settings", "choice_options");
+  host.Dirty("settings", "choice_foot");
+  host.Dirty("settings", "choice_help_topic");
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
@@ -1338,6 +1354,9 @@ void SettingsController::OnCloseSecurityPage() {
 void SettingsController::ApplyCloseSecurityPage() {
   security_page_ = "";
   security_page_title_ = "";
+  choice_page_.Close();
+  choice_foot_ = "";
+  choice_help_topic_ = "";
   status_ = "";
   AppRuntime::PostUI([this]() {
     DirtyAll();
@@ -1359,8 +1378,12 @@ void SettingsController::ResetSecurityPage() {
   }
   security_page_ = "";
   security_page_title_ = "";
+  choice_page_.Close();
+  choice_foot_ = "";
+  choice_help_topic_ = "";
   DataModelHost::Instance().Dirty("settings", "security_page");
   DataModelHost::Instance().Dirty("settings", "security_page_title");
+  DataModelHost::Instance().Dirty("settings", "choice_options");
 }
 
 void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
@@ -1402,30 +1425,73 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   FlushSection("llm");
 }
 
-void SettingsController::OnChooseTheme(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::ShowChoice(ui::Event& ev, const std::string& kind, const std::string& title,
+                                    const std::string& foot, const std::string& help_topic,
+                                    std::vector<SettingsChoicePage::Option> options,
+                                    std::function<void(const std::string&)> apply) {
+  if (!show_detail_ || !compact_layout_) {
+    // The desktop: the float menu under the row's value, as before.
+    const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+    std::vector<ContextMenuAction> actions;
+    actions.reserve(options.size());
+    for (const SettingsChoicePage::Option& option : options) {
+      const std::string id = option.id.c_str();
+      actions.push_back({.id = id,
+                         .label = option.label.c_str(),
+                         .enabled = {},
+                         .run = [apply, id]() { apply(id); },
+                         .icon = {},
+                         .danger = false,
+                         .selected = option.selected});
+    }
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+    return;
+  }
+  // Phones (Kenneth 2026-11-04): a page pushed over the section, one row per value, the current one checked.
+  log().info << "OpenChoicePage " << kind;
+  ++choice_pop_generation_;
+  choice_page_.Open(kind, title, foot, help_topic, std::move(options), std::move(apply));
+  security_page_ = "choice";
+  security_page_title_ = title.c_str();
+  choice_foot_ = foot.c_str();
+  choice_help_topic_ = help_topic.c_str();
+  status_ = "";
+  DirtyAll();
+  if (context_) {
+    context_->Update(); // the page must be in the DOM before the shell plays its push
+  }
+  if (shell_navigation_.push_local_back) {
+    shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
+  }
+}
 
+void SettingsController::OnPickChoice(const std::string& id) {
+  if (security_page_ != "choice" || !choice_page_.Pick(id)) {
+    return;
+  }
+  // The value is applied (and its row's label updated) by now; the check shows on the picked row, then the page goes.
+  DataModelHost::Instance().Dirty("settings", "choice_options");
+  const uint64_t generation = ++choice_pop_generation_;
+  // A short beat so the check is seen landing; a thread, so the wait also ends while nothing else wakes the loop.
+  std::thread([this, generation]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(SettingsChoicePage::kPopDelayMs));
+    AppRuntime::PostUI([this, generation]() {
+      if (generation == choice_pop_generation_ && security_page_ == "choice") {
+        OnCloseSecurityPage();
+      }
+    });
+  }).detach();
+}
+
+void SettingsController::OnChooseTheme(ui::Event& ev) {
   const std::string current =
       bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
-
-  static const char* kThemeIds[] = {"system", "light", "dark"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kThemeIds) {
-    const std::string theme_id = id;
-    actions.push_back({.id = theme_id,
-                       .label = ThemeDisplayLabel(theme_id),
-                       .enabled = {},
-                       .run =
-                           [this, theme_id]() {
-                             ApplyThemeChoice(theme_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == theme_id});
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"system", "light", "dark"}) {
+    options.push_back({id, ThemeDisplayLabel(id).c_str(), current == id});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "theme", Tr("settings.theme.label"), Tr("settings.theme.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyThemeChoice(id); });
 }
 
 void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
@@ -1445,45 +1511,19 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
 }
 
 void SettingsController::OnChooseLanguage(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
-
   if (!commands_.language_display_label || !commands_.available_locales) {
     log().warning << "OnChooseLanguage: locale ports not bound";
     return;
   }
 
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
-  const auto label_for = [this](const std::string& pref) {
-    return commands_.language_display_label(pref);
-  };
-
-  std::vector<ContextMenuAction> actions;
-  actions.push_back({.id = "system",
-                     .label = label_for("system"),
-                     .enabled = {},
-                     .run =
-                         [this]() {
-                           ApplyLanguageChoice("system");
-                         },
-                     .icon = {},
-                     .danger = false,
-                     .selected = current == "system"});
-
+  std::vector<SettingsChoicePage::Option> options;
+  options.push_back({"system", commands_.language_display_label("system").c_str(), current == "system"});
   for (const LocaleInfo& info : commands_.available_locales()) {
-    const std::string tag = info.tag;
-    actions.push_back({.id = tag,
-                       .label = label_for(tag),
-                       .enabled = {},
-                       .run =
-                           [this, tag]() {
-                             ApplyLanguageChoice(tag);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == tag});
+    options.push_back({info.tag.c_str(), commands_.language_display_label(info.tag).c_str(), current == info.tag});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "language", Tr("settings.language.label"), Tr("settings.language.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyLanguageChoice(id); });
 }
 
 void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
@@ -1503,22 +1543,16 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
 }
 
 void SettingsController::OnChooseBackend(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.backend_env.c_str();
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"prod", "qa", "custom"}) {
     if (std::string_view(id) == "qa" && !ui_state_.backend_qa_available) {
       continue;
     }
-    actions.push_back({.id = id,
-                       .label = BackendDisplayLabel(id),
-                       .enabled = {},
-                       .run = [this, env = std::string(id)]() { ApplyBackendChoice(env); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == id});
+    options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {},
+             std::move(options), [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
 void SettingsController::ApplyBackendChoice(const std::string& env) {
@@ -1533,22 +1567,17 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
       bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const mesh::DirectAudience audience :
        {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts, mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
     const std::string id = mesh::DirectAudienceName(audience);
-    actions.push_back({.id = id,
-                       .label = DirectConnectionsDisplayLabel(id),
-                       .enabled = {},
-                       .run = [this, id]() { ApplyDirectConnectionsChoice(id); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == id});
+    options.push_back({id.c_str(), DirectConnectionsDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "direct_connections", Tr("settings.network.direct_connections"),
+             Tr("settings.network.direct_connections.help"), "settings.network.direct_connections", std::move(options),
+             [this](const std::string& id) { ApplyDirectConnectionsChoice(id); });
 }
 
 void SettingsController::ApplyDirectConnectionsChoice(const std::string& audience) {
@@ -1564,21 +1593,14 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
 }
 
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
       bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = CallInvitePolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run = [this, policy_id]() { ApplyCallInvitePolicyChoice(policy_id); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
+    options.push_back({id, CallInvitePolicyDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "call_invite_policy", Tr("settings.security.calls"), Tr("settings.security.calls.help"), {},
+             std::move(options), [this](const std::string& id) { ApplyCallInvitePolicyChoice(id); });
 }
 
 void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) {
@@ -1594,30 +1616,16 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 }
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
-
   const std::string current = bindings_.group_invite_policy.empty()
                                   ? "contacts_only"
                                   : std::string(bindings_.group_invite_policy.c_str());
-
-  static const char* kPolicyIds[] = {"everyone", "contacts_only", "nobody"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kPolicyIds) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = GroupInvitePolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run =
-                           [this, policy_id]() {
-                             ApplyGroupInvitePolicyChoice(policy_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"everyone", "contacts_only", "nobody"}) {
+    options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "group_invite_policy", Tr("settings.security.group_invites"),
+             Tr("settings.security.group_invites.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyGroupInvitePolicyChoice(id); });
 }
 
 void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy) {
@@ -1633,28 +1641,16 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
 }
 
 void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.attachment_download_policy.empty()
                                   ? "smart"
                                   : std::string(bindings_.attachment_download_policy.c_str());
-
-  static const char* kPolicyIds[] = {"smart", "always_auto", "on_demand"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kPolicyIds) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = AttachmentDownloadPolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run =
-                           [this, policy_id]() {
-                             ApplyAttachmentDownloadPolicyChoice(policy_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"smart", "always_auto", "on_demand"}) {
+    options.push_back({id, AttachmentDownloadPolicyDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "attachment_download_policy", Tr("settings.storage.attachment_policy.label"),
+             Tr("settings.storage.attachment_policy.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyAttachmentDownloadPolicyChoice(id); });
 }
 
 void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& policy) {

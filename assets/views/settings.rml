@@ -179,7 +179,8 @@
     </div>
   </div>
 
-  <!-- Phones: a page pushed over Security (Change PIN, Move to a new device); same bar, back and swipe-back. -->
+  <!-- Phones: a page pushed over a section (Security's Change PIN and Move to a new device; a pick-one-value page of
+       any section); same bar, back and swipe-back. -->
   <div data-if="show_detail && security_page != ''" class="settings-detail-view settings-subpage-view stack"
        id="settings-subpage-view">
     <div class="settings-detail-header row">
@@ -187,6 +188,8 @@
         <svg class="settings-back-v2" src="../icons/v2/back.svg" width="18" height="18"></svg>
       </button>
       <p class="settings-header-title">{{security_page_title}}</p>
+      <button class="settings-q-btn settings-subpage-help" type="button" data-if="security_page == 'choice' && choice_help_topic != ''"
+              data-event-click="ask_setting_help(choice_help_topic)"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
     </div>
 
     <div class="settings-detail-body stack">
@@ -195,6 +198,20 @@
       </div>
       <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
+      </div>
+      <!-- Pick one value (theme, language, who can call...): one row each, the current one checked; a tap applies it
+           and the page goes back (SettingsChoicePage). -->
+      <div class="settings-section settings-section--grouped stack settings-choice-page" data-if="security_page == 'choice'">
+        <div class="group-card">
+          <button data-for="option : choice_options" class="group-row settings-choice-option" type="button"
+                  data-event-click="pick_choice(option.id)">
+            <span class="group-row-body">
+              <span class="group-row-text">{{option.label}}</span>
+              <svg class="settings-choice-check" data-if="option.selected" src="../icons/v2/check.svg" width="20" height="20"></svg>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="choice_foot != ''">{{choice_foot}}</p>
       </div>
       <p class="text muted group-foot" data-if="status != ''">{{status}}</p>
     </div>

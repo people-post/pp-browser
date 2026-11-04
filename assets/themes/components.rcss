@@ -8020,6 +8020,26 @@ input.checkbox {
   margin-left: 0;
 }
 
+/* A pick-one-value page (SettingsChoicePage, Kenneth 2026-11-04): one 50dp row per value, the current one with an
+   accent check at the right end (iOS Settings). */
+.shell-layer-compact .settings-choice-option .group-row-body {
+  padding-right: 16dp;
+}
+
+.shell-layer-compact .settings-choice-check {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+/* The pushed page's "?" sits at the right end of its bar, a 44dp target like the back arrow. */
+.shell-layer-compact .settings-detail-header .settings-subpage-help {
+  position: absolute;
+  top: 0;
+  right: 4dp;
+  margin: 0;
+}
+
 /* Current value on the right of a row that opens a choice: one size below the 17dp title. */
 .shell-layer-compact .group-row .settings-choice-value-text {
   font-size: 14dp;
