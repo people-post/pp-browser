@@ -1510,8 +1510,29 @@ select selectbox option {
   transform-origin: 50% 31%;
 }
 
-/* Idle moves (AiDotModel::kSwayMs / kBlinkMs): one run each, started and ended by a class; between them nothing
-   animates, so the app draws nothing for the dot. C and D move about a third as much (DESIGN-pp-ui §8.14). */
+/* The cheeks, mouth and D's text lines show only during their action. Under its class each rests at opacity 0: RmlUi
+   drops an RCSS animation's value when it ends, so the layer then falls back to invisible, not to a still picture, for
+   the short while before AiDotModel takes the class off. */
+.ai-dot-blush,
+.ai-dot-mouth,
+.ai-dot-lines {
+  display: none;
+}
+
+/* The mouth opens and shuts about its middle (B's mouth at 443, 630 of the -24–1004 viewBox; A's and C's within a
+   few units); D's lines grow from their left end (x 340). */
+.ai-dot-mouth {
+  transform-origin: 41.5% 63.6%;
+}
+
+.ai-dot-lines {
+  transform-origin: 31.5% 52%;
+}
+
+/* Idle actions (AiDotModel::IdleLengthMs; the mockups' motions, DEV/ui-mockups/mascot-compare.html): one run each,
+   started and ended by a class; between them nothing animates, so the app draws nothing for the dot. C and D move
+   about a third as much (DESIGN-pp-ui §8.14). Every keyframe list starts and ends at rest. Percent translations are of
+   the moved box (the figure is the 900-unit mascot, a layer the 1028-unit viewBox). */
 @keyframes ai-dot-sway {
   0% { transform: rotate(0deg); }
   20% { transform: rotate(-9deg); }
@@ -1534,6 +1555,105 @@ select selectbox option {
   100% { transform: scaleY(1); }
 }
 
+/* Hop: the mockup's "happy" jump, squash at the feet, 110 of 900 units up, squash on landing. */
+@keyframes ai-dot-hop {
+  0% { transform: translateY(0%) scale(1, 1); }
+  14% { transform: translateY(0%) scale(1.08, 0.88); }
+  38% { transform: translateY(-12%) scale(0.94, 1.07); }
+  60% { transform: translateY(0%) scale(1.1, 0.86); }
+  74% { transform: translateY(0%) scale(0.98, 1.03); }
+  86% { transform: translateY(0%) scale(1, 1); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-hop-calm {
+  0% { transform: translateY(0%); }
+  30% { transform: translateY(-4%); }
+  55% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+/* Talk: the mouth opens and shuts twice (the mockup's 0.42 s beats), the front eyes glance up a little. */
+@keyframes ai-dot-talk-mouth {
+  0% { opacity: 0; transform: scale(0.9, 0.25); }
+  8% { opacity: 1; transform: scale(0.92, 0.4); }
+  25% { opacity: 1; transform: scale(1, 1); }
+  50% { opacity: 1; transform: scale(0.9, 0.25); }
+  75% { opacity: 1; transform: scale(1, 1); }
+  92% { opacity: 1; transform: scale(0.92, 0.4); }
+  100% { opacity: 0; transform: scale(0.9, 0.25); }
+}
+
+@keyframes ai-dot-talk-eyes {
+  0% { transform: translateY(0%); }
+  15% { transform: translateY(-1.2%); }
+  85% { transform: translateY(-1.2%); }
+  100% { transform: translateY(0%); }
+}
+
+/* D has no face: its text lines write themselves across the front bubble and fade. */
+@keyframes ai-dot-talk-lines {
+  0% { opacity: 1; transform: scaleX(0); }
+  35% { opacity: 1; transform: scaleX(1); }
+  85% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* Shy: it leans away, the eyes look aside and down (the front ones half shut), the cheeks go pink, then it comes back. */
+@keyframes ai-dot-shy {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-8deg); }
+  75% { transform: rotate(-8deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-shy-calm {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-4deg); }
+  75% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-shy-eyes-front {
+  0% { transform: translate(0%, 0%) scale(1, 1); }
+  30% { transform: translate(-2.9%, 0.6%) scale(1, 0.5); }
+  75% { transform: translate(-2.9%, 0.6%) scale(1, 0.5); }
+  100% { transform: translate(0%, 0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-shy-eyes-back {
+  0% { transform: translate(0%, 0%); }
+  30% { transform: translate(-1.2%, 0.6%); }
+  75% { transform: translate(-1.2%, 0.6%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-shy-blush {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Look around: the eyes go left, stay, go right, stay, come back (the back bubble's half as far). */
+@keyframes ai-dot-look-front {
+  0% { transform: translateX(0%); }
+  18% { transform: translateX(-2.4%); }
+  40% { transform: translateX(-2.4%); }
+  60% { transform: translateX(2.4%); }
+  82% { transform: translateX(2.4%); }
+  100% { transform: translateX(0%); }
+}
+
+@keyframes ai-dot-look-back {
+  0% { transform: translateX(0%); }
+  18% { transform: translateX(-1.2%); }
+  40% { transform: translateX(-1.2%); }
+  60% { transform: translateX(1.2%); }
+  82% { transform: translateX(1.2%); }
+  100% { transform: translateX(0%); }
+}
+
 .ai-dot--sway .ai-dot-figure {
   animation: 1.2s sine-in-out ai-dot-sway;
 }
@@ -1545,6 +1665,60 @@ select selectbox option {
 .ai-dot--blink .ai-dot-eyes-front,
 .ai-dot--blink .ai-dot-eyes-back {
   animation: 0.5s quadratic-in-out ai-dot-blink;
+}
+
+.ai-dot--hop .ai-dot-figure {
+  animation: 1.3s quadratic-in-out ai-dot-hop;
+}
+
+.ai-dot--calm.ai-dot--hop .ai-dot-figure {
+  animation: 1.3s sine-in-out ai-dot-hop-calm;
+}
+
+.ai-dot--talk .ai-dot-mouth {
+  display: block;
+  opacity: 0;
+  animation: 1.68s sine-in-out ai-dot-talk-mouth;
+}
+
+.ai-dot--talk .ai-dot-eyes-front {
+  animation: 1.68s sine-in-out ai-dot-talk-eyes;
+}
+
+.ai-dot--talk .ai-dot-lines {
+  display: block;
+  opacity: 0;
+  animation: 1.68s cubic-out ai-dot-talk-lines;
+}
+
+.ai-dot--shy .ai-dot-figure {
+  animation: 1.6s sine-in-out ai-dot-shy;
+}
+
+.ai-dot--calm.ai-dot--shy .ai-dot-figure {
+  animation: 1.6s sine-in-out ai-dot-shy-calm;
+}
+
+.ai-dot--shy .ai-dot-eyes-front {
+  animation: 1.6s sine-in-out ai-dot-shy-eyes-front;
+}
+
+.ai-dot--shy .ai-dot-eyes-back {
+  animation: 1.6s sine-in-out ai-dot-shy-eyes-back;
+}
+
+.ai-dot--shy .ai-dot-blush {
+  display: block;
+  opacity: 0;
+  animation: 1.6s sine-in-out ai-dot-shy-blush;
+}
+
+.ai-dot--look .ai-dot-eyes-front {
+  animation: 1.8s sine-in-out ai-dot-look-front;
+}
+
+.ai-dot--look .ai-dot-eyes-back {
+  animation: 1.8s sine-in-out ai-dot-look-back;
 }
 
 .shell-banner {

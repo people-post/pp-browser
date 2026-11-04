@@ -59,21 +59,30 @@
        lifted (shell-root bottom) while the panel paints in the freed bottom band. -->
   <div id="shell-emoji-keyboard-mount" class="shell-emoji-keyboard-mount"></div>
   <!-- Phone AI dot (DESIGN-pp-ui §8.14): ShellAiDot shows, places and drags it; one look's layers at a time, the eyes
-       apart so they can blink. Its stacking order is explained in components.rcss (.shell-ai-dot-mount). -->
+       apart so they can blink and look round, the cheeks and mouth apart for shy and talk (shown only then). Its
+       stacking order is explained in components.rcss (.shell-ai-dot-mount). -->
   <div id="shell-ai-dot-mount" class="shell-ai-dot-mount">
     <div id="shell-ai-dot" class="ai-dot" data-class-ai-dot--shown="ai_dot_shown"
          data-class-ai-dot--sway="ai_dot_idle == 'sway'" data-class-ai-dot--blink="ai_dot_idle == 'blink'"
+         data-class-ai-dot--hop="ai_dot_idle == 'hop'" data-class-ai-dot--talk="ai_dot_idle == 'talk'"
+         data-class-ai-dot--shy="ai_dot_idle == 'shy'" data-class-ai-dot--look="ai_dot_idle == 'look'"
          data-class-ai-dot--calm="ai_dot_look == 'c' || ai_dot_look == 'd'"
          data-class-ai-dot--size-s="ai_dot_size == 's'" data-class-ai-dot--size-l="ai_dot_size == 'l'">
       <div class="ai-dot-figure">
         <svg class="ai-dot-layer" data-if="ai_dot_look != 'c'" src="../icons/mascot/body.svg"></svg>
         <svg class="ai-dot-layer" data-if="ai_dot_look == 'c'" src="../icons/mascot/body-c.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-blush" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-blush.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-blush" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-blush.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-back" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-eyes-back.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-front" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-eyes-front.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-back" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-eyes-back.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-front" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-eyes-front.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-back" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eyes-back.svg"></svg>
         <svg class="ai-dot-layer ai-dot-eyes-front" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eyes-front.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-mouth" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-mouth.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-mouth" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-mouth.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-mouth" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-mouth.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-lines" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-talk.svg"></svg>
       </div>
     </div>
   </div>

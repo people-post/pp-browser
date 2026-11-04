@@ -1,5 +1,6 @@
-// The phone AI dot (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c): drag anywhere, stick to the nearer side, tuck
-// half away after 4.5 s, a short idle move every 5–10 s, and hidden wherever it would be in the way.
+// The phone AI dot (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c): three sizes, drag anywhere, stick to the nearer
+// side, tuck half away after 15 s, a random idle action (never the same twice running) every 5–10 s while it is out,
+// and hidden wherever it would be in the way.
 #include "gui/shell/AiDotModel.h"
 
 #include <ui/base/SystemInterface.h>
@@ -10,8 +11,13 @@
 #include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <set>
+#include <sstream>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -20,6 +26,7 @@ namespace {
 constexpr AiDotArea kArea{402.f, 874.f, 62.f, 34.f, AiDotModel::kMediumDp};
 constexpr float kSize = kArea.size_dp;
 const float kGap = AiDotModel::EdgeGapDp(kSize);
+constexpr AiDotLook kLook = AiDotLook::TwoEyes;
 
 AiDotScene Home() { return AiDotScene{}; }
 
@@ -177,55 +184,172 @@ TEST(AiDotModelTest, ADragNeverCountsAsATapEvenWhenItEndsWhereItBegan) {
   EXPECT_TRUE(release.moved);
 }
 
-TEST(AiDotModelTest, TucksAfterFourAndAHalfSecondsAlone) {
+TEST(AiDotModelTest, TucksAfterFifteenSecondsAlone) {
   AiDotModel model;
   model.Show(0);
-  EXPECT_FALSE(model.Advance(4499, true).tucked);
+  EXPECT_FALSE(model.Advance(14999, kLook).tucked);
   EXPECT_FALSE(model.Tucked());
-  EXPECT_TRUE(model.Advance(4500, true).tucked);
+  EXPECT_TRUE(model.Advance(15000, kLook).tucked);
   EXPECT_TRUE(model.Tucked());
 }
 
 TEST(AiDotModelTest, APressBringsATuckedDotOutAndTheClockStartsAgainOnRelease) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(5000, true);
+  model.Advance(15000, kLook);
   ASSERT_TRUE(model.Tucked());
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
   EXPECT_FALSE(model.Tucked());
-  EXPECT_FALSE(model.Advance(20000, true).tucked) << "held: it does not tuck under the finger";
-  model.Up(kArea, 20000);
-  EXPECT_FALSE(model.Advance(24499, true).tucked);
-  EXPECT_TRUE(model.Advance(24500, true).tucked);
+  EXPECT_FALSE(model.Advance(40000, kLook).tucked) << "held: it does not tuck under the finger";
+  model.Up(kArea, 40000);
+  EXPECT_FALSE(model.Advance(54999, kLook).tucked);
+  EXPECT_TRUE(model.Advance(55000, kLook).tucked);
 }
 
-TEST(AiDotModelTest, IdleMovesComeEveryFiveToTenSecondsAndTakeTurns) {
+TEST(AiDotModelTest, IdleActionsComeEveryFiveToTenSeconds) {
   for (int n = 0; n < 50; ++n) {
     EXPECT_GE(AiDotModel::IdleDelayMs(n), 5000);
     EXPECT_LE(AiDotModel::IdleDelayMs(n), 10000);
   }
   EXPECT_NE(AiDotModel::IdleDelayMs(0), AiDotModel::IdleDelayMs(1)) << "not a metronome";
-  EXPECT_EQ(AiDotModel::IdleAction(0, true), AiDotIdle::Sway);
-  EXPECT_EQ(AiDotModel::IdleAction(1, true), AiDotIdle::Blink);
-  EXPECT_EQ(AiDotModel::IdleAction(1, false), AiDotIdle::Sway) << "the plain look has no eyes to blink";
 }
 
-TEST(AiDotModelTest, AnIdleMoveRunsOnlyAsLongAsItsKeyframes) {
+TEST(AiDotModelTest, EachLookHasItsActionsThePlainOneOnlyHopSwayAndTalk) {
+  for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool}) {
+    const std::set<AiDotIdle> actions(AiDotModel::IdleActions(look).begin(), AiDotModel::IdleActions(look).end());
+    EXPECT_EQ(actions, (std::set<AiDotIdle>{AiDotIdle::Sway, AiDotIdle::Blink, AiDotIdle::Hop, AiDotIdle::Talk,
+                                            AiDotIdle::Shy, AiDotIdle::Look}));
+  }
+  const auto plain = AiDotModel::IdleActions(AiDotLook::Plain);
+  EXPECT_EQ(std::set<AiDotIdle>(plain.begin(), plain.end()),
+            (std::set<AiDotIdle>{AiDotIdle::Hop, AiDotIdle::Sway, AiDotIdle::Talk}))
+      << "no eyes: no blink, shy or look round";
+  EXPECT_EQ(AiDotModel::LookFrom("a"), AiDotLook::OneEye);
+  EXPECT_EQ(AiDotModel::LookFrom("b"), AiDotLook::TwoEyes);
+  EXPECT_EQ(AiDotModel::LookFrom("c"), AiDotLook::Cool);
+  EXPECT_EQ(AiDotModel::LookFrom("d"), AiDotLook::Plain);
+  EXPECT_EQ(AiDotModel::LookFrom("?"), AiDotLook::TwoEyes);
+}
+
+TEST(AiDotModelTest, APickIsNeverTheActionJustPlayed) {
+  for (const AiDotLook look : {AiDotLook::TwoEyes, AiDotLook::Plain}) {
+    const auto actions = AiDotModel::IdleActions(look);
+    for (const AiDotIdle previous : actions) {
+      std::set<AiDotIdle> picked;
+      for (uint32_t roll = 0; roll < 64; ++roll) {
+        const AiDotIdle idle = AiDotModel::PickIdle(look, previous, roll);
+        EXPECT_NE(idle, previous);
+        EXPECT_NE(std::find(actions.begin(), actions.end(), idle), actions.end());
+        picked.insert(idle);
+      }
+      EXPECT_EQ(picked.size(), actions.size() - 1) << "every other action can come next";
+    }
+  }
+}
+
+/** Leaves a seeded dot alone for `count` actions (pressing it out of its tuck when it tucks) and lists them. */
+std::vector<AiDotIdle> PlayedActions(const uint32_t seed, const AiDotLook look, const int count) {
+  AiDotModel model;
+  model.Seed(seed);
+  int64_t now = 0;
+  model.Show(now);
+  std::vector<AiDotIdle> played;
+  while (static_cast<int>(played.size()) < count) {
+    const auto wait = model.MsUntilNext(now);
+    if (!wait) {
+      // Tucked: nothing is due until a press brings it out.
+      EXPECT_TRUE(model.Tucked());
+      const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+      model.Press({rest.x_dp, rest.y_dp}, rest);
+      model.Up(kArea, now);
+      continue;
+    }
+    now += *wait;
+    const AiDotIdle before = model.Idle();
+    model.Advance(now, look);
+    if (model.Idle() != AiDotIdle::None && model.Idle() != before) {
+      played.push_back(model.Idle());
+    }
+  }
+  return played;
+}
+
+TEST(AiDotModelTest, ARandomActionNeverTheSameTwiceInARow) {
+  for (const AiDotLook look : {AiDotLook::OneEye, AiDotLook::TwoEyes, AiDotLook::Cool, AiDotLook::Plain}) {
+    const std::vector<AiDotIdle> played = PlayedActions(20261104u, look, 300);
+    for (size_t i = 1; i < played.size(); ++i) {
+      ASSERT_NE(played[i], played[i - 1]) << "action " << i;
+    }
+    const auto actions = AiDotModel::IdleActions(look);
+    EXPECT_EQ(std::set<AiDotIdle>(played.begin(), played.end()), std::set<AiDotIdle>(actions.begin(), actions.end()))
+        << "every action of the look comes up, and no other";
+  }
+  EXPECT_EQ(PlayedActions(7u, AiDotLook::TwoEyes, 40), PlayedActions(7u, AiDotLook::TwoEyes, 40)) << "seeded";
+  EXPECT_NE(PlayedActions(7u, AiDotLook::TwoEyes, 40), PlayedActions(8u, AiDotLook::TwoEyes, 40)) << "random";
+}
+
+TEST(AiDotModelTest, AnIdleActionRunsOnlyAsLongAsItsKeyframes) {
   AiDotModel model;
   model.Show(0);
   const int64_t first = AiDotModel::IdleDelayMs(0);
-  EXPECT_EQ(model.MsUntilNext(0), 4500) << "the tuck comes first";
-  model.Advance(4500, true);
-  EXPECT_EQ(model.MsUntilNext(4500), first - 4500);
-  EXPECT_TRUE(model.Advance(first, true).idle);
-  EXPECT_EQ(model.Idle(), AiDotIdle::Sway);
-  EXPECT_EQ(model.MsUntilNext(first), AiDotModel::kSwayMs + AiDotModel::kIdleTailMs);
-  EXPECT_TRUE(model.Advance(first + AiDotModel::kSwayMs + AiDotModel::kIdleTailMs, true).idle);
+  EXPECT_EQ(model.MsUntilNext(0), first) << "the first action comes before the tuck";
+  EXPECT_TRUE(model.Advance(first, kLook).idle);
+  const AiDotIdle idle = model.Idle();
+  ASSERT_NE(idle, AiDotIdle::None);
+  const int64_t end = first + AiDotModel::IdleLengthMs(idle) + AiDotModel::kIdleTailMs;
+  EXPECT_EQ(model.MsUntilNext(first), end - first);
+  EXPECT_TRUE(model.Advance(end, kLook).idle);
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
-  const auto next = model.MsUntilNext(first + AiDotModel::kSwayMs + AiDotModel::kIdleTailMs);
+  const auto next = model.MsUntilNext(end);
   ASSERT_TRUE(next.has_value());
-  EXPECT_GE(*next, AiDotModel::kIdleMinMs) << "between moves nothing is due for at least 5 s";
+  EXPECT_GE(*next, std::min<int64_t>(AiDotModel::kIdleMinMs, AiDotModel::kTuckAfterMs - end))
+      << "between actions nothing is due before the next one or the tuck";
+}
+
+TEST(AiDotModelTest, TuckedItPlaysNothingSoTheAppCanSleep) {
+  AiDotModel model;
+  model.Show(0);
+  model.Advance(15000, kLook);
+  ASSERT_TRUE(model.Tucked());
+  EXPECT_EQ(model.Idle(), AiDotIdle::None);
+  EXPECT_FALSE(model.MsUntilNext(15000).has_value()) << "no wake at all while it sits tucked";
+  EXPECT_FALSE(model.Advance(600000, kLook).idle);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  model.Press({rest.x_dp, rest.y_dp}, rest);
+  model.Up(kArea, 600000);
+  const auto next = model.MsUntilNext(600000);
+  ASSERT_TRUE(next.has_value()) << "out again, the actions start again";
+  EXPECT_LE(*next, AiDotModel::kIdleMaxMs);
+}
+
+TEST(AiDotModelTest, AnActionUnderwayWhenItTucksEndsAndNoNextOneIsDue) {
+  // Left alone, tapped out of each tuck, until a tuck falls in the middle of an action.
+  AiDotModel model;
+  model.Seed(1u);
+  int64_t now = 0;
+  model.Show(now);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  bool seen = false;
+  for (int step = 0; step < 5000 && !seen; ++step) {
+    const auto wait = model.MsUntilNext(now);
+    if (!wait) {
+      model.Press({rest.x_dp, rest.y_dp}, rest);
+      model.Up(kArea, now);
+      continue;
+    }
+    now += *wait;
+    if (model.Advance(now, kLook).tucked && model.Idle() != AiDotIdle::None) {
+      seen = true;
+      const auto until_end = model.MsUntilNext(now);
+      ASSERT_TRUE(until_end.has_value()) << "the action still gets its last frame";
+      now += *until_end;
+      EXPECT_TRUE(model.Advance(now, kLook).idle);
+      EXPECT_EQ(model.Idle(), AiDotIdle::None);
+      EXPECT_FALSE(model.MsUntilNext(now).has_value()) << "tucked: no next action";
+    }
+  }
+  EXPECT_TRUE(seen);
 }
 
 TEST(AiDotModelTest, HiddenNothingIsDueSoTheAppCanSleep) {
@@ -235,34 +359,34 @@ TEST(AiDotModelTest, HiddenNothingIsDueSoTheAppCanSleep) {
   ASSERT_TRUE(model.MsUntilNext(0).has_value());
   model.Hide();
   EXPECT_FALSE(model.MsUntilNext(100).has_value());
-  EXPECT_FALSE(model.Advance(60000, true).tucked);
-  EXPECT_FALSE(model.Advance(60000, true).idle);
+  EXPECT_FALSE(model.Advance(60000, kLook).tucked);
+  EXPECT_FALSE(model.Advance(60000, kLook).idle);
 }
 
 TEST(AiDotModelTest, ShownAgainItComesOutAtItsEdge) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(5000, true);
+  model.Advance(15000, kLook);
   ASSERT_TRUE(model.Tucked());
   model.Hide();
-  model.Show(9000);
+  model.Show(20000);
   EXPECT_FALSE(model.Tucked());
-  EXPECT_EQ(model.MsUntilNext(9000), 4500);
+  EXPECT_EQ(model.MsUntilNext(20000), AiDotModel::IdleDelayMs(0)) << "its first action, then the tuck 15 s on";
 }
 
-TEST(AiDotModelTest, APressStopsAnIdleMove) {
+TEST(AiDotModelTest, APressStopsAnIdleAction) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(AiDotModel::IdleDelayMs(0), true);
-  ASSERT_EQ(model.Idle(), AiDotIdle::Sway);
+  model.Advance(AiDotModel::IdleDelayMs(0), kLook);
+  ASSERT_NE(model.Idle(), AiDotIdle::None);
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
   EXPECT_FALSE(model.MsUntilNext(AiDotModel::IdleDelayMs(0)).has_value()) << "nothing runs while held";
 }
 
-// The idle moves are the real components.rcss keyframes: while one runs the context asks for frames, once it has run
-// (the class still set) it asks for none, so a dot left alone costs no frames between its moves.
+// The idle actions are the real components.rcss keyframes: while one runs the context asks for frames, once it has run
+// (the class still set) it asks for none, so a dot left alone costs no frames between its actions.
 class NullRender : public ui::RenderInterface {
 public:
   ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
@@ -294,7 +418,12 @@ protected:
     const std::string rml =
         "<rml><head><link type=\"text/rcss\" href=\"components.rcss\"/></head><body>"
         "<div class=\"shell-ai-dot-mount\"><div id=\"dot\" class=\"ai-dot ai-dot--shown\">"
-        "<div id=\"figure\" class=\"ai-dot-figure\"><div id=\"eyes\" class=\"ai-dot-layer ai-dot-eyes-front\"></div>"
+        "<div id=\"figure\" class=\"ai-dot-figure\">"
+        "<div id=\"blush\" class=\"ai-dot-layer ai-dot-blush\"></div>"
+        "<div id=\"eyes-back\" class=\"ai-dot-layer ai-dot-eyes-back\"></div>"
+        "<div id=\"eyes\" class=\"ai-dot-layer ai-dot-eyes-front\"></div>"
+        "<div id=\"mouth\" class=\"ai-dot-layer ai-dot-mouth\"></div>"
+        "<div id=\"lines\" class=\"ai-dot-layer ai-dot-lines\"></div>"
         "</div></div></div></body></rml>";
     document = context->LoadDocumentFromMemory(rml, themes + "ai_dot_keyframes_test.rml");
     ASSERT_NE(document, nullptr);
@@ -368,6 +497,76 @@ TEST_F(AiDotKeyframesTest, TheCalmSwayIsAsLongAsTheOther) {
   const int frames = FramesUntilIdle();
   EXPECT_GE(frames, AiDotModel::kSwayMs * 60 / 1000 - 1);
   EXPECT_LE(frames, AiDotModel::kSwayMs * 60 / 1000 + 3);
+}
+
+// Every action of every look (the plain look's are among them), in the full and the calm (C, D) version: frames for
+// its own length and not one more, also with the class still set, and none once the class is gone.
+TEST_F(AiDotKeyframesTest, EveryActionAsksForFramesOnlyWhileItRuns) {
+  ui::Element* dot = document->GetElementById("dot");
+  for (const bool calm : {false, true}) {
+    for (const AiDotIdle idle : AiDotModel::IdleActions(AiDotLook::TwoEyes)) {
+      const std::string name = AiDotModel::IdleName(idle);
+      SCOPED_TRACE(name + (calm ? " calm" : ""));
+      dot->SetClass("ai-dot--calm", calm);
+      ASSERT_FALSE(Frame(kFrame));
+      ASSERT_TRUE(Idle());
+      dot->SetClass("ai-dot--" + name, true);
+      const int frames = FramesUntilIdle();
+      const int64_t length_ms = AiDotModel::IdleLengthMs(idle);
+      EXPECT_GE(frames, length_ms * 60 / 1000 - 1) << "it animates for its whole length";
+      EXPECT_LE(frames, length_ms * 60 / 1000 + 3) << "and its keyframes are no longer than AiDotModel says";
+      EXPECT_FALSE(Frame(kFrame));
+      EXPECT_TRUE(Idle()) << "a finished action asks for nothing more";
+      dot->SetClass("ai-dot--" + name, false);
+      EXPECT_FALSE(Frame(kFrame));
+      EXPECT_TRUE(Idle());
+    }
+  }
+}
+
+TEST_F(AiDotKeyframesTest, TheMouthCheeksAndLinesShowOnlyDuringTheirAction) {
+  ui::Element* dot = document->GetElementById("dot");
+  const auto shown = [this](const char* id) {
+    ui::Element* layer = document->GetElementById(id);
+    return layer->IsVisible() && layer->GetComputedValues().opacity() > 0.01f;
+  };
+  for (const char* id : {"mouth", "blush", "lines"}) {
+    EXPECT_FALSE(shown(id)) << id << " at rest";
+  }
+  for (const auto& [action, ids] : std::vector<std::pair<std::string, std::vector<const char*>>>{
+           {"talk", {"mouth", "lines"}}, {"shy", {"blush"}}}) {
+    SCOPED_TRACE(action);
+    dot->SetClass("ai-dot--" + action, true);
+    for (int i = 0; i < 30; ++i) {
+      Frame(kFrame); // half a second in: about a third of the way
+    }
+    for (const char* id : ids) {
+      EXPECT_TRUE(shown(id)) << id << " mid-action";
+    }
+    FramesUntilIdle();
+    for (const char* id : ids) {
+      EXPECT_FALSE(shown(id)) << id << " after the keyframes, the class still on: no still picture left over";
+    }
+    dot->SetClass("ai-dot--" + action, false);
+    Frame(kFrame);
+  }
+}
+
+TEST(AiDotWindowMarkupTest, EveryActionHasItsClassAndEveryLookItsLayers) {
+  std::ifstream file(std::string(PP_BROWSER_ASSETS_DIR) + "/samples/window_shell.rml");
+  ASSERT_TRUE(file.good());
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  const std::string rml = buffer.str();
+  for (const AiDotIdle idle : AiDotModel::IdleActions(AiDotLook::TwoEyes)) {
+    const std::string name = AiDotModel::IdleName(idle);
+    EXPECT_NE(rml.find("data-class-ai-dot--" + name + "=\"ai_dot_idle == '" + name + "'\""), std::string::npos)
+        << name;
+  }
+  for (const char* layer : {"a-mouth.svg", "b-mouth.svg", "c-mouth.svg", "d-talk.svg", "a-blush.svg", "b-blush.svg"}) {
+    EXPECT_NE(rml.find(std::string("../icons/mascot/") + layer), std::string::npos) << layer;
+  }
+  EXPECT_EQ(rml.find("c-blush.svg"), std::string::npos) << "the cool look does not blush";
 }
 
 } // namespace

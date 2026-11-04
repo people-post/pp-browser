@@ -20,7 +20,7 @@ namespace pbr {
 
 /**
  * The phone AI dot in #shell-ai-dot-mount (window_shell.rml; DESIGN-pp-ui §8.14): shows and hides it with the scene,
- * places it at its edge, follows a drag, slides it to its side, tucks it, and starts its idle moves. Decisions are
+ * places it at its edge, follows a drag, slides it to its side, tucks it, and starts its idle actions. Decisions are
  * AiDotModel's; this class only touches the DOM. The bound fields (ai_dot_shown / ai_dot_idle) live in ShellState.
  * Nothing here runs per frame on its own: Update is called by the frames the app draws anyway, and MsUntilNext asks
  * for one more frame only when a tuck or an idle move is due. UI thread.
@@ -36,7 +36,8 @@ public:
     std::function<void()> dirty;
   };
 
-  explicit ShellAiDot(ShellState& state) : state_(state) {}
+  /** Seeds the dot's random idle actions. */
+  explicit ShellAiDot(ShellState& state);
 
   void SetCallbacks(Callbacks callbacks) { callbacks_ = std::move(callbacks); }
 

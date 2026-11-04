@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <random>
+#include <span>
 #include <string_view>
 
 namespace pbr {
@@ -21,8 +23,16 @@ struct AiDotScene {
   bool keyboard_up = false;///< The on-screen keyboard or the emoji panel.
 };
 
-/** The short idle move the dot makes now and then (RCSS keyframes; nothing runs between them). */
-enum class AiDotIdle { None, Sway, Blink };
+/**
+ * The short idle action the dot plays now and then (RCSS keyframes switched on by a class; nothing runs between them).
+ * The motions are the mockups' (DEV/ui-mockups/mascot-compare.html): sway, blink, hop (the "happy" jump), talk (the
+ * mouth opens and shuts; the plain look shows text lines instead), shy (leans away, eyes aside, cheeks pink), look
+ * around (eyes left, then right).
+ */
+enum class AiDotIdle { None, Sway, Blink, Hop, Talk, Shy, Look };
+
+/** The assistant look (Me → AI assistant): `a` one eye, `b` two eyes (default), `c` cool, `d` plain (no face). */
+enum class AiDotLook { OneEye, TwoEyes, Cool, Plain };
 
 /** Where the dot rests: the side it sticks to and how far down the band it stands (0 top, 1000 bottom). */
 struct AiDotPlace {
@@ -52,8 +62,10 @@ struct AiDotPoint {
 
 /**
  * The phone AI dot without any DOM (Kenneth 2026-11-02/03: "可以到处放，或者把它吸在侧边", "设置里面设置打开或关闭"):
- * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 4.5 s after the last
- * touch it tucks half off the screen, a press brings it out again; while it shows, a short sway or blink every 5–10 s.
+ * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 15 s after the last
+ * touch it tucks half off the screen, a press brings it out again. While it is out (not tucked), every 5–10 s it plays
+ * one idle action picked at random, never the same one twice in a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，
+ * ……他靠边的这个时间稍微慢一点"); tucked, it does nothing, so nothing wakes the app.
  * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
  * edge and the clamps follow it. Times are milliseconds on any steady clock. UI thread.
  */
@@ -74,13 +86,66 @@ public:
   static constexpr float kBottomReserveDp = 57.f;
   /** A press that moves less than this is a tap. */
   static constexpr float kTapSlopDp = 10.f;
-  static constexpr int64_t kTuckAfterMs = 4500;
+  static constexpr int64_t kTuckAfterMs = 15000;
   static constexpr int64_t kIdleMinMs = 5000;
   static constexpr int64_t kIdleMaxMs = 10000;
-  /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink); the class goes a little after. */
+  /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. */
   static constexpr int64_t kSwayMs = 1200;
   static constexpr int64_t kBlinkMs = 500;
+  static constexpr int64_t kHopMs = 1300;
+  static constexpr int64_t kTalkMs = 1680;
+  static constexpr int64_t kShyMs = 1600;
+  static constexpr int64_t kLookMs = 1800;
   static constexpr int64_t kIdleTailMs = 100;
+
+  static AiDotLook LookFrom(const std::string_view look) {
+    return look == "a" ? AiDotLook::OneEye : look == "c" ? AiDotLook::Cool : look == "d" ? AiDotLook::Plain
+                                                                                      : AiDotLook::TwoEyes;
+  }
+
+  /** The actions a look plays: the plain look has no eyes, so only hop, sway and talk (its text lines). */
+  static std::span<const AiDotIdle> IdleActions(const AiDotLook look) {
+    static constexpr AiDotIdle kFace[] = {AiDotIdle::Sway, AiDotIdle::Blink, AiDotIdle::Hop,
+                                          AiDotIdle::Talk, AiDotIdle::Shy,   AiDotIdle::Look};
+    static constexpr AiDotIdle kPlain[] = {AiDotIdle::Sway, AiDotIdle::Hop, AiDotIdle::Talk};
+    return look == AiDotLook::Plain ? std::span<const AiDotIdle>(kPlain) : std::span<const AiDotIdle>(kFace);
+  }
+
+  /** One of the look's actions other than `previous`, chosen by `roll` (any random number). */
+  static AiDotIdle PickIdle(const AiDotLook look, const AiDotIdle previous, const uint32_t roll) {
+    AiDotIdle choices[8];
+    uint32_t count = 0;
+    for (const AiDotIdle idle : IdleActions(look)) {
+      if (idle != previous) {
+        choices[count++] = idle;
+      }
+    }
+    return count == 0 ? AiDotIdle::None : choices[roll % count];
+  }
+
+  /** The class suffix (ai-dot--<name>) and bound value for an action; empty for none. */
+  static const char* IdleName(const AiDotIdle idle) {
+    switch (idle) {
+    case AiDotIdle::Sway:
+      return "sway";
+    case AiDotIdle::Blink:
+      return "blink";
+    case AiDotIdle::Hop:
+      return "hop";
+    case AiDotIdle::Talk:
+      return "talk";
+    case AiDotIdle::Shy:
+      return "shy";
+    case AiDotIdle::Look:
+      return "look";
+    case AiDotIdle::None:
+      break;
+    }
+    return "";
+  }
+
+  /** The random actions; the app seeds it once, tests with a fixed seed. */
+  void Seed(const uint32_t seed) { rng_.seed(seed); }
 
   /** Whether the dot shows at all on this screen. */
   static bool Shown(const AiDotScene& scene) {
@@ -120,13 +185,24 @@ public:
     return kIdleMinMs + static_cast<int64_t>((mixed >> 8) % static_cast<uint32_t>(kIdleMaxMs - kIdleMinMs + 1));
   }
 
-  /** Idle move number `n`: sway and blink take turns; a look without eyes only sways. */
-  static AiDotIdle IdleAction(const int n, const bool has_eyes) {
-    return has_eyes && n % 2 == 1 ? AiDotIdle::Blink : AiDotIdle::Sway;
-  }
-
   static int64_t IdleLengthMs(const AiDotIdle idle) {
-    return idle == AiDotIdle::Blink ? kBlinkMs : idle == AiDotIdle::Sway ? kSwayMs : 0;
+    switch (idle) {
+    case AiDotIdle::Sway:
+      return kSwayMs;
+    case AiDotIdle::Blink:
+      return kBlinkMs;
+    case AiDotIdle::Hop:
+      return kHopMs;
+    case AiDotIdle::Talk:
+      return kTalkMs;
+    case AiDotIdle::Shy:
+      return kShyMs;
+    case AiDotIdle::Look:
+      return kLookMs;
+    case AiDotIdle::None:
+      break;
+    }
+    return 0;
   }
 
   // --- Showing, tucking and idle moves -----------------------------------------------------------------------------
@@ -157,8 +233,8 @@ public:
     bool idle = false;   ///< Idle() changed.
   };
 
-  /** Moves the clocks on to `now_ms`. */
-  Changes Advance(const int64_t now_ms, const bool has_eyes) {
+  /** Moves the clocks on to `now_ms`; `look` decides which actions may play. */
+  Changes Advance(const int64_t now_ms, const AiDotLook look) {
     Changes changes;
     if (!shown_) {
       return changes;
@@ -170,13 +246,19 @@ public:
         changes.tucked = true;
       }
     }
+    if (tucked_) {
+      next_idle_ms_.reset(); // tucked away it rests; a press brings it out and starts the actions again
+    }
     if (idle_ != AiDotIdle::None && now_ms >= idle_end_ms_) {
       idle_ = AiDotIdle::None;
       changes.idle = true;
       ++idle_count_;
-      next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
-    } else if (idle_ == AiDotIdle::None && !pressed_ && next_idle_ms_ && now_ms >= *next_idle_ms_) {
-      idle_ = IdleAction(idle_count_, has_eyes);
+      if (!tucked_) {
+        next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
+      }
+    } else if (idle_ == AiDotIdle::None && !pressed_ && !tucked_ && next_idle_ms_ && now_ms >= *next_idle_ms_) {
+      idle_ = PickIdle(look, last_idle_, static_cast<uint32_t>(rng_()));
+      last_idle_ = idle_;
       idle_end_ms_ = now_ms + IdleLengthMs(idle_) + kIdleTailMs;
       next_idle_ms_.reset();
       changes.idle = true;
@@ -295,6 +377,9 @@ private:
   bool pressed_ = false;
   bool dragging_ = false;
   AiDotIdle idle_ = AiDotIdle::None;
+  /** The action played last (it is not picked again next). */
+  AiDotIdle last_idle_ = AiDotIdle::None;
+  std::minstd_rand rng_{1u};
   int idle_count_ = 0;
   int64_t idle_end_ms_ = 0;
   std::optional<int64_t> tuck_at_ms_;

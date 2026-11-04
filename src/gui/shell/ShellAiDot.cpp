@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <random>
 
 namespace pbr {
 
@@ -33,6 +34,10 @@ bool Near(const AiDotPoint& a, const AiDotPoint& b) {
 }
 
 } // namespace
+
+ShellAiDot::ShellAiDot(ShellState& state) : state_(state) {
+  model_.Seed(std::random_device{}());
+}
 
 void ShellAiDot::OnDetach(ui::Element* element) {
   if (!removing_ && element != nullptr && (element == dot_ || element == document_)) {
@@ -140,8 +145,7 @@ void ShellAiDot::SetDocumentCapture(const bool enabled) {
 }
 
 void ShellAiDot::SyncIdle() {
-  const AiDotIdle idle = model_.Idle();
-  const char* name = idle == AiDotIdle::Sway ? "sway" : idle == AiDotIdle::Blink ? "blink" : "";
+  const char* name = AiDotModel::IdleName(model_.Idle());
   if (state_.ai_dot_idle != name) {
     state_.ai_dot_idle = name;
     if (callbacks_.dirty) {
@@ -173,7 +177,7 @@ void ShellAiDot::Update(ui::Context* context, const AiDotScene& scene) {
     }
   }
   if (show) {
-    model_.Advance(now, state_.ai_dot_look != "d");
+    model_.Advance(now, AiDotModel::LookFrom(state_.ai_dot_look.c_str()));
     const AiDotArea area = Area();
     if (!pressed_ && area.width_dp > 0.f) {
       const bool tucked = model_.Tucked();

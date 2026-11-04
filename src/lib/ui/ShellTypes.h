@@ -473,7 +473,8 @@ struct ShellState {
   ui::String ai_dot_size = "m";
   bool ai_dot_left = false;
   int ai_dot_y_permille = 600;
-  /** Bound: the dot is on screen now; its idle move now (`sway`, `blink` or empty). */
+  /** Bound: the dot is on screen now; its idle action now (AiDotModel::IdleName: `sway`, `blink`, `hop`, `talk`, `shy`,
+   * `look`, or empty). */
   bool ai_dot_shown = false;
   ui::String ai_dot_idle;
 
