@@ -236,6 +236,22 @@ std::optional<std::string> CallUiBackend::JoinableCallInThread(const std::string
   return call ? std::optional<std::string>(call->call_id) : std::nullopt;
 }
 
+std::optional<CallUiBackend::JoinableCallInfo> CallUiBackend::JoinableCallInfoInThread(
+    const std::string& thread_id) const {
+  const CallReads* reads = stack_.Reads();
+  auto call = reads ? reads->JoinableCallInThread(thread_id) : std::nullopt;
+  if (!call) {
+    return std::nullopt;
+  }
+  JoinableCallInfo info;
+  info.call_id = call->call_id;
+  info.media_mode = call->media_mode;
+  if (auto joined = reads->JoinedParticipants(call->call_id)) {
+    info.joined_count = static_cast<int>(joined->size());
+  }
+  return info;
+}
+
 Roe<std::optional<CallSession>> CallUiBackend::ActiveLocalCall() {
   if (const CallReads* reads = stack_.Reads()) {
     return reads->ActiveLocalCall();

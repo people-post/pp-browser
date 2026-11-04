@@ -2153,6 +2153,25 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+/* A group call goes on here: the bar under the header. */
+.chat-call-bar {
+  background-color: #f2f2f7;
+}
+
+.chat-call-bar-dot {
+  background-color: #34c759;
+}
+
+.chat-call-bar-text {
+  color: #000000;
+}
+
+.chat-call-bar-join,
+.chat-call-bar-join:hover,
+.chat-call-bar-join:focus {
+  background-color: transparent;
+}
+
 .shell-chat-overlay .chat-header-title {
   color: #000000;
 }

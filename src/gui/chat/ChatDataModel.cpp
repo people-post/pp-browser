@@ -77,6 +77,7 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("show_peer_sheet", &state.show_peer_sheet);
   ctor.Bind("show_call_actions", &state.show_call_actions);
   ctor.Bind("call_joinable", &state.call_joinable);
+  ctor.Bind("call_bar_text", &state.call_bar_text);
   ctor.Bind("show_forget_memory", &state.show_forget_memory);
   ctor.Bind("show_sync_with_peer", &state.show_sync_with_peer);
   ctor.Bind("show_thread_menu", &state.show_thread_menu);

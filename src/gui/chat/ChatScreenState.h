@@ -89,6 +89,8 @@ struct ChatScreenState {
   bool show_call_actions = false;
   /** A group call goes on here that this device may join: the call button reads "Join" (V053). */
   bool call_joinable = false;
+  /** Phones: the bar under the header while that call may be joined ("" = no bar). */
+  ui::String call_bar_text;
   bool show_forget_memory = false;
   bool show_sync_with_peer = false;
   bool show_thread_menu = false;

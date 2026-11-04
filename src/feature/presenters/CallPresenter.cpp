@@ -496,6 +496,26 @@ void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
   }));
 }
 
+CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call) {
+  CallJoinBar bar;
+  if (!call) {
+    return bar;
+  }
+  bar.shown = true;
+  bar.video = call->media_mode == CallMediaMode::Video;
+  bar.joined = call->joined_count && *call->joined_count > 0 ? *call->joined_count : 0;
+  bar.text_key = bar.video ? "chat.call_bar.video" : "chat.call_bar.voice";
+  return bar;
+}
+
+CallJoinBar CallPresenter::JoinBarInThread(const std::string& thread_id) const {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
+    return {};
+  }
+  return MakeCallJoinBar(backend->JoinableCallInfoInThread(thread_id));
+}
+
 bool CallPresenter::CallJoinableInThread(const std::string& thread_id) const {
   auto* backend = Backend();
   return backend && backend->Available() && backend->JoinableCallInThread(thread_id).has_value();

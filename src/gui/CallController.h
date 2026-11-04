@@ -60,6 +60,8 @@ public:
   bool StartCall(const std::string& thread_id, bool video_allowed);
   /** A group call goes on in this chat that this device may join (V053): the call button joins it. */
   bool CallJoinableInThread(const std::string& thread_id);
+  /** The group chat's call bar ("A voice call is on · 3 people"); "" when there is no call to join. */
+  std::string CallJoinBarText(const std::string& thread_id);
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);

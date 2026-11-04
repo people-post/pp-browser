@@ -96,6 +96,14 @@
       </button>
     </div>
   </div>
+  <!-- Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4, mockup 06-GroupLive). -->
+  <div class="chat-call-bar" data-if="call_bar_text != '' && !search_open">
+    <span class="chat-call-bar-dot"></span>
+    <p class="chat-call-bar-text">{{call_bar_text}}</p>
+    <button class="chat-call-bar-join" type="button" data-event-click="join_group_call()">
+      <span class="chat-header-call-btn chat-header-call-btn--join">{{i18n:call.join}}</span>
+    </button>
+  </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted">{{peer_link_banner}}</p>
     <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">{{i18n:chat.link.retry}}</button>

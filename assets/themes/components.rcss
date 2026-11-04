@@ -2235,6 +2235,50 @@ select selectbox option {
   display: none;
 }
 
+/* Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4). A 44dp bar under the header: a dot, what
+   call it is, and the header's own green "Join" pill inside a 44dp target. */
+.chat-call-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  height: 44dp;
+  padding: 0 8dp 0 16dp;
+  box-sizing: border-box;
+}
+
+.chat-call-bar-dot {
+  flex-shrink: 0;
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
+}
+
+.chat-call-bar-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-call-bar-join {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
 .shell-chat-overlay .shell-composer-mount {
   flex-shrink: 0;
 }

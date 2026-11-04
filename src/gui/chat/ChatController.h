@@ -301,6 +301,9 @@ private:
   std::chrono::steady_clock::time_point last_call_joinable_poll_{};
   /** Each second: whether the open group chat has a call this device may join (calls change it). */
   void RefreshCallJoinable(std::chrono::steady_clock::time_point now);
+  void SetCallBarText(const std::string& text);
+  /** The call bar's "Join": joins the group's call, or says it has ended when it is gone. */
+  void OnJoinGroupCall();
   void OpenChatLink(const std::string& entry_id, int link_index) { OpenChatLinkIn(ActiveThreadId(), entry_id, link_index); }
   /** Link `link_index` of answer `entry_id` in `thread_id` (after a restart rebuilt from its stored text). */
   void OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, int link_index);

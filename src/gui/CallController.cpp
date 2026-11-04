@@ -874,6 +874,18 @@ bool CallController::CallJoinableInThread(const std::string& thread_id) {
   return presenter_.CallJoinableInThread(thread_id);
 }
 
+std::string CallController::CallJoinBarText(const std::string& thread_id) {
+  const CallJoinBar bar = presenter_.JoinBarInThread(thread_id);
+  if (!bar.shown) {
+    return {};
+  }
+  std::string text = Tr(bar.text_key);
+  if (bar.joined > 0) {
+    text += " · " + Tr("chat.call_bar.people", {{"count", std::to_string(bar.joined)}});
+  }
+  return text;
+}
+
 void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video_allowed) {
   if (people_picker_notify_.open_for_group_call) {
     people_picker_notify_.open_for_group_call(thread_id, video_allowed);

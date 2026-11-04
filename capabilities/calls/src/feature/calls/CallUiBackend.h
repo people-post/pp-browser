@@ -103,6 +103,15 @@ public:
   Roe<std::optional<CallSession>> ActiveLocalCall();
   /** V053: a group call this device may join from `thread_id`: StartCall on it joins (the button reads Join). */
   std::optional<std::string> JoinableCallInThread(const std::string& thread_id) const;
+  /** The joinable group call of `thread_id` as a chat's call bar shows it (DEV/PLAN-ui-batch8-group-pages.md 4). */
+  struct JoinableCallInfo {
+    std::string call_id;
+    CallMediaMode media_mode = CallMediaMode::Voice;
+    /** Joined right now, from the call's participant table; none when it cannot be read. */
+    std::optional<int> joined_count;
+  };
+  /** JoinableCallInThread with its voice / video mode and how many have joined (none: nothing to join). */
+  std::optional<JoinableCallInfo> JoinableCallInfoInThread(const std::string& thread_id) const;
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;

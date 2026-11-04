@@ -5,9 +5,11 @@
 #include "lib/calls/CallScreen.h"
 #include "lib/media/IMediaView.h"
 #include "feature/calls/CallFunctionalPorts.h"
+#include "feature/calls/CallUiBackend.h"
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -44,6 +46,21 @@ struct CallStartResult {
   std::string error_key;
   std::string error_text;
 };
+
+/**
+ * A group chat's "a call goes on here" bar (DEV/PLAN-ui-batch8-group-pages.md 4): whether it shows, its words (an
+ * i18n key, voice or video) and how many have joined (0: unknown, so no number shows; never "0 people").
+ */
+struct CallJoinBar {
+  bool shown = false;
+  bool video = false;
+  int joined = 0;
+  /** chat.call_bar.voice / chat.call_bar.video; "" when not shown. */
+  std::string text_key;
+
+  bool operator==(const CallJoinBar&) const = default;
+};
+CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call);
 
 /**
  * The call surface's decisions and the call buttons, without a GUI: which call shows (ring,
@@ -102,6 +119,8 @@ public:
                              StartDone done = {});
   /** A group call goes on in this chat that this device may join (the button reads "Join"). */
   bool CallJoinableInThread(const std::string& thread_id) const;
+  /** The bar over a group chat while a call there may be joined (read now, through CallUiBackend). */
+  CallJoinBar JoinBarInThread(const std::string& thread_id) const;
   /** The in-call "add people" button. */
   void OpenAddPeople();
   /** The add-people picker's choice: each is invited (`done` once per invitee). */

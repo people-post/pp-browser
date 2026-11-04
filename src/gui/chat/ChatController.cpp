@@ -2614,6 +2614,36 @@ void ChatController::RefreshCallJoinable(const std::chrono::steady_clock::time_p
     chat_.call_joinable = joinable;
     DataModelHost::Instance().Dirty("chat", "call_joinable");
   }
+  // Phones: the bar under the header says which call goes on, and how many are in it (CallPresenter decides).
+  const std::string bar = joinable && AskAiCompact() && call_actions_.call_join_bar_text
+                              ? call_actions_.call_join_bar_text(thread_id)
+                              : std::string();
+  SetCallBarText(bar);
+}
+
+void ChatController::SetCallBarText(const std::string& text) {
+  if (text != chat_.call_bar_text.c_str()) {
+    chat_.call_bar_text = text.c_str();
+    DataModelHost::Instance().Dirty("chat", "call_bar_text");
+  }
+}
+
+void ChatController::OnJoinGroupCall() {
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty() || !call_actions_.start_call) {
+    return;
+  }
+  // Read again: a call that ended since the bar was drawn is said so, and the bar goes.
+  if (!call_actions_.call_joinable || !call_actions_.call_joinable(thread_id)) {
+    SetCallBarText({});
+    if (chat_.call_joinable) {
+      chat_.call_joinable = false;
+      DataModelHost::Instance().Dirty("chat", "call_joinable");
+    }
+    ShowToast(Tr("chat.call_bar.ended"));
+    return;
+  }
+  (void)call_actions_.start_call(thread_id, false); // joins it; any other failure is the call's own error notice
 }
 
 void ChatController::OnFindSomeone() {
@@ -3491,6 +3521,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_thread_actions_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
         ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
