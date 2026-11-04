@@ -111,12 +111,13 @@ void ShellNavBarScroll::OnPageScroll(ui::Element* scroller) {
   }
   const float from_top_dp = FromHomeDp(scroller, false);
   SetClassIfChanged(host, kPageScrolledClass, NavBarCollapseModel::ContentUnderBar(from_top_dp));
-  // One page scrolls at a time: another page's scroll starts its own run from where that page's bar stands.
+  // One page scrolls at a time: another page's scroll starts its own run from where that page's bar stands (a shown
+  // bar counts from the top: a quick first move already lands well down the page).
   if (page_host_.get() != host) {
     page_host_ = host->GetObserverPtr();
     page_.Reset();
     page_.hidden = host->IsClassSet(kPageHiddenClass);
-    page_.turn_dp = from_top_dp;
+    page_.turn_dp = page_.hidden ? from_top_dp : 0.f;
   }
   if (page_.OnScroll(from_top_dp)) {
     host->SetClass(kPageHiddenClass, page_.hidden);
