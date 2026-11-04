@@ -71,6 +71,11 @@ struct MediaEngineHealth {
   int64_t last_tx_audio_ms = 0;
   uint64_t rx_video_frames = 0;
   uint64_t tx_video_frames = 0;
+  /** Frames shown in the self-view (the camera's rate, ~30 fps; video is sent at half of it). */
+  uint64_t preview_frames = 0;
+  /** The encoder's time per frame this session: average and slowest (ms). */
+  double encode_ms_avg = 0;
+  double encode_ms_max = 0;
   int64_t last_rx_video_ms = 0;
   int64_t video_target_bps = 0;
   size_t stream_count = 0;

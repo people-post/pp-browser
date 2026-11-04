@@ -84,6 +84,13 @@ constexpr int kPlayoutMaxSlotsPerTick = 3;
 // Calls' video sends at 15 fps (with VideoLevelProfile's 250 kbit/s at level 1): with audio and overhead it
 // fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
 constexpr int kVideoFps = 15;
+/**
+ * The camera runs at twice that: every frame goes to the self-view, and a frame is encoded when a send interval has
+ * passed (every second one at 30 fps). Sending is unchanged; the self-view is not held to the send rate.
+ */
+constexpr int kCameraFps = 30;
+/** A frame is encoded once this long has passed since the last encode (a send period, less camera jitter). */
+constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8);
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */
@@ -343,6 +350,11 @@ struct MediaEngine::Impl {
   std::atomic<int64_t> last_tx_audio_ms{0};
   std::atomic<uint64_t> rx_video_frames{0};
   std::atomic<uint64_t> tx_video_frames{0};
+  /** Frames shown in the self-view, and the encoder's time per frame (sum, count, slowest), this session. */
+  std::atomic<uint64_t> preview_frames{0};
+  std::atomic<int64_t> encode_us_total{0};
+  std::atomic<uint64_t> encodes{0};
+  std::atomic<int64_t> encode_us_max{0};
   std::atomic<int64_t> last_rx_video_ms{0};
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
@@ -1365,7 +1377,7 @@ struct MediaEngine::Impl {
       request.holder = session_id;
     }
     request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
-    request.format.fps = kVideoFps;
+    request.format.fps = kCameraFps;
     request.format.prefer_front_facing = camera_prefer_front.load(std::memory_order_relaxed);
     auto lease = DeviceArbiter().AcquireCamera(request);
     if (!lease && !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
@@ -1440,7 +1452,7 @@ struct MediaEngine::Impl {
 
   /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
    *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
-  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
+  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode) {
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
     const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
@@ -1456,17 +1468,24 @@ struct MediaEngine::Impl {
       if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width,
                               geometry.encode_height, preview_fitted)) {
         PublishLocalPreview(preview_fitted, geometry.mirror_preview);
+        preview_frames.fetch_add(1, std::memory_order_relaxed);
       }
     }
     const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
     VideoFrameRgba fitted;
-    VideoFrameI420 i420;
-    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
-        !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted)) {
       return;
     }
     if (preview_rotate_cw == rotate_cw) {
       PublishLocalPreview(fitted, geometry.mirror_preview);
+      preview_frames.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (!encode) {
+      return; // a self-view frame between two sends
+    }
+    VideoFrameI420 i420;
+    if (!RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+      return;
     }
     if (!adaptation_send_video.load(std::memory_order_relaxed)) {
       need_keyframe = true; // the path cannot carry video now: nothing goes out; a keyframe starts it again
@@ -1476,7 +1495,9 @@ struct MediaEngine::Impl {
       return;
     }
     video_stage.Set(MediaThreadStage::Encode);
+    const auto encode_started = std::chrono::steady_clock::now();
     auto encoded = video_codec->Encode(i420, need_keyframe);
+    NoteEncodeTime(std::chrono::steady_clock::now() - encode_started);
     if (!encoded || encoded->annex_b.empty()) {
       return;
     }
@@ -1509,9 +1530,19 @@ struct MediaEngine::Impl {
     }
   }
 
+  void NoteEncodeTime(const std::chrono::steady_clock::duration took) {
+    const int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(took).count();
+    encode_us_total.fetch_add(us, std::memory_order_relaxed);
+    encodes.fetch_add(1, std::memory_order_relaxed);
+    int64_t max = encode_us_max.load(std::memory_order_relaxed);
+    while (us > max && !encode_us_max.compare_exchange_weak(max, us, std::memory_order_relaxed)) {
+    }
+  }
+
   /** The camera lease lives on this thread: open when wanted, release when not, frames in between. */
   void RunVideoLoop() {
-    const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
+    const auto frame_period = std::chrono::milliseconds(1000 / kCameraFps);
+    std::optional<std::chrono::steady_clock::time_point> last_encode;
     std::unique_ptr<CameraDeviceLease> camera;
     CameraGeometry geometry;
     bool need_keyframe = true;
@@ -1626,7 +1657,12 @@ struct MediaEngine::Impl {
         camera_requested.reset();
       }
       video_stage.Set(MediaThreadStage::Convert);
-      EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      const auto now = std::chrono::steady_clock::now();
+      const bool encode = !last_encode || now - *last_encode >= kEncodeInterval;
+      if (encode) {
+        last_encode = now;
+      }
+      EncodeAndSend(std::move(*frame), geometry, need_keyframe, encode);
       (void)DropStuckEncoder();
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       video_stage.Set(MediaThreadStage::Sleep);
@@ -2221,6 +2257,12 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.last_tx_audio_ms = impl->last_tx_audio_ms.load(std::memory_order_relaxed);
   h.rx_video_frames = impl->rx_video_frames.load(std::memory_order_relaxed);
   h.tx_video_frames = impl->tx_video_frames.load(std::memory_order_relaxed);
+  h.preview_frames = impl->preview_frames.load(std::memory_order_relaxed);
+  if (const uint64_t n = impl->encodes.load(std::memory_order_relaxed); n > 0) {
+    h.encode_ms_avg =
+        static_cast<double>(impl->encode_us_total.load(std::memory_order_relaxed)) / 1000.0 / static_cast<double>(n);
+  }
+  h.encode_ms_max = static_cast<double>(impl->encode_us_max.load(std::memory_order_relaxed)) / 1000.0;
   h.last_rx_video_ms = impl->last_rx_video_ms.load(std::memory_order_relaxed);
   h.video_target_bps = impl->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl->local_input_level.load(std::memory_order_relaxed);
