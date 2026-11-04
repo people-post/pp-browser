@@ -64,7 +64,6 @@
                     data-if="contact.unread_count > 0">{{contact.unread_display}}</span>
             </div>
             <p class="contacts-row-subtitle contacts-row-subtitle--desktop text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
-            <p class="contacts-row-subtitle contacts-row-subtitle--phone" data-if="contact.short_id != ''">{{contact.short_id}}</p>
           </div>
         </div>
       </div>
