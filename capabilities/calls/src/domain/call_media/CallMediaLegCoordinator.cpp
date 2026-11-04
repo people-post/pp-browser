@@ -9,7 +9,7 @@
 #include "lib/calls/CallMediaControlCodec.h"
 #include "domain/call_media/CallMediaFrameCrypto.h"
 #include "lib/calls/CallMediaSessionLogic.h"
-#include "common/LengthPrefixedCodec.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "common/Logger.h"
 
 #include "common/ValueJson.h"
@@ -175,6 +175,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     Clock::time_point next_auto_migrate{};
     /** Transport-side seq de-dupe per media channel: overlapping paths can deliver a frame twice. */
     std::unordered_map<uint8_t, CallMediaSeqWindow> rx_seq;
+    /** For SendMedia callers that name no sender instance (tests, SendAudio): this leg's own. */
+    uint64_t own_instance = mesh::NewMediaSenderInstance();
+    /** One per leg, as the media key is (A029 H2): each (channel, seq) once under an instance and epoch. */
+    std::shared_ptr<mesh::MediaFrameSendGuard> send_guard = std::make_shared<mesh::MediaFrameSendGuard>();
   };
 
   pp::amp::MeshRuntime* runtime = nullptr;
@@ -876,18 +880,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       cbs = bundle->callbacks;
       params = bundle->params;
     }
-    if (frame.size() < 8) {
-      return true;
-    }
-    const uint64_t len = DecodeLengthPrefixedHeader(std::vector<uint8_t>(frame.begin(), frame.begin() + 8));
-    if (len + 8 != frame.size()) {
-      return true;
-    }
-    std::vector<uint8_t> body(frame.begin() + static_cast<std::ptrdiff_t>(8), frame.end());
-    auto decoded = DecryptCallMediaFrame(params.media_key, params.call_id, params.media_epoch, body);
+    auto decoded = mesh::DecodeMediaDataFrame(frame);
     if (!decoded) {
       return true;
     }
+    auto plain =
+        mesh::OpenMediaFrame(params.media_key, CallMediaDirectContext(params.call_id), params.media_epoch, *decoded);
+    if (!plain) {
+      return true;
+    }
+    decoded->payload = std::move(*plain);
     {
       CallbackLock lock(*this);
       auto* bundle = FindByCallId(call_id);
@@ -900,13 +902,14 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       if (Path* path = PathOwningMedia(*bundle, from)) {
         path->last_rx = Clock::now();
       }
-      if (!bundle->rx_seq[decoded->channel].Accept(decoded->seq)) {
+      if (!bundle->rx_seq[static_cast<uint8_t>(decoded->channel_id)].Accept(decoded->seq)) {
         return true;  // the same frame over the other path
       }
     }
+    const auto channel = static_cast<uint8_t>(decoded->channel_id);
     if (cbs.on_media) {
-      cbs.on_media(decoded->channel, decoded->seq, decoded->mark, decoded->payload);
-    } else if (decoded->channel == mesh::kMediaChannelAudio && cbs.on_audio) {
+      cbs.on_media(channel, decoded->seq, decoded->mark, decoded->payload);
+    } else if (channel == mesh::kMediaChannelAudio && cbs.on_audio) {
       cbs.on_audio(decoded->payload);
     }
     return true;
@@ -2439,9 +2442,11 @@ CallMediaPathState CallMediaLegCoordinator::PathState(const CallMediaLegId id) c
 
 Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint8_t channel,
                                              const std::vector<uint8_t>& payload, const uint32_t seq,
-                                             const uint8_t mark) {
+                                             const uint8_t mark, const uint64_t instance) {
   std::shared_ptr<pp::amp::ChannelSession> session;
   CallMediaDirectConnectParams params;
+  std::shared_ptr<mesh::MediaFrameSendGuard> guard;
+  uint64_t own_instance = 0;
   {
     Impl::CallbackLock lock(*impl_);
     auto* bundle = impl_->FindByLegId(id);
@@ -2450,16 +2455,29 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
     }
     session = bundle->active.media;
     params = bundle->params;
+    guard = bundle->send_guard;
+    own_instance = bundle->own_instance;
     if (bundle->active.kind == impl_->silenced_kind_for_test.load(std::memory_order_relaxed)) {
       return Roe<void>();  // test: this path went quiet
     }
   }
-  auto encrypted =
-      EncryptCallMediaFrame(params.media_key, params.call_id, params.media_epoch, seq, mark, channel, payload);
-  if (!encrypted) {
-    return encrypted.error();
+  // One media frame (A029 H2): the stream id is the sender's (0 on a 1:1 call: the instance tells the two ends'
+  // nonces apart); the leg's send guard keeps every (channel, seq) once under an instance and epoch.
+  mesh::MediaDataFrame frame;
+  frame.channel_id = channel;
+  frame.channel_type = mesh::MediaChannelTypeFor(channel);
+  frame.seq = seq;
+  frame.mark = mark;
+  frame.instance = instance != 0 ? instance : own_instance;
+  if (!guard->Admit(frame.instance, params.media_epoch, channel, seq)) {
+    return Error("amp call-media: a frame's seq did not move forward");
   }
-  auto framed = EncodeLengthPrefixedFrame(*encrypted);
+  if (auto sealed = mesh::SealMediaFrame(params.media_key, CallMediaDirectContext(params.call_id), params.media_epoch,
+                                         frame, payload);
+      !sealed) {
+    return sealed.error();
+  }
+  auto framed = mesh::EncodeMediaDataFrame(frame);
   // The channel session is io-affine: the capture thread enqueues under the runtime io lock, or it
   // races the mesh pump on the same session — a link drop orphaning the session cleared its queue
   // mid-push (hard-w5 cold-upgrade answerer SIGSEGV, 2026-09-29). Not under the callback lock: a

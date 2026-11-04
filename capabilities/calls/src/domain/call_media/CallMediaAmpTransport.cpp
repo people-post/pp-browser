@@ -234,12 +234,12 @@ Roe<void> CallMediaAmpTransport::SendAudio(const std::vector<uint8_t>& opus_payl
 }
 
 Roe<void> CallMediaAmpTransport::SendMedia(const uint8_t channel, const std::vector<uint8_t>& payload,
-                                           const uint32_t seq, const uint8_t mark) {
+                                           const uint32_t seq, const uint8_t mark, const uint64_t instance) {
   const CallMediaLegId id = ActiveLegId();
   if (!id) {
     return Error("amp call-media: no active leg");
   }
-  return coordinator_.SendMedia(id, channel, payload, seq, mark);
+  return coordinator_.SendMedia(id, channel, payload, seq, mark, instance);
 }
 
 } // namespace pbr

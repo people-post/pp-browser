@@ -1,6 +1,6 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 
-#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "lib/media/VideoLevelProfile.h"
 #include "lib/broadcast/BroadcastMedia.h"
 
@@ -34,14 +34,10 @@ struct BroadcasterWorkflow::Sender {
   uint32_t stream_id = 0;
   std::atomic<bool> live{false};
   std::shared_ptr<std::atomic<uint64_t>> sent;  // the workflow's counter (outlives the show)
+  mesh::MediaFrameSendGuard guard;
 
   void Send(const MediaEngine::MediaPacket& packet) {
     if (!live.load(std::memory_order_acquire)) {
-      return;
-    }
-    const auto channel = static_cast<uint8_t>(packet.channel_id);
-    auto body = mesh::SealMediaRelayFrame(key, context, epoch, stream_id, packet.seq, packet.mark, channel, packet.payload);
-    if (!body) {
       return;
     }
     mesh::MediaDataFrame frame;
@@ -50,7 +46,11 @@ struct BroadcasterWorkflow::Sender {
     frame.channel_type = mesh::MediaChannelTypeFor(packet.channel_id);
     frame.seq = packet.seq;
     frame.mark = packet.mark;
-    frame.payload = std::move(*body);
+    frame.instance = packet.instance;
+    if (!guard.Admit(frame.instance, epoch, static_cast<uint8_t>(frame.channel_id), frame.seq) ||
+        !mesh::SealMediaFrame(key, context, epoch, frame, packet.payload)) {
+      return;
+    }
     if (relay->SendFrame(frame)) {
       sent->fetch_add(1, std::memory_order_relaxed);
     }

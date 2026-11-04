@@ -6,7 +6,6 @@ include(PpBrowserDomain)
 pp_browser_add_domain_library(pp_domain_call_media
   SOURCES
     CallMediaAmpTransport.cpp
-    CallMediaFrameCrypto.cpp
     CallMediaLegCoordinator.cpp
   PUBLIC_LIBS
     pp_calls_common

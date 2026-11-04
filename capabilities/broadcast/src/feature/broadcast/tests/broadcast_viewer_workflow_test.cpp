@@ -2,7 +2,7 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 
 #include "lib/media/VideoCodecUnavailable.h"
-#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "lib/broadcast/BroadcastJoinTicket.h"
 #include "lib/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
@@ -153,14 +153,14 @@ protected:
   }
 
   mesh::MediaDataFrame SealedFrame(const std::string& context, uint32_t seq,
-                             uint32_t stream = BroadcastPublisherStreamId(kPublisher)) {
-    auto body = mesh::SealMediaRelayFrame(media_key_, context, 1, stream, seq, 0, 0, opus_);
-    EXPECT_TRUE(body);
+                                   uint32_t stream = BroadcastPublisherStreamId(kPublisher)) {
     mesh::MediaDataFrame f;
     f.stream_id = stream;
     f.channel_id = 0;
+    f.channel_type = mesh::MediaChannelType::ReliableOrdered;
     f.seq = seq;
-    f.payload = *body;
+    f.instance = 0x5eed;
+    EXPECT_TRUE(mesh::SealMediaFrame(media_key_, context, 1, f, opus_));
     return f;
   }
 

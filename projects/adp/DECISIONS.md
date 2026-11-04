@@ -219,7 +219,7 @@
 ## A029 — A smaller packet: one sealed header, derived nonces, no second tag
 
 **Date:** 2026-11-03  
-**Status:** Accepted for step 1 and H1, built; H2 and H3 proposed. Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
+**Status:** Accepted for step 1, H1 and H2, built; H3 proposed. Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
 - **Step 1, 40 ms Opus packets:** [CALLS.md § Audio packets](../../docs/architecture/CALLS.md). Measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user: group, one stream up 130 → 88 kbit/s (60 → 35 pkt/s); group, two streams down 189 → 105 kbit/s; 1:1 through a circuit, up 165 → 112 and down 120 → 67 kbit/s each way.
 - **H1, amp wire v2 (pp-cpp-amp v4.0.0):** [ADP.md](../../docs/contracts/ADP.md), [AMP-SESSION.md § Sealing packets](../../docs/contracts/AMP-SESSION.md#sealing-packets), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md). Amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3). Built as decided below, with these changes: the association id stays dialer-chosen (item 4), the key-phase bit is not built, and fragments now fill each link's budget (§ Sizes). Measured in the lab against step 1 (2026-11-03), per user, received video the same (15.1 fps, none lost, no stalls):
 
@@ -231,6 +231,16 @@
   | `video_pair_wide` (circuit) | 536 → 413 kbit/s, 124 → 74 pkt/s | 494 → 371 kbit/s |
 
   The 1:1 video gain is the largest: its frames were fragmented twice before.
+- **H2, one media frame (pp-cpp-mesh v5.0.0):** [WIRE_SCHEMAS § Media frames](../../docs/contracts/WIRE_SCHEMAS.md#media-frames). Built as decided below, with these changes: the header also keeps the relay's channel type (2 bits beside the mark), the stream id is 0 on a 1:1 call (the sender instance tells the two ends apart), and the 1:1 path draws its own instance for the audio it renumbers each media session. 34 B around a media payload, where it was 60 through a hop and 55 on the 1:1 path. Shipped in one cutover with H1. Measured in the lab against H1 (2026-11-03), per user, received video the same (15.1 fps, none lost, no stalls):
+
+  | Scenario | Up | Down |
+  |---|---|---|
+  | `voice_group_wide` | 75 → 70 kbit/s (265 → 246 B/pkt) | 67 → 57 kbit/s |
+  | `voice_pair_wide` (circuit) | 90 → 86 kbit/s | 45 → 41 kbit/s |
+  | `video_group_wide` | 434 → 426 kbit/s | 746 → 729 kbit/s |
+  | `video_pair_wide` (circuit) | 413 → 407 kbit/s | 371 → 364 kbit/s |
+
+  The averages include acks and keepalives, so a media packet's 26 B (21 B on the 1:1 path) shows as 13–23 B.
 - **H3** amends [A024](#a024--amp-call-media-over-circuit--nested-session) once built.
 
 **Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
@@ -248,7 +258,7 @@
 
 A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8 B length prefix. The duplication: the sequence number 5 times, the channel id twice, a version / type byte at 4–5 layers, two random 24 B nonces, three authenticators (the E2E tag, the L2 tag, the L1 HMAC), a 16 B association id, and length fields that UDP and L3 already give. Video fragments (~1 200 B) pay the same per packet: about 14 %, against 3–4× for audio.
 
-**Decision** (H1 accepted and built; H2 and H3 proposed):
+**Decision** (H1 and H2 accepted and built; H3 proposed):
 
 *H1: Amp's packet (every Amp packet, chat included; about −59 B):*
 1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge.
