@@ -1108,6 +1108,8 @@ PHONE_JITTERY = {"delay": 60, "jitter": 40, "loss": 0, "up": 4000, "down": 8000}
 PHONE_NARROW = {"delay": 60, "loss": 0, "up": 600, "down": 2000}
 # None of them: what a call puts on the wire when nothing holds it back.
 PHONE_WIDE = {"delay": 20, "loss": 0, "up": 8000, "down": 8000}
+# A long path and nothing else (a US <-> China call through a relay): 250 ms more round trip on each user's link.
+PHONE_FAR = {"delay": 125, "loss": 0, "up": 4000, "down": 8000}
 
 
 def gw_net(u, script):
@@ -2902,6 +2904,49 @@ VIDEO_MEASUREMENTS = [("video_%s_%s" % (kind, name), video_measurement(kind == "
     ("voice_%s_wide" % kind, voice_measurement(kind == "group", PHONE_WIDE)) for kind in ("group", "pair")]
 
 
+def call_link(u):
+    """The call's link now (Amp ConnectionStats of the association its media rides), or None."""
+    return u.state().get("link")
+
+
+def scenario_call_on_a_far_path(lab):
+    """A 1:1 call set up on clean links; then both links get 250 ms longer (PHONE_FAR). The call's link learns
+    the new round trip and resends little: before amp v5.0.1 a new packet's first resend came after the old
+    (or the 50 ms initial) timeout, every packet was resent before its ack, Karn's rule never took a sample, and
+    the link resent everything with its round trip unknown (#502: link_rtt_ms=-1, link_resend_pct=100)."""
+    a, a_thread, b, _ = open_pair(lab)
+    users = [a, b]
+    call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
+    b.wait_surface("ringing", 60, call_id=call_id)
+    b.cmd("accept_voice")
+    for u in users:
+        u.wait_surface("in_call", 90, call_id=call_id)
+    for u in users:
+        assert_hears(u, 1, timeout=60)
+    report = {}
+    with Road(users, PHONE_FAR):
+        time.sleep(20)  # the link meets the long path
+        before = {u.name: call_link(u) for u in users}
+        time.sleep(30)
+        after = {u.name: call_link(u) for u in users}
+        for u in users:
+            assert_hears(u, 1, timeout=30)
+    leave_all(users)
+    for u in users:
+        was, now = before[u.name], after[u.name]
+        if not now:
+            raise ProbeError("%s: no call link counters" % u.name)
+        sent = now["reliable_sent"] - was["reliable_sent"] if was and was["link_id"] == now["link_id"] else 0
+        resent = now["retransmits"] - was["retransmits"] if sent else 0
+        report[u.name.split("-")[0]] = "rtt=%d ms sent=%d resent=%d" % (now["srtt_ms"], sent, resent)
+        if now["srtt_ms"] < 200:
+            raise ProbeError("%s: the call link's round trip is %d ms on a 250 ms longer path (not learned)"
+                             % (u.name, now["srtt_ms"]))
+        if sent and resent > sent // 4:
+            raise ProbeError("%s: %d of %d Reliable packets resent on a lossless path" % (u.name, resent, sent))
+    return report
+
+
 def scenario_group_call_on_the_road(lab):
     """The dogfood call: Carol (a phone on the highway) and Bob (also on the road) hand over every
     10-25 s on lossy, jittery links; Bob added Carol, Carol never added Bob. Alice (owner) calls;
@@ -3018,6 +3063,7 @@ SCENARIOS = [
     ("group_one_way_joins_late", scenario_group_one_way_joins_late),
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
+    ("call_on_a_far_path", scenario_call_on_a_far_path),
     ("group_call_on_the_road", scenario_group_call_on_the_road),
     ("group_call_weak_upload", scenario_group_call_weak_upload),
     ("group_video_three", scenario_group_video_three),
@@ -3036,7 +3082,7 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
-             "bystander_is_no_relay"} | {name for name, _ in VIDEO_MEASUREMENTS}
+             "bystander_is_no_relay", "call_on_a_far_path"} | {name for name, _ in VIDEO_MEASUREMENTS}
 
 
 def main():
