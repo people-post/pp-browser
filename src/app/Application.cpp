@@ -37,6 +37,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -1186,6 +1187,17 @@ void Application::WireCalls() {
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.call_joinable = [this](const std::string& thread_id) { return call_->CallJoinableInThread(thread_id); };
     call_actions.call_join_bar_text = [this](const std::string& thread_id) { return call_->CallJoinBarText(thread_id); };
+    call_actions.recent_calls_reader = [this](const size_t limit) -> std::function<std::vector<call_queries::RecentCall>()> {
+      ConversationsHub& hub = Conversations();
+      const std::optional<LocalIdentity> identity = messaging_facade_ ? messaging_facade_->GetIdentity() : std::nullopt;
+      if (!hub.IsInitialized() || hub.ProfileDbPath().empty() || !identity || identity->account_id.empty()) {
+        return {};
+      }
+      // Its own handle on profile.db (each call opens and closes it), so the read can run on a worker.
+      return [db_path = hub.ProfileDbPath(), local = identity->account_id, limit]() {
+        return call_queries::RecentCalls(SqliteCallSessionStore(db_path), local, limit);
+      };
+    };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
@@ -1523,6 +1535,14 @@ void Application::WireAgentAndConfig() {
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
   store_.AddProfilePrefsListener(
       [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
+  // A contact starred or unstarred (on their page): Home's Favorites follow.
+  store_.AddProfilePrefsListener(
+      [this, starred = store_.Snapshot().profile_prefs.starred_contacts](const ProfilePreferences& prefs) mutable {
+        if (prefs.starred_contacts != starred) {
+          starred = prefs.starred_contacts;
+          chat_->OnHomePrefsChanged();
+        }
+      });
 }
 
 bool Application::MountPresenters(ui::Context* context) {
@@ -1574,6 +1594,7 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
   contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
   people_picker_->BindContactsNotify(contacts_notify); // a member's profile from the member list
   chat_->BindContactsNotify(std::move(contacts_notify));
 

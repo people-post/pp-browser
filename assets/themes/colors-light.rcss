@@ -2597,24 +2597,89 @@ input.checkbox:checked {
   color: #3c3c4399;
 }
 
-.shell-layer-compact .home-widget-title {
-  color: #000000;
-}
-
-.shell-layer-compact .home-widget-more, .shell-layer-compact .home-friend-view {
-  color: #007aff;
-}
-
-.shell-layer-compact .home-card {
+.shell-layer-compact .home-w {
   background-color: #ffffff;
 }
 
-.shell-layer-compact .home-card .sidebar-session {
-  background-color: transparent;
+.shell-layer-compact .home-w--tap:active,
+.shell-layer-compact .home-av:active .home-av-frame,
+.shell-layer-compact .home-chat:active,
+.shell-layer-compact .home-brief:active,
+.shell-layer-compact .home-edit-toggle:active {
+  opacity: 0.6;
 }
 
-.shell-layer-compact .home-card .sidebar-session:active {
-  background-color: #7878801f;
+.shell-layer-compact .home-wh-title,
+.shell-layer-compact .home-av-name,
+.shell-layer-compact .home-chat-preview,
+.shell-layer-compact .home-small,
+.shell-layer-compact .home-brief-meta,
+.shell-layer-compact .home-w-hint,
+.shell-layer-compact .home-edit-size {
+  color: #3c3c4399;
+}
+
+.shell-layer-compact .home-wh-more {
+  color: #007aff;
+}
+
+.shell-layer-compact .home-chat-title,
+.shell-layer-compact .home-num,
+.shell-layer-compact .home-brief-title {
+  color: #000000;
+}
+
+.shell-layer-compact .home-av-letter,
+.shell-layer-compact .home-chat-letter {
+  color: #ffffff;
+}
+
+.shell-layer-compact .home-wh-icon svg,
+.shell-layer-compact .home-chat-icon,
+.shell-layer-compact .home-edit-sign svg {
+  image-color: #ffffff;
+}
+
+/* The widgets' coloured squares (mockup 10-home-widgets). */
+.shell-layer-compact .home-wh-icon--favorites {
+  background-color: #007aff;
+}
+
+.shell-layer-compact .home-wh-icon--calls {
+  background-color: #34c759;
+}
+
+.shell-layer-compact .home-wh-icon--mentions {
+  background-color: #ff9500;
+}
+
+.shell-layer-compact .home-wh-icon--recent {
+  background-color: #5856d6;
+}
+
+.shell-layer-compact .home-wh-icon--new-people {
+  background-color: #af52de;
+}
+
+.shell-layer-compact .home-wh-icon--brief {
+  background-color: #ff3b30;
+}
+
+/* The smaller headlines sit under a hairline. */
+.shell-layer-compact .home-brief {
+  border-top: 1dp #3c3c434a;
+}
+
+.shell-layer-compact .home-brief--head {
+  border-top-width: 0;
+}
+
+.shell-layer-compact .home-edit-sign--remove {
+  background-color: #ff3b30;
+}
+
+.shell-layer-compact .home-edit-sign--add {
+  background-color: #34c759;
 }
 
 /* Home: the ask-AI dock and the tab bar share one opaque colour, no line between them or above the dock; the widgets

@@ -212,6 +212,8 @@ public:
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
   void OpenNewChatPage();
+  /** Opens (or starts) the chat with a contact, as a pick on the New chat page does (Home's Favorites). */
+  void MessageContact(const std::string& contact_id);
   /**
    * Phone Contacts "+": the Add contact sheet. A search field (the directory, as you type), my account card with
    * copy and share, and rows for scan, my QR code, inviting friends and a new group.

@@ -22,6 +22,7 @@
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <utility>
 
@@ -291,7 +292,7 @@ void ChatPresenter::Refresh() {
   }
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
-  const std::set<std::string> mentioned = facade_->ThreadsWithMentions();
+  const std::map<std::string, int> mentions = facade_->MentionCounts();
   std::string local_account;
   if (auto identity = facade_->GetIdentity()) {
     local_account = identity->account_id;
@@ -313,10 +314,14 @@ void ChatPresenter::Refresh() {
     row.kind = ChatSessionKindName(thread);
     row.unread_count = thread.unread_count;
     row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
-    row.mentioned = mentioned.count(thread.id) > 0;
+    if (const auto it = mentions.find(thread.id); it != mentions.end() && it->second > 0) {
+      row.mentioned = true;
+      row.mention_count = it->second;
+    }
     row.pinned = thread_prefs.pinned_at != 0;
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.date_label = SessionDateLabel(thread.updated_at, now_ms);
+    row.updated_at = thread.updated_at;
     row.active = thread.id == active_id;
     {
       const AvatarGlyph glyph = MakeAvatarGlyph(row.title, {});
@@ -324,6 +329,7 @@ void ChatPresenter::Refresh() {
       row.avatar_tone = glyph.tone;
     }
     if (thread.kind == ThreadKind::Direct && label.contact_id) {
+      row.contact_id = *label.contact_id;
       row.icon_path = facade_->ContactIconPath(*label.contact_id);
       // Kenneth 2026-11-04: a blocked person's chat must be findable again to unblock them.
       if (auto contact = facade_->GetContact(*label.contact_id); contact && *contact) {

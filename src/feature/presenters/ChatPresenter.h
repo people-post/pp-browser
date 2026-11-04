@@ -38,9 +38,13 @@ struct ChatSessionRow {
   bool unread_dot = false;
   /** An unread message here mentions us (G015): the row says "You were mentioned". */
   bool mentioned = false;
+  /** How many unread messages here mention us (Home's Mentions widget). */
+  int mention_count = 0;
   bool pinned = false;
   bool muted = false;
   std::string date_label;
+  /** Last activity, unix ms (Home's Recent chats and Favorites order by it, whatever is pinned). */
+  int64_t updated_at = 0;
   bool active = false;
   /** A direct chat with someone who is not a saved contact (so not a blocked one either): a possible new friend. */
   bool from_stranger = false;
@@ -51,6 +55,8 @@ struct ChatSessionRow {
   int avatar_tone = 0;
   /** Local file of the person's cached profile photo (direct chats with a saved contact); empty: show the letter. */
   std::string icon_path;
+  /** The saved contact a direct chat is with; empty for anyone else, groups and the AI. */
+  std::string contact_id;
 
   bool operator==(const ChatSessionRow&) const = default;
 };

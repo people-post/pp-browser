@@ -1398,6 +1398,23 @@ void ContactsController::SyncNewChat() {
   }
 }
 
+void ContactsController::MessageContact(const std::string& contact_id) {
+  LoadSelectedDetail(contact_id);
+  if (selected_.id.empty()) {
+    return;
+  }
+  if (!selected_.can_message) {
+    if (!selected_.message_hint.empty()) {
+      ShowToast(selected_.message_hint.c_str());
+    }
+    selected_ = {};
+    return;
+  }
+  OnStartChat();
+  selected_ = {};
+  DirtyAll();
+}
+
 // A contact chosen on the New chat page opens (or creates) the same chat the contact page's "Message" does.
 void ContactsController::OnNewChatPick(const std::string& contact_id) {
   LoadSelectedDetail(contact_id);

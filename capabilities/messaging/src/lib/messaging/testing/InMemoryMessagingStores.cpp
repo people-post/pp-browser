@@ -368,6 +368,17 @@ Roe<std::set<std::string>> InMemoryThreadMentionsStore::Threads() const {
   return threads;
 }
 
+Roe<std::map<std::string, int>> InMemoryThreadMentionsStore::Counts() const {
+  std::lock_guard lock(mutex_);
+  std::map<std::string, int> counts;
+  for (const auto& [thread_id, mentions] : mentions_) {
+    if (!mentions.empty()) {
+      counts[thread_id] = static_cast<int>(mentions.size());
+    }
+  }
+  return counts;
+}
+
 Roe<std::optional<std::string>> InMemoryThreadMentionsStore::Oldest(const std::string& thread_id) const {
   std::lock_guard lock(mutex_);
   auto thread = mentions_.find(thread_id);

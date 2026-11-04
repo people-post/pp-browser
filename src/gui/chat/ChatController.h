@@ -140,8 +140,10 @@ public:
   /** Put `text` in the open chat's composer and focus it; the user sends it (Settings "?" → PP Support). */
   void PrefillDraft(const std::string& text);
   void OnHomeTabActivated();
-  /** Edit Home (DESIGN-pp-ui 8.16): a sheet of switches for the Home widgets; Home's "Edit" and Me → Appearance. */
+  /** Edit Home (DESIGN-pp-ui 8.16): the Home widgets on and off Home; Home's "Edit" and Me → Appearance. */
   void OpenHomeEdit();
+  /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
+  void OnHomePrefsChanged();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
   /**
@@ -211,10 +213,14 @@ private:
                      bool show_error_text = false);
   /** Copy the presenter's chats list into the shell's data model. */
   void ApplySessionList();
-  /** The phone Today page's date line, "New messages" rows and "New people" count, from the same list. */
+  /** The phone Home widgets' data from the chats list (Recent chats, Mentions, New people, Favorites). */
   void ApplyHomeToday(const ChatListScreen& list);
-  /** Which Today widgets show, and the briefs' rows, from the last summary and the briefs cache. */
+  /** Which Home widgets show and in which order, the calls' and briefs' lines, and Edit Home's rows. */
   void ApplyHomeWidgets();
+  /** Favorites: starred contacts (the star order) then recent chats with contacts; a starred one is looked up here. */
+  void ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows);
+  /** Phones, Home shown, Calls kept: reads the newest calls on a worker and draws the Calls widget. */
+  void RefreshHomeCalls();
   /**
    * Phones, Home shown: reads the profile's briefs cache once and, when it is over 3 hours old (or for another
    * language), fetches the article feed again on a worker (DESIGN-pp-ui 8.16).
@@ -226,10 +232,16 @@ private:
   void OpenHomeBrief(int index);
   /** A tap on the "New people" line: the first chat with unread messages from someone who is not a contact. */
   void OpenHomeNewPeople();
-  /** The widgets the user keeps on Home (profile preferences; device-only). */
-  HomeWidgetChoices HomeChoices() const;
-  /** An Edit Home switch: saves the choice, redraws Home, and fetches the briefs when they were switched back on. */
-  void ToggleHomeWidgetChoice(const std::string& id);
+  /** A favourite's avatar: their newest chat, or (none yet) a new one as the contact page's Message starts. */
+  void OpenHomeFavorite(int index);
+  /** The Calls widget: the chat of the newest call. */
+  void OpenHomeCalls();
+  /** The Mentions widget: the chat, at its oldest unread mention. */
+  void OpenHomeMentions();
+  /** The widgets the user keeps on Home and their order (profile preferences; device-only). */
+  HomeWidgetLayout HomeLayout() const;
+  /** Saves an Edit Home change, redraws Home, and reads / fetches what a widget put back needs. */
+  void SaveHomeLayout(const HomeWidgetLayout& layout);
   void OnToggleArchived();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
@@ -568,6 +580,11 @@ private:
   bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   // Phone Today page (DESIGN-pp-ui 8.16): the last unread summary and the Today's briefs cache.
   HomeTodaySummary home_summary_;
+  std::vector<HomeFavorite> home_favorites_;
+  /** The newest calls as last read (RefreshHomeCalls), and whether a read is running. */
+  std::vector<call_queries::RecentCall> home_calls_;
+  bool home_calls_reading_ = false;
+  bool home_calls_again_ = false;  // asked again while a read ran: read once more when it ends
   HomeBriefCache home_brief_;
   std::string home_brief_dir_;          // the profile directory the cache was read from
   bool home_brief_fetching_ = false;

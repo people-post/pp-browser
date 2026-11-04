@@ -277,6 +277,39 @@ bool PeerStillToAnswerOurCall(const ICallSessionReader& sessions, const std::str
   return local_joined && peer_pending;
 }
 
+std::vector<RecentCall> RecentCalls(const ICallSessionReader& sessions, const std::string& local_identity,
+                                    const size_t limit) {
+  std::vector<RecentCall> calls;
+  auto listed = sessions.ListRecentSessions(limit);
+  if (!listed) {
+    return calls;
+  }
+  for (const CallSession& session : *listed) {
+    if (session.session_kind == CallSessionKind::Broadcast) {
+      continue;
+    }
+    RecentCall call;
+    call.call_id = session.call_id;
+    call.thread_id = session.origin_thread_id.value_or("");
+    call.video = session.media_mode == CallMediaMode::Video;
+    call.group = session.origin_group_id.has_value();
+    call.incoming = !session.initiator_identity.empty() && session.initiator_identity != local_identity;
+    call.at_ms = session.created_at;
+    if (call.incoming && session.state == CallSessionState::Ended) {
+      auto self = sessions.FindParticipant(session.call_id, local_identity);
+      if (self && self->has_value()) {
+        const CallParticipant& row = **self;
+        const bool unanswered = row.state == CallParticipantState::Invited ||
+                                row.state == CallParticipantState::Ringing ||
+                                row.state == CallParticipantState::Missed;
+        call.missed = unanswered && !row.joined_at.has_value();
+      }
+    }
+    calls.push_back(std::move(call));
+  }
+  return calls;
+}
+
 } // namespace call_queries
 
 Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRosterDetail& roster,

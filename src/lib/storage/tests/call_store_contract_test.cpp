@@ -77,6 +77,11 @@ TEST_P(CallStoreContractTest, ActiveSessionsAreTheUnendedNewestFirstAndAGroupsAr
   auto group = sessions_->ListSessionsForGroup("group:g", 2).value();
   ASSERT_EQ(group.size(), 2u) << "at most `limit`, any state";
   EXPECT_EQ(group[0].call_id, "call:ended");
+  auto recent = sessions_->ListRecentSessions(3).value();
+  ASSERT_EQ(recent.size(), 3u) << "every call, any state, at most `limit`";
+  EXPECT_EQ(recent[0].call_id, "call:other");
+  EXPECT_EQ(recent[1].call_id, "call:ended");
+  EXPECT_EQ(recent[2].call_id, "call:new");
   EXPECT_EQ(sessions_->LoadSession("call:new").value()->state, CallSessionState::Ringing);
   EXPECT_FALSE(sessions_->LoadSession("call:none").value().has_value());
 }

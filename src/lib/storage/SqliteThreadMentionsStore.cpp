@@ -107,6 +107,28 @@ Roe<std::set<std::string>> SqliteThreadMentionsStore::Threads() const {
   return threads;
 }
 
+Roe<std::map<std::string, int>> SqliteThreadMentionsStore::Counts() const {
+  auto db = OpenDb();
+  if (!db) {
+    return db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(*db, "SELECT thread_id, COUNT(*) FROM thread_mentions GROUP BY thread_id;", -1, &stmt,
+                         nullptr) != SQLITE_OK) {
+    sqlite3_close(*db);
+    return Error("Failed to count thread mentions");
+  }
+  std::map<std::string, int> counts;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (const unsigned char* id = sqlite3_column_text(stmt, 0)) {
+      counts[reinterpret_cast<const char*>(id)] = sqlite3_column_int(stmt, 1);
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(*db);
+  return counts;
+}
+
 Roe<std::optional<std::string>> SqliteThreadMentionsStore::Oldest(const std::string& thread_id) const {
   auto db = OpenDb();
   if (!db) {

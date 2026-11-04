@@ -40,6 +40,8 @@ struct ContactsNotifyPorts {
   std::function<void(GroupAdminCard card)> set_group_admin;
   /** Phone Chats "compose": pushes the full-screen New chat page. */
   std::function<void()> open_new_chat;
+  /** Home's Favorites, a starred contact with no chat yet: opens (or starts) the chat their page's Message would. */
+  std::function<void(const std::string& contact_id)> message_contact;
 };
 
 } // namespace pbr

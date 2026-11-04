@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -168,6 +169,8 @@ public:
   Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
   /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
   std::set<std::string> ThreadsWithMentions();
+  /** Those chats with how many unread mentions each has; empty when unknown. */
+  std::map<std::string, int> MentionCounts();
   /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
   std::optional<std::string> OldestMention(const std::string& thread_id);
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */

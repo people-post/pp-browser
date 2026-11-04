@@ -24,27 +24,32 @@ bool Has(const std::string& text, const std::string& needle) {
   return text.find(needle) != std::string::npos;
 }
 
-TEST(HomeEditMarkupTest, EditHomeIsAPageSheetWithASwitchPerWidget) {
+TEST(HomeEditMarkupTest, EditHomeIsAPageSheetWithRemoveAndAddRows) {
   EXPECT_EQ(ViewCatalog::ResolvePath("home_edit"), "views/home_edit.rml");
   const std::string rml = ReadAsset("views/home_edit.rml");
   ASSERT_FALSE(rml.empty());
   EXPECT_TRUE(Has(rml, "class=\"sheet-header\"")) << "the shared sheet title row";
-  for (const char* id : {kHomeWidgetMessages, kHomeWidgetNewPeople, kHomeWidgetBrief}) {
-    EXPECT_TRUE(Has(rml, std::string("home_widget_toggle('") + id + "')")) << id;
-  }
-  EXPECT_TRUE(Has(rml, "settings-switch--on=\"home_keep_messages\""));
-  EXPECT_TRUE(Has(rml, "settings-switch--on=\"home_keep_new_contacts\""));
-  EXPECT_TRUE(Has(rml, "settings-switch--on=\"home_keep_brief\""));
+  EXPECT_TRUE(Has(rml, "data-for=\"row : home_edit_on\""));
+  EXPECT_TRUE(Has(rml, "data-for=\"row : home_edit_off\""));
+  EXPECT_TRUE(Has(rml, "home_widget_remove(row.id)"));
+  EXPECT_TRUE(Has(rml, "home_widget_add(row.id)"));
+  EXPECT_TRUE(Has(rml, "{{row.size}}")) << "wide or small";
 }
 
-TEST(HomeEditMarkupTest, HomeShowsEachWidgetOnlyWithSomethingAndHasAnEditButton) {
+TEST(HomeEditMarkupTest, HomeDrawsTheWidgetsInTheUsersOrderAndHasAnEditButton) {
   const std::string rml = ReadAsset("views/home.rml");
-  EXPECT_TRUE(Has(rml, "data-if=\"home_show_messages\""));
-  EXPECT_TRUE(Has(rml, "data-if=\"home_show_new_contacts\""));
-  EXPECT_TRUE(Has(rml, "data-if=\"home_show_brief\""));
+  EXPECT_TRUE(Has(rml, "data-for=\"w : home_widgets\""));
+  EXPECT_TRUE(Has(rml, "data-class-home-slot--wide=\"w.wide\""));
+  for (const std::string& id : HomeWidgetIds()) {
+    EXPECT_TRUE(Has(rml, "data-if=\"w.id == '" + id + "'\"")) << id;
+  }
   EXPECT_TRUE(Has(rml, "home_edit_open()"));
+  EXPECT_TRUE(Has(rml, "home_open_favorite(f_index)"));
+  EXPECT_TRUE(Has(rml, "home_open_calls()"));
+  EXPECT_TRUE(Has(rml, "home_open_mentions()"));
   EXPECT_TRUE(Has(rml, "home_open_new_people()"));
   EXPECT_TRUE(Has(rml, "home_open_brief(item_index)"));
+  EXPECT_TRUE(Has(rml, "home_open_chats()"));
   // Me -> Appearance opens the same sheet.
   EXPECT_TRUE(Has(ReadAsset("views/settings_section_appearance.rml"), "open_home_edit()"));
 }

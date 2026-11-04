@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -24,6 +25,8 @@ public:
   virtual Roe<void> DropMessage(const std::string& thread_id, const std::string& message_id) const = 0;
   /** The threads with a mention unread ("You were mentioned"). */
   virtual Roe<std::set<std::string>> Threads() const = 0;
+  /** How many unread mentions each thread with one has (Home's "Mentions" widget counts them). */
+  virtual Roe<std::map<std::string, int>> Counts() const = 0;
   /** The oldest unread mention of a thread (where opening it can jump to); none when it has none. */
   virtual Roe<std::optional<std::string>> Oldest(const std::string& thread_id) const = 0;
 };

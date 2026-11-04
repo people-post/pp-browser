@@ -24,6 +24,7 @@ public:
   Roe<void> DropThread(const std::string& thread_id) const override;
   Roe<void> DropMessage(const std::string& thread_id, const std::string& message_id) const override;
   Roe<std::set<std::string>> Threads() const override;
+  Roe<std::map<std::string, int>> Counts() const override;
   Roe<std::optional<std::string>> Oldest(const std::string& thread_id) const override;
 
 private:

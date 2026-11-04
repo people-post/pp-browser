@@ -7,98 +7,177 @@
 namespace pbr {
 namespace {
 
-ChatSessionRow Row(const std::string& id, const int unread, const bool stranger = false) {
+ChatSessionRow Row(const std::string& id, const int unread, const bool stranger = false, const int64_t at = 0) {
   ChatSessionRow row;
   row.id = id;
+  row.title = "T-" + id;
   row.unread_count = unread;
   row.from_stranger = stranger;
+  row.updated_at = at;
   return row;
 }
 
-TEST(HomeTodayTest, NewMessagesShowAtMostThreeUnreadChatsInListOrder) {
-  const HomeTodaySummary summary =
-      SummarizeHomeToday({Row("a", 2), Row("read", 0), Row("b", 1), Row("c", 5), Row("d", 4), Row("e", 1)});
-  ASSERT_EQ(summary.unread.size(), 3u);
-  EXPECT_EQ(summary.unread[0].id, "a");
-  EXPECT_EQ(summary.unread[1].id, "b");
-  EXPECT_EQ(summary.unread[2].id, "c");
-  // "See all" counts every unread message, like the Chats tab badge.
-  EXPECT_EQ(summary.unread_total, 13);
+ChatSessionRow Direct(const std::string& id, const std::string& contact, const int64_t at, const bool blocked = false) {
+  ChatSessionRow row = Row(id, 0, false, at);
+  row.kind = "private";
+  row.contact_id = contact;
+  row.title = contact;
+  row.blocked = blocked;
+  return row;
 }
 
-TEST(HomeTodayTest, NothingUnreadHidesTheWidgets) {
-  const HomeTodaySummary summary = SummarizeHomeToday({Row("a", 0), Row("b", 0, /*stranger=*/true)});
-  EXPECT_TRUE(summary.unread.empty());
-  EXPECT_EQ(summary.unread_total, 0);
-  EXPECT_EQ(summary.new_contacts, 0);
-  EXPECT_TRUE(SummarizeHomeToday({}).unread.empty());
+const HomeWidgetLayout kAll = HomeWidgetLayoutFrom({}, {});
+
+std::vector<std::string> Ids(const std::vector<ChatSessionRow>& rows) {
+  std::vector<std::string> ids;
+  for (const ChatSessionRow& row : rows) {
+    ids.push_back(row.id);
+  }
+  return ids;
 }
 
-TEST(HomeTodayTest, NewContactsCountUnreadChatsWithStrangersOnly) {
-  const HomeTodaySummary summary =
-      SummarizeHomeToday({Row("friend", 3), Row("stranger1", 1, true), Row("stranger2", 2, true),
-                          Row("stranger-read", 0, true)});
-  EXPECT_EQ(summary.new_contacts, 2);
+std::vector<std::string> ContactIds(const std::vector<HomeFavorite>& favorites) {
+  std::vector<std::string> ids;
+  for (const HomeFavorite& favorite : favorites) {
+    ids.push_back(favorite.contact_id);
+  }
+  return ids;
 }
 
-TEST(HomeTodayTest, NewPeopleOpensTheFirstStrangerChatInListOrder) {
-  const HomeTodaySummary summary =
-      SummarizeHomeToday({Row("friend", 3), Row("stranger-read", 0, true), Row("s1", 1, true), Row("s2", 4, true)});
+TEST(HomeTodayTest, RecentChatsAreTheThreeLatestReadOrNotWhateverIsPinned) {
+  // The list is pinned first; Home takes the newest by time.
+  const std::vector<ChatSessionRow> rows = {Row("pinned-old", 0, false, 10), Row("a", 2, false, 50),
+                                            Row("read", 0, false, 40), Row("b", 0, false, 30)};
+  const HomeTodaySummary summary = SummarizeHomeToday(rows, kAll);
+  EXPECT_EQ(Ids(summary.recent), (std::vector<std::string>{"a", "read", "b"}));
+
+  // Reading every chat (unread 0 everywhere) leaves the widget full: it is not "new messages" any more.
+  std::vector<ChatSessionRow> all_read = rows;
+  for (ChatSessionRow& row : all_read) {
+    row.unread_count = 0;
+  }
+  EXPECT_EQ(Ids(SummarizeHomeToday(all_read, kAll).recent), (std::vector<std::string>{"a", "read", "b"}));
+  EXPECT_TRUE(SummarizeHomeToday({}, kAll).recent.empty());
+}
+
+TEST(HomeTodayTest, NewPeopleCountUnreadChatsWithStrangersAndOpenTheFirst) {
+  const HomeTodaySummary summary = SummarizeHomeToday(
+      {Row("friend", 3), Row("stranger-read", 0, true), Row("s1", 1, true), Row("s2", 4, true)}, kAll);
   EXPECT_EQ(summary.new_contacts, 2);
   EXPECT_EQ(summary.first_stranger_thread_id, "s1");
-  EXPECT_TRUE(SummarizeHomeToday({Row("friend", 3)}).first_stranger_thread_id.empty());
+  EXPECT_TRUE(SummarizeHomeToday({Row("friend", 3)}, kAll).first_stranger_thread_id.empty());
 }
 
-TEST(HomeTodayTest, AWidgetWithNothingToShowIsHidden) {
-  const HomeWidgetsShown none = ShownHomeWidgets(SummarizeHomeToday({Row("a", 0)}), 0);
-  EXPECT_FALSE(none.messages);
-  EXPECT_FALSE(none.new_contacts);
-  EXPECT_FALSE(none.brief);
-
-  const HomeWidgetsShown friends_only = ShownHomeWidgets(SummarizeHomeToday({Row("friend", 2)}), 0);
-  EXPECT_TRUE(friends_only.messages);
-  EXPECT_FALSE(friends_only.new_contacts) << "no unread chat from a stranger";
-  EXPECT_FALSE(friends_only.brief) << "no headlines";
-
-  const HomeWidgetsShown all = ShownHomeWidgets(SummarizeHomeToday({Row("s", 1, true)}), 3);
-  EXPECT_TRUE(all.messages);
-  EXPECT_TRUE(all.new_contacts);
-  EXPECT_TRUE(all.brief);
+TEST(HomeTodayTest, MentionsCountEveryUnreadMentionAndNameTheLatestChat) {
+  ChatSessionRow hiking = Row("hiking", 3, false, 100);
+  hiking.mention_count = 2;
+  hiking.preview = "Fang: @you Saturday?";
+  ChatSessionRow work = Row("work", 1, false, 200);
+  work.mention_count = 1;
+  work.preview = "Bob: @you the doc";
+  const HomeTodaySummary summary = SummarizeHomeToday({hiking, Row("quiet", 5, false, 300), work}, kAll);
+  EXPECT_EQ(summary.mentions.count, 3);
+  EXPECT_EQ(summary.mentions.thread_id, "work");
+  EXPECT_EQ(summary.mentions.title, "T-work");
+  EXPECT_EQ(summary.mentions.preview, "Bob: @you the doc");
+  EXPECT_EQ(SummarizeHomeToday({Row("quiet", 5)}, kAll).mentions.count, 0);
 }
 
-TEST(HomeTodayTest, AWidgetTheUserRemovedIsNotShownEvenWithData) {
-  const HomeTodaySummary busy = SummarizeHomeToday({Row("friend", 2), Row("s", 1, true)});
-  HomeWidgetChoices choices;
-  choices.brief = false;
-  const HomeWidgetsShown shown = ShownHomeWidgets(busy, 3, choices);
-  EXPECT_TRUE(shown.messages);
-  EXPECT_TRUE(shown.new_contacts);
-  EXPECT_FALSE(shown.brief);
+TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
+  const int64_t midnight = 1'000'000'000;
+  const int64_t now = midnight + 10LL * 60 * 60 * 1000;
+  const auto call = [](const std::string& id, int64_t at, bool missed) {
+    call_queries::RecentCall c;
+    c.call_id = id;
+    c.thread_id = "thread-" + id;
+    c.incoming = true;
+    c.missed = missed;
+    c.at_ms = at;
+    return c;
+  };
+  const HomeCalls calls = SummarizeHomeCalls(
+      {call("answered", now - 1000, false), call("missed-2", now - 2000, true), call("missed-1", midnight + 5, true),
+       call("yesterday", midnight - 5, true)},
+      midnight, now);
+  EXPECT_EQ(calls.missed_today, 2) << "yesterday's missed call is not today's";
+  ASSERT_TRUE(calls.latest.has_value());
+  EXPECT_EQ(calls.latest->call_id, "answered");
 
-  choices = {.messages = false, .new_contacts = false, .brief = true};
-  const HomeWidgetsShown only_brief = ShownHomeWidgets(busy, 3, choices);
-  EXPECT_FALSE(only_brief.messages);
-  EXPECT_FALSE(only_brief.new_contacts);
-  EXPECT_TRUE(only_brief.brief);
+  EXPECT_FALSE(SummarizeHomeCalls({}, midnight, now).latest.has_value()) << "no calls: the widget hides";
+  const HomeCalls old = SummarizeHomeCalls({call("old", now - kHomeCallsRecentMs - 1, false)}, midnight, now);
+  EXPECT_FALSE(old.latest.has_value()) << "nothing in the last week";
 }
 
-TEST(HomeTodayTest, EditHomeChoicesAreStoredAsTheIdsSwitchedOff) {
-  EXPECT_EQ(HomeWidgetChoicesFromHidden({}), HomeWidgetChoices{}) << "nothing stored: every widget on";
-  EXPECT_TRUE(HiddenHomeWidgets(HomeWidgetChoices{}).empty());
+TEST(HomeTodayTest, FavoritesAreStarredFirstThenRecentContactsAndFollowTheStar) {
+  const std::vector<ChatSessionRow> rows = {
+      Direct("t-ann", "ann", 500), Direct("t-bob", "bob", 400), Direct("t-cy", "cy", 300),
+      Direct("t-cy-secure", "cy", 600),  // a contact's newer chat is the one opened
+      Direct("t-dee", "dee", 200, /*blocked=*/true), Row("group", 0, false, 900), Row("stranger", 1, true, 800)};
+  // Nobody starred: the most recent contacts (a blocked one, a group and a stranger never show).
+  std::vector<HomeFavorite> favorites = HomeFavorites(rows, {}, {});
+  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"cy", "ann", "bob"}));
+  EXPECT_EQ(favorites[0].thread_id, "t-cy-secure");
 
-  const HomeWidgetChoices no_brief = ToggleHomeWidget(HomeWidgetChoices{}, "brief");
-  EXPECT_FALSE(no_brief.brief);
-  EXPECT_TRUE(no_brief.messages);
-  EXPECT_EQ(HiddenHomeWidgets(no_brief), (std::vector<std::string>{"brief"}));
-  EXPECT_EQ(HomeWidgetChoicesFromHidden(HiddenHomeWidgets(no_brief)), no_brief) << "round trip";
-  EXPECT_TRUE(ToggleHomeWidget(no_brief, "brief").brief) << "switched back on";
+  // Bob starred: first, before newer chats. Eve starred too, with no chat yet (looked up by the caller).
+  const std::vector<std::string> starred = {"bob", "eve"};
+  EXPECT_EQ(StarredWithoutChat(rows, starred), std::vector<std::string>{"eve"});
+  const HomeFavorite eve{.contact_id = "eve", .thread_id = "", .title = "Eve", .avatar_letter = "E"};
+  favorites = HomeFavorites(rows, starred, {eve});
+  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"bob", "eve", "cy", "ann"}));
+  EXPECT_TRUE(favorites[1].thread_id.empty()) << "a tap starts the chat";
 
-  const HomeWidgetChoices all_off =
-      ToggleHomeWidget(ToggleHomeWidget(no_brief, "messages"), "new_people");
-  EXPECT_EQ(HiddenHomeWidgets(all_off), (std::vector<std::string>{"messages", "new_people", "brief"}));
-  EXPECT_EQ(ToggleHomeWidget(all_off, "weather"), all_off) << "an unknown id changes nothing";
-  EXPECT_EQ(HomeWidgetChoicesFromHidden({"weather", "messages"}),
-            (HomeWidgetChoices{.messages = false, .new_contacts = true, .brief = true}));
+  // Unstarred: Bob is back in his place by time.
+  EXPECT_EQ(ContactIds(HomeFavorites(rows, {"eve"}, {eve})), (std::vector<std::string>{"eve", "cy", "ann", "bob"}));
+}
+
+TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesAlwaysShows) {
+  const HomeTodaySummary empty = SummarizeHomeToday({}, kAll);
+  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(empty, {}, 0)), std::vector<std::string>{kHomeWidgetFavorites});
+
+  ChatSessionRow mention = Row("g", 1, false, 5);
+  mention.mention_count = 1;
+  const HomeTodaySummary busy = SummarizeHomeToday({mention, Row("s", 1, true, 4)}, kAll);
+  HomeCalls calls;
+  calls.latest = call_queries::RecentCall{};
+  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(busy, calls, 3)),
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetCalls, kHomeWidgetMentions,
+                                      kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople}))
+      << "every widget, in the default order";
+}
+
+TEST(HomeTodayTest, ARemovedWidgetIsNeitherShownNorComputed) {
+  ChatSessionRow mention = Row("g", 1, false, 5);
+  mention.mention_count = 2;
+  const std::vector<ChatSessionRow> rows = {mention, Row("s", 1, true, 4)};
+  const HomeWidgetLayout layout =
+      RemoveHomeWidget(RemoveHomeWidget(RemoveHomeWidget(kAll, kHomeWidgetRecentChats), kHomeWidgetMentions),
+                       kHomeWidgetNewPeople);
+  const HomeTodaySummary summary = SummarizeHomeToday(rows, layout);
+  EXPECT_TRUE(summary.recent.empty()) << "not computed";
+  EXPECT_EQ(summary.mentions.count, 0) << "not computed";
+  EXPECT_EQ(summary.new_contacts, 0) << "not computed";
+  HomeCalls calls;
+  calls.latest = call_queries::RecentCall{};
+  EXPECT_EQ(ShownHomeWidgets(RemoveHomeWidget(layout, kHomeWidgetCalls), HomeWidgetDataOf(summary, calls, 3)),
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetBrief}));
+}
+
+TEST(HomeTodayTest, TheLayoutIsStoredAsTheRemovedIdsAndAWidgetPutBackGoesLast) {
+  EXPECT_EQ(kAll.order, HomeWidgetIds()) << "nothing stored: every widget, default order";
+  EXPECT_TRUE(HiddenHomeWidgets(kAll).empty());
+
+  const HomeWidgetLayout no_calls = RemoveHomeWidget(kAll, kHomeWidgetCalls);
+  EXPECT_FALSE(no_calls.Kept(kHomeWidgetCalls));
+  EXPECT_EQ(HiddenHomeWidgets(no_calls), std::vector<std::string>{kHomeWidgetCalls});
+  EXPECT_EQ(no_calls.Addable(), std::vector<std::string>{kHomeWidgetCalls});
+  EXPECT_EQ(HomeWidgetLayoutFrom(no_calls.order, HiddenHomeWidgets(no_calls)), no_calls) << "round trip";
+
+  const HomeWidgetLayout back = AddHomeWidget(no_calls, kHomeWidgetCalls);
+  EXPECT_TRUE(back.Kept(kHomeWidgetCalls));
+  EXPECT_EQ(back.OnHome().back(), kHomeWidgetCalls) << "back at the end of Home";
+  EXPECT_EQ(RemoveHomeWidget(kAll, "weather"), kAll) << "an unknown id changes nothing";
+  EXPECT_EQ(HomeWidgetLayoutFrom({}, {"weather", "messages", "brief"}).hidden, std::set<std::string>{"brief"})
+      << "unknown and retired ids are ignored";
 }
 
 TEST(HomeTodayTest, ContactsAndBlockedPeopleAreNotStrangers) {

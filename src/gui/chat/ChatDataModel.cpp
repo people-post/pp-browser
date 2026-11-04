@@ -138,18 +138,39 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     brief_handle.RegisterMember("meta", &HomeBriefRow::meta);
   }
   ctor.RegisterArray<std::vector<HomeBriefRow>>();
+  if (auto slot_handle = ctor.RegisterStruct<HomeWidgetSlot>()) {
+    slot_handle.RegisterMember("id", &HomeWidgetSlot::id);
+    slot_handle.RegisterMember("wide", &HomeWidgetSlot::wide);
+  }
+  ctor.RegisterArray<std::vector<HomeWidgetSlot>>();
+  if (auto favorite_handle = ctor.RegisterStruct<HomeFavoriteRow>()) {
+    favorite_handle.RegisterMember("contact_id", &HomeFavoriteRow::contact_id);
+    favorite_handle.RegisterMember("title", &HomeFavoriteRow::title);
+    favorite_handle.RegisterMember("avatar_letter", &HomeFavoriteRow::avatar_letter);
+    favorite_handle.RegisterMember("avatar_tone", &HomeFavoriteRow::avatar_tone);
+    favorite_handle.RegisterMember("has_icon", &HomeFavoriteRow::has_icon);
+    favorite_handle.RegisterMember("icon_src", &HomeFavoriteRow::icon_src);
+  }
+  ctor.RegisterArray<std::vector<HomeFavoriteRow>>();
+  if (auto edit_handle = ctor.RegisterStruct<HomeEditRow>()) {
+    edit_handle.RegisterMember("id", &HomeEditRow::id);
+    edit_handle.RegisterMember("name", &HomeEditRow::name);
+    edit_handle.RegisterMember("size", &HomeEditRow::size);
+  }
+  ctor.RegisterArray<std::vector<HomeEditRow>>();
   ctor.Bind("sessions", &state.sessions);
   ctor.Bind("home_date_label", &state.home_date_label);
-  ctor.Bind("home_unread", &state.home_unread);
-  ctor.Bind("home_all_label", &state.home_all_label);
-  ctor.Bind("home_new_contacts_label", &state.home_new_contacts_label);
+  ctor.Bind("home_widgets", &state.home_widgets);
+  ctor.Bind("home_favorites", &state.home_favorites);
+  ctor.Bind("home_recent", &state.home_recent);
+  ctor.Bind("home_missed_calls", &state.home_missed_calls);
+  ctor.Bind("home_calls_latest", &state.home_calls_latest);
+  ctor.Bind("home_mentions", &state.home_mentions);
+  ctor.Bind("home_mentions_where", &state.home_mentions_where);
+  ctor.Bind("home_new_people", &state.home_new_people);
   ctor.Bind("home_brief", &state.home_brief);
-  ctor.Bind("home_show_messages", &state.home_show_messages);
-  ctor.Bind("home_show_new_contacts", &state.home_show_new_contacts);
-  ctor.Bind("home_show_brief", &state.home_show_brief);
-  ctor.Bind("home_keep_messages", &state.home_keep_messages);
-  ctor.Bind("home_keep_new_contacts", &state.home_keep_new_contacts);
-  ctor.Bind("home_keep_brief", &state.home_keep_brief);
+  ctor.Bind("home_edit_on", &state.home_edit_on);
+  ctor.Bind("home_edit_off", &state.home_edit_off);
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
@@ -261,16 +282,11 @@ void DirtyChat() {
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
-  DataModelHost::Instance().Dirty("shell", "home_unread");
-  DataModelHost::Instance().Dirty("shell", "home_all_label");
-  DataModelHost::Instance().Dirty("shell", "home_new_contacts_label");
-  DataModelHost::Instance().Dirty("shell", "home_brief");
-  DataModelHost::Instance().Dirty("shell", "home_show_messages");
-  DataModelHost::Instance().Dirty("shell", "home_show_new_contacts");
-  DataModelHost::Instance().Dirty("shell", "home_show_brief");
-  DataModelHost::Instance().Dirty("shell", "home_keep_messages");
-  DataModelHost::Instance().Dirty("shell", "home_keep_new_contacts");
-  DataModelHost::Instance().Dirty("shell", "home_keep_brief");
+  for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
+                           "home_mentions", "home_mentions_where", "home_new_people", "home_brief", "home_edit_on",
+                           "home_edit_off"}) {
+    DataModelHost::Instance().Dirty("shell", name);
+  }
   DataModelHost::Instance().Dirty("shell", "archived_count");
   DataModelHost::Instance().Dirty("shell", "showing_archived");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");

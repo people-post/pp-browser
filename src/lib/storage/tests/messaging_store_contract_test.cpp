@@ -10,6 +10,8 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
+
 #include <filesystem>
 #include <memory>
 
@@ -239,10 +241,12 @@ TEST_P(MessagingStoreContractTest, MentionsAreOnePerMessageOldestFirst) {
   ASSERT_TRUE(mentions.Add("t2", "m3", 5));
   EXPECT_EQ(mentions.Oldest("t1").value(), std::optional<std::string>("m1"));
   EXPECT_EQ(mentions.Threads().value(), (std::set<std::string>{"t1", "t2"}));
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t1", 2}, {"t2", 1}})) << "one per message";
   ASSERT_TRUE(mentions.DropMessage("t1", "m1"));
   EXPECT_EQ(mentions.Oldest("t1").value(), std::optional<std::string>("m2"));
   ASSERT_TRUE(mentions.DropThread("t1"));
   EXPECT_EQ(mentions.Threads().value(), std::set<std::string>{"t2"});
+  EXPECT_EQ(mentions.Counts().value(), (std::map<std::string, int>{{"t2", 1}}));
   EXPECT_FALSE(mentions.Oldest("t1").value().has_value());
 }
 

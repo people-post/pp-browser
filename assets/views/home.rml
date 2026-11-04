@@ -16,91 +16,113 @@
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="!fonts_ready">…</p>
     </div>
   </div>
-  <!-- Phone only (hidden on the desktop): date line, large title and the widgets. A widget with nothing to show is
-       not drawn; with none, the title sits above the chips and nothing else. -->
+  <!-- Phone only (hidden on the desktop): date line, large title and the widgets (DESIGN-pp-ui 8.16, mockup
+       10-home-widgets), iPhone-widget style: a wide card takes a row, two small ones sit side by side, in the order
+       the user set in Edit Home. A widget with nothing to show is not drawn (Favorites always is). -->
   <div class="home-scroll root-scroll" data-model="shell">
     <p class="home-date">{{home_date_label}}</p>
     <p class="large-title">{{i18n:home.title}}</p>
-    <div class="home-widget" data-if="home_show_messages">
-      <div class="home-widget-head row">
-        <p class="home-widget-title">{{i18n:home.new_messages}}</p>
-        <button class="home-widget-more" type="button" data-model="window"
-                data-event-click="select_nav_tab('sessions')"><span data-model="shell">{{home_all_label}}</span></button>
-      </div>
-      <div class="home-card">
-        <div data-for="session : home_unread" class="sidebar-session"
-             data-attr-session-id="session.id"
-             data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
-             data-class-sidebar-session--ai="session.kind == 'ai'"
-             data-class-sidebar-session--private="session.kind == 'private'"
-             data-class-sidebar-session--public="session.kind == 'public'"
-             data-class-sidebar-session--group="session.kind == 'group'"
-             data-event-click="select_thread(session.id)">
-          <div class="chat-row-avatar"
-               data-class-chat-row-avatar--ai="session.kind == 'ai'"
-               data-class-chat-row-avatar--group="session.kind == 'group'"
-               data-class-avatar-tone-0="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 0"
-               data-class-avatar-tone-1="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 1"
-               data-class-avatar-tone-2="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 2"
-               data-class-avatar-tone-3="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 3"
-               data-class-avatar-tone-4="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 4"
-               data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 5"
-               data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 6"
-               data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && session.avatar_tone == 7">
-            <img class="avatar-photo" data-if="session.kind != 'ai' && session.kind != 'group' && session.has_icon" data-attr-src="session.icon_src"/>
-            <p class="chat-row-avatar-letter" data-if="session.kind != 'ai' && session.kind != 'group' && !session.has_icon">{{session.avatar_letter}}</p>
-            <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="28" height="28" data-if="session.kind == 'ai'"></svg>
-            <svg class="chat-row-avatar-icon" src="../icons/v2/group.svg" width="28" height="28" data-if="session.kind == 'group'"></svg>
+    <div class="home-grid">
+      <div class="home-slot" data-for="w : home_widgets" data-class-home-slot--wide="w.wide">
+        <!-- Favorites (常用联系人): starred contacts first, then recent ones; a tap opens the chat. -->
+        <div class="home-w" data-if="w.id == 'favorites'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--favorites"><svg src="../icons/v2/star-fill.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.favorites}}</p>
           </div>
-          <div class="sidebar-session-body">
-            <div class="sidebar-session-line">
-              <svg class="chat-row-type chat-row-type--ai" src="../icons/v2/sparkle-fill.svg" width="14" height="14" data-if="session.kind == 'ai'"></svg>
-              <svg class="chat-row-type chat-row-type--private" src="../icons/v2/lock.svg" width="14" height="14" data-if="session.kind == 'private'"></svg>
-              <svg class="chat-row-type chat-row-type--public" src="../icons/message.svg" width="14" height="14" data-if="session.kind == 'public'"></svg>
-              <svg class="chat-row-type chat-row-type--group" src="../icons/v2/group.svg" width="14" height="14" data-if="session.kind == 'group'"></svg>
-              <p class="sidebar-session-title">{{session.title}}</p>
-              <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
-            </div>
-            <div class="sidebar-session-line">
-              <span class="sidebar-session-mention" data-if="session.mentioned">{{i18n:sidebar.mentioned}}</span>
-              <p class="sidebar-session-preview">{{session.preview}}</p>
-              <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
-            </div>
+          <div class="home-avs" data-if="home_favorites.size > 0">
+            <button class="home-av" type="button" data-for="f, f_index : home_favorites"
+                    data-event-click="home_open_favorite(f_index)">
+              <span class="home-av-frame"
+                    data-class-avatar-tone-0="!f.has_icon && f.avatar_tone == 0"
+                    data-class-avatar-tone-1="!f.has_icon && f.avatar_tone == 1"
+                    data-class-avatar-tone-2="!f.has_icon && f.avatar_tone == 2"
+                    data-class-avatar-tone-3="!f.has_icon && f.avatar_tone == 3"
+                    data-class-avatar-tone-4="!f.has_icon && f.avatar_tone == 4"
+                    data-class-avatar-tone-5="!f.has_icon && f.avatar_tone == 5"
+                    data-class-avatar-tone-6="!f.has_icon && f.avatar_tone == 6"
+                    data-class-avatar-tone-7="!f.has_icon && f.avatar_tone == 7">
+                <img class="avatar-photo" data-if="f.has_icon" data-attr-src="f.icon_src"/>
+                <span class="home-av-letter" data-if="!f.has_icon">{{f.avatar_letter}}</span>
+              </span>
+              <span class="home-av-name">{{f.title}}</span>
+            </button>
           </div>
+          <p class="home-w-hint" data-if="home_favorites.size == 0">{{i18n:home.favorites.empty}}</p>
         </div>
-      </div>
-    </div>
-    <!-- Unread chats from people who are not contacts: only how many; the tap opens the first of them. -->
-    <div class="home-widget" data-if="home_show_new_contacts">
-      <div class="home-widget-head row">
-        <p class="home-widget-title">{{i18n:home.new_contacts}}</p>
-      </div>
-      <div class="group-card home-card">
-        <button class="group-row" type="button" data-event-click="home_open_new_people()">
-          <span class="group-row-body">
-            <span class="group-row-text">{{home_new_contacts_label}}</span>
-            <span class="home-friend-view">{{i18n:home.view}}</span>
-          </span>
-        </button>
-      </div>
-    </div>
-    <!-- The first three headlines of the article feed (cached, refreshed when over 3 hours old); "See all" shows the
-         feed in the AI chat like the Latest briefs chip. -->
-    <div class="home-widget" data-if="home_show_brief">
-      <div class="home-widget-head row">
-        <p class="home-widget-title">{{i18n:home.brief}}</p>
-        <button class="home-widget-more" type="button" data-event-click="home_brief_all()">{{i18n:home.see_all}}</button>
-      </div>
-      <div class="group-card home-card">
-        <button class="group-row" type="button" data-for="item, item_index : home_brief"
-                data-event-click="home_open_brief(item_index)">
-          <span class="group-row-body">
-            <span class="group-row-label">
-              <span class="group-row-text">{{item.title}}</span>
-              <span class="group-row-sub" data-if="item.meta != ''">{{item.meta}}</span>
+        <!-- Recent chats: the three latest, read or not; "See all" opens Chats. -->
+        <div class="home-w" data-if="w.id == 'recent_chats'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--recent"><svg src="../icons/v2/tab-chats-fill.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.recent_chats}}</p>
+            <button class="home-wh-more" type="button" data-event-click="home_open_chats()">{{i18n:home.see_all}}</button>
+          </div>
+          <button class="home-chat" type="button" data-for="session : home_recent" data-event-click="select_thread(session.id)">
+            <span class="home-chat-av"
+                  data-class-chat-row-avatar--ai="session.kind == 'ai'"
+                  data-class-chat-row-avatar--group="session.kind == 'group'"
+                  data-class-avatar-tone-0="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 0"
+                  data-class-avatar-tone-1="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 1"
+                  data-class-avatar-tone-2="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 2"
+                  data-class-avatar-tone-3="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 3"
+                  data-class-avatar-tone-4="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 4"
+                  data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 5"
+                  data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 6"
+                  data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 7">
+              <img class="avatar-photo" data-if="session.kind != 'ai' && session.kind != 'group' && session.has_icon" data-attr-src="session.icon_src"/>
+              <span class="home-chat-letter" data-if="session.kind != 'ai' && session.kind != 'group' && !session.has_icon">{{session.avatar_letter}}</span>
+              <svg class="home-chat-icon" src="../icons/v2/sparkle-fill.svg" width="18" height="18" data-if="session.kind == 'ai'"></svg>
+              <svg class="home-chat-icon" src="../icons/v2/group.svg" width="18" height="18" data-if="session.kind == 'group'"></svg>
             </span>
+            <span class="home-chat-body">
+              <span class="home-chat-title">{{session.title}}</span>
+              <span class="home-chat-preview">{{session.preview}}</span>
+            </span>
+            <span class="badge-count home-chat-badge" data-if="session.unread_count > 0">{{session.unread_display}}</span>
+          </button>
+        </div>
+        <!-- Calls: missed today and the latest call; a tap opens that call's chat. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'calls'" data-event-click="home_open_calls()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--calls"><svg src="../icons/v2/phone.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.calls}}</span>
           </span>
+          <span class="home-num">{{home_missed_calls}}</span>
+          <span class="home-small">{{i18n:home.calls.missed}}</span>
+          <span class="home-small home-small--two">{{home_calls_latest}}</span>
         </button>
+        <!-- Mentions: unread @me in groups; a tap opens the chat at its oldest unread mention. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'mentions'" data-event-click="home_open_mentions()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.mentions}}</span>
+          </span>
+          <span class="home-num">{{home_mentions}}</span>
+          <span class="home-small home-small--two">{{home_mentions_where}}</span>
+        </button>
+        <!-- New people: unread chats from people who are not contacts; a tap opens the first. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'new_people'" data-event-click="home_open_new_people()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--new-people"><svg src="../icons/v2/user-plus.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.new_people}}</span>
+          </span>
+          <span class="home-num">{{home_new_people}}</span>
+          <span class="home-small home-small--two">{{i18n:home.new_people.count}}</span>
+        </button>
+        <!-- Today's briefs: the first headline larger, two more under it (cached, refreshed when over 3 hours old);
+             "See all" shows the feed in the AI chat like the Latest briefs chip. -->
+        <div class="home-w" data-if="w.id == 'brief'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--brief"><svg src="../icons/v2/globe.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.brief}}</p>
+            <button class="home-wh-more" type="button" data-event-click="home_brief_all()">{{i18n:home.see_all}}</button>
+          </div>
+          <button class="home-brief" type="button" data-for="item, item_index : home_brief"
+                  data-class-home-brief--head="item_index == 0" data-event-click="home_open_brief(item_index)">
+            <span class="home-brief-title">{{item.title}}</span>
+            <span class="home-brief-meta" data-if="item.meta != ''">{{item.meta}}</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>

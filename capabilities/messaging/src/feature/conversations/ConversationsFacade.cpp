@@ -400,6 +400,15 @@ std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
   return threads ? std::move(*threads) : std::set<std::string>{};
 }
 
+std::map<std::string, int> ConversationsFacade::MentionCounts() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return {};
+  }
+  auto counts = mentions->Counts();
+  return counts ? std::move(*counts) : std::map<std::string, int>{};
+}
+
 std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
   IThreadMentionsStore* mentions = hub_.ThreadMentions();
   if (!mentions) {

@@ -138,6 +138,29 @@ struct HomeBriefRow {
   ui::String meta;
 };
 
+/** One widget drawn on the phone Home, in the user's order: wide (a row) or small (half a row). */
+struct HomeWidgetSlot {
+  ui::String id;
+  bool wide = false;
+};
+
+/** One person in Home's Favorites widget (avatar and name; a tap opens the chat). */
+struct HomeFavoriteRow {
+  ui::String contact_id;
+  ui::String title;
+  ui::String avatar_letter;
+  int avatar_tone = 0;
+  bool has_icon = false;
+  ui::String icon_src;
+};
+
+/** One row of the Edit Home sheet: a widget's name and its size note ("Wide" / "Small"). */
+struct HomeEditRow {
+  ui::String id;
+  ui::String name;
+  ui::String size;
+};
+
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */
 struct ChatShellState {
   std::vector<SessionDisplayRow> sessions;
@@ -150,21 +173,24 @@ struct ChatShellState {
   /** The search box above the list: rows are kept when their title or preview contains it. */
   ui::String sessions_query;
   /**
-   * Phone Today page: the date line, the first unread chats ("New messages"), the "New people" line and the first
-   * headlines ("Today's briefs"). A widget shows only when it has something (home_show_*).
+   * Phone Today page (DESIGN-pp-ui 8.16, mockup 10-home-widgets): the date line and the widgets drawn, in the user's
+   * order (home_widgets), each with its own data below. A widget shows only when it has something (Favorites always).
    */
   ui::String home_date_label;
-  std::vector<SessionDisplayRow> home_unread;
-  ui::String home_all_label;
-  ui::String home_new_contacts_label;
+  std::vector<HomeWidgetSlot> home_widgets;
+  std::vector<HomeFavoriteRow> home_favorites;
+  std::vector<SessionDisplayRow> home_recent;
+  int home_missed_calls = 0;
+  /** "Latest: Hongwei · Video · 16:20". */
+  ui::String home_calls_latest;
+  int home_mentions = 0;
+  /** "Hiking group · Fang: @you what time on Saturday?". */
+  ui::String home_mentions_where;
+  int home_new_people = 0;
   std::vector<HomeBriefRow> home_brief;
-  bool home_show_messages = false;
-  bool home_show_new_contacts = false;
-  bool home_show_brief = false;
-  /** Edit Home's switches: the widgets the user keeps on Home. */
-  bool home_keep_messages = true;
-  bool home_keep_new_contacts = true;
-  bool home_keep_brief = true;
+  /** Edit Home: the widgets on Home (in order) and the ones that can be added. */
+  std::vector<HomeEditRow> home_edit_on;
+  std::vector<HomeEditRow> home_edit_off;
   bool working_set_active = false;
   ui::String working_set_title;
   ui::String working_set_subtitle;

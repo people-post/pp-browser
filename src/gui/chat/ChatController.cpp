@@ -74,6 +74,8 @@
 #include "common/StartupTiming.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AvatarGlyph.h"
+#include "lib/people/ContactTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/PeopleLookupFailure.h"
 #include "lib/people/ContactJson.h"
@@ -1135,39 +1137,150 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
   if (list.showing_archived) {
     return;
   }
-  home_summary_ = SummarizeHomeToday(list.rows);
-  shell_.home_unread.clear();
-  for (const ChatSessionRow& from : home_summary_.unread) {
-    shell_.home_unread.push_back(ToSessionDisplayRow(from));
+  const HomeWidgetLayout layout = HomeLayout();
+  home_summary_ = SummarizeHomeToday(list.rows, layout);
+  shell_.home_recent.clear();
+  for (const ChatSessionRow& from : home_summary_.recent) {
+    shell_.home_recent.push_back(ToSessionDisplayRow(from));
   }
-  shell_.home_all_label = Tr("home.all_count", {{"count", std::to_string(home_summary_.unread_total)}}).c_str();
-  shell_.home_new_contacts_label =
-      Tr("home.new_contacts_row", {{"count", std::to_string(home_summary_.new_contacts)}}).c_str();
+  shell_.home_mentions = home_summary_.mentions.count;
+  shell_.home_mentions_where =
+      home_summary_.mentions.preview.empty()
+          ? home_summary_.mentions.title.c_str()
+          : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
+  shell_.home_new_people = home_summary_.new_contacts;
+  if (layout.Kept(kHomeWidgetFavorites)) {
+    ApplyHomeFavorites(list.rows);
+  } else {
+    home_favorites_.clear();
+    shell_.home_favorites.clear();
+  }
   ApplyHomeWidgets();
+  RefreshHomeCalls(); // a missed call arrives as a chat change
+}
+
+void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows) {
+  const std::vector<std::string> starred = session_store_ ? Store().Snapshot().profile_prefs.starred_contacts
+                                                          : std::vector<std::string>{};
+  // A starred contact with no chat yet is looked up (the contacts store; a handful at most).
+  std::vector<HomeFavorite> without_chat;
+  if (facade_) {
+    for (const std::string& id : StarredWithoutChat(rows, starred)) {
+      auto contact = facade_->GetContact(id);
+      if (!contact || !*contact || (*contact)->trust == TrustLevel::Blocked) {
+        continue;
+      }
+      std::string title = ContactEffectiveTitle(**contact);
+      if (title.empty()) {
+        title = Tr("people_picker.unnamed");
+      }
+      const AvatarGlyph glyph = MakeAvatarGlyph(title, {});
+      without_chat.push_back({.contact_id = id,
+                              .thread_id = {},
+                              .title = title,
+                              .avatar_letter = glyph.letter,
+                              .avatar_tone = glyph.tone,
+                              .icon_path = facade_->ContactIconPath(id)});
+    }
+  }
+  home_favorites_ = HomeFavorites(rows, starred, without_chat);
+  shell_.home_favorites.clear();
+  for (const HomeFavorite& favorite : home_favorites_) {
+    shell_.home_favorites.push_back({.contact_id = favorite.contact_id.c_str(),
+                                     .title = favorite.title.c_str(),
+                                     .avatar_letter = favorite.avatar_letter.c_str(),
+                                     .avatar_tone = favorite.avatar_tone,
+                                     .has_icon = !favorite.icon_path.empty(),
+                                     .icon_src = favorite.icon_path.c_str()});
+  }
 }
 
 void ChatController::ApplyHomeWidgets() {
   const int64_t now_ms = util::NowUnixMs();
-  const std::vector<HomeBriefItem> top = HomeBriefTop(home_brief_, HomeBriefFeed());
+  const HomeWidgetLayout layout = HomeLayout();
+  const std::vector<HomeBriefItem> top =
+      layout.Kept(kHomeWidgetBrief) ? HomeBriefTop(home_brief_, HomeBriefFeed()) : std::vector<HomeBriefItem>{};
   shell_.home_brief.clear();
   for (const HomeBriefItem& item : top) {
     shell_.home_brief.push_back({.title = item.title.c_str(), .meta = HomeBriefMeta(item, now_ms).c_str()});
   }
-  const HomeWidgetChoices choices = HomeChoices();
-  const HomeWidgetsShown shown = ShownHomeWidgets(home_summary_, top.size(), choices);
-  shell_.home_show_messages = shown.messages;
-  shell_.home_show_new_contacts = shown.new_contacts;
-  shell_.home_show_brief = shown.brief;
-  shell_.home_keep_messages = choices.messages;
-  shell_.home_keep_new_contacts = choices.new_contacts;
-  shell_.home_keep_brief = choices.brief;
+  const HomeCalls calls = layout.Kept(kHomeWidgetCalls)
+                              ? SummarizeHomeCalls(home_calls_, LocalMidnightMs(now_ms), now_ms)
+                              : HomeCalls{};
+  shell_.home_missed_calls = calls.missed_today;
+  shell_.home_calls_latest = "";
+  if (calls.latest) {
+    // The chat's name as the Chats list shows it (the DM or the group); none when the chat is gone.
+    std::string name;
+    for (const SessionDisplayRow& row : shell_.sessions) {
+      if (row.id.c_str() == calls.latest->thread_id) {
+        name = row.title.c_str();
+        break;
+      }
+    }
+    std::string line = Tr(calls.latest->video ? "home.calls.video" : "home.calls.voice");
+    if (!name.empty()) {
+      line = name + " · " + line;
+    }
+    line += " · " + SessionDateLabel(calls.latest->at_ms, now_ms);
+    shell_.home_calls_latest = Tr("home.calls.latest", {{"call", line}}).c_str();
+  }
+  shell_.home_widgets.clear();
+  for (const std::string& id : ShownHomeWidgets(layout, HomeWidgetDataOf(home_summary_, calls, top.size()))) {
+    shell_.home_widgets.push_back({.id = id.c_str(), .wide = HomeWidgetWide(id)});
+  }
+  shell_.home_edit_on.clear();
+  shell_.home_edit_off.clear();
+  for (const std::string& id : layout.order) {
+    HomeEditRow row{.id = id.c_str(),
+                    .name = Tr("home.widget." + id).c_str(),
+                    .size = Tr(HomeWidgetWide(id) ? "home_edit.wide" : "home_edit.small").c_str()};
+    (layout.Kept(id) ? shell_.home_edit_on : shell_.home_edit_off).push_back(std::move(row));
+  }
 }
 
-HomeWidgetChoices ChatController::HomeChoices() const {
-  if (!session_store_) {
-    return {};
+void ChatController::RefreshHomeCalls() {
+  // The widgets exist only on phones and are read while Home shows; a removed Calls widget is not read.
+  if (home_calls_reading_) {
+    home_calls_again_ = true; // a call may have been stored after that read began
+    return;
   }
-  return HomeWidgetChoicesFromHidden(Store().Snapshot().profile_prefs.home_widgets_hidden);
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact ||
+      ChromeSnapshot().nav_tab != NavTab::Home || !HomeLayout().Kept(kHomeWidgetCalls) ||
+      !call_actions_.recent_calls_reader) {
+    return;
+  }
+  std::function<std::vector<call_queries::RecentCall>()> read = call_actions_.recent_calls_reader(kHomeCallsRead);
+  if (!read) {
+    return;
+  }
+  home_calls_reading_ = true;
+  AppRuntime::PostWorkerAndReplyOnUI<std::vector<call_queries::RecentCall>>(
+      WorkerLane::Background, [read = std::move(read)]() { return read(); },
+      [this](std::vector<call_queries::RecentCall> calls) {
+        home_calls_reading_ = false;
+        if (calls != home_calls_) {
+          home_calls_ = std::move(calls);
+          ApplyHomeWidgets();
+          DirtyShell();
+        }
+        if (std::exchange(home_calls_again_, false)) {
+          RefreshHomeCalls();
+        }
+      });
+}
+
+void ChatController::OnHomePrefsChanged() {
+  ApplyHomeToday(presenter_.List());
+  DirtyShell();
+}
+
+HomeWidgetLayout ChatController::HomeLayout() const {
+  if (!session_store_) {
+    return HomeWidgetLayoutFrom({}, {});
+  }
+  const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
+  return HomeWidgetLayoutFrom({}, prefs.home_widgets_hidden);
 }
 
 void ChatController::OpenHomeEdit() {
@@ -1185,22 +1298,22 @@ void ChatController::OpenHomeEdit() {
   }
 }
 
-void ChatController::ToggleHomeWidgetChoice(const std::string& id) {
-  if (!session_store_) {
+void ChatController::SaveHomeLayout(const HomeWidgetLayout& layout) {
+  if (!session_store_ || layout == HomeLayout()) {
     return;
   }
-  const HomeWidgetChoices next = ToggleHomeWidget(HomeChoices(), id);
   ProfilePreferences prefs = Store().Snapshot().profile_prefs;
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
-  prefs.home_widgets_hidden = HiddenHomeWidgets(next);
+  prefs.home_widgets_hidden = HiddenHomeWidgets(layout);
   if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
     log().warning << "Edit Home: could not save the choice: " << saved.error().message;
     ShowToast(UserFeedback::FailFrom(saved.error()));
     return;
   }
-  ApplyHomeWidgets();
+  // A widget put back is computed again; Calls and Today's briefs read / fetch when they need to.
+  ApplyHomeToday(presenter_.List());
   DirtyShell();
-  RefreshHomeBrief(); // switched back on: fetch when the cache is old
+  RefreshHomeBrief();
 }
 
 std::string ChatController::HomeBriefFeed() {
@@ -1248,8 +1361,8 @@ void ChatController::RefreshHomeBrief() {
     return;
   }
   // A widget the user removed is not fetched.
-  if (!ShouldFetchHomeBrief(HomeChoices().brief, home_brief_fetching_, home_brief_failed_ms_, home_brief_, feed,
-                            now_ms)) {
+  if (!ShouldFetchHomeBrief(HomeLayout().Kept(kHomeWidgetBrief), home_brief_fetching_, home_brief_failed_ms_,
+                            home_brief_, feed, now_ms)) {
     return;
   }
   home_brief_fetching_ = true;
@@ -1312,6 +1425,31 @@ void ChatController::OpenHomeBrief(const int index) {
 void ChatController::OpenHomeNewPeople() {
   if (!home_summary_.first_stranger_thread_id.empty()) {
     OnSelectThread(home_summary_.first_stranger_thread_id);
+  }
+}
+
+void ChatController::OpenHomeFavorite(const int index) {
+  if (index < 0 || static_cast<size_t>(index) >= home_favorites_.size()) {
+    return;
+  }
+  const HomeFavorite& favorite = home_favorites_[static_cast<size_t>(index)];
+  if (!favorite.thread_id.empty()) {
+    OnSelectThread(favorite.thread_id);
+  } else if (contacts_notify_.message_contact) {
+    contacts_notify_.message_contact(favorite.contact_id);
+  }
+}
+
+void ChatController::OpenHomeCalls() {
+  const HomeCalls calls = SummarizeHomeCalls(home_calls_, LocalMidnightMs(util::NowUnixMs()), util::NowUnixMs());
+  if (calls.latest && !calls.latest->thread_id.empty()) {
+    OnSelectThread(calls.latest->thread_id);
+  }
+}
+
+void ChatController::OpenHomeMentions() {
+  if (!home_summary_.mentions.thread_id.empty()) {
+    OnSelectThread(home_summary_.mentions.thread_id); // opens at its oldest unread mention (G015)
   }
 }
 
@@ -3782,9 +3920,15 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("home_open_brief", DataEvent<int>([this](const int index) { OpenHomeBrief(index); }));
         ctor.BindEventCallback("home_brief_all", DataEvent([this] { SendSuggestionAction("articles"); }));
         ctor.BindEventCallback("home_open_new_people", DataEvent([this] { OpenHomeNewPeople(); }));
+        ctor.BindEventCallback("home_open_favorite", DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
+        ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));
+        ctor.BindEventCallback("home_open_chats", DataEvent([this] { ShellSelectNavTab(NavTab::Sessions); }));
+        ctor.BindEventCallback("home_open_mentions", DataEvent([this] { OpenHomeMentions(); }));
         ctor.BindEventCallback("home_edit_open", DataEvent([this] { OpenHomeEdit(); }));
-        ctor.BindEventCallback("home_widget_toggle", DataEvent<std::string>(
-            [this](const std::string& id) { ToggleHomeWidgetChoice(id); }));
+        ctor.BindEventCallback("home_widget_remove", DataEvent<std::string>(
+            [this](const std::string& id) { SaveHomeLayout(RemoveHomeWidget(HomeLayout(), id)); }));
+        ctor.BindEventCallback("home_widget_add", DataEvent<std::string>(
+            [this](const std::string& id) { SaveHomeLayout(AddHomeWidget(HomeLayout(), id)); }));
         BindSharedEvents(ctor);
       })) {
     return false;

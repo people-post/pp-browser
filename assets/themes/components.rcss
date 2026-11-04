@@ -8686,24 +8686,94 @@ textarea:composing ~ .prompt-composer-label,
   padding: 0 16dp;
 }
 
-.shell-layer-compact .home-widget-head {
+/* The engine keeps 16dp for an (undrawn) scrollbar once the widgets overflow; Home scrolls by touch, so the cards
+   keep their 16dp margins on both sides. */
+.shell-layer-compact .home-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+/* The widgets, iPhone style (mockup 10-home-widgets): 20dp corners, 12dp apart; a wide card takes a row, two small
+   ones share it. Each slot pads 6dp, so the grid's -6dp edge keeps the cards on the 16dp margins. */
+.shell-layer-compact .home-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin: 6dp 10dp 0 10dp;
+}
+
+.shell-layer-compact .home-slot {
+  display: flex;
+  flex-direction: column;
+  width: 50%;
+  padding: 6dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-slot--wide {
+  width: 100%;
+}
+
+.shell-layer-compact .home-w {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 12dp 14dp;
+  border: 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  text-align: left;
+  font-family: LatoLatin;
+}
+
+/* A small card is one target: at least 140dp tall, like the mockup. */
+.shell-layer-compact .home-w--tap {
+  min-height: 140dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-wh {
+  display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  margin: 20dp 16dp 6dp 16dp;
+  height: 22dp;
+  margin: 0 0 8dp 0;
 }
 
-.shell-layer-compact .home-widget-title {
+.shell-layer-compact .home-wh-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20dp;
+  height: 20dp;
+  margin-right: 6dp;
+  border-radius: 6dp;
+}
+
+.shell-layer-compact .home-wh-icon svg {
+  width: 13dp;
+  height: 13dp;
+}
+
+.shell-layer-compact .home-wh-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  font-size: 17dp;
-  line-height: 22dp;
+  font-size: 13dp;
+  line-height: 18dp;
   font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.shell-layer-compact .home-widget-more,
-.shell-layer-compact .home-friend-view {
-  margin: 0;
-  padding: 0;
+/* "See all": a 44dp-tall target that does not push the header apart. */
+.shell-layer-compact .home-wh-more {
+  flex: none;
+  margin: -11dp -14dp -11dp 0;
+  padding: 11dp 14dp 11dp 12dp;
   border: 0;
   background-color: transparent;
   font-size: 15dp;
@@ -8711,27 +8781,232 @@ textarea:composing ~ .prompt-composer-label,
   cursor: pointer;
 }
 
-.shell-layer-compact .home-card {
-  margin: 0 16dp;
-  border-radius: 10dp;
+.shell-layer-compact .home-w-hint {
+  margin: 4dp 0 2dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Favorites: up to five 50dp avatars with their names, spread over the row; each is a 64dp-wide target. */
+.shell-layer-compact .home-avs {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.shell-layer-compact .home-av {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 60dp;
+  margin: 0;
+  padding: 2dp 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-av-frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50dp;
+  height: 50dp;
+  border-radius: 25dp;
   overflow: hidden;
 }
 
-/* The card clips the last row's separator: each row hangs 1dp below the card (rows are transparent on the card). */
-.shell-layer-compact .home-card .sidebar-session {
-  margin-bottom: -1dp;
+.shell-layer-compact .home-av-frame .avatar-photo {
+  width: 50dp;
+  height: 50dp;
 }
 
-/* "View" at the end of the New people row (the whole row is the target). */
-.shell-layer-compact .home-friend-view {
-  flex-shrink: 0;
+.shell-layer-compact .home-av-letter {
+  font-size: 20dp;
+  line-height: 24dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-av-name {
+  display: block;
+  width: 60dp;
+  margin-top: 4dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Recent chats: 52dp rows (36dp avatar, name over a one-line preview, the unread count at the end). */
+.shell-layer-compact .home-chat {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-chat-av {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  margin-right: 10dp;
+  border-radius: 18dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .home-chat-av .avatar-photo {
+  width: 36dp;
+  height: 36dp;
+}
+
+.shell-layer-compact .home-chat-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .home-chat-title,
+.shell-layer-compact .home-chat-preview {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .home-chat-title {
+  font-size: 15dp;
+  line-height: 20dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-chat-preview {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-chat-badge {
+  margin-left: 8dp;
+}
+
+/* Small cards: a large count, then what it counts and one more line (two at most). */
+.shell-layer-compact .home-num {
+  display: block;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-small {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-small--two {
+  max-height: 36dp;
+  margin-top: 2dp;
+  overflow: hidden;
+}
+
+/* Today's briefs: the first headline larger over two lines at most, two smaller ones under a hairline. */
+.shell-layer-compact .home-brief {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 44dp;
+  margin: 0;
+  padding: 6dp 0;
+  border: 0;
+  background-color: transparent;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-brief-title {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .home-brief--head {
+  padding-top: 0;
+}
+
+.shell-layer-compact .home-brief--head .home-brief-title {
+  max-height: 44dp;
   font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: normal;
 }
 
-/* "See all" beside a widget's title: a 44dp-tall target that does not push the title row apart. */
-.shell-layer-compact .home-widget-more {
-  margin: -11dp 0;
-  padding: 11dp 0 11dp 12dp;
+.shell-layer-compact .home-brief-meta {
+  display: block;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* Edit Home (mockup 10-home-widgets B): a red minus / green plus at the start of each row, the size at its end. */
+.shell-layer-compact .home-edit-row {
+  padding-left: 0;
+}
+
+.shell-layer-compact .home-edit-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 50dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-edit-sign {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+}
+
+.shell-layer-compact .home-edit-sign svg {
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .home-edit-size {
+  flex: none;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
 /* The chips row is pinned above the tab bar and does not scroll with the widgets. */
