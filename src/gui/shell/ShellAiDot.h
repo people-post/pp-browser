@@ -31,7 +31,7 @@ public:
     /** A tap: open the ask-AI panel. */
     std::function<void()> on_tap;
     /** A drag ended at a new resting place (persist it). */
-    std::function<void(const AiDotPlace& place)> on_moved;
+    std::function<void(const AiDotPlace& place, bool tucked)> on_moved;
     /** A bound field changed. */
     std::function<void()> dirty;
   };

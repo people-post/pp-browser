@@ -325,9 +325,9 @@ void ShellHost::Initialize(ui::Context* context) {
                               }
                             },
                         .on_moved =
-                            [this](const AiDotPlace& place) {
+                            [this](const AiDotPlace& place, const bool tucked) {
                               if (on_ai_dot_moved_) {
-                                on_ai_dot_moved_(place.left, place.y_permille);
+                                on_ai_dot_moved_(place.left, place.y_permille, tucked);
                               }
                             },
                         .dirty = [this]() { DirtyAiDot(); }});
@@ -964,8 +964,9 @@ void ShellHost::SetAiDot(const bool enabled, const std::string& look, const std:
   Backend::RequestForceFrame();
 }
 
-void ShellHost::SetAiDotPlace(const bool left, const int y_permille) {
+void ShellHost::SetAiDotPlace(const bool left, const int y_permille, const bool tucked) {
   state_.ai_dot_left = left;
+  state_.ai_dot_tucked = tucked;
   state_.ai_dot_y_permille = std::clamp(y_permille, 0, 1000);
 }
 
@@ -973,7 +974,7 @@ void ShellHost::SetOnAiDotTap(std::function<void()> callback) {
   on_ai_dot_tap_ = std::move(callback);
 }
 
-void ShellHost::SetOnAiDotMoved(std::function<void(bool left, int y_permille)> callback) {
+void ShellHost::SetOnAiDotMoved(std::function<void(bool left, int y_permille, bool tucked)> callback) {
   on_ai_dot_moved_ = std::move(callback);
 }
 

@@ -778,6 +778,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("ai_dot_size", prefs.ai_dot_size);
   object.set("ai_dot_left", prefs.ai_dot_left);
   object.set("ai_dot_y_permille", static_cast<int64_t>(prefs.ai_dot_y_permille));
+  object.set("ai_dot_tucked", prefs.ai_dot_tucked);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -873,6 +874,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   }
   prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
   prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
+  prefs.ai_dot_tucked = object.getIf<bool>("ai_dot_tucked").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {

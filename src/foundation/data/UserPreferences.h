@@ -87,6 +87,8 @@ struct ProfilePreferences {
   /** Where it rests: the left or right edge, and how far down its band (0 top – 1000 bottom). */
   bool ai_dot_left = false;
   int ai_dot_y_permille = 600;
+  /** Tucked half off that edge (flung or dragged into it); stays tucked until dragged out. */
+  bool ai_dot_tucked = false;
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */

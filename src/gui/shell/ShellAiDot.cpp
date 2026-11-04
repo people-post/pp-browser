@@ -167,7 +167,7 @@ void ShellAiDot::Update(ui::Context* context, const AiDotScene& scene) {
   const bool show = dot_ != nullptr && AiDotModel::Shown(scene);
   if (show != model_.ShownNow()) {
     if (show) {
-      model_.Show(now);
+      model_.Show(now, state_.ai_dot_tucked);
       placed_.reset(); // placed afresh at its edge, without a slide
     } else {
       if (pressed_) {
@@ -222,11 +222,13 @@ void ShellAiDot::EndPress(const bool cancelled) {
   if (release.moved) {
     state_.ai_dot_left = release.place.left;
     state_.ai_dot_y_permille = release.place.y_permille;
-    // From where the finger left it to its side, in one slide (the drag's translate is gone in the same frame).
-    MoveTo(AiDotModel::Rest(release.place, area, false), kSnapSeconds, release.dropped);
-    placed_tucked_ = false;
+    state_.ai_dot_tucked = release.tucked;
+    // From where the finger left it to its side (tucked: half past it), in one slide (the drag's translate is gone in
+    // the same frame).
+    MoveTo(AiDotModel::Rest(release.place, area, release.tucked), kSnapSeconds, release.dropped);
+    placed_tucked_ = release.tucked;
     if (callbacks_.on_moved) {
-      callbacks_.on_moved(release.place);
+      callbacks_.on_moved(release.place, release.tucked);
     }
     return;
   }
@@ -253,21 +255,16 @@ void ShellAiDot::ProcessEvent(ui::Event& event) {
       return;
     }
     const AiDotArea area = Area();
-    const AiDotPoint out = AiDotModel::Rest(Place(), area, false);
-    const bool was_tucked = model_.Tucked();
-    model_.Press(finger(), out);
+    // Where it stands now: a tucked dot stays half out until it is dragged (a tap opens the panel, still tucked).
+    model_.Press(finger(), AiDotModel::Rest(Place(), area, model_.Tucked()));
     pressed_ = true;
-    if (was_tucked) {
-      MoveTo(out, kUntuckSeconds);
-      placed_tucked_ = false;
-    }
     SyncIdle();
     SetDocumentCapture(true);
     break;
   }
   case ui::EventId::Mousemove:
     if (pressed_) {
-      if (const auto offset = model_.Move(finger(), Area())) {
+      if (const auto offset = model_.Move(finger(), Area(), SteadyMs())) {
         char buffer[80];
         std::snprintf(buffer, sizeof(buffer), "translate(%.1fdp, %.1fdp)", offset->x_dp, offset->y_dp);
         dot_->SetProperty("transform", buffer);

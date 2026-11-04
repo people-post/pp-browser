@@ -1,5 +1,5 @@
 // The phone AI dot (DESIGN-pp-ui §8.14, PLAN-ui-batch5-ask-ai 5c): three sizes, drag anywhere, stick to the nearer
-// side, tuck half away after 20 s, a random idle action (never the same twice running) every 3–6 s while it is out,
+// side, tuck half away only when the user flings or drags it into the edge, a random idle action (never the same twice running) every 3–6 s while it is out,
 // and hidden wherever it would be in the way.
 #include "gui/shell/AiDotModel.h"
 
@@ -96,14 +96,14 @@ TEST(AiDotModelTest, TheTuckTheEdgeGapAndTheClampsFollowTheSize) {
     // Which side it sticks to is decided by its own middle.
     EXPECT_FALSE(AiDotModel::Snap({201.f - side / 2.f + 1.f, 300.f}, area).left);
     EXPECT_TRUE(AiDotModel::Snap({201.f - side / 2.f - 1.f, 300.f}, area).left);
-    // Dragged far off, the whole dot stays on the screen, inside the safe area.
+    // Dragged far off, it may go a quarter of its size short of the side edge, never past the top or bottom.
     AiDotModel model;
     model.Show(0);
     const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, area, false);
     model.Press({rest.x_dp, rest.y_dp}, rest);
-    const auto offset = model.Move({rest.x_dp + 500.f, rest.y_dp + 2000.f}, area);
+    const auto offset = model.Move({rest.x_dp + 500.f, rest.y_dp + 2000.f}, area, 0);
     ASSERT_TRUE(offset.has_value());
-    EXPECT_FLOAT_EQ(rest.x_dp + offset->x_dp, 402.f - side);
+    EXPECT_FLOAT_EQ(rest.x_dp + offset->x_dp, 402.f - side * 0.25f);
     EXPECT_FLOAT_EQ(rest.y_dp + offset->y_dp, 874.f - 34.f - side);
   }
 }
@@ -127,7 +127,7 @@ TEST(AiDotModelTest, ADragLetGoSnapsToTheNearerSideAndKeepsItsHeight) {
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp + 20.f, rest.y_dp + 20.f}, rest);
   // To the left third of the screen and a little up.
-  const auto offset = model.Move({120.f, rest.y_dp - 80.f}, kArea);
+  const auto offset = model.Move({120.f, rest.y_dp - 80.f}, kArea, 0);
   ASSERT_TRUE(offset.has_value());
   const AiDotModel::Release release = model.Up(kArea, 1000);
   EXPECT_FALSE(release.tap);
@@ -150,14 +150,14 @@ TEST(AiDotModelTest, LetGoOverTheTabBarOrTheStatusBarItComesBackIntoTheBand) {
   EXPECT_EQ(AiDotModel::Snap({300.f, 0.f}, kArea).y_permille, 0);
 }
 
-TEST(AiDotModelTest, WhileDraggedItStaysOnTheScreen) {
+TEST(AiDotModelTest, WhileDraggedItGoesPastTheSidesButNotTheTopOrBottom) {
   AiDotModel model;
   model.Show(0);
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
-  const auto offset = model.Move({rest.x_dp + 500.f, rest.y_dp + 2000.f}, kArea);
+  const auto offset = model.Move({rest.x_dp + 500.f, rest.y_dp + 2000.f}, kArea, 0);
   ASSERT_TRUE(offset.has_value());
-  EXPECT_FLOAT_EQ(rest.x_dp + offset->x_dp, 402.f - kSize);
+  EXPECT_FLOAT_EQ(rest.x_dp + offset->x_dp, 402.f - kSize * 0.25f) << "a quarter of it may still be seen at the edge";
   EXPECT_FLOAT_EQ(rest.y_dp + offset->y_dp, 874.f - 34.f - kSize);
 }
 
@@ -166,7 +166,7 @@ TEST(AiDotModelTest, ASmallWobbleIsATapNotADrag) {
   model.Show(0);
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp + 28.f, rest.y_dp + 28.f}, rest);
-  EXPECT_FALSE(model.Move({rest.x_dp + 34.f, rest.y_dp + 32.f}, kArea).has_value());
+  EXPECT_FALSE(model.Move({rest.x_dp + 34.f, rest.y_dp + 32.f}, kArea, 0).has_value());
   const AiDotModel::Release release = model.Up(kArea, 500);
   EXPECT_TRUE(release.tap);
   EXPECT_FALSE(release.moved);
@@ -177,34 +177,11 @@ TEST(AiDotModelTest, ADragNeverCountsAsATapEvenWhenItEndsWhereItBegan) {
   model.Show(0);
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
   model.Press({rest.x_dp, rest.y_dp}, rest);
-  ASSERT_TRUE(model.Move({rest.x_dp - 60.f, rest.y_dp}, kArea).has_value());
-  ASSERT_TRUE(model.Move({rest.x_dp, rest.y_dp}, kArea).has_value());
+  ASSERT_TRUE(model.Move({rest.x_dp - 60.f, rest.y_dp}, kArea, 0).has_value());
+  ASSERT_TRUE(model.Move({rest.x_dp, rest.y_dp}, kArea, 0).has_value());
   const AiDotModel::Release release = model.Up(kArea, 500);
   EXPECT_FALSE(release.tap);
   EXPECT_TRUE(release.moved);
-}
-
-TEST(AiDotModelTest, TucksAfterTwentySecondsAlone) {
-  AiDotModel model;
-  model.Show(0);
-  EXPECT_FALSE(model.Advance(19999, kLook).tucked);
-  EXPECT_FALSE(model.Tucked());
-  EXPECT_TRUE(model.Advance(20000, kLook).tucked);
-  EXPECT_TRUE(model.Tucked());
-}
-
-TEST(AiDotModelTest, APressBringsATuckedDotOutAndTheClockStartsAgainOnRelease) {
-  AiDotModel model;
-  model.Show(0);
-  model.Advance(20000, kLook);
-  ASSERT_TRUE(model.Tucked());
-  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
-  model.Press({rest.x_dp, rest.y_dp}, rest);
-  EXPECT_FALSE(model.Tucked());
-  EXPECT_FALSE(model.Advance(40000, kLook).tucked) << "held: it does not tuck under the finger";
-  model.Up(kArea, 40000);
-  EXPECT_FALSE(model.Advance(59999, kLook).tucked);
-  EXPECT_TRUE(model.Advance(60000, kLook).tucked);
 }
 
 TEST(AiDotModelTest, IdleActionsComeEveryThreeToSixSeconds) {
@@ -248,7 +225,7 @@ TEST(AiDotModelTest, APickIsNeverTheActionJustPlayed) {
   }
 }
 
-/** Leaves a seeded dot alone for `count` actions (pressing it out of its tuck when it tucks) and lists them. */
+/** Leaves a seeded dot alone for `count` actions and lists them. */
 std::vector<AiDotIdle> PlayedActions(const uint32_t seed, const AiDotLook look, const int count) {
   AiDotModel model;
   model.Seed(seed);
@@ -258,12 +235,8 @@ std::vector<AiDotIdle> PlayedActions(const uint32_t seed, const AiDotLook look, 
   while (static_cast<int>(played.size()) < count) {
     const auto wait = model.MsUntilNext(now);
     if (!wait) {
-      // Tucked: nothing is due until a press brings it out.
-      EXPECT_TRUE(model.Tucked());
-      const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
-      model.Press({rest.x_dp, rest.y_dp}, rest);
-      model.Up(kArea, now);
-      continue;
+      ADD_FAILURE() << "left alone it always has a next action";
+      break;
     }
     now += *wait;
     const AiDotIdle before = model.Idle();
@@ -293,7 +266,7 @@ TEST(AiDotModelTest, AnIdleActionRunsOnlyAsLongAsItsKeyframes) {
   AiDotModel model;
   model.Show(0);
   const int64_t first = AiDotModel::IdleDelayMs(0);
-  EXPECT_EQ(model.MsUntilNext(0), first) << "the first action comes before the tuck";
+  EXPECT_EQ(model.MsUntilNext(0), first);
   EXPECT_TRUE(model.Advance(first, kLook).idle);
   const AiDotIdle idle = model.Idle();
   ASSERT_NE(idle, AiDotIdle::None);
@@ -303,53 +276,140 @@ TEST(AiDotModelTest, AnIdleActionRunsOnlyAsLongAsItsKeyframes) {
   EXPECT_EQ(model.Idle(), AiDotIdle::None);
   const auto next = model.MsUntilNext(end);
   ASSERT_TRUE(next.has_value());
-  EXPECT_GE(*next, std::min<int64_t>(AiDotModel::kIdleMinMs, AiDotModel::kTuckAfterMs - end))
-      << "between actions nothing is due before the next one or the tuck";
+  EXPECT_GE(*next, AiDotModel::kIdleMinMs) << "between actions nothing is due before the next one";
+}
+
+/** A drag from the right edge, ending `dx` dp to the left of where it started over `ms`, then let go `idle_ms` later. */
+AiDotModel::Release DragAndRelease(AiDotModel& model, const AiDotPoint& rest, const float dx, const float dy,
+                                   const int64_t ms, const int64_t idle_ms, const int64_t start = 1000) {
+  model.Press({rest.x_dp, rest.y_dp}, rest);
+  for (int i = 1; i <= 10; ++i) {
+    model.Move({rest.x_dp + dx * static_cast<float>(i) / 10.f, rest.y_dp + dy * static_cast<float>(i) / 10.f}, kArea,
+               start + ms * i / 10);
+  }
+  return model.Up(kArea, start + ms + idle_ms);
+}
+
+TEST(AiDotModelTest, NeverTucksOnATimer) {
+  AiDotModel model;
+  model.Show(0);
+  int64_t now = 0;
+  for (int i = 0; i < 400; ++i) {
+    const auto wait = model.MsUntilNext(now);
+    ASSERT_TRUE(wait.has_value()) << "out, it always has a next action";
+    now += *wait;
+    model.Advance(now, kLook);
+    ASSERT_FALSE(model.Tucked());
+  }
+  EXPECT_GT(now, 600000) << "minutes alone";
+}
+
+TEST(AiDotModelTest, LetGoWithMoreThanHalfPastTheEdgeItTucksThere) {
+  AiDotModel model;
+  model.Show(0);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  // Slow drag to the right: its left edge ends 0.5 * size + 2 past the screen's right edge minus its size... i.e. its
+  // middle 2dp past the edge.
+  const float to = 402.f - kSize * 0.5f - kSize * AiDotModel::kEdgeSlack + 1.f - rest.x_dp;
+  const AiDotModel::Release release = DragAndRelease(model, rest, to, 0.f, 2000, 500);
+  ASSERT_TRUE(release.moved);
+  EXPECT_TRUE(release.tucked);
+  EXPECT_FALSE(release.place.left);
+  EXPECT_TRUE(model.Tucked());
+  EXPECT_FALSE(model.MsUntilNext(4000).has_value()) << "tucked: nothing is scheduled";
+}
+
+TEST(AiDotModelTest, LetGoWithLessThanHalfPastTheEdgeItStaysOut) {
+  AiDotModel model;
+  model.Show(0);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  const float to = 402.f - kSize * 0.5f - kSize * AiDotModel::kEdgeSlack - 6.f - rest.x_dp;
+  const AiDotModel::Release release = DragAndRelease(model, rest, to, 0.f, 2000, 500);
+  ASSERT_TRUE(release.moved);
+  EXPECT_FALSE(release.tucked);
+  EXPECT_FALSE(model.Tucked());
+  EXPECT_TRUE(model.MsUntilNext(4000).has_value());
+}
+
+TEST(AiDotModelTest, AFastFlingTowardAnEdgeTucksThere) {
+  AiDotModel model;
+  model.Show(0);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  // 150dp to the left in 100 ms = 1500 dp/s, let go at once, far from the left edge.
+  const AiDotModel::Release release = DragAndRelease(model, rest, -150.f, 0.f, 100, 0);
+  ASSERT_TRUE(release.moved);
+  EXPECT_TRUE(release.tucked);
+  EXPECT_TRUE(release.place.left) << "the fling's side, not the nearer one";
+  EXPECT_FLOAT_EQ(AiDotModel::Rest(release.place, kArea, true).x_dp, -kSize / 2.f);
+  EXPECT_TRUE(model.Tucked());
+}
+
+TEST(AiDotModelTest, ASlowOrStoppedDragIsNoFling) {
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
+  AiDotModel slow;
+  slow.Show(0);
+  EXPECT_FALSE(DragAndRelease(slow, rest, -150.f, 0.f, 600, 0).tucked) << "250 dp/s";
+  AiDotModel stopped;
+  stopped.Show(0);
+  EXPECT_FALSE(DragAndRelease(stopped, rest, -150.f, 0.f, 100, 400).tucked) << "fast, but held still before release";
+  AiDotModel vertical;
+  vertical.Show(0);
+  EXPECT_FALSE(DragAndRelease(vertical, rest, 0.f, -300.f, 100, 0).tucked) << "up is no edge";
+}
+
+TEST(AiDotModelTest, ATapOnATuckedDotOpensThePanelAndItStaysTucked) {
+  AiDotModel model;
+  model.Show(0, /*tucked=*/true);
+  EXPECT_FALSE(model.MsUntilNext(0).has_value());
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, true);
+  model.Press({rest.x_dp + 5.f, rest.y_dp + 5.f}, rest);
+  EXPECT_TRUE(model.Tucked()) << "a press alone does not bring it out";
+  const AiDotModel::Release release = model.Up(kArea, 1000);
+  EXPECT_TRUE(release.tap);
+  EXPECT_TRUE(model.Tucked());
+  EXPECT_FALSE(model.MsUntilNext(1000).has_value()) << "still nothing scheduled";
+  EXPECT_FALSE(model.Advance(600000, kLook).idle);
+}
+
+TEST(AiDotModelTest, DraggingATuckedDotOutBringsItBackAndTheActionsResume) {
+  AiDotModel model;
+  model.Show(0, /*tucked=*/true);
+  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, true);
+  model.Press({rest.x_dp, rest.y_dp}, rest);
+  ASSERT_TRUE(model.Move({rest.x_dp - 40.f, rest.y_dp}, kArea, 1000).has_value());
+  EXPECT_FALSE(model.Tucked()) << "out as soon as it is dragged";
+  const AiDotModel::Release release = model.Up(kArea, 2000);
+  EXPECT_TRUE(release.moved);
+  EXPECT_FALSE(release.tucked);
+  const auto next = model.MsUntilNext(2000);
+  ASSERT_TRUE(next.has_value());
+  EXPECT_LE(*next, AiDotModel::kIdleMaxMs);
 }
 
 TEST(AiDotModelTest, TuckedItPlaysNothingSoTheAppCanSleep) {
   AiDotModel model;
   model.Show(0);
-  model.Advance(20000, kLook);
-  ASSERT_TRUE(model.Tucked());
-  EXPECT_EQ(model.Idle(), AiDotIdle::None);
-  EXPECT_FALSE(model.MsUntilNext(20000).has_value()) << "no wake at all while it sits tucked";
-  EXPECT_FALSE(model.Advance(600000, kLook).idle);
+  model.Advance(AiDotModel::IdleDelayMs(0), kLook);
+  ASSERT_NE(model.Idle(), AiDotIdle::None) << "an action is running when it is flung away";
   const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
-  model.Press({rest.x_dp, rest.y_dp}, rest);
-  model.Up(kArea, 600000);
-  const auto next = model.MsUntilNext(600000);
-  ASSERT_TRUE(next.has_value()) << "out again, the actions start again";
-  EXPECT_LE(*next, AiDotModel::kIdleMaxMs);
+  const AiDotModel::Release release = DragAndRelease(model, rest, -150.f, 0.f, 100, 0, 4000);
+  ASSERT_TRUE(release.tucked);
+  EXPECT_EQ(model.Idle(), AiDotIdle::None);
+  EXPECT_FALSE(model.MsUntilNext(4100).has_value()) << "no wake at all while it sits tucked";
+  EXPECT_FALSE(model.Advance(600000, kLook).idle);
 }
 
-TEST(AiDotModelTest, AnActionUnderwayWhenItTucksEndsAndNoNextOneIsDue) {
-  // Left alone, tapped out of each tuck, until a tuck falls in the middle of an action.
+TEST(AiDotModelTest, ShownAgainItIsAsTheUserLeftIt) {
   AiDotModel model;
-  model.Seed(1u);
-  int64_t now = 0;
-  model.Show(now);
-  const AiDotPoint rest = AiDotModel::Rest(AiDotPlace{}, kArea, false);
-  bool seen = false;
-  for (int step = 0; step < 5000 && !seen; ++step) {
-    const auto wait = model.MsUntilNext(now);
-    if (!wait) {
-      model.Press({rest.x_dp, rest.y_dp}, rest);
-      model.Up(kArea, now);
-      continue;
-    }
-    now += *wait;
-    if (model.Advance(now, kLook).tucked && model.Idle() != AiDotIdle::None) {
-      seen = true;
-      const auto until_end = model.MsUntilNext(now);
-      ASSERT_TRUE(until_end.has_value()) << "the action still gets its last frame";
-      now += *until_end;
-      EXPECT_TRUE(model.Advance(now, kLook).idle);
-      EXPECT_EQ(model.Idle(), AiDotIdle::None);
-      EXPECT_FALSE(model.MsUntilNext(now).has_value()) << "tucked: no next action";
-    }
-  }
-  EXPECT_TRUE(seen);
+  model.Show(0, /*tucked=*/true);
+  model.Hide();
+  model.Show(25000, /*tucked=*/true);
+  EXPECT_TRUE(model.Tucked());
+  EXPECT_FALSE(model.MsUntilNext(25000).has_value());
+  model.Hide();
+  model.Show(30000, /*tucked=*/false);
+  EXPECT_FALSE(model.Tucked());
+  EXPECT_EQ(model.MsUntilNext(30000), AiDotModel::IdleDelayMs(0));
 }
 
 TEST(AiDotModelTest, HiddenNothingIsDueSoTheAppCanSleep) {
@@ -359,19 +419,7 @@ TEST(AiDotModelTest, HiddenNothingIsDueSoTheAppCanSleep) {
   ASSERT_TRUE(model.MsUntilNext(0).has_value());
   model.Hide();
   EXPECT_FALSE(model.MsUntilNext(100).has_value());
-  EXPECT_FALSE(model.Advance(60000, kLook).tucked);
   EXPECT_FALSE(model.Advance(60000, kLook).idle);
-}
-
-TEST(AiDotModelTest, ShownAgainItComesOutAtItsEdge) {
-  AiDotModel model;
-  model.Show(0);
-  model.Advance(20000, kLook);
-  ASSERT_TRUE(model.Tucked());
-  model.Hide();
-  model.Show(25000);
-  EXPECT_FALSE(model.Tucked());
-  EXPECT_EQ(model.MsUntilNext(25000), AiDotModel::IdleDelayMs(0)) << "its first action, then the tuck 20 s on";
 }
 
 TEST(AiDotModelTest, APressStopsAnIdleAction) {

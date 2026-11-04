@@ -7,6 +7,7 @@
 #include <random>
 #include <span>
 #include <string_view>
+#include <vector>
 
 namespace pbr {
 
@@ -62,10 +63,12 @@ struct AiDotPoint {
 
 /**
  * The phone AI dot without any DOM (Kenneth 2026-11-02/03: "可以到处放，或者把它吸在侧边", "设置里面设置打开或关闭"):
- * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area; 20 s after the last
- * touch it tucks half off the screen, a press brings it out again. While it is out (not tucked), every 3–6 s it plays
- * one idle action picked at random, never the same one twice in a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，
- * ……他靠边的这个时间稍微慢一点"); tucked, it does nothing, so nothing wakes the app.
+ * dragged anywhere, on release it sticks to the nearer left or right edge inside the safe area. It never tucks on a
+ * timer (Kenneth 2026-11-04): the user tucks it half off the screen by letting go with more than half of it past the
+ * edge, or by flinging it fast toward an edge; a tap on a tucked dot opens the panel and it stays tucked, a drag
+ * brings it out. While it is out, every 3–6 s it plays one idle action picked at random, never the same one twice in
+ * a row (Kenneth 2026-11-04: "说话呀、害羞啊……都没有看到，……他靠边的这个时间稍微慢一点"); tucked, it does nothing, so
+ * nothing wakes the app.
  * Its side is the user's choice (Kenneth 2026-11-04: "三个尺寸小中大"; AiDotArea::size_dp); the tuck, the gap to the
  * edge and the clamps follow it. Times are milliseconds on any steady clock. UI thread.
  */
@@ -86,7 +89,15 @@ public:
   static constexpr float kBottomReserveDp = 57.f;
   /** A press that moves less than this is a tap. */
   static constexpr float kTapSlopDp = 10.f;
-  static constexpr int64_t kTuckAfterMs = 20000;
+  /** Let go with its middle within this share of its size from a side edge (or past it) counts as "more than half
+   * past": a finger cannot go beyond the screen, so a dot grabbed anywhere and pushed into the edge must tuck. */
+  static constexpr float kEdgeSlack = 0.25f;
+  /** A horizontal fling toward an edge at least this fast tucks the dot (the sheet model's flick speed)... */
+  static constexpr float kFlingDpPerS = 700.f;
+  /** ...once the finger has moved this far (a wobble is no fling). */
+  static constexpr float kFlingMinDragDp = 24.f;
+  /** Moves older than this at release do not count towards the fling speed (a drag that stopped is no fling). */
+  static constexpr int64_t kFlingWindowMs = 100;
   static constexpr int64_t kIdleMinMs = 3000;
   static constexpr int64_t kIdleMaxMs = 6000;
   /** The keyframes' lengths in components.rcss (ai-dot-sway, ai-dot-blink, …); the class goes a little after. */
@@ -207,15 +218,14 @@ public:
 
   // --- Showing, tucking and idle moves -----------------------------------------------------------------------------
 
-  /** The dot came on screen: out at its edge, the tuck and idle clocks start now. */
-  void Show(const int64_t now_ms) {
+  /** The dot came on screen: at its edge, out or `tucked` (as the user left it); the idle clock starts now. */
+  void Show(const int64_t now_ms, const bool tucked = false) {
     shown_ = true;
-    tucked_ = false;
+    tucked_ = tucked;
     pressed_ = false;
     dragging_ = false;
     idle_ = AiDotIdle::None;
-    tuck_at_ms_ = now_ms + kTuckAfterMs;
-    next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
+    next_idle_ms_ = tucked_ ? std::nullopt : std::optional<int64_t>(now_ms + IdleDelayMs(idle_count_));
   }
 
   /** The dot went off screen: no clock runs (nothing wakes the app for it). */
@@ -224,13 +234,11 @@ public:
     pressed_ = false;
     dragging_ = false;
     idle_ = AiDotIdle::None;
-    tuck_at_ms_.reset();
     next_idle_ms_.reset();
   }
 
   struct Changes {
-    bool tucked = false; ///< Tucked() flipped.
-    bool idle = false;   ///< Idle() changed.
+    bool idle = false; ///< Idle() changed.
   };
 
   /** Moves the clocks on to `now_ms`; `look` decides which actions may play. */
@@ -239,15 +247,8 @@ public:
     if (!shown_) {
       return changes;
     }
-    if (!pressed_ && tuck_at_ms_ && now_ms >= *tuck_at_ms_) {
-      tuck_at_ms_.reset();
-      if (!tucked_) {
-        tucked_ = true;
-        changes.tucked = true;
-      }
-    }
     if (tucked_) {
-      next_idle_ms_.reset(); // tucked away it rests; a press brings it out and starts the actions again
+      next_idle_ms_.reset(); // tucked away it rests; a drag brings it out and starts the actions again
     }
     if (idle_ != AiDotIdle::None && now_ms >= idle_end_ms_) {
       idle_ = AiDotIdle::None;
@@ -273,9 +274,6 @@ public:
     }
     std::optional<int64_t> at;
     const auto earliest = [&at](const int64_t t) { at = at ? std::min(*at, t) : t; };
-    if (tuck_at_ms_) {
-      earliest(*tuck_at_ms_);
-    }
     if (idle_ != AiDotIdle::None) {
       earliest(idle_end_ms_);
     } else if (next_idle_ms_) {
@@ -295,15 +293,14 @@ public:
   // --- Touch -------------------------------------------------------------------------------------------------------
 
   /**
-   * A finger went down on the dot standing at `rest` (its untucked rest point): it comes out of its tuck, stops its
-   * idle move, and no clock runs while it is held.
+   * A finger went down on the dot standing at `rest` (where it is drawn now, tucked or not): its idle move stops and
+   * no clock runs while it is held. A tucked dot stays tucked until it is dragged.
    */
   void Press(const AiDotPoint& finger_dp, const AiDotPoint& rest) {
     pressed_ = true;
     dragging_ = false;
-    tucked_ = false;
     idle_ = AiDotIdle::None;
-    tuck_at_ms_.reset();
+    samples_.clear();
     press_finger_ = finger_dp;
     press_rest_ = rest;
     offset_ = {};
@@ -311,11 +308,16 @@ public:
 
   /**
    * The finger moved: the offset to draw the dot at from its rest point, or nullopt while it is still a tap. The dot
-   * stays on the screen while it is dragged.
+   * may go up to three quarters past a side edge (to be tucked there), never past the top or bottom; dragging a
+   * tucked dot brings it out.
    */
-  std::optional<AiDotPoint> Move(const AiDotPoint& finger_dp, const AiDotArea& area) {
+  std::optional<AiDotPoint> Move(const AiDotPoint& finger_dp, const AiDotArea& area, const int64_t now_ms) {
     if (!pressed_) {
       return std::nullopt;
+    }
+    samples_.push_back({now_ms, finger_dp.x_dp});
+    if (samples_.size() > 16) {
+      samples_.erase(samples_.begin());
     }
     const float dx = finger_dp.x_dp - press_finger_.x_dp;
     const float dy = finger_dp.y_dp - press_finger_.y_dp;
@@ -324,8 +326,10 @@ public:
         return std::nullopt;
       }
       dragging_ = true;
+      tucked_ = false;
     }
-    const float x = std::clamp(press_rest_.x_dp + dx, 0.f, std::max(0.f, area.width_dp - area.size_dp));
+    const float past = area.size_dp * 0.75f;
+    const float x = std::clamp(press_rest_.x_dp + dx, -past, std::max(-past, area.width_dp - area.size_dp + past));
     const float y = std::clamp(press_rest_.y_dp + dy, area.safe_top_dp,
                                std::max(area.safe_top_dp, area.height_dp - area.safe_bottom_dp - area.size_dp));
     offset_ = {x - press_rest_.x_dp, y - press_rest_.y_dp};
@@ -336,28 +340,41 @@ public:
     bool tap = false;          ///< No drag: open the ask-AI panel.
     bool moved = false;        ///< Dragged: `place` is where it now rests.
     AiDotPlace place;
+    bool tucked = false;       ///< Dragged past the edge or flung at it: `place` is its side, half off the screen.
     AiDotPoint dropped;        ///< Where the finger left it (top-left), for the slide to `place`.
   };
 
-  /** The finger lifted. The tuck clock starts again. */
+  /** The finger lifted: a tap, or a drag that rests at an edge, out or tucked (see the class comment). */
   Release Up(const AiDotArea& area, const int64_t now_ms) {
     Release release;
     if (!pressed_) {
       return release;
     }
     pressed_ = false;
-    tuck_at_ms_ = now_ms + kTuckAfterMs;
-    if (!next_idle_ms_) {
-      next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
-    }
     if (!dragging_) {
       release.tap = true;
+      ResumeIdle(now_ms);
       return release;
     }
     dragging_ = false;
     release.moved = true;
     release.dropped = {press_rest_.x_dp + offset_.x_dp, press_rest_.y_dp + offset_.y_dp};
     release.place = Snap(release.dropped, area);
+    const float vx = FlingDpPerS(now_ms);
+    const float dx = release.dropped.x_dp - press_rest_.x_dp;
+    const float half = area.size_dp * 0.5f;
+    const bool past_left = release.dropped.x_dp <= -half + area.size_dp * kEdgeSlack;
+    const bool past_right = release.dropped.x_dp >= area.width_dp - half - area.size_dp * kEdgeSlack;
+    const bool fling = std::fabs(vx) >= kFlingDpPerS && std::fabs(dx) >= kFlingMinDragDp;
+    if (past_left || past_right) {
+      release.tucked = true;
+      release.place.left = past_left;
+    } else if (fling) {
+      release.tucked = true;
+      release.place.left = vx < 0.f;
+    }
+    tucked_ = release.tucked;
+    ResumeIdle(now_ms);
     return release;
   }
 
@@ -368,10 +385,41 @@ public:
     }
     pressed_ = false;
     dragging_ = false;
-    tuck_at_ms_ = now_ms + kTuckAfterMs;
+    ResumeIdle(now_ms);
   }
 
 private:
+  struct Sample {
+    int64_t at_ms = 0;
+    float x_dp = 0.f;
+  };
+
+  /** Starts the idle clock if none runs and the dot is out; tucked, none runs. */
+  void ResumeIdle(const int64_t now_ms) {
+    if (tucked_) {
+      next_idle_ms_.reset();
+    } else if (!next_idle_ms_) {
+      next_idle_ms_ = now_ms + IdleDelayMs(idle_count_);
+    }
+  }
+
+  /** The finger's horizontal speed over the last kFlingWindowMs before release (0: it had stopped). */
+  float FlingDpPerS(const int64_t now_ms) const {
+    const Sample* first = nullptr;
+    const Sample* last = nullptr;
+    for (const Sample& sample : samples_) {
+      if (now_ms - sample.at_ms > kFlingWindowMs) {
+        continue;
+      }
+      first = first ? first : &sample;
+      last = &sample;
+    }
+    if (!first || last->at_ms <= first->at_ms) {
+      return 0.f;
+    }
+    return (last->x_dp - first->x_dp) * 1000.f / static_cast<float>(last->at_ms - first->at_ms);
+  }
+
   bool shown_ = false;
   bool tucked_ = false;
   bool pressed_ = false;
@@ -382,7 +430,7 @@ private:
   std::minstd_rand rng_{1u};
   int idle_count_ = 0;
   int64_t idle_end_ms_ = 0;
-  std::optional<int64_t> tuck_at_ms_;
+  std::vector<Sample> samples_;
   std::optional<int64_t> next_idle_ms_;
   AiDotPoint press_finger_;
   AiDotPoint press_rest_;

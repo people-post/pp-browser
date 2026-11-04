@@ -227,11 +227,11 @@ public:
    */
   void SetAiDot(bool enabled, const std::string& look, const std::string& size);
   /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
-  void SetAiDotPlace(bool left, int y_permille);
+  void SetAiDotPlace(bool left, int y_permille, bool tucked);
   /** A tap on the AI dot (open the ask-AI panel). */
   void SetOnAiDotTap(std::function<void()> callback);
   /** The user dragged the AI dot to a new resting place (persist it). */
-  void SetOnAiDotMoved(std::function<void(bool left, int y_permille)> callback);
+  void SetOnAiDotMoved(std::function<void(bool left, int y_permille, bool tucked)> callback);
   /** True while a page the AI dot must not sit on is up (Me → Account & security: change PIN, recovery phrase). */
   void SetAiDotSecretPage(std::function<bool()> showing);
 
@@ -406,7 +406,7 @@ private:
   std::function<void()> scan_action_;
   ShellAiDot ai_dot_{state_};
   std::function<void()> on_ai_dot_tap_;
-  std::function<void(bool, int)> on_ai_dot_moved_;
+  std::function<void(bool, int, bool)> on_ai_dot_moved_;
   std::function<bool()> ai_dot_secret_page_;
 
 };

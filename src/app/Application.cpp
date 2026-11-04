@@ -1915,15 +1915,17 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   // is written here after a drag. A tap opens the ask-AI panel; it keeps off Me → Account & security.
   shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look,
                    bootstrap.profile_prefs.ai_dot_size);
-  shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille);
+  shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille,
+                         bootstrap.profile_prefs.ai_dot_tucked);
   shell_->SetOnAiDotTap([this]() { chat_->OpenAskAiFromDot(); });
-  shell_->SetOnAiDotMoved([this](const bool left, const int y_permille) {
+  shell_->SetOnAiDotMoved([this](const bool left, const int y_permille, const bool tucked) {
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;
-    if (prefs.ai_dot_left == left && prefs.ai_dot_y_permille == y_permille) {
+    if (prefs.ai_dot_left == left && prefs.ai_dot_y_permille == y_permille && prefs.ai_dot_tucked == tucked) {
       return;
     }
     prefs.ai_dot_left = left;
     prefs.ai_dot_y_permille = y_permille;
+    prefs.ai_dot_tucked = tucked;
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     (void)store_.SaveProfilePrefs(prefs);
   });
