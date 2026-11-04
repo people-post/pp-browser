@@ -38,6 +38,8 @@ struct CallStoryInput {
   CallScreen::Kind kind = CallScreen::Kind::InCall;
   CallScreen::Status status = CallScreen::Status::Calling;
   bool group = false;
+  /** This device started the call (CallScreen::placed_here); else it answered or joined. */
+  bool placed_here = false;
   /** The call's media is live now. */
   bool media_connected = false;
   std::string path_kind;
@@ -63,11 +65,16 @@ struct CallStoryEvent {
     Closer,
   };
   Kind kind = Kind::Placed;
-  /** Since the story began (this device placed or answered the call). */
+  /** Since the story began (this device placed or answered the call). The first line, and lines of a call this
+   *  device found already live, show `wall_ms` as a time of day instead. */
   int64_t at_ms = 0;
   /** Since the call connected (Closer); -1 before. */
   int64_t call_ms = -1;
   CallRoute route = CallRoute::Unknown;
+  /** When it happened (unix ms). */
+  int64_t wall_ms = 0;
+
+  bool operator==(const CallStoryEvent&) const = default;
 };
 
 struct CallStoryView {
@@ -113,6 +120,8 @@ public:
   static constexpr int64_t kSignalHoldMs = 500;
   /** "The line got slower" is said at most this often. */
   static constexpr int64_t kSlowNoticeEveryMs = 30'000;
+  /** After media connects the bar waits this long at most for audio to settle (or the first good sample). */
+  static constexpr int64_t kSettleMs = 2'000;
 
   /** Steps the story with this poll's facts and returns what the call page shows now. */
   const CallStoryView& Step(const CallStoryInput& in);
@@ -127,6 +136,7 @@ private:
   bool answered_ = false;
   bool connected_ = false;
   bool slow_noticed_ = false;
+  bool settled_ = false;
   int64_t began_ms_ = 0;
   int64_t answered_ms_ = 0;
   int64_t connected_ms_ = 0;

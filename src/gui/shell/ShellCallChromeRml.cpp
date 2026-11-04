@@ -67,6 +67,20 @@ void AppendSignalSlot(std::ostringstream& out, const char* extra_class) {
   out << "</div>";
 }
 
+/**
+ * What the user can act on or should know while the call runs (the bar's old status hint: no microphone, the group
+ * needs a host, the path being switched; else "you can't hear them"), and, with call diagnostics on, its technical
+ * line. Under the status on every phone page.
+ */
+void AppendHints(std::ostringstream& out) {
+  out << "<p class=\"call-phone-hint\" data-if=\"call_in_progress_status_hint != ''\">"
+         "{{call_in_progress_status_hint}}</p>";
+  out << "<p class=\"call-phone-hint\" data-if=\"call_in_progress_status_hint == '' && "
+         "call_in_progress_quality_hint != ''\">{{call_in_progress_quality_hint}}</p>";
+  out << "<p class=\"call-phone-debug\" data-if=\"call_in_progress_show_debug_subtitle\">"
+         "{{call_in_progress_debug_subtitle}}</p>";
+}
+
 /** "Connected directly, 0.9 s" right after connecting; it fades after 4 s (the class's transition). */
 void AppendResult(std::ostringstream& out) {
   out << "<div class=\"call-phone-result\" data-if=\"call_in_progress_result_text != ''\" "
@@ -164,6 +178,11 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
                         "</span>");
     }
   };
+  // 1:1 couldn't connect but the page stays (the path may still move): Try again sits with the buttons, as on the
+  // old bar.
+  if (call.show_retry) {
+    AppendControl(out, "call_retry()", nullptr, "src=\"../icons/sync.svg\"", Tr("call.failed.retry"));
+  }
   if (video_layout) {
     flip();
     mute();
@@ -328,7 +347,9 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<p class=\"call-phone-group-name\">{{call_in_progress_phone_title}}</p>";
     out << "<div class=\"call-phone-sub-row\"><p class=\"call-phone-sub\">{{call_in_progress_subtitle}}</p>";
     AppendSignalSlot(out, "call-phone-signal--compact");
-    out << "</div></div>";
+    out << "</div>";
+    AppendHints(out);
+    out << "</div>";
     out << "<div class=\"call-phone-group-body\">";
     out << "<div class=\"call-phone-grid" << (call.story_active ? " call-phone-grid--dim" : "") << "\">";
     out << "<div data-for=\"p : call_in_progress_roster\" class=\"call-phone-tile\">";
@@ -362,6 +383,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<p class=\"call-phone-who-status\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
+    AppendHints(out);
     out << "</div>";
     out << "<call-video-tile class=\"call-phone-pip\" id=\"call-local-tile\" tile=\"local\" "
            "data-if=\"call_in_progress_local_preview\"></call-video-tile></div>";
@@ -370,6 +392,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
     AppendPair(out, call);
     AppendSteps(out, call.story_stage);
+    AppendHints(out);
     out << (video_layout ? "</div>" : "");
     out << "</div>";
   } else {
@@ -380,8 +403,7 @@ std::string CallPhoneRml(const ShellState& state) {
     out << "<p class=\"call-phone-status\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "");
-    out << "<p class=\"call-phone-hint\" data-if=\"call_in_progress_quality_hint != ''\">"
-           "{{call_in_progress_quality_hint}}</p>";
+    AppendHints(out);
     out << "</div>";
   }
 

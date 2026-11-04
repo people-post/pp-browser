@@ -22,12 +22,15 @@ TEST(CallDemoScenesTest, TheVoiceSceneCallsThenConnectsRelayedThenFindsACloserWa
 
 TEST(CallDemoScenesTest, EverySceneIsKnownAndAnUnknownOneIsNot) {
   for (const char* scene :
-       {"ring", "ring_group", "voice", "reconnect", "video", "failed", "group_voice", "group_video"}) {
+       {"ring", "ring_group", "voice", "reconnect", "video", "failed", "answer_group", "group_voice", "group_video"}) {
     EXPECT_TRUE(DemoCallSceneAt(scene, 0, 1'000'000).valid) << scene;
   }
   EXPECT_FALSE(DemoCallSceneAt("nope", 0, 1'000'000).valid);
   EXPECT_EQ(DemoCallSceneAt("ring_group", 0, 1).screen.kind, CallScreen::Kind::Ringing);
   EXPECT_TRUE(DemoCallSceneAt("group_voice", 0, 1).screen.group);
+  EXPECT_FALSE(DemoCallSceneAt("group_voice", 0, 1).screen.placed_here) << "joined, not placed";
+  EXPECT_EQ(DemoCallSceneAt("answer_group", 4'000, 1).screen.kind, CallScreen::Kind::Answering);
+  EXPECT_TRUE(DemoCallSceneAt("answer_group", 4'000, 1).screen.ring_group);
 }
 
 TEST(CallDemoScenesTest, ASceneMayStartPartWayIn) {

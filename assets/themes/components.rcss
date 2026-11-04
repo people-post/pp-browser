@@ -5178,6 +5178,13 @@ call-video-tile {
   text-align: center;
 }
 
+.call-phone-debug {
+  margin: 6dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
 .call-phone-hint {
   margin: 8dp 0 0 0;
   max-width: 300dp;

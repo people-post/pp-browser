@@ -230,6 +230,9 @@ void CallPresenter::Refresh() {
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
     next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
+    const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
+                                                          : std::string{};
+    next.placed_here = !local.empty() && surface.active->initiator_identity == local;
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();

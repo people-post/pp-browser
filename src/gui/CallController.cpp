@@ -30,6 +30,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallDemoScenes.h"
+#include "gui/chat/MessageTimeLabel.h"
 #include "foundation/product/DevTools.h"
 #include "gui/CallMetricsTracker.h"
 #include "lib/ui/CallConflictCopy.h"
@@ -313,7 +314,7 @@ void CallController::Tick() {
   }
   presenter_.Tick();  // expired rings; the in-call screen (Calling… / timer / levels) every frame
   const int64_t now = util::NowUnixMs();
-  if (ring_.active) {
+  if (ring_.active && !phone_layout_) {  // the phone ring page has no pulse: no dirty, no forced frame
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring_.pulse = !ring_.pulse;
       last_pulse_toggle_ms_ = now;
@@ -663,34 +664,9 @@ void CallController::Render() {
     }
   }
   switch (screen.kind) {
-  case CallScreen::Kind::Answering: {
-    // Accept in flight (CALLS.md): the ring is gone; a Connecting bar so Accept does not look hung.
-    ClearRing();
-    in_call_.active = true;
-    in_call_.call_id = screen.ring_call_id;
-    in_call_.subtitle = Tr("call.status.connecting").c_str();
-    in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
-    const std::string caller = DisplayNameForIdentity(screen.caller_identity);
-    in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
-    // Answered with video: switch to the video stage right away (see kVideoStartMs).
-    in_call_.stage_visible = screen.answered_video;
-    in_call_.remote_video = false;
-    in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
-    in_call_.show_speaker = screen.show_speaker;
-    in_call_.speaker_on = screen.speaker_on;
-    // The phone page tells the answer's story from here ("You answered", setting up the encrypted line).
-    if (chrome_mode_call_id_ != screen.ring_call_id) {
-      chrome_mode_ = DefaultCallChromeMode(screen.ring_group || phone_layout_);
-      restore_mode_ = chrome_mode_;
-      chrome_mode_call_id_ = screen.ring_call_id;
-    }
-    ApplyChromeModeToState(in_call_);
-    FillPhoneCallFields(screen);
-    ApplyConnectStory(screen, std::string(), CallPathQuality::Good, 4, util::NowUnixMs());
-    SyncShellState();
-    SyncRingtone();
+  case CallScreen::Kind::Answering:
+    RenderAnswering(screen);
     return;
-  }
   case CallScreen::Kind::Ringing:
     RenderRing(screen);
     return;
@@ -712,6 +688,42 @@ void CallController::Render() {
     SyncShellState();
     return;
   }
+}
+
+void CallController::RenderAnswering(const CallScreen& screen) {
+  // Accept in flight (CALLS.md): the ring is gone; a Connecting bar so Accept does not look hung.
+  ClearRing();
+  in_call_.active = true;
+  in_call_.call_id = screen.ring_call_id;
+  in_call_.subtitle = Tr("call.status.connecting").c_str();
+  in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+  const std::string caller = DisplayNameForIdentity(screen.caller_identity);
+  in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
+  // Answered with video: switch to the video stage right away (see kVideoStartMs).
+  in_call_.stage_visible = screen.answered_video;
+  in_call_.remote_video = false;
+  in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
+  in_call_.show_speaker = screen.show_speaker;
+  in_call_.speaker_on = screen.speaker_on;
+  if (phone_layout_) {
+    // The phone page tells the answer's story from here ("You answered", setting up the encrypted line), in the
+    // layout the call will keep: a group's grid from the start, so it does not flash the 1:1 page first. Desktop
+    // keeps its Connecting bar as before.
+    in_call_.show_roster = screen.ring_group;
+    if (screen.ring_group) {
+      in_call_.title = screen.ring_video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
+    }
+    if (chrome_mode_call_id_ != screen.ring_call_id) {
+      chrome_mode_ = DefaultCallChromeMode(true);
+      restore_mode_ = chrome_mode_;
+      chrome_mode_call_id_ = screen.ring_call_id;
+    }
+    ApplyChromeModeToState(in_call_);
+    FillPhoneCallFields(screen);
+    ApplyConnectStory(screen, std::string(), CallPathQuality::Good, 4, util::NowUnixMs());
+  }
+  SyncShellState();
+  SyncRingtone();
 }
 
 void CallController::RenderRing(const CallScreen& screen) {
@@ -1559,6 +1571,11 @@ bool CallController::RenderDemoScene() {
     ringtone_.Stop();
     return true;
   }
+  if (f.screen.kind == CallScreen::Kind::Answering) {
+    RenderAnswering(f.screen);
+    ringtone_.Stop();
+    return true;
+  }
   ClearRing();
   FillInCallFromScreen(f.screen);
   in_call_.stage_visible = f.video_stage;
@@ -1583,13 +1600,17 @@ void CallController::EndDemoScene() {
 }
 
 std::string CallController::GroupTitle(const std::string& thread_id) {
-  if (thread_id != group_title_thread_) {
-    group_title_thread_ = thread_id;
-    group_title_.clear();
-    if (!thread_id.empty() && call_ports_.get_thread) {
-      if (auto thread = call_ports_.get_thread(thread_id); thread && *thread) {
-        group_title_ = (*thread)->local_title.empty() ? (*thread)->title : (*thread)->local_title;
-      }
+  // Read each time (a rename shows at once; a thread not readable yet is tried again), at most every 2 s per thread.
+  const int64_t now = util::NowUnixMs();
+  if (thread_id == group_title_thread_ && !group_title_.empty() && now - group_title_read_ms_ < 2000) {
+    return group_title_;
+  }
+  group_title_thread_ = thread_id;
+  group_title_read_ms_ = now;
+  group_title_.clear();
+  if (!thread_id.empty() && call_ports_.get_thread) {
+    if (auto thread = call_ports_.get_thread(thread_id); thread && *thread) {
+      group_title_ = (*thread)->local_title.empty() ? (*thread)->title : (*thread)->local_title;
     }
   }
   return group_title_;
@@ -1681,6 +1702,7 @@ void CallController::ApplyConnectStory(const CallScreen& screen, const std::stri
   in.kind = screen.kind;
   in.status = answering ? CallScreen::Status::Connecting : screen.status;
   in.group = answering ? screen.ring_group : screen.group;
+  in.placed_here = !answering && screen.placed_here;
   in.media_connected = !answering && screen.media_connected;
   in.path_kind = path_kind;
   in.quality = quality;
@@ -1745,10 +1767,17 @@ void CallController::FillStoryLines() {
   const std::string name = in_call.phone_title.c_str();
   const bool group = in_call.show_roster;
   in_call.story_lines.clear();
-  for (const CallStoryEvent& event : v.events) {
+  for (size_t i = 0; i < v.events.size(); ++i) {
+    const CallStoryEvent& event = v.events[i];
     CallStoryLine line;
-    line.time = event.call_ms >= 0 ? FormatMinSec(event.call_ms / 1000)
-                                   : Tr("call.story.seconds", {{"seconds", FormatTenths((event.at_ms + 50) / 100)}});
+    if (i == 0 || (event.at_ms == 0 && event.call_ms < 0)) {
+      // Where the story starts (or a call found already live): the time of day, never a "0.0 s".
+      line.time = MessageClockLabel(event.wall_ms);
+    } else if (event.call_ms >= 0) {
+      line.time = FormatMinSec(event.call_ms / 1000);  // after connect: on the call's clock
+    } else {
+      line.time = Tr("call.story.seconds", {{"seconds", FormatTenths((event.at_ms + 50) / 100)}});
+    }
     using Kind = CallStoryEvent::Kind;
     switch (event.kind) {
     case Kind::Placed:

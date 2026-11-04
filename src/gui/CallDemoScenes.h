@@ -16,7 +16,7 @@ namespace pbr {
  * the demo app reads PP_DEMO_CALL ("voice", "voice@12" starts 12 s in) and calls it.
  *
  * Scenes: ring, ring_group, voice (calling → answered → relayed → a closer way at 25 s → slower at 35 s), reconnect,
- * video, failed, group_voice, group_video.
+ * video, failed, answer_group (a group ring answered at 3 s), group_voice, group_video.
  */
 struct DemoCallFrame {
   bool valid = false;

@@ -19,6 +19,7 @@ CallStoryInput At(int64_t now_ms, Status status, bool live = false, const char* 
   CallStoryInput in;
   in.call_id = "call-1";
   in.kind = Kind::InCall;
+  in.placed_here = true;
   in.status = status;
   in.media_connected = live;
   in.path_kind = path;
@@ -103,11 +104,13 @@ TEST(CallConnectStoryTest, AGroupCallHasNoResultLineAndGoesStraightToTheBar) {
   CallConnectStory story;
   CallStoryInput in = At(0, Status::SettingUpGroup, false, "");
   in.group = true;
+  in.placed_here = false;
   CallStoryView v = story.Step(in);
   EXPECT_TRUE(v.connecting);
   EXPECT_EQ(v.stage, 1) << "joined, the group's line is being set up";
   in = At(2'000, Status::Connected, true, "media_relay");
   in.group = true;
+  in.placed_here = false;
   v = story.Step(in);
   EXPECT_FALSE(v.result_shown);
   EXPECT_TRUE(v.signal_shown);
@@ -234,6 +237,93 @@ TEST(CallConnectStoryTest, EveryWordExistsInEnglishAndChineseAndNoneIsATechWord)
       EXPECT_EQ(en.find(tech), std::string::npos) << key << " says " << tech;
     }
   }
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+// A joiner from a group's join bar first reads "Calling" too (its media is starting): it joined, it is not calling.
+TEST(CallConnectStoryTest, AJoinerIsJoiningNotCallingEveryone) {
+  CallConnectStory story;
+  CallStoryInput in = At(1'000, Status::Calling);
+  in.group = true;
+  in.placed_here = false;
+  const CallStoryView v = story.Step(in);
+  EXPECT_FALSE(v.outgoing);
+  EXPECT_EQ(v.stage, 1);
+  ASSERT_EQ(v.events.size(), 1u);
+  EXPECT_EQ(v.events[0].kind, CallStoryEvent::Kind::Answered);
+  EXPECT_EQ(v.events[0].wall_ms, 1'000);
+}
+
+// Audio warms up after media connects: no bar, no "slower" until the first good sample (or 2 s).
+TEST(CallConnectStoryTest, TheBarWaitsForAudioToSettleAfterConnect) {
+  CallConnectStory story;
+  CallStoryInput in = At(0, Status::Connected, true, "direct", CallPathQuality::NoAudio, 0);
+  in.group = true;
+  CallStoryView v = story.Step(in);
+  EXPECT_FALSE(v.signal_shown);
+  in = At(800, Status::Connected, true, "direct", CallPathQuality::Good, 4);
+  in.group = true;
+  v = story.Step(in);
+  EXPECT_TRUE(v.signal_shown);
+  EXPECT_EQ(v.signal_tone, CallSignalTone::Good);
+  EXPECT_EQ(v.notice, CallStoryNotice::None) << "warming up is not a slower line";
+  in = At(1'400, Status::Connected, true, "direct", CallPathQuality::Fair, 2);
+  in.group = true;
+  v = story.Step(in);
+  EXPECT_EQ(v.notice, CallStoryNotice::Slow) << "measured against the first good sample";
+}
+
+TEST(CallConnectStoryTest, AnUnsettledCallShowsItsBarAfterTwoSecondsWithoutCallingItSlower) {
+  CallConnectStory story;
+  CallStoryInput in = At(0, Status::Connected, true, "direct", CallPathQuality::NoAudio, 0);
+  in.group = true;
+  story.Step(in);
+  in.now_ms = 2'000;
+  CallStoryView v = story.Step(in);
+  EXPECT_TRUE(v.signal_shown);
+  EXPECT_EQ(v.signal_tone, CallSignalTone::Poor);
+  in = At(3'000, Status::Connected, true, "direct", CallPathQuality::Fair, 2);
+  in.group = true;
+  v = story.Step(in);
+  EXPECT_EQ(v.notice, CallStoryNotice::None);
+}
+
+TEST(CallConnectStoryTest, NoAudioIsNotASlowerLine) {
+  CallConnectStory story;
+  story.Step(At(0, Status::Connected, true, "direct", CallPathQuality::Good, 4));
+  const CallStoryView v = story.Step(At(1'000, Status::Connected, true, "direct", CallPathQuality::NoAudio, 0));
+  EXPECT_EQ(v.signal_tone, CallSignalTone::Poor);
+  EXPECT_EQ(v.notice, CallStoryNotice::None) << "no audio has its own hint";
+}
+
+TEST(CallConnectStoryTest, TheTimelineKeepsOnlyTheLatestMoveCloser) {
+  CallConnectStory story;
+  story.Step(At(0, Status::Connected, true, "circuit"));
+  story.Step(At(3'000, Status::Connected, true, "direct"));
+  story.Step(At(10'000, Status::Connected, true, "circuit"));
+  const CallStoryView v = story.Step(At(20'000, Status::Connected, true, "punched"));
+  int closer = 0;
+  for (const CallStoryEvent& e : v.events) {
+    closer += e.kind == CallStoryEvent::Kind::Closer ? 1 : 0;
+  }
+  EXPECT_EQ(closer, 1);
+  EXPECT_EQ(v.events.back().call_ms, 20'000);
+}
+
+// A call found already live (the app came back to it) still says how it goes, without made-up timings.
+TEST(CallConnectStoryTest, ACallFoundLiveListsHowItConnectedWithoutResultLine) {
+  CallConnectStory story;
+  const CallStoryView v = story.Step(At(50'000, Status::Connected, true, "circuit"));
+  EXPECT_FALSE(v.result_shown);
+  ASSERT_EQ(v.events.size(), 3u);
+  EXPECT_EQ(v.events[1].kind, CallStoryEvent::Kind::Connected);
+  EXPECT_EQ(v.events[1].route, CallRoute::Relayed);
+  EXPECT_EQ(v.events[1].wall_ms, 50'000);
 }
 
 } // namespace

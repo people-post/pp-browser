@@ -64,24 +64,25 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     call_id_ = in.call_id;
     began_ms_ = now;
     last_status_ = in.status;
-    // Placed here: the first sight is our own call still ringing the others. Anything else was answered or joined
-    // here (or the app came back to a call already running: then the story starts at what it sees).
-    view_.outgoing = in.kind == CallScreen::Kind::InCall && in.status == Status::Calling && !in.media_connected;
+    // The direction is the call's own (who started it), not a guess from the first frame: a joiner from the group's
+    // join bar also first reads "Calling" while its media starts.
+    view_.outgoing = in.placed_here && in.kind == CallScreen::Kind::InCall;
     if (!view_.outgoing) {
       answered_ = true;
       answered_ms_ = now;
     }
-    view_.events.push_back({.kind = view_.outgoing ? CallStoryEvent::Kind::Placed : CallStoryEvent::Kind::Answered});
+    view_.events.push_back({.kind = view_.outgoing ? CallStoryEvent::Kind::Placed : CallStoryEvent::Kind::Answered,
+                            .wall_ms = now});
     if (in.media_connected) {
-      // Already live at first sight: how long it took is not known, so no result line; the bar shows at once.
+      // Already live at first sight (the app came back to a running call): how long it took is not known, so no
+      // result line and no times relative to a start this device did not see.
       connected_ = true;
       connected_ms_ = now;
+      answered_ = true;
+      answered_ms_ = now;
       view_.route = CallRouteFromPathKind(in.path_kind);
-      view_.signal_bars = in.quality_bars;
-      view_.signal_quality = in.quality;
-      view_.signal_tone = ToneFor(in.quality);
-      last_tone_ = view_.signal_tone;
-      signal_changed_ms_ = now;
+      view_.events.push_back({.kind = CallStoryEvent::Kind::Connected, .route = view_.route, .wall_ms = now});
+      view_.events.push_back({.kind = CallStoryEvent::Kind::Encrypted, .wall_ms = now});
     }
   }
 
@@ -92,7 +93,8 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     answered_ = true;
     answered_ms_ = now;
     if (!in.group) {
-      view_.events.push_back({.kind = CallStoryEvent::Kind::PeerAnswered, .at_ms = now - began_ms_});
+      view_.events.push_back(
+          {.kind = CallStoryEvent::Kind::PeerAnswered, .at_ms = now - began_ms_, .wall_ms = now});
     }
   }
 
@@ -101,19 +103,15 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     connected_ms_ = now;
     // The path is only worth reading now (before media it is empty or a default "direct").
     view_.route = CallRouteFromPathKind(in.path_kind);
-    view_.events.push_back({.kind = CallStoryEvent::Kind::Connected, .at_ms = now - began_ms_, .route = view_.route});
-    view_.events.push_back({.kind = CallStoryEvent::Kind::Encrypted, .at_ms = now - began_ms_});
+    view_.events.push_back(
+        {.kind = CallStoryEvent::Kind::Connected, .at_ms = now - began_ms_, .route = view_.route, .wall_ms = now});
+    view_.events.push_back({.kind = CallStoryEvent::Kind::Encrypted, .at_ms = now - began_ms_, .wall_ms = now});
     if (!in.group) {
       view_.result_shown = true;
       view_.result_route = view_.route;
       const int64_t from = answered_ ? answered_ms_ : began_ms_;
       view_.connect_tenths = (now - from + 50) / 100;
     }
-    view_.signal_bars = in.quality_bars;
-    view_.signal_quality = in.quality;
-    view_.signal_tone = ToneFor(in.quality);
-    last_tone_ = view_.signal_tone;
-    signal_changed_ms_ = now;
   }
 
   view_.connecting = !connected_ && StillConnecting(in.status);
@@ -136,27 +134,42 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
     if (in.media_connected && !reconnecting) {
       const CallRoute route = CallRouteFromPathKind(in.path_kind);
       if (view_.route == CallRoute::Relayed && (route == CallRoute::Direct || route == CallRoute::AroundLimits)) {
-        // A relayed call found a nearer way (the direct retries at 3 / 20 / 60 s) and moved onto it.
+        // A relayed call found a nearer way (the direct retries at 3 / 20 / 60 s) and moved onto it. The timeline
+        // keeps only the latest move, however often a call flips between paths.
+        std::erase_if(view_.events, [](const CallStoryEvent& e) { return e.kind == CallStoryEvent::Kind::Closer; });
         view_.events.push_back({.kind = CallStoryEvent::Kind::Closer,
                                 .at_ms = now - began_ms_,
                                 .call_ms = now - connected_ms_,
-                                .route = route});
+                                .route = route,
+                                .wall_ms = now});
         Raise(CallStoryNotice::Closer, now);
       }
       if (route != CallRoute::Unknown) {
         view_.route = route;
       }
     }
-    // The bar follows the measured quality, held at least kSignalHoldMs between changes.
+    // Audio warms up for a moment after media connects (no audio yet, still settling): the bar waits for the
+    // first good sample or kSettleMs, and that sample is the baseline "slower" is measured against.
     const CallSignalTone tone = ToneFor(in.quality);
+    if (!settled_ && (tone == CallSignalTone::Good || now - connected_ms_ >= kSettleMs)) {
+      settled_ = true;
+      view_.signal_bars = in.quality_bars;
+      view_.signal_quality = in.quality;
+      view_.signal_tone = tone;
+      last_tone_ = tone;
+      signal_changed_ms_ = now;
+    }
+    // The bar follows the measured quality, held at least kSignalHoldMs between changes.
     const bool differs = in.quality_bars != view_.signal_bars || in.quality != view_.signal_quality;
-    if (differs && now - signal_changed_ms_ >= kSignalHoldMs) {
+    if (settled_ && differs && now - signal_changed_ms_ >= kSignalHoldMs) {
       view_.signal_bars = in.quality_bars;
       view_.signal_quality = in.quality;
       view_.signal_tone = tone;
       signal_changed_ms_ = now;
-      // "The line got slower": good turning fair or poor while the call runs (a reconnect says so itself).
-      if (last_tone_ == CallSignalTone::Good && tone != CallSignalTone::Good && !reconnecting &&
+      // "The line got slower": good turning fair or poor while the call runs. A reconnect says so itself, and no
+      // audio is not a slower line (it has its own hint: "you can't hear them").
+      const bool slower = in.quality == CallPathQuality::Fair || in.quality == CallPathQuality::Poor;
+      if (last_tone_ == CallSignalTone::Good && slower && !reconnecting &&
           (!slow_noticed_ || now - slow_notice_ms_ >= kSlowNoticeEveryMs)) {
         slow_noticed_ = true;
         slow_notice_ms_ = now;
@@ -165,7 +178,7 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
       last_tone_ = tone;
     }
   }
-  view_.signal_shown = connected_ && !view_.result_shown && in.status != Status::CouldntConnect &&
+  view_.signal_shown = connected_ && settled_ && !view_.result_shown && in.status != Status::CouldntConnect &&
                        in.status != Status::Disconnected;
 
   if (view_.notice != CallStoryNotice::None) {

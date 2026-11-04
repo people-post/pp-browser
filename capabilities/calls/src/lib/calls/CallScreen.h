@@ -69,6 +69,8 @@ struct CallScreen {
   std::vector<Member> members;
   /** The 1:1 peer. */
   std::string peer_identity;
+  /** This device started the call (the session's initiator is the local account); else it answered or joined. */
+  bool placed_here = false;
   /** This device's chat the call belongs to (the group's, or the DM): local only; the phone page names the group. */
   std::string thread_id;
   bool muted = false;

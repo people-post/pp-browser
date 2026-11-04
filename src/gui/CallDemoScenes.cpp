@@ -1,5 +1,7 @@
 #include "gui/CallDemoScenes.h"
 
+#include "foundation/i18n/LocalizationService.h"
+
 #include <cstdlib>
 
 namespace pbr {
@@ -31,6 +33,7 @@ CallScreen InCall(const char* call_id, const bool video, const bool group) {
     s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = video});
   } else {
     s.peer_identity = kPeer;
+    s.placed_here = true;  // the 1:1 scenes are calls this device placed
   }
   return s;
 }
@@ -106,6 +109,29 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     f.screen.hint_seed_unreachable = true;
     return f;
   }
+  if (scene == "answer_group") {
+    // A group's ring, answered at 3 s: the page must go straight to the group's grid (no 1:1 page in between).
+    if (t < 3'000) {
+      f.screen.kind = CallScreen::Kind::Ringing;
+    } else if (t < 6'000) {
+      f.screen.kind = CallScreen::Kind::Answering;
+      f.screen.show_speaker = true;
+    } else {
+      f.screen = InCall("demo-group-answer", false, true);
+      if (t < 9'000) {
+        f.screen.status = Status::SettingUpGroup;
+      } else {
+        Connected(f.screen, start + 9'000);
+        f.path_kind = "media_relay";
+      }
+      return f;
+    }
+    f.screen.ring_call_id = "demo-group-answer";
+    f.screen.caller_identity = "demo-acct-demo-contact-01";
+    f.screen.ring_group = true;
+    f.screen.thread_id = kGroupThread;
+    return f;
+  }
   if (scene == "group_voice" || scene == "group_video") {
     const bool video = scene == "group_video";
     f.screen = InCall(video ? "demo-group-video" : "demo-group-voice", video, true);
@@ -114,6 +140,11 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     } else {
       Connected(f.screen, start + 5'000);
       f.path_kind = "media_relay";
+      if (!video && t >= 30'000 && t < 40'000) {
+        // The stack moving the group onto another path: its line and the hint under it ("everyone reconnects").
+        f.screen.status = Status::Activity;
+        f.screen.activity = Tr("call.status.switching_media_path");
+      }
       if (video && t >= 15'000) {
         f.quality = CallPathQuality::Poor;
         f.quality_bars = 1;

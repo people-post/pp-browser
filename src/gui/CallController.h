@@ -101,6 +101,8 @@ private:
   /** The presenter's screen into the shell's ring / in-call state. */
   void Render();
   void RenderRing(const CallScreen& screen);
+  /** Accept in flight: the ring is gone, a Connecting page / bar shows. */
+  void RenderAnswering(const CallScreen& screen);
   void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
   /** The in-call state from the presenter's screen (names, roster, status line, phone page fields). */
   void FillInCallFromScreen(const CallScreen& screen);
@@ -218,6 +220,7 @@ private:
   bool demo_ended_ = false;
   std::string group_title_thread_;
   std::string group_title_;
+  int64_t group_title_read_ms_ = 0;
 };
 
 } // namespace pbr
