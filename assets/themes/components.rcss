@@ -7302,6 +7302,27 @@ input.checkbox {
   font-weight: bold;
 }
 
+/* The owner's "Group admin" card (a person's page opened from their group): 50dp rows with a 22dp icon before the
+   label (accent for Re-invite, red for Remove), the hairline from the label; a grey note at the right end. */
+.cd-row.cd-row--admin {
+  height: 50dp;
+  gap: 12dp;
+}
+
+.cd-row--admin .cd-row-body {
+  height: 50dp;
+}
+
+.cd-admin-icon {
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.cd-admin {
+  padding-bottom: 24dp;
+}
+
 /* Group member page: help line sits centred under the Add contact button. */
 .cd-footnote--center {
   margin-top: 16dp;

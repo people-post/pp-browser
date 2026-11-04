@@ -1,6 +1,7 @@
-// A tap on someone in a group's member list or on the group info's member card, on a phone
-// (DEV/PLAN-ui-batch8-group-pages.md 2): anyone but the owner goes straight to the profile (Kenneth 2026-11-04);
-// the owner gets an action sheet; our own row does nothing. No "transfer owner" here (Kenneth: only when leaving).
+// A tap on someone in a group's member list, the group info's member card or their avatar in the chat, on a phone
+// (Kenneth 2026-11-04, ui-mockups/09-sheets-unify ③): everyone, the owner too, opens the person's profile; the owner
+// finds a "Group admin" card at its bottom (Re-invite with a note, Remove); our own row does nothing. No "transfer
+// owner" here (Kenneth: only when leaving).
 #include "feature/presenters/ChatPresenter.h"
 
 #include <gtest/gtest.h>
@@ -25,32 +26,37 @@ GroupMemberRow Member(const std::string& contact_id, const bool unreachable = fa
 TEST(GroupMemberTapTest, OurOwnRowDoesNothing) {
   EXPECT_EQ(DecideGroupMemberTap(Member("c1"), /*is_self=*/true, /*owner=*/true).kind, GroupMemberTap::Kind::Nothing);
   EXPECT_EQ(DecideGroupMemberTap(Member(""), /*is_self=*/true, /*owner=*/false).kind, GroupMemberTap::Kind::Nothing);
+  EXPECT_TRUE(DecideGroupMemberTap(Member("c1"), true, true).admin_actions.empty());
 }
 
-TEST(GroupMemberTapTest, NotTheOwnerGoesStraightToTheProfileContactOrNot) {
+TEST(GroupMemberTapTest, NotTheOwnerGoesStraightToTheProfileWithoutTheAdminCard) {
   EXPECT_EQ(DecideGroupMemberTap(Member("c1"), false, /*owner=*/false).kind, GroupMemberTap::Kind::OpenProfile);
   EXPECT_EQ(DecideGroupMemberTap(Member(""), false, /*owner=*/false).kind, GroupMemberTap::Kind::OpenProfile);
-  EXPECT_TRUE(DecideGroupMemberTap(Member("c1"), false, false).actions.empty());
+  EXPECT_TRUE(DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, false).admin_actions.empty());
+  EXPECT_TRUE(DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, false).admin_actions.empty());
 }
 
-TEST(GroupMemberTapTest, TheOwnerSeesProfileMessageAndRemoveForAContact) {
+TEST(GroupMemberTapTest, TheOwnerAlsoOpensTheProfileWithRemoveInTheCard) {
   const GroupMemberTap tap = DecideGroupMemberTap(Member("c1"), false, /*owner=*/true);
-  EXPECT_EQ(tap.kind, GroupMemberTap::Kind::ShowActions);
-  EXPECT_EQ(tap.actions, (std::vector<Action>{Action::ViewProfile, Action::Message, Action::Remove}));
+  EXPECT_EQ(tap.kind, GroupMemberTap::Kind::OpenProfile);
+  EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Remove}));
+  EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::None);
 }
 
-TEST(GroupMemberTapTest, SomeoneWhoIsNotAContactCanBeAddedNotMessaged) {
-  const GroupMemberTap tap = DecideGroupMemberTap(Member(""), false, /*owner=*/true);
-  EXPECT_EQ(tap.actions, (std::vector<Action>{Action::ViewProfile, Action::AddContact, Action::Remove}));
+TEST(GroupMemberTapTest, SomeoneWhoIsNotAContactCanBeRemovedNotInvitedAgain) {
+  const GroupMemberTap tap = DecideGroupMemberTap(Member("", /*unreachable=*/true), false, /*owner=*/true);
+  EXPECT_EQ(tap.kind, GroupMemberTap::Kind::OpenProfile);
+  EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Remove}));
 }
 
-TEST(GroupMemberTapTest, AnUnreachableContactCanBeInvitedAgain) {
+TEST(GroupMemberTapTest, AnUnreachableContactCanBeInvitedAgainNotedCantBeReached) {
   const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, /*owner=*/true);
-  EXPECT_EQ(tap.actions,
-            (std::vector<Action>{Action::ViewProfile, Action::Message, Action::Reinvite, Action::Remove}));
+  EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Reinvite, Action::Remove}));
+  EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::Unreachable);
 }
 
-TEST(GroupMemberTapTest, SomeoneStillInvitedCannotBeRemovedOnlyInvitedAgain) {
+TEST(GroupMemberTapTest, SomeoneStillInvitedCannotBeRemovedOnlyInvitedAgainNotedNotJoined) {
   const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, /*owner=*/true);
-  EXPECT_EQ(tap.actions, (std::vector<Action>{Action::ViewProfile, Action::Message, Action::Reinvite}));
+  EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Reinvite}));
+  EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::NotJoined);
 }

@@ -1358,47 +1358,77 @@ bool PeoplePickerController::CompactLayout() const {
   return shell_navigation_.snapshot && shell_navigation_.snapshot().layout_mode == LayoutMode::Compact;
 }
 
-void PeoplePickerController::TapGroupMember(const std::string& thread_id, const std::string& identity) {
-  if (!MessagingInitialized() || !picker_ports_.get_thread || !picker_ports_.list_group_roster || identity.empty()) {
-    return;
+std::optional<PeoplePickerController::MemberInGroup> PeoplePickerController::FindMemberInGroup(
+    const std::string& thread_id, const std::function<bool(const GroupRosterMember&)>& matches) const {
+  if (!MessagingInitialized() || !picker_ports_.get_thread || !picker_ports_.list_group_roster) {
+    return std::nullopt;
   }
   auto thread = picker_ports_.get_thread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
-    return;
+    return std::nullopt;
   }
-  const std::string group_id = *(*thread)->group_id;
-  auto roster = picker_ports_.list_group_roster(group_id);
+  MemberInGroup found;
+  found.group_id = *(*thread)->group_id;
+  auto roster = picker_ports_.list_group_roster(found.group_id);
   if (!roster) {
-    return;
+    return std::nullopt;
   }
-  const auto member = std::find_if(roster->begin(), roster->end(), [&identity](const GroupRosterMember& m) {
-    return m.member_identity == identity;
-  });
+  const auto member = std::find_if(roster->begin(), roster->end(), matches);
   if (member == roster->end()) {
-    return;
+    return std::nullopt;
   }
+  const std::string& identity = member->member_identity;
   std::string local_identity;
   if (picker_ports_.local_relay_identity) {
     if (auto local = picker_ports_.local_relay_identity()) {
       local_identity = *local;
     }
   }
-  bool is_owner = false;
   if (picker_ports_.is_local_owner) {
-    if (auto owner = picker_ports_.is_local_owner(group_id)) {
-      is_owner = *owner;
+    if (auto owner = picker_ports_.is_local_owner(found.group_id)) {
+      found.viewer_is_owner = *owner;
     }
   }
   bool unreachable = false;
   if (picker_ports_.list_unreachable_members) {
-    const std::vector<std::string> list = picker_ports_.list_unreachable_members(group_id);
+    const std::vector<std::string> list = picker_ports_.list_unreachable_members(found.group_id);
     unreachable = std::find(list.begin(), list.end(), identity) != list.end();
   }
   const std::optional<Contact> contact = ContactForMember(*member);
   const std::string nickname =
       !contact && picker_ports_.kept_card_nickname ? picker_ports_.kept_card_nickname(identity) : std::string();
-  const GroupMemberRow row = BuildGroupMemberRow(*member, contact, unreachable, nickname);
-  ShowMemberTap(row, group_id, is_owner, identity == local_identity || identity == kLocalSelfContactId);
+  found.row = BuildGroupMemberRow(*member, contact, unreachable, nickname);
+  found.is_self = identity == local_identity || identity == kLocalSelfContactId;
+  return found;
+}
+
+void PeoplePickerController::TapGroupMember(const std::string& thread_id, const std::string& identity) {
+  if (identity.empty()) {
+    return;
+  }
+  const auto found = FindMemberInGroup(
+      thread_id, [&identity](const GroupRosterMember& m) { return m.member_identity == identity; });
+  if (found) {
+    ShowMemberTap(found->row, found->group_id, found->viewer_is_owner, found->is_self);
+  }
+}
+
+void PeoplePickerController::OfferGroupAdmin(const std::string& thread_id, const std::string& sender) {
+  if (sender.empty()) {
+    return;
+  }
+  // The sender is the account id of someone who is not a contact, or the contact's id.
+  const auto found = FindMemberInGroup(thread_id, [this, &sender](const GroupRosterMember& m) {
+    if (m.member_identity == sender || (!m.contact_id.empty() && m.contact_id == sender)) {
+      return true;
+    }
+    const std::optional<Contact> contact = ContactForMember(m);
+    return contact && contact->id == sender;
+  });
+  if (!found) {
+    return;
+  }
+  OfferAdminCard(DecideGroupMemberTap(found->row, found->is_self, found->viewer_is_owner), found->group_id, found->row);
 }
 
 void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std::string& group_id,
@@ -1407,38 +1437,40 @@ void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std:
   if (tap.kind == GroupMemberTap::Kind::Nothing) {
     return;
   }
-  if (tap.kind == GroupMemberTap::Kind::OpenProfile) {
-    OpenMemberProfile(row);
+  // Everyone, the owner too, goes to the profile (Kenneth 2026-11-04); the owner's has the admin card at its bottom.
+  OpenMemberProfile(row);
+  OfferAdminCard(tap, group_id, row);
+}
+
+void PeoplePickerController::OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id,
+                                            const GroupMemberRow& row) {
+  if (tap.admin_actions.empty() || group_id.empty() || !contacts_notify_.set_group_admin) {
     return;
   }
-  // The owner: the phone action sheet (rows of 57dp, Cancel below); Remove in red asks before it removes.
-  std::vector<ContextMenuAction> actions;
-  for (const GroupMemberAction action : tap.actions) {
+  GroupAdminCard card;
+  for (const GroupMemberAction action : tap.admin_actions) {
     switch (action) {
-    case GroupMemberAction::ViewProfile:
-      actions.push_back({"member_view_profile", Tr("group_info.view_profile"), nullptr,
-                         [this, row]() { OpenMemberProfile(row); }, "../icons/v2/user.svg"});
-      break;
-    case GroupMemberAction::Message:
-      actions.push_back({"member_message", Tr("people_picker.cta_message"), nullptr,
-                         [this, contact_id = row.contact_id]() { StartDirectMessage(contact_id); },
-                         "../icons/v2/tab-chats.svg"});
-      break;
-    case GroupMemberAction::AddContact:
-      actions.push_back({"member_add_contact", Tr("people_picker.add_as_contact"), nullptr,
-                         [this, row]() { AddMemberAsContact(row); }, "../icons/v2/user-plus.svg"});
-      break;
     case GroupMemberAction::Reinvite:
-      actions.push_back({"member_reinvite", Tr("people_picker.reinvite"), nullptr,
-                         [this, group_id, row]() { ReinviteMember(group_id, row); }, "../icons/v2/group.svg"});
+      card.can_reinvite = true;
+      card.reinvite = [this, group_id, row]() { ReinviteMember(group_id, row); };
       break;
     case GroupMemberAction::Remove:
-      actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
-                         [this, group_id, row]() { RemoveMember(group_id, row); }, "../icons/v2/trash.svg", true});
+      card.can_remove = true;
+      card.remove = [this, group_id, row](std::function<void()> done) { RemoveMember(group_id, row, std::move(done)); };
       break;
     }
   }
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(0, 0), std::move(actions));
+  switch (tap.reinvite_note) {
+  case GroupReinviteNote::NotJoined:
+    card.reinvite_note = Tr("contacts.group_admin.not_joined");
+    break;
+  case GroupReinviteNote::Unreachable:
+    card.reinvite_note = Tr("group_info.unreachable");
+    break;
+  case GroupReinviteNote::None:
+    break;
+  }
+  contacts_notify_.set_group_admin(std::move(card));
 }
 
 void PeoplePickerController::OpenMemberProfile(const GroupMemberRow& row) {
@@ -1472,13 +1504,14 @@ void PeoplePickerController::ReinviteMember(const std::string& group_id, const G
   });
 }
 
-void PeoplePickerController::RemoveMember(const std::string& group_id, const GroupMemberRow& row) {
+void PeoplePickerController::RemoveMember(const std::string& group_id, const GroupMemberRow& row,
+                                          std::function<void()> removed) {
   if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
   shell_feedback_.show_confirm_destructive(
       Tr("chat.group.remove_member_title"), Tr("chat.group.remove_member_confirm", {{"name", row.title}}),
-      [this, group_id, identity = row.identity](const bool ok) {
+      [this, group_id, identity = row.identity, name = row.title, removed = std::move(removed)](const bool ok) {
         if (!ok || group_id.empty() || !picker_ports_.remove_member_by_identity) {
           return;
         }
@@ -1494,6 +1527,10 @@ void PeoplePickerController::RemoveMember(const std::string& group_id, const Gro
           DirtyAll();
         }
         NotifySurfaceChanged();
+        if (removed) {
+          removed();
+        }
+        ShowToast(Tr("people_picker.member_removed", {{"name", name}}));
       },
       {});
 }

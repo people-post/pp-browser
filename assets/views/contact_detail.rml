@@ -172,6 +172,25 @@
         </button>
       </div>
     </div>
+
+    <!-- The group's owner, from that group (Kenneth 2026-11-04): re-invite and remove at the bottom of the person's page
+         instead of a menu first. Remove asks before it removes. -->
+    <div class="cd-admin" data-if="admin_shown">
+      <p class="cd-header">{{i18n:contacts.group_admin}}</p>
+      <div class="cd-card cd-card--headed">
+        <button class="cd-row cd-row--admin" type="button" data-if="admin_can_reinvite" data-event-click="admin_reinvite()">
+          <svg class="cd-admin-icon" src="../icons/v2/send.svg" width="22" height="22"></svg>
+          <span class="cd-row-body">
+            <span class="cd-row-text cd-row-text--accent">{{i18n:people_picker.reinvite}}</span>
+            <span class="cd-row-value" data-if="admin_reinvite_note != ''">{{admin_reinvite_note}}</span>
+          </span>
+        </button>
+        <button class="cd-row cd-row--admin cd-row--danger" type="button" data-if="admin_can_remove" data-event-click="admin_remove()">
+          <svg class="cd-admin-icon" src="../icons/v2/user-minus.svg" width="22" height="22"></svg>
+          <span class="cd-row-body"><span class="cd-row-text">{{i18n:people_picker.remove_from_group}}</span></span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="contacts-detail-body stack">

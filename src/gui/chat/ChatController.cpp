@@ -1846,13 +1846,15 @@ void ChatController::OpenGroupSender(const std::string& message_id) {
     if (contacts_notify_.select_contact_sheet) {
       contacts_notify_.select_contact_sheet((*contact)->id);
     }
-    return;
-  }
-  if (contacts_notify_.show_member_sheet) {
+  } else if (contacts_notify_.show_member_sheet) {
     // Not a contact: the same page in its member state (name, photo, Account ID, Add contact).
     const TranscriptFacts facts = facade_->TranscriptFactsFor();
     contacts_notify_.show_member_sheet(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
                                        facts.sender_icon ? facts.sender_icon(sender) : std::string());
+  }
+  // The group's owner finds the "Group admin" card at the bottom, as from the member list.
+  if (people_picker_notify_.offer_group_admin) {
+    people_picker_notify_.offer_group_admin(facade_->ActiveThreadId(), sender);
   }
 }
 

@@ -636,6 +636,12 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
     ctor.BindEventCallback("on_contact_field_changed", &ContactsController::OnContactFieldChangedCallback);
     ctor.BindEventCallback("on_contact_field_left", DataEvent<>([this]() { OnContactFieldLeft(); }));
+    ctor.Bind("admin_shown", &admin_shown_);
+    ctor.Bind("admin_can_reinvite", &admin_can_reinvite_);
+    ctor.Bind("admin_can_remove", &admin_can_remove_);
+    ctor.Bind("admin_reinvite_note", &admin_reinvite_note_);
+    ctor.BindEventCallback("admin_reinvite", DataEvent<>([this]() { OnGroupAdminReinvite(); }));
+    ctor.BindEventCallback("admin_remove", DataEvent<>([this]() { OnGroupAdminRemove(); }));
     ctor.BindEventCallback("sync_contact_remote", &ContactsController::SyncRemoteCallback);
     ctor.BindEventCallback("add_search_changed", &ContactsController::AddSearchChangedCallback);
     ctor.BindEventCallback("add_pick", DataEvent<std::string>([this](const std::string& i) { OnAddPick(i); }));
@@ -674,6 +680,10 @@ void ContactsController::DirtyAll() {
   host.Dirty("contacts", "compact_layout");
   host.Dirty("contacts", "advanced");
   host.Dirty("contacts", "selected");
+  host.Dirty("contacts", "admin_shown");
+  host.Dirty("contacts", "admin_can_reinvite");
+  host.Dirty("contacts", "admin_can_remove");
+  host.Dirty("contacts", "admin_reinvite_note");
 }
 
 void ContactsController::SyncLayoutMode() {
@@ -1020,6 +1030,7 @@ void ContactsController::UpdateMessagingEligibility(const Contact& contact) {
 }
 
 void ContactsController::OnSelectContact(const std::string& contact_id) {
+  ClearGroupAdminCard();
   FlushPending();
   LoadSelectedDetail(contact_id);
   if (selected_.id.empty()) {
@@ -1037,6 +1048,7 @@ void ContactsController::OnSelectContact(const std::string& contact_id) {
 
 void ContactsController::OnShowMember(const std::string& account_id, const std::string& name,
                                       const std::string& icon_src) {
+  ClearGroupAdminCard();
   if (account_id.empty()) {
     return;
   }
@@ -1060,6 +1072,7 @@ bool ContactsController::DetailSheetAvailable() const {
 }
 
 void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
+  ClearGroupAdminCard();
   if (!DetailSheetAvailable()) {
     OnSelectContact(contact_id);
     return;
@@ -1084,6 +1097,7 @@ void ContactsController::OnSelectContactSheet(const std::string& contact_id) {
 
 void ContactsController::OnShowMemberSheet(const std::string& account_id, const std::string& name,
                                            const std::string& icon_src) {
+  ClearGroupAdminCard();
   if (!DetailSheetAvailable()) {
     OnShowMember(account_id, name, icon_src);
     return;
@@ -1121,7 +1135,53 @@ void ContactsController::CloseSheetsBeforeLeaving() {
   }
 }
 
+void ContactsController::SetGroupAdminCard(GroupAdminCard card) {
+  group_admin_ = std::move(card);
+  admin_can_reinvite_ = group_admin_.can_reinvite && group_admin_.reinvite;
+  admin_can_remove_ = group_admin_.can_remove && group_admin_.remove;
+  admin_reinvite_note_ = group_admin_.reinvite_note.c_str();
+  admin_shown_ = admin_can_reinvite_ || admin_can_remove_;
+  DirtyAll();
+}
+
+void ContactsController::ClearGroupAdminCard() {
+  if (!admin_shown_ && !group_admin_.reinvite && !group_admin_.remove) {
+    return;
+  }
+  group_admin_ = {};
+  admin_shown_ = false;
+  admin_can_reinvite_ = false;
+  admin_can_remove_ = false;
+  admin_reinvite_note_ = "";
+  DirtyAll();
+}
+
+void ContactsController::OnGroupAdminReinvite() {
+  if (admin_can_reinvite_ && group_admin_.reinvite) {
+    group_admin_.reinvite();
+  }
+}
+
+void ContactsController::OnGroupAdminRemove() {
+  if (!admin_can_remove_ || !group_admin_.remove) {
+    return;
+  }
+  // Asks first; once the person is out their page closes and the sheets under it stay (Kenneth 2026-11-04).
+  const int layer = detail_sheet_layer_id_;
+  const auto remove = group_admin_.remove;
+  remove([this, layer]() {
+    ClearGroupAdminCard();
+    if (layer >= 0 && layer == detail_sheet_layer_id_) {
+      if (shell_navigation_.close_layer) {
+        shell_navigation_.close_layer(layer);
+      }
+      NoticeDetailSheetClosed();
+    }
+  });
+}
+
 void ContactsController::OnDetailSheetClosed() {
+  ClearGroupAdminCard();
   detail_sheet_layer_id_ = -1;
   FlushPending();
   const std::string under = std::exchange(detail_under_sheet_, std::string());

@@ -5,6 +5,7 @@
 #include "gui/ChatSessionPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/contacts/ContactsAccountPorts.h"
+#include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/contacts/ContactsSurfaceNotifyPorts.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -184,6 +185,16 @@ public:
   void OnShowMemberSheet(const std::string& account_id, const std::string& name, const std::string& icon_src);
   /** The contact page is open as a page sheet. */
   bool DetailSheetOpen() const { return detail_sheet_layer_id_ >= 0; }
+  /**
+   * The group owner's "Group admin" card at the bottom of the person's page just opened from that group (phones);
+   * opening any page clears it. Remove closes the sheet once the person is out.
+   */
+  void SetGroupAdminCard(GroupAdminCard card);
+  /** The admin card is shown (tests). */
+  bool GroupAdminShown() const { return admin_shown_; }
+  /** The card's Remove row, as its tap does (tests, and the view). */
+  void OnGroupAdminRemove();
+  void OnGroupAdminReinvite();
   void OnDetailDismissed();
 
   /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
@@ -356,6 +367,12 @@ private:
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
   RemarkSaveNotice remark_notice_;
+  GroupAdminCard group_admin_;
+  bool admin_shown_ = false;
+  bool admin_can_reinvite_ = false;
+  bool admin_can_remove_ = false;
+  ui::String admin_reinvite_note_;
+  void ClearGroupAdminCard();
   /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */
   std::string detail_under_sheet_;
   ui::String search_query_;

@@ -68,3 +68,5 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | arrow-up-right | phone sheet headers (ask-AI "Open in AI chat") | drawn | - |
 | photo | 09-sheets-unify; phone small sheet (attach Photo) | drawn | - |
 | file | 09-sheets-unify; phone small sheet (attach File) | drawn | - |
+| send | 09-sheets-unify; contact page "Group admin" card (Re-invite) | drawn | `send.svg` |
+| user-minus | 09-sheets-unify; contact page "Group admin" card (Remove from group) | drawn | - |

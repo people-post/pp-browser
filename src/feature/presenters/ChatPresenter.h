@@ -164,27 +164,31 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
-/** One item of the owner's member action sheet (phones). */
-enum class GroupMemberAction { ViewProfile, Message, AddContact, Reinvite, Remove };
+/** One row of the owner's "Group admin" card on a member's profile (phones). */
+enum class GroupMemberAction { Reinvite, Remove };
 
-/** What a tap on someone in a group's member list (or the group info's member card) does on a phone. */
+/** The grey note beside Re-invite: why the person is offered one. */
+enum class GroupReinviteNote { None, NotJoined, Unreachable };
+
+/** What a tap on someone in a group (member list, group info's member card, their avatar in the chat) does on a phone. */
 struct GroupMemberTap {
   enum class Kind {
     /** Our own row. */
     Nothing,
-    /** Straight to their profile (anyone but the owner, Kenneth 2026-11-04). */
+    /** Their profile sheet, for everyone (Kenneth 2026-11-04: the owner too, no menu first). */
     OpenProfile,
-    /** The owner: an action sheet of `actions` (and Cancel). */
-    ShowActions,
   };
   Kind kind = Kind::Nothing;
-  std::vector<GroupMemberAction> actions;
+  /** The owner's "Group admin" card at the bottom of that profile; empty for anyone else. */
+  std::vector<GroupMemberAction> admin_actions;
+  GroupReinviteNote reinvite_note = GroupReinviteNote::None;
 
   bool operator==(const GroupMemberTap&) const = default;
 };
 /**
- * The owner's sheet: View profile, Message (a contact), Add contact (not one), Re-invite (a contact still waiting or
- * out of reach), Remove (anyone on the roster). Handing the group over is not here: it happens when the owner leaves.
+ * The profile for anyone but ourselves. The owner's card: Re-invite (a contact still waiting, noted "not joined yet",
+ * or out of reach, noted "can't be reached"), Remove (anyone on the roster). Handing the group over is not here: it
+ * happens when the owner leaves.
  */
 GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
 

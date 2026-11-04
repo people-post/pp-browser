@@ -93,6 +93,11 @@ public:
 
   /** Someone tapped on the group info sheet's member card: the same as a tap in the member list. */
   void TapGroupMember(const std::string& thread_id, const std::string& identity);
+  /**
+   * A member's profile was just opened from the group chat `thread_id` (their avatar or name; `sender` a contact id or
+   * an account id): if we own the group, the profile gets the "Group admin" card.
+   */
+  void OfferGroupAdmin(const std::string& thread_id, const std::string& sender);
 
   void Close();
 
@@ -115,13 +120,25 @@ private:
   void RefreshGroupAddLimit();
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
-  /** Phones: a non-owner goes to the profile, the owner gets the action sheet (DecideGroupMemberTap). */
+  /** Phones: everyone goes to the profile; the owner's has the "Group admin" card (DecideGroupMemberTap). */
   void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, bool viewer_is_owner, bool is_self);
+  /** The owner's card on the profile just opened for `row` (nothing when `tap` offers no admin action). */
+  void OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id, const GroupMemberRow& row);
+  /** Someone on the roster of the group chat `thread_id`, found by `matches`, with what we know about them and us. */
+  struct MemberInGroup {
+    std::string group_id;
+    GroupMemberRow row;
+    bool viewer_is_owner = false;
+    bool is_self = false;
+  };
+  std::optional<MemberInGroup> FindMemberInGroup(const std::string& thread_id,
+                                                 const std::function<bool(const GroupRosterMember&)>& matches) const;
   /** The member's profile as a page sheet (their contact page, or its member state). */
   void OpenMemberProfile(const GroupMemberRow& row);
   bool CompactLayout() const;
   void ReinviteMember(const std::string& group_id, const GroupMemberRow& row);
-  void RemoveMember(const std::string& group_id, const GroupMemberRow& row);
+  /** Asks first; `removed` runs once the person is out (the owner's profile sheet then closes). */
+  void RemoveMember(const std::string& group_id, const GroupMemberRow& row, std::function<void()> removed = {});
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,

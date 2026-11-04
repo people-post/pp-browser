@@ -90,19 +90,17 @@ GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_sel
   if (is_self) {
     return tap;
   }
+  tap.kind = GroupMemberTap::Kind::OpenProfile;
   if (!viewer_is_owner) {
-    tap.kind = GroupMemberTap::Kind::OpenProfile;
     return tap;
   }
-  tap.kind = GroupMemberTap::Kind::ShowActions;
-  tap.actions.push_back(GroupMemberAction::ViewProfile);
-  tap.actions.push_back(row.IsContact() ? GroupMemberAction::Message : GroupMemberAction::AddContact);
   // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
   if (row.IsContact() && (row.invited || row.unreachable)) {
-    tap.actions.push_back(GroupMemberAction::Reinvite);
+    tap.admin_actions.push_back(GroupMemberAction::Reinvite);
+    tap.reinvite_note = row.invited ? GroupReinviteNote::NotJoined : GroupReinviteNote::Unreachable;
   }
   if (!row.invited) {
-    tap.actions.push_back(GroupMemberAction::Remove);
+    tap.admin_actions.push_back(GroupMemberAction::Remove);
   }
   return tap;
 }

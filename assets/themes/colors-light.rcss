@@ -1807,6 +1807,14 @@ input.checkbox:checked {
   color: #007aff;
 }
 
+.cd-admin-icon {
+  image-color: #007aff;
+}
+
+.cd-row--danger .cd-admin-icon {
+  image-color: #ff3b30;
+}
+
 .cd-chevron {
   image-color: #3c3c434c;
 }

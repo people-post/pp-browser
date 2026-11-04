@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <functional>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -124,6 +125,74 @@ TEST(ProfileSheetTest, ThePageHasTheSheetsTitleRowOnlyInASheet) {
   const std::string css = ReadAsset("themes/components.rcss");
   EXPECT_NE(css.find(".cd-sheet-header {\n  display: none;"), std::string::npos);
   EXPECT_NE(css.find(".shell-page-sheet .cd-sheet-header {\n  display: flex;"), std::string::npos);
+}
+
+// Kenneth 2026-11-04 (ui-mockups/09-sheets-unify ③): the owner, like everyone, gets the person's page; from that group
+// it has a "Group admin" card at the bottom. Remove asks first (the picker's confirm), then the page closes and the
+// sheets under it stay.
+TEST(ProfileSheetTest, TheOwnersAdminCardShowsOnThatPersonsPageAndRemoveClosesIt) {
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  shell.layers.push_back(PaneSpec{}); // the member list under it
+  shell.open.push_back(1);
+  controller.OnShowMemberSheet("acct:ann", "Ann", "");
+  ASSERT_TRUE(controller.DetailSheetOpen());
+  EXPECT_FALSE(controller.GroupAdminShown()) << "nobody's page has the card by itself";
+
+  int reinvited = 0;
+  std::function<void()> confirm_then_done;
+  GroupAdminCard card;
+  card.can_reinvite = true;
+  card.reinvite_note = "Not joined yet";
+  card.reinvite = [&reinvited]() { ++reinvited; };
+  card.can_remove = true;
+  card.remove = [&confirm_then_done](std::function<void()> done) { confirm_then_done = std::move(done); };
+  controller.SetGroupAdminCard(card);
+  EXPECT_TRUE(controller.GroupAdminShown());
+
+  controller.OnGroupAdminReinvite();
+  EXPECT_EQ(reinvited, 1);
+  EXPECT_TRUE(controller.DetailSheetOpen()) << "re-inviting keeps the page";
+
+  controller.OnGroupAdminRemove();
+  ASSERT_TRUE(confirm_then_done) << "asks first";
+  EXPECT_TRUE(controller.DetailSheetOpen());
+  confirm_then_done(); // confirmed and removed
+  EXPECT_FALSE(controller.DetailSheetOpen());
+  EXPECT_FALSE(controller.GroupAdminShown());
+  EXPECT_EQ(shell.open, (std::vector<int>{1})) << "only the person's page closes";
+}
+
+TEST(ProfileSheetTest, OpeningAnotherPersonDropsTheAdminCard) {
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  controller.OnShowMemberSheet("acct:ann", "Ann", "");
+  GroupAdminCard card;
+  card.can_remove = true;
+  card.remove = [](std::function<void()>) {};
+  controller.SetGroupAdminCard(card);
+  ASSERT_TRUE(controller.GroupAdminShown());
+  controller.OnShowMemberSheet("acct:bo", "Bo", ""); // not from the owner's tap: no card
+  EXPECT_FALSE(controller.GroupAdminShown());
+
+  controller.SetGroupAdminCard(card);
+  shell.open.clear(); // swiped away
+  controller.Tick();
+  EXPECT_FALSE(controller.GroupAdminShown());
+}
+
+TEST(ProfileSheetTest, TheAdminCardIsAtTheBottomWithReinviteNoteAndRedRemove) {
+  const std::string rml = ReadAsset("views/contact_detail.rml");
+  const size_t card = rml.find("data-if=\"admin_shown\"");
+  ASSERT_NE(card, std::string::npos);
+  EXPECT_GT(card, rml.find("data-event-click=\"remove_contact()\""));
+  EXPECT_NE(rml.find("{{i18n:contacts.group_admin}}"), std::string::npos);
+  EXPECT_NE(rml.find("data-if=\"admin_can_reinvite\" data-event-click=\"admin_reinvite()\""), std::string::npos);
+  EXPECT_NE(rml.find("{{admin_reinvite_note}}"), std::string::npos);
+  EXPECT_NE(rml.find("cd-row--danger\" type=\"button\" data-if=\"admin_can_remove\" data-event-click=\"admin_remove()\""),
+            std::string::npos);
 }
 
 } // namespace
