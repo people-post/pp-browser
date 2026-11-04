@@ -159,7 +159,7 @@ private:
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
   /** Last chrome applied — idle poll must not remount when unchanged. */
-  CallChromeLayer synced_chrome_;
+  CallChromeSyncGate chrome_gate_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;

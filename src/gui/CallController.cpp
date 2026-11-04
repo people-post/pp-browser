@@ -1,6 +1,8 @@
 #include <stdexcept>
 #include "gui/CallController.h"
 
+#include <chrono>
+
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
@@ -402,8 +404,7 @@ void CallController::SyncShellState() {
     return;
   }
   const CallChromeLayer next = CaptureCallChrome(ring_, in_call_);
-  const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
-  synced_chrome_ = next;
+  const CallChromeUpdate update = chrome_gate_.Decide(next, std::chrono::steady_clock::now());
 
   if (update == CallChromeUpdate::None) {
     return;
