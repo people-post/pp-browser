@@ -968,6 +968,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
+  settings_commands.ask_ai_once = [this](const std::string& question) { return chat_ && chat_->AskAiOnce(question); };
   if (chat_) {
     chat_->BindAskSupport(settings_commands.ask_support); // the ask-AI panel's "Ask PP Support"
   }

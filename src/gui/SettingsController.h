@@ -60,6 +60,11 @@ public:
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
+  /**
+   * A "?" beside a hard setting: phones ask the AI in the ask-AI panel (a one-off question; the panel offers PP 客服
+   * too), the desktop asks PP 客服 (sends the question; the answer arrives in that chat).
+   */
+  void OnAskSettingHelp(const std::string& label_key);
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
@@ -271,8 +276,6 @@ private:
   void ReportFailure(const std::string& technical_message);
   void DirtyAll(bool include_profile_nickname = true);
   void OnOpenSupportChat();
-  /** A "?" beside a hard setting: asks PP 客服 about it (sends the question; the answer arrives in that chat). */
-  void OnAskSettingHelp(const std::string& label_key);
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
   void OnChooseTheme(ui::Event& ev);

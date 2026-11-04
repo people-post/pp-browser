@@ -133,8 +133,13 @@ public:
   void OnHomeTabActivated();
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
-  /** A new chat with the AI (the phone "New chat" page's first row). */
-  void StartNewAiChat() { OnNewChat(); }
+  /**
+   * The phone "New chat" page's "AI chat": the shared AI conversation (the one Home and the ask-AI panel continue),
+   * DEV/PLAN-ui-batch5-ask-ai.md 5a. The desktop still starts a new AI chat.
+   */
+  void StartNewAiChat();
+  /** A setting's "?" on a phone: the ask-AI panel opens with `question` asked as a one-off. False elsewhere. */
+  bool AskAiOnce(const std::string& question) { return ask_ai_.OpenOnce(question); }
   /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
   void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
     ask_support_ = std::move(ask_support);
@@ -393,6 +398,9 @@ private:
   bool AskAiIntroSeen() const override;
   void AskAiMarkIntroSeen() override;
   void AskAiToast(const std::string& text) override { ShowToast(text); }
+  /** ChatMenusHost: "⋯ → Ask AI" (phones, chats with people). */
+  bool AskAiPanelAvailable() const override { return AskAiCompact(); }
+  void OpenAskAiPanel() override { (void)ask_ai_.Open(AskAiEntry::ChatMenu); }
   /** Opens the thread in the full chat page (Sessions tab, chat pane, the phone's chat page). */
   void ShowThreadInChat(const std::string& thread_id);
   void WireMessagingBindings();

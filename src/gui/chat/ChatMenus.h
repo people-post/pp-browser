@@ -63,6 +63,10 @@ public:
   virtual bool IsContactCard(const std::string& message_id) const = 0;
   /** *Add to contacts* on a contact card: checks it, adds the person, shows them. */
   virtual void AddContactFromCard(const std::string& message_id) = 0;
+  /** The ask-AI panel exists here (phones): the chat's "⋯" offers "Ask AI". */
+  virtual bool AskAiPanelAvailable() const = 0;
+  /** Opens the ask-AI panel over the chat; nothing of the chat goes to the AI. */
+  virtual void OpenAskAiPanel() = 0;
 };
 
 /**

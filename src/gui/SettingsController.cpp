@@ -1768,11 +1768,16 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
   if (question.empty()) {
     return;
   }
+  // Kenneth 2026-11-04 (DEV/PLAN-ui-batch5-ask-ai.md 原话 11–13): on phones the AI answers it in the half-screen panel,
+  // a one-off question with no earlier conversation; the panel keeps a "Ask PP Support" button for a person.
+  if (commands_.ask_ai_once && commands_.ask_ai_once(question)) {
+    return;
+  }
   if (!commands_.ask_support) {
     ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  // Kenneth 2026-11-04: no typing — the question goes straight to PP 客服 and the user watches the answer come.
+  // The desktop (no panel yet): the question goes straight to PP 客服 and the user watches the answer come.
   if (auto asked = commands_.ask_support(question); !asked) {
     ReportFailure(asked.error());
   }

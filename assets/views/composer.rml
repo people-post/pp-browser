@@ -64,6 +64,9 @@
       <!-- Phones: the engine draws no placeholder, so a label sits over the empty input (hidden on the desktop). -->
       <p class="prompt-composer-label" data-if="draft == '' && thread_is_ai">{{draft_placeholder}}</p>
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
+      <!-- Phones, Home only (components.rcss): the field opens the ask-AI panel instead of taking the text here. -->
+      <button class="prompt-ask-ai-catcher" type="button" data-event-click="open_ask_ai_panel()"
+              title="{{i18n:ask_ai.title}}"></button>
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach_file}}">

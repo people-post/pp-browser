@@ -104,6 +104,11 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
   /** Opens the PP 客服 chat and sends `question` in it, as if typed (a settings "?"; the answer comes in that chat). */
   std::function<Roe<void>(const std::string& question)> ask_support;
+  /**
+   * Phones: the ask-AI panel opens over the setting with `question` asked as a one-off (DEV/PLAN-ui-batch5-ask-ai.md
+   * 5a). False when there is no panel (the desktop): the settings "?" then asks PP 客服 (ask_support) as before.
+   */
+  std::function<bool(const std::string& question)> ask_ai_once;
   /** How many saved contacts this device blocked (Security's "Blocked" row). */
   std::function<int()> blocked_count;
   /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */

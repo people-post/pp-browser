@@ -2918,6 +2918,25 @@ select selectbox option {
   text-align: center;
 }
 
+/* Phones, Home: the ask-AI field opens the panel; a clear button over the pill takes the tap (hidden elsewhere). */
+.prompt-ask-ai-catcher {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-ask-ai-catcher {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 18dp;
+}
+
 /* New chat in a sheet (Kenneth 2026-11-04): a 44dp title row centred like the people picker's, the rows edge to edge
    (the rows pad themselves, so the sheet drops its side padding). */
 .shell-page-sheet.shell-page-sheet--new_chat {

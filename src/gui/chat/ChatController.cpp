@@ -3376,9 +3376,15 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatScreenState(ctor, chat_);
         ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
         ctor.BindEventCallback("send_suggestion", DataEvent<std::string>([this](const std::string& text) {
+          // Phones: the ask-AI panel rises over Home and asks the chip's question there (DEV/PLAN-ui-batch5-ask-ai.md).
+          if (ChromeSnapshot().nav_tab == NavTab::Home && ask_ai_.OpenAndAsk(AskAiEntry::HomeChip, text)) {
+            return;
+          }
           // A Home chip continues its own thread instead of opening a new one on every tap.
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
         }));
+        // Phones: a tap on Home's ask-AI field opens the panel, the cursor in its input (the field is covered).
+        ctor.BindEventCallback("open_ask_ai_panel", DataEvent([this] { (void)ask_ai_.Open(AskAiEntry::HomeInput); }));
         ctor.BindEventCallback("send_example", DataEvent<std::string>([this](const std::string& text) {
           // Inside an open thread: send there, never re-target to a chip's own thread.
           SendUserText(text, std::nullopt, /*from_home_chip=*/false);
@@ -4082,6 +4088,18 @@ void ChatController::AskAiMarkIntroSeen() {
   if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
     log().warning << "Ask AI: could not remember the privacy card: " << saved.error().message;
   }
+}
+
+void ChatController::StartNewAiChat() {
+  if (AskAiCompact() && messaging_ready_) {
+    // One AI conversation on phones: Home, the ask-AI panel and "AI chat" continue the same one.
+    const std::string thread_id = AskAiSharedThread(/*create=*/true);
+    if (!thread_id.empty()) {
+      ShowThreadInChat(thread_id);
+      return;
+    }
+  }
+  OnNewChat();
 }
 
 } // namespace pbr

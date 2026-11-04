@@ -448,6 +448,16 @@ void ChatMenus::OpenThreadActions(ui::Event& ev) {
         "../icons/sync.svg",
     });
   }
+  // Phones, chats with people (design §8.15): the ask-AI panel over this chat. An AI chat is the AI already.
+  if (host_.AskAiPanelAvailable() && !chat_.thread_is_ai) {
+    actions.push_back({
+        "ask_ai",
+        Tr("ask_ai.title"),
+        nullptr,
+        [this]() { host_.OpenAskAiPanel(); },
+        "../icons/v2/sparkle-fill.svg",
+    });
+  }
   if (chat_.show_thread_actions) {
     actions.push_back({
         "clear_history",

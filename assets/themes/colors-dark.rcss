@@ -950,6 +950,13 @@ select selectbox option:hover {
   image-color: #ffffff;
 }
 
+.prompt-ask-ai-catcher,
+.prompt-ask-ai-catcher:hover,
+.prompt-ask-ai-catcher:focus,
+.prompt-ask-ai-catcher:active {
+  background-color: transparent;
+}
+
 .shell-page-sheet .people-picker-search-field {
   background-color: #2c2c2e;
 }

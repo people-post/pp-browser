@@ -1,7 +1,9 @@
-// Settings "?" (Kenneth 2026-11-04): only beside the hard settings, not in every page's bar; a tap sends PP 客服
-// a ready question about that setting.
+// Settings "?" (Kenneth 2026-11-04): only beside the hard settings, not in every page's bar. A tap asks a ready question
+// about that setting: on phones the AI answers it in the ask-AI panel as a one-off (DEV/PLAN-ui-batch5-ask-ai.md 原话
+// 11–13; the panel keeps "Ask PP Support"), on the desktop it goes to PP 客服 as before.
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/SettingsController.h"
+#include "feature/settings/SettingsCommands.h"
 
 #include <gtest/gtest.h>
 
@@ -9,6 +11,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -87,6 +90,44 @@ TEST_F(SettingsHelpQuestionTest, TheQuestionMarkIsABigEnoughTarget) {
   const size_t icon = css.find(".settings-q-icon {");
   ASSERT_NE(icon, std::string::npos);
   EXPECT_NE(css.find("width: 20dp;", icon), std::string::npos);
+}
+
+// Phones: the "?" opens the ask-AI panel with the question asked; PP 客服 is not messaged.
+TEST_F(SettingsHelpQuestionTest, OnAPhoneTheAiAnswersAndSupportIsNotMessaged) {
+  LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
+  std::vector<std::string> to_ai;
+  std::vector<std::string> to_support;
+  SettingsCommands commands;
+  commands.ask_ai_once = [&to_ai](const std::string& question) {
+    to_ai.push_back(question);
+    return true;
+  };
+  commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
+    to_support.push_back(question);
+    return {};
+  };
+  SettingsController settings;
+  settings.BindCommands(commands);
+  settings.OnAskSettingHelp("settings.security.crash_reports.label");
+  ASSERT_EQ(to_ai.size(), 1u);
+  EXPECT_EQ(to_ai[0], "「发送崩溃报告」是什么意思？");
+  EXPECT_TRUE(to_support.empty());
+}
+
+// The desktop has no panel (ask_ai_once says no): the question goes to PP 客服 as before.
+TEST_F(SettingsHelpQuestionTest, WithoutThePanelSupportIsAsked) {
+  std::vector<std::string> to_support;
+  SettingsCommands commands;
+  commands.ask_ai_once = [](const std::string&) { return false; };
+  commands.ask_support = [&to_support](const std::string& question) -> Roe<void> {
+    to_support.push_back(question);
+    return {};
+  };
+  SettingsController settings;
+  settings.BindCommands(commands);
+  settings.OnAskSettingHelp("settings.security.crash_reports.label");
+  ASSERT_EQ(to_support.size(), 1u);
+  EXPECT_EQ(to_support[0], "What does “Send crash reports” do?");
 }
 
 } // namespace
