@@ -101,6 +101,12 @@ const char* CallScreenStatusName(CallScreen::Status status);
 bool ShowsParticipantCount(const CallScreen& screen);
 
 /**
+ * The labelled Cancel button: an outgoing call still ringing the others (on screen, never live, still "Calling").
+ * Its tap is the End button's (CallPresenter::Leave): with nobody in yet the call ends for everyone it rang.
+ */
+bool ShowsCancelCall(const CallScreen& screen);
+
+/**
  * The camera button: needs a video encoder and a path that allows video — but never hides while the
  * camera is on. The path verdict follows live jitter pressure and flaps (B130: on a relayed cellular
  * call it crossed the limit 5 s in and took the off switch and the flip button away from a camera

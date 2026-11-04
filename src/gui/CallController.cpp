@@ -141,6 +141,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_roster = in_call.show_roster,
       .in_call_show_invite = in_call.show_invite,
       .in_call_show_retry = in_call.show_retry,
+      .in_call_calling = in_call.calling,
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_show_camera = in_call.show_camera,
       .in_call_show_flip = in_call.show_flip,
@@ -782,6 +783,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
   }
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
+  in_call.calling = ShowsCancelCall(screen);
 
   // The status line (CallPresenter decides it: DecideInCallStatus).
   using Status = CallScreen::Status;

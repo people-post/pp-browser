@@ -120,6 +120,16 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "</button>";
   };
 
+  // An outgoing call still ringing: a labelled Cancel under the controls (phones only, by style), the End button's
+  // tap. Kenneth 2026-11-04: a group call he started rang everyone and he saw no way to cancel it.
+  auto append_cancel = [](std::ostringstream& out) {
+    out << "<div class=\"shell-call-cancel-row\" data-if=\"call_in_progress_calling\">";
+    out << "<button class=\"shell-call-cancel\" type=\"button\" data-event-click=\"call_leave()\">";
+    out << "<svg src=\"../icons/phone-hangup.svg\" width=\"22\" height=\"22\" crop-to-content=\"true\"></svg>";
+    out << "<span class=\"shell-call-cancel-label\">" << Tr("call.cancel_calling") << "</span>";
+    out << "</button></div>";
+  };
+
   const auto& call = state.call_in_progress;
   std::ostringstream out;
 
@@ -220,7 +230,9 @@ std::string CallInProgressRml(const ShellState& state) {
     out << "<div class=\"shell-call-immersive-controls\">";
     out << "<div class=\"shell-call-bar-actions row\">";
     append_core_actions(out);
-    out << "</div></div></div></div>";
+    out << "</div>";
+    append_cancel(out);
+    out << "</div></div></div>";
     return out.str();
   }
 
@@ -250,6 +262,7 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<div class=\"shell-call-bar-actions row\">";
   append_core_actions(out);
   out << "</div></div>";
+  append_cancel(out);
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
   out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";

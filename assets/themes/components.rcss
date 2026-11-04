@@ -3249,6 +3249,46 @@ call-video-tile {
   flex-wrap: wrap;
 }
 
+/* An outgoing call still ringing: a wide labelled Cancel on phones (Kenneth 2026-11-04); desktop keeps its End. */
+.shell-call-cancel-row {
+  display: none;
+}
+
+.shell-body--compact .shell-call-cancel-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  padding: 12dp 16dp;
+}
+
+.shell-body--compact .shell-call-cancel {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8dp;
+  width: 100%;
+  max-width: 320dp;
+  height: 50dp;
+  padding: 0 20dp;
+  border: 0;
+  border-radius: 25dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-body--compact .shell-call-cancel svg {
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-body--compact .shell-call-cancel-label {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 50dp;
+}
+
 .shell-call-ring-eyebrow {
   margin: 0 0 4dp 0;
   font-size: 12dp;

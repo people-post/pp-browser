@@ -1032,6 +1032,15 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
+.shell-call-cancel {
+  background-color: #ff3b30;
+  color: #ffffff;
+}
+
+.shell-call-cancel svg {
+  image-color: #ffffff;
+}
+
 .shell-call-expand {
   background-color: #78788033;
   color: #000000;

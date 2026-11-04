@@ -52,5 +52,18 @@ TEST(ShellCallChromeRmlTest, TheFlipButtonSitsNextToTheCameraBehindItsOwnGate) {
   }
 }
 
+TEST(ShellCallChromeRmlTest, ARingingOutgoingCallHasALabelledCancelThatEndsIt) {
+  ShellState state;
+  state.call_in_progress.active = true;
+  for (const CallChromeMode mode : {CallChromeMode::Expanded, CallChromeMode::Immersive}) {
+    state.call_in_progress.mode = mode;
+    const std::string rml = CallInProgressRml(state);
+    const size_t row = rml.find("data-if=\"call_in_progress_calling\"");
+    ASSERT_NE(row, std::string::npos);
+    EXPECT_NE(rml.find("class=\"shell-call-cancel\" type=\"button\" data-event-click=\"call_leave()\"", row),
+              std::string::npos);
+  }
+}
+
 } // namespace
 } // namespace pbr

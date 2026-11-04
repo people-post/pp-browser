@@ -52,6 +52,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_show_flip != next.in_call_show_flip ||
       synced.in_call_show_invite != next.in_call_show_invite ||
       synced.in_call_show_retry != next.in_call_show_retry ||
+      synced.in_call_calling != next.in_call_calling ||
       synced.in_call_show_roster != next.in_call_show_roster ||
       synced.in_call_stage_visible != next.in_call_stage_visible ||
       synced.in_call_mode != next.in_call_mode ||

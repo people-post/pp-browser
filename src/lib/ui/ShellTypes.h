@@ -273,6 +273,8 @@ struct CallInProgressState {
   bool show_invite = false;
   /** Show Retry after 1:1 P2P connect fail/timeout. */
   bool show_retry = false;
+  /** An outgoing call still ringing: the phone shows a labelled Cancel (ShowsCancelCall). */
+  bool calling = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
   /** Hide Camera when video disallowed, encoder missing, or hop A↑ too small for video_lo. */

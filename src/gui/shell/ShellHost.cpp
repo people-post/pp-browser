@@ -184,6 +184,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_show_roster", &host.state_.call_in_progress.show_roster);
     ctor.Bind("call_in_progress_show_invite", &host.state_.call_in_progress.show_invite);
     ctor.Bind("call_in_progress_show_retry", &host.state_.call_in_progress.show_retry);
+    ctor.Bind("call_in_progress_calling", &host.state_.call_in_progress.calling);
     ctor.Bind("call_in_progress_show_speaker", &host.state_.call_in_progress.show_speaker);
     ctor.Bind("call_in_progress_show_camera", &host.state_.call_in_progress.show_camera);
     ctor.Bind("call_in_progress_show_flip", &host.state_.call_in_progress.show_flip);
@@ -907,6 +908,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_roster");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_invite");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_retry");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_calling");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_speaker");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_camera");
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_flip");

@@ -64,6 +64,11 @@ bool ShowsCameraButton(const bool encoder_available, const bool path_allows_vide
   return encoder_available && (path_allows_video || camera_on);
 }
 
+bool ShowsCancelCall(const CallScreen& screen) {
+  return screen.kind == CallScreen::Kind::InCall && screen.status == CallScreen::Status::Calling &&
+         !screen.was_connected;
+}
+
 bool ShowsCameraFlip(const bool mobile, const bool show_camera, const bool camera_on) {
   return mobile && show_camera && camera_on;
 }

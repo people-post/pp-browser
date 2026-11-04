@@ -46,6 +46,7 @@ struct CallChromeLayer {
   bool in_call_show_roster = false;
   bool in_call_show_invite = false;
   bool in_call_show_retry = false;
+  bool in_call_calling = false;
   bool in_call_show_speaker = false;
   bool in_call_show_camera = true;
   bool in_call_show_flip = false;
