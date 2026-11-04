@@ -85,7 +85,7 @@
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.find_someone}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.headlines_prompt}}')"
+        <button class="chat-suggestion" data-event-click="send_suggestion_in_chat('{{i18n:home.suggestion.headlines_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
         <button class="chat-suggestion" data-event-click="send_suggestion_action('articles')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.articles}}</button>

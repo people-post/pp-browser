@@ -511,12 +511,12 @@ TEST_F(AskAiPanelTest, ClosingKeepsTheDraftAndTheRunningAnswerAndSendsNothingAga
 TEST_F(AskAiPanelTest, AGuestsOneTurnQueuesTheQuestionOnceAndShowsIt) {
   max_turns_ = 1;
   can_start_ = [](const std::string&) { return TurnStart::Full; }; // another chat answers
-  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "今日要闻"));
+  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "你能做什么？"));
   EXPECT_TRUE(panel_host_.sent.empty());
-  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "今日要闻");
+  EXPECT_EQ(std::string(panel_.View().queued_text.c_str()), "你能做什么？");
   EXPECT_EQ(agent_.QueuedCount(), 1u);
 
-  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "今日要闻")); // tapped again
+  ASSERT_TRUE(panel_.OpenAndAsk(AskAiEntry::HomeChip, "你能做什么？")); // tapped again
   EXPECT_EQ(agent_.QueuedCount(), 1u) << "the same question is not queued twice";
   EXPECT_TRUE(panel_host_.toasts.empty());
 
@@ -615,6 +615,22 @@ TEST(AskAiPanelSourceTest, NewChatsAiChatStartsANewAiChat) {
   EXPECT_EQ(ReadSource("src/gui/chat/ChatController.cpp").find("void ChatController::StartNewAiChat("),
             std::string::npos)
       << "no phone-only path to the shared chat";
+}
+
+// Kenneth 2026-11-04: Today's headlines goes to the AI chat page again (users follow up on the news there); only Get
+// started and What can you do open the panel.
+TEST(AskAiPanelSourceTest, OnlyGetStartedAndCapabilitiesChipsOpenThePanel) {
+  const std::string home = ReadSource("assets/views/home.rml");
+  ASSERT_FALSE(home.empty());
+  EXPECT_NE(home.find("send_suggestion_in_chat('{{i18n:home.suggestion.headlines_prompt}}')"), std::string::npos);
+  EXPECT_NE(home.find("send_suggestion('{{i18n:home.suggestion.get_started_prompt}}')"), std::string::npos);
+  EXPECT_NE(home.find("send_suggestion('{{i18n:home.suggestion.capabilities_prompt}}')"), std::string::npos);
+  const std::string source = ReadSource("src/gui/chat/ChatController.cpp");
+  const size_t at = source.find("BindEventCallback(\"send_suggestion_in_chat\"");
+  ASSERT_NE(at, std::string::npos);
+  const std::string handler = source.substr(at, source.find("}));", at) - at);
+  EXPECT_NE(handler.find("SendUserText(text, std::nullopt, /*from_home_chip=*/true)"), std::string::npos);
+  EXPECT_EQ(handler.find("ask_ai_"), std::string::npos) << "no panel on this path";
 }
 
 // The panel's title row (Kenneth 2026-11-04): the sheets' centred title, "Open in AI chat" an icon button left of

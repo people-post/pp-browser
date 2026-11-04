@@ -3376,11 +3376,16 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatScreenState(ctor, chat_);
         ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
         ctor.BindEventCallback("send_suggestion", DataEvent<std::string>([this](const std::string& text) {
-          // Phones: the ask-AI panel rises over Home and asks the chip's question there (DEV/PLAN-ui-batch5-ask-ai.md).
+          // Phones: Get started / What can you do raise the ask-AI panel over Home and ask there (PLAN-ui-batch5-ask-ai).
           if (ChromeSnapshot().nav_tab == NavTab::Home && ask_ai_.OpenAndAsk(AskAiEntry::HomeChip, text)) {
             return;
           }
           // A Home chip continues its own thread instead of opening a new one on every tap.
+          SendUserText(text, std::nullopt, /*from_home_chip=*/true);
+        }));
+        // Today's headlines go to the AI chat page as before, phones too (Kenneth 2026-11-04: users follow up on the
+        // news there).
+        ctor.BindEventCallback("send_suggestion_in_chat", DataEvent<std::string>([this](const std::string& text) {
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
         }));
         // Phones: a tap on Home's ask-AI field opens the panel, the cursor in its input (the field is covered).
