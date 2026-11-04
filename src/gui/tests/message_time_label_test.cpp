@@ -36,7 +36,7 @@ TEST_F(MessageTimeLabelTest, EnglishRelativeToNow) {
   EXPECT_EQ(MessageTimeLabel(LocalMs(2026, 10, 28, 18, 32), now), "Yesterday 18:32");
   EXPECT_EQ(MessageTimeLabel(LocalMs(2026, 10, 27, 18, 32), now), "Oct 27, 18:32");
   EXPECT_EQ(MessageTimeLabel(LocalMs(2026, 1, 3, 7, 0), now), "Jan 3, 07:00");
-  EXPECT_EQ(MessageTimeLabel(LocalMs(2025, 10, 28, 18, 32), now), "Oct 28 2025, 18:32");
+  EXPECT_EQ(MessageTimeLabel(LocalMs(2025, 10, 28, 18, 32), now), "Oct 28, 2025 18:32");
 }
 
 TEST_F(MessageTimeLabelTest, ChineseRelativeToNow) {
@@ -59,7 +59,7 @@ TEST_F(MessageTimeLabelTest, DateStripIsWhatsAppStyle) {
   EXPECT_EQ(MessageDateLabel(LocalMs(2026, 10, 27, 9, 5), now), "Tuesday");
   EXPECT_EQ(MessageDateLabel(LocalMs(2026, 10, 23, 9, 5), now), "Friday");
   EXPECT_EQ(MessageDateLabel(LocalMs(2026, 10, 22, 9, 5), now), "Oct 22");
-  EXPECT_EQ(MessageDateLabel(LocalMs(2025, 10, 28, 9, 5), now), "Oct 28 2025");
+  EXPECT_EQ(MessageDateLabel(LocalMs(2025, 10, 28, 9, 5), now), "Oct 28, 2025");
   LocalizationService::Instance().SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(MessageDateLabel(LocalMs(2026, 10, 27, 9, 5), now), "星期二");
   EXPECT_EQ(MessageDateLabel(LocalMs(2026, 10, 22, 9, 5), now), "10月22日");

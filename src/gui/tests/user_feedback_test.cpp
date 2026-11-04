@@ -37,7 +37,7 @@ TEST_F(AppErrorTest, PinAndConfigDisplayFromCatalog) {
   EXPECT_EQ(AppError::Display(AppError::Pin(Err::Pin::Required, "vault locked")),
             "Unlock your profile PIN to continue.");
   EXPECT_EQ(AppError::Display(AppError::Config(Err::Config::MissingKey, "LLM not configured")),
-            "Configure the assistant in Me → Assistant.");
+            "Set up the assistant in Me → AI assistant.");
   EXPECT_EQ(AppError::Display(AppError::Network(Err::Network::Unreachable, "curl failed: recv error")),
             "Can't reach the server.");
 }

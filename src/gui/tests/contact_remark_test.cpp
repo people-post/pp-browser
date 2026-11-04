@@ -41,8 +41,8 @@ std::string ReadFile(const std::string& path) {
 TEST_F(ContactRemarkTest, DetailLabelsTheFieldAsARemarkAndShowsTheirNickname) {
   const ContactsController::ContactDetail detail = ToContactDetail(Ada(), {});
   EXPECT_EQ(std::string(detail.display_name.c_str()), "");
-  EXPECT_EQ(Tr("contacts.display_name"), "Remark");
-  EXPECT_EQ(std::string(detail.name_placeholder.c_str()), "Add a remark; only you can see it");
+  EXPECT_EQ(Tr("contacts.display_name"), "Note");
+  EXPECT_EQ(std::string(detail.name_placeholder.c_str()), "Add a note; only you can see it");
   EXPECT_EQ(std::string(detail.their_nickname.c_str()), "Their nickname: Ada");
   EXPECT_EQ(std::string(detail.title.c_str()), "Ada");
 
