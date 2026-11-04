@@ -4092,16 +4092,4 @@ void ChatController::AskAiMarkIntroSeen() {
   }
 }
 
-void ChatController::StartNewAiChat() {
-  if (AskAiCompact() && messaging_ready_) {
-    // One AI conversation on phones: Home, the ask-AI panel and "AI chat" continue the same one.
-    const std::string thread_id = AskAiSharedThread(/*create=*/true);
-    if (!thread_id.empty()) {
-      ShowThreadInChat(thread_id);
-      return;
-    }
-  }
-  OnNewChat();
-}
-
 } // namespace pbr

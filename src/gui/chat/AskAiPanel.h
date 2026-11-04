@@ -60,7 +60,8 @@ public:
   /** The panel is a phone surface; the desktop keeps its own entries. */
   virtual bool AskAiCompact() const = 0;
   /**
-   * The shared AI conversation (Home, the panel and New chat's "AI chat" are one): the AI chat used last. `create`:
+   * The shared AI conversation (the one Home and the panel continue): the AI chat used last, so a new one from New
+   * chat's "AI chat" is it from then on. `create`:
    * make one, not opened, when there is none. "" when there is none (or messaging is not up).
    */
   virtual std::string AskAiSharedThread(bool create) = 0;
@@ -92,8 +93,8 @@ public:
 
 /**
  * The ask-AI half sheet (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14): opens over the page the user is on, which
- * stays where it was. It shows the shared AI conversation, the AI chat used last (Home, the panel and New chat's
- * "AI chat" all continue it), and sends into it through the same router and queue as
+ * stays where it was. It shows the shared AI conversation, the AI chat used last (Home and the panel continue it; New
+ * chat's "AI chat" makes a new one, which is then the last), and sends into it through the same router and queue as
  * the chat page (the sessions' cap, a guest's 1). A setting's "?" asks a one-off question instead: the Home session,
  * its conversation started empty, in memory only, shown here and nowhere else, answered in words only (no app action,
  * no permission card), counted in the sessions' cap; its follow-ups stay in it; it ends when another "?" starts one,

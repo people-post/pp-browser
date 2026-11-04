@@ -608,6 +608,16 @@ std::string Body(const std::string& source, const std::string& signature) {
   return close == std::string::npos ? std::string() : source.substr(at, close + 3 - at);
 }
 
+// Kenneth: New chat's "AI chat" starts a new AI chat again; being the newest, it is the one the panel continues.
+TEST(AskAiPanelSourceTest, NewChatsAiChatStartsANewAiChat) {
+  const std::string header = ReadSource("src/gui/chat/ChatController.h");
+  ASSERT_FALSE(header.empty());
+  EXPECT_NE(header.find("void StartNewAiChat() { OnNewChat(); }"), std::string::npos);
+  EXPECT_EQ(ReadSource("src/gui/chat/ChatController.cpp").find("void ChatController::StartNewAiChat("),
+            std::string::npos)
+      << "no phone-only path to the shared chat";
+}
+
 // A permission card tapped in the panel belongs to the panel's AI chat: a stale one is rewritten there, never in the
 // chat open under the panel.
 TEST(AskAiPanelSourceTest, APanelCardIsAnsweredInItsOwnChat) {

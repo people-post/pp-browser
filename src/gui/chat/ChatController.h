@@ -134,10 +134,10 @@ public:
   void OnSessionsTabActivated();
   void OnFindSomeone() override;
   /**
-   * The phone "New chat" page's "AI chat": the shared AI conversation (the one Home and the ask-AI panel continue),
-   * DEV/PLAN-ui-batch5-ask-ai.md 5a. The desktop still starts a new AI chat.
+   * The phone "New chat" page's "AI chat": a new AI chat, opened. Being the newest, it is the one the ask-AI panel
+   * continues from then on (DEV/PLAN-ui-batch5-ask-ai.md 5a).
    */
-  void StartNewAiChat();
+  void StartNewAiChat() { OnNewChat(); }
   /** A setting's "?" on a phone: the ask-AI panel opens with `question` asked as a one-off. False elsewhere. */
   bool AskAiOnce(const std::string& question) { return ask_ai_.OpenOnce(question); }
   /** The question to PP 客服 (SettingsCommands::ask_support), for the panel's "Ask PP Support". */
