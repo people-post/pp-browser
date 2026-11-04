@@ -2947,6 +2947,28 @@ def scenario_call_on_a_far_path(lab):
     return report
 
 
+def scenario_call_starts_on_a_far_path(lab):
+    """Both users' links are 250 ms longer (PHONE_FAR) from the start; they idle 150 s, then a 1:1 voice call.
+    The call connects through the hop's circuit (a nested handshake over two long legs) and both hear each other.
+    Before amp v5.0.2 the nested handshake got the 800 ms per-address budget (the peer's id had direct addresses
+    on record), which ran out before its first answer: "nested ... dial timeout" ~1.6 s into every relayed call
+    (#502)."""
+    a, a_thread, b, _ = open_pair(lab)
+    users = [a, b]
+    with Road(users, PHONE_FAR):
+        time.sleep(150)
+        call_id = a.cmd("call", thread=a_thread, video=False)["call_id"]
+        b.wait_surface("ringing", 60, call_id=call_id)
+        b.cmd("accept_voice")
+        for u in users:
+            u.wait_surface("in_call", 90, call_id=call_id)
+        for u in users:
+            assert_hears(u, 1, timeout=60)
+        report = {u.name.split("-")[0]: call_link(u) for u in users}
+    leave_all(users)
+    return report
+
+
 def scenario_group_call_on_the_road(lab):
     """The dogfood call: Carol (a phone on the highway) and Bob (also on the road) hand over every
     10-25 s on lossy, jittery links; Bob added Carol, Carol never added Bob. Alice (owner) calls;
@@ -3064,6 +3086,7 @@ SCENARIOS = [
     ("group_one_way_network_drops", scenario_group_one_way_network_drops),
     ("group_two_join_through_drops", scenario_group_two_join_through_drops),
     ("call_on_a_far_path", scenario_call_on_a_far_path),
+    ("call_starts_on_a_far_path", scenario_call_starts_on_a_far_path),
     ("group_call_on_the_road", scenario_group_call_on_the_road),
     ("group_call_weak_upload", scenario_group_call_weak_upload),
     ("group_video_three", scenario_group_video_three),
@@ -3082,7 +3105,7 @@ NEEDS_DIRECT_PATH = {"seed_down", "seed_dies_in_use", "group_hop_down_mid_call"}
 NEEDS_NAT = {"network_drops_mid_call", "address_changes_mid_call", "group_member_network_drops",
              "group_one_way_network_drops", "group_two_join_through_drops", "group_call_on_the_road",
              "group_call_weak_upload", "group_video_on_the_road", "video_on_the_road",
-             "bystander_is_no_relay", "call_on_a_far_path"} | {name for name, _ in VIDEO_MEASUREMENTS}
+             "bystander_is_no_relay", "call_on_a_far_path", "call_starts_on_a_far_path"} | {name for name, _ in VIDEO_MEASUREMENTS}
 
 
 def main():
