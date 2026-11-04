@@ -226,6 +226,8 @@ private:
   void ApplyHomeWidgets();
   /** Favorites: starred contacts (the star order) then recent chats with contacts; a starred one is looked up here. */
   void ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows);
+  /** Sizes the 关注联系人 avatars from the window width (four across the card); dirties them when they change. */
+  void SyncHomeFavoriteSize();
   /** Phones, Home shown, Calls kept: reads the newest calls on a worker and draws the Calls widget. */
   void RefreshHomeCalls();
   /**

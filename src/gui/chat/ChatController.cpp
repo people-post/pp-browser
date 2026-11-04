@@ -23,6 +23,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
+#include "gui/shell/FavoritesRowModel.h"
 #include "lib/ui/ShellLayout.h"
 #include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
@@ -1204,6 +1205,7 @@ void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows)
     }
   }
   home_favorites_ = HomeFavorites(rows, starred, without_chat);
+  SyncHomeFavoriteSize();
   shell_.home_favorites.clear();
   for (const HomeFavorite& favorite : home_favorites_) {
     shell_.home_favorites.push_back({.contact_id = favorite.contact_id.c_str(),
@@ -1213,6 +1215,23 @@ void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows)
                                      .has_icon = !favorite.icon_path.empty(),
                                      .icon_src = favorite.icon_path.c_str()});
   }
+}
+
+void ChatController::SyncHomeFavoriteSize() {
+  if (!context_) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float width_dp = static_cast<float>(context_->GetDimensions().x) / (ratio > 0.f ? ratio : 1.f);
+  const int avatar = FavoritesRowModel::AvatarDp(width_dp);
+  const ui::String size = (std::to_string(avatar) + "dp").c_str();
+  if (size == shell_.home_fav_avatar) {
+    return;
+  }
+  shell_.home_fav_avatar = size;
+  shell_.home_fav_avatar_radius = (std::to_string((avatar + 1) / 2) + "dp").c_str();
+  DataModelHost::Instance().Dirty("shell", "home_fav_avatar");
+  DataModelHost::Instance().Dirty("shell", "home_fav_avatar_radius");
 }
 
 void ChatController::ApplyHomeWidgets() {
@@ -3204,6 +3223,7 @@ void ChatController::OnSessionSwipeAction(const std::string& thread_id, const Se
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
   scroller_.OnShellRemounted();
+  SyncHomeFavoriteSize();  // a turn or a resize changes the width the row divides
   if (!focus_draft_after_sync_) {
     return;
   }

@@ -10097,52 +10097,65 @@ textarea:composing ~ .prompt-composer-label,
   line-height: 20dp;
 }
 
-/* Favorites: up to five 50dp avatars with their names, spread over the row; each is a 64dp-wide target. */
+/* Favorites (关注联系人, Kenneth 2026-11-05 原话 75-77): exactly four people across the card, each a quarter of the
+   row, on every screen width; the avatar's size comes from the window width (FavoritesRowModel, bound as
+   home_fav_avatar: about 64dp on a 393dp phone, 56-72dp). More than four scroll sideways with momentum (the engine locks
+   a touch to one axis, so Home still scrolls up and down) and settle on a whole person (ShellFavoritesSnap). */
 .shell-layer-compact .home-avs {
   display: flex;
   flex-direction: row;
-  justify-content: space-between;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Touch-scrolled: no room kept for an (undrawn) scrollbar under the names. */
+.shell-layer-compact .home-avs scrollbarhorizontal {
+  height: 0dp;
 }
 
 .shell-layer-compact .home-av {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 60dp;
+  flex-shrink: 0;
+  width: 25%;
   margin: 0;
-  padding: 2dp 0;
+  padding: 2dp 4dp;
   border: 0;
+  box-sizing: border-box;
   background-color: transparent;
   cursor: pointer;
 }
 
 .shell-layer-compact .home-av-frame {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 50dp;
-  height: 50dp;
-  border-radius: 25dp;
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
   overflow: hidden;
 }
 
 .shell-layer-compact .home-av-frame .avatar-photo {
-  width: 50dp;
-  height: 50dp;
+  width: 64dp;
+  height: 64dp;
 }
 
 .shell-layer-compact .home-av-letter {
-  font-size: 20dp;
-  line-height: 24dp;
+  font-size: 24dp;
+  line-height: 28dp;
   font-weight: bold;
 }
 
 .shell-layer-compact .home-av-name {
   display: block;
-  width: 60dp;
-  margin-top: 4dp;
-  font-size: 12dp;
-  line-height: 16dp;
+  width: 100%;
+  margin-top: 6dp;
+  font-size: 13dp;
+  line-height: 18dp;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;

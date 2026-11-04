@@ -71,6 +71,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellSplitterDrag.cpp
     shell/ShellLargeTitleScroll.cpp
     shell/ShellNavBarScroll.cpp
+    shell/ShellFavoritesSnap.cpp
     shell/ShellPageSheetGesture.cpp
     shell/ShellSwipeBackGesture.cpp
     shell/SessionSwipeGesture.cpp

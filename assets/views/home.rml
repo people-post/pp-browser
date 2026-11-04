@@ -25,7 +25,8 @@
     <p class="large-title">{{i18n:home.title}}</p>
     <div class="home-grid">
       <div class="home-slot" data-for="w : home_widgets" data-class-home-slot--wide="w.wide">
-        <!-- Favorites (常用联系人): starred contacts first, then recent ones; a tap opens the chat. -->
+        <!-- Favorites (关注联系人): the starred contacts in star order, four across the card; more scroll sideways and
+             settle on a whole person (ShellFavoritesSnap). A tap opens the chat. -->
         <div class="home-w" data-if="w.id == 'favorites'">
           <div class="home-wh">
             <span class="home-wh-icon home-wh-icon--favorites"><svg src="../icons/v2/star-fill.svg" width="13" height="13"></svg></span>
@@ -35,6 +36,8 @@
             <button class="home-av" type="button" data-for="f, f_index : home_favorites"
                     data-event-click="home_open_favorite(f_index)">
               <span class="home-av-frame"
+                    data-style-width="home_fav_avatar" data-style-height="home_fav_avatar"
+                    data-style-border-radius="home_fav_avatar_radius"
                     data-class-avatar-tone-0="!f.has_icon && f.avatar_tone == 0"
                     data-class-avatar-tone-1="!f.has_icon && f.avatar_tone == 1"
                     data-class-avatar-tone-2="!f.has_icon && f.avatar_tone == 2"
@@ -43,7 +46,8 @@
                     data-class-avatar-tone-5="!f.has_icon && f.avatar_tone == 5"
                     data-class-avatar-tone-6="!f.has_icon && f.avatar_tone == 6"
                     data-class-avatar-tone-7="!f.has_icon && f.avatar_tone == 7">
-                <img class="avatar-photo" data-if="f.has_icon" data-attr-src="f.icon_src"/>
+                <img class="avatar-photo" data-if="f.has_icon" data-attr-src="f.icon_src"
+                     data-style-width="home_fav_avatar" data-style-height="home_fav_avatar"/>
                 <span class="home-av-letter" data-if="!f.has_icon">{{f.avatar_letter}}</span>
               </span>
               <span class="home-av-name">{{f.title}}</span>

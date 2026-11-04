@@ -152,26 +152,40 @@ TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
   EXPECT_FALSE(old.latest.has_value()) << "nothing in the last week";
 }
 
-TEST(HomeTodayTest, FavoritesAreStarredFirstThenRecentContactsAndFollowTheStar) {
+// Kenneth 2026-11-05 (原话 75-77): 关注联系人 is the starred people only, a row of four that scrolls.
+TEST(HomeTodayTest, FavoritesAreTheStarredContactsInStarOrder) {
   const std::vector<ChatSessionRow> rows = {
       Direct("t-ann", "ann", 500), Direct("t-bob", "bob", 400), Direct("t-cy", "cy", 300),
       Direct("t-cy-secure", "cy", 600),  // a contact's newer chat is the one opened
       Direct("t-dee", "dee", 200, /*blocked=*/true), Row("group", 0, false, 900), Row("stranger", 1, true, 800)};
-  // Nobody starred: the most recent contacts (a blocked one, a group and a stranger never show).
-  std::vector<HomeFavorite> favorites = HomeFavorites(rows, {}, {});
-  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"cy", "ann", "bob"}));
-  EXPECT_EQ(favorites[0].thread_id, "t-cy-secure");
+  // Nobody starred: nobody shows (no recent chats fill in; the widget shows its hint).
+  EXPECT_TRUE(HomeFavorites(rows, {}, {}).empty());
 
-  // Bob starred: first, before newer chats. Eve starred too, with no chat yet (looked up by the caller).
-  const std::vector<std::string> starred = {"bob", "eve"};
+  // Starred cy, eve (no chat yet, looked up by the caller), dee (blocked) and bob: in star order, dee left out.
+  const std::vector<std::string> starred = {"cy", "eve", "dee", "bob"};
   EXPECT_EQ(StarredWithoutChat(rows, starred), std::vector<std::string>{"eve"});
   const HomeFavorite eve{.contact_id = "eve", .thread_id = "", .title = "Eve", .avatar_letter = "E"};
-  favorites = HomeFavorites(rows, starred, {eve});
-  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"bob", "eve", "cy", "ann"}));
+  const std::vector<HomeFavorite> favorites = HomeFavorites(rows, starred, {eve});
+  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"cy", "eve", "bob"}));
+  EXPECT_EQ(favorites[0].thread_id, "t-cy-secure");
   EXPECT_TRUE(favorites[1].thread_id.empty()) << "a tap starts the chat";
 
-  // Unstarred: Bob is back in his place by time.
-  EXPECT_EQ(ContactIds(HomeFavorites(rows, {"eve"}, {eve})), (std::vector<std::string>{"eve", "cy", "ann", "bob"}));
+  // Unstarred: gone.
+  EXPECT_EQ(ContactIds(HomeFavorites(rows, {"bob"}, {})), std::vector<std::string>{"bob"});
+}
+
+TEST(HomeTodayTest, FavoritesKeepAtMostTwelve) {
+  std::vector<ChatSessionRow> rows;
+  std::vector<std::string> starred;
+  for (int i = 0; i < 15; ++i) {
+    const std::string id = "p" + std::to_string(i);
+    rows.push_back(Direct("t-" + id, id, 100 + i));
+    starred.push_back(id);
+  }
+  const std::vector<HomeFavorite> favorites = HomeFavorites(rows, starred, {});
+  ASSERT_EQ(favorites.size(), kHomeFavoritesMax);
+  EXPECT_EQ(favorites.front().contact_id, "p0");
+  EXPECT_EQ(favorites.back().contact_id, "p11");
 }
 
 TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesAlwaysShows) {

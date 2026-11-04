@@ -122,10 +122,14 @@ HomeTodaySummary SummarizeHomeToday(const std::vector<ChatSessionRow>& rows, con
 std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& rows,
                                             const std::vector<std::string>& starred);
 
+/** The most people the Favorites row holds (three screens of four). */
+inline constexpr size_t kHomeFavoritesMax = 12;
+
 /**
- * The Favorites widget (常用联系人): up to five saved, unblocked contacts, the starred ones first in star order, then
- * the most recently active direct chats (FrequentContacts). `starred`: the star order; `starred_without_chat`: the
- * starred contacts StarredWithoutChat named, as looked up (blocked ones left out by the caller).
+ * The Favorites widget (关注联系人, Kenneth 2026-11-05 原话 75-77): the starred contacts only, in star order, up to
+ * kHomeFavoritesMax; a blocked one never shows, and nobody fills in for an empty star list (the widget shows its hint).
+ * Each opens its newest direct chat in `rows`. `starred`: the star order; `starred_without_chat`: the starred contacts
+ * StarredWithoutChat named, as looked up (blocked ones left out by the caller).
  */
 std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows, const std::vector<std::string>& starred,
                                         const std::vector<HomeFavorite>& starred_without_chat);

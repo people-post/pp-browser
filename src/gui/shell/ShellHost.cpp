@@ -1842,6 +1842,7 @@ void ShellHost::SyncLayout() {
   aux_splitter_drag_.Detach();
   large_title_scroll_.Detach();
   nav_bar_scroll_.Detach();
+  favorites_snap_.Detach();
   session_swipe_.Detach();
   RmlMount::MountInner(root, Rml().ShellRoot());
   last_synced_mode_ = mode;
@@ -1850,6 +1851,7 @@ void ShellHost::SyncLayout() {
   AttachLargeTitleScroll();
   if (state_.layout_mode == LayoutMode::Compact && context_->GetNumDocuments() > 0) {
     nav_bar_scroll_.Attach(context_->GetDocument(0));
+    favorites_snap_.Attach(context_->GetDocument(0));
   }
   remount_call_chrome_pending_ = false;
   remount_dialog_chrome_pending_ = false;
@@ -2207,6 +2209,7 @@ void ShellHost::Update(ui::Context* context) {
     }
   }
   ai_dot_.Update(context, AiDotSceneNow());
+  favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
 }
 
 void ShellHost::NotifyFrameEnd(ui::Context* context) {
@@ -2236,6 +2239,11 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   // Call ring pulse / in-call meters need sub-second frames while overlays are active.
   if (state_.call_ring.active || state_.call_in_progress.active) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
+  }
+
+  // Home's favourites row: one frame when its scroll has been still long enough to count as at rest.
+  if (const std::optional<double> snap_sec = favorites_snap_.SecondsUntilRest(ShellFavoritesSnap::NowSeconds())) {
+    delay_sec = std::min(delay_sec, *snap_sec);
   }
 
   if (std::isfinite(delay_sec)) {

@@ -1,10 +1,8 @@
 #include "feature/presenters/HomeToday.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "lib/ui/NewChatList.h"
 
 #include <algorithm>
-#include <map>
 
 namespace pbr {
 
@@ -181,48 +179,41 @@ std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& r
 
 std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows, const std::vector<std::string>& starred,
                                         const std::vector<HomeFavorite>& starred_without_chat) {
-  // One candidate per contact, with its newest direct chat (the chats list is pinned first: look at the times).
-  std::vector<HomeFavorite> candidates;
-  std::vector<int64_t> newest;
-  std::vector<NewChatContact> contacts;
-  std::vector<NewChatDirectChat> chats;
-  std::map<std::string, size_t> index_of;
-  for (const ChatSessionRow& row : rows) {
-    if (row.contact_id.empty()) {
-      continue;
-    }
-    chats.push_back({row.contact_id, row.updated_at});
-    if (const auto found = index_of.find(row.contact_id); found != index_of.end()) {
-      const size_t i = found->second;
-      contacts[i].blocked = contacts[i].blocked || row.blocked;
-      if (row.updated_at > newest[i]) {
-        newest[i] = row.updated_at;
-        candidates[i].thread_id = row.id;
-      }
-      continue;
-    }
-    index_of[row.contact_id] = candidates.size();
-    candidates.push_back({.contact_id = row.contact_id,
-                          .thread_id = row.id,
-                          .title = row.title,
-                          .avatar_letter = row.avatar_letter,
-                          .avatar_tone = row.avatar_tone,
-                          .icon_path = row.icon_path});
-    newest.push_back(row.updated_at);
-    contacts.push_back({row.contact_id, row.title, row.blocked, StarRank(starred, row.contact_id)});
-  }
-  for (const HomeFavorite& favorite : starred_without_chat) {
-    if (favorite.contact_id.empty() || index_of.count(favorite.contact_id) != 0) {
-      continue;
-    }
-    index_of[favorite.contact_id] = candidates.size();
-    candidates.push_back(favorite);
-    candidates.back().thread_id.clear();
-    contacts.push_back({favorite.contact_id, favorite.title, false, StarRank(starred, favorite.contact_id)});
-  }
   std::vector<HomeFavorite> favorites;
-  for (const size_t i : FrequentContacts(contacts, chats)) {
-    favorites.push_back(candidates[i]);
+  for (const std::string& id : starred) {
+    if (favorites.size() == kHomeFavoritesMax) {
+      break;
+    }
+    // Their newest direct chat (the chats list is pinned first: look at the times); blocked in any: left out.
+    const ChatSessionRow* newest = nullptr;
+    bool blocked = false;
+    for (const ChatSessionRow& row : rows) {
+      if (row.contact_id != id) {
+        continue;
+      }
+      blocked = blocked || row.blocked;
+      if (!newest || row.updated_at > newest->updated_at) {
+        newest = &row;
+      }
+    }
+    if (blocked) {
+      continue;
+    }
+    if (newest) {
+      favorites.push_back({.contact_id = id,
+                           .thread_id = newest->id,
+                           .title = newest->title,
+                           .avatar_letter = newest->avatar_letter,
+                           .avatar_tone = newest->avatar_tone,
+                           .icon_path = newest->icon_path});
+      continue;
+    }
+    const auto looked_up = std::find_if(starred_without_chat.begin(), starred_without_chat.end(),
+                                        [&id](const HomeFavorite& favorite) { return favorite.contact_id == id; });
+    if (looked_up != starred_without_chat.end()) {
+      favorites.push_back(*looked_up);
+      favorites.back().thread_id.clear();
+    }
   }
   return favorites;
 }

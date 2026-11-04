@@ -179,6 +179,9 @@ struct ChatShellState {
   ui::String home_date_label;
   std::vector<HomeWidgetSlot> home_widgets;
   std::vector<HomeFavoriteRow> home_favorites;
+  /** The 关注联系人 avatar's diameter and corner, e.g. "64dp" / "32dp" (FavoritesRowModel::AvatarDp of the window). */
+  ui::String home_fav_avatar = "64dp";
+  ui::String home_fav_avatar_radius = "32dp";
   std::vector<SessionDisplayRow> home_recent;
   int home_missed_calls = 0;
   /** "Latest: Hongwei · Video · 16:20". */
