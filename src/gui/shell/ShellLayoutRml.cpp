@@ -227,11 +227,15 @@ std::string ShellLayoutRml::Overlays() const {
     if (overlay.page_sheet && state_.layout_mode == LayoutMode::Compact) {
       // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches the
       // swipe-down (ShellPageSheetGesture). The view keeps its own Cancel; the close button stays top right.
-      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet\" data-model=\"window\">";
+      // A half-stop sheet standing at half: its top at about the middle, the page behind dimmed less (ShellHost
+      // switches it to full height while the keyboard is up).
+      const bool half = overlay.sheet_half_stop && overlay.sheet_detent == SheetDetent::Half;
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << (half ? " shell-layer-sheet--half" : "")
+          << "\" data-model=\"window\">";
       out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
       // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
-      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << "\" id=\"shell-page-sheet-" << overlay.id
-          << "\">";
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << (half ? " shell-page-sheet--half" : "")
+          << "\" id=\"shell-page-sheet-" << overlay.id << "\">";
       out << "<div class=\"shell-page-sheet-grabber\"></div>";
       out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
           << overlay.id << ")\">";

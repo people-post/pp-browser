@@ -548,6 +548,8 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   entry.key = spec.key;
   entry.rml_path = spec.rml_path.empty() ? ViewCatalog::ResolvePath(spec.key) : spec.rml_path;
   entry.page_sheet = spec.page_sheet;
+  entry.sheet_half_stop = spec.page_sheet && spec.sheet_half_stop;
+  entry.sheet_detent = entry.sheet_half_stop ? spec.sheet_detent : SheetDetent::Full;
   if (entry.page_sheet && state_.layout_mode == LayoutMode::Compact) {
     sheet_enter_pending_id_ = "shell-page-sheet-" + std::to_string(entry.id);
   }
@@ -559,6 +561,27 @@ int ShellHost::PushLayer(const PaneSpec& spec) {
   }
   RequestSyncLayout();
   return state_.overlay_stack.back().id;
+}
+
+void ShellHost::SetSheetDetent(const int layer_id, const SheetDetent detent) {
+  for (OverlayEntry& entry : state_.overlay_stack) {
+    if (entry.id != layer_id || !entry.sheet_half_stop) {
+      continue;
+    }
+    entry.sheet_detent = detent;
+    const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
+    if (detent == SheetDetent::Half && keyboard_up) {
+      // Dragged down to half while typing: the keyboard goes, or the sheet would stay full height.
+      if (context_ && context_->GetFocusElement()) {
+        context_->GetFocusElement()->Blur();
+      }
+      if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+        system->DeactivateKeyboard();
+      }
+    }
+    ApplySafeAreaLayout();
+    return;
+  }
 }
 
 void ShellHost::CloseLayer(int layer_id) {
@@ -1284,10 +1307,20 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
+  // A half-stop sheet shows full height while the keyboard is up, and its own stop again once it is down.
+  const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
     if (overlay.page_sheet) {
       const std::string sheet_id = "shell-page-sheet-" + std::to_string(overlay.id);
-      set_dp(doc->GetElementById(sheet_id.c_str()), "padding-bottom", strip_dp);
+      ui::Element* sheet = doc->GetElementById(sheet_id.c_str());
+      set_dp(sheet, "padding-bottom", strip_dp);
+      if (sheet && overlay.sheet_half_stop) {
+        const bool half = PageSheetModel::Shown(overlay.sheet_detent, keyboard_up) == SheetDetent::Half;
+        sheet->SetClass("shell-page-sheet--half", half);
+        if (ui::Element* layer = sheet->GetParentNode()) {
+          layer->SetClass("shell-layer-sheet--half", half);
+        }
+      }
     }
   }
   // Auxiliary sheet sits above the nav rail.
@@ -1450,7 +1483,23 @@ void ShellHost::AttachSwipeBackGesture() {
   if (TopPageSheet()) {
     // A page sheet covers everything under it: its swipe-down is the only dismiss gesture.
     if (ui::Element* sheet = PageElementFor(DismissTarget::OverlayLayer)) {
-      page_sheet_gesture_.Attach(sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); });
+      ShellPageSheetGesture::Options sheet_options;
+      const int sheet_layer_id = state_.overlay_stack.back().id;
+      sheet_options.half_stop = state_.overlay_stack.back().sheet_half_stop;
+      sheet_options.shown_detent = [this, sheet_layer_id]() {
+        const bool keyboard_up = !bottom_chrome_open_ && state_.safe_area_bottom_dp >= kImeLatchMinDp;
+        for (const OverlayEntry& entry : state_.overlay_stack) {
+          if (entry.id == sheet_layer_id) {
+            return PageSheetModel::Shown(entry.sheet_detent, keyboard_up);
+          }
+        }
+        return SheetDetent::Full;
+      };
+      sheet_options.on_detent = [this, sheet_layer_id](const SheetDetent detent) {
+        SetSheetDetent(sheet_layer_id, detent);
+      };
+      page_sheet_gesture_.Attach(sheet, context_, [slide_out]() { slide_out(DismissTarget::OverlayLayer); },
+                                 std::move(sheet_options));
     }
     return;
   }

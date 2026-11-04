@@ -292,6 +292,8 @@ private:
   ui::Element* PageElementFor(DismissTarget target) const;
   /** Phone and the top overlay is a page sheet (PaneSpec::page_sheet). */
   bool TopPageSheet() const;
+  /** A released drag moved a half-stop page sheet (PaneSpec::sheet_half_stop) to `detent`. */
+  void SetSheetDetent(int layer_id, SheetDetent detent);
   /** Slide the element with this id in from the right (adds the shell-page-enter class). */
   void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);

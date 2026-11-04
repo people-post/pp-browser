@@ -5,6 +5,7 @@
 #include <ui/dom/ElementDocument.h>
 #include <ui/dom/Event.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,8 @@ namespace {
 constexpr int kDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 constexpr const char* kDraggingClass = "shell-swipe-dragging";
+/** components.rcss .shell-page-sheet top: a sheet dragged up from half stops there. */
+constexpr float kFullTopDp = 10.f;
 
 double NowMs() {
   return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -23,7 +26,8 @@ double NowMs() {
 
 } // namespace
 
-void ShellPageSheetGesture::Attach(ui::Element* sheet, ui::Context* context, std::function<void()> on_dismiss) {
+void ShellPageSheetGesture::Attach(ui::Element* sheet, ui::Context* context, std::function<void()> on_dismiss,
+                                   Options options) {
   Detach();
   if (!sheet || !context) {
     return;
@@ -32,6 +36,7 @@ void ShellPageSheetGesture::Attach(ui::Element* sheet, ui::Context* context, std
   document_ = sheet->GetOwnerDocument();
   context_ = context;
   on_dismiss_ = std::move(on_dismiss);
+  options_ = std::move(options);
   sheet_->AddEventListener(ui::EventId::Mousedown, this);
   sheet_->AddEventListener(ui::EventId::Click, this, true);
 }
@@ -50,6 +55,8 @@ void ShellPageSheetGesture::Detach() {
   document_ = nullptr;
   context_ = nullptr;
   on_dismiss_ = {};
+  options_ = {};
+  may_drag_up_ = false;
   tracking_ = false;
   dragging_ = false;
   swallow_click_ = false;
@@ -85,6 +92,15 @@ bool ShellPageSheetGesture::ScrolledToTop(ui::Element* target) const {
   return true;
 }
 
+bool ShellPageSheetGesture::InScrollingContent(ui::Element* target) const {
+  for (ui::Element* node = target; node && node != sheet_; node = node->GetParentNode()) {
+    if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void ShellPageSheetGesture::SetOffset(const float dy_dp, const bool animate) {
   if (!sheet_) {
     return;
@@ -92,6 +108,15 @@ void ShellPageSheetGesture::SetOffset(const float dy_dp, const bool animate) {
   sheet_->SetClass("shell-page-sheet-enter", false);
   sheet_->SetClass(kDraggingClass, !animate);
   char buffer[64];
+  if (dy_dp < 0.f && may_drag_up_) {
+    // Up from half: the top edge itself moves (a transform would lift the bottom off the screen).
+    const float top_dp = std::max(kFullTopDp, press_top_dp_ + dy_dp);
+    std::snprintf(buffer, sizeof(buffer), "%.1fdp", top_dp);
+    sheet_->SetProperty("top", buffer);
+    sheet_->SetProperty("transform", "translateY(0dp)");
+    return;
+  }
+  sheet_->RemoveProperty("top");
   std::snprintf(buffer, sizeof(buffer), "translateY(%.1fdp)", dy_dp < 0.f ? 0.f : dy_dp);
   sheet_->SetProperty("transform", buffer);
 }
@@ -128,13 +153,25 @@ void ShellPageSheetGesture::Release() {
   const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
   const float height_px = sheet_->GetBox().GetSize(ui::BoxArea::Border).y;
   const float height_dp = ratio > 0.f ? height_px / ratio : height_px;
-  if (PageSheetModel::ShouldDismiss(drag_dp, height_dp, velocity_.AtRelease(NowMs())) && on_dismiss_) {
+  // Measured against the height it had at the press (a drag up has grown it since).
+  const float press_height_dp = drag_dp < 0.f && may_drag_up_ ? height_dp + drag_dp : height_dp;
+  const PageSheetModel::Release release = PageSheetModel::OnRelease(
+      press_detent_, options_.half_stop, drag_dp, press_height_dp, velocity_.AtRelease(NowMs()));
+  if (release == PageSheetModel::Release::Dismiss && on_dismiss_) {
+    sheet_->RemoveProperty("top");
     SetOffset(height_dp, true);
     auto dismiss = on_dismiss_;
     dismiss(); // may detach this gesture (the shell remounts)
     return;
   }
-  SetOffset(0.f, true);
+  if ((release == PageSheetModel::Release::ToFull || release == PageSheetModel::Release::ToHalf) &&
+      options_.on_detent) {
+    // The stop's class moves the top edge (with its transition) from where the finger left it.
+    options_.on_detent(release == PageSheetModel::Release::ToFull ? SheetDetent::Full : SheetDetent::Half);
+  }
+  sheet_->SetClass(kDraggingClass, false);
+  sheet_->RemoveProperty("top");
+  sheet_->SetProperty("transform", "translateY(0dp)");
 }
 
 void ShellPageSheetGesture::ProcessEvent(ui::Event& event) {
@@ -155,8 +192,18 @@ void ShellPageSheetGesture::ProcessEvent(ui::Event& event) {
   case ui::EventId::Mousedown: {
     swallow_click_ = false;
     ui::Element* target = event.GetTargetElement();
-    if (ShouldIgnoreTarget(target) || !ScrolledToTop(target)) {
+    if (ShouldIgnoreTarget(target)) {
       return;
+    }
+    press_detent_ = options_.shown_detent ? options_.shown_detent() : SheetDetent::Full;
+    may_drag_up_ = options_.half_stop && press_detent_ == SheetDetent::Half && !InScrollingContent(target);
+    if (!may_drag_up_ && !ScrolledToTop(target)) {
+      return;
+    }
+    {
+      const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+      const float top_px = sheet_->GetOffsetTop();
+      press_top_dp_ = ratio > 0.f ? top_px / ratio : top_px;
     }
     press_target_ = target;
     tracking_ = true;
@@ -181,7 +228,8 @@ void ShellPageSheetGesture::ProcessEvent(ui::Event& event) {
       if (std::abs(dx) <= kDeadzonePx && std::abs(dy) <= kDeadzonePx) {
         return;
       }
-      if (dy <= 0 || std::abs(dx) > std::abs(dy) || !ScrolledToTop(press_target_)) {
+      const bool up_ok = dy < 0 && may_drag_up_;
+      if ((dy <= 0 && !up_ok) || std::abs(dx) > std::abs(dy) || (dy > 0 && !ScrolledToTop(press_target_))) {
         // Up or sideways first: the content scrolls / handles it.
         tracking_ = false;
         SetDocumentCapture(false);

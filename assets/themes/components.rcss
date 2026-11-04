@@ -2599,11 +2599,21 @@ select selectbox option {
   overflow: hidden;
   clip: always;
   transform: translateY(0);
-  transition: transform 0.3s cubic-out;
+  transition: transform 0.3s cubic-out, top 0.3s cubic-out;
 }
 
 .shell-page-sheet.shell-swipe-dragging {
   transition: none;
+}
+
+/* A half-stop sheet (the ask-AI panel) standing at half: its top at 45% of the screen, the page behind it dimmed
+   less, so what the user was doing stays in sight. */
+.shell-page-sheet.shell-page-sheet--half {
+  top: 45%;
+}
+
+.shell-layer-sheet--half .shell-scrim {
+  opacity: 0.5;
 }
 
 .shell-page-sheet-enter {
