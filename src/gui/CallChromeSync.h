@@ -2,6 +2,8 @@
 
 #include "lib/ui/ShellTypes.h"
 
+#include <array>
+#include <chrono>
 #include <string>
 
 namespace pbr {
@@ -67,10 +69,38 @@ enum class CallChromeUpdate {
   None,      // idle poll / no visible change
   DirtyOnly, // subtitle/labels while layer already shown
   Remount,   // layer appear / disappear / switch call_id → RemountCallChrome mounts
+  LevelsOnly, // only the audio meters changed while they are on screen → dirty kCallLevelVariables
 };
 
-/** Pure gate: remount on layer identity / control presence / mode / status kind; Dirty for icon toggles + meters. */
+/** Window-model variables behind the 1:1 audio meters; LevelsOnly dirties exactly these (B146). */
+inline constexpr std::array<const char*, 4> kCallLevelVariables = {
+    "call_in_progress_mic_level",
+    "call_in_progress_peer_level",
+    "call_in_progress_mic_hint",
+    "call_in_progress_peer_hint",
+};
+
+/** Pure gate: remount on layer identity / control presence / mode / status kind; Dirty for icon toggles;
+ * meter-only changes are LevelsOnly while the meters are on screen (Expanded, no roster) and None otherwise. */
 CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const CallChromeLayer& next);
+
+/**
+ * Holds the chrome last pushed to the shell and decides each poll's update (B146).
+ * Meter-only changes are pushed at most every kLevelInterval; a held-back change keeps the pushed
+ * snapshot where it was, so the next poll pushes the newest level even if nothing changes again.
+ * `now` is a steady (monotonic) clock: wall-clock jumps must not freeze the meters.
+ */
+class CallChromeSyncGate {
+public:
+  static constexpr std::chrono::milliseconds kLevelInterval{200};
+
+  CallChromeUpdate Decide(const CallChromeLayer& next, std::chrono::steady_clock::time_point now);
+
+private:
+  CallChromeLayer synced_;
+  std::chrono::steady_clock::time_point last_levels_{};
+  bool levels_pushed_ = false;
+};
 
 /** Group / roster calls open Immersive; 1:1 opens Expanded (V031). */
 CallChromeMode DefaultCallChromeMode(bool show_roster);

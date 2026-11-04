@@ -1,4 +1,5 @@
 #include "gui/shell/ShellCallChromeRml.h"
+#include "gui/CallChromeSync.h"
 
 #include <gtest/gtest.h>
 
@@ -24,6 +25,24 @@ TEST(ShellCallChromeRmlTest, ARingingCallOffersItsAnswers) {
   EXPECT_TRUE(Has(rml, "call_accept"));
   EXPECT_TRUE(Has(rml, "call_decline()"));
   EXPECT_TRUE(Has(rml, "data-model=\"window\""));
+}
+
+TEST(ShellCallChromeRmlTest, MetersAreOnlyInTheExpandedBar) {
+  // CallChromeSync treats a level change as invisible outside Expanded (B146): keep the markup honest.
+  ShellState state;
+  state.call_in_progress.active = true;
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  const std::string expanded = CallInProgressRml(state);
+  state.call_in_progress.mode = CallChromeMode::Minimized;
+  const std::string minimized = CallInProgressRml(state);
+  state.call_in_progress.mode = CallChromeMode::Immersive;
+  const std::string immersive = CallInProgressRml(state);
+  for (const char* name : kCallLevelVariables) {
+    EXPECT_TRUE(Has(expanded, name)) << name;
+    EXPECT_FALSE(Has(minimized, name)) << name;
+    EXPECT_FALSE(Has(immersive, name)) << name;
+  }
+  EXPECT_TRUE(Has(expanded, "data-if=\"!call_in_progress_show_roster\"")); // and hidden under a roster
 }
 
 TEST(ShellCallChromeRmlTest, EachModeHasItsOwnChrome) {
