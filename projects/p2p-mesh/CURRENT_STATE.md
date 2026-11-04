@@ -153,7 +153,7 @@
 5. **N032** node versions ([N032](DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)):
    - **built:** version negotiation (amp v4.1.0, mesh v5.1.0); channel 0's extension; the claims in the registration, directory row and cold-start cache, rows of another wire version dropped (mesh v5.1.1); relay sets composed by rules 4–8 — distrusted nodes and operators, operator repeats and nodes below `mesh.preferred_min_node_version` tried later, an anchor leading the park / circuit surface, claims audited against channel 0 and version-mismatched dials, demotions kept per profile (`MeshNodeReputation`)
    - **needs www:** app-static-api #232 deployed, so rows carry the claims
-   - **later:** item 3, the wire version in addresses, at the next wire break
+   - **built (item 3):** addresses say their wire version (`/adp/2/`, amp v5.0.0); legacy `/adp/1.0.0/` dials as "not said", another version is refused at parse; the built-in seeds are written in the new form
 
 ## Follow-ups
 

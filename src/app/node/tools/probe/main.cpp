@@ -62,7 +62,7 @@ void PrintUsage(const char* argv0) {
       << "       [--warm-hop <adp-ma>] [--peer-id-only] [--stale-ma <adp-ma>]\n"
       << "\n"
       << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
-      << "Hop example: /ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/<PeerId>\n"
+      << "Hop example: /ip4/127.0.0.1/udp/4001/adp/2/p2p/<PeerId>\n"
       << "\n"
       << "Modes:\n"
       << "  l1 (default)            Amp media-relay RequestQuote + Amp circuit StartBridge payload\n"
@@ -1536,7 +1536,7 @@ int main(int argc, char** argv) {
     return 2;
   }
   if (hop_ma.find("/adp/") == std::string::npos) {
-    std::cerr << "error: --hop must be an Amp ADP multiaddr (.../udp/.../adp/1.0.0/p2p/...)\n";
+    std::cerr << "error: --hop must be an Amp ADP multiaddr (.../udp/.../adp/2/p2p/...)\n";
     PrintUsage(argv[0]);
     return 2;
   }
