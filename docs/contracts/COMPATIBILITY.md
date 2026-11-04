@@ -106,6 +106,8 @@ Taken whole, with no old/new bridge: every app updates.
 |----------|--------|-------|
 | App release | `PP_BROWSER_RELEASE_VERSION` / `AppVersionString()` | Store / About / `min_client_version` compare |
 | Protocol gen | `kProtocolGen` | App constant; reserved for future in-band messaging hello (not directory) |
+| Amp wire | the packet's first nibble (`adp::kWireVersion`) | A mismatch answered by version negotiation (`0xF`, [ADP.md](ADP.md)): the dial fails at once (N032) |
+| Mesh node | `amp_wire` / `node_version` / `features` | A node's own claims in its directory row and channel 0's extension (N032): they exclude a node, never rank it higher. Additive: a node or directory before them says nothing and is dialed as before |
 | Client-compat doc | `schema_version` on `/v1/client-compat` | Product / relay upgrade gate |
 | SQLite | `PRAGMA user_version` | Migrate in production (D069) |
 | Envelope | `envelope_version` | Signing / outer shape |

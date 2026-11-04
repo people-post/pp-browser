@@ -5,6 +5,7 @@
 
 #include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
+#include "common/ValueJson.h"
 #include "mesh/types/IDirectoryClient.h"
 
 #include <functional>
@@ -25,7 +26,17 @@ struct RegistrationPublishOpts {
   std::string entity_kind;
   bool has_capabilities = false;
   mesh::MeshCapabilitiesAd capabilities;
+  /** What a mesh_node runs (N032): sent when set; the directory lists them as the node's own claims. */
+  int amp_wire = 0;
+  std::string node_version;
+  std::vector<std::string> features;
 };
+
+/** register/finish's extras into `body`: entity_kind and capabilities (N027), what a mesh_node runs (N032). */
+void ApplyRegistrationPublishOpts(pp::common::Object& body, const RegistrationPublishOpts& publish);
+
+/** A `GET /v1/mesh/nodes` body's rows (N027), with what each node says it runs (N032) when it says it. */
+Roe<std::vector<mesh::MeshNodeHit>> MeshNodeHitsFromDirectoryJson(const std::string& json);
 
 struct RegistrationResult {
   bool success = false;

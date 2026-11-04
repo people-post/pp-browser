@@ -37,7 +37,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/
   manifest.json             # schema_version; backend = the backend key the profile belongs to (see Per-backend profiles)
-  mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1); per profile, so per backend
+  mesh_directory_nodes.json # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1; optional amp_wire / node_version / features, N032); per profile, so per backend
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
