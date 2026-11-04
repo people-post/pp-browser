@@ -75,6 +75,8 @@ CallHopPath::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
   deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
   deps.trusted_relays_only = mesh_cfg.trusted_relays_only;
   deps.list_directory_nodes = deps_.list_directory_nodes;
+  deps.node_reputation = deps_.node_reputation;
+  deps.preferred_min_node_version = mesh_cfg.preferred_min_node_version;
   deps.list_dht_nodes = deps_.list_dht_nodes;
   deps.seed_dial_ok = deps_.seed_dial_ok;
   deps.reach_held_down = [connectivity = connectivity_](const std::string& peer_id) {

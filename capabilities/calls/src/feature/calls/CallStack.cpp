@@ -268,6 +268,7 @@ void CallStack::SyncMediaPlaneDeps() {
   plane_deps.mesh = deps_.mesh;
   plane_deps.mesh_config = deps_.mesh_config;
   plane_deps.list_directory_nodes = deps_.list_directory_nodes;
+  plane_deps.node_reputation = deps_.node_reputation;
   plane_deps.list_dht_nodes = deps_.list_dht_nodes;
   plane_deps.seed_dial_ok = deps_.seed_dial_ok;
   plane_deps.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };

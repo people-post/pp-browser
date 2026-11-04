@@ -105,6 +105,8 @@ Opened immediately after Session `Established`.
 - `protocols[]` supported (includes circuit / media-relay protocol ids when hosted)
 - `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions; v1 binary codec carries flags via `protocols[]` until an explicit flags field is added)
 
+**Extension** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), pp-cpp-amp v4.1.0): after the payload above (the dialer on the responder's reply, the responder right after its reply), each side sends one more message on channel 0. Leading byte `3` (`1` is the payload above, `2` session control): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). A peer before it refuses it as an unknown payload version and drops it, after the exchange above has completed; a decoder ignores bytes past the fields it knows. pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapabilityExtension(peer_id)` reads a connected peer's.
+
 Channel 0 may stay open (long-lived control) or close after exchange — implementation policy; default **long-lived, Reliable Control**.
 
 Replaces libp2p Identify stream on the AMP path.
@@ -243,7 +245,7 @@ Relay hosts `/pp-mesh/circuit/1.0.0`. After a JSON bridge handshake, the relay *
   "op": "bridge",
   "timeout_ms": 8000,
   "target_peer_id": "<base58>",
-  "target_multiaddr": "/ip4/.../udp/.../adp/1.0.0/p2p/...",
+  "target_multiaddr": "/ip4/.../udp/.../adp/2/p2p/...",
   "target_protocol": "/pp/realtime/1.0.0"
 }
 ```

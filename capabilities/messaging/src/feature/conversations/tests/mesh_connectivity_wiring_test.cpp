@@ -140,6 +140,54 @@ TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
   }
 }
 
+// N032 rules 5–8 on the park / circuit surface: a node whose claim was contradicted (it said a newer version than
+// it runs) is demoted with its operator and goes last, a second relay of one operator comes after the others, and an
+// anchor (org seed or Friendly contact's node) leads.
+TEST_F(MeshConnectivityWiringTest, TheRendezvousSurfaceDemotesLiarsSpreadsOperatorsAndLeadsWithAnAnchor) {
+  MeshConnectivityWiringInputs in = Inputs(false);
+  auto row = [](const std::string& peer, const std::string& account, const std::string& version) {
+    mesh::MeshDirectoryNode node;
+    node.peer_id = peer;
+    node.account_id = account;
+    node.node_version = version;
+    node.multiaddrs = {"/ip4/198.51.100.20/udp/443/adp/1.0.0/p2p/" + peer};
+    node.circuit_relay = true;
+    return node;
+  };
+  in.list_directory_nodes = [row]() {
+    return std::vector<mesh::MeshDirectoryNode>{row("12D3KooWLiar", "account:liar", "9.9.9"),
+                                                row("12D3KooWLiarTwo", "account:liar", "4.1.0"),
+                                                row("12D3KooWHonest", "account:honest", "4.1.0")};
+  };
+  in.observe_node = [](const std::string& peer_id) {
+    ObservedNode seen;
+    if (peer_id == "12D3KooWLiar") { // reached: it runs 4.1.0, not the 9.9.9 it registered
+      seen.told = true;
+      seen.amp_wire = 2;
+      seen.node_version = "4.1.0";
+    }
+    return seen;
+  };
+  auto reputation = std::make_shared<MeshNodeReputation>();
+  in.node_reputation = [reputation]() { return reputation; };
+
+  const auto surface = ComputeMeshHopPolicy(in).Rendezvous();
+  std::vector<std::string> order;
+  for (const auto& hop : surface) {
+    order.push_back(hop.peer_id);
+  }
+  ASSERT_FALSE(order.empty());
+  const std::vector<std::string> anchors = {kSeedA, kSeedB, kFriend};
+  EXPECT_NE(std::find(anchors.begin(), anchors.end(), order.front()), anchors.end()) << "an anchor leads";
+  const auto at = [&order](const std::string& id) { return std::find(order.begin(), order.end(), id) - order.begin(); };
+  const auto last = static_cast<ptrdiff_t>(order.size()) - 1;
+  EXPECT_GE(at("12D3KooWLiar"), last - 1) << "the liar is still offered, behind every anchor and honest node";
+  EXPECT_GE(at("12D3KooWLiarTwo"), last - 1) << "its operator is demoted with it";
+  EXPECT_LT(at("12D3KooWHonest"), at("12D3KooWLiar"));
+  EXPECT_TRUE(reputation->IsDemoted("12D3KooWLiar", "account:liar", MeshNodeReputation::NowMs()));
+  EXPECT_FALSE(reputation->IsDemoted("12D3KooWHonest", "account:honest", MeshNodeReputation::NowMs()));
+}
+
 // THREADING.md § Mesh threads, rule 1: the app pushes the policy; the mesh never computes it. Start
 // pushes on the caller (the policy is in before connectivity wires), changes push from a worker, and
 // nothing is pushed between Stop and the next Start (the inputs read a mesh that may be going).

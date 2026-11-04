@@ -173,7 +173,7 @@
 **Decision:** Amp 1:1 call-media over circuit uses a **nested end-to-end A↔B Session** (inner `Session` + `ChannelMux`) carried on the bridged `ChannelSession`. `CallMediaLegCoordinator` keeps the [A021](DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime) control+media bundle on that virtual link. **Rejected:** single-pipe call-media mode; dual protocol-specific circuit tunnels as the long-term shape. SoftMigrate media-relay may continue to adopt one opaque channel ([D9 step 5c](CURRENT_STATE.md)). See [CALL_MEDIA_CIRCUIT.md](CALL_MEDIA_CIRCUIT.md).  
 **Rationale:** Preserves Reliable control vs BestEffort media, authenticates A to B (not relay R), aligns with [A019](DECISIONS.md#a019--circuit-relay--channel-tunnel) blindness, and avoids a second call-media state machine. Opaque single-channel adopt works for media-relay because that L4 is already one pipe — not for the call-media bundle.  
 **Alternatives:** Tagged single-pipe hello+media on the splice; two parallel circuit channels (control + media) without inner Session.  
-**Amendment proposed:** [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H3 — the carrier's outer leg authenticates, without encrypting again, the inner packets that are already sealed end to end; the inner handshake stays fully sealed. The nested Session itself is unchanged. Until A029 is accepted, this entry holds.
+**Amendment withdrawn (2026-11-04):** [A029](#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H3 proposed that the carrier's outer leg authenticate, without encrypting again, the inner packets already sealed end to end. H3 is withdrawn (A029); this entry holds unchanged.
 ## A025 — Pre-extract layer cleanup (limits, policies, PeerId)
 
 **Date:** 2026-08-31  
@@ -219,7 +219,7 @@
 ## A029 — A smaller packet: one sealed header, derived nonces, no second tag
 
 **Date:** 2026-11-03  
-**Status:** Accepted for step 1, H1 and H2, built; H3 proposed. Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
+**Status:** Accepted for step 1, H1 and H2, built; H3 withdrawn (2026-11-04, below). Wire changes keep no compatibility: a major pp-cpp-amp version for H1, pp-cpp-mesh and call media for H2, and a pp-node release with each.
 - **Step 1, 40 ms Opus packets:** [CALLS.md § Audio packets](../../docs/architecture/CALLS.md). Measured in the lab (`voice_group_wide`, `voice_pair_wide`, 2026-11-03), per user: group, one stream up 130 → 88 kbit/s (60 → 35 pkt/s); group, two streams down 189 → 105 kbit/s; 1:1 through a circuit, up 165 → 112 and down 120 → 67 kbit/s each way.
 - **H1, amp wire v2 (pp-cpp-amp v4.0.0):** [ADP.md](../../docs/contracts/ADP.md), [AMP-SESSION.md § Sealing packets](../../docs/contracts/AMP-SESSION.md#sealing-packets), [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md). Amends [A002](#a002--l1-hmac-binding-vs-l2-crypto) (H1.3). Built as decided below, with these changes: the association id stays dialer-chosen (item 4), the key-phase bit is not built, and fragments now fill each link's budget (§ Sizes). Measured in the lab against step 1 (2026-11-03), per user, received video the same (15.1 fps, none lost, no stalls):
 
@@ -241,7 +241,7 @@
   | `video_pair_wide` (circuit) | 413 → 407 kbit/s | 371 → 364 kbit/s |
 
   The averages include acks and keepalives, so a media packet's 26 B (21 B on the 1:1 path) shows as 13–23 B.
-- **H3** amends [A024](#a024--amp-call-media-over-circuit--nested-session) once built.
+- **H3 withdrawn (2026-11-04):** its saving was the outer leg's random 24 B nonce, which H1 already removed (the outer seal's nonce is derived). Authenticating without encrypting adds the same 16 B tag as sealing, so on wire v2 H3 saves no bytes. What would remain is relay CPU (no decrypt and re-encrypt of inner-sealed bytes), against a new outer packet type and path observers seeing the inner packet numbers: not worth a wire change. A 1:1 circuit packet now carries 59 B around its inner frame (outer header 13 and tag 16, outer frame header 9, inner header 5 and tag 16); only the outer frame header, at most ~9 B, is left to trim, as a separate change if ever. [A024](#a024--amp-call-media-over-circuit--nested-session) stays as it is.
 
 **Context:** In the lab (`pp_app_lab.py` `voice_{group,pair}_wide`, `video_*`), a 20 ms Opus frame of about 60 B goes out as **265 B** to the hop and **319 B** through a 1:1 circuit. An audio stream at 24 kbit/s costs about 106 kbit/s on the wire to the hop, and that is most of why a call sits at a phone's ~600 kbit/s uplink. A group packet, layer by layer:
 
@@ -258,7 +258,7 @@
 
 A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8 B length prefix. The duplication: the sequence number 5 times, the channel id twice, a version / type byte at 4–5 layers, two random 24 B nonces, three authenticators (the E2E tag, the L2 tag, the L1 HMAC), a 16 B association id, and length fields that UDP and L3 already give. Video fragments (~1 200 B) pay the same per packet: about 14 %, against 3–4× for audio.
 
-**Decision** (H1 and H2 accepted and built; H3 proposed):
+**Decision** (H1 and H2 accepted and built; H3 withdrawn):
 
 *H1: Amp's packet (every Amp packet, chat included; about −59 B):*
 1. **One packet header, sealed once.** L1, the L2 envelope and the L3 frame header merge.
@@ -288,7 +288,7 @@ A 1:1 circuit adds the outer leg's L3 + L2 seal + envelope + L1 (103 B) and an 8
 7. **One media header:** stream id (u32), channel (u8), flags (mark, keyframe) and seq (u32), once. It replaces the E2E header and `MediaDataFrame`, and drops the 1:1 path's 8 B length prefix (L3 already frames a message).
 8. **The E2E nonce is derived** from the media kind, stream id, a sender instance id, the seq and the key epoch. The instance id is 8 random bytes a sender picks at each send-session start and carries in every packet. Net −16 B.
 
-*H3: the carrier's outer leg authenticates, without encrypting, the inner packets already sealed end to end* (1:1 behind NATs, about −24 B after H1). This amends A024.
+*H3 (withdrawn, see Status): the carrier's outer leg authenticates, without encrypting, the inner packets already sealed end to end* (1:1 behind NATs; the −24 B it counted was the outer nonce, which H1 removed).
 - The inner handshake, and anything not inner-sealed, stays fully sealed on the outer leg: no one on the path learns who talks to whom.
 - What an observer on that leg learns is what the hop already sees: the inner packet numbers. The inner frame fields stay sealed by the inner session.
 - The outer leg keeps a tag, so the hop still knows each packet comes from its peer, and nobody can inject into a circuit.
@@ -328,7 +328,7 @@ A group video sender's uplink would go from ~520 to ~445 kbit/s.
 1. 40 ms Opus frames.
 2. H1 (pp-cpp-amp major).
 3. H2, with the nonce design reviewed first.
-4. H3.
+4. ~~H3~~ (withdrawn).
 
 Each phase is measured in the lab and needs a pp-node release before group calls gain.
 

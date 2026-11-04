@@ -93,7 +93,7 @@ std::vector<std::string> SplitCommaList(const std::string& list) {
 void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage:\n"
-      << "  " << argv0 << " --role answerer --listen <adp-ma|/ip4/0.0.0.0/udp/PORT/adp/1.0.0>\n"
+      << "  " << argv0 << " --role answerer --listen <adp-ma|/ip4/0.0.0.0/udp/PORT/adp/2>\n"
       << "                 [--advertise-host <ip>] [--call-id ID] [--ready-file PATH]\n"
       << "                 [--warm-hop <adp-ma-with-p2p>] [--min-rx-frames N]\n"
       << "                 [--no-auto-detach] [--with-chat]\n"
@@ -104,7 +104,7 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Amp thin-client B-CALL-DIRECT / B-CALL-HOP / B-CONFLICT / B-MSG+CALL\n"
       << "(docs/ops/TEST_STRATEGY.md).\n"
-      << "  Listen/peer example: /ip4/127.0.0.1/udp/47100/adp/1.0.0[/p2p/<PeerId>]\n"
+      << "  Listen/peer example: /ip4/127.0.0.1/udp/47100/adp/2[/p2p/<PeerId>]\n"
       << "  --expect busy   Connect failure is success (second inbound while MediaReady).\n"
       << "  --hold-ms N     Stay MediaReady after audio before detach (conflict holder).\n"
       << "  --with-chat     AmpDirectChatTransport ping during and after the call.\n"
@@ -219,7 +219,7 @@ std::string RewriteWildcardListenHost(std::string multiaddr) {
   return multiaddr;
 }
 
-/** Parse `/ip4|ip6/H/udp/P/adp/1.0.0` with optional `/p2p/...` for answerer bind. */
+/** Parse `/ip4|ip6/H/udp/P/adp/2` with optional `/p2p/...` for answerer bind. */
 std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
   if (auto full = pp::amp::ParseAdpMultiaddr(ma)) {
     return full->endpoint;
@@ -914,7 +914,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   auto bind_ep = ParseListenEndpoint(listen_ma);
   if (!bind_ep) {
     std::cerr << "error: --listen must be Amp ADP multiaddr "
-                 "(/ip4/.../udp/.../adp/1.0.0[/p2p/...])\n";
+                 "(/ip4/.../udp/.../adp/2[/p2p/...])\n";
     return 2;
   }
 
@@ -1288,7 +1288,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
 int main(int argc, char** argv) {
   std::string role;
-  std::string listen_ma = "/ip4/127.0.0.1/udp/47100/adp/1.0.0";
+  std::string listen_ma = "/ip4/127.0.0.1/udp/47100/adp/2";
   std::string peer_ma;
   std::string hop_ma;
   std::string advertise_host;
