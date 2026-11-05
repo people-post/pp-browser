@@ -2010,6 +2010,13 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
+/* Me -> Storage lists: the group card is itself a .settings-row, so a child row's :hover / :focus would
+   grey the whole group (every option at once). Keep the card steady; only the tapped row greys, via the
+   .settings-choice-row rule below (Kenneth 2026-11-05, phone). */
+.settings-row.storage-group:hover, .settings-row.storage-group:focus {
+  background-color: #ffffff;
+}
+
 .settings-back-btn:hover, .settings-back-btn:focus {
   background-color: #7878801f;
 }

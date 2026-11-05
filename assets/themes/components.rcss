@@ -11583,6 +11583,13 @@ textarea:composing ~ .prompt-composer-label,
   cursor: default;
 }
 
+/* Me -> Storage reset buttons (phone): inset like the other settings buttons instead of edge-to-edge,
+   with clear space between the two (Kenneth 2026-11-05). */
+.shell-layer-compact .storage-section .settings-danger-zone .settings-action-bar {
+  width: auto;
+  margin: 12dp 16dp 0 16dp;
+}
+
 .storage-section .storage-card {
   padding: 14dp 16dp;
   margin-bottom: 16dp;
