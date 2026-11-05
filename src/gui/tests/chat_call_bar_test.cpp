@@ -24,6 +24,14 @@ TEST(ChatCallBarTest, TheBarSitsUnderTheHeaderAndJoins) {
   EXPECT_LT(bar, header_end);
   EXPECT_NE(rml.find("data-event-click=\"join_group_call()\"", bar), std::string::npos);
   EXPECT_NE(rml.find("chat-header-call-btn chat-header-call-btn--join\"><span>{{i18n:call.join}}</span>", bar), std::string::npos);
+  // With the bar up its button is the one "Join": the header's goes back to the plain phone icon.
+  const size_t header_btn = rml.find("class=\"chat-header-call-btn\"");
+  ASSERT_NE(header_btn, std::string::npos);
+  EXPECT_LT(header_btn, bar);
+  EXPECT_NE(rml.find("data-class-chat-header-call-btn--join=\"call_joinable && call_bar_text == ''\"", header_btn),
+            std::string::npos);
+  EXPECT_NE(rml.find("<span data-if=\"call_joinable && call_bar_text == ''\">{{i18n:call.join}}</span>", header_btn),
+            std::string::npos);
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t join = css.find(".chat-call-bar-join {");
   ASSERT_NE(join, std::string::npos);

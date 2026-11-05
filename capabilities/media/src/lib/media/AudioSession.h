@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 
 namespace pbr {
 
@@ -29,6 +30,14 @@ void Deactivate();
  */
 void SetSystemManaged(bool managed);
 void NotifySystemActivation(bool active);
+
+/**
+ * The OS took the live session away and gave it back (a call screen, Siri, an alarm; or the media services were
+ * reset): `fn` runs after ActivateForVoip re-took it, so the audio devices can be reopened. Only fires while a
+ * live session is active. One handler; empty clears it. `fn` runs under the registry lock: keep it short and do
+ * not register from inside it. No-op where the OS does not interrupt the session this way.
+ */
+void SetInterruptionEndedHandler(std::function<void()> fn);
 
 /**
  * An audio user is about to start I/O without ActivateForVoip (ringtone / ringback open their

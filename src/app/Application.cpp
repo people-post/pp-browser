@@ -2116,8 +2116,8 @@ void Application::Run() {
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
     qr_scan_->NotifyFrameEnd();
-    // Android in the background: events and posted tasks run above, nothing draws (B127).
-    const bool draw_frame = ShouldDrawFrame(Platform::Detect() == PlatformKind::Android, AppLifecycle::IsForeground());
+    // A phone in the background: events and posted tasks run above, nothing draws (B127).
+    const bool draw_frame = ShouldDrawFrame(Platform::IsMobile(), AppLifecycle::IsForeground());
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (draw_frame && Backend::CanRender()) {
       const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd

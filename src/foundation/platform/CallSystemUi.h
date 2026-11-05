@@ -23,6 +23,8 @@ public:
     std::function<void(const std::string& call_id, bool muted)> set_muted;
     /** The system activated (true) or deactivated (false) the audio session of a call it owns. */
     std::function<void(bool active)> audio_session;
+    /** The push's call left the system screen without a ring found (timeout, reset, ended by us). */
+    std::function<void()> pending_gone;
   };
   enum class EndReason { Ended, AnsweredElsewhere, Failed };
 
@@ -40,6 +42,8 @@ public:
    * unboundedly (up to an absolute cap) until this, then the usual short timeouts count from here.
    */
   virtual void NotifyMessagingReady() {}
+  /** Take the push's call off the system screen: no ring will match it (the app joined a call on its own). */
+  virtual void EndPendingPushCall() {}
   /** `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. */
   virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
   /** Ring `call_id` on the system screen (fills in the push's pending call when there is one). */

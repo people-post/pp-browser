@@ -59,6 +59,7 @@ public:
   void OnEnd(const std::string& call_id);
   void OnSetMuted(const std::string& call_id, bool muted);
   void OnAudioSession(bool active);
+  void OnPendingGone();
 
 private:
   int64_t Now() const;

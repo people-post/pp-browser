@@ -23,6 +23,13 @@ public:
   }
 
   void NotifyMessagingReady() override { log.push_back("ready"); }
+  void EndPendingPushCall() override {
+    log.push_back("ended pending");
+    pending_push = false;
+    if (callbacks_.pending_gone) {
+      callbacks_.pending_gone();
+    }
+  }
 
   bool pending_push = false;
   std::vector<std::string> log;
@@ -153,6 +160,30 @@ TEST_F(CallSystemUiBridgeTest, ThePushsCallDeclinedBeforeItsRingShowedDeclinesTh
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
   EXPECT_TRUE(ui_.log.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, AJoinAnsweredByTheAppEndsThePushsCallAtOnce) {
+  ui_.pending_push = true;
+  bridge_.Sync(Answering("c1"), "", false);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending"}));
+  EXPECT_FALSE(ui_.pending_push);
+}
+
+TEST_F(CallSystemUiBridgeTest, AWaitingPushCallIsLeftAloneWhileNoCallIsUp) {
+  ui_.pending_push = true;
+  bridge_.Sync(CallScreen{}, "", false);
+  EXPECT_TRUE(ui_.log.empty());
+  EXPECT_TRUE(ui_.pending_push);
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsCallGoingAwayForgetsAChoiceMadeOnIt) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("");
+  ui_.pending_push = false;
+  ui_.callbacks_.pending_gone();  // timed out or reset: its choice must not hit a later ring
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, AChoiceOnThePushsCallExpires) {

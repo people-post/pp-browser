@@ -30,9 +30,9 @@ public:
                     const CallDeliveryPorts& delivery);
 
   Roe<std::string> LocalRelayIdentity() const;
-  /** Signaling to `peer_identity` on the control lane. */
+  /** Signaling to `peer_identity` on the control lane. `urgent=false` keeps a CallInvite from waking the peer. */
   Roe<void> SendDirect(const std::string& peer_identity, CallControlType type, const std::string& detail_json,
-                       const std::string& display);
+                       const std::string& display, bool urgent = true);
   /**
    * The call's summary into `thread_id`'s chat stream (both sides, all their devices read it); kept
    * here only when it cannot be sent (an unverified private key, no route) or `local_only`.

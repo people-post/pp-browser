@@ -9,6 +9,7 @@ void Deactivate() {}
 void CancelPendingDeactivate() {}
 void SetSystemManaged(bool /*managed*/) {}
 void NotifySystemActivation(bool /*active*/) {}
+void SetInterruptionEndedHandler(std::function<void()> /*fn*/) {}
 
 void ActivateForVoicePlayback() {}
 void ActivateForVoiceRecording() {}
