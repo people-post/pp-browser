@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace pbr {
@@ -124,6 +125,45 @@ TEST(MediaEngineAdaptationTest, APathTooWeakForVideoPausesTheSendAndKeepsTheCame
   EXPECT_EQ(encodes.At(paused_at), std::optional<bool>(true)) << "video resumes with a keyframe";
 
   ASSERT_TRUE(engine.SetCameraEnabled(true, 0)) << "the camera can be turned on whatever the path";
+  engine.Stop();
+  (void)engine.WaitForRetiredSessions(3s);
+}
+
+// The UI draws a video frame only when told (nothing else wakes its frame loop for one), and a phone saving power
+// shows only the sent frames in the self-view: half the camera's, and the others never converted. The sent video
+// is the same either way.
+TEST(MediaEngineAdaptationTest, EachSelfViewFrameIsAnnouncedAndHalfRateShowsOnlyTheSentOnes) {
+  EncodeLog encodes;
+  MediaDeviceArbiter devices(std::make_unique<FrameBackend>());
+  MediaEngine engine(devices);
+  engine.SetVideoCodecFactoryForTest(
+      [&encodes]() -> std::unique_ptr<IVideoCodec> { return std::make_unique<RecordingCodec>(encodes); });
+  std::atomic<uint64_t> announced{0};
+  engine.SetOnVideoFrame([&announced]() { announced.fetch_add(1); });
+  auto started = engine.StartDuplex("self-view-call", [](const MediaEngine::MediaPacket&) {});
+  ASSERT_TRUE(started) << (started ? "" : started.error().message);
+  ASSERT_TRUE(engine.SetCameraEnabled(true, 0));
+  ASSERT_TRUE(WaitFor([&] { return encodes.Count() >= 2; })) << "the camera never sent video";
+
+  auto window = [&](std::chrono::milliseconds length) {
+    const uint64_t previews = engine.HealthSnapshot().preview_frames;
+    const uint64_t calls = announced.load();
+    const size_t sent = encodes.Count();
+    std::this_thread::sleep_for(length);
+    return std::tuple{engine.HealthSnapshot().preview_frames - previews, announced.load() - calls,
+                      static_cast<uint64_t>(encodes.Count() - sent)};
+  };
+  const auto [full_previews, full_calls, full_sent] = window(1000ms);
+  EXPECT_GE(full_calls, full_previews) << "a self-view frame the UI was not told of";
+  EXPECT_GT(full_previews, full_sent) << "the self-view runs at the camera's rate, above the send rate";
+
+  engine.SetSelfViewHalfRate(true);
+  std::this_thread::sleep_for(100ms);
+  const auto [half_previews, half_calls, half_sent] = window(1000ms);
+  EXPECT_GE(half_calls, half_previews);
+  EXPECT_LE(half_previews, half_sent + 1) << "half rate shows only the frames that are sent";
+  EXPECT_LT(half_previews * 10, full_previews * 8) << "half rate did not slow the self-view";
+  EXPECT_GE(half_sent * 10, full_sent * 7) << "half rate is the self-view's only: the send rate stays";
   engine.Stop();
   (void)engine.WaitForRetiredSessions(3s);
 }

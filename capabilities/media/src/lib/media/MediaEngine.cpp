@@ -233,6 +233,11 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
  */
 struct MediaEngine::Shared {
   std::mutex mu;
+  /** SetOnVideoFrame's callback (every session's frames); called after a frame is published, outside its lock. */
+  std::mutex on_video_frame_mu;
+  std::function<void()> on_video_frame;
+  /** SetSelfViewHalfRate: show only the sent frames. */
+  std::atomic<bool> self_view_half_rate{false};
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -438,6 +443,16 @@ struct MediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
+  void NotifyVideoFrame() {
+    std::function<void()> cb;
+    {
+      std::lock_guard lock(shared->on_video_frame_mu);
+      cb = shared->on_video_frame;
+    }
+    if (cb) {
+      cb();
+    }
+  }
   /** Facing the next camera open asks for: front at each session's start, turned over by FlipCamera. */
   std::atomic<bool> camera_prefer_front{true};
   /** FlipCamera asked the video thread to release the open camera and take the other facing. */
@@ -519,11 +534,14 @@ struct MediaEngine::Impl {
       MirrorRgbaInPlace(copy);
     }
     PremultiplyRgbaInPlace(copy.rgba);
-    std::lock_guard lock(video_frame_mutex);
-    local_video_frame.width = copy.width;
-    local_video_frame.height = copy.height;
-    local_video_frame.rgba = std::move(copy.rgba);
-    local_video_frame.seq = ++local_video_seq;
+    {
+      std::lock_guard lock(video_frame_mutex);
+      local_video_frame.width = copy.width;
+      local_video_frame.height = copy.height;
+      local_video_frame.rgba = std::move(copy.rgba);
+      local_video_frame.seq = ++local_video_seq;
+    }
+    NotifyVideoFrame();
   }
 
   /**
@@ -571,6 +589,11 @@ struct MediaEngine::Impl {
   }
 
   void PublishRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
+    StoreRemoteFrame(stream_id, std::move(frame));
+    NotifyVideoFrame();
+  }
+
+  void StoreRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
     PremultiplyRgbaInPlace(frame.rgba);
     const int64_t now = util::NowUnixMs();
     std::lock_guard lock(video_frame_mutex);
@@ -1453,6 +1476,9 @@ struct MediaEngine::Impl {
   /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
    *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
   void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode) {
+    if (!encode && shared->self_view_half_rate.load(std::memory_order_relaxed)) {
+      return; // half-rate self-view: a frame only for it is not even converted
+    }
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
     const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
@@ -2571,6 +2597,15 @@ float MediaEngine::LocalInputLevel() const {
 float MediaEngine::RemoteOutputLevel() const {
   const std::shared_ptr<Impl> impl = Session();
   return impl->remote_output_level.load(std::memory_order_relaxed);
+}
+
+void MediaEngine::SetOnVideoFrame(std::function<void()> on_frame) {
+  std::lock_guard lock(shared_->on_video_frame_mu);
+  shared_->on_video_frame = std::move(on_frame);
+}
+
+void MediaEngine::SetSelfViewHalfRate(const bool half) {
+  shared_->self_view_half_rate.store(half, std::memory_order_relaxed);
 }
 
 bool MediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {

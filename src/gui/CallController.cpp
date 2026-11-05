@@ -16,6 +16,8 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -272,6 +274,19 @@ void CallController::Tick() {
   } else if (!metrics_.Tracking() && ui_probe_.Running()) {
     ui_probe_.Stop();
   }
+}
+
+void CallController::BindVideoFrameWake(IMediaView& media) {
+  if (video_wake_bound_ == &media) {
+    return;
+  }
+  video_wake_bound_ = &media;
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
+  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
+    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
+      Backend::RequestForceFrame();
+    }
+  });
 }
 
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
@@ -901,6 +916,12 @@ void CallController::ToggleSpeaker() {
 
 void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
+  BindVideoFrameWake(media);
+  {
+    // Low Power Mode / Battery Saver, or a hot phone: the self-view shows only the sent frames (15 fps).
+    const DeviceVitals& vitals = Vitals(util::NowUnixMs());
+    media.SetSelfViewHalfRate(vitals.low_power || vitals.thermal >= kThermalSerious);
+  }
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();

@@ -360,6 +360,9 @@ private:
       line.Add("cpu_s", vitals.cpu_s - call_.vitals_start.cpu_s);
     }
     line.Add("thermal_max", ThermalStateName(std::max(call_.thermal_max, vitals.thermal)));
+    if (vitals.low_power) {
+      line.Add("low_power", true); // the self-view ran at half rate (SetSelfViewHalfRate)
+    }
     if (call_.vitals_start.battery_pct >= 0) {
       line.Add("battery_start", call_.vitals_start.battery_pct)
           .Add("battery_end", vitals.battery_pct)

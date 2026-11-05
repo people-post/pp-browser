@@ -108,6 +108,8 @@ private:
   void HideInCallChrome();
   void ApplyChromeModeToState(CallInProgressState& in_call);
   void ApplyAudioLevels(IMediaView& media);
+  /** Once per media view: its new video frames wake the frame loop (at most every kVideoWakeMinIntervalMs). */
+  void BindVideoFrameWake(IMediaView& media);
   void RefreshCallLevels();
   void SyncRingtone();
   /**
@@ -147,6 +149,10 @@ private:
   int64_t last_video_refresh_ms_ = 0;
   /** The last self-view / peer frame sent to the screen (call.summary shown_*_fps counts new ones). */
   uint64_t last_shown_self_seq_ = 0;
+  /** The media view whose frames wake the loop (BindVideoFrameWake). */
+  IMediaView* video_wake_bound_ = nullptr;
+  /** DeviceVitals::thermal at which the self-view drops to half rate (Apple's "serious"). */
+  static constexpr int kThermalSerious = 2;
   uint64_t last_shown_peer_seq_ = 0;
   /** Operational metrics for the current call (Metrics channel; no identities). */
   CallMetricsTracker metrics_;

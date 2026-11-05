@@ -4,6 +4,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -88,6 +89,16 @@ public:
   virtual bool EverHadRemoteVideo() const = 0;
   /** Drop the last remote frame (camera off, leave, hard stall, connection dead). */
   virtual void ClearRemoteVideo() = 0;
+  /**
+   * Called (any thread: the camera's, a decoder's) each time a new self-view or remote frame is ready to copy:
+   * the UI's cue to draw. Nothing else wakes the UI for a frame. Empty: none.
+   */
+  virtual void SetOnVideoFrame(std::function<void()> on_frame) = 0;
+  /**
+   * Half-rate self-view (Low Power Mode, a hot phone): only the frames that are sent are shown (15 fps of the
+   * camera's 30), and the others are not converted at all. The sent video is unchanged.
+   */
+  virtual void SetSelfViewHalfRate(bool half) = 0;
   /** Copy the latest local preview / remote decoded frames (false if none). */
   virtual bool CopyLocalVideoFrame(VideoTileFrame& out) const = 0;
   virtual bool CopyRemoteVideoFrame(VideoTileFrame& out) const = 0;

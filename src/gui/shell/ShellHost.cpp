@@ -1949,10 +1949,6 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
   if (state_.call_ring.active || state_.call_in_progress.active) {
     delay_sec = std::min(delay_sec, kLiveChromeFrameIntervalSec);
   }
-  // A video tile: a frame per camera frame, so each new one is drawn (none wakes the loop by itself).
-  if (CallVideoOnScreen(state_.call_in_progress)) {
-    delay_sec = std::min(delay_sec, kVideoFrameIntervalSec);
-  }
 
   if (std::isfinite(delay_sec)) {
     // Must run after Context::Update — that call resets next_update_timeout to infinity.
