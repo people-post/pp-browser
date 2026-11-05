@@ -5,6 +5,7 @@
 #if defined(__APPLE__) && TARGET_OS_IPHONE
 
 #import <AVFoundation/AVFoundation.h>
+#import <UIKit/UIKit.h>
 
 #include <atomic>
 #include <condition_variable>
@@ -37,11 +38,14 @@ constexpr int kDeactivateRetries = 5;
 constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
 
 void ResumeAfterInterruption(const char* why);
+/** The app came back with no interruption end seen: resume only if the session can be had (a phone call may still hold it). */
+void ResumeIfSessionFree();
 
 /**
- * Once, at the first live session: the OS's interruption-ended and media-services-reset notices resume the session
- * and run every AudioSession interruption handler (AudioSessionInterruptions.cpp). Off the posting thread:
- * ActivateForVoip may wait for CallKit's activation.
+ * Once, at the first live session: an interruption that begins marks the session interrupted (NotifyInterruptionBegan);
+ * its end, a media-services reset, or the app becoming active again with no end seen (iOS does not always send one)
+ * resume the session and run every AudioSession interruption handler (AudioSessionInterruptions.cpp). Off the
+ * posting thread: ActivateForVoip may wait for CallKit's activation.
  */
 void InstallInterruptionObservers() {
   static dispatch_once_t once;
@@ -56,6 +60,18 @@ void InstallInterruptionObservers() {
                       if (type == AVAudioSessionInterruptionTypeEnded) {
                         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
                                        ^{ ResumeAfterInterruption("interruption ended"); });
+                      } else if (type == AVAudioSessionInterruptionTypeBegan && g_session_active.load()) {
+                        NSLog(@"AudioSession interruption began");
+                        NotifyInterruptionBegan();
+                      }
+                    }];
+    [center addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                      if (IsInterrupted()) {
+                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                       ^{ ResumeIfSessionFree(); });
                       }
                     }];
     [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification
@@ -165,6 +181,7 @@ void ActivateForVoip() {
 
 void Deactivate() {
   g_session_active.store(false);
+  ClearInterruption();
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
   [session overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];
@@ -206,6 +223,25 @@ void ResumeAfterInterruption(const char* why) {
   NSLog(@"AudioSession %s: resuming", why);
   ActivateForVoip();
   NotifyInterruptionEnded();
+}
+
+void ResumeIfSessionFree() {
+  if (!g_session_active.load() || !IsInterrupted()) {
+    return;
+  }
+  bool managed = false;
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    managed = g_system_managed;
+  }
+  if (!managed) {
+    NSError* error = nil;
+    if (![[AVAudioSession sharedInstance] setActive:YES error:&error]) {
+      NSLog(@"AudioSession app active: session still taken (%@), staying interrupted", error);
+      return;
+    }
+  }
+  ResumeAfterInterruption("app active, no interruption end seen");
 }
 
 } // namespace

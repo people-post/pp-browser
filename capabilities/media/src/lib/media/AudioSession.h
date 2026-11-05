@@ -38,7 +38,7 @@ void NotifySystemActivation(bool active);
  * reopen its devices. There are several (each MediaEngine: a call's, a broadcast's two; one not capturing ignores
  * it), so each adds its own. A single handler that each new engine replaced ended up on a broadcast engine, and the
  * call's audio never came back. Fires only while a live session is active, and only where the OS interrupts the
- * session this way (iOS); elsewhere the handlers are kept and never run.
+ * session (iOS's interruptions, Android's loss of audio focus); elsewhere the handlers are kept and never run.
  *
  * Handlers run under the registry's lock: keep them short, and do not add or remove from inside one. Remove waits
  * for a running handler, so its owner may go once Remove returns.
@@ -48,6 +48,17 @@ InterruptionHandlerId AddInterruptionEndedHandler(std::function<void()> fn);
 void RemoveInterruptionEndedHandler(InterruptionHandlerId id);
 /** The platform's session took the session back after an interruption: runs every handler, in the order added. */
 void NotifyInterruptionEnded();
+
+/**
+ * The OS took the live session away (a phone call, Siri, an alarm, another app's call): the microphone gives silence
+ * or nothing until NotifyInterruptionEnded. Meanwhile a starved capture is not a broken device (MediaEngine does
+ * not count it toward giving up on voice processing), and a call tells its peer it is on hold.
+ */
+void NotifyInterruptionBegan();
+/** Between NotifyInterruptionBegan and NotifyInterruptionEnded (or the session's end). Any thread. */
+bool IsInterrupted();
+/** The live session ended (the platform's Deactivate): an interruption it was under is over with it. */
+void ClearInterruption();
 
 /**
  * An audio user is about to start I/O without ActivateForVoip (ringtone / ringback open their

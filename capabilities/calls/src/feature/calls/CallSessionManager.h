@@ -51,6 +51,16 @@ public:
   Roe<void> SetLocalAudioMuted(bool muted);
   /** `display_rotation_degrees` read on UI by the caller (L012). */
   Roe<void> SetLocalVideoEnabled(bool enabled, int display_rotation_degrees);
+  /**
+   * The OS took (true) or gave back (false) this device's call audio — a phone call, Siri, another app's call: the
+   * roster tells the others the call is on hold here. The media goes on (silence) either way.
+   */
+  Roe<void> SetLocalOnHold(bool on_hold);
+  /**
+   * The app went to the background (true) or came back (false). A camera that was on goes off meanwhile, and the
+   * roster says why (video_paused); it comes back on with the app. `display_rotation_degrees` as for the camera.
+   */
+  Roe<void> SetLocalVideoPaused(bool paused, int display_rotation_degrees);
   /** Ask publisher for an IDR (empty identity = local encoder). */
   Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
   void SweepExpiredInvites();
@@ -119,6 +129,8 @@ private:
   CallMediaKeyExchange& key_exchange_;
   CallReachSignals& reach_signals_;
   mesh::InboundAudience inbound_call_audience_ = mesh::InboundAudience::Everyone;
+  /** The call whose camera SetLocalVideoPaused turned off (empty: none): it turns it back on. */
+  std::string video_paused_call_id_;
 };
 
 } // namespace pbr

@@ -99,6 +99,50 @@ CallController::CallController()
   };
   callbacks.on_decline = [this](const std::string& call_id) { metrics_.NoteDecline(call_id); };
   presenter_.BindCallbacks(std::move(callbacks));
+  // Mobile: in the background the OS stops the camera; the call turns it off and says so (video_paused).
+  background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
+  foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
+}
+
+CallController::~CallController() {
+  AppLifecycle::RemoveListener(background_listener_);
+  AppLifecycle::RemoveListener(foreground_listener_);
+}
+
+void CallController::SyncLocalHold() {
+  auto* backend = Backend();
+  const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
+  const bool held = in_call && AudioSession::IsInterrupted();
+  if (held == local_on_hold_) {
+    return;
+  }
+  local_on_hold_ = held;
+  log().info << "call on hold=" << (held ? 1 : 0) << " (the OS " << (held ? "took" : "gave back") << " the audio)";
+  if (in_call) {
+    backend->SetLocalOnHold(held);
+  }
+}
+
+void CallController::OnAppBackground() {
+  auto* backend = Backend();
+  if (!Platform::IsMobile() || !backend || !backend->Available() || presenter_.ActiveCallId().empty() ||
+      !backend->Media().IsCameraEnabled()) {
+    return;
+  }
+  video_paused_ = true;
+  log().info << "camera paused: app in the background";
+  backend->SetLocalVideoPaused(true);
+}
+
+void CallController::OnAppForeground() {
+  if (!video_paused_) {
+    return;
+  }
+  video_paused_ = false;
+  if (auto* backend = Backend(); backend && backend->Available()) {
+    log().info << "camera back: app in front";
+    backend->SetLocalVideoPaused(false);
+  }
 }
 
 namespace {
@@ -357,6 +401,7 @@ void CallController::Tick() {
     }
   }
   SyncRingtone();
+  SyncLocalHold();
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();
@@ -1277,10 +1322,13 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
 
   bool peer_camera_on = false;
   bool have_peer_video_flag = false;
+  peer_on_hold_ = false;
+  peer_video_paused_ = false;
   if (backend && backend->Available() && !presenter_.ActiveCallId().empty()) {
-    if (auto peer_video = backend->PeerVideoEnabledForCall(presenter_.ActiveCallId());
-        peer_video && peer_video->has_value()) {
-      peer_camera_on = **peer_video;
+    if (auto peer_media = backend->PeerMediaForCall(presenter_.ActiveCallId()); peer_media && peer_media->has_value()) {
+      peer_camera_on = (*peer_media)->video_enabled;
+      peer_on_hold_ = (*peer_media)->on_hold;
+      peer_video_paused_ = (*peer_media)->video_paused;
       have_peer_video_flag = true;
     }
   }
@@ -1331,10 +1379,13 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
                                      presenter_.Screen().status != CallScreen::Status::Disconnected;
   const bool path_lost =
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
+  // On hold (here or there) the audio is silence by design: only a lost path is a reconnect.
+  const bool on_hold = local_on_hold_ || peer_on_hold_;
   const bool media_reconnect =
       !mesh_messaging_failed &&
-      (stalling || missing_after_video || path_lost ||
-       (backend && backend->Available() && CallMediaDropped(*backend, media, presenter_.ActiveCallId())));
+      (path_lost || (!on_hold && (stalling || missing_after_video ||
+                                  (backend && backend->Available() &&
+                                   CallMediaDropped(*backend, media, presenter_.ActiveCallId())))));
 
   // Live or soft-stall: keep painting the last frame. Hard stall / camera-off clears HasRemoteVideo.
   in_call.remote_video = media.HasRemoteVideo() && expect_remote_video;
@@ -1434,13 +1485,16 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   const bool video_in_play = in_call.camera_on || media.EverHadRemoteVideo() || (have_peer_video_flag && peer_camera_on);
   in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview ||
                           (have_peer_video_flag && peer_camera_on) || (media_reconnect && video_in_play) ||
-                          starting_video;
+                          starting_video || peer_video_paused_;
   if (in_call.remote_video) {
     in_call.remote_placeholder = "";
   } else if (starting_video) {
     in_call.remote_placeholder = Tr("call.placeholder.starting_video").c_str();
+  } else if (peer_on_hold_) {
+    in_call.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
   } else if (have_peer_video_flag && !peer_camera_on) {
-    in_call.remote_placeholder = Tr("call.placeholder.camera_off").c_str();
+    in_call.remote_placeholder =
+        Tr(peer_video_paused_ ? "call.placeholder.camera_paused" : "call.placeholder.camera_off").c_str();
   } else if (mesh_messaging_failed) {
     in_call.remote_placeholder = Tr("call.status.couldnt_connect").c_str();
   } else if (media_reconnect) {
@@ -1479,6 +1533,17 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   }
 
   ApplyMediaHealth(media, backend, media_reconnect || mesh_messaging_failed);
+  if (on_hold && !mesh_messaging_failed && !path_lost) {
+    // Silence by design, not a broken path: no "no audio" hint, and the line says why.
+    in_call.quality_hint = "";
+    if (local_on_hold_) {
+      in_call.subtitle = Tr("call.status.on_hold_local").c_str();
+    } else if (const std::string name = DisplayNameForIdentity(presenter_.Screen().peer_identity); !name.empty()) {
+      in_call.subtitle = Tr("call.status.on_hold_peer_named", {{"name", name}}).c_str();
+    } else {
+      in_call.subtitle = Tr("call.status.on_hold_peer").c_str();
+    }
+  }
 }
 
 CallMediaHealthView CallController::BuildMediaHealthView(IMediaView& media, CallUiBackend* backend,

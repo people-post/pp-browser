@@ -1831,6 +1831,20 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalAudioMuted(false); }));
   EXPECT_FALSE(media_->IsMuted());
 
+  // The OS took the call's audio (a phone call): the others are told it is on hold here, then that it is back.
+  const int before_hold = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(true); }));
+  EXPECT_TRUE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  EXPECT_GT(sent_control_messages_, before_hold) << "hold should fan-out CallRoster";
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalOnHold(false); }));
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.on_hold);
+  // No camera on: the background pauses nothing (and says nothing).
+  const int before_pause = sent_control_messages_;
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(true, 0); }));
+  EXPECT_FALSE(sessions_->FindParticipant(call_id, local_identity_).value()->media.video_paused);
+  EXPECT_EQ(sent_control_messages_, before_pause);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->SetLocalVideoPaused(false, 0); }));
+
   // Camera may fail headless — gate must still accept video_allowed before device open.
   auto enable = OnCallsOwner([&] { return csm_->SetLocalVideoEnabled(true, 0); });
   if (enable) {

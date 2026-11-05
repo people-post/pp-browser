@@ -1426,3 +1426,20 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Alternatives rejected:** A draggable floating self-view in 1:1 (a strip card does the job with one layout); tap-the-spotlight-to-leave (see 1).
 
+## V060 — A call says when it is on hold or its camera is paused
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05: an interrupted / on-hold state, and telling the other side when the camera stops because the app went to the background). Implemented: `AudioSession::NotifyInterruptionBegan` / `IsInterrupted`, `CallSessionManager::SetLocalOnHold` / `SetLocalVideoPaused`, `CallController::SyncLocalHold` / `OnAppBackground`.
+
+**Context:** A phone call, Siri or another app's call takes a call's audio (iOS interrupts the session, Android takes the audio focus). The microphone gives silence; the other side saw "Reconnecting…" or "no audio from them" for a call that was fine, and the capture loop counted the silence toward giving up voice processing (three reopens turn echo cancellation off for the rest of the call). In the background the OS stops the camera; the other side saw the picture freeze, then "Reconnecting…".
+
+**Decision:**
+1. **On hold.** `AudioSession` keeps whether the OS has the live session: from an interruption's start (iOS `AVAudioSessionInterruptionTypeBegan`; Android a loss of the call's audio focus, not a duck) to its end (iOS: the end, a media services reset, or the app active again with the session free — iOS does not always send the end; Android: the focus back), or the session's end. Meanwhile a starved capture is not a broken device: no reopen, none counted. The screen's tick reads it and the call tells the others (`SetLocalOnHold`).
+2. **Camera paused.** On mobile, a call whose camera is on turns it off when the app goes to the background and on again when it comes back (`SetLocalVideoPaused`): the device is closed properly instead of starved, and reopens cleanly.
+3. **The roster carries both**, beside mute and camera: `on_hold` and `video_paused` in a roster row (`CallRosterEntry`, `CallParticipantMedia`, the store's `call_participants`), sent only when set. A paused camera also sends `video_enabled: false`, so an older app shows "Camera off"; an older app ignores `on_hold`. One mechanism for 1:1 and group calls (V058: group calls ride the roster).
+4. **The other side shows it.** 1:1: "On hold on {name}'s side" in place of the timer, "On hold" or "Camera paused" on the video stage; while either side is on hold, only a lost path reads "Reconnecting…", and no "no audio" hint shows. The side on hold reads "On hold: another call has your microphone".
+
+**Later:** group tiles showing a member on hold; Android Telecom (`ConnectionService`) for the system's hold; a camera in the background (Android's camera foreground service, iOS multitasking camera access) where a platform allows it.
+
+**Alternatives rejected:** the call-media heartbeat (500 ms, already on every 1:1 path): it has no group path, and the state would need plumbing through every layer between the coordinator and the screen; the roster already goes there. Muting instead of holding: the user's own mute is theirs to undo, and the other side could not tell the two apart.
+

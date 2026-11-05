@@ -43,7 +43,7 @@ public:
   bool InGroup(const std::string& group_id, const std::string& identity) const;
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
-  Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+  Roe<std::optional<CallParticipantMedia>> PeerMediaForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   /**
    * True while a remote we invited is joined only through an implicit accept (B30): its CallAccept —

@@ -99,7 +99,27 @@ public class MainActivity extends SDLActivity {
     /** A secret is on screen (native SecureScreen): no screenshot of it anywhere, ours included. */
     private volatile boolean mSecureScreen;
     private AudioFocusRequest mCallAudioFocusRequest;
-    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> { };
+    /**
+     * A phone call (or another app's call) takes the call's audio focus: the call is interrupted until focus is back
+     * (native AudioSession: its peer is told it is on hold, and its devices reopen at the end). A duck is not a loss.
+     */
+    private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> {
+        if (focusChange == AudioManager.AUDIOFOCUS_LOSS || focusChange == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+            onCallAudioFocus(true);
+        } else if (focusChange == AudioManager.AUDIOFOCUS_GAIN) {
+            onCallAudioFocus(false);
+        }
+    };
+
+    private static native void nativeOnCallAudioFocus(boolean lost);
+
+    private static void onCallAudioFocus(boolean lost) {
+        Log.i(TAG, lost ? "call audio focus lost" : "call audio focus back");
+        try {
+            nativeOnCallAudioFocus(lost);
+        } catch (UnsatisfiedLinkError ignored) {
+        }
+    }
 
     /** App appearance preference from native Theme ("system" / "light" / "dark"). */
     private volatile String mAppAppearance = "system";

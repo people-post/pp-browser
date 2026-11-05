@@ -97,6 +97,9 @@ public:
   void SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done = {});
   /** Reads the display rotation here, on UI (L012), and hands it to the owner. */
   void SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done = {});
+  /** CallSessionManager::SetLocalOnHold / SetLocalVideoPaused (the rotation read here, as for the camera). */
+  void SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done = {});
+  void SetLocalVideoPaused(bool paused, std::function<void(Roe<void>)> on_done = {});
 
   // --- Durable state (stores, read-only) ---------------------------------------------------------
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
@@ -113,7 +116,8 @@ public:
   /** JoinableCallInThread with its voice / video mode and how many have joined (none: nothing to join). */
   std::optional<JoinableCallInfo> JoinableCallInfoInThread(const std::string& thread_id) const;
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
-  Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
+  /** The 1:1 peer's media row from the roster (camera, hold, paused); none before the peer is known. */
+  Roe<std::optional<CallParticipantMedia>> PeerMediaForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;

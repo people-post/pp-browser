@@ -39,6 +39,9 @@ class CallUiBackend;
 class CallController : public Module {
 public:
   CallController();
+  ~CallController();
+  CallController(const CallController&) = delete;
+  CallController& operator=(const CallController&) = delete;
 
   void BindCallPorts(CallFunctionalPorts ports);
   /** Open people-picker flows without PeoplePickerController::Instance(). Clear via BindPeoplePickerNotify({}). */
@@ -205,6 +208,19 @@ private:
   std::string peer_video_log_key_;
   /** When this video call started waiting for the peer's first frame (0: not yet). */
   int64_t video_start_since_ms_ = 0;
+  /** The OS has this device's call audio (AudioSession::IsInterrupted), as last told to the call (on hold). */
+  bool local_on_hold_ = false;
+  /** Tells the call when the OS takes this device's call audio or gives it back (each tick). */
+  void SyncLocalHold();
+  /** The app went to the background in a call with the camera on: the camera is paused until it is back. */
+  bool video_paused_ = false;
+  void OnAppBackground();
+  void OnAppForeground();
+  uint64_t background_listener_ = 0;
+  uint64_t foreground_listener_ = 0;
+  /** The peer's roster says they are on hold / their camera is paused (this frame). */
+  bool peer_on_hold_ = false;
+  bool peer_video_paused_ = false;
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
   /** Last chrome applied — idle poll must not remount when unchanged. */
