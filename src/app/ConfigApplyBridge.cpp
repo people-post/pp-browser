@@ -1,6 +1,7 @@
 #include "app/ConfigApplyBridge.h"
 
 #include "feature/product/HubSettingsProjection.h"
+#include "foundation/platform/ILocalNotifier.h"
 
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -73,6 +74,7 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
   if (!last_notifications_ || notifications != *last_notifications_) {
     last_notifications_ = notifications;
     messaging_->Apply(notifications);
+    ILocalNotifier::Instance().SetMessageBannersOn(notifications.show_notifications);
   }
 
   const ShellHost::ChromePrefs chrome = ShellHost::ProjectChrome(prefs);

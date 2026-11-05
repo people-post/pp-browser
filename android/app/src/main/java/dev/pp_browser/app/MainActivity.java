@@ -1,9 +1,11 @@
 package dev.pp_browser.app;
 
+import android.Manifest;
 import android.app.ActivityManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
@@ -81,6 +83,14 @@ public class MainActivity extends SDLActivity {
     private static final long PIXEL_COPY_TIMEOUT_MS = 80;
     private static final String CHANNEL_MESSAGES = "messages";
     private static final String PREFS = "pp_browser_device";
+    /** Me → Show notifications, kept here for a push that comes while the app is not running. */
+    private static final String PREF_MESSAGE_BANNERS = "message_banners_on";
+    /** The "New message" a push posts while the app is not running (it cannot say who or what). */
+    private static final int PUSH_MESSAGE_NOTIFICATION_ID = 0x5052;
+    /** Our own permission request (SDL's and the camera flow's codes go to them). */
+    private static final int REQ_NOTIFICATIONS = 0x5053;
+    /** Between onResume and onPause: a call push is rung by the app itself. */
+    private static volatile boolean sInFront;
 
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
@@ -171,6 +181,56 @@ public class MainActivity extends SDLActivity {
         InboxSyncWorker.schedule(this, true);
         PpLinkBridge.deliver(getIntent());
         PpCameraCapture.clearScratch(this);
+        PpCallNotifications.init(this);
+        if (savedInstanceState == null) {
+            PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
+        }
+        PpFirebaseMessagingService.requestToken();
+        requestNotificationPermission();
+    }
+
+    /** Like iOS at launch: calls ring by notification, and messages show by it. Android 13+ asks. */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+    }
+
+    /** The app's native side is running (its SDL main thread). */
+    static boolean isAppRunning() {
+        final Thread thread = mSDLThread;
+        return thread != null && thread.isAlive() && !mSDLMainFinished;
+    }
+
+    static boolean isAppInFront() {
+        return sInFront && isAppRunning();
+    }
+
+    /** A message push while the app is not running: "New message", unless Me → Show notifications is off. */
+    static void showPushMessageNotification(Context context) {
+        final Context c = context.getApplicationContext();
+        if (!c.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_MESSAGE_BANNERS, true)) {
+            return;
+        }
+        ensureMessagesChannel(c);
+        Intent open = new Intent(c, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(
+                c, PUSH_MESSAGE_NOTIFICATION_ID, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(c, CHANNEL_MESSAGES)
+                .setSmallIcon(android.R.drawable.stat_notify_chat)
+                .setContentTitle(c.getString(R.string.message_incoming_title))
+                .setContentText(c.getString(R.string.message_incoming_body))
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH);
+        try {
+            NotificationManagerCompat.from(c).notify(PUSH_MESSAGE_NOTIFICATION_ID, builder.build());
+        } catch (SecurityException e) {
+            Log.w(TAG, "message notification refused: " + e);  // notifications not allowed
+        }
     }
 
     /** Called from native (CameraCapture_Android.cpp) from any thread: opens the system camera. */
@@ -201,6 +261,9 @@ public class MainActivity extends SDLActivity {
     /** Same rule: SDL's call permission requests depend on super for every code that is not ours. */
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_NOTIFICATIONS) {
+            return;  // nothing waits on it: notifications are posted or refused as they come
+        }
         if (PpCameraCapture.onPermissionsResult(this, requestCode, grantResults)) {
             return;
         }
@@ -212,10 +275,12 @@ public class MainActivity extends SDLActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         PpLinkBridge.deliver(intent);
+        PpCallNotifications.onActivityIntent(intent);
     }
 
     @Override
     protected void onDestroy() {
+        PpCallNotifications.appGone();
         uninstallKeyboardSafeAreaPublisher();
         if (mPixelCopyThread != null) {
             mPixelCopyThread.quitSafely();
@@ -465,12 +530,16 @@ public class MainActivity extends SDLActivity {
     protected void onResume() {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
+        sInFront = true;
+        // The app is open: what the push's "New message" stood for shows in the app.
+        NotificationManagerCompat.from(this).cancel(PUSH_MESSAGE_NOTIFICATION_ID);
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
         mKeyboardProbeHandler.post(mKeyboardProbeRunnable);
     }
 
     @Override
     protected void onPause() {
+        sInFront = false;
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
         captureRecentsThumbnailOnce();
         super.onPause();
@@ -858,6 +927,36 @@ public class MainActivity extends SDLActivity {
         NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
     }
 
+    /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
+    public void setMessageBannersOn(boolean on) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_MESSAGE_BANNERS, on).apply();
+    }
+
+    // Called from native AndroidCallSystemUi (the app's UI thread): the incoming-call notification.
+    public boolean callNotificationsAvailable() {
+        return PpCallNotifications.available();
+    }
+
+    public boolean hasPendingPushCall() {
+        return PpCallNotifications.hasPendingPushCall();
+    }
+
+    public void callMessagingReady() {
+        PpCallNotifications.messagingReady();
+    }
+
+    public void endPendingPushCall() {
+        PpCallNotifications.endPendingPushCall();
+    }
+
+    public void showIncomingCall(String callId, String callerName, boolean video) {
+        PpCallNotifications.showIncoming(callId, callerName, video);
+    }
+
+    public void endIncomingCall(String callId) {
+        PpCallNotifications.endIncoming(callId);
+    }
+
     public void clearLocalNotification(String threadId) {
         int req = threadId == null || threadId.isEmpty() ? 1 : threadId.hashCode();
         NotificationManagerCompat.from(this).cancel(req);
@@ -911,13 +1010,17 @@ public class MainActivity extends SDLActivity {
     }
 
     private void ensureNotificationChannel() {
+        ensureMessagesChannel(this);
+    }
+
+    private static void ensureMessagesChannel(Context c) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("Incoming chat messages");
-        NotificationManager nm = getSystemService(NotificationManager.class);
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm != null) {
             nm.createNotificationChannel(channel);
         }

@@ -105,3 +105,16 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Depends on:** a call holds the app's work running in the background (P010 amendment, 2026-10-23) — a call answered on the lock screen goes on with the app never opened.  
 **Cross-link:** `CallSystemUi.h`, `CallSystemUi_Ios.mm`, `call_system_ui_bridge_test.cpp`; relay `planPushWakes` (www).
 
+## P014 — Android rings by its own incoming-call notification; a push reaches a stopped app
+
+**Date:** 2026-11-05  
+**Status:** Accepted (product owner: notification permission, push for a killed app, full-screen call notification)  
+**Decision:** Android gets the phone's own call screen that P013 gave iPhones, built from what Android has: an incoming-call notification (`PpCallNotifications.java`, native `AndroidCallSystemUi`, the same `ICallSystemUi` and `CallSystemUiBridge`).
+- **Ring:** a ring the app does not show itself (in the background, or a push's call waiting) goes to the notification: the calls channel's ringtone until it is answered or gone (the app's own ringtone stays quiet), full screen on a locked phone, Answer / Decline on it (the system's call style from Android 12; plain buttons before, or where the system refuses it). Decline works on the lock screen; Answer opens the app (Android asks for the phone's unlock first). The app is not shown over the lock screen: the call, and the chats behind it, wait for the phone's unlock.
+- **Push with the app stopped:** the push starts the process, not the app. A `call_wake` rings "Incoming call" (no caller: the push carries none, P001) and its full-screen notification starts the app, which syncs and fills the call in with the ring it finds. This is the push's call of P013, with its timeouts: 75 s unanswered while the app cannot find rings (not running, or PIN-locked, P003), 20 s (45 s answered) once it can, never more than 3 min. Answered or declined before the ring is known, the choice applies to the ring, as on CallKit. With the app running in the background the same "Incoming call" rings at once, and the app is woken to sync; in front, the app rings itself. An `inbox_wake` with the app stopped shows a generic "New message" (P003's wording), unless Me → Show notifications is off; the setting is kept for this beside the app (`ILocalNotifier::SetMessageBannersOn`). The app running, it syncs and shows what came, as before.
+- **Token:** the app asks Firebase for its current token at each start. `onNewToken` alone came once, mostly before the native side was loaded, and was lost.
+- **Permission:** Android 13+ asks for notifications at the app's start, as iOS does.
+
+**Rationale:** on Android a call to a phone whose app was swiped away, or killed by the system, rang nowhere (the wake reached no native code), and a ring in the background was an ordinary banner. A call should ring like a call, and a stopped app is the common case on phones.  
+**Follow-ups:** an in-call foreground service (microphone and camera in the background, Android 14+); Android's Telecom (`ConnectionService`) for the system's call routing and Bluetooth answer.  
+**Cross-link:** `PpCallNotifications.java`, `AndroidCallSystemUi.cpp`, `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), P013.
