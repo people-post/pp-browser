@@ -29,7 +29,8 @@ Roe<std::string> CallControlClient::LocalRelayIdentity() const {
 }
 
 Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const CallControlType type,
-                                        const std::string& detail_json, const std::string& display) {
+                                        const std::string& detail_json, const std::string& display,
+                                        const bool urgent_allowed) {
   if (!delivery_.send_control) {
     return Error("Call delivery not bound");
   }
@@ -49,7 +50,7 @@ Roe<void> CallControlClient::SendDirect(const std::string& peer_identity, const 
     }
   }
   // A call invite rings: the relay wakes the peer as for an incoming call (P012).
-  const bool urgent = type == CallControlType::CallInvite;
+  const bool urgent = urgent_allowed && type == CallControlType::CallInvite;
   if (auto sent = delivery_.send_control(peer_identity, *control, key_init, urgent); !sent) {
     return sent.error();
   }

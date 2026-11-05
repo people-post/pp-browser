@@ -265,7 +265,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
 
 
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
-                                                 const std::vector<std::string>& co_invitees) {
+                                                 const std::vector<std::string>& co_invitees,
+                                                 const bool reply_to_join) {
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -289,7 +290,10 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   const std::string display =
       (*session)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
   // Wire first — do not leave Ringing/pending debris if send fails.
-  if (auto sent = host_.wire.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
+  // A reply to a join request is answered silently by the joiner: no push, or iOS shows an orphan call.
+  if (auto sent =
+          host_.wire.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display, !reply_to_join);
+      !sent) {
     return sent;
   }
   if (auto recorded = RecordInviteSent(**session, *invite); !recorded) {
@@ -583,7 +587,7 @@ Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& cal
   if (!detail) {
     return detail.error();
   }
-  if (auto sent = host_.wire.send_direct(inviter, CallControlType::CallAccept, *detail, "Call accepted"); !sent) {
+  if (auto sent = host_.wire.send_direct(inviter, CallControlType::CallAccept, *detail, "Call accepted", true); !sent) {
     log().warning << "CallAccept send failed call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
   }
@@ -687,7 +691,7 @@ void CallSessionWorkflow::SendRosterAfterAccept(const workflow_event::RosterAfte
     if (auto roster = host_.wire.build_roster_detail(after.call_id); roster) {
       if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
         if (host_.wire.send_direct) {
-          (void)host_.wire.send_direct(after.inviter, CallControlType::CallRoster, *roster_json, "Call roster");
+          (void)host_.wire.send_direct(after.inviter, CallControlType::CallRoster, *roster_json, "Call roster", true);
         }
         if (host_.wire.fan_out_joined_and_ringing) {
           (void)host_.wire.fan_out_joined_and_ringing(after.call_id, CallControlType::CallRoster, *roster_json,
@@ -757,7 +761,7 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
     return Error("Call session workflow host ports not bound");
   }
   if (auto sent = host_.wire.send_direct((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
-                                    "Call declined");
+                                    "Call declined", true);
       !sent) {
     return sent.error();
   }
@@ -831,7 +835,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
       continue;
     }
     (void)key_exchange_.Send(call_id, peer, *key);
-    (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster");
+    (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster", true);
   }
   media_key_resends_[call_id] = MediaKeyResend{key->epoch, util::NowUnixMs(), 0};
   return {};
@@ -1338,7 +1342,7 @@ bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, con
     decline.identity = local_identity;
     if (auto encoded = CallControlCodec::EncodeDecline(decline)) {
       (void)host_.wire.send_direct(sender_identity, CallControlType::CallDecline, *encoded,
-                                   "Call declined (offer too low)");
+                                   "Call declined (offer too low)", true);
     }
     return true;
   }
@@ -1948,7 +1952,7 @@ Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detai
     return {};
   }
   log().info << "Join request call_id=" << request->call_id << " from=" << sender_identity << " — inviting";
-  return InviteParticipant(request->call_id, sender_identity);
+  return InviteParticipant(request->call_id, sender_identity, {}, /*reply_to_join=*/true);
 }
 
 bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std::string& identity) const {

@@ -221,7 +221,7 @@ protected:
 
     CallDeliveryPorts delivery;
     delivery.send_control = [this](const std::string& peer, const ThreadMessage& control,
-                                   const std::optional<std::string>& /*key_init*/, bool /*urgent*/) -> Roe<void> {
+                                   const std::optional<std::string>& /*key_init*/, bool urgent) -> Roe<void> {
       if (fail_sends_ || peer == unreachable_peer_) {
         return Error("offline (test)");
       }
@@ -234,6 +234,8 @@ protected:
           last_sent_accept_payload_ = msg.payload_json;
         } else if (type == "call_roster") {
           ++sent_rosters_;
+        } else if (type == "call_invite") {
+          invite_urgent_.push_back(urgent);
         }
       }
       return {};
@@ -430,6 +432,8 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  /** `urgent` of every CallInvite put on the wire, in order. */
+  std::vector<bool> invite_urgent_;
   std::vector<ThreadMessage> summaries_;
 };
 
@@ -1643,8 +1647,35 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
   ASSERT_TRUE(self && self->has_value());
   EXPECT_EQ((*self)->state, CallParticipantState::Joined);
   EXPECT_GE(sent_control_messages_, 1);
+  EXPECT_EQ(invite_urgent_, std::vector<bool>{true}) << "an ordinary invite wakes the peer";
   auto key = keys_->LoadEpochKey(started->call_id, 1);
   ASSERT_TRUE(key && key->has_value());
+}
+
+// The joiner answers this invite on its own, so it must not ring (or push) the joiner's device.
+TEST_F(CallSessionInboundComposeTest, InviteAnsweringAJoinRequestIsNotUrgent) {
+  Thread thread;
+  thread.id = "thread-dm-join";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+  auto started = OnCallsOwner([&] { return csm_->StartCall(thread.id, false, {"account:peer"}); });
+  ASSERT_TRUE(started) << started.error().message;
+  ASSERT_EQ(invite_urgent_.size(), 1u);
+
+  CallJoinRequestDetail request;
+  request.call_id = started->call_id;
+  request.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeJoinRequest(request);
+  ASSERT_TRUE(detail) << detail.error().message;
+  auto msg = CallControlCodec::BuildSystemMessage("thread:inbox", CallControlType::CallJoinRequest, "Joining the call",
+                                                  *detail, "account:peer");
+  ASSERT_TRUE(msg) << msg.error().message;
+  auto applied = OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); });
+  ASSERT_TRUE(applied) << applied.error().message;
+  ASSERT_EQ(invite_urgent_.size(), 2u) << "the join request was not answered with an invite";
+  EXPECT_FALSE(invite_urgent_[1]);
 }
 
 // PR #240 review: a new call whose invites cannot go out must leave the current call alone, and must

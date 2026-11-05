@@ -40,7 +40,7 @@ public:
   struct WirePorts {
     std::function<Roe<std::string>()> local_relay_identity;
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
-                            const std::string& display)>
+                            const std::string& display, bool urgent)>
         send_direct;
     /** The same signaling to each of `peers`, best-effort, off this loop (V058 2). */
     std::function<void(const std::vector<std::string>& peers, CallControlType type, const std::string& detail,
@@ -252,7 +252,7 @@ private:
    * invitee sees the whole invite list (V050), not the part sent before it.
    */
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
-                              const std::vector<std::string>& co_invitees);
+                              const std::vector<std::string>& co_invitees, bool reply_to_join = false);
   /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);
