@@ -451,6 +451,10 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
+    // AI conversations never count as unread (the assistant's answer to your own question is not a waiting message).
+    if (thread.kind == ThreadKind::Ai) {
+      continue;
+    }
     total += thread.unread_count;
   }
   return total;

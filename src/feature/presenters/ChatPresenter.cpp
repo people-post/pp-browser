@@ -341,6 +341,10 @@ void ChatPresenter::Refresh() {
     // AI conversations live on the AI 助手 page, not the 聊天 list; an AI thread with no readable content yet
     // (not `listed`) shows nowhere until its first message. Human chats stay in `rows`.
     if (thread.kind == ThreadKind::Ai) {
+      // An AI conversation never carries an "unread" badge: its answer is to your own question, read as it arrives,
+      // not a message from someone else waiting to be seen (Kenneth 2026-11-05).
+      row.unread_count = 0;
+      row.unread_dot = false;
       if (thread.listed) {
         next.ai_rows.push_back(std::move(row));
       }

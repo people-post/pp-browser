@@ -124,6 +124,27 @@ TEST(InboxControllerUnreadTest, AnAnswerToTheActiveThreadCountsWhenItsPageIsNotS
   EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 0);
 }
 
+TEST(InboxControllerUnreadTest, AiThreadsDoNotCountTowardSumUnread) {
+  // Kenneth 2026-11-05: an AI conversation never shows as unread (the assistant's answer to your own question is not
+  // a waiting message), so it must not add to the unread total that drives the nav badge.
+  InboxTestEnv env("unread_ai_excluded_test");
+  ASSERT_TRUE(env.inbox->ListThreads());
+  Thread direct;
+  direct.id = "thread-direct-x";
+  direct.kind = ThreadKind::Direct;
+  direct.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(direct));
+  env.inbox->IncrementUnread(direct.id);
+  Thread ai;
+  ai.id = "thread-ai-x";
+  ai.kind = ThreadKind::Ai;
+  ai.updated_at = 2;
+  ASSERT_TRUE(env.store->UpsertThread(ai));
+  env.inbox->IncrementUnread(ai.id, 3, /*even_if_active=*/true);
+  EXPECT_EQ((*env.store->GetThread(ai.id))->unread_count, 3);
+  EXPECT_EQ(env.inbox->SumUnread(), 1) << "only the human chat counts; the AI thread's unread is excluded";
+}
+
 TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   InboxTestEnv env("unread_inbound_test");
   ASSERT_TRUE(env.inbox->ListThreads());
