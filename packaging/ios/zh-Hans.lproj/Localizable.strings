@@ -4,3 +4,5 @@
 /* The relay's new-message alert: generic by design, never names the sender or the content. */
 "MESSAGE_INCOMING_TITLE" = "新消息";
 "MESSAGE_INCOMING_BODY" = "你有一条新消息";
+/* Over the app while the recovery phrase shows and the screen is recorded or mirrored (SecureScreen_Ios.mm). */
+"SECRET_HIDDEN_WHILE_CAPTURED" = "屏幕录制或共享时已隐藏";

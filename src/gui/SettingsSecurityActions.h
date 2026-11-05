@@ -36,6 +36,8 @@ public:
   void Bind(ui::DataModelConstructor& ctor);
   /** The Send diagnostics button's label and the last-sent line, read again (on opening the section). */
   void RefreshDiagnostics();
+  /** The recovery phrase is on screen now (shown, not yet hidden). */
+  bool RecoveryPhraseShown() const { return !recovery_phrase_.empty(); }
 
 private:
   void ChangePin();

@@ -26,4 +26,9 @@ void SetSecretOnScreen(const bool on) {
   env->DeleteLocalRef(activity);
 }
 
+/** FLAG_SECURE already keeps every copy of the window out, legible or not. */
+void SetSecretLegible(const bool on) {
+  (void)on;
+}
+
 } // namespace pbr::SecureScreen

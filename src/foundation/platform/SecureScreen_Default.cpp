@@ -6,4 +6,8 @@ void SetSecretOnScreen(const bool on) {
   (void)on;
 }
 
+void SetSecretLegible(const bool on) {
+  (void)on;
+}
+
 } // namespace pbr::SecureScreen
