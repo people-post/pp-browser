@@ -1,7 +1,7 @@
 #pragma once
 
-#include <unordered_map>
-
+#include "gui/CallActiveSpeaker.h"
+#include "gui/CallSpotlight.h"
 #include "gui/CallAudioFaultToastGate.h"
 #include "gui/CallMetricsTracker.h"
 #include "gui/UiLatencyProbe.h"
@@ -17,6 +17,7 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 
+#include <unordered_map>
 #include <chrono>
 #include <memory>
 #include <cstdint>
@@ -91,6 +92,10 @@ public:
   void MinimizeChrome();
   void ExpandChrome();
   void ImmersiveChrome();
+  /** V059: spotlight a roster row (its stream_id) in Immersive; back to the grid; toggle fill / fit. */
+  void SpotlightParticipant(const std::string& stream_id);
+  void SpotlightGrid();
+  void ToggleSpotlightFill();
   void RestoreChromeFromMinimized();
   void SetMinimizedCorner(int corner);
   CallChromeMode ChromeMode() const { return chrome_mode_; }
@@ -121,6 +126,8 @@ private:
   void HideInCallChrome();
   void ApplyChromeModeToState(CallInProgressState& in_call);
   void ApplyAudioLevels(IMediaView& media);
+  /** Once per media view: its new video frames wake the frame loop (at most every kVideoWakeMinIntervalMs). */
+  void BindVideoFrameWake(IMediaView& media);
   void RefreshCallLevels();
   void SyncRingtone();
   /**
@@ -168,6 +175,11 @@ private:
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
   int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
+  /** The last self-view / peer frame sent to the screen (call.summary shown_*_fps counts new ones). */
+  uint64_t last_shown_self_seq_ = 0;
+  /** The media view whose frames wake the loop (BindVideoFrameWake). */
+  IMediaView* video_wake_bound_ = nullptr;
+  uint64_t last_shown_peer_seq_ = 0;
   /** Operational metrics for the current call (Metrics channel; no identities). */
   CallMetricsTracker metrics_;
   UiLatencyProbe ui_probe_;
@@ -196,6 +208,15 @@ private:
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeSyncGate chrome_gate_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
+  /** V059: the user's spotlight choice and the spotlit tile's fill, for the shown call (reset per call). */
+  CallSpotlightChoice spotlight_choice_;
+  /** Group calls: who is speaking, for the spotlight when nobody chose (V059). */
+  CallActiveSpeaker active_speaker_;
+  bool spotlight_fill_ = true;
+  void ApplySpotlightToState(CallInProgressState& in_call);
+  void ResyncSpotlight();
+  /** Group calls: feed the active speaker each frame; a new one moves the spotlight (unless someone chose). */
+  void NoteActiveSpeaker(const MediaEngineHealth& engine, int64_t now_ms);
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;
   int minimized_corner_ = 0;

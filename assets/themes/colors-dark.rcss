@@ -1252,12 +1252,14 @@ input.checkbox:checked {
   image-color: #ffffff;
 }
 
-.shell-call-expand {
+.shell-call-expand,
+.shell-call-grid {
   background-color: #7878805c;
   color: #ffffff;
 }
 
-.shell-call-expand svg {
+.shell-call-expand svg,
+.shell-call-grid svg {
   image-color: #ffffff;
 }
 

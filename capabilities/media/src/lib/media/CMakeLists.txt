@@ -66,7 +66,7 @@ elseif(ANDROID)
   target_sources(pp_lib_media PRIVATE
     VideoCodec_Android.cpp
     CameraCandidates_Default.cpp
-    DeviceVitals_Default.cpp
+    DeviceVitals_Android.cpp
     ThreadCpu_Default.cpp
     MediaThreadName_Default.cpp
     AudioSession_Android.cpp

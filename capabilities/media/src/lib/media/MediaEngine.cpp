@@ -86,10 +86,12 @@ constexpr int kPlayoutMaxSlotsPerTick = 3;
 // fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
 constexpr int kVideoFps = 15;
 /**
- * The camera runs at twice that: every frame goes to the self-view, and a frame is encoded when a send interval has
- * passed (every second one at 30 fps). Sending is unchanged; the self-view is not held to the send rate.
+ * The camera runs at the send rate: every frame it gives is sent and shown in the self-view. A faster camera (30 fps
+ * was tried) costs the sensor's power and converts frames only the self-view shows; at 15 fps, drawn as each frame
+ * comes (IMediaView::SetOnVideoFrame), the self-view is smooth enough. A frame is still encoded only once a send
+ * interval has passed, so a camera that gives more than it was asked for is sent at the send rate.
  */
-constexpr int kCameraFps = 30;
+constexpr int kCameraFps = kVideoFps;
 /** A frame is encoded once this long has passed since the last encode (a send period, less camera jitter). */
 constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8);
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
@@ -234,6 +236,9 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
  */
 struct MediaEngine::Shared {
   std::mutex mu;
+  /** SetOnVideoFrame's callback (every session's frames); called after a frame is published, outside its lock. */
+  std::mutex on_video_frame_mu;
+  std::function<void()> on_video_frame;
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -439,6 +444,16 @@ struct MediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
+  void NotifyVideoFrame() {
+    std::function<void()> cb;
+    {
+      std::lock_guard lock(shared->on_video_frame_mu);
+      cb = shared->on_video_frame;
+    }
+    if (cb) {
+      cb();
+    }
+  }
   /** Facing the next camera open asks for: front at each session's start, turned over by FlipCamera. */
   std::atomic<bool> camera_prefer_front{true};
   /** FlipCamera asked the video thread to release the open camera and take the other facing. */
@@ -520,11 +535,14 @@ struct MediaEngine::Impl {
       MirrorRgbaInPlace(copy);
     }
     PremultiplyRgbaInPlace(copy.rgba);
-    std::lock_guard lock(video_frame_mutex);
-    local_video_frame.width = copy.width;
-    local_video_frame.height = copy.height;
-    local_video_frame.rgba = std::move(copy.rgba);
-    local_video_frame.seq = ++local_video_seq;
+    {
+      std::lock_guard lock(video_frame_mutex);
+      local_video_frame.width = copy.width;
+      local_video_frame.height = copy.height;
+      local_video_frame.rgba = std::move(copy.rgba);
+      local_video_frame.seq = ++local_video_seq;
+    }
+    NotifyVideoFrame();
   }
 
   /**
@@ -572,6 +590,11 @@ struct MediaEngine::Impl {
   }
 
   void PublishRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
+    StoreRemoteFrame(stream_id, std::move(frame));
+    NotifyVideoFrame();
+  }
+
+  void StoreRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
     PremultiplyRgbaInPlace(frame.rgba);
     const int64_t now = util::NowUnixMs();
     std::lock_guard lock(video_frame_mutex);
@@ -2577,6 +2600,11 @@ float MediaEngine::LocalInputLevel() const {
 float MediaEngine::RemoteOutputLevel() const {
   const std::shared_ptr<Impl> impl = Session();
   return impl->remote_output_level.load(std::memory_order_relaxed);
+}
+
+void MediaEngine::SetOnVideoFrame(std::function<void()> on_frame) {
+  std::lock_guard lock(shared_->on_video_frame_mu);
+  shared_->on_video_frame = std::move(on_frame);
 }
 
 bool MediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {

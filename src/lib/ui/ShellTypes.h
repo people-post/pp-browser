@@ -335,6 +335,13 @@ struct CallInProgressState {
   int minimized_corner = 0;
   int participant_count = 0;
   std::vector<CallRosterParticipantState> roster;
+  /** Immersive's spotlit roster row (its stream_id; empty: the grid) — V059, CallSpotlight.h. */
+  ui::String spotlight_stream;
+  /** The spotlit tile covers the area, cropped (else the whole frame, letterboxed). Double-tap toggles. */
+  bool spotlight_fill = true;
+  /** With a spotlight: its row, and everyone else's for the strip (copies of roster rows). */
+  std::vector<CallRosterParticipantState> spotlight_rows;
+  std::vector<CallRosterParticipantState> strip_rows;
   ui::String call_id;
   ui::String title;
   ui::String subtitle;

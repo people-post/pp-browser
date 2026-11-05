@@ -333,15 +333,33 @@ app_lab_compose() {
     docker compose -p pp-app-lab "${files[@]}" "$@"
 }
 
-# The lab seed's address in the lab directory: it carries the seed's PeerId (#385).
+# The lab seeds' addresses in the lab directory: each carries its seed's PeerId (#385).
+lab_seed_peer() {
+  curl -fsS -m 2 "http://127.0.0.1:$1/status" 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin).get("peer_id",""))' 2>/dev/null || true
+}
+
 lab_hop_advertise() {
   local peer
-  peer="$(curl -fsS -m 2 http://127.0.0.1:18718/status 2>/dev/null |
-    python3 -c 'import json,sys; print(json.load(sys.stdin).get("peer_id",""))' 2>/dev/null || true)"
+  peer="$(lab_seed_peer 18718)"
   if [[ -n "${peer}" ]]; then
     export PP_APP_LAB_HOP_ADVERTISE="/ip4/198.51.100.10/udp/18517/adp/1.0.0/p2p/${peer}"
     export PP_APP_LAB_HOP_PUBLISH=true
   fi
+  peer="$(lab_seed_peer 18728)"
+  if [[ -n "${peer}" ]]; then
+    # Not published: only the two-hop rows know it (as a bootstrap seed), so the other scenarios see one seed.
+    export PP_APP_LAB_HOP2_ADVERTISE="/ip4/198.51.100.30/udp/18517/adp/1.0.0/p2p/${peer}"
+  fi
+}
+
+wait_lab_seeds() {
+  local i
+  for i in $(seq 1 60); do
+    curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 &&
+      curl -fsS -m 2 http://127.0.0.1:18728/healthz >/dev/null 2>&1 && return 0
+    sleep 1
+  done
 }
 
 run_app() {
@@ -362,18 +380,15 @@ run_app() {
   app_lab_compose "${args[@]}"
   local i
   for i in $(seq 1 60); do
-    curl -fsS -m 2 http://127.0.0.1:18719/healthz >/dev/null 2>&1 &&
-      curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
+    curl -fsS -m 2 http://127.0.0.1:18719/healthz >/dev/null 2>&1 && break
     sleep 1
   done
-  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" ]]; then
-    # A new seed has just minted its PeerId: start it again listed in the lab directory, as prod's are.
+  wait_lab_seeds
+  if [[ -z "${PP_APP_LAB_HOP_ADVERTISE:-}" || -z "${PP_APP_LAB_HOP2_ADVERTISE:-}" ]]; then
+    # A new seed has just minted its PeerId: start the seeds again listed in the lab directory, as prod's are.
     lab_hop_advertise
-    app_lab_compose up -d hop
-    for i in $(seq 1 60); do
-      curl -fsS -m 2 http://127.0.0.1:18718/healthz >/dev/null 2>&1 && break
-      sleep 1
-    done
+    app_lab_compose up -d hop hop2
+    wait_lab_seeds
   fi
   local nat_args=()
   if [[ "${APP_LAB_NAT}" -eq 1 ]]; then

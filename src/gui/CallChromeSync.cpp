@@ -54,8 +54,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
       synced.in_call_show_retry != next.in_call_show_retry ||
       synced.in_call_calling != next.in_call_calling ||
       synced.in_call_show_roster != next.in_call_show_roster ||
-      synced.in_call_stage_visible != next.in_call_stage_visible ||
-      synced.in_call_mode != next.in_call_mode ||
+      synced.in_call_stage_visible != next.in_call_stage_visible || synced.in_call_mode != next.in_call_mode ||
+      synced.in_call_spotlight != next.in_call_spotlight ||
+      synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
       synced.in_call_minimized_corner != next.in_call_minimized_corner ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {

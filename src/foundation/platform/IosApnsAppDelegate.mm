@@ -127,6 +127,8 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
   g_center_delegate = [[PpNotificationCenterDelegate alloc] init];
   // Set before launch finishes so a tap that launched the app is delivered.
   [UNUserNotificationCenter currentNotificationCenter].delegate = g_center_delegate;
+  // UIKit has no will-finish notification; this one is posted as SDL's
+  // application:didFinishLaunchingWithOptions: returns, where the work used to run.
   [[NSNotificationCenter defaultCenter]
       addObserverForName:UIApplicationDidFinishLaunchingNotification
                   object:nil

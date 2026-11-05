@@ -50,6 +50,10 @@ struct CallActionsPorts {
   std::function<void()> minimize_chrome;
   std::function<void()> expand_chrome;
   std::function<void()> immersive_chrome;
+  /** V059: Immersive's spotlight — a roster row's stream_id; back to the grid; toggle fill / fit. */
+  std::function<void(const std::string&)> spotlight_participant;
+  std::function<void()> spotlight_grid;
+  std::function<void()> spotlight_toggle_fill;
   std::function<void()> restore_chrome_from_minimized;
   std::function<void(int corner)> set_minimized_corner;
   std::function<void()> show_call_details;

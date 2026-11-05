@@ -4744,7 +4744,8 @@ call-video-tile {
   min-width: 44dp;
 }
 
-.shell-call-expand {
+.shell-call-expand,
+.shell-call-grid {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -4759,10 +4760,15 @@ call-video-tile {
   cursor: pointer;
 }
 
-.shell-call-expand svg {
+.shell-call-expand svg,
+.shell-call-grid svg {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+.shell-call-grid {
+  margin-right: 8dp;
 }
 
 .shell-call-chrome--dragging {
@@ -4937,6 +4943,77 @@ call-video-tile {
   gap: 6dp;
   margin-top: 8dp;
   min-height: 16dp;
+}
+
+/* V059 spotlight: one card fills the call area, the others line up in a strip below (a tap spotlights them). */
+.shell-call-immersive-spotlight {
+  flex-grow: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4dp 0 8dp 0;
+}
+
+.shell-call-peer-card--spotlit {
+  flex-grow: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8dp;
+}
+
+.shell-call-peer-card--spotlit .shell-call-peer-tile {
+  flex-grow: 1;
+  height: auto;
+  min-height: 160dp;
+  margin: 0 0 8dp 0;
+}
+
+.shell-call-peer-card--spotlit .shell-call-peer-avatar,
+.shell-call-peer-card--spotlit .shell-call-peer-avatar-image {
+  width: 96dp;
+  height: 96dp;
+  border-radius: 48dp;
+  margin: auto auto 12dp auto;
+}
+
+.shell-call-immersive-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 8dp;
+  overflow-x: auto;
+  padding: 0 0 8dp 0;
+}
+
+.shell-call-peer-card--strip {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: 112dp;
+  min-width: 112dp;
+  padding: 6dp;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-tile {
+  height: 72dp;
+  margin: 0 0 4dp 0;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-avatar,
+.shell-call-peer-card--strip .shell-call-peer-avatar-image {
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  margin: 0 auto 4dp auto;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-name {
+  font-size: 12dp;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-badges {
+  margin-top: 2dp;
 }
 
 .shell-call-immersive-controls {

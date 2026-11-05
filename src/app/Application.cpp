@@ -1220,6 +1220,11 @@ void Application::WireCalls() {
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
     call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
     call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };
+    call_actions.spotlight_participant = [this](const std::string& stream_id) {
+      call_->SpotlightParticipant(stream_id);
+    };
+    call_actions.spotlight_grid = [this]() { call_->SpotlightGrid(); };
+    call_actions.spotlight_toggle_fill = [this]() { call_->ToggleSpotlightFill(); };
     call_actions.restore_chrome_from_minimized = [this]() { call_->RestoreChromeFromMinimized(); };
     call_actions.set_minimized_corner = [this](int corner) { call_->SetMinimizedCorner(corner); };
     call_actions.show_call_details = [this]() { call_->ShowCallDetails(); };

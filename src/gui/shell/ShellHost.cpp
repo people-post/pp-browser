@@ -231,6 +231,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
+    ctor.Bind("call_in_progress_spotlight_rows", &host.state_.call_in_progress.spotlight_rows);
+    ctor.Bind("call_in_progress_strip_rows", &host.state_.call_in_progress.strip_rows);
     ctor.Bind("activity_visible", &host.state_.activity_visible);
     statusbar_.Bind(ctor);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
@@ -308,6 +310,21 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));
     ctor.BindEventCallback("call_expand", DataEvent<>([this]() { CallExpand(); }));
     ctor.BindEventCallback("call_immersive", DataEvent<>([this]() { CallImmersive(); }));
+    ctor.BindEventCallback("call_spotlight", DataEvent<std::string>([this](const std::string& stream_id) {
+                             if (call_actions_.spotlight_participant) {
+                               call_actions_.spotlight_participant(stream_id);
+                             }
+                           }));
+    ctor.BindEventCallback("call_spotlight_grid", DataEvent<>([this]() {
+                             if (call_actions_.spotlight_grid) {
+                               call_actions_.spotlight_grid();
+                             }
+                           }));
+    ctor.BindEventCallback("call_spotlight_fit", DataEvent<>([this]() {
+                             if (call_actions_.spotlight_toggle_fill) {
+                               call_actions_.spotlight_toggle_fill();
+                             }
+                           }));
     ctor.BindEventCallback("call_restore", DataEvent<>([this]() { CallRestore(); }));
     ctor.BindEventCallback("call_details", DataEvent<>([this]() { CallDetails(); }));
     ctor.BindEventCallback("titlebar_minimize", DataEvent<>([this]() { TitlebarMinimize(); }));
@@ -1047,6 +1064,8 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_show_flip");
   DataModelHost::Instance().Dirty("window", "call_in_progress_participant_count");
   DataModelHost::Instance().Dirty("window", "call_in_progress_roster");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_spotlight_rows");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_strip_rows");
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_bars");
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_ok");
   DataModelHost::Instance().Dirty("window", "call_in_progress_quality_warn");

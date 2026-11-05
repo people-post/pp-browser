@@ -18,6 +18,8 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -170,6 +172,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
       .in_call_mode = in_call.mode,
+      .in_call_spotlight = in_call.spotlight_stream.c_str(),
+      .in_call_spotlight_fill = in_call.spotlight_fill,
       .in_call_minimized_corner = in_call.minimized_corner,
       .in_call_quality_bars = in_call.quality_bars,
       .in_call_quality_ok = in_call.quality_ok,
@@ -342,6 +346,19 @@ void CallController::Tick() {
   }
 }
 
+void CallController::BindVideoFrameWake(IMediaView& media) {
+  if (video_wake_bound_ == &media) {
+    return;
+  }
+  video_wake_bound_ = &media;
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
+  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
+    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
+      Backend::RequestForceFrame();
+    }
+  });
+}
+
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
   // UIDevice / getrusage: every couple of seconds is plenty for power and thermal trends.
   if (vitals_read_ms_ == 0 || now_ms - vitals_read_ms_ >= 2000) {
@@ -483,6 +500,74 @@ void CallController::MinimizeChrome() {
 
 void CallController::ExpandChrome() {
   SetChromeMode(CallChromeMode::Expanded);
+}
+
+void CallController::ApplySpotlightToState(CallInProgressState& in_call) {
+  const std::string spotlit =
+      ResolveCallSpotlight(in_call.roster, in_call.show_roster, spotlight_choice_, active_speaker_.Current());
+  if (!spotlight_choice_.stream.empty() && spotlit != spotlight_choice_.stream) {
+    spotlight_choice_.stream.clear(); // they left the call
+  }
+  in_call.spotlight_stream = spotlit.c_str();
+  in_call.spotlight_fill = spotlight_fill_;
+  in_call.spotlight_rows.clear();
+  in_call.strip_rows.clear();
+  if (!spotlit.empty()) {
+    for (const CallRosterParticipantState& row : in_call.roster) {
+      (spotlit == row.stream_id.c_str() ? in_call.spotlight_rows : in_call.strip_rows).push_back(row);
+    }
+  }
+}
+
+void CallController::SpotlightParticipant(const std::string& stream_id) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, stream_id]() { SpotlightParticipant(stream_id); });
+    return;
+  }
+  spotlight_choice_.stream = stream_id;
+  spotlight_choice_.grid = false;
+  spotlight_fill_ = true;
+  ResyncSpotlight();
+}
+
+void CallController::SpotlightGrid() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { SpotlightGrid(); });
+    return;
+  }
+  spotlight_choice_ = {.grid = true};
+  ResyncSpotlight();
+}
+
+void CallController::ToggleSpotlightFill() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { ToggleSpotlightFill(); });
+    return;
+  }
+  spotlight_fill_ = !spotlight_fill_;
+  ResyncSpotlight();
+}
+
+void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const int64_t now_ms) {
+  if (!in_call_.show_roster) {
+    return; // 1:1: the peer is spotlit anyway
+  }
+  std::vector<std::pair<std::string, float>> levels;
+  levels.reserve(engine.streams.size());
+  for (const MediaStreamHealth& stream : engine.streams) {
+    levels.emplace_back(std::to_string(stream.stream_id), stream.peak_level);
+  }
+  const std::string before = active_speaker_.Current();
+  if (active_speaker_.Update(levels, now_ms) != before) {
+    ResyncSpotlight();
+  }
+}
+
+void CallController::ResyncSpotlight() {
+  if (in_call_.active) {
+    ApplySpotlightToState(in_call_);
+    SyncShellState();
+  }
 }
 
 void CallController::ImmersiveChrome() {
@@ -872,8 +957,12 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     chrome_mode_ = DefaultCallChromeMode(in_call.show_roster || phone_layout_);  // phones: the full call page
     restore_mode_ = chrome_mode_;
     chrome_mode_call_id_ = screen.call_id;
+    spotlight_choice_ = {};
+    spotlight_fill_ = true;
+    active_speaker_.Reset();
   }
   ApplyChromeModeToState(in_call);
+  ApplySpotlightToState(in_call);
 
   if (in_call.show_roster) {
     in_call.title = screen.video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
@@ -1059,6 +1148,7 @@ void CallController::ToggleSpeaker() {
 
 void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
+  BindVideoFrameWake(media);
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
@@ -1187,7 +1277,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
 
   IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  bool self_new = false;
+  bool peer_new = false;
   if (in_call.local_preview) {
+    self_new = local_tile.seq != last_shown_self_seq_;
+    last_shown_self_seq_ = local_tile.seq;
     CallVideoTileRenderer::Frame frame;
     frame.width = local_tile.width;
     frame.height = local_tile.height;
@@ -1198,6 +1292,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   if (in_call.remote_video) {
     IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
+      peer_new = remote_tile.seq != last_shown_peer_seq_;
+      last_shown_peer_seq_ = remote_tile.seq;
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
       frame.height = remote_tile.height;
@@ -1207,8 +1303,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
 
-  std::vector<uint32_t> live_peer_streams;
   const int64_t now_ms = util::NowUnixMs();
+  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  std::vector<uint32_t> live_peer_streams;
   for (CallRosterParticipantState& row : in_call.roster) {
     if (row.is_local) {
       row.has_remote_video = false;
@@ -1232,6 +1329,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, std::move(frame));
   }
   CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
+  ApplySpotlightToState(in_call); // the spotlight / strip copies take the rows' new video flags
 
   if (backend && backend->Available() && !presenter_.ActiveCallId().empty()) {
     for (uint32_t stream : media.TakePendingVideoRefreshStreamIds()) {
@@ -1362,6 +1460,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   SampleLinkHealth(backend, util::NowUnixMs());
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
+  NoteActiveSpeaker(view.engine, now_ms);
 
   if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
     last_metrics_media_ms_ = now_ms;
