@@ -2921,6 +2921,15 @@ input.checkbox:checked {
   background-color: #784800eb;
 }
 
+.call-hold-pill {
+  background-color: #784800eb;
+  color: #ffffff;
+}
+
+.call-hold-pill svg {
+  image-color: #ffffff;
+}
+
 .call-phone-notice-icon {
   background-color: #ffffff24;
 }

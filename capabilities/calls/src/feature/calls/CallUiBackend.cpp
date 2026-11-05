@@ -173,6 +173,21 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   });
 }
 
+void CallUiBackend::SetLocalOnHold(bool on_hold, std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([on_hold, reply](CallSessionManager* calls) {
+    reply(calls ? calls->SetLocalOnHold(on_hold) : Roe<void>(UnavailableError()));
+  });
+}
+
+void CallUiBackend::SetLocalVideoPaused(bool paused, std::function<void(Roe<void>)> on_done) {
+  const int rotation = paused ? 0 : CameraDisplayRotationDegrees();
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([paused, rotation, reply](CallSessionManager* calls) {
+    reply(calls ? calls->SetLocalVideoPaused(paused, rotation) : Roe<void>(UnavailableError()));
+  });
+}
+
 CallUiBackend::Surface CallUiBackend::Settle() {
   Surface surface;
   if (!Available()) {
@@ -266,9 +281,9 @@ Roe<std::optional<std::string>> CallUiBackend::PeerIdentityForCall(const std::st
   return UnavailableError();
 }
 
-Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::string& call_id) const {
+Roe<std::optional<CallParticipantMedia>> CallUiBackend::PeerMediaForCall(const std::string& call_id) const {
   if (const CallReads* reads = stack_.Reads()) {
-    return reads->PeerVideoEnabledForCall(call_id);
+    return reads->PeerMediaForCall(call_id);
   }
   return UnavailableError();
 }

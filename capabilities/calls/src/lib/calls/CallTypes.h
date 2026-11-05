@@ -112,6 +112,10 @@ inline constexpr int64_t kCallAnswererAwaitHoldMs = 60'000;
 struct CallParticipantMedia {
   bool audio_muted = false;
   bool video_enabled = false;
+  /** The OS took the member's audio (a phone call, Siri, another app's call): back when it ends. */
+  bool on_hold = false;
+  /** The member's camera is off because their app went to the background: back when it comes to the front. */
+  bool video_paused = false;
 };
 
 /**
@@ -177,6 +181,9 @@ struct CallRosterEntry {
   CallParticipantState state = CallParticipantState::Joined;
   bool audio_muted = false;
   bool video_enabled = false;
+  /** CallParticipantMedia's; on the wire only when set (older peers ignore them: off). */
+  bool on_hold = false;
+  bool video_paused = false;
   /** Sticky SoftMigrate initiator (earliest wins). Optional for wire compat with older peers. */
   std::optional<int64_t> joined_at;
 };

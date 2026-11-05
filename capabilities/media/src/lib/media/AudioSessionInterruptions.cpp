@@ -1,5 +1,6 @@
 #include "lib/media/AudioSession.h"
 
+#include <atomic>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -18,6 +19,8 @@ InterruptionHandlers& Registry() {
   static InterruptionHandlers registry;
   return registry;
 }
+
+std::atomic<bool> g_interrupted{false};
 
 } // namespace
 
@@ -42,11 +45,24 @@ void RemoveInterruptionEndedHandler(const InterruptionHandlerId id) {
 }
 
 void NotifyInterruptionEnded() {
+  g_interrupted.store(false);
   InterruptionHandlers& registry = Registry();
   std::lock_guard<std::mutex> lock(registry.mu);
   for (const auto& [id, fn] : registry.handlers) {
     fn();
   }
+}
+
+void NotifyInterruptionBegan() {
+  g_interrupted.store(true);
+}
+
+bool IsInterrupted() {
+  return g_interrupted.load();
+}
+
+void ClearInterruption() {
+  g_interrupted.store(false);
 }
 
 } // namespace AudioSession

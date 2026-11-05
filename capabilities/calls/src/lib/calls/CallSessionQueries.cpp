@@ -25,6 +25,8 @@ Roe<CallRosterDetail> RosterDetail(const ICallSessionReader& sessions, const std
     entry.state = row.state;
     entry.audio_muted = row.media.audio_muted;
     entry.video_enabled = row.media.video_enabled;
+    entry.on_hold = row.media.on_hold;
+    entry.video_paused = row.media.video_paused;
     entry.joined_at = row.joined_at;
     detail.participants.push_back(std::move(entry));
   }
@@ -357,6 +359,8 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
           CallParticipant keep = **existing;
           keep.media.audio_muted = entry.audio_muted;
           keep.media.video_enabled = entry.video_enabled;
+          keep.media.on_hold = entry.on_hold;
+          keep.media.video_paused = entry.video_paused;
           (void)sessions.UpsertParticipant(keep);
           continue;
         }
@@ -368,6 +372,8 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
     participant.state = entry.state;
     participant.media.audio_muted = entry.audio_muted;
     participant.media.video_enabled = entry.video_enabled;
+    participant.media.on_hold = entry.on_hold;
+    participant.media.video_paused = entry.video_paused;
     participant.joined_at = entry.joined_at;
     (void)sessions.UpsertParticipant(participant);
   }

@@ -1273,7 +1273,11 @@ struct MediaEngine::Impl {
                 SmoothLevel(local_input_level, 0.f);
               }
               const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
-              if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
+              // Interrupted (a phone call holds the mic): the starve is the OS's, not the device's — no reopen, and
+              // none counted toward giving up voice processing; the interruption's end reopens.
+              if (AudioSession::IsInterrupted()) {
+                last_capture_starve_reopen_ms = now;
+              } else if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
                 last_capture_starve_reopen_ms = now;
                 SDL_Log("MediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));

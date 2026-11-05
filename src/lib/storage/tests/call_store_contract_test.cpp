@@ -102,6 +102,23 @@ TEST_P(CallStoreContractTest, AStayKeepsItsEarliestJoinAndARejoinStartsANewOne) 
   EXPECT_EQ(sessions_->ListParticipants("call:a").value().size(), 1u);
 }
 
+// A member's hold and paused camera are kept like mute and camera, and an update clears them again.
+TEST_P(CallStoreContractTest, AMembersHoldAndPausedCameraAreKeptAndCleared) {
+  CallParticipant bob = Participant(CallParticipantState::Joined, 100);
+  bob.media.on_hold = true;
+  bob.media.video_paused = true;
+  ASSERT_TRUE(sessions_->UpsertParticipant(bob));
+  CallParticipantMedia kept = sessions_->FindParticipant("call:a", "account:bob").value()->media;
+  EXPECT_TRUE(kept.on_hold);
+  EXPECT_TRUE(kept.video_paused);
+  bob.media.on_hold = false;
+  bob.media.video_paused = false;
+  ASSERT_TRUE(sessions_->UpsertParticipant(bob));
+  kept = sessions_->FindParticipant("call:a", "account:bob").value()->media;
+  EXPECT_FALSE(kept.on_hold);
+  EXPECT_FALSE(kept.video_paused);
+}
+
 TEST_P(CallStoreContractTest, TheInvitesToAnswerAreThePendingOnesNewestFirst) {
   PendingCallInvite first;
   first.call_id = "call:1";

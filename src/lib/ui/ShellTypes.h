@@ -291,6 +291,10 @@ struct CallRosterParticipantState {
   /** Speaking now (CallActiveSpeaker::Speaking; we by our microphone): the phone page rings the tile. Bound, and
    * part-dirtied on its own (CallChromeChangedVariables), at most every CallController::kSpeakingRingRefreshMs. */
   bool speaking = false;
+  /** V060: the OS has their call audio (a phone call, Siri): the tile reads "On hold", dimmed. */
+  bool on_hold = false;
+  /** V060: their camera is off because their app is in the background: the tile reads "Camera paused". */
+  bool video_paused = false;
 };
 
 /** In-call chrome presentation mode (V031). */
@@ -315,6 +319,8 @@ inline const char* CallChromeModeName(CallChromeMode mode) {
 /** Active in-call chrome. */
 struct CallInProgressState {
   bool active = false;
+  /** V060: this call is on hold, here or on the other side (the 1:1 page shows an "On hold" pill; the line says whose). */
+  bool on_hold = false;
   bool muted = false;
   bool camera_on = false;
   /** Speakerphone on (true) vs earpiece (false). UI: same icon, contrast encodes status. */

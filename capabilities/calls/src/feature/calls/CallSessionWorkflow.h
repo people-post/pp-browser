@@ -164,6 +164,8 @@ public:
   struct LocalMedia {
     std::optional<bool> audio_muted;
     std::optional<bool> video_enabled;
+    std::optional<bool> on_hold;
+    std::optional<bool> video_paused;
   };
   Roe<void> PublishLocalMedia(const std::string& call_id, const std::string& local_identity, LocalMedia media);
 

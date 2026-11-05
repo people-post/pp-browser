@@ -34,6 +34,23 @@ TEST(AudioSessionInterruptionTest, EveryAddedHandlerRunsAndARemovedOneDoesNot) {
   EXPECT_EQ(AudioSession::AddInterruptionEndedHandler({}), 0u) << "an empty handler is not added";
 }
 
+// Interrupted from the OS's take until its end (which also runs the handlers), or until the session ends.
+TEST(AudioSessionInterruptionTest, InterruptedFromBeganUntilEndedOrTheSessionsEnd) {
+  int reopened = 0;
+  const auto id = AudioSession::AddInterruptionEndedHandler([&reopened]() { ++reopened; });
+  EXPECT_FALSE(AudioSession::IsInterrupted());
+  AudioSession::NotifyInterruptionBegan();
+  EXPECT_TRUE(AudioSession::IsInterrupted());
+  EXPECT_EQ(reopened, 0) << "nothing reopens while the OS holds the session";
+  AudioSession::NotifyInterruptionEnded();
+  EXPECT_FALSE(AudioSession::IsInterrupted());
+  EXPECT_EQ(reopened, 1);
+  AudioSession::NotifyInterruptionBegan();
+  AudioSession::ClearInterruption(); // the call ended during it
+  EXPECT_FALSE(AudioSession::IsInterrupted()) << "the next call does not start on hold";
+  AudioSession::RemoveInterruptionEndedHandler(id);
+}
+
 class QuietEndpoint final : public IAudioEndpoint {
 public:
   int Read(void*, int) override { return 0; }

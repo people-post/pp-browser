@@ -189,6 +189,53 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   return {};
 }
 
+Roe<void> CallSessionManager::SetLocalOnHold(const bool on_hold) {
+  auto local = control_.LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = call_media_.MediaRunningCallId();
+  if (call_id.empty()) {
+    return Error("No active call media");
+  }
+  CallSessionWorkflow::LocalMedia media;
+  media.on_hold = on_hold;
+  return workflow_.PublishLocalMedia(call_id, *local, media);
+}
+
+Roe<void> CallSessionManager::SetLocalVideoPaused(const bool paused, const int display_rotation_degrees) {
+  auto local = control_.LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::string call_id = call_media_.MediaRunningCallId();
+  CallMedia* call_media = call_id.empty() ? nullptr : call_media_.Media(call_id);
+  if (!call_media) {
+    video_paused_call_id_.clear();
+    return Error("No active call media");
+  }
+  CallSessionWorkflow::LocalMedia media;
+  if (paused) {
+    if (!call_media->CameraOn()) {
+      return {}; // nothing to pause
+    }
+    (void)call_media->SetCamera(false, 0);
+    video_paused_call_id_ = call_id;
+    media.video_enabled = false; // an older peer shows "camera off"
+    media.video_paused = true;
+  } else {
+    if (video_paused_call_id_ != call_id) {
+      video_paused_call_id_.clear();
+      return {}; // not paused here (or another call's)
+    }
+    video_paused_call_id_.clear();
+    auto cam = call_media->SetCamera(true, display_rotation_degrees);
+    media.video_enabled = cam && call_media->CameraOn();
+    media.video_paused = false;
+  }
+  return workflow_.PublishLocalMedia(call_id, *local, media);
+}
+
 Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
                                                  const std::string& publisher_identity) {
   auto local = control_.LocalRelayIdentity();

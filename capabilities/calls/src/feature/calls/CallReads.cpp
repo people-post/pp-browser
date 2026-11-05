@@ -95,7 +95,7 @@ Roe<std::optional<std::string>> CallReads::PeerIdentityForCall(const std::string
   return *peer ? std::optional<std::string>{(*peer)->identity} : std::optional<std::string>{};
 }
 
-Roe<std::optional<bool>> CallReads::PeerVideoEnabledForCall(const std::string& call_id) const {
+Roe<std::optional<CallParticipantMedia>> CallReads::PeerMediaForCall(const std::string& call_id) const {
   auto local = LocalIdentity();
   if (!local) {
     return local.error();
@@ -104,7 +104,7 @@ Roe<std::optional<bool>> CallReads::PeerVideoEnabledForCall(const std::string& c
   if (!peer) {
     return peer.error();
   }
-  return *peer ? std::optional<bool>{(*peer)->media.video_enabled} : std::optional<bool>{};
+  return *peer ? std::optional<CallParticipantMedia>{(*peer)->media} : std::optional<CallParticipantMedia>{};
 }
 
 Roe<std::optional<bool>> CallReads::VideoAllowedForCall(const std::string& call_id) const {

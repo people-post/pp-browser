@@ -937,6 +937,12 @@ Roe<void> CallSessionWorkflow::PublishLocalMedia(const std::string& call_id, con
     if (media.video_enabled) {
       (*participant)->media.video_enabled = *media.video_enabled;
     }
+    if (media.on_hold) {
+      (*participant)->media.on_hold = *media.on_hold;
+    }
+    if (media.video_paused) {
+      (*participant)->media.video_paused = *media.video_paused;
+    }
     (void)sessions_.UpsertParticipant(**participant);
   }
   auto roster = host_.wire.build_roster_detail(call_id);
@@ -1424,6 +1430,8 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
     row.state = entry.state;
     row.media.audio_muted = entry.audio_muted;
     row.media.video_enabled = entry.video_enabled;
+    row.media.on_hold = entry.on_hold;
+    row.media.video_paused = entry.video_paused;
     if (entry.identity == local_identity) {
       row.state = CallParticipantState::Ringing;
     } else if (entry.identity == inviter && row.state != CallParticipantState::Joined) {

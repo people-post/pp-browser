@@ -92,6 +92,12 @@ Object EncodeRosterEntry(const CallRosterEntry& entry) {
   row.set("state", CallParticipantStateToString(entry.state));
   row.set("audio_muted", entry.audio_muted);
   row.set("video_enabled", entry.video_enabled);
+  if (entry.on_hold) {
+    row.set("on_hold", true);
+  }
+  if (entry.video_paused) {
+    row.set("video_paused", true);
+  }
   if (entry.joined_at) {
     row.set("joined_at", *entry.joined_at);
   }
@@ -117,6 +123,8 @@ void ReadParticipants(const Object& json, std::vector<CallRosterEntry>& particip
     entry.state = CallParticipantStateFromString(row->getString("state").value_or("joined"));
     entry.audio_muted = row->getIf<bool>("audio_muted").value_or(false);
     entry.video_enabled = row->getIf<bool>("video_enabled").value_or(false);
+    entry.on_hold = row->getIf<bool>("on_hold").value_or(false);
+    entry.video_paused = row->getIf<bool>("video_paused").value_or(false);
     entry.joined_at = row->getIf<int64_t>("joined_at");
     participants.push_back(std::move(entry));
   }
