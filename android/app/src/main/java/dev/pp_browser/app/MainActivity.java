@@ -868,6 +868,35 @@ public class MainActivity extends SDLActivity {
         return android.os.LocaleList.getDefault().toLanguageTags();
     }
 
+    /**
+     * For DeviceVitals_Android.cpp, read every couple of seconds in a call: {power saver on (1/0), thermal state
+     * 0 nominal .. 3 critical (Apple's four; -1 before API 29), battery percent (-1 unknown), charging (1/0)}.
+     */
+    public int[] getDeviceVitals() {
+        int powerSave = 0;
+        int thermal = -1;
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+            powerSave = pm.isPowerSaveMode() ? 1 : 0;
+            if (Build.VERSION.SDK_INT >= 29) {
+                // NONE, LIGHT, MODERATE / SEVERE, CRITICAL and above.
+                final int status = pm.getCurrentThermalStatus();
+                thermal = status <= 0 ? 0 : status == 1 ? 1 : status <= 3 ? 2 : 3;
+            }
+        }
+        int battery = -1;
+        int charging = 0;
+        android.os.BatteryManager bm = (android.os.BatteryManager) getSystemService(BATTERY_SERVICE);
+        if (bm != null) {
+            battery = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY);
+            if (battery < 0 || battery > 100) {
+                battery = -1;
+            }
+            charging = bm.isCharging() ? 1 : 0;
+        }
+        return new int[] {powerSave, thermal, battery, charging};
+    }
+
     public String getStableDeviceId() {
         SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
         String id = prefs.getString("device_id", null);

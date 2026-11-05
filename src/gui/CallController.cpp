@@ -16,6 +16,8 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -274,6 +276,19 @@ void CallController::Tick() {
   } else if (!metrics_.Tracking() && ui_probe_.Running()) {
     ui_probe_.Stop();
   }
+}
+
+void CallController::BindVideoFrameWake(IMediaView& media) {
+  if (video_wake_bound_ == &media) {
+    return;
+  }
+  video_wake_bound_ = &media;
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
+  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
+    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
+      Backend::RequestForceFrame();
+    }
+  });
 }
 
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
@@ -975,6 +990,7 @@ void CallController::ToggleSpeaker() {
 
 void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
+  BindVideoFrameWake(media);
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
@@ -1103,7 +1119,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
 
   IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  bool self_new = false;
+  bool peer_new = false;
   if (in_call.local_preview) {
+    self_new = local_tile.seq != last_shown_self_seq_;
+    last_shown_self_seq_ = local_tile.seq;
     CallVideoTileRenderer::Frame frame;
     frame.width = local_tile.width;
     frame.height = local_tile.height;
@@ -1114,6 +1134,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   if (in_call.remote_video) {
     IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
+      peer_new = remote_tile.seq != last_shown_peer_seq_;
+      last_shown_peer_seq_ = remote_tile.seq;
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
       frame.height = remote_tile.height;
@@ -1123,8 +1145,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
 
-  std::vector<uint32_t> live_peer_streams;
   const int64_t now_ms = util::NowUnixMs();
+  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  std::vector<uint32_t> live_peer_streams;
   for (CallRosterParticipantState& row : in_call.roster) {
     if (row.is_local) {
       row.has_remote_video = false;
