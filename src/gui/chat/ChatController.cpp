@@ -3343,7 +3343,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   bool home_thread_was_empty = false;
-  if (ChromeSnapshot().nav_tab == NavTab::Home) {
+  // The composer on the PP 助手 page (the list, no chat overlay) starts a NEW conversation each send. Once a
+  // conversation is open (the overlay), the same Home tab keeps sending into that thread — continue, don't re-create.
+  if (ChromeSnapshot().nav_tab == NavTab::Home && !ChromeSnapshot().compact_chat_open) {
     if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       log().info << "Send ignored: could not open a thread from Home";
       return;
