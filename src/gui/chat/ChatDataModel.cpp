@@ -150,6 +150,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
     favorite_handle.RegisterMember("avatar_tone", &HomeFavoriteRow::avatar_tone);
     favorite_handle.RegisterMember("has_icon", &HomeFavoriteRow::has_icon);
     favorite_handle.RegisterMember("icon_src", &HomeFavoriteRow::icon_src);
+    favorite_handle.RegisterMember("suggested", &HomeFavoriteRow::suggested);
   }
   ctor.RegisterArray<std::vector<HomeFavoriteRow>>();
   if (auto edit_handle = ctor.RegisterStruct<HomeEditRow>()) {

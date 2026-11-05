@@ -2817,6 +2817,32 @@ input.checkbox:checked {
   background-color: #af52de;
 }
 
+/* Mentions / New people with nothing to show: a faint tinted icon over one grey line (mockup 12, option C). */
+.shell-layer-compact .home-empty-icon--mentions {
+  background-color: #ff9f0a2e;
+}
+
+.shell-layer-compact .home-empty-icon--mentions svg {
+  image-color: #ff9f0a;
+}
+
+.shell-layer-compact .home-empty-icon--new-people {
+  background-color: #af52de2e;
+}
+
+.shell-layer-compact .home-empty-icon--new-people svg {
+  image-color: #af52de;
+}
+
+/* A suggested person in Favorites (not starred): a lighter name after a small blue sparkle. */
+.shell-layer-compact .home-av-name--suggested {
+  color: #ebebf54c;
+}
+
+.shell-layer-compact .home-av-suggest {
+  image-color: #0a84ff;
+}
+
 .shell-layer-compact .home-wh-icon--brief {
   background-color: #ff453a;
 }

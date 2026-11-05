@@ -215,6 +215,39 @@ std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows,
       favorites.back().thread_id.clear();
     }
   }
+  if (favorites.size() >= kHomeFavoritesFillTo) {
+    return favorites;
+  }
+  // Fill the first row: saved contacts by their newest direct chat; starred, blocked or already shown ones skipped.
+  std::vector<const ChatSessionRow*> recent;
+  for (const ChatSessionRow& row : rows) {
+    if (!row.contact_id.empty()) {
+      recent.push_back(&row);
+    }
+  }
+  std::stable_sort(recent.begin(), recent.end(), [](const ChatSessionRow* a, const ChatSessionRow* b) {
+    return a->updated_at > b->updated_at;
+  });
+  for (const ChatSessionRow* row : recent) {
+    if (favorites.size() == kHomeFavoritesFillTo) {
+      break;
+    }
+    const std::string& id = row->contact_id;
+    const bool skip =
+        std::find(starred.begin(), starred.end(), id) != starred.end() ||
+        std::any_of(favorites.begin(), favorites.end(), [&id](const HomeFavorite& f) { return f.contact_id == id; }) ||
+        std::any_of(rows.begin(), rows.end(), [&id](const ChatSessionRow& r) { return r.contact_id == id && r.blocked; });
+    if (skip) {
+      continue;
+    }
+    favorites.push_back({.contact_id = id,
+                         .thread_id = row->id,
+                         .title = row->title,
+                         .avatar_letter = row->avatar_letter,
+                         .avatar_tone = row->avatar_tone,
+                         .icon_path = row->icon_path,
+                         .suggested = true});
+  }
   return favorites;
 }
 

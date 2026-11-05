@@ -9945,6 +9945,17 @@ input.checkbox {
   line-height: 16dp;
 }
 
+/* A status line last on a file card ("Downloading 40%", "Couldn't download") keeps 8dp under it, like the top; only
+   when reactions hang on that card does it grow by the pills' overlap, so they sit under the line, not on it. A card
+   ending in its 44dp action row needs nothing: the pills land in the row's empty lower part (Kenneth 2026-11-05). */
+.shell-chat-overlay .chat-attachment-card .muted:last-child {
+  margin-bottom: 8dp;
+}
+
+.shell-chat-overlay .chat-attachment-card.chat-reaction-host .muted:last-child {
+  margin-bottom: 20dp;
+}
+
 .shell-chat-overlay .chat-attachment-video-poster {
   max-width: 216dp;
 }
@@ -11061,6 +11072,32 @@ textarea:composing ~ .prompt-composer-label,
   font-size: 24dp;
   line-height: 28dp;
   font-weight: bold;
+}
+
+/* Mentions / New people with nothing to show (mockup 12, option C): a faint 40dp icon centred over one grey line,
+   in the space the number and its lines take otherwise. Tints: colors-*. */
+.shell-layer-compact .home-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.shell-layer-compact .home-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+  margin-bottom: 8dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .home-av-suggest {
+  margin-right: 2dp;
+  vertical-align: -1dp;
 }
 
 .shell-layer-compact .home-av-name {

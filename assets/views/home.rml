@@ -26,7 +26,8 @@
     <div class="home-grid">
       <div class="home-slot" data-for="w : home_widgets" data-class-home-slot--wide="w.wide">
         <!-- Favorites (关注联系人): the starred contacts in star order, four across the card; more scroll sideways and
-             settle on a whole person (ShellFavoritesSnap). A tap opens the chat. -->
+             settle on a whole person (ShellFavoritesSnap). Under four starred, people chatted with lately fill the row,
+             their names grey after a small sparkle (suggested, not followed). A tap opens the chat. -->
         <div class="home-w" data-if="w.id == 'favorites'">
           <div class="home-wh">
             <span class="home-wh-icon home-wh-icon--favorites"><svg src="../icons/v2/star-fill.svg" width="13" height="13"></svg></span>
@@ -50,7 +51,7 @@
                      data-style-width="home_fav_avatar" data-style-height="home_fav_avatar"/>
                 <span class="home-av-letter" data-if="!f.has_icon">{{f.avatar_letter}}</span>
               </span>
-              <span class="home-av-name">{{f.title}}</span>
+              <span class="home-av-name" data-class-home-av-name--suggested="f.suggested"><svg class="home-av-suggest" src="../icons/v2/sparkle-fill.svg" width="11" height="11" data-if="f.suggested"></svg>{{f.title}}</span>
             </button>
           </div>
           <p class="home-w-hint" data-if="home_favorites.size == 0">{{i18n:home.favorites.empty}}</p>
@@ -97,24 +98,32 @@
           <span class="home-small home-small--two">{{home_calls_latest}}</span>
         </button>
         <!-- Mentions: @me in groups from the last 7 days, read or not (like Calls); the number counts the unread ones,
-             none unread: "Recent mention"; none at all: 0. A tap opens the chat (at its oldest unread mention, if any). -->
+             none unread: "Recent mention"; none at all: a faint @ over "No one has mentioned you". A tap opens the chat (at its oldest unread mention, if any). -->
         <button class="home-w home-w--tap" type="button" data-if="w.id == 'mentions'" data-event-click="home_open_mentions()">
           <span class="home-wh">
             <span class="home-wh-icon home-wh-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="13" height="13"></svg></span>
             <span class="home-wh-title">{{i18n:home.widget.mentions}}</span>
           </span>
-          <span class="home-num" data-if="home_mentions > 0 || home_mentions_where == ''">{{home_mentions}}</span>
+          <span class="home-num" data-if="home_mentions > 0">{{home_mentions}}</span>
           <span class="home-num home-num--word" data-if="home_mentions == 0 && home_mentions_where != ''">{{i18n:home.mentions.recent}}</span>
-          <span class="home-small home-small--two">{{home_mentions_where}}</span>
+          <span class="home-small home-small--two" data-if="home_mentions_where != ''">{{home_mentions_where}}</span>
+          <span class="home-empty" data-if="home_mentions == 0 && home_mentions_where == ''">
+            <span class="home-empty-icon home-empty-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="20" height="20"></svg></span>
+            <span class="home-small">{{i18n:home.mentions.none}}</span>
+          </span>
         </button>
-        <!-- New people: unread chats from people who are not contacts (0 when none); a tap opens the first. -->
+        <!-- New people: unread chats from people who are not contacts (none: a faint person over "No new people yet"); a tap opens the first. -->
         <button class="home-w home-w--tap" type="button" data-if="w.id == 'new_people'" data-event-click="home_open_new_people()">
           <span class="home-wh">
             <span class="home-wh-icon home-wh-icon--new-people"><svg src="../icons/v2/user-plus.svg" width="13" height="13"></svg></span>
             <span class="home-wh-title">{{i18n:home.widget.new_people}}</span>
           </span>
-          <span class="home-num">{{home_new_people}}</span>
-          <span class="home-small home-small--two">{{i18n:home.new_people.count}}</span>
+          <span class="home-num" data-if="home_new_people > 0">{{home_new_people}}</span>
+          <span class="home-small home-small--two" data-if="home_new_people > 0">{{i18n:home.new_people.count}}</span>
+          <span class="home-empty" data-if="home_new_people == 0">
+            <span class="home-empty-icon home-empty-icon--new-people"><svg src="../icons/v2/user-plus.svg" width="20" height="20"></svg></span>
+            <span class="home-small">{{i18n:home.new_people.none}}</span>
+          </span>
         </button>
         <!-- Today's briefs: the first headline larger, two more under it (cached, refreshed when over 3 hours old);
              "See all" shows the feed in the AI chat like the Latest briefs chip. -->

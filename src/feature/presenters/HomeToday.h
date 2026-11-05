@@ -73,6 +73,8 @@ struct HomeFavorite {
   int avatar_tone = 0;
   /** Local file of their cached photo; empty: the letter. */
   std::string icon_path;
+  /** Not starred: someone they chat with lately, filling the first row (shown marked as a suggestion). */
+  bool suggested = false;
 
   bool operator==(const HomeFavorite&) const = default;
 };
@@ -124,12 +126,15 @@ std::vector<std::string> StarredWithoutChat(const std::vector<ChatSessionRow>& r
 
 /** The most people the Favorites row holds (three screens of four). */
 inline constexpr size_t kHomeFavoritesMax = 12;
+/** Fewer starred than this: the row is filled up to it with suggestions (one full row of four). */
+inline constexpr size_t kHomeFavoritesFillTo = 4;
 
 /**
- * The Favorites widget (关注联系人, Kenneth 2026-11-05 原话 75-77): the starred contacts only, in star order, up to
- * kHomeFavoritesMax; a blocked one never shows, and nobody fills in for an empty star list (the widget shows its hint).
- * Each opens its newest direct chat in `rows`. `starred`: the star order; `starred_without_chat`: the starred contacts
- * StarredWithoutChat named, as looked up (blocked ones left out by the caller).
+ * The Favorites widget (关注联系人, Kenneth 2026-11-05 原话 75-77, 89): the starred contacts in star order, up to
+ * kHomeFavoritesMax; a blocked one never shows. With fewer than kHomeFavoritesFillTo starred, the row is filled up to
+ * it with the saved contacts chatted with most recently (`suggested`); with none of those either the widget shows its
+ * hint. Each opens its newest direct chat in `rows`. `starred`: the star order; `starred_without_chat`: the starred
+ * contacts StarredWithoutChat named, as looked up (blocked ones left out by the caller).
  */
 std::vector<HomeFavorite> HomeFavorites(const std::vector<ChatSessionRow>& rows, const std::vector<std::string>& starred,
                                         const std::vector<HomeFavorite>& starred_without_chat);

@@ -2,6 +2,8 @@
 
 #include "foundation/i18n/LocalizationService.h"
 
+#include <algorithm>
+
 #include <gtest/gtest.h>
 
 namespace pbr {
@@ -154,26 +156,35 @@ TEST(HomeTodayTest, MissedCallsCountTodaysUnansweredCallsAndShowTheLatest) {
   EXPECT_FALSE(old.latest.has_value()) << "nothing in the last week";
 }
 
-// Kenneth 2026-11-05 (原话 75-77): 关注联系人 is the starred people only, a row of four that scrolls.
-TEST(HomeTodayTest, FavoritesAreTheStarredContactsInStarOrder) {
+// Kenneth 2026-11-05 (原话 75-77, 89): 关注联系人 is the starred people, a row of four that scrolls; under four starred,
+// the contacts chatted with most recently fill the first row, marked as suggestions.
+TEST(HomeTodayTest, FavoritesAreTheStarredContactsInStarOrderFilledToFourWithSuggestions) {
   const std::vector<ChatSessionRow> rows = {
       Direct("t-ann", "ann", 500), Direct("t-bob", "bob", 400), Direct("t-cy", "cy", 300),
       Direct("t-cy-secure", "cy", 600),  // a contact's newer chat is the one opened
       Direct("t-dee", "dee", 200, /*blocked=*/true), Row("group", 0, false, 900), Row("stranger", 1, true, 800)};
-  // Nobody starred: nobody shows (no recent chats fill in; the widget shows its hint).
-  EXPECT_TRUE(HomeFavorites(rows, {}, {}).empty());
+  // Nobody starred: saved contacts by their newest chat fill in (no group, stranger or blocked one; one per person).
+  const std::vector<HomeFavorite> suggested = HomeFavorites(rows, {}, {});
+  EXPECT_EQ(ContactIds(suggested), (std::vector<std::string>{"cy", "ann", "bob"}));
+  EXPECT_TRUE(std::all_of(suggested.begin(), suggested.end(), [](const HomeFavorite& f) { return f.suggested; }));
+  EXPECT_EQ(suggested[0].thread_id, "t-cy-secure");
+  EXPECT_TRUE(HomeFavorites({Row("group", 0, false, 900)}, {}, {}).empty()) << "nobody to suggest: the hint";
 
   // Starred cy, eve (no chat yet, looked up by the caller), dee (blocked) and bob: in star order, dee left out.
   const std::vector<std::string> starred = {"cy", "eve", "dee", "bob"};
   EXPECT_EQ(StarredWithoutChat(rows, starred), std::vector<std::string>{"eve"});
   const HomeFavorite eve{.contact_id = "eve", .thread_id = "", .title = "Eve", .avatar_letter = "E"};
   const std::vector<HomeFavorite> favorites = HomeFavorites(rows, starred, {eve});
-  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"cy", "eve", "bob"}));
+  EXPECT_EQ(ContactIds(favorites), (std::vector<std::string>{"cy", "eve", "bob", "ann"})) << "ann fills the fourth";
   EXPECT_EQ(favorites[0].thread_id, "t-cy-secure");
   EXPECT_TRUE(favorites[1].thread_id.empty()) << "a tap starts the chat";
+  EXPECT_FALSE(favorites[2].suggested);
+  EXPECT_TRUE(favorites[3].suggested);
 
-  // Unstarred: gone.
-  EXPECT_EQ(ContactIds(HomeFavorites(rows, {"bob"}, {})), std::vector<std::string>{"bob"});
+  // Unstarred: no longer first, only a suggestion after the starred one.
+  const std::vector<HomeFavorite> only_bob = HomeFavorites(rows, {"bob"}, {});
+  EXPECT_EQ(ContactIds(only_bob), (std::vector<std::string>{"bob", "cy", "ann"}));
+  EXPECT_FALSE(only_bob[0].suggested);
 }
 
 TEST(HomeTodayTest, FavoritesKeepAtMostTwelve) {

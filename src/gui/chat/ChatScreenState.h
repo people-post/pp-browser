@@ -152,6 +152,8 @@ struct HomeFavoriteRow {
   int avatar_tone = 0;
   bool has_icon = false;
   ui::String icon_src;
+  /** Not starred: a suggestion filling the first row (marked). */
+  bool suggested = false;
 };
 
 /** One row of the Edit Home sheet: a widget's name and its size note ("Wide" / "Small"). */

@@ -1214,7 +1214,8 @@ void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows)
                                      .avatar_letter = favorite.avatar_letter.c_str(),
                                      .avatar_tone = favorite.avatar_tone,
                                      .has_icon = !favorite.icon_path.empty(),
-                                     .icon_src = favorite.icon_path.c_str()});
+                                     .icon_src = favorite.icon_path.c_str(),
+                                     .suggested = favorite.suggested});
   }
 }
 
