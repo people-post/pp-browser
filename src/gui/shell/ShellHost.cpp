@@ -1470,6 +1470,15 @@ void ShellHost::ApplySafeAreaLayout() {
   const float strip_dp = layout.bottom_surface_padding_dp;
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
+  // Keyboard up over a tab-bar page: hide the nav tab bar so the keyboard covers it (the content's own composer stays
+  // above the keyboard). Only fires for the TabBar surface, so a chat's composer is untouched.
+  if (ui::Element* bottom_chrome = doc->GetElementById("shell-bottom-chrome")) {
+    if (layout.tab_bar_hidden) {
+      bottom_chrome->SetProperty("display", "none");
+    } else {
+      bottom_chrome->RemoveProperty("display");
+    }
+  }
   set_dp(doc->GetElementById("shell-composer-mount"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",

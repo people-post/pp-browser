@@ -110,7 +110,10 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
   const float tab_bar_inset =
       bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
-  layout.content_padding_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
+  // Keyboard up over a tab-bar page: hide the tab bar and stop reserving its height, so the content sits right above
+  // the keyboard (which covers where the bar was) instead of being squeezed above a floating bar (Kenneth 2026-11-05).
+  layout.tab_bar_hidden = keyboard && bottom_surface == CompactBottomSurface::TabBar;
+  layout.content_padding_bottom_dp = layout.tab_bar_hidden ? 0.f : config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_bottom_dp = 0.f;
   layout.sheet_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;

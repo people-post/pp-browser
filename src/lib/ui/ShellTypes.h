@@ -94,6 +94,9 @@ struct CompactChromeLayout {
   float content_top_dp = 0.f;
   /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
+  /** The on-screen keyboard is up over a tab-bar page: the tab bar is hidden (the keyboard covers it) so content is
+   *  not squeezed above a floating bar. */
+  bool tab_bar_hidden = false;
   float chrome_bottom_dp = 0.f;
   /**
    * Home-indicator inset the bottom surface (tab bar / composer mount / transient page) pads itself by

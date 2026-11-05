@@ -208,13 +208,16 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(tab_bar_no_inset.shell_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar_no_inset.bottom_surface_padding_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar_no_inset.content_padding_bottom_dp, 49.f);
+  EXPECT_FALSE(tab_bar_no_inset.tab_bar_hidden);
 
-  // Keyboard up: today's behaviour (body shrinks by the keyboard, no strip padding).
+  // Keyboard up over a tab-bar page: the tab bar is hidden (the keyboard covers it) and its height is no longer
+  // reserved, so the content sits right above the keyboard instead of squeezed above a floating bar.
   const CompactChromeLayout tab_bar_keyboard =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::TabBar);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.shell_bottom_dp, 336.f);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.bottom_surface_padding_dp, 0.f);
-  EXPECT_FLOAT_EQ(tab_bar_keyboard.content_padding_bottom_dp, 49.f);
+  EXPECT_TRUE(tab_bar_keyboard.tab_bar_hidden);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.content_padding_bottom_dp, 0.f);
 
   // Chat overlay (no tab bar): the composer pads by the inset; nothing is added to the nav padding.
   const CompactChromeLayout composer =
