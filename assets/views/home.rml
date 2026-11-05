@@ -2,7 +2,9 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <p class="pane-nav-title">{{i18n:home.title}}</p>
+    <!-- The sticky bar title: PP 助手 on the minimal page, 今天 when the 动态 widgets are shown. -->
+    <p class="pane-nav-title" data-model="shell" data-if="!home_show_dynamic">{{i18n:nav.home}}</p>
+    <p class="pane-nav-title" data-model="shell" data-if="home_show_dynamic">{{i18n:home.title}}</p>
     <div class="pane-nav-actions row">
       <!-- The Edit-Home (customise 动态 widgets) button only matters when 动态 is shown; the minimal AI Home hides it
            (Kenneth 2026-11-05). -->
@@ -164,15 +166,14 @@
     </div>
   </div>
   <!-- data-model=shell drives the minimal/centered switch; the chips keep the chat model (home-landing-inner below). -->
-  <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic"
-       data-class-home-landing--has-ai="!home_show_dynamic && ai_sessions.size &gt; 0">
-    <!-- Page header title, like the Chats page (Kenneth 2026-11-05); no search box (the assistant keeps context). -->
-    <p class="home-ai-header" data-if="!home_show_dynamic">{{i18n:nav.home}}</p>
+  <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic">
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
-    <!-- AI 助手页的对话列表（每段 Ai 线程一条；空时不显示，保持极简）。点开即进该对话。
-         置顶/删除/改名/归档的滑动菜单在后续增量加。复用聊天行的 sidebar-session 样式。 -->
-    <div class="home-ai-list root-scroll" data-model="shell" data-if="!home_show_dynamic && ai_sessions.size &gt; 0">
+    <!-- The AI conversation list scrolls; its "PP 助手" large title scrolls up and collapses into the sticky bar,
+         like the Chats page (Kenneth 2026-11-05). No search box (the assistant keeps context). Empty = just the title.
+         置顶/删除/改名/归档的滑动菜单在后续增量加；复用聊天行的 sidebar-session 样式。 -->
+    <div class="home-ai-list root-scroll" data-model="shell" data-if="!home_show_dynamic">
+      <p class="home-ai-header">{{i18n:nav.home}}</p>
       <div data-for="session : ai_sessions" class="sidebar-session sidebar-session--ai"
            data-attr-session-id="session.id"
            data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"

@@ -9874,7 +9874,8 @@ input.checkbox {
 .shell-chat-overlay .chat-messages-wrap .messages {
   top: -63dp;
   padding-top: 63dp;
-  padding-bottom: 12dp;
+  /* Keep the last bubble clear of the composer (and its frost) when scrolled to the bottom (Kenneth 2026-11-05). */
+  padding-bottom: 24dp;
 }
 
 .shell-chat-overlay .chat-gap-banner,
@@ -11543,23 +11544,19 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* With AI conversations present (Kenneth 2026-11-05): the conversation list fills the top and scrolls, the ask-AI
-   field + chips sink to the bottom. Overrides --minimal's centring. */
+/* The AI conversation list fills the page and scrolls (its "PP 助手" title scrolls with it); the ask-AI field + chips
+   sink to the bottom (Kenneth 2026-11-05). */
 .home-ai-list {
   display: none;
 }
-.shell-layer-compact .home-landing--has-ai {
-  justify-content: flex-start;
-  padding: 8dp 0 12dp 0;
-}
-.shell-layer-compact .home-landing--has-ai .home-ai-list {
+.shell-layer-compact .home-landing--minimal .home-ai-list {
   display: block;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   width: 100%;
 }
-.shell-layer-compact .home-landing--has-ai .home-landing-inner {
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
   flex: none;
 }
 
