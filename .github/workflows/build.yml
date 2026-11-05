@@ -381,12 +381,13 @@ jobs:
   # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
   # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
   # October 2026. Mirrors `scripts/platform/ios_build.sh configure-device` + `build`, Ninja tree.
-  # Self-hosted Mac (Xcode 27 / iOS 26+ SDK) — hosted macos-* cannot satisfy ASC SDK rules.
+  # Defaults to hosted macos-15; the repo variable CI_MAC_BUILD_LABELS points it at the self-hosted Mac
+  # (Xcode 27 / iOS 26+ SDK), which the hosted image cannot match for ASC SDK rules.
   ios:
     needs: changes
     # Fork PRs never reach the self-hosted Mac: their code would run on it.
     if: github.event_name != 'pull_request' || (needs.changes.outputs.apple == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: ${{ fromJSON(vars.CI_MAC_BUILD_LABELS || '"macos-15"') }}
     timeout-minutes: 90
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
