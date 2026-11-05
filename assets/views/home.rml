@@ -4,7 +4,9 @@
     <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:home.title}}</p>
     <div class="pane-nav-actions row">
-      <div class="pane-nav-btn-wrap" data-model="shell">
+      <!-- The Edit-Home (customise 动态 widgets) button only matters when 动态 is shown; the minimal AI Home hides it
+           (Kenneth 2026-11-05). -->
+      <div class="pane-nav-btn-wrap" data-model="shell" data-if="home_show_dynamic">
         <button class="pane-nav-btn" type="button"
                 data-event-click="home_edit_open()" title="{{i18n:home.edit}}">
           <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
@@ -167,10 +169,8 @@
     <div class="home-dock-fade"></div>
     <!-- Minimal AI-first Home (Kenneth 2026-11-05, 太乱): a prominent heading + one line above the chips when the
          动态 widgets are hidden (the default). Shown only in minimal mode. -->
-    <div class="home-ai-intro stack" data-if="!home_show_dynamic">
-      <h1 class="home-ai-title">{{i18n:home.ai.title}}</h1>
-      <p class="home-ai-subtitle muted">{{i18n:home.ai.subtitle}}</p>
-    </div>
+    <!-- Empty AI Home: nothing in the centre (Kenneth 2026-11-05, 极简); the AI tab icon carries the brand and the
+         floating assistant is hidden here (this page is its home). Just the composer + chips below. -->
     <div class="home-landing-inner stack" data-model="chat">
       <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
