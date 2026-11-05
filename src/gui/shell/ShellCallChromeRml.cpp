@@ -205,13 +205,17 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
   };
   const auto speaker = [&]() {
     if (call.show_speaker) {
-      AppendControl(out, "call_speaker()", "call_in_progress_speaker_on", "src=\"../icons/v2/speaker.svg\"",
+      AppendControl(out, "call_speaker()", "call_in_progress_speaker_on",
+                    "data-attr-src=\"call_in_progress_speaker_on ? '../icons/v2/speaker.svg' : "
+                    "'../icons/v2/speaker-off.svg'\"",
                     Tr("call.control.speaker"));
     }
   };
   const auto camera = [&]() {
     if (call.show_camera) {
-      AppendControl(out, "call_camera()", "call_in_progress_camera_on", "src=\"../icons/v2/video.svg\"",
+      AppendControl(out, "call_camera()", "call_in_progress_camera_on",
+                    "data-attr-src=\"call_in_progress_camera_on ? '../icons/v2/video.svg' : "
+                    "'../icons/v2/video-off.svg'\"",
                     "<span data-if=\"!call_in_progress_camera_on\">" + Tr("call.control.camera_on") +
                         "</span><span data-if=\"call_in_progress_camera_on\">" + Tr("call.control.camera_off") +
                         "</span>");
