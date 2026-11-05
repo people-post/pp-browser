@@ -9,4 +9,7 @@
     <!-- Incoming-call notification buttons where the system's call style is not available. -->
     <string name="call_answer">Answer</string>
     <string name="call_decline">Decline</string>
+    <!-- Notification channel for the call in progress (its ongoing notification). -->
+    <string name="channel_calls_ongoing">Ongoing calls</string>
+    <string name="channel_calls_ongoing_description">Shown while you are in a call</string>
 </resources>

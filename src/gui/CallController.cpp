@@ -23,6 +23,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/IAssetLocator.h"
+#include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
 #include "gui/CallStatusHint.h"
@@ -102,11 +103,29 @@ CallController::CallController()
   // Mobile: in the background the OS stops the camera; the call turns it off and says so (video_paused).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() { OnAppBackground(); });
   foreground_listener_ = AppLifecycle::AddForegroundListener([this]() { OnAppForeground(); });
+  OngoingCallService::SetHangUpHandler([this]() {
+    if (!presenter_.ActiveCallId().empty()) {
+      log().info << "hang up from the ongoing-call notification";
+      (void)presenter_.Leave();
+    }
+  });
 }
 
 CallController::~CallController() {
+  OngoingCallService::SetHangUpHandler({});
   AppLifecycle::RemoveListener(background_listener_);
   AppLifecycle::RemoveListener(foreground_listener_);
+}
+
+void CallController::SyncOngoingCall() {
+  const bool on = !presenter_.ActiveCallId().empty();
+  const std::string title = on ? std::string(in_call_.phone_title.c_str()) : std::string();
+  if (on == ongoing_call_on_ && title == ongoing_call_title_) {
+    return;
+  }
+  ongoing_call_on_ = on;
+  ongoing_call_title_ = title;
+  OngoingCallService::SetOngoingCall(on, title);
 }
 
 void CallController::SyncLocalHold() {
@@ -403,6 +422,7 @@ void CallController::Tick() {
   }
   SyncRingtone();
   SyncLocalHold();
+  SyncOngoingCall();
   EndDisconnectedCall(now);
   if (metrics_.Tracking()) {
     auto* backend = Backend();

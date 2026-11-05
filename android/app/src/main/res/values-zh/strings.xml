@@ -5,4 +5,6 @@
     <string name="message_incoming_body">你有一条新消息</string>
     <string name="call_answer">接听</string>
     <string name="call_decline">拒绝</string>
+    <string name="channel_calls_ongoing">通话中</string>
+    <string name="channel_calls_ongoing_description">通话进行时显示</string>
 </resources>

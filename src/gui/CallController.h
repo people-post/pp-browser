@@ -218,6 +218,10 @@ private:
   void OnAppForeground();
   uint64_t background_listener_ = 0;
   uint64_t foreground_listener_ = 0;
+  /** The call this device is in, as last told to the OS (OngoingCallService: Android's call service). */
+  void SyncOngoingCall();
+  bool ongoing_call_on_ = false;
+  std::string ongoing_call_title_;
   /** The peer's roster says they are on hold / their camera is paused (this frame). */
   bool peer_on_hold_ = false;
   bool peer_video_paused_ = false;

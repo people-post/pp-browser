@@ -276,10 +276,11 @@ endif()
 if(PP_BROWSER_IS_ANDROID)
   target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp
                  StayConnectedService_Android.cpp
-                 AndroidCallSystemUi.cpp SecureScreen_Android.cpp)
+                 AndroidCallSystemUi.cpp SecureScreen_Android.cpp
+                 OngoingCallService_Android.cpp)
   target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
 else()
-  target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp)
+  target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp OngoingCallService_Default.cpp)
   if(NOT PP_BROWSER_IS_IOS)
     target_sources(pp_foundation_platform PRIVATE SecureScreen_Default.cpp)
   endif()
