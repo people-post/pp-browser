@@ -429,6 +429,7 @@
     "pin.link_paste_title": "Paste transfer code",
     "pin.link_paste_message": "Paste the transfer code you copied on your other device. It works for 15 minutes.",
     "pin.link_paste_placeholder": "Transfer code",
+    "pin.paste_button": "Paste",
     "pin.link_paste_empty": "Paste the transfer code first.",
     "pin.link_imported": "Your account is now on this device",
     "pin.identity_phrase": "Restore with my recovery phrase",
