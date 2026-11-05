@@ -71,6 +71,8 @@
 #include "lib/pricing/PaymentPromiseWireCodec.h"
 
 #include <atomic>
+#include <unordered_map>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -606,6 +608,14 @@ private:
   /** Server-space warnings: once per level and run, and at most one list call a day. */
   BlobSpaceMonitor blob_space_monitor_;
   std::mutex blob_space_mutex_;
+  /**
+   * Contact photo fetches (ScheduleContactIconFetch): one at a time per cache key, and a failed key waits
+   * kIconFetchRetryAfter before the next try. The chats list asks on every refresh; without this every refresh
+   * started a GET per row and duplicates wrote the same cache files at once (2026-11-05 review; Android crash).
+   */
+  std::mutex icon_fetch_mu_;
+  std::unordered_set<std::string> icon_fetch_inflight_;
+  std::unordered_map<std::string, std::chrono::steady_clock::time_point> icon_fetch_failed_at_;
   std::function<void(int percent)> on_blob_space_warning_;
   void CheckBlobSpace(bool after_quota_error);
   struct AttachmentSendJob {

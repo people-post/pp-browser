@@ -1617,12 +1617,37 @@ void ConversationsHub::ScheduleContactIconFetch(const Contact& contact) {
   if (key.empty()) {
     return;
   }
-  const mesh::ProfileIconRef icon = *contact.remote.icon;
-  AppRuntime::PostWorkerBackground([this, icon, key]() {
-    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+  constexpr auto kIconFetchRetryAfter = std::chrono::minutes(5);
+  {
+    std::lock_guard<std::mutex> lock(icon_fetch_mu_);
+    if (icon_fetch_inflight_.count(key) > 0) {
       return;
     }
-    if (FetchProfileIcon(data_dir_, key, icon)) {
+    const auto failed = icon_fetch_failed_at_.find(key);
+    if (failed != icon_fetch_failed_at_.end() &&
+        std::chrono::steady_clock::now() - failed->second < kIconFetchRetryAfter) {
+      return;
+    }
+    icon_fetch_inflight_.insert(key);
+  }
+  const mesh::ProfileIconRef icon = *contact.remote.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    bool fetched = false;
+    bool failed = false;
+    if (ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      fetched = static_cast<bool>(FetchProfileIcon(data_dir_, key, icon));
+      failed = !fetched;
+    }
+    {
+      std::lock_guard<std::mutex> lock(icon_fetch_mu_);
+      icon_fetch_inflight_.erase(key);
+      if (failed) {
+        icon_fetch_failed_at_[key] = std::chrono::steady_clock::now();
+      } else {
+        icon_fetch_failed_at_.erase(key);
+      }
+    }
+    if (fetched) {
       AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
     }
   });
