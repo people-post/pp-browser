@@ -176,8 +176,18 @@
            data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"
            data-class-sidebar-session--pinned="session.pinned"
            data-event-click="select_thread(session.id)">
-        <div class="chat-row-avatar chat-row-avatar--ai">
-          <svg class="chat-row-avatar-icon" src="../icons/v2/sparkle-fill.svg" width="28" height="28"></svg>
+        <!-- Each AI conversation shows its title's first character in a per-conversation colour (like chats),
+             so they are distinguishable rather than all the same icon (Kenneth 2026-11-05). -->
+        <div class="chat-row-avatar"
+             data-class-avatar-tone-0="session.avatar_tone == 0"
+             data-class-avatar-tone-1="session.avatar_tone == 1"
+             data-class-avatar-tone-2="session.avatar_tone == 2"
+             data-class-avatar-tone-3="session.avatar_tone == 3"
+             data-class-avatar-tone-4="session.avatar_tone == 4"
+             data-class-avatar-tone-5="session.avatar_tone == 5"
+             data-class-avatar-tone-6="session.avatar_tone == 6"
+             data-class-avatar-tone-7="session.avatar_tone == 7">
+          <p class="chat-row-avatar-letter">{{session.avatar_letter}}</p>
         </div>
         <div class="sidebar-session-body">
           <div class="sidebar-session-line">
