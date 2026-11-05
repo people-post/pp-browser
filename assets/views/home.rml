@@ -93,12 +93,13 @@
             <span class="home-wh-icon home-wh-icon--calls"><svg src="../icons/v2/phone.svg" width="13" height="13"></svg></span>
             <span class="home-wh-title">{{i18n:home.widget.calls}}</span>
           </span>
-          <span class="home-num" data-if="home_missed_calls > 0 || home_calls_latest != ''">{{home_missed_calls}}</span>
-          <span class="home-small" data-if="home_missed_calls > 0 || home_calls_latest != ''">{{i18n:home.calls.missed}}</span>
-          <span class="home-small home-small--two" data-if="home_calls_latest != ''">{{home_calls_latest}}</span>
-          <span class="home-empty" data-if="home_missed_calls == 0 && home_calls_latest == ''">
+          <span class="home-num" data-if="home_missed_calls > 0">{{home_missed_calls}}</span>
+          <span class="home-small" data-if="home_missed_calls > 0">{{i18n:home.calls.missed}}</span>
+          <span class="home-small home-small--two" data-if="home_missed_calls > 0 && home_calls_latest != ''">{{home_calls_latest}}</span>
+          <span class="home-empty" data-if="home_missed_calls == 0">
             <span class="home-empty-icon home-empty-icon--calls"><svg src="../icons/v2/phone.svg" width="20" height="20"></svg></span>
-            <span class="home-small">{{i18n:home.calls.none}}</span>
+            <span class="home-small" data-if="home_calls_latest != ''">{{home_calls_latest}}</span>
+            <span class="home-small" data-if="home_calls_latest == ''">{{i18n:home.calls.none}}</span>
           </span>
         </button>
         <!-- Mentions: @me in groups from the last 7 days, read or not (like Calls); the number counts the unread ones,
