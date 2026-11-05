@@ -6,6 +6,49 @@
 
 namespace pbr {
 
+namespace {
+
+/**
+ * One card per row of the bound array `rows` (data-for), with `events` on the card and its tile drawn `tile_fit`
+ * ("fit": the whole frame; "fill": cover the tile, cropped).
+ */
+void AppendRosterCards(std::ostringstream& out, const char* rows, const char* card_class, const char* events,
+                       const char* tile_fit) {
+  out << "<div data-for=\"p : " << rows << "\" class=\"shell-call-peer-card " << card_class << "\" " << events << ">";
+  out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" fit=\"" << tile_fit
+      << "\" "
+         "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
+  out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"peer\" data-attr-stream=\"p.stream_id\" fit=\""
+      << tile_fit << "\" data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
+  out << "<div class=\"shell-call-peer-avatar\" "
+         "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
+         "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
+         "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
+         "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
+         "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
+         "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
+         "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
+         "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
+         "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
+         "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
+         "<p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
+  out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
+         "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
+         "data-attr-src=\"p.avatar_src\"/>";
+  out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
+  out << "<p class=\"text-xs shell-call-peer-stall\" "
+         "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
+         ">{{call_in_progress_remote_placeholder}}</p>";
+  out << "<div class=\"shell-call-peer-badges row\">";
+  out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"14\" height=\"14\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "</div></div>";
+}
+
+} // namespace
+
 std::string CallRingRml(const ShellState& state) {
   // Mounted into #shell-call-ring-mount when active (RemountCallChrome). Presence = visibility;
   // data-if alone was not flipping Display on idle Present (accept dialog stayed gone).
@@ -176,47 +219,37 @@ std::string CallInProgressRml(const ShellState& state) {
            ">{{call_in_progress_quality_hint}}</p>";
     out << "</div>";
     append_quality_chip(out, "");
+    if (!call.spotlight_stream.empty()) {
+      out << "<button class=\"shell-call-grid\" type=\"button\" data-event-click=\"call_spotlight_grid()\">";
+      out << "<svg src=\"../icons/grid.svg\" width=\"18\" height=\"18\" crop-to-content=\"true\"></svg>";
+      out << "</button>";
+    }
     out << "<button class=\"shell-call-expand\" type=\"button\" data-event-click=\"call_expand()\">";
     out << "<svg src=\"../icons/chevron-down.svg\" width=\"18\" height=\"18\"></svg>";
     out << "</button>";
     out << "</div></div>";
-    out << "<div class=\"shell-call-immersive-roster\">";
-    out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-peer-card\">";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" "
-           "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
-    out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"peer\" data-attr-stream=\"p.stream_id\" "
-           "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
-    out << "<div class=\"shell-call-peer-avatar\" "
-           "data-if=\"(p.is_local && !call_in_progress_local_preview) || "
-           "(!p.is_local && !p.has_remote_video && !p.has_avatar)\" "
-           "data-class-avatar-tone-0=\"p.avatar_tone == 0\" "
-           "data-class-avatar-tone-1=\"p.avatar_tone == 1\" "
-           "data-class-avatar-tone-2=\"p.avatar_tone == 2\" "
-           "data-class-avatar-tone-3=\"p.avatar_tone == 3\" "
-           "data-class-avatar-tone-4=\"p.avatar_tone == 4\" "
-           "data-class-avatar-tone-5=\"p.avatar_tone == 5\" "
-           "data-class-avatar-tone-6=\"p.avatar_tone == 6\" "
-           "data-class-avatar-tone-7=\"p.avatar_tone == 7\">"
-           "<p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
-    out << "<img class=\"shell-call-peer-avatar-image\" data-if=\"p.has_avatar && "
-           "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
-           "data-attr-src=\"p.avatar_src\"/>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
-    out << "<p class=\"text-xs shell-call-peer-stall\" "
-           "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
-           ">{{call_in_progress_remote_placeholder}}</p>";
-    out << "<div class=\"shell-call-peer-badges row\">";
-    out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"14\" height=\"14\" "
-           "crop-to-content=\"true\"></svg>";
-    out << "</div></div>";
-    // 1:1 / empty roster: still show a single presence card from title/peer.
-    out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
-    out << "<div class=\"shell-call-peer-avatar\"></div>";
-    out << "<p class=\"text-sm shell-call-peer-name\">{{call_in_progress_peer_label}}</p>";
-    out << "</div>";
-    out << "</div>";
+    if (call.spotlight_stream.empty()) {
+      // The grid: a tap on a card spotlights that person (V059).
+      out << "<div class=\"shell-call-immersive-roster\">";
+      AppendRosterCards(out, "call_in_progress_roster", "", "data-event-click=\"call_spotlight(p.stream_id)\"", "fit");
+      // 1:1 / empty roster: still show a single presence card from title/peer.
+      out << "<div class=\"shell-call-peer-card\" data-if=\"call_in_progress_participant_count == 0\">";
+      out << "<div class=\"shell-call-peer-avatar\"></div>";
+      out << "<p class=\"text-sm shell-call-peer-name\">{{call_in_progress_peer_label}}</p>";
+      out << "</div>";
+      out << "</div>";
+    } else {
+      // The spotlight fills the call area (a double tap: fill / fit); the others line up in a strip, a tap on one
+      // spotlights them instead.
+      out << "<div class=\"shell-call-immersive-spotlight\">";
+      AppendRosterCards(out, "call_in_progress_spotlight_rows", "shell-call-peer-card--spotlit",
+                        "data-event-dblclick=\"call_spotlight_fit()\"", call.spotlight_fill ? "fill" : "fit");
+      out << "</div>";
+      out << "<div class=\"shell-call-immersive-strip\">";
+      AppendRosterCards(out, "call_in_progress_strip_rows", "shell-call-peer-card--strip",
+                        "data-event-click=\"call_spotlight(p.stream_id)\"", "fill");
+      out << "</div>";
+    }
     out << "<div class=\"shell-call-immersive-controls\">";
     out << "<div class=\"shell-call-bar-actions row\">";
     append_core_actions(out);

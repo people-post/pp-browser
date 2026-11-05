@@ -130,7 +130,7 @@ void CallVideoTileRenderer::UploadIfNeeded(GpuTile& tile) {
   tile.uploaded_seq = frame.seq;
 }
 
-void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile) {
+void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile, const bool fill) {
   if (!element || tile.gl_tex == 0 || tile.uploaded_seq == 0) {
     return;
   }
@@ -147,10 +147,25 @@ void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile) {
     return;
   }
 
-  // Letterbox / pillarbox into the tile so frames keep their native aspect ratio.
   ui::Vector2f draw_size = size;
   ui::Vector2f draw_offset = offset;
-  if (tile.tex_width > 0 && tile.tex_height > 0) {
+  ui::Vector2f uv_top_left(0.f, 0.f);
+  ui::Vector2f uv_bottom_right(1.f, 1.f);
+  if (fill && tile.tex_width > 0 && tile.tex_height > 0) {
+    // Cover: the frame fills the tile, its overflow cropped evenly from both sides.
+    const float tex_aspect = static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
+    const float box_aspect = size.x / size.y;
+    if (tex_aspect > box_aspect) {
+      const float shown = box_aspect / tex_aspect;
+      uv_top_left.x = (1.f - shown) * 0.5f;
+      uv_bottom_right.x = 1.f - uv_top_left.x;
+    } else if (tex_aspect < box_aspect) {
+      const float shown = tex_aspect / box_aspect;
+      uv_top_left.y = (1.f - shown) * 0.5f;
+      uv_bottom_right.y = 1.f - uv_top_left.y;
+    }
+  } else if (tile.tex_width > 0 && tile.tex_height > 0) {
+    // Letterbox / pillarbox into the tile so frames keep their native aspect ratio.
     const float tex_aspect =
         static_cast<float>(tile.tex_width) / static_cast<float>(tile.tex_height);
     const float box_aspect = size.x / size.y;
@@ -164,15 +179,16 @@ void CallVideoTileRenderer::DrawTile(ui::Element* element, GpuTile& tile) {
   }
 
   ui::Mesh mesh;
-  ui::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size,
-                                   ui::ColourbPremultiplied(255, 255, 255, 255));
+  ui::MeshUtilities::GenerateQuad(mesh, draw_offset, draw_size, ui::ColourbPremultiplied(255, 255, 255, 255),
+                                  uv_top_left, uv_bottom_right);
   const ui::CompiledGeometryHandle handle = renderer->CompileGeometry(mesh.vertices, mesh.indices);
   renderer->RenderGeometry(handle, ui::Vector2f(0.f, 0.f),
                            static_cast<ui::TextureHandle>(static_cast<uintptr_t>(tile.gl_tex)));
   renderer->ReleaseGeometry(handle);
 }
 
-void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id) {
+void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id,
+                                       const bool fill) {
   GpuTile* tile = nullptr;
   if (kind == CallVideoTileKind::Local) {
     tile = &local_;
@@ -186,7 +202,7 @@ void CallVideoTileRenderer::RenderTile(CallVideoTileKind kind, ui::Element* elem
     tile = &remote_;
   }
   UploadIfNeeded(*tile);
-  DrawTile(element, *tile);
+  DrawTile(element, *tile, fill);
 }
 
 } // namespace pbr

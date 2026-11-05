@@ -48,13 +48,12 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   // model flush keep those in sync.
   // Mode / minimized corner change the markup tree → Remount (V031).
   if (synced.in_call_show_speaker != next.in_call_show_speaker ||
-      synced.in_call_show_camera != next.in_call_show_camera ||
-      synced.in_call_show_flip != next.in_call_show_flip ||
-      synced.in_call_show_invite != next.in_call_show_invite ||
-      synced.in_call_show_retry != next.in_call_show_retry ||
+      synced.in_call_show_camera != next.in_call_show_camera || synced.in_call_show_flip != next.in_call_show_flip ||
+      synced.in_call_show_invite != next.in_call_show_invite || synced.in_call_show_retry != next.in_call_show_retry ||
       synced.in_call_show_roster != next.in_call_show_roster ||
-      synced.in_call_stage_visible != next.in_call_stage_visible ||
-      synced.in_call_mode != next.in_call_mode ||
+      synced.in_call_stage_visible != next.in_call_stage_visible || synced.in_call_mode != next.in_call_mode ||
+      synced.in_call_spotlight != next.in_call_spotlight ||
+      synced.in_call_spotlight_fill != next.in_call_spotlight_fill ||
       synced.in_call_minimized_corner != next.in_call_minimized_corner ||
       synced.ring_show_pricing != next.ring_show_pricing ||
       synced.ring_accept_charge_enabled != next.ring_accept_charge_enabled) {
