@@ -234,9 +234,11 @@ public:
   void SetOnAiDotTap(std::function<void()> callback);
   /** The user dragged the AI dot to a new resting place (persist it). */
   void SetOnAiDotMoved(std::function<void(bool left, int y_permille, bool tucked)> callback);
-  /** True while a page the AI dot must not sit on is up (Me → Account & security: change PIN, recovery phrase). */
-  void SetAiDotSecretPage(std::function<bool()> showing);
-
+  /**
+   * True while a page with secrets on it is up (Me → Account & security: change PIN, recovery phrase). The AI dot does
+   * not sit on it, and neither it nor the PIN gate is in the OS's copies of the screen (SecureScreen).
+   */
+  void SetSecretPage(std::function<bool()> showing);
 
   bool RegisterWindowModel(ui::Context* context);
 
@@ -331,6 +333,8 @@ private:
   bool ChromeFrostEnabled() const;
   /** What is on screen now, for the AI dot (AiDotModel::Shown). */
   AiDotScene AiDotSceneNow() const;
+  /** Tells SecureScreen when a secret comes on screen or goes (the PIN gate, the secret page). */
+  void SyncSecureScreen();
   /** The AI dot's bound keys (ai_dot_*). */
   void DirtyAiDot();
   struct SafeAreaFromSdl {
@@ -422,8 +426,9 @@ private:
   ShellAiDot ai_dot_{state_};
   std::function<void()> on_ai_dot_tap_;
   std::function<void(bool, int, bool)> on_ai_dot_moved_;
-  std::function<bool()> ai_dot_secret_page_;
-
+  std::function<bool()> secret_page_;
+  /** What SecureScreen was last told. */
+  bool secret_on_screen_ = false;
 };
 
 } // namespace pbr

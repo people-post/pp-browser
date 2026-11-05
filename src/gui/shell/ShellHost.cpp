@@ -13,6 +13,7 @@
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ScreenKeyboard.h"
+#include "foundation/platform/SecureScreen.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/RmlVariantHelpers.h"
@@ -983,7 +984,7 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   scene.pin_gate = state_.pin_gate.active;
   // The startup cover, the onboarding wizard and a picture preview cover the whole screen.
   scene.cover = state_.startup_cover_visible || !overlay_bodies_.empty();
-  scene.secret_page = ai_dot_secret_page_ && ai_dot_secret_page_();
+  scene.secret_page = secret_page_ && secret_page_();
   scene.layer_open = !state_.overlay_stack.empty();
   for (const OverlayEntry& overlay : state_.overlay_stack) {
     scene.scanning = scene.scanning || overlay.full_screen;
@@ -1020,8 +1021,8 @@ void ShellHost::SetOnAiDotMoved(std::function<void(bool left, int y_permille, bo
   on_ai_dot_moved_ = std::move(callback);
 }
 
-void ShellHost::SetAiDotSecretPage(std::function<bool()> showing) {
-  ai_dot_secret_page_ = std::move(showing);
+void ShellHost::SetSecretPage(std::function<bool()> showing) {
+  secret_page_ = std::move(showing);
 }
 
 void ShellHost::DirtyCallChrome() {
@@ -2343,6 +2344,15 @@ void ShellHost::Update(ui::Context* context) {
   }
   ai_dot_.Update(context, AiDotSceneNow());
   favorites_snap_.Update(ShellFavoritesSnap::NowSeconds());
+  SyncSecureScreen();
+}
+
+void ShellHost::SyncSecureScreen() {
+  const bool secret = state_.pin_gate.active || (secret_page_ && secret_page_());
+  if (secret != secret_on_screen_) {
+    secret_on_screen_ = secret;
+    SecureScreen::SetSecretOnScreen(secret);
+  }
 }
 
 void ShellHost::NotifyFrameEnd(ui::Context* context) {

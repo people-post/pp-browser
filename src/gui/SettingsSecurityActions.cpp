@@ -8,6 +8,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/product/DevTools.h"
+#include "foundation/runtime/AppLifecycle.h"
 #include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
@@ -26,7 +27,18 @@ namespace pbr {
 
 SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const SettingsCommands& commands,
                                                  const ShellFeedbackPorts& feedback, const UnlockEnsurePorts& unlock)
-    : host_(host), commands_(commands), feedback_(feedback), unlock_(unlock) {}
+    : host_(host), commands_(commands), feedback_(feedback), unlock_(unlock) {
+  // The phrase does not stay up behind the app (the app switcher, an unlocked phone left on the table).
+  background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
+    if (!recovery_phrase_.empty()) {
+      HideRecoveryPhrase();
+    }
+  });
+}
+
+SettingsSecurityActions::~SettingsSecurityActions() {
+  AppLifecycle::RemoveListener(background_listener_);
+}
 
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("pin_change_old", &pin_change_old_);

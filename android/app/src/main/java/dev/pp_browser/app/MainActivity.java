@@ -57,7 +57,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * SDL3 and other native deps are statically linked into libmain.so (see root CMakeLists.txt).
  *
  * Captures a last-good SurfaceView frame into the task description before the EGL surface is
- * torn down, so Recents / app-switcher is less likely to show a black tile.
+ * torn down, so Recents / app-switcher is less likely to show a black tile. Never while a secret is
+ * on screen ({@link #setSecureScreen}): then the window is secure and the task's icon is the app's.
  *
  * On API 24+, SDL pauses from {@code onStop} after {@code surfaceDestroyed}; capture must happen
  * earlier from {@code onPause} / focus loss while {@code mIsSurfaceReady} is still true.
@@ -95,6 +96,8 @@ public class MainActivity extends SDLActivity {
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
     private final AtomicBoolean mThumbnailCapturedForPause = new AtomicBoolean(false);
+    /** A secret is on screen (native SecureScreen): no screenshot of it anywhere, ours included. */
+    private volatile boolean mSecureScreen;
     private AudioFocusRequest mCallAudioFocusRequest;
     private final AudioManager.OnAudioFocusChangeListener mCallAudioFocusListener = focusChange -> { };
 
@@ -927,6 +930,29 @@ public class MainActivity extends SDLActivity {
         NotificationManagerCompat.from(this).notify(req == 0 ? 1 : req, builder.build());
     }
 
+    /**
+     * Called from native SecureScreen when a secret comes on screen or goes (the PIN gate; Me → Account &
+     * security, where the recovery phrase shows). Secure: no screenshot, screen recording, cast or Recents
+     * preview of the window, and the task's icon goes back to the app's (it may hold an earlier screenshot).
+     */
+    public void setSecureScreen(boolean on) {
+        mSecureScreen = on;
+        runOnUiThread(() -> {
+            final Window window = getWindow();
+            if (on) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                setPlainTaskDescription();
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void setPlainTaskDescription() {
+        setTaskDescription(new ActivityManager.TaskDescription(getString(R.string.app_name)));
+    }
+
     /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */
     public void setMessageBannersOn(boolean on) {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_MESSAGE_BANNERS, on).apply();
@@ -1036,7 +1062,7 @@ public class MainActivity extends SDLActivity {
     }
 
     private void captureRecentsThumbnailOnce() {
-        if (!mThumbnailCapturedForPause.compareAndSet(false, true)) {
+        if (mSecureScreen || !mThumbnailCapturedForPause.compareAndSet(false, true)) {
             return;
         }
         captureRecentsThumbnail();
