@@ -82,7 +82,8 @@ Android still keeps the activity alive across other config changes (`configChang
 | `SDL_EVENT_RENDER_DEVICE_RESET` | Rebuild GL3 shaders/FBOs, release TextLoupe GPU state, `Rml::ReleaseTextures` / `ReleaseCompiledGeometry` / `ReleaseFontResources`, then `SyncContext` |
 | `SDL_EVENT_DID_ENTER_FOREGROUND` | `SyncContext` + theme sync (size may have changed while backgrounded) |
 | Invalid surface / zero pixel size | Skip `BeginFrame` / `PresentFrame` (avoids clearing into a dead surface) |
-| `onPause` / focus loss (before surface destroy) | `MainActivity` best-effort `PixelCopy` of `SDLSurface` into `TaskDescription` so Recents is less likely to show a black tile |
+| `onPause` / focus loss (before surface destroy) | `MainActivity` best-effort `PixelCopy` of `SDLSurface` into `TaskDescription` so Recents is less likely to show a black tile — never while a secret is on screen (below) |
+| A secret on screen (`SecureScreen`: the PIN gate; Me → Account & security, where the recovery phrase shows) | `FLAG_SECURE` on the window (no screenshot, screen recording, cast or Recents preview of it) and the task's icon back to the app's; iOS: a plain cover while the app is not active, so the app switcher's picture shows none of it. The recovery phrase hides when the app goes to the background |
 
 Do not issue OpenGL calls after `SDL_EVENT_WILL_ENTER_BACKGROUND`; SDL may have already backed up the EGL context.
 

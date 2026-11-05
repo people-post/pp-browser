@@ -72,3 +72,14 @@
 
 **Rationale:** P004 publishes what a node offers (addresses, services) so anyone can use it. A 5-minute heartbeat adds more: a timeline of when each node is up — readable by anyone polling the listing — and the node's real egress address in the directory's logs, which differs from its advertised addresses when it advertises through a relay. It also makes one server the authority on which nodes are alive, against the mesh's direction (N029: the HTTP directory is an interim phone book). The heartbeat stays for the org's own seeds, where a dead node lingering in the list (registrations last 90 days) costs clients dials. The longer-term answer — liveness that travels with signed records and is observed by the mesh, not reported to the directory — is [N031](../p2p-mesh/DECISIONS.md#n031--node-liveness-short-lived-signed-records-observed-by-the-mesh).
 
+## P012 — Secrets stay out of the OS's copies of the screen
+
+**Date:** 2026-11-05
+**Decision:** While a screen with a secret on it is up — the PIN gate (unlock, a new PIN, a typed recovery phrase or transfer code), Me → Account & security (change PIN, the recovery phrase shown) — the OS's copies of the screen leave it out (`SecureScreen`, driven by `ShellHost` from the same "secret page" that keeps the AI dot off it):
+- Android: `FLAG_SECURE` on the window — no screenshot, screen recording, cast or Recents preview of it (the SurfaceView's content is covered from Android 10) — and the app's own Recents thumbnail (a `PixelCopy` into the task's icon, which Android keeps on its disk) is never taken then; the task's icon goes back to the app's.
+- iOS: a plain cover over the window while the app is not active, so the app switcher's picture shows none of it. iOS cannot stop a screenshot.
+- The recovery phrase hides when the app goes to the background (as it does by itself after two minutes).
+Other screens (chats) are copied as before.
+**Rationale:** The phrase and the PIN are the account: a screenshot, a screen recording left running, a cast to a TV or the app switcher's picture copies them somewhere the owner does not control (the photo library, a cloud backup, the system's task snapshots). The PIN gate is covered too: what is typed there is a secret even when it shows as dots. Chats stay as they were — a whole-app screen block is a setting other messengers offer, not a default.
+**Follow-ups:** desktop windows during screen sharing (Windows `WDA_EXCLUDEFROMCAPTURE`, macOS `sharingType`); hiding the phrase while an iOS screen is being recorded or mirrored; an opt-in "screen security" for every screen.
+

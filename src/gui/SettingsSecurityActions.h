@@ -28,6 +28,9 @@ class SettingsSecurityActions {
 public:
   SettingsSecurityActions(SettingsHost& host, const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
                           const UnlockEnsurePorts& unlock);
+  ~SettingsSecurityActions();
+  SettingsSecurityActions(const SettingsSecurityActions&) = delete;
+  SettingsSecurityActions& operator=(const SettingsSecurityActions&) = delete;
 
   /** Its fields and events in the settings model. */
   void Bind(ui::DataModelConstructor& ctor);
@@ -68,6 +71,8 @@ private:
   ui::String recovery_phrase_pin_;
   /** Bumped on every show and hide: a pending auto-hide only acts on the showing it was set for. */
   uint64_t recovery_shown_count_ = 0;
+  /** Hides the recovery phrase when the app goes to the background (UI thread, SDL's event). */
+  uint64_t background_listener_ = 0;
   /** How long the phrase stays on screen. */
   static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
 
