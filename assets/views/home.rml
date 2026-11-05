@@ -22,7 +22,7 @@
   <!-- Phone only (hidden on the desktop): date line, large title and the widgets (DESIGN-pp-ui 8.16, mockup
        10-home-widgets), iPhone-widget style: a wide card takes a row, two small ones sit side by side, in the order
        the user set in Edit Home. A widget with nothing to show is not drawn (Favorites always is). -->
-  <div class="home-scroll root-scroll" data-model="shell">
+  <div class="home-scroll root-scroll" data-model="shell" data-if="home_show_dynamic">
     <p class="home-date">{{home_date_label}}</p>
     <p class="large-title">{{i18n:home.title}}</p>
     <div class="home-grid">
@@ -161,10 +161,17 @@
       </div>
     </div>
   </div>
-  <div class="home-landing">
+  <!-- data-model=shell drives the minimal/centered switch; the chips keep the chat model (home-landing-inner below). -->
+  <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic">
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
-    <div class="home-landing-inner stack">
+    <!-- Minimal AI-first Home (Kenneth 2026-11-05, 太乱): a prominent heading + one line above the chips when the
+         动态 widgets are hidden (the default). Shown only in minimal mode. -->
+    <div class="home-ai-intro stack" data-if="!home_show_dynamic">
+      <h1 class="home-ai-title">{{i18n:home.ai.title}}</h1>
+      <p class="home-ai-subtitle muted">{{i18n:home.ai.subtitle}}</p>
+    </div>
+    <div class="home-landing-inner stack" data-model="chat">
       <!-- The desktop's ask-AI field; phones have only the chips below (Kenneth 2026-11-04). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">

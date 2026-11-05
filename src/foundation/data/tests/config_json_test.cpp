@@ -242,6 +242,22 @@ TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
   EXPECT_TRUE(parsed.recovery_phrase_seen);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
+  // Minimal AI-first Home: absent (a fresh or pre-existing profile) reads off; once set it stays set.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.home_show_dynamic = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.home_show_dynamic);
+
+  pbr::ProfilePreferences edited;
+  edited.home_show_dynamic = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.home_show_dynamic);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

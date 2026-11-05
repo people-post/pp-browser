@@ -177,6 +177,7 @@ private:
     ui::String language_label = "System";
     ui::String reduce_transparency = "off";
     ui::String call_diagnostics = "off";
+    ui::String home_show_dynamic = "off";
     ui::String crash_reports_enabled = "off";
     ui::String show_advanced_settings = "off";
     /** show_advanced_settings == "on"; templates gate technical rows on it. */
@@ -229,6 +230,7 @@ private:
   /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
   void ToggleTransparency();
   void ToggleCallDiagnostics();
+  void ToggleHomeShowDynamic();
   void ToggleShowAdvancedSettings();
   /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
   void ToggleAiDot();

@@ -1542,13 +1542,16 @@ void Application::WireAgentAndConfig() {
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
   store_.AddProfilePrefsListener(
       [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
-  // A contact starred or unstarred (on their page), or the recovery phrase opened: Home's widgets follow.
+  // A contact starred or unstarred (on their page), the recovery phrase opened, or the 动态 section toggled: Home follows.
   store_.AddProfilePrefsListener(
       [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
-       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen](const ProfilePreferences& prefs) mutable {
-        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen) {
+       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen,
+       show_dynamic = store_.Snapshot().profile_prefs.home_show_dynamic](const ProfilePreferences& prefs) mutable {
+        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen ||
+            prefs.home_show_dynamic != show_dynamic) {
           starred = prefs.starred_contacts;
           phrase_seen = prefs.recovery_phrase_seen;
+          show_dynamic = prefs.home_show_dynamic;
           chat_->OnHomePrefsChanged();
         }
       });

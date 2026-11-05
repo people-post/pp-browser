@@ -11505,6 +11505,53 @@ textarea:composing ~ .prompt-composer-label,
   box-sizing: border-box;
 }
 
+/* Minimal AI-first Home (Kenneth 2026-11-05): with the 动态 widgets hidden (the default), the landing is the whole
+   page — it grows and centres the ask-AI heading and the chips. */
+.shell-layer-compact .home-landing--minimal {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 44dp 0 48dp 0;
+}
+
+/* No widgets above, so the fade into the dock has nothing to fade from. */
+.shell-layer-compact .home-landing--minimal .home-dock-fade {
+  display: none;
+}
+
+/* The ask-AI heading above the chips; phone-only, so hidden on the desktop Home. */
+.home-ai-intro {
+  display: none;
+}
+
+.shell-layer-compact .home-ai-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6dp;
+  margin: 0;
+  padding: 0 24dp 16dp 24dp;
+  text-align: center;
+}
+
+.shell-layer-compact .home-ai-title {
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 26dp;
+  line-height: 32dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .home-ai-subtitle {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
 /* The widgets fade into the dock over 28dp (no divider line); touches pass through. Gradient: colors-*.rcss. */
 .home-dock-fade,
 .home-dock-seam {
