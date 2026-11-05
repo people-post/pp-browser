@@ -102,3 +102,7 @@ x-name-5	#238192	#30b0c7	extra: group sender name 5; light is darker than avatar
 x-name-7	#8c7251	#a2845e	extra: group sender name 7; light is darker than avatar-7 (>= 4.5:1 on the incoming bubble), dark is avatar-7
 x-home-empty-mentions	#ff95001f	#ff9f0a2e	extra: Home Mentions widget with nothing to show, tint behind the big faint @ (Kenneth 2026-11-05 原话 88, option C)
 x-home-empty-new-people	#af52de1f	#af52de2e	extra: Home New people widget with nothing to show, tint behind the big faint person-plus
+x-storage-other	#c7c7cc	#48484a	extra: Me -> Storage usage bar, the "other" segment
+x-storage-video-tint	#af52de40	#af52de4d	extra: Me -> Storage manager, a video tile before its frame loads
+x-on-media	#ffffff	#ffffff	extra: text and ticks drawn over a picture (storage manager tiles), white in both themes
+x-on-media-shadow	#00000099	#00000099	extra: shadow under text over a picture

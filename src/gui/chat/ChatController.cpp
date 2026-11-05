@@ -1171,6 +1171,7 @@ void ChatController::ApplyHomeToday(const ChatListScreen& list) {
           ? home_summary_.mentions.title.c_str()
           : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
   shell_.home_new_people = home_summary_.new_contacts;
+  shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
   if (layout.Kept(kHomeWidgetFavorites)) {
     ApplyHomeFavorites(list.rows);
   } else {
@@ -4124,6 +4125,11 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("home_open_brief", DataEvent<int>([this](const int index) { OpenHomeBrief(index); }));
         ctor.BindEventCallback("home_brief_all", DataEvent([this] { SendSuggestionAction("articles"); }));
         ctor.BindEventCallback("home_open_new_people", DataEvent([this] { OpenHomeNewPeople(); }));
+        ctor.BindEventCallback("home_open_security", DataEvent([this] {
+          if (open_settings_section_) {
+            open_settings_section_("security");
+          }
+        }));
         ctor.BindEventCallback("home_open_favorite", DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
         ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));
         ctor.BindEventCallback("home_open_chats", DataEvent([this] { ShellSelectNavTab(NavTab::Sessions); }));

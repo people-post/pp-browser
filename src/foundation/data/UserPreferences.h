@@ -45,6 +45,8 @@ struct ProfilePreferences {
   std::string language = "system";
   /** True when vault was created with kDefaultProfilePin and not yet changed. */
   bool pin_is_default = false;
+  /** The user has opened their recovery phrase on Me → Security once (Home's Security widget; device-only). */
+  bool recovery_phrase_seen = false;
   /** When true, renew network registration near/past expiry after unlock. */
   bool auto_renew_registration = true;
   /** P005 (amended by P010) — message banners; push stays registered and calls ring either way. */

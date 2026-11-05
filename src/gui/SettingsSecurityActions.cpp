@@ -259,6 +259,12 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
       }
       recovery_phrase_ = phrase->value().Reveal().c_str();  // shown to its owner, on their screen
       host_.PushToView(false);
+      // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
+      if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
+        ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
+        prefs.recovery_phrase_seen = true;
+        (void)host_.Store().SaveProfilePrefs(prefs);
+      }
       // Not left on screen: it hides by itself.
       const uint64_t shown = ++recovery_shown_count_;
       AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRecoveryPhraseShownMs), [this, shown]() {

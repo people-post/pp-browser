@@ -759,6 +759,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("appearance", prefs.appearance);
   object.set("language", prefs.language);
   object.set("pin_is_default", prefs.pin_is_default);
+  object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
   object.set("show_notification_preview", prefs.show_notification_preview);
@@ -823,6 +824,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto pin_is_default = object.getIf<bool>("pin_is_default")) {
     prefs.pin_is_default = *pin_is_default;
   }
+  prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
     prefs.auto_renew_registration = *auto_renew;
   } else {

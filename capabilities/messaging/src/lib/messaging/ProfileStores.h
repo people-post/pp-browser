@@ -11,6 +11,7 @@
 
 #include "common/Error.h"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -36,6 +37,8 @@ struct ProfileStores {
   std::vector<IDekConsumer*> at_rest;
   /** The profile database, for the calls stack's stores (`OpenSqliteCallStores`). */
   std::string profile_db_path;
+  /** Bytes the message databases take on disk now (Me → Storage's "chats" share); none: not known. Blocking. */
+  std::function<uint64_t()> message_store_bytes;
 };
 
 /** Opens a profile's stores (`profile_data_dir`, `profile_id`): the app's storage, or a test's in-memory ones. */

@@ -2760,6 +2760,19 @@ input.checkbox:checked {
   background-color: #af52de;
 }
 
+/* Security: green when the recovery phrase has been opened, orange while it still should be written down. */
+.shell-layer-compact .home-wh-icon--security {
+  background-color: #34c759;
+}
+
+.shell-layer-compact .home-num--ok {
+  color: #34c759;
+}
+
+.shell-layer-compact .home-num--todo {
+  color: #ff9500;
+}
+
 /* Mentions / New people with nothing to show: a faint tinted icon over one grey line (mockup 12, option C). */
 .shell-layer-compact .home-empty-icon--mentions {
   background-color: #ff95001f;
@@ -3063,5 +3076,95 @@ input.checkbox:checked {
 
 .call-phone-kv {
   border-color: #3c3c434a;
+}
+
+/* Me -> Storage and its storage manager (merged 2026-11-05 from kenneth/storage-manager; colours moved onto tokens). */
+.storage-bar {
+  background-color: #78788033;
+}
+
+.storage-c-picture {
+  background-color: #007aff;
+}
+
+.storage-c-video {
+  background-color: #af52de;
+}
+
+.storage-c-file {
+  background-color: #ff9500;
+}
+
+.storage-c-chats {
+  background-color: #8e8e93;
+}
+
+.storage-c-other {
+  background-color: #c7c7cc;
+}
+
+.storage-row + .storage-row {
+  border-top-color: #3c3c434a;
+}
+
+.settings-radio-check {
+  image-color: #007aff;
+}
+
+.storage-nav-back,
+.storage-nav-action {
+  color: #007aff;
+}
+
+.storage-nav-back-icon {
+  image-color: #007aff;
+}
+
+.storage-seg {
+  background-color: #7878801f;
+}
+
+.storage-tile-frame {
+  background-color: #007aff1f;
+}
+
+.storage-tile--video .storage-tile-frame {
+  background-color: #af52de40;
+}
+
+.storage-tile-size {
+  color: #ffffff;
+  font-effect: shadow(1dp 1dp #00000099);
+}
+
+.storage-tile-play {
+  image-color: #ffffff;
+}
+
+.storage-check {
+  border-color: #8e8e93;
+}
+
+.storage-tile-check {
+  border-color: #ffffff;
+  background-color: #00000026;
+}
+
+.storage-check--on,
+.storage-tile-check.storage-check--on {
+  border-color: #007aff;
+  background-color: #007aff;
+}
+
+.storage-check-icon {
+  image-color: #ffffff;
+}
+
+.storage-file-type {
+  background-color: #ff9500;
+}
+
+.storage-file-type-text {
+  color: #ffffff;
 }
 }

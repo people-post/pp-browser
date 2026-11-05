@@ -28,11 +28,7 @@ AttachmentDownloadPolicy AttachmentDownloadPolicyFromString(const std::string& v
 }
 
 bool ShouldAutoEnqueueAttachment(const AttachmentDownloadPolicy policy, const uint64_t byte_length,
-                                 const bool backlog_drain, const uint64_t smart_max_bytes,
-                                 const bool network_allows_all_auto) {
-  if (backlog_drain) {
-    return true;
-  }
+                                 const uint64_t smart_max_bytes, const bool network_allows_all_auto) {
   switch (policy) {
   case AttachmentDownloadPolicy::AlwaysAuto:
     return network_allows_all_auto || byte_length <= smart_max_bytes;

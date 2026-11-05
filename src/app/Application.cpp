@@ -106,6 +106,7 @@
 #include "foundation/product/DevTools.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/SettingsController.h"
+#include "app/StorageManagerBridge.h"
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellHost.h"
@@ -681,8 +682,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.delete_relay_file = [&facade](const std::string& blob_id) {
     return facade.DeleteRelayFileById(blob_id);
   };
-  settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
-  settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   // Me → Storage works on the hub's content store: open from messaging's Initialize to its teardown.
   const auto content_store = [this]() -> std::shared_ptr<CasStore> {
     return messaging_ != nullptr ? messaging_->Content() : nullptr;
@@ -1026,6 +1025,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     const auto last = ReadLastUpload(store_.Snapshot().data_dir);
     return last ? last->upload_id : std::string();
   };
+  settings_commands.storage =
+      MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
@@ -1071,6 +1072,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
   settings_->BindOpenHomeEdit([this]() { chat_->OpenHomeEdit(); });
+  chat_->BindOpenSettingsSection([this](const std::string& section_id) { settings_->OpenSection(section_id); });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
   chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
@@ -1540,11 +1542,13 @@ void Application::WireAgentAndConfig() {
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
   store_.AddProfilePrefsListener(
       [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
-  // A contact starred or unstarred (on their page): Home's Favorites follow.
+  // A contact starred or unstarred (on their page), or the recovery phrase opened: Home's widgets follow.
   store_.AddProfilePrefsListener(
-      [this, starred = store_.Snapshot().profile_prefs.starred_contacts](const ProfilePreferences& prefs) mutable {
-        if (prefs.starred_contacts != starred) {
+      [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
+       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen](const ProfilePreferences& prefs) mutable {
+        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen) {
           starred = prefs.starred_contacts;
+          phrase_seen = prefs.recovery_phrase_seen;
           chat_->OnHomePrefsChanged();
         }
       });

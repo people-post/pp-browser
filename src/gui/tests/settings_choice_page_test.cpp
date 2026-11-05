@@ -99,9 +99,10 @@ TEST(SettingsChoicePageTest, ThePushedPageHasTheRowsTheCheckTheFootAndTheHelp) {
   EXPECT_NE(rml.find("class=\"settings-choice-check\" data-if=\"option.selected\""), std::string::npos);
   EXPECT_NE(rml.find("{{choice_foot}}"), std::string::npos);
   EXPECT_NE(rml.find("ask_setting_help(choice_help_topic)"), std::string::npos);
-  // Every row that picks one value still has its handler (the controller decides menu or page).
+  // Every row that picks one value still has its handler (the controller decides menu or page). Storage picks its
+  // download policy with ticked rows in the page itself (choose_attachment_download_policy), not a choice page.
   for (const char* view : {"views/settings_section_appearance.rml", "views/settings_section_security.rml",
-                           "views/settings_section_network.rml", "views/settings_section_storage.rml"}) {
+                           "views/settings_section_network.rml"}) {
     EXPECT_NE(ReadAsset(view).find("data-event-click=\"on_choose_"), std::string::npos) << view;
   }
 }

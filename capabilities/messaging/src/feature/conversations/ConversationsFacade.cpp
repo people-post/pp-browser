@@ -894,12 +894,101 @@ Roe<void> ConversationsFacade::DeleteRelayFileById(const std::string& blob_id) {
   return hub_.DeleteRelayFileById(blob_id);
 }
 
-void ConversationsFacade::DrainPendingAttachmentMedia() { hub_.DrainPendingAttachmentMedia(); }
-
-Roe<void> ConversationsFacade::ClearDownloadedAttachments() { return hub_.ClearDownloadedAttachments(); }
-
 void ConversationsFacade::RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id) {
   hub_.RequestAttachmentDownload(thread_id, message_id);
+}
+
+void ConversationsFacade::ListStoredAttachmentsAsync(std::function<void(std::vector<StoredAttachmentItem>)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<std::vector<StoredAttachmentItem>>(
+      WorkerLane::Normal,
+      [this]() -> std::vector<StoredAttachmentItem> {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return {};
+        }
+        return hub_.ListStoredAttachments();
+      },
+      [done = std::move(done)](std::vector<StoredAttachmentItem> items) {
+        if (done) {
+          done(std::move(items));
+        }
+      });
+}
+
+void ConversationsFacade::ReleasableAttachmentBytesAsync(std::vector<StoredAttachmentRef> items,
+                                                         std::function<void(uint64_t)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<uint64_t>(
+      WorkerLane::Normal,
+      [this, items = std::move(items)]() -> uint64_t {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return 0;
+        }
+        return hub_.ReleasableAttachmentBytes(items);
+      },
+      [done = std::move(done)](const uint64_t bytes) {
+        if (done) {
+          done(bytes);
+        }
+      });
+}
+
+void ConversationsFacade::DeleteLocalAttachmentsAsync(std::vector<StoredAttachmentRef> items,
+                                                      std::function<void(StoredAttachmentDeleteResult)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<StoredAttachmentDeleteResult>(
+      WorkerLane::Normal,
+      [this, items = std::move(items)]() mutable -> StoredAttachmentDeleteResult {
+        StoredAttachmentDeleteResult result;
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return result;
+        }
+        hub_.DeleteLocalAttachments(std::move(items), [&result](StoredAttachmentDeleteResult done_result) {
+          result = done_result; // called on this worker before DeleteLocalAttachments returns
+        });
+        return result;
+      },
+      [done = std::move(done)](StoredAttachmentDeleteResult result) {
+        if (done) {
+          done(result);
+        }
+      });
+}
+
+void ConversationsFacade::MessageStoreBytesAsync(std::function<void(uint64_t)> done) {
+  AppRuntime::PostWorkerAndReplyOnUI<uint64_t>(
+      WorkerLane::Normal,
+      [this]() -> uint64_t {
+        if (AppRuntime::IsShuttingDown() || !hub_.IsInitialized()) {
+          return 0;
+        }
+        return hub_.MessageStoreBytes();
+      },
+      [done = std::move(done)](const uint64_t bytes) {
+        if (done) {
+          done(bytes);
+        }
+      });
+}
+
+void ConversationsFacade::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  hub_.SetOnStoredAttachmentsChanged(std::move(callback));
+}
+
+void ConversationsFacade::SetOnGridThumbnailReady(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
+  hub_.SetOnGridThumbnailReady(std::move(callback));
+}
+
+void ConversationsFacade::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                               const std::string& mime, const uint64_t page_generation) {
+  hub_.RequestGridThumbnail(thread_id, content_hash, mime, page_generation);
+}
+
+void ConversationsFacade::CancelGridThumbnails(const uint64_t page_generation) {
+  hub_.CancelGridThumbnails(page_generation);
+}
+
+std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,
+                                                   const std::vector<uint8_t>& content_hash) {
+  return hub_.GridThumbnailPath(thread_id, content_hash);
 }
 
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,

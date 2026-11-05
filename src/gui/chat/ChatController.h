@@ -164,6 +164,10 @@ public:
   void BindAskSupport(std::function<Roe<void>(const std::string& question)> ask_support) {
     ask_support_ = std::move(ask_support);
   }
+  /** Home's Security widget opens Me → that page (SettingsController::OpenSection). */
+  void BindOpenSettingsSection(std::function<void(const std::string& section_id)> open) {
+    open_settings_section_ = std::move(open);
+  }
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
   void OnSelectThread(const std::string& thread_id);
@@ -578,6 +582,7 @@ private:
   /** The ask-AI half sheet over any page (DEV/PLAN-ui-batch5-ask-ai.md 5a). */
   AskAiPanel ask_ai_{*this, agent_};
   std::function<Roe<void>(const std::string& question)> ask_support_;
+  std::function<void(const std::string& section_id)> open_settings_section_;
   FlowCoordinatorPorts flow_coordinator_;
   /** The screen's menus (long press / right-click, header buttons, pickers' fallbacks). */
   ChatMenus menus_{*this, presenter_, chat_, working_set_, contacts_notify_, emoji_picker_notify_, shell_feedback_,

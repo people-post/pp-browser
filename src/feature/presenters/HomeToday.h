@@ -26,6 +26,8 @@ inline constexpr const char* kHomeWidgetCalls = "calls";
 inline constexpr const char* kHomeWidgetMentions = "mentions";
 inline constexpr const char* kHomeWidgetNewPeople = "new_people";
 inline constexpr const char* kHomeWidgetBrief = "brief";
+/** The account's protection: the recovery phrase written down or not; pairs with New people (Kenneth 2026-11-05). */
+inline constexpr const char* kHomeWidgetSecurity = "security";
 
 /** Every widget once, in the default order. */
 const std::vector<std::string>& HomeWidgetIds();
@@ -168,7 +170,7 @@ HomeWidgetData HomeWidgetDataOf(const HomeTodaySummary& summary, const HomeCalls
 
 /**
  * The widgets drawn, in Home's order: the kept ones with something to show. Favorites always shows (with a hint when
- * empty), Mentions and New people always show (0 when none); Recent chats once there is a chat; Calls and Today's
+ * empty), Mentions, New people and Security always show (an empty state when none); Recent chats once there is a chat; Calls and Today's
  * briefs only with data.
  */
 std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const HomeWidgetData& data);

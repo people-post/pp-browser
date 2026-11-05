@@ -125,6 +125,18 @@
             <span class="home-small">{{i18n:home.new_people.none}}</span>
           </span>
         </button>
+        <!-- Security (Kenneth 2026-11-05 原话 92, 98): whether the recovery phrase has been opened once on Me → Security
+             (recovery_phrase_seen); a tap opens that page. Pairs with New people so the small cards fill their row. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'security'" data-event-click="home_open_security()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--security"><svg src="../icons/v2/shield.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.security}}</span>
+          </span>
+          <span class="home-num home-num--word home-num--ok" data-if="home_security_ok">{{i18n:home.security.ok}}</span>
+          <span class="home-small home-small--two" data-if="home_security_ok">{{i18n:home.security.ok_line}}</span>
+          <span class="home-num home-num--word home-num--todo" data-if="!home_security_ok">{{i18n:home.security.todo}}</span>
+          <span class="home-small home-small--two" data-if="!home_security_ok">{{i18n:home.security.todo_line}}</span>
+        </button>
         <!-- Today's briefs: the first headline larger, two more under it (cached, refreshed when over 3 hours old);
              "See all" shows the feed in the AI chat like the Latest briefs chip. -->
         <div class="home-w" data-if="w.id == 'brief'">

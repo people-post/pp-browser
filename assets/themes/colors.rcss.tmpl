@@ -2838,6 +2838,19 @@ input.checkbox:checked {
   background-color: {{avatar-4}};
 }
 
+/* Security: green when the recovery phrase has been opened, orange while it still should be written down. */
+.shell-layer-compact .home-wh-icon--security {
+  background-color: {{success}};
+}
+
+.shell-layer-compact .home-num--ok {
+  color: {{success}};
+}
+
+.shell-layer-compact .home-num--todo {
+  color: {{warn}};
+}
+
 /* Mentions / New people with nothing to show: a faint tinted icon over one grey line (mockup 12, option C). */
 .shell-layer-compact .home-empty-icon--mentions {
   background-color: {{x-home-empty-mentions}};
@@ -3141,5 +3154,95 @@ input.checkbox:checked {
 
 .call-phone-kv {
   border-color: {{separator}};
+}
+
+/* Me -> Storage and its storage manager (merged 2026-11-05 from kenneth/storage-manager; colours moved onto tokens). */
+.storage-bar {
+  background-color: {{fill}};
+}
+
+.storage-c-picture {
+  background-color: {{accent}};
+}
+
+.storage-c-video {
+  background-color: {{avatar-4}};
+}
+
+.storage-c-file {
+  background-color: {{warn}};
+}
+
+.storage-c-chats {
+  background-color: {{gray}};
+}
+
+.storage-c-other {
+  background-color: {{x-storage-other}};
+}
+
+.storage-row + .storage-row {
+  border-top-color: {{separator}};
+}
+
+.settings-radio-check {
+  image-color: {{accent}};
+}
+
+.storage-nav-back,
+.storage-nav-action {
+  color: {{accent}};
+}
+
+.storage-nav-back-icon {
+  image-color: {{accent}};
+}
+
+.storage-seg {
+  background-color: {{fill-2}};
+}
+
+.storage-tile-frame {
+  background-color: {{accent-tint}};
+}
+
+.storage-tile--video .storage-tile-frame {
+  background-color: {{x-storage-video-tint}};
+}
+
+.storage-tile-size {
+  color: {{x-on-media}};
+  font-effect: shadow(1dp 1dp {{x-on-media-shadow}});
+}
+
+.storage-tile-play {
+  image-color: {{x-on-media}};
+}
+
+.storage-check {
+  border-color: {{gray}};
+}
+
+.storage-tile-check {
+  border-color: {{x-on-media}};
+  background-color: {{shadow}};
+}
+
+.storage-check--on,
+.storage-tile-check.storage-check--on {
+  border-color: {{accent}};
+  background-color: {{accent}};
+}
+
+.storage-check-icon {
+  image-color: {{label-on-accent}};
+}
+
+.storage-file-type {
+  background-color: {{warn}};
+}
+
+.storage-file-type-text {
+  color: {{label-on-accent}};
 }
 }

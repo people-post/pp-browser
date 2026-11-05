@@ -8,8 +8,9 @@ namespace pbr {
 
 const std::vector<std::string>& HomeWidgetIds() {
   // Mockup 10-home-widgets: the two small ones that pair up sit together.
-  static const std::vector<std::string> ids = {kHomeWidgetFavorites, kHomeWidgetCalls,     kHomeWidgetMentions,
-                                               kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople};
+  static const std::vector<std::string> ids = {kHomeWidgetFavorites,   kHomeWidgetCalls, kHomeWidgetMentions,
+                                               kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople,
+                                               kHomeWidgetSecurity};
   return ids;
 }
 
@@ -278,6 +279,7 @@ std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const 
   for (const std::string& id : layout.OnHome()) {
     // Mentions and New people stay with a 0 (Kenneth 2026-11-05).
     const bool has = id == kHomeWidgetFavorites || id == kHomeWidgetMentions || id == kHomeWidgetNewPeople ||
+                     id == kHomeWidgetSecurity ||
                      (id == kHomeWidgetRecentChats && data.any_chat) || (id == kHomeWidgetCalls && data.calls) ||
                      (id == kHomeWidgetBrief && data.brief_items > 0);
     if (has) {

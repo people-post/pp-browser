@@ -49,6 +49,7 @@ pp_browser_add_feature_library(pp_gui
     SettingsController.cpp
     SettingsProfileActions.cpp
     SettingsSecurityActions.cpp
+    StorageManagerController.cpp
     UiPerfTestController.cpp
     DiagnosticsFeedback.cpp
     shell/DataModelHost.cpp

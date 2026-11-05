@@ -11577,3 +11577,348 @@ textarea:composing ~ .prompt-composer-label,
   font-size: 15dp;
   line-height: 32dp;
 }
+
+/* Me → Storage and its "Manage storage" pages (DEV/PLAN-storage-manager.md): iOS-style grouped lists, in-place
+ * choice rows with a check, a usage bar, segmented tabs, a 3-column grid and select mode. Surfaces borrow the
+ * themed `.settings-row` / `.settings-choice-row` / `.settings-toggle-label` / `.settings-choice-value-text`
+ * colours; the fixed colours below read on light and dark alike. */
+.storage-section .storage-card,
+.storage-section .storage-group {
+  display: block;
+  margin: 0;
+  min-height: 0;
+  padding: 0;
+  border-radius: 12dp;
+  overflow: hidden;
+  cursor: default;
+}
+
+.storage-section .storage-card {
+  padding: 14dp 16dp;
+  margin-bottom: 16dp;
+}
+
+.storage-usage-line {
+  margin: 0 0 10dp 0;
+  font-size: 14dp;
+}
+
+.storage-usage-big {
+  font-size: 22dp;
+  font-weight: bold;
+}
+
+.storage-bar {
+  gap: 0;
+  height: 10dp;
+  border-radius: 5dp;
+  overflow: hidden;
+}
+
+.storage-bar-seg {
+  flex-shrink: 0;
+  height: 10dp;
+}
+
+.storage-legend {
+  flex-wrap: wrap;
+  gap: 6dp 14dp;
+  margin-top: 10dp;
+}
+
+.storage-legend-item {
+  align-items: center;
+  gap: 5dp;
+}
+
+.storage-dot {
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
+  flex-shrink: 0;
+}
+
+.storage-legend-text {
+  font-size: 12dp;
+  max-width: none;
+}
+
+
+.storage-group-head {
+  display: block;
+  margin: 4dp 14dp 6dp 14dp;
+  font-size: 12dp;
+  max-width: none;
+}
+
+.storage-group-foot {
+  display: block;
+  margin: 6dp 14dp 18dp 14dp;
+  font-size: 12dp;
+  line-height: 1.45;
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+}
+
+.storage-row {
+  width: 100%;
+  min-height: 46dp;
+  padding: 10dp 14dp;
+  margin: 0;
+  gap: 12dp;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.storage-row + .storage-row {
+  border-top-width: 1dp;
+}
+
+.storage-row--indent {
+  padding-left: 32dp;
+}
+
+.storage-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.storage-row-title {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.storage-row-sub {
+  display: block;
+  margin-top: 2dp;
+  font-size: 12dp;
+  max-width: none;
+}
+
+/* A choice shown in place (no menu): the chosen row carries a check. */
+.settings-radio-row {
+  justify-content: space-between;
+}
+
+.settings-radio-check {
+  flex-shrink: 0;
+}
+
+.storage-avatar {
+  width: 34dp;
+  height: 34dp;
+  border-radius: 17dp;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.storage-avatar-letter {
+  font-size: 14dp;
+}
+
+/* Page header of the deeper pages: back (desktop), title, Select / Cancel. */
+.storage-nav {
+  align-items: center;
+  min-height: 40dp;
+  margin-bottom: 10dp;
+}
+
+.storage-nav-back,
+.storage-nav-action {
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4dp;
+  margin: 0;
+  padding: 4dp 6dp;
+  border: 0;
+  background-color: transparent;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
+.storage-nav-back-icon {
+}
+
+.storage-nav-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Segmented tabs: Photos / Videos / Files. The chosen one takes the themed row surface. */
+.storage-seg {
+  gap: 2dp;
+  padding: 2dp;
+  margin-bottom: 12dp;
+  border-radius: 9dp;
+}
+
+.storage-seg .storage-seg-tab {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 0;
+  margin: 0;
+  padding: 6dp 0;
+  border-width: 0;
+  border-radius: 7dp;
+  background-color: transparent;
+  font-size: 13dp;
+  cursor: pointer;
+}
+
+.storage-seg .storage-seg-tab--on {
+  font-weight: bold;
+}
+
+/* Photos and videos: three square cells a row (padding-top in % follows the grid's width). */
+.storage-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.storage-tile {
+  position: relative;
+  display: block;
+  width: 33.333%;
+  height: 0;
+  padding: 33.333% 0 0 0;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.storage-tile-frame {
+  position: absolute;
+  top: 1dp;
+  left: 1dp;
+  right: 1dp;
+  bottom: 1dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.storage-tile--video .storage-tile-frame {
+}
+
+.storage-tile--picked .storage-tile-frame {
+  opacity: 0.7;
+}
+
+.storage-tile-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.storage-tile-size {
+  position: absolute;
+  left: 6dp;
+  bottom: 5dp;
+  font-size: 11dp;
+}
+
+.storage-tile-play {
+  position: absolute;
+  right: 6dp;
+  bottom: 6dp;
+}
+
+.storage-check {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  border-width: 2dp;
+  border-radius: 11dp;
+  box-sizing: border-box;
+}
+
+.storage-tile-check {
+  position: absolute;
+  top: 6dp;
+  right: 6dp;
+}
+
+.storage-check--on,
+.storage-tile-check.storage-check--on {
+}
+
+.storage-check-icon {
+}
+
+.storage-file-type {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34dp;
+  height: 40dp;
+  border-radius: 6dp;
+}
+
+.storage-file-type-text {
+  font-size: 10dp;
+  font-weight: bold;
+}
+
+.storage-more {
+  margin-top: 12dp;
+}
+
+/* While a delete runs the page is locked. */
+.storage-busy {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.storage-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.storage-section .storage-select-bar {
+  align-items: center;
+  justify-content: space-between;
+  min-height: 0;
+  margin: 0 0 10dp 0;
+  padding: 8dp 12dp;
+  cursor: default;
+}
+
+/* Phone: pinned to the bottom of the screen, the list ends above it. */
+.storage-section .storage-select-bar--pinned {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 12dp 16dp 22dp 16dp;
+  border-radius: 0;
+  z-index: 10;
+}
+
+.storage-select-spacer {
+  height: 72dp;
+}
+
+.storage-select-delete {
+  flex-shrink: 0;
+}

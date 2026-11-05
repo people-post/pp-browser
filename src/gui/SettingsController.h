@@ -11,6 +11,7 @@
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsOwnDevices.h"
 #include "gui/SettingsSecurityActions.h"
+#include "gui/StorageManagerController.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
@@ -99,6 +100,8 @@ public:
   void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
   void OpenNetworkSettings();
+  /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
+  void OpenSection(const std::string& section_id);
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
@@ -182,8 +185,6 @@ private:
     ui::String config_dir;
     ui::String data_dir;
     ui::String profile_dir;
-    ui::String profile_size_label;
-    ui::String attachment_cache_size_label;
     ui::String attachment_download_policy = "smart";
     ui::String attachment_download_policy_label;
     ui::String attachment_auto_on_wifi = "on";
@@ -310,12 +311,8 @@ private:
   void ApplyBackendChoice(const std::string& env);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
-  void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
   void ToggleAttachmentAutoNetwork(bool cellular);
-  void OnDrainPendingAttachmentMedia();
-  void OnClearDownloadedAttachments();
-  void PerformClearDownloadedAttachments();
 
   ShellChromeSnapshot ChromeSnapshot() const;
 
@@ -367,6 +364,10 @@ private:
   SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
+  StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
+    const ShellChromeSnapshot chrome = ChromeSnapshot();
+    return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
+  }};
 
 };
 

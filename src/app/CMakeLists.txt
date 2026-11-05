@@ -16,6 +16,7 @@ set(PP_BROWSER_APP_SOURCES
   ContactsShellBridge.cpp
   ChatShellBridge.cpp
   PeoplePickerShellBridge.cpp
+  StorageManagerBridge.cpp
 )
 
 include(PpBrowserWarnings)

@@ -390,8 +390,6 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
   bindings_.profile_dir = ui_state_.profile_dir.c_str();
-  bindings_.profile_size_label = ui_state_.profile_size_label.c_str();
-  bindings_.attachment_cache_size_label = ui_state_.attachment_cache_size_label.c_str();
   bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
   bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.attachment_auto_on_wifi = ui_state_.attachment_auto_on_wifi.c_str();
@@ -601,8 +599,6 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
     ctor.Bind("profile_dir", &controller.bindings_.profile_dir);
-    ctor.Bind("profile_size_label", &controller.bindings_.profile_size_label);
-    ctor.Bind("attachment_cache_size_label", &controller.bindings_.attachment_cache_size_label);
     ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
     ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("attachment_auto_on_wifi", &controller.bindings_.attachment_auto_on_wifi);
@@ -626,6 +622,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("support_subtitle", &controller.bindings_.support_subtitle);
     security_actions_.Bind(ctor);
     own_devices_.Bind(ctor);
+    storage_manager_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
     ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
     ctor.Bind("ai_dot_look", &controller.ai_dot_look_);
@@ -660,9 +657,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
     ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
     ctor.BindEventCallback("toggle_attachment_auto_cellular", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(true); }));
-    ctor.BindEventCallback("on_choose_attachment_download_policy", DataEventAt([this](ui::Event& ev) { OnChooseAttachmentDownloadPolicy(ev); }));
-    ctor.BindEventCallback("drain_pending_attachment_media", DataEvent<>([this]() { OnDrainPendingAttachmentMedia(); }));
-    ctor.BindEventCallback("clear_downloaded_attachments", DataEvent<>([this]() { OnClearDownloadedAttachments(); }));
+    ctor.BindEventCallback("choose_attachment_download_policy", DataEvent<std::string>([this](const std::string& policy) { ApplyAttachmentDownloadPolicyChoice(policy); }));
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
@@ -793,8 +788,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
   host.Dirty("settings", "profile_dir");
-  host.Dirty("settings", "profile_size_label");
-  host.Dirty("settings", "attachment_cache_size_label");
   host.Dirty("settings", "attachment_download_policy");
   host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "attachment_auto_on_wifi");
@@ -973,6 +966,7 @@ void SettingsController::SyncLayoutMode() {
       if (shell_navigation_.push_local_back) {
         shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
       }
+      storage_manager_.RestoreBackStack();
     }
     DirtyAll();
     return;
@@ -986,6 +980,7 @@ void SettingsController::SyncLayoutMode() {
   show_detail_ = false;
   if (had_detail && !selected_id_.empty()) {
     OpenSettingsDetailPane();
+    storage_manager_.RestoreBackStack();
   }
   DirtyAll();
 }
@@ -1202,6 +1197,10 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
   if (section_id == "security") {
     RefreshBlockedCount();
+  }
+  storage_manager_.Reset();
+  if (section_id == "storage") {
+    storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.layout_mode == LayoutMode::Compact) {
@@ -1654,19 +1653,6 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   DirtyAll();
 }
 
-void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
-  const std::string current = bindings_.attachment_download_policy.empty()
-                                  ? "smart"
-                                  : std::string(bindings_.attachment_download_policy.c_str());
-  std::vector<SettingsChoicePage::Option> options;
-  for (const char* id : {"smart", "always_auto", "on_demand"}) {
-    options.push_back({id, AttachmentDownloadPolicyDisplayLabel(id).c_str(), current == id});
-  }
-  ShowChoice(ev, "attachment_download_policy", Tr("settings.storage.attachment_policy.label"),
-             Tr("settings.storage.attachment_policy.help"), {}, std::move(options),
-             [this](const std::string& id) { ApplyAttachmentDownloadPolicyChoice(id); });
-}
-
 void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& policy) {
   if (suppress_auto_save_) {
     return;
@@ -1689,44 +1675,6 @@ void SettingsController::ToggleAttachmentAutoNetwork(const bool cellular) {
   MarkSectionDirty("storage");
   FlushPending();
   DirtyAll();
-}
-
-void SettingsController::OnDrainPendingAttachmentMedia() {
-  if (!commands_.drain_pending_attachment_media) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment downloads are not available"));
-    return;
-  }
-  commands_.drain_pending_attachment_media();
-  UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
-}
-
-void SettingsController::OnClearDownloadedAttachments() {
-  if (!shell_feedback_.show_confirm_destructive) {
-    return;
-  }
-  shell_feedback_.show_confirm_destructive(Tr("settings.storage.clear_attachments_confirm_title"),
-                               Tr("settings.storage.clear_attachments_confirm_message"),
-                               [this](const bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 PerformClearDownloadedAttachments();
-                               },
-                               {});
-}
-
-void SettingsController::PerformClearDownloadedAttachments() {
-  if (!commands_.clear_downloaded_attachments) {
-    ReportFailure(AppError::Storage(Err::Storage::Unavailable, "Attachment storage is not available"));
-    return;
-  }
-  if (auto cleared = commands_.clear_downloaded_attachments(); !cleared) {
-    ReportFailure(cleared.error());
-    return;
-  }
-  SyncBindingsFromSession();
-  DirtyAll();
-  UserFeedback::Ok(Tr("settings.storage.clear_attachments_done"));
 }
 
 void SettingsController::RefreshLocalizedChrome() {
@@ -1806,16 +1754,20 @@ void SettingsController::OnAskSettingHelp(const std::string& label_key) {
 }
 
 void SettingsController::OpenNetworkSettings() {
+  OpenSection("network");
+}
+
+void SettingsController::OpenSection(const std::string& section_id) {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.nav_tab != NavTab::Me) {
     if (shell_navigation_.select_nav_tab) {
       shell_navigation_.select_nav_tab(NavTab::Me);
     }
-    // OnNavTabActivated clears selection; open Network on the next UI turn.
-    AppRuntime::PostUI([this]() { OnSelectSection("network"); });
+    // OnNavTabActivated clears selection; open the page on the next UI turn.
+    AppRuntime::PostUI([this, section_id]() { OnSelectSection(section_id); });
     return;
   }
-  OnSelectSection("network");
+  OnSelectSection(section_id);
 }
 
 void SettingsController::ApplyReachability() {

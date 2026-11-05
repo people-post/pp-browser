@@ -109,7 +109,7 @@ TEST(HomeTodayTest, ARecentReadMentionKeepsTheWidgetWithNoNumber) {
   EXPECT_FALSE(HomeWidgetDataOf(stale, {}, 0).mentions);
   EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(stale, {}, 0)),
             (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetMentions, kHomeWidgetRecentChats,
-                                      kHomeWidgetNewPeople}))
+                                      kHomeWidgetNewPeople, kHomeWidgetSecurity}))
       << "no mention to show: the widget stays, with 0";
 
   // Its chat deleted (not in the list): hidden too.
@@ -204,7 +204,7 @@ TEST(HomeTodayTest, FavoritesKeepAtMostTwelve) {
 TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesMentionsAndNewPeopleAlwaysShow) {
   const HomeTodaySummary empty = SummarizeHomeToday({}, kAll);
   EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(empty, {}, 0)),
-            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetMentions, kHomeWidgetNewPeople}));
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetMentions, kHomeWidgetNewPeople, kHomeWidgetSecurity}));
 
   ChatSessionRow mention = Row("g", 1, false, 5);
   mention.mention_count = 1;
@@ -213,7 +213,7 @@ TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesMentionsAndNewPe
   calls.latest = call_queries::RecentCall{};
   EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(busy, calls, 3)),
             (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetCalls, kHomeWidgetMentions,
-                                      kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople}))
+                                      kHomeWidgetRecentChats, kHomeWidgetBrief, kHomeWidgetNewPeople, kHomeWidgetSecurity}))
       << "every widget, in the default order";
 }
 
@@ -231,7 +231,7 @@ TEST(HomeTodayTest, ARemovedWidgetIsNeitherShownNorComputed) {
   HomeCalls calls;
   calls.latest = call_queries::RecentCall{};
   EXPECT_EQ(ShownHomeWidgets(RemoveHomeWidget(layout, kHomeWidgetCalls), HomeWidgetDataOf(summary, calls, 3)),
-            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetBrief}));
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetBrief, kHomeWidgetSecurity}));
 }
 
 TEST(HomeTodayTest, TheLayoutIsStoredAsTheRemovedIdsAndAWidgetPutBackGoesLast) {
@@ -257,7 +257,7 @@ TEST(HomeTodayTest, AMovedWidgetKeepsItsPlaceAndHomeFollowsTheSavedOrder) {
   // Today's briefs dragged to the top; the removed Calls stays after everything on Home.
   const HomeWidgetLayout moved = MoveHomeWidget(no_calls, kHomeWidgetBrief, 0);
   EXPECT_EQ(moved.OnHome(), (std::vector<std::string>{kHomeWidgetBrief, kHomeWidgetFavorites, kHomeWidgetMentions,
-                                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople}));
+                                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople, kHomeWidgetSecurity}));
   EXPECT_EQ(moved.order.back(), kHomeWidgetCalls);
   EXPECT_EQ(MoveHomeWidget(moved, kHomeWidgetFavorites, 99).OnHome().back(), kHomeWidgetFavorites) << "to the bottom";
   EXPECT_EQ(MoveHomeWidget(moved, kHomeWidgetCalls, 0), moved) << "a removed widget is not moved";
@@ -270,7 +270,7 @@ TEST(HomeTodayTest, AMovedWidgetKeepsItsPlaceAndHomeFollowsTheSavedOrder) {
   const HomeTodaySummary summary = SummarizeHomeToday({mention, Row("s", 1, true, 4)}, stored);
   EXPECT_EQ(ShownHomeWidgets(stored, HomeWidgetDataOf(summary, {}, 3)),
             (std::vector<std::string>{kHomeWidgetBrief, kHomeWidgetFavorites, kHomeWidgetMentions,
-                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople}));
+                                      kHomeWidgetRecentChats, kHomeWidgetNewPeople, kHomeWidgetSecurity}));
   // A stored order missing a widget (an older list) puts it at the end.
   EXPECT_EQ(HomeWidgetLayoutFrom({kHomeWidgetBrief}, {}).order.front(), kHomeWidgetBrief);
   EXPECT_EQ(HomeWidgetLayoutFrom({kHomeWidgetBrief}, {}).order.size(), HomeWidgetIds().size());

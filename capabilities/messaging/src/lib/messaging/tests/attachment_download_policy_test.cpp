@@ -8,34 +8,29 @@ namespace {
 constexpr uint64_t kSmartMax = 4000000;
 
 TEST(AttachmentDownloadPolicyTest, SmartAutoEnqueuesSmallFilesOnly) {
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 1024, false, kSmartMax, false));
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax, false, kSmartMax, false));
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax + 1, false, kSmartMax, false));
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax + 1, false, kSmartMax, true))
+  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 1024, kSmartMax, false));
+  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax, kSmartMax, false));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax + 1, kSmartMax, false));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax + 1, kSmartMax, true))
       << "the network only matters to \"download everything\"";
 }
 
 TEST(AttachmentDownloadPolicyTest, SmartThresholdIsTheCallersLimit) {
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 2000, false, 1000, false));
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 2000, false, 2000, false));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 2000, 1000, false));
+  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, 2000, 2000, false));
 }
 
 TEST(AttachmentDownloadPolicyTest, AlwaysAutoTakesEverythingOnlyOnAnAllowedNetwork) {
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 30'000'000, false, kSmartMax, true));
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 30'000'000, false, kSmartMax, false))
+  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 30'000'000, kSmartMax, true));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 30'000'000, kSmartMax, false))
       << "not allowed here: as Smart";
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 3'000'000, false, kSmartMax, false))
+  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::AlwaysAuto, 3'000'000, kSmartMax, false))
       << "as Smart: a small one still comes";
 }
 
 TEST(AttachmentDownloadPolicyTest, OnDemandTakesNothingWhateverTheNetwork) {
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::OnDemand, 3'000'000, false, kSmartMax, true));
-  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::OnDemand, 1024, false, kSmartMax, false));
-}
-
-TEST(AttachmentDownloadPolicyTest, BacklogDrainOverridesSmart) {
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::Smart, kSmartMax + 1, true, kSmartMax, false));
-  EXPECT_TRUE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::OnDemand, 1024, true, kSmartMax, false));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::OnDemand, 3'000'000, kSmartMax, true));
+  EXPECT_FALSE(ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy::OnDemand, 1024, kSmartMax, false));
 }
 
 TEST(AttachmentDownloadPolicyTest, AlwaysAutoWithNeitherNetworkTickedIsSmart) {

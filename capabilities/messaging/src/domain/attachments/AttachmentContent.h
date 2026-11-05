@@ -18,6 +18,8 @@ namespace pbr {
  * the thread's folder in `profile_dir`.
  */
 bool AttachmentBlobExists(const CasStore& content, const std::vector<uint8_t>& content_hash);
+/** The size on disk of the stored object (encrypted, as held on this device); 0 when it is not stored. */
+uint64_t AttachmentLocalBytes(const CasStore& content, const std::vector<uint8_t>& content_hash);
 
 /** Store an attachment's plaintext (its hash must be `content_hash`); returns the block path. */
 Roe<std::string> SaveAttachmentPlaintext(CasStore& content, const std::vector<uint8_t>& content_hash,

@@ -11,8 +11,10 @@ pp_browser_add_feature_library(pp_feature_settings
     SettingsLogic.cpp
     SettingsSections.cpp
     SettingsTools.cpp
+    StorageManagerModel.cpp
     StorageSettingsSection.cpp
   PUBLIC_LIBS
+    pp_domain_attachments
     pp_lib_messaging
     pp_lib_content
     pp_lib_net)

@@ -72,3 +72,4 @@ assets/themes/components.rcss	rgba(64,128,255,0.18)	1
 src/lib/ui/QrSvg.cpp	#000000	1
 src/lib/ui/QrSvg.cpp	#ffffff	1
 assets/icons/grid.svg	#FFFFFF	4
+assets/icons/check.svg	#FFFFFF	1

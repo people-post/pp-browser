@@ -39,6 +39,7 @@
 #include "mesh/types/AddressDisclosure.h"
 #include "domain/attachments/LargeTransferLane.h"
 #include "domain/attachments/OutgoingAttachmentStore.h"
+#include "domain/attachments/StoredAttachments.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/AttachmentSuppressionStore.h"
 #include "lib/messaging/OutgoingAttachment.h"
@@ -304,8 +305,23 @@ public:
   /** One file of a confirmed quota recovery (`/files/delete`). */
   Roe<void> DeleteRelayFileById(const std::string& blob_id);
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
-  void DrainPendingAttachmentMedia();
-  Roe<void> ClearDownloadedAttachments();
+  /** Me → Storage → Manage storage (AttachmentFetchWorkflow): blocking, call on a worker. */
+  std::vector<StoredAttachmentItem> ListStoredAttachments();
+  uint64_t ReleasableAttachmentBytes(const std::vector<StoredAttachmentRef>& items);
+  /** Runs the whole delete on the calling worker; `done` is called there. */
+  void DeleteLocalAttachments(std::vector<StoredAttachmentRef> items,
+                              std::function<void(StoredAttachmentDeleteResult)> done);
+  /** Bytes the message databases take on disk (0: not known). Blocking: call on a worker. */
+  uint64_t MessageStoreBytes() const;
+  void RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                            const std::string& mime, uint64_t page_generation);
+  void CancelGridThumbnails(uint64_t page_generation);
+  std::string GridThumbnailPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash);
+  /** Me → Storage: an attachment arrived or went (or a chat made a thumbnail). Called on the UI thread. */
+  void SetOnStoredAttachmentsChanged(std::function<void()> callback);
+  /** Me → Storage: the thumbnail of a grid cell (RequestGridThumbnail) was made. Called on the UI thread. */
+  void SetOnGridThumbnailReady(
+      std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback);
   /**
    * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
    * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
@@ -557,6 +573,7 @@ private:
   /** The stores encrypted at rest (the profile's data key goes to them). */
   std::vector<IDekConsumer*> at_rest_;
   std::string profile_db_path_;
+  std::function<uint64_t()> message_store_bytes_;
   std::unique_ptr<IGroupRosterStore> group_roster_;
   std::unique_ptr<IThreadLocalPrefsStore> thread_prefs_;
   /** Unread mentions of this account (G015 marker). */
@@ -642,6 +659,12 @@ private:
   uint64_t reachability_outbound_since_ms_ = 0;
   std::function<void()> on_reachability_updated_;
   std::function<void()> on_peer_icons_changed_;
+  /** Me → Storage's callbacks: set on the UI thread, read (copied under the lock) where a change is reported. */
+  std::mutex storage_callbacks_mu_;
+  std::function<void()> on_stored_attachments_changed_;
+  std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> on_grid_thumbnail_ready_;
+  /** Guards the workflow's change reports and their UI posts: invalidated at Shutdown and when the hub goes. */
+  pp::Lifetime storage_callbacks_lifetime_;
   std::function<void()> on_messaging_ready_;
   std::function<void()> on_mesh_ready_;
   std::function<void()> on_call_wake_;

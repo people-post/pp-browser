@@ -226,6 +226,22 @@ TEST(ConfigJsonTest, ProfilePrefsStarredContactsRoundTripInStarOrder) {
   EXPECT_EQ(cleaned.starred_contacts, (std::vector<std::string>{"a", "b"}));
 }
 
+TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
+  // Home's Security widget: absent (a fresh profile) reads as not yet seen; once set it stays set.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.recovery_phrase_seen = true;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_FALSE(loaded.recovery_phrase_seen);
+
+  pbr::ProfilePreferences edited;
+  edited.recovery_phrase_seen = true;
+  pbr::ProfilePreferences parsed;
+  pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+  EXPECT_TRUE(parsed.recovery_phrase_seen);
+}
+
 TEST(ConfigJsonTest, ProfilePrefsAiDotDefaultsRoundTripAndUnknownLook) {
   // Phone AI dot (DESIGN-pp-ui §8.14): on, two eyes, medium, right edge, 600 down its band unless written otherwise.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
