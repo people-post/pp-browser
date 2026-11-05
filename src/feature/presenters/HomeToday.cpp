@@ -243,9 +243,9 @@ HomeWidgetData HomeWidgetDataOf(const HomeTodaySummary& summary, const HomeCalls
 std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const HomeWidgetData& data) {
   std::vector<std::string> shown;
   for (const std::string& id : layout.OnHome()) {
-    const bool has = id == kHomeWidgetFavorites || (id == kHomeWidgetRecentChats && data.any_chat) ||
-                     (id == kHomeWidgetCalls && data.calls) || (id == kHomeWidgetMentions && data.mentions) ||
-                     (id == kHomeWidgetNewPeople && data.new_people > 0) ||
+    // Mentions and New people stay with a 0 (Kenneth 2026-11-05).
+    const bool has = id == kHomeWidgetFavorites || id == kHomeWidgetMentions || id == kHomeWidgetNewPeople ||
+                     (id == kHomeWidgetRecentChats && data.any_chat) || (id == kHomeWidgetCalls && data.calls) ||
                      (id == kHomeWidgetBrief && data.brief_items > 0);
     if (has) {
       shown.push_back(id);

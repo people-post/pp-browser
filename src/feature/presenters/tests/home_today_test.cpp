@@ -106,7 +106,9 @@ TEST(HomeTodayTest, ARecentReadMentionKeepsTheWidgetWithNoNumber) {
   EXPECT_TRUE(stale.mentions.thread_id.empty());
   EXPECT_FALSE(HomeWidgetDataOf(stale, {}, 0).mentions);
   EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(stale, {}, 0)),
-            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetRecentChats}));
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetMentions, kHomeWidgetRecentChats,
+                                      kHomeWidgetNewPeople}))
+      << "no mention to show: the widget stays, with 0";
 
   // Its chat deleted (not in the list): hidden too.
   EXPECT_TRUE(SummarizeHomeToday({Row("quiet", 0, false, now)}, kAll, read, now).mentions.thread_id.empty());
@@ -188,9 +190,10 @@ TEST(HomeTodayTest, FavoritesKeepAtMostTwelve) {
   EXPECT_EQ(favorites.back().contact_id, "p11");
 }
 
-TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesAlwaysShows) {
+TEST(HomeTodayTest, AWidgetWithNothingToShowIsHiddenButFavoritesMentionsAndNewPeopleAlwaysShow) {
   const HomeTodaySummary empty = SummarizeHomeToday({}, kAll);
-  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(empty, {}, 0)), std::vector<std::string>{kHomeWidgetFavorites});
+  EXPECT_EQ(ShownHomeWidgets(kAll, HomeWidgetDataOf(empty, {}, 0)),
+            (std::vector<std::string>{kHomeWidgetFavorites, kHomeWidgetMentions, kHomeWidgetNewPeople}));
 
   ChatSessionRow mention = Row("g", 1, false, 5);
   mention.mention_count = 1;
