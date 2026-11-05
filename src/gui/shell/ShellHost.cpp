@@ -1430,8 +1430,10 @@ void ShellHost::ApplySafeAreaLayout() {
   const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
   const float bottom_chrome_dp =
       bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
-  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
-  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
+  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root) and, with a keyboard up, above the
+  // keyboard — the body itself stays full-bleed so its background paints behind the keyboard's rounded corners.
+  set_dp(doc->GetElementById("shell-root"), "bottom",
+         statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {

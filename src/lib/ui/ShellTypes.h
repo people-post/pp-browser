@@ -85,8 +85,14 @@ struct CompactChromeLayout {
    * translucent status bar (edge-to-edge blend).
    */
   float shell_top_dp = 0.f;
-  /** Bottom inset for home indicator / IME; applied to the shell document body. */
+  /** Bottom inset for the home indicator; applied to the shell document body. 0 while the keyboard is up, so the body
+   *  (theme background) stays full-bleed and paints behind the keyboard — the keyboard inset lifts the content instead
+   *  (content_bottom_inset_dp), the same edge-to-edge trick the top uses (content_top_dp under the status bar).
+   *  Without that the window's clear colour (transparent black) shows through the keyboard's rounded top corners. */
   float shell_bottom_dp = 0.f;
+  /** Keyboard inset applied to #shell-root (not the body) so content clears the on-screen keyboard while the body
+   *  background still fills behind it. 0 when no keyboard is up. */
+  float content_bottom_inset_dp = 0.f;
   /**
    * Top inset applied to #shell-root / chrome so content clears the status bar
    * (mobile) and/or the desktop custom title bar.

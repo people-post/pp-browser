@@ -188,10 +188,13 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(with_inset.chrome_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(with_inset.sheet_bottom_dp, 49.f);
 
+  // Keyboard up with no bottom surface: the body stays full-bleed (0) so its background paints behind the keyboard,
+  // and the keyboard inset lifts the content via #shell-root instead of shrinking the body.
   const CompactChromeLayout with_keyboard = ShellLayout::ComputeCompactChromeLayout(config, 47, 336);
   EXPECT_FLOAT_EQ(with_keyboard.shell_top_dp, 0.f);
   EXPECT_FLOAT_EQ(with_keyboard.content_top_dp, 47.f);
-  EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(with_keyboard.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(with_keyboard.content_bottom_inset_dp, 336.f);
   EXPECT_FLOAT_EQ(with_keyboard.content_padding_bottom_dp, 49.f);
 
   // Phone: the tab bar paints down through the home-indicator strip (document full-bleed, bar pads by the inset).
@@ -211,10 +214,12 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FALSE(tab_bar_no_inset.tab_bar_hidden);
 
   // Keyboard up over a tab-bar page: the tab bar is hidden (the keyboard covers it) and its height is no longer
-  // reserved, so the content sits right above the keyboard instead of squeezed above a floating bar.
+  // reserved, so the content sits right above the keyboard instead of squeezed above a floating bar. The body stays
+  // full-bleed (shell_bottom 0) so its background paints behind the keyboard; the keyboard inset lifts #shell-root.
   const CompactChromeLayout tab_bar_keyboard =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::TabBar);
-  EXPECT_FLOAT_EQ(tab_bar_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.content_bottom_inset_dp, 336.f);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.bottom_surface_padding_dp, 0.f);
   EXPECT_TRUE(tab_bar_keyboard.tab_bar_hidden);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.content_padding_bottom_dp, 0.f);
@@ -234,15 +239,17 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_FLOAT_EQ(composer.content_padding_bottom_dp, 49.f);
   const CompactChromeLayout composer_keyboard =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 336, 0.f, CompactBottomSurface::Composer);
-  EXPECT_FLOAT_EQ(composer_keyboard.shell_bottom_dp, 336.f);
+  EXPECT_FLOAT_EQ(composer_keyboard.shell_bottom_dp, 0.f);
+  EXPECT_FLOAT_EQ(composer_keyboard.content_bottom_inset_dp, 336.f);
   EXPECT_FLOAT_EQ(composer_keyboard.bottom_surface_padding_dp, 0.f);
 
-  // Phone toast pill: just above the tab bar / composer / keyboard; none on desktop.
+  // Phone toast pill: just above the tab bar / composer / keyboard; none on desktop. With a keyboard up the body no
+  // longer shrinks, so the toast adds the keyboard inset to clear it (and a hidden tab bar is not there to clear).
   EXPECT_FLOAT_EQ(with_inset.toast_bottom_dp, 0.f);
   EXPECT_FLOAT_EQ(tab_bar.toast_bottom_dp, 34.f + 49.f + 12.f);
-  EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 49.f + 12.f);  // the body already ends at the keyboard
+  EXPECT_FLOAT_EQ(tab_bar_keyboard.toast_bottom_dp, 336.f + 12.f);  // tab bar hidden; inset clears the keyboard
+  EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 336.f + 52.f + 12.f);  // above the composer, above the keyboard
   EXPECT_FLOAT_EQ(composer.toast_bottom_dp, 34.f + 52.f + 12.f);
-  EXPECT_FLOAT_EQ(composer_keyboard.toast_bottom_dp, 52.f + 12.f);
   EXPECT_FLOAT_EQ(
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Page).toast_bottom_dp,
       34.f + 12.f);

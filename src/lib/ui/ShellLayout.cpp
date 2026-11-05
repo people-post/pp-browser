@@ -103,11 +103,13 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   // bottom of that rect and content only needs nav-height padding.
   layout.shell_top_dp = 0.f;
   layout.content_top_dp = safe_top + titlebar;
-  // Without a keyboard, the bottom surface paints down through the home-indicator strip: the document
-  // goes full-bleed and the surface pads itself by the inset. With a keyboard up the body shrinks.
+  // Without a keyboard, the bottom surface paints down through the home-indicator strip: the document goes full-bleed
+  // and the surface pads itself by the inset. With a keyboard up the body still goes full-bleed (so the theme background
+  // paints behind the keyboard, not the window's black clear colour) and the keyboard inset lifts #shell-root instead.
   const bool keyboard = safe_area_bottom_dp >= kImeLatchMinDp;
   const bool covers_strip = bottom_surface != CompactBottomSurface::None && !keyboard;
-  layout.shell_bottom_dp = covers_strip ? 0.f : safe_bottom;
+  layout.shell_bottom_dp = (covers_strip || keyboard) ? 0.f : safe_bottom;
+  layout.content_bottom_inset_dp = keyboard ? safe_bottom : 0.f;
   layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
   const float tab_bar_inset =
       bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
@@ -122,13 +124,15 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;
   if (bottom_surface != CompactBottomSurface::None) {
     // The bar the toast must clear: tab bar, or the composer's one-line height (DESIGN-pp-ui 8.5); a pushed
-    // page has none. Below it the home-indicator strip (with a keyboard up the body already ends above it).
+    // page has none. A hidden tab bar is not there to clear. The body no longer shrinks for the keyboard, so the
+    // toast (anchored to the body bottom) adds the keyboard inset to stay above it.
     constexpr float kComposerMinHeightDp = 52.f;
     constexpr float kToastGapDp = 12.f;
-    const float bar = bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
+    const float bar = layout.tab_bar_hidden                              ? 0.f
+                      : bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
                       : bottom_surface == CompactBottomSurface::Composer ? kComposerMinHeightDp
                                                                          : 0.f;
-    layout.toast_bottom_dp = layout.bottom_surface_padding_dp + bar + kToastGapDp;
+    layout.toast_bottom_dp = layout.content_bottom_inset_dp + layout.bottom_surface_padding_dp + bar + kToastGapDp;
   }
   return layout;
 }
