@@ -275,7 +275,8 @@ endif()
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
   target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp
-                 StayConnectedService_Android.cpp)
+                 StayConnectedService_Android.cpp
+                 AndroidCallSystemUi.cpp)
   target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
 else()
   target_sources(pp_foundation_platform PRIVATE StayConnectedService_Default.cpp)

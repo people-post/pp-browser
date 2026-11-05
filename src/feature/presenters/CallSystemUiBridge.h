@@ -11,8 +11,9 @@
 namespace pbr {
 
 /**
- * Keeps the phone's own call screen (ICallSystemUi: CallKit) in step with CallPresenter's screen,
- * and turns what the user does there into the presenter's buttons (P013).
+ * Keeps the phone's own call screen (ICallSystemUi: CallKit, Android's incoming-call notification) in
+ * step with CallPresenter's screen, and turns what the user does there into the presenter's buttons
+ * (P013, P014).
  *
  * - A ring goes to the system screen when the app is not in the foreground, or when a call push
  *   already put "Incoming call" there (the push's call is filled in with the ring's caller).

@@ -789,7 +789,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
   }
   case CallNotice::Kind::IncomingCall: {
     if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
-      return;  // the phone's own call screen rings it (CallKit)
+      return; // the phone's own call screen rings it (CallKit, Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     const std::string body =

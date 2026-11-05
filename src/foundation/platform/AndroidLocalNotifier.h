@@ -10,6 +10,7 @@ public:
   void NotifyIncoming(const std::string& title, const std::string& body,
                       const std::string& thread_id = {}) override;
   void ClearForThread(const std::string& thread_id) override;
+  void SetMessageBannersOn(bool on) override;
 };
 
 } // namespace pbr

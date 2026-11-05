@@ -1,6 +1,6 @@
 # Push notifications — current state
 
-**Last updated:** 2026-10-12
+**Last updated:** 2026-11-05
 
 ## Landed (wave 1 + iOS)
 
@@ -12,7 +12,7 @@
 | Net | `HttpPushDeviceClient` + relay-api device sign ops 3/4 |
 | Messaging | `SyncInboxFromWake`, background unread → OS notify when alerts on |
 | Relay contract | Client calls `/v1/devices/register|unregister`; expects opaque wakes from the provider when tokens are registered |
-| Android | FCM (opt-in via `google-services.json`), WorkManager, NotificationCompat, JNI wake/token |
+| Android | FCM (opt-in via `google-services.json`; token asked for at each start), WorkManager, NotificationCompat, JNI wake/token; incoming-call notification via `CallSystemUiBridge` (P014): rings, full screen when locked, Answer / Decline; a push with the app stopped rings "Incoming call" / shows "New message"; notification permission asked at start (13+) |
 | iOS | APNs token via `IosPushDeviceRegistrar` + `IosApnsAppDelegate` (+load hook adding callbacks to SDL's scene delegate); silent `inbox_wake` → `BackgroundSyncScheduler`; the relay's `call_wake` alert (P012): tap or foreground → call wake sync; `IosLocalNotifier` posts banners after a wake (tap → open thread); CallKit builds: PushKit token (`ios_voip`) + CallKit screen via `CallSystemUiBridge` (P013) |
 | www relay | `FcmPushSender` + `ApnsPushSender` (HTTP/2 + .p8 JWT); branch on `platform` |
 | Desktop local banners | Native OS APIs (Linux Freedesktop/D-Bus, macOS `UNUserNotificationCenter`, Windows WinRT toasts); tap → raise + open thread; `ClearForThread` on select |
@@ -40,7 +40,8 @@
 
 ## Follow-ups
 
-- FCM/APNs token refresh → automatic re-register after native start (handler exists; harden cold-start race)
+- APNs token refresh → automatic re-register after native start (Android asks FCM for its token at each start, P014)
+- Android (P014): verify on a device — killed-app call push (full screen, answer before unlock), decline on the lock screen, Android 14 full-screen permission; in-call foreground service; Telecom
 - Android notification tap → open specific thread in ChatController (PendingIntent already embeds `thread_id`)
 - Relay (www): honour `urgent` — `call_wake` to Android, the time-sensitive alert to iOS, rate limit (P012)
 - iOS CallKit (P013): verify on a device — lock-screen answer (audio via CallKit's session), PIN-locked answer, decline; in-app mute is not mirrored to CallKit's screen yet

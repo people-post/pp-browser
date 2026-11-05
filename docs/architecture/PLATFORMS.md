@@ -57,6 +57,7 @@ Android builds use Gradle + NDK (`android/`) and produce a debug APK with `libma
 | `ICredentialStore` | `EnvCredentialStore` | `EnvCredentialStore` (inline API key in Settings; Keystore deferred) |
 | libp2p | Built and linked (`p2p::p2p`) | Built and linked (same vendor tree) |
 | `ConversationsHub` | Foreground poll loop | `BackgroundSyncScheduler`: 2s foreground; background push only (20 s wake window); FCM wake + WorkManager when enabled |
+| Push / call screen | N/A (desktop local notify) | FCM token asked for at each start (`PpFirebaseMessagingService.requestToken`); notification permission asked at start (13+). A ring the app does not show itself rings the incoming-call notification (`PpCallNotifications`, `AndroidCallSystemUi` behind `CallSystemUiBridge`; [P014](../../projects/push-notifications/DECISIONS.md)): channel ringtone, full screen when locked, Answer / Decline. A push with the app stopped starts only the process: `call_wake` rings "Incoming call" and its full-screen notification starts the app, `inbox_wake` shows a generic "New message" unless Show notifications is off |
 | Navigation | Escape → dismiss then exit | Back → dismiss then minimize; Escape same as desktop |
 | MCP stdio | Supported | Skipped; use `mcp.url` |
 | HTTPS (curl + BoringSSL) | Host CA bundle / Secure Transport / Schannel | `os::ApplyPlatformCurlSsl` → system CAPATH (`TlsCaPath`); same entry as iOS via `ApplyCurlSslDefaults` |
