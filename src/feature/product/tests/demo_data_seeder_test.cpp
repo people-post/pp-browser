@@ -177,7 +177,8 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
 
   // Two picture messages, both in the content store, with different hashes.
   ASSERT_EQ(pictures.size(), 2u);
-  std::set<ByteVector> hashes;
+  // Hex strings, not a set<ByteVector>: GCC 13 -Werror flags the vector spaceship used by std::set<vector<uint8_t>>.
+  std::set<std::string> hashes;
   for (const ThreadMessage& m : pictures) {
     auto fields = ChatPayloadCodec::DecodeAttachmentJson(m.payload_json);
     ASSERT_TRUE(fields) << fields.error().message;
@@ -186,7 +187,7 @@ TEST_F(DemoDataSeederTest, SeedsContactsThreadsUnreadCountsAndTwoDifferentPictur
     auto bytes = LoadAttachmentPlaintext(*content_, fields->content_hash, TestDek());
     ASSERT_TRUE(bytes);
     EXPECT_EQ(bytes->size(), fields->byte_length);
-    hashes.insert(fields->content_hash);
+    hashes.insert(std::string(fields->content_hash.begin(), fields->content_hash.end()));
   }
   EXPECT_EQ(hashes.size(), 2u);
 }
