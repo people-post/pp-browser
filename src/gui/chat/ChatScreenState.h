@@ -166,6 +166,8 @@ struct HomeEditRow {
 /** The shell's chat side of its data model ("shell"): the chats list and the working set panel. */
 struct ChatShellState {
   std::vector<SessionDisplayRow> sessions;
+  /** AI conversations for the AI 助手 page (ThreadKind::Ai). Same row shape as `sessions`. */
+  std::vector<SessionDisplayRow> ai_sessions;
   /** Archived threads are kept out of the list; the entry row above it opens them. */
   int archived_count = 0;
   bool showing_archived = false;

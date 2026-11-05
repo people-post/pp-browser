@@ -160,6 +160,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   }
   ctor.RegisterArray<std::vector<HomeEditRow>>();
   ctor.Bind("sessions", &state.sessions);
+  ctor.Bind("ai_sessions", &state.ai_sessions);
   ctor.Bind("home_date_label", &state.home_date_label);
   ctor.Bind("home_widgets", &state.home_widgets);
   ctor.Bind("home_favorites", &state.home_favorites);
@@ -287,6 +288,7 @@ void DirtyChat() {
 
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
   for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
                            "home_mentions", "home_mentions_where", "home_new_people", "home_security_ok", "home_show_dynamic", "home_brief", "home_edit_on",

@@ -11521,6 +11521,26 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
+/* With AI conversations present (Kenneth 2026-11-05): the conversation list fills the top and scrolls, the ask-AI
+   field + chips sink to the bottom. Overrides --minimal's centring. */
+.home-ai-list {
+  display: none;
+}
+.shell-layer-compact .home-landing--has-ai {
+  justify-content: flex-start;
+  padding: 8dp 0 12dp 0;
+}
+.shell-layer-compact .home-landing--has-ai .home-ai-list {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+}
+.shell-layer-compact .home-landing--has-ai .home-landing-inner {
+  flex: none;
+}
+
 /* The ask-AI heading above the chips; phone-only, so hidden on the desktop Home. */
 .home-ai-intro {
   display: none;

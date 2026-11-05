@@ -1144,6 +1144,12 @@ void ChatController::ApplySessionList() {
     }
     shell_.sessions.push_back(std::move(row));
   }
+  // AI conversations for the AI 助手 page (no search window yet; the whole list, newest/pinned first).
+  shell_.ai_sessions.clear();
+  shell_.ai_sessions.reserve(list.ai_rows.size());
+  for (const ChatSessionRow& from : list.ai_rows) {
+    shell_.ai_sessions.push_back(ToSessionDisplayRow(from));
+  }
   ApplyHomeToday(list);
 }
 
