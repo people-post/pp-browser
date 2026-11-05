@@ -47,10 +47,10 @@ TEST(HomeBriefTest, AnAnswerThatIsNotAFeedKeepsTheOldCache) {
   EXPECT_TRUE(empty->empty());
 }
 
-TEST(HomeBriefTest, StaleAfterThreeHoursOrForAnotherLanguage) {
+TEST(HomeBriefTest, StaleAfterADayOrForAnotherLanguage) {
   EXPECT_TRUE(HomeBriefStale(HomeBriefCache{}, "cn", kNow)) << "never fetched";
-  EXPECT_FALSE(HomeBriefStale(CacheOf("cn", kNow - 3 * kHour, 3), "cn", kNow)) << "exactly 3 h: still fresh";
-  EXPECT_TRUE(HomeBriefStale(CacheOf("cn", kNow - 3 * kHour - 1, 3), "cn", kNow));
+  EXPECT_FALSE(HomeBriefStale(CacheOf("cn", kNow - 24 * kHour, 3), "cn", kNow)) << "exactly a day: still fresh";
+  EXPECT_TRUE(HomeBriefStale(CacheOf("cn", kNow - 24 * kHour - 1, 3), "cn", kNow));
   EXPECT_FALSE(HomeBriefStale(CacheOf("cn", kNow - kHour, 3), "cn", kNow));
   EXPECT_TRUE(HomeBriefStale(CacheOf("cn", kNow - kHour, 3), "en", kNow)) << "the UI language changed";
   EXPECT_TRUE(HomeBriefStale(CacheOf("cn", kNow + kHour, 3), "cn", kNow)) << "a clock that went back";
@@ -76,11 +76,11 @@ TEST(HomeBriefTest, SkipsHeadlinesWithoutAPageToOpen) {
 }
 
 TEST(HomeBriefTest, FetchesOnlyWhenOnStaleIdleAndNotJustFailed) {
-  const HomeBriefCache stale = CacheOf("cn", kNow - 4 * kHour, 3);
+  const HomeBriefCache stale = CacheOf("cn", kNow - 25 * kHour, 3);
   const HomeBriefCache fresh = CacheOf("cn", kNow - kHour, 3);
   EXPECT_TRUE(ShouldFetchHomeBrief(true, false, 0, stale, "cn", kNow));
   EXPECT_TRUE(ShouldFetchHomeBrief(true, false, 0, HomeBriefCache{}, "cn", kNow)) << "first open";
-  EXPECT_FALSE(ShouldFetchHomeBrief(true, false, 0, fresh, "cn", kNow)) << "fetched under 3 h ago";
+  EXPECT_FALSE(ShouldFetchHomeBrief(true, false, 0, fresh, "cn", kNow)) << "fetched under a day ago";
   EXPECT_FALSE(ShouldFetchHomeBrief(true, true, 0, stale, "cn", kNow)) << "one fetch at a time";
   EXPECT_FALSE(ShouldFetchHomeBrief(true, false, kNow - 60'000, stale, "cn", kNow)) << "failed a minute ago";
   EXPECT_TRUE(ShouldFetchHomeBrief(true, false, kNow - kHomeBriefRetryMs, stale, "cn", kNow));

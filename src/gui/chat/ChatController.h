@@ -238,7 +238,7 @@ private:
   /** Phones, Home shown, Calls kept: reads the newest calls on a worker and draws the Calls widget. */
   void RefreshHomeCalls();
   /**
-   * Phones, Home shown: reads the profile's briefs cache once and, when it is over 3 hours old (or for another
+   * Phones, Home shown: reads the profile's briefs cache once and, when it is over a day old (or for another
    * language), fetches the article feed again on a worker (DESIGN-pp-ui 8.16).
    */
   void RefreshHomeBrief();

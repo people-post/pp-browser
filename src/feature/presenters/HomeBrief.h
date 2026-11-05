@@ -13,7 +13,7 @@ namespace pbr {
 
 /**
  * The Today's briefs widget on the phone's Home (DESIGN-pp-ui 8.16; Kenneth 2026-11-03: fetch again when Home opens
- * and the last fetch is over 3 hours old, show the first 3, hide it with no data). The headlines come from the same
+ * and the last fetch is over a day old, show the first 3, hide it with no data). The headlines come from the same
  * article feed the "Latest briefs" chip shows; only general headlines are kept, so the cache is not encrypted.
  */
 struct HomeBriefItem {
@@ -38,7 +38,7 @@ struct HomeBriefCache {
   std::vector<HomeBriefItem> items;
 };
 
-inline constexpr int64_t kHomeBriefMaxAgeMs = 3LL * 60 * 60 * 1000;
+inline constexpr int64_t kHomeBriefMaxAgeMs = 24LL * 60 * 60 * 1000;  // once a day: the auto-fetch tells the server IP+language+when Home opens, so keep it rare (privacy, 2026-11-05 review)
 /** After a failed fetch, Home asks again no sooner than this (tab switches must not hammer the server). */
 inline constexpr int64_t kHomeBriefRetryMs = 10LL * 60 * 1000;
 inline constexpr size_t kHomeBriefShown = 3;
@@ -50,7 +50,7 @@ inline constexpr size_t kHomeBriefShown = 3;
  */
 std::optional<std::vector<HomeBriefItem>> ParseHomeBriefArticles(const std::string& json);
 
-/** The cache is for another feed (the UI language changed), was never filled, or is over 3 hours old. */
+/** The cache is for another feed (the UI language changed), was never filled, or is over a day old. */
 bool HomeBriefStale(const HomeBriefCache& cache, const std::string& feed, int64_t now_ms);
 
 /**
