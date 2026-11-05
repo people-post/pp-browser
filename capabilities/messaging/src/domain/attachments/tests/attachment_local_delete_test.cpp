@@ -26,6 +26,12 @@
 #include <mutex>
 #include <thread>
 
+// asio (via ScriptedHttpServer.h) pulls in <windows.h>, whose GetMessage macro would rewrite
+// IThreadTranscript::GetMessage below to GetMessageA on MSVC (C2039). We call the method, not the Win32 pump.
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 namespace pbr {
 namespace {
 
