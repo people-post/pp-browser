@@ -63,7 +63,10 @@ struct ChatSessionRow {
 
 /** The chats list: pinned first, then by activity; archived chats are a separate list. */
 struct ChatListScreen {
+  /** Human chats (Direct/Group) — the 聊天 tab. AI threads are split out into `ai_rows`. */
   std::vector<ChatSessionRow> rows;
+  /** AI conversations (ThreadKind::Ai, listed only) — the AI 助手 page. Same row shape as `rows`. */
+  std::vector<ChatSessionRow> ai_rows;
   int archived_count = 0;
   /** The archived list is showing (back to the main list once nothing is archived). */
   bool showing_archived = false;

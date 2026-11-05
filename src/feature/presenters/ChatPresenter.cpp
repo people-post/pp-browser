@@ -338,7 +338,15 @@ void ChatPresenter::Refresh() {
         row.blocked = (*contact)->trust == TrustLevel::Blocked;
       }
     }
-    next.rows.push_back(std::move(row));
+    // AI conversations live on the AI 助手 page, not the 聊天 list; an AI thread with no readable content yet
+    // (not `listed`) shows nowhere until its first message. Human chats stay in `rows`.
+    if (thread.kind == ThreadKind::Ai) {
+      if (thread.listed) {
+        next.ai_rows.push_back(std::move(row));
+      }
+    } else {
+      next.rows.push_back(std::move(row));
+    }
   }
   list_ = std::move(next);
   Changed();
