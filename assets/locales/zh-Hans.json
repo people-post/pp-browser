@@ -1134,6 +1134,7 @@
     "call.error.media_key_timeout": "无法完成连接 — 通话密钥未到达。请重试，或确认双方设备在线。",
     "call.error.reconnect_failed": "没能重新连上对方，通话已中断。",
     "call.error.migrate_timeout": "切换线路超时，通话已中断。",
+    "call.error.connect_failed": "暂时连不上对方，稍后再试一次。",
     "call.error.peer_unreachable": "联系不上对方，通话没有接通。",
     "call.error.dial_failed": "连接对方失败，请稍后再试。",
     "call.error.media_failed": "通话连接中断。",
