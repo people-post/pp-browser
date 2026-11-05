@@ -1005,12 +1005,14 @@ select selectbox option:hover {
   image-color: #fecaca;
 }
 
-.shell-call-expand {
+.shell-call-expand,
+.shell-call-grid {
   background-color: #374151;
   color: #f9fafb;
 }
 
-.shell-call-expand svg {
+.shell-call-expand svg,
+.shell-call-grid svg {
   image-color: #f9fafb;
 }
 

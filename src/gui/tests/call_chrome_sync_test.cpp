@@ -307,3 +307,16 @@ TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
   ASSERT_EQ(applied.size(), 1u);
   EXPECT_EQ(applied[0], pbr::CallChromeUpdate::DirtyOnly);
 }
+
+// V059: the spotlight (who, and fill / fit) changes the Immersive markup: a remount, like a mode change.
+TEST(CallChromeSyncTest, ASpotlightChangeRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_spotlight = "22";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced = next;
+  next.in_call_spotlight_fill = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}

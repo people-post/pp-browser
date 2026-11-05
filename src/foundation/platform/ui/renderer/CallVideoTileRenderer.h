@@ -41,7 +41,11 @@ public:
   void RetainPeers(const std::vector<uint32_t>& keep);
 
   /** Upload if needed and letterbox-draw into `element`. UI thread, GL context current. */
-  void RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id = 0);
+  /**
+   * fill: cover the tile, cropping the frame's overflow (the spotlight, V059); else fit the whole frame in,
+   * letterboxed.
+   */
+  void RenderTile(CallVideoTileKind kind, ui::Element* element, uint32_t stream_id = 0, bool fill = false);
 
   void ReleaseGpuResources();
 
@@ -57,7 +61,7 @@ private:
   };
 
   void UploadIfNeeded(GpuTile& tile);
-  void DrawTile(ui::Element* element, GpuTile& tile);
+  void DrawTile(ui::Element* element, GpuTile& tile, bool fill);
   void ReleaseTile(GpuTile& tile);
 
   GpuTile remote_;
