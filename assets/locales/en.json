@@ -533,6 +533,7 @@
     "contacts.remove_button": "Remove contact…",
     "contacts.actions_hint": "Private chat adds a key only the two of you hold; regular chat is encrypted too.",
     "contacts.secure_message": "Secure message",
+    "contacts.private_chat": "Private chat (verify a safety code)",
     "contacts.public_chat": "Public chat",
     "contacts.addresses_one": "1 address",
     "contacts.addresses_many": "{count} addresses",

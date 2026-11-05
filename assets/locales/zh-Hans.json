@@ -522,6 +522,7 @@
     "contacts.remove_button": "移除联系人…",
     "contacts.actions_hint": "私密聊天多一层只有你们两人有的密钥；普通聊天也是加密的。",
     "contacts.secure_message": "安全消息",
+    "contacts.private_chat": "私密聊天（需核对安全码）",
     "contacts.public_chat": "公开聊天",
     "contacts.addresses_one": "1 个地址",
     "contacts.addresses_many": "{count} 个地址",
