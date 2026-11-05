@@ -174,6 +174,11 @@
          滑动菜单（右滑：置顶、重命名；左滑：更多、归档、删除）复用聊天行的 sidebar-session 样式和 SessionSwipeGesture。 -->
     <div class="home-ai-list root-scroll" id="home-ai-sessions" data-model="shell" data-if="!home_show_dynamic">
       <p class="home-ai-header">{{i18n:nav.home}}</p>
+      <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
+        <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
+        <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
+        <p class="sidebar-archived-label">{{archived_entry_label_ai}}</p>
+      </div>
       <div data-for="session : ai_sessions" class="sidebar-session sidebar-session--ai"
            data-attr-session-id="session.id"
            data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"
@@ -211,8 +216,8 @@
           </div>
           <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
             <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
-            <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>
-            <p class="session-swipe-label" data-if="showing_archived">{{i18n:sidebar.swipe.unarchive}}</p>
+            <p class="session-swipe-label" data-if="!showing_archived_ai">{{i18n:sidebar.swipe.archive}}</p>
+            <p class="session-swipe-label" data-if="showing_archived_ai">{{i18n:sidebar.swipe.unarchive}}</p>
           </div>
           <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
             <svg src="../icons/v2/trash.svg" width="22" height="22"></svg>

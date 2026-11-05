@@ -953,6 +953,12 @@ void ChatController::OnSessionsSearchChanged() {
   DataModelHost::Instance().Dirty("shell", "sessions_more");
 }
 
+void ChatController::OnToggleArchivedAi() {
+  presenter_.ToggleArchivedAi();
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
+}
+
 void ChatController::OnToggleArchived() {
   session_window_.Reset();  // the other list starts at its first rows
   presenter_.ToggleArchived();
@@ -1075,6 +1081,7 @@ void ChatController::OnProfileDataReset() {
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
+  shell_.showing_archived_ai = false;
   session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1142,6 +1149,12 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
+  shell_.archived_count_ai = list.archived_count_ai;
+  shell_.showing_archived_ai = list.showing_archived_ai;
+  shell_.archived_entry_label_ai =
+      list.showing_archived_ai
+          ? Tr("sidebar.archived.back_ai").c_str()
+          : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count_ai)}}).c_str();
   // The open chat is always drawn, wherever it sorts (opened from Contacts, or pushed down by newer ones).
   for (size_t i = 0; i < list.rows.size(); ++i) {
     if (list.rows[i].active) {
@@ -4142,6 +4155,7 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));

@@ -1542,6 +1542,7 @@
     "sidebar.swipe.unread": "Unread",
     "sidebar.archived.entry": "Archived ({count})",
     "sidebar.archived.back": "Back to chats",
+    "sidebar.archived.back_ai": "Back to conversations",
     "sidebar.error.prefs_failed": "Could not save the setting",
     "sidebar.empty": "No chats yet.",
     "sidebar.loading_more": "Loading…",

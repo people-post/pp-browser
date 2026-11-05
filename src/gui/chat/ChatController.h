@@ -268,6 +268,7 @@ private:
   /** Edit Home's rows from `layout` (the drag's working order while a handle is held). */
   void ApplyHomeEditRows(const HomeWidgetLayout& layout);
   void OnToggleArchived();
+  void OnToggleArchivedAi();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;

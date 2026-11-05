@@ -200,6 +200,7 @@ void ChatPresenter::BindCallbacks(Callbacks callbacks) {
 void ChatPresenter::ResetForNewProfile() {
   prefs_.reset();
   showing_archived_ = false;
+  showing_archived_ai_ = false;
 }
 
 const std::unordered_map<std::string, ThreadLocalPrefs>& ChatPresenter::AllPrefs() {
@@ -265,9 +266,37 @@ void ChatPresenter::UpdatePrefs(const std::string& thread_id, const std::functio
   Refresh();
 }
 
+ChatListBucket ClassifyForList(const bool is_ai, const bool listed, const bool archived, const bool showing_archived,
+                               const bool showing_archived_ai) {
+  if (is_ai) {
+    // An AI thread with no readable content yet (not `listed`) shows nowhere until its first message.
+    return listed && archived == showing_archived_ai ? ChatListBucket::Ai : ChatListBucket::Hidden;
+  }
+  return archived == showing_archived ? ChatListBucket::Human : ChatListBucket::Hidden;
+}
+
+ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, const bool showing_archived,
+                                 const bool showing_archived_ai) {
+  ArchiveViews views;
+  for (const ArchiveItem& item : items) {
+    if (!item.archived) {
+      continue;
+    }
+    if (!item.is_ai) {
+      ++views.archived_count;
+    } else if (item.listed) {  // an unlisted AI thread is not shown, so not counted
+      ++views.archived_count_ai;
+    }
+  }
+  views.showing_archived = showing_archived && views.archived_count > 0;
+  views.showing_archived_ai = showing_archived_ai && views.archived_count_ai > 0;
+  return views;
+}
+
 void ChatPresenter::Refresh() {
   ChatListScreen next;
   next.showing_archived = showing_archived_;
+  next.showing_archived_ai = showing_archived_ai_;
   auto threads = facade_ ? facade_->ListThreads() : Roe<std::vector<Thread>>(Error("Messaging not ready"));
   if (!threads) {
     list_ = std::move(next);
@@ -283,15 +312,16 @@ void ChatPresenter::Refresh() {
   std::stable_sort(sorted.begin(), sorted.end(), [&prefs_of](const Thread& a, const Thread& b) {
     return SessionSortsBefore(prefs_of(a).pinned_at, a.updated_at, prefs_of(b).pinned_at, b.updated_at);
   });
+  std::vector<ArchiveItem> items;
+  items.reserve(sorted.size());
   for (const Thread& thread : sorted) {
-    if (prefs_of(thread).archived) {
-      ++next.archived_count;
-    }
+    items.push_back({thread.kind == ThreadKind::Ai, thread.listed, prefs_of(thread).archived});
   }
-  if (next.archived_count == 0) {
-    showing_archived_ = false;  // the last archived chat left: back to the list
-    next.showing_archived = false;
-  }
+  const ArchiveViews views = ResolveArchiveViews(items, showing_archived_, showing_archived_ai_);
+  next.archived_count = views.archived_count;
+  next.archived_count_ai = views.archived_count_ai;
+  next.showing_archived = showing_archived_ = views.showing_archived;  // the last archived one left: back to the list
+  next.showing_archived_ai = showing_archived_ai_ = views.showing_archived_ai;
   const std::string active_id = facade_->ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
   const std::map<std::string, int> mentions = facade_->MentionCounts();
@@ -301,7 +331,10 @@ void ChatPresenter::Refresh() {
   }
   for (const Thread& thread : sorted) {
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
-    if (thread_prefs.archived != next.showing_archived) {
+    // Each list has its own archive view: an archived AI thread never reaches `rows`, a human one never `ai_rows`.
+    const ChatListBucket bucket = ClassifyForList(thread.kind == ThreadKind::Ai, thread.listed, thread_prefs.archived,
+                                                  next.showing_archived, next.showing_archived_ai);
+    if (bucket == ChatListBucket::Hidden) {
       continue;
     }
     ChatSessionRow row;
@@ -345,9 +378,7 @@ void ChatPresenter::Refresh() {
       // not a message from someone else waiting to be seen (Kenneth 2026-11-05).
       row.unread_count = 0;
       row.unread_dot = false;
-      if (thread.listed) {
-        next.ai_rows.push_back(std::move(row));
-      }
+      next.ai_rows.push_back(std::move(row));
     } else {
       next.rows.push_back(std::move(row));
     }
@@ -387,6 +418,11 @@ void ChatPresenter::ShowHome() {
   if (facade_) {
     facade_->ClearActiveThread();
   }
+  Refresh();
+}
+
+void ChatPresenter::ToggleArchivedAi() {
+  showing_archived_ai_ = !showing_archived_ai_;
   Refresh();
 }
 
