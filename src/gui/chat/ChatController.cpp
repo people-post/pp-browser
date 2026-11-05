@@ -3429,7 +3429,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
   // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
   // the preview update, which rebuilds the session rows once.
-  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), AiThreadTitleFromMessage(trimmed));
+  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), trimmed);
   UpdateSidebarPreview(trimmed);
   DirtyChatChrome();
 
@@ -3686,7 +3686,7 @@ QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item
     }
     return QueuedSendOutcome::NotStarted;
   }
-  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, AiThreadTitleFromMessage(item.text));
+  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, item.text);
   if (!expects) {
     return QueuedSendOutcome::NotStarted;
   }
@@ -4699,7 +4699,7 @@ std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, con
     log().warning << "Ask AI: could not store the question: " << stored.error().message;
     return {};
   }
-  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(text));
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, text);
   (void)facade_->UpdatePreview(thread_id, text);
   SyncShellSessions();
   return stored->id.empty() ? message.id : stored->id;

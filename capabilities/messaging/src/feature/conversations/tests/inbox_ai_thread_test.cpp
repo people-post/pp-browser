@@ -159,5 +159,115 @@ TEST(InboxAiThreadTest, ThePinOfAnAiThreadIsAStoredPreference) {
   EXPECT_EQ(prefs.Get("ai-1")->pinned_at, 0);
 }
 
+std::string StoredTitle(AiInboxEnv& env, const std::string& id) {
+  auto thread = env.store->GetThread(id);
+  return thread && *thread ? (*thread)->title : "<missing>";
+}
+
+std::string StoredPreview(AiInboxEnv& env, const std::string& id) {
+  auto thread = env.store->GetThread(id);
+  return thread && *thread ? (*thread)->preview : "<missing>";
+}
+
+TEST(InboxAiThreadTest, ALongFirstMessageIsCutOnACharacterBoundary) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  std::string cjk;
+  for (int i = 0; i < 40; ++i) {
+    cjk += "一二三四";
+  }
+  ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", cjk));
+  std::string expected;
+  for (int i = 0; i < 6; ++i) {
+    expected += "一二三四"; // 24 characters, whole
+  }
+  EXPECT_EQ(StoredTitle(env, "ai-1"), expected + "…");
+  env.Reopen();
+  EXPECT_EQ(env.TitleOf("ai-1"), expected + "…") << "the title is stored";
+}
+
+TEST(InboxAiThreadTest, ATitleNeverSplitsAnEmojiSequence) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x91\xA7"; // man+woman+girl
+  std::string text(23, 'a');
+  text += family + "tail"; // the family is the 24th character
+  ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", text));
+  EXPECT_EQ(StoredTitle(env, "ai-1"), std::string(23, 'a') + family + "…");
+}
+
+TEST(InboxAiThreadTest, AShortSentenceIsShownAsIs) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", "  Plan a trip\n to Japan "));
+  EXPECT_EQ(StoredTitle(env, "ai-1"), "Plan a trip to Japan");
+  ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", "Plan a trip to Japan"));
+  EXPECT_EQ(StoredPreview(env, "ai-1"), "Plan a trip to Japan");
+}
+
+TEST(InboxAiThreadTest, ADeviceLinkCodeIsNeverTheTitleOrPreview) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  const std::string code = "pp-browser-link-device-v1:AbCdEf0123456789secret";
+  ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", code));
+  ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", code));
+  EXPECT_EQ(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle);
+  EXPECT_EQ(StoredPreview(env, "ai-1").find("secret"), std::string::npos);
+  EXPECT_EQ(StoredPreview(env, "ai-1").find("pp-browser-link"), std::string::npos);
+  EXPECT_FALSE(StoredPreview(env, "ai-1").empty());
+}
+
+TEST(InboxAiThreadTest, ABase64BlobOrOpaquePasteGetsThePlaceholder) {
+  // A long base64 run (with a digit), an opaque ASCII paste with no spaces, and a base64 run inside other text.
+  for (const std::string& text :
+       {std::string("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5"), std::string(250, 'x'),
+        std::string("see ") + "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIz"}) {
+    AiInboxEnv env;
+    env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+    ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", text));
+    ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", text));
+    EXPECT_EQ(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle) << text;
+    EXPECT_EQ(StoredPreview(env, "ai-1").find(text.substr(text.size() - 6)), std::string::npos) << text;
+  }
+}
+
+TEST(InboxAiThreadTest, APlainNumberOrLongCjkIsNotMasked) {
+  // A bare number (a year, a PIN, an amount) and ordinary prose — including long space-free Chinese — are not codes.
+  std::string long_cjk;
+  for (int i = 0; i < 250; ++i) {
+    long_cjk += "中";  // 250 CJK codepoints, no spaces: prose, not a blob
+  }
+  for (const std::string& text : {std::string("123456"), std::string("2025"), long_cjk}) {
+    AiInboxEnv env;
+    env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+    ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", text));
+    ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", text));
+    EXPECT_NE(StoredTitle(env, "ai-1"), kDefaultAiThreadTitle) << text;  // named from the message, not left default
+    EXPECT_EQ(StoredPreview(env, "ai-1"), text) << "preview kept unmasked";
+  }
+}
+
+TEST(InboxAiThreadTest, AHumanChatPreviewIsNotMasked) {
+  AiInboxEnv env;
+  Thread direct;
+  direct.id = "d-1";
+  direct.kind = ThreadKind::Direct;
+  direct.title = "Peer";
+  direct.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(direct));
+  ASSERT_TRUE(env.inbox->UpdatePreview("d-1", "123456"));
+  EXPECT_EQ(StoredPreview(env, "d-1"), "123456");
+}
+
+TEST(InboxAiThreadTest, ARenamedThreadKeepsItsOwnName) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  ASSERT_TRUE(env.inbox->SetThreadLocalTitle("ai-1", "Japan 2027"));
+  ASSERT_TRUE(env.inbox->NameAiThreadFromFirstMessage("ai-1", "Plan a trip"));
+  EXPECT_EQ(env.TitleOf("ai-1"), "Japan 2027");
+  env.Reopen();
+  EXPECT_EQ(env.TitleOf("ai-1"), "Japan 2027");
+}
+
 } // namespace
 } // namespace pbr

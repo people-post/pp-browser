@@ -574,7 +574,7 @@ void AgentTurnController::StartPreparedImageSend(const std::string& thread_id, c
   DirtyChatTurns();
   chat_.status = "";
   MarkAgentBusy(thread_id);
-  (void)host_.Facade()->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(question));
+  (void)host_.Facade()->NameAiThreadFromFirstMessage(thread_id, question);
   host_.UpdateSidebarPreview(question);
   DirtyChatChrome();
   DirtyChatHeader();

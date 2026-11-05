@@ -7,6 +7,7 @@
 #include "domain/attachments/AttachmentFetchWorkflow.h"
 #include "common/Localized.h"
 #include "common/ImageMetadata.h"
+#include "lib/messaging/AiThreadTitle.h"
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
@@ -488,7 +489,8 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
     return Error("Thread not found");
   }
   Thread updated = **thread;
-  updated.preview = preview;
+  // An AI thread's preview is the user's own text or the answer; a sensitive one never reaches the row.
+  updated.preview = updated.kind == ThreadKind::Ai && LooksSensitiveForAiTitle(preview) ? Localized("chat.new_chat") : preview;
   updated.updated_at = util::NowUnixMs();
   if (store_.UpsertThread(updated)) {
     return {};
@@ -542,7 +544,8 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   return {};
 }
 
-Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
+Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id,
+                                                         const std::string& first_message) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -550,7 +553,13 @@ Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& threa
   if (!*thread) {
     return Error("Thread not found");
   }
-  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle || title.empty()) {
+  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle) {
+    return {};
+  }
+  // A sensitive first message (device-link code, PIN, pasted blob) leaves the neutral default title: the title
+  // is shown in lists and notifications. A renamed thread's own name lives in local_title and is not touched.
+  const std::string title = LooksSensitiveForAiTitle(first_message) ? std::string() : AiThreadTitleFromMessage(first_message);
+  if (title.empty()) {
     return {};
   }
   Thread updated = **thread;

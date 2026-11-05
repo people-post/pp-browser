@@ -108,10 +108,12 @@ public:
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /**
-   * Names an AI thread after its first question. Applies only while the thread still has
-   * kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of the send).
+   * Names an AI thread after its first question (`first_message` is the raw text; the title is cut to
+   * kAiThreadTitleMaxChars display characters, and a sensitive message keeps the default title). Applies only
+   * while the thread still has kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of
+   * the send).
    */
-  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message);
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
