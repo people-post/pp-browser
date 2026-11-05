@@ -211,6 +211,9 @@
     <!-- Empty AI Home: nothing in the centre (Kenneth 2026-11-05, 极简); the AI tab icon carries the brand and the
          floating assistant is hidden here (this page is its home). Just the composer + chips below. -->
     <div class="home-landing-inner stack" data-model="chat">
+      <!-- A soft frosted fade where the scrolling conversation list meets the dock, like the chat composer
+           (Kenneth 2026-11-05 "加一点点毛玻璃"). -->
+      <div class="bar-fade bar-fade--up home-composer-fade"></div>
       <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">

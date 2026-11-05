@@ -219,6 +219,13 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   EXPECT_TRUE(tab_bar_keyboard.tab_bar_hidden);
   EXPECT_FLOAT_EQ(tab_bar_keyboard.content_padding_bottom_dp, 0.f);
 
+  // Emoji / attachment panel open over a tab-bar page (bottom_chrome_open): its own inset is zeroed at the call site,
+  // so no keyboard is detected, but the tab bar still hides so the panel sits right under the docked composer.
+  const CompactChromeLayout tab_bar_bottom_chrome =
+      ShellLayout::ComputeCompactChromeLayout(config, 47, 0, 0.f, CompactBottomSurface::TabBar, /*bottom_chrome_open=*/true);
+  EXPECT_TRUE(tab_bar_bottom_chrome.tab_bar_hidden);
+  EXPECT_FLOAT_EQ(tab_bar_bottom_chrome.content_padding_bottom_dp, 0.f);
+
   // Chat overlay (no tab bar): the composer pads by the inset; nothing is added to the nav padding.
   const CompactChromeLayout composer =
       ShellLayout::ComputeCompactChromeLayout(config, 47, 34, 0.f, CompactBottomSurface::Composer);

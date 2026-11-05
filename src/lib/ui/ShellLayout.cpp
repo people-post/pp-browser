@@ -90,7 +90,8 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
                                                             int safe_area_top_dp,
                                                             int safe_area_bottom_dp,
                                                             float titlebar_height_dp,
-                                                            CompactBottomSurface bottom_surface) {
+                                                            CompactBottomSurface bottom_surface,
+                                                            bool bottom_chrome_open) {
   CompactChromeLayout layout{};
   const float safe_top = static_cast<float>(std::max(0, safe_area_top_dp));
   const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
@@ -110,9 +111,11 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
   const float tab_bar_inset =
       bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
-  // Keyboard up over a tab-bar page: hide the tab bar and stop reserving its height, so the content sits right above
-  // the keyboard (which covers where the bar was) instead of being squeezed above a floating bar (Kenneth 2026-11-05).
-  layout.tab_bar_hidden = keyboard && bottom_surface == CompactBottomSurface::TabBar;
+  // Keyboard up, or an emoji/attachment bottom sheet open, over a tab-bar page: hide the tab bar and stop reserving its
+  // height, so the content (and its docked composer) sits right above the keyboard / panel that covers where the bar
+  // was, instead of being squeezed above a floating bar (Kenneth 2026-11-05). bottom_chrome_open is the emoji/attachment
+  // panel, whose own inset is zeroed at the call site, so it is passed in separately from the keyboard inset.
+  layout.tab_bar_hidden = (keyboard || bottom_chrome_open) && bottom_surface == CompactBottomSurface::TabBar;
   layout.content_padding_bottom_dp = layout.tab_bar_hidden ? 0.f : config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_bottom_dp = 0.f;
   layout.sheet_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;

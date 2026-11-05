@@ -11544,6 +11544,15 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
+/* The minimal AI home scrolls a conversation list into the dock, so the composer gets the same soft frosted fade at
+   its top edge as the chat composer (Kenneth 2026-11-05). Only on the minimal home; the dock must anchor it. */
+.shell-layer-compact .home-composer-fade {
+  display: none;
+}
+.shell-layer-compact .home-landing--minimal .home-composer-fade {
+  display: block;
+}
+
 /* The AI conversation list fills the page and scrolls (its "PP 助手" title scrolls with it); the ask-AI field + chips
    sink to the bottom (Kenneth 2026-11-05). */
 .home-ai-list {
@@ -11558,6 +11567,8 @@ textarea:composing ~ .prompt-composer-label,
 }
 .shell-layer-compact .home-landing--minimal .home-landing-inner {
   flex: none;
+  /* Anchors the composer frost fade (.home-composer-fade sits just above this dock's top edge). */
+  position: relative;
 }
 
 /* The ask-AI heading above the chips; phone-only, so hidden on the desktop Home. */

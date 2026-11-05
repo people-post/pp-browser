@@ -1411,7 +1411,7 @@ void ShellHost::ApplySafeAreaLayout() {
                                                      : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
-      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface);
+      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
@@ -1470,8 +1470,9 @@ void ShellHost::ApplySafeAreaLayout() {
   const float strip_dp = layout.bottom_surface_padding_dp;
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
-  // Keyboard up over a tab-bar page: hide the nav tab bar so the keyboard covers it (the content's own composer stays
-  // above the keyboard). Only fires for the TabBar surface, so a chat's composer is untouched.
+  // Keyboard up, or an emoji/attachment panel open, over a tab-bar page: hide the nav tab bar so the keyboard / panel
+  // covers it (the content's own composer stays above it). Only fires for the TabBar surface, so a chat's composer is
+  // untouched.
   if (ui::Element* bottom_chrome = doc->GetElementById("shell-bottom-chrome")) {
     if (layout.tab_bar_hidden) {
       bottom_chrome->SetProperty("display", "none");

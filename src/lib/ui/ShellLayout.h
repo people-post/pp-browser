@@ -39,7 +39,8 @@ struct ShellLayout {
                                                         int safe_area_top_dp,
                                                         int safe_area_bottom_dp,
                                                         float titlebar_height_dp = 0.f,
-                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None);
+                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None,
+                                                        bool bottom_chrome_open = false);
 };
 
 } // namespace pbr
