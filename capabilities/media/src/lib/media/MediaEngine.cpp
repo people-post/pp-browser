@@ -85,10 +85,12 @@ constexpr int kPlayoutMaxSlotsPerTick = 3;
 // fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
 constexpr int kVideoFps = 15;
 /**
- * The camera runs at twice that: every frame goes to the self-view, and a frame is encoded when a send interval has
- * passed (every second one at 30 fps). Sending is unchanged; the self-view is not held to the send rate.
+ * The camera runs at the send rate: every frame it gives is sent and shown in the self-view. A faster camera (30 fps
+ * was tried) costs the sensor's power and converts frames only the self-view shows; at 15 fps, drawn as each frame
+ * comes (IMediaView::SetOnVideoFrame), the self-view is smooth enough. A frame is still encoded only once a send
+ * interval has passed, so a camera that gives more than it was asked for is sent at the send rate.
  */
-constexpr int kCameraFps = 30;
+constexpr int kCameraFps = kVideoFps;
 /** A frame is encoded once this long has passed since the last encode (a send period, less camera jitter). */
 constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8);
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
@@ -236,8 +238,6 @@ struct MediaEngine::Shared {
   /** SetOnVideoFrame's callback (every session's frames); called after a frame is published, outside its lock. */
   std::mutex on_video_frame_mu;
   std::function<void()> on_video_frame;
-  /** SetSelfViewHalfRate: show only the sent frames. */
-  std::atomic<bool> self_view_half_rate{false};
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -1476,9 +1476,6 @@ struct MediaEngine::Impl {
   /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
    *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
   void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode) {
-    if (!encode && shared->self_view_half_rate.load(std::memory_order_relaxed)) {
-      return; // half-rate self-view: a frame only for it is not even converted
-    }
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
     const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
@@ -2602,10 +2599,6 @@ float MediaEngine::RemoteOutputLevel() const {
 void MediaEngine::SetOnVideoFrame(std::function<void()> on_frame) {
   std::lock_guard lock(shared_->on_video_frame_mu);
   shared_->on_video_frame = std::move(on_frame);
-}
-
-void MediaEngine::SetSelfViewHalfRate(const bool half) {
-  shared_->self_view_half_rate.store(half, std::memory_order_relaxed);
 }
 
 bool MediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {

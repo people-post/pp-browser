@@ -917,11 +917,6 @@ void CallController::ToggleSpeaker() {
 void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
   BindVideoFrameWake(media);
-  {
-    // Low Power Mode / Battery Saver, or a hot phone: the self-view shows only the sent frames (15 fps).
-    const DeviceVitals& vitals = Vitals(util::NowUnixMs());
-    media.SetSelfViewHalfRate(vitals.low_power || vitals.thermal >= kThermalSerious);
-  }
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();

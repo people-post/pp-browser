@@ -361,7 +361,7 @@ private:
     }
     line.Add("thermal_max", ThermalStateName(std::max(call_.thermal_max, vitals.thermal)));
     if (vitals.low_power) {
-      line.Add("low_power", true); // the self-view ran at half rate (SetSelfViewHalfRate)
+      line.Add("low_power", true); // Low Power Mode / Battery Saver at the end: read the call's figures with it
     }
     if (call_.vitals_start.battery_pct >= 0) {
       line.Add("battery_start", call_.vitals_start.battery_pct)

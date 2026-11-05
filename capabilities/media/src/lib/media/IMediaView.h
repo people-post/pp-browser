@@ -94,11 +94,6 @@ public:
    * the UI's cue to draw. Nothing else wakes the UI for a frame. Empty: none.
    */
   virtual void SetOnVideoFrame(std::function<void()> on_frame) = 0;
-  /**
-   * Half-rate self-view (Low Power Mode, a hot phone): only the frames that are sent are shown (15 fps of the
-   * camera's 30), and the others are not converted at all. The sent video is unchanged.
-   */
-  virtual void SetSelfViewHalfRate(bool half) = 0;
   /** Copy the latest local preview / remote decoded frames (false if none). */
   virtual bool CopyLocalVideoFrame(VideoTileFrame& out) const = 0;
   virtual bool CopyRemoteVideoFrame(VideoTileFrame& out) const = 0;

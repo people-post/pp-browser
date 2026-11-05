@@ -151,8 +151,6 @@ private:
   uint64_t last_shown_self_seq_ = 0;
   /** The media view whose frames wake the loop (BindVideoFrameWake). */
   IMediaView* video_wake_bound_ = nullptr;
-  /** DeviceVitals::thermal at which the self-view drops to half rate (Apple's "serious"). */
-  static constexpr int kThermalSerious = 2;
   uint64_t last_shown_peer_seq_ = 0;
   /** Operational metrics for the current call (Metrics channel; no identities). */
   CallMetricsTracker metrics_;

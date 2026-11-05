@@ -219,7 +219,6 @@ public:
 
   /** Copy latest local preview / remote decoded frames (empty if none). */
   void SetOnVideoFrame(std::function<void()> on_frame) override;
-  void SetSelfViewHalfRate(bool half) override;
   bool CopyLocalVideoFrame(VideoTileFrame& out) const override;
   bool CopyRemoteVideoFrame(VideoTileFrame& out) const override;
   /** Group: copy decoded frame for a publisher stream_id (0 = primary remote). */

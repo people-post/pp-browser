@@ -11,7 +11,6 @@
 #include <optional>
 #include <string>
 #include <thread>
-#include <tuple>
 #include <vector>
 
 namespace pbr {
@@ -129,10 +128,9 @@ TEST(MediaEngineAdaptationTest, APathTooWeakForVideoPausesTheSendAndKeepsTheCame
   (void)engine.WaitForRetiredSessions(3s);
 }
 
-// The UI draws a video frame only when told (nothing else wakes its frame loop for one), and a phone saving power
-// shows only the sent frames in the self-view: half the camera's, and the others never converted. The sent video
-// is the same either way.
-TEST(MediaEngineAdaptationTest, EachSelfViewFrameIsAnnouncedAndHalfRateShowsOnlyTheSentOnes) {
+// The UI draws a video frame only when told (nothing else wakes its frame loop for one), and the camera runs at the
+// send rate: every self-view frame is announced, and the self-view shows what is sent, frame for frame.
+TEST(MediaEngineAdaptationTest, EachSelfViewFrameIsAnnouncedAndIsASentFrame) {
   EncodeLog encodes;
   MediaDeviceArbiter devices(std::make_unique<FrameBackend>());
   MediaEngine engine(devices);
@@ -145,25 +143,17 @@ TEST(MediaEngineAdaptationTest, EachSelfViewFrameIsAnnouncedAndHalfRateShowsOnly
   ASSERT_TRUE(engine.SetCameraEnabled(true, 0));
   ASSERT_TRUE(WaitFor([&] { return encodes.Count() >= 2; })) << "the camera never sent video";
 
-  auto window = [&](std::chrono::milliseconds length) {
-    const uint64_t previews = engine.HealthSnapshot().preview_frames;
-    const uint64_t calls = announced.load();
-    const size_t sent = encodes.Count();
-    std::this_thread::sleep_for(length);
-    return std::tuple{engine.HealthSnapshot().preview_frames - previews, announced.load() - calls,
-                      static_cast<uint64_t>(encodes.Count() - sent)};
-  };
-  const auto [full_previews, full_calls, full_sent] = window(1000ms);
-  EXPECT_GE(full_calls, full_previews) << "a self-view frame the UI was not told of";
-  EXPECT_GT(full_previews, full_sent) << "the self-view runs at the camera's rate, above the send rate";
-
-  engine.SetSelfViewHalfRate(true);
-  std::this_thread::sleep_for(100ms);
-  const auto [half_previews, half_calls, half_sent] = window(1000ms);
-  EXPECT_GE(half_calls, half_previews);
-  EXPECT_LE(half_previews, half_sent + 1) << "half rate shows only the frames that are sent";
-  EXPECT_LT(half_previews * 10, full_previews * 8) << "half rate did not slow the self-view";
-  EXPECT_GE(half_sent * 10, full_sent * 7) << "half rate is the self-view's only: the send rate stays";
+  const uint64_t previews_at = engine.HealthSnapshot().preview_frames;
+  const uint64_t announced_at = announced.load();
+  const size_t sent_at = encodes.Count();
+  std::this_thread::sleep_for(1000ms);
+  const uint64_t previews = engine.HealthSnapshot().preview_frames - previews_at;
+  const uint64_t calls = announced.load() - announced_at;
+  const uint64_t sent = encodes.Count() - sent_at;
+  EXPECT_GE(calls, previews) << "a self-view frame the UI was not told of";
+  EXPECT_GE(previews, 10u) << "the self-view runs at about the send rate (15 fps)";
+  EXPECT_LE(previews, sent + 1) << "the self-view shows the frames that are sent, no more";
+  EXPECT_GE(previews + 1, sent) << "every sent frame is shown";
   engine.Stop();
   (void)engine.WaitForRetiredSessions(3s);
 }
