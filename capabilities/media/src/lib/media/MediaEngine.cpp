@@ -2019,12 +2019,12 @@ MediaEngine::MediaEngine(MediaDeviceArbiter& devices)
   shared_->own_devices = &devices;
   shared_->devices = &devices;
   impl_ = std::make_shared<Impl>(shared_);
-  // An OS audio interruption (iOS) stops the audio units; reopen once the session is back.
-  AudioSession::SetInterruptionEndedHandler([this]() { RequestAudioDeviceReopen(); });
+  // An OS audio interruption (iOS) stops the audio units; reopen once the session is back (a no-op unless capturing).
+  interruption_handler_ = AudioSession::AddInterruptionEndedHandler([this]() { RequestAudioDeviceReopen(); });
 }
 
 MediaEngine::~MediaEngine() {
-  AudioSession::SetInterruptionEndedHandler({});
+  AudioSession::RemoveInterruptionEndedHandler(interruption_handler_);
   Stop();
   // Product quit / owner teardown: give retired sessions a moment; one stuck on a device is left to
   // the process exit (it keeps what it uses alive).

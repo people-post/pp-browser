@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <functional>
 
 namespace pbr {
@@ -33,11 +34,20 @@ void NotifySystemActivation(bool active);
 
 /**
  * The OS took the live session away and gave it back (a call screen, Siri, an alarm; or the media services were
- * reset): `fn` runs after ActivateForVoip re-took it, so the audio devices can be reopened. Only fires while a
- * live session is active. One handler; empty clears it. `fn` runs under the registry lock: keep it short and do
- * not register from inside it. No-op where the OS does not interrupt the session this way.
+ * reset): every handler added here runs once ActivateForVoip has taken the session again, so each audio user can
+ * reopen its devices. There are several (each MediaEngine: a call's, a broadcast's two; one not capturing ignores
+ * it), so each adds its own. A single handler that each new engine replaced ended up on a broadcast engine, and the
+ * call's audio never came back. Fires only while a live session is active, and only where the OS interrupts the
+ * session this way (iOS); elsewhere the handlers are kept and never run.
+ *
+ * Handlers run under the registry's lock: keep them short, and do not add or remove from inside one. Remove waits
+ * for a running handler, so its owner may go once Remove returns.
  */
-void SetInterruptionEndedHandler(std::function<void()> fn);
+using InterruptionHandlerId = uint64_t;
+InterruptionHandlerId AddInterruptionEndedHandler(std::function<void()> fn);
+void RemoveInterruptionEndedHandler(InterruptionHandlerId id);
+/** The platform's session took the session back after an interruption: runs every handler, in the order added. */
+void NotifyInterruptionEnded();
 
 /**
  * An audio user is about to start I/O without ActivateForVoip (ringtone / ringback open their
