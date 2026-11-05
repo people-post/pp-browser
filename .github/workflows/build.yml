@@ -386,7 +386,7 @@ jobs:
     needs: changes
     # Fork PRs never reach the self-hosted Mac: their code would run on it.
     if: github.event_name != 'pull_request' || (needs.changes.outputs.apple == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: ${{ fromJSON(vars.CI_MAC_BUILD_LABELS || '["self-hosted","macOS","ARM64"]') }}
     timeout-minutes: 90
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache

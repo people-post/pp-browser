@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   testflight:
-    runs-on: macos-15
+    runs-on: ${{ fromJSON(vars.CI_MAC_RELEASE_LABELS || '"macos-15"') }}
     timeout-minutes: 120
     env:
       CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
