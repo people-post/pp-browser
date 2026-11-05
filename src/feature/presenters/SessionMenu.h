@@ -15,6 +15,8 @@ enum class SessionMenuItem {
   MarkRead,
   Pin,
   Unpin,
+  /** An AI conversation: give it a name of the user's own. */
+  Rename,
   Mute,
   Unmute,
   /** A muted group: its mentions silent too (G015) — or alerting again. */
@@ -66,6 +68,8 @@ inline const char* SessionMenuIcon(const SessionMenuItem item) {
   case SessionMenuItem::Pin:
   case SessionMenuItem::Unpin:
     return "../icons/v2/pin.svg";
+  case SessionMenuItem::Rename:
+    return "../icons/v2/compose.svg";
   case SessionMenuItem::Mute:
   case SessionMenuItem::MuteMentions:
     return "../icons/v2/bell-off.svg";
@@ -100,6 +104,9 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   std::vector<SessionMenuItem> items;
   items.push_back(state.unread ? SessionMenuItem::MarkRead : SessionMenuItem::MarkUnread);
   items.push_back(state.pinned ? SessionMenuItem::Unpin : SessionMenuItem::Pin);
+  if (state.kind == SessionKind::Ai) {
+    items.push_back(SessionMenuItem::Rename);
+  }
   if (state.kind != SessionKind::Ai) { // an AI thread never notifies
     items.push_back(state.muted ? SessionMenuItem::Unmute : SessionMenuItem::Mute);
   }

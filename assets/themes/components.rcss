@@ -11563,6 +11563,7 @@ textarea:composing ~ .prompt-composer-label,
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden; /* the swipe buttons sit outside the row (SessionSwipeGesture) */
   width: 100%;
 }
 .shell-layer-compact .home-landing--minimal .home-landing-inner {

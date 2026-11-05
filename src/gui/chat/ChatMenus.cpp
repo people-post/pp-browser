@@ -201,13 +201,43 @@ void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const Sessio
     ids[0] = "session_mark_read";
     ids[1] = "session_mark_unread";
     break;
+  case SessionSwipeAction::Rename:
+    ids[0] = "session_rename"; // offered for AI conversations only
+    break;
   }
   for (ContextMenuAction& item : SessionActions(thread_id, ui::Vector2i(0, 0))) {
-    if ((item.id == ids[0] || item.id == ids[1]) && item.run) {
+    // An action with no second id (e.g. Rename) leaves ids[1] null; comparing a std::string to a null char* would
+    // strlen(nullptr) and crash, so guard each id before the compare.
+    const bool match = (ids[0] && item.id == ids[0]) || (ids[1] && item.id == ids[1]);
+    if (match && item.run) {
       item.run();
       return;
     }
   }
+}
+
+void ChatMenus::RenameAiThread(const std::string& thread_id) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!facade) {
+    return;
+  }
+  auto thread = facade->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Ai) {
+    return;
+  }
+  host_.ShowPrompt(Tr("chat.ai_rename.title"), Tr("chat.ai_rename.prompt"), SessionTitle(thread_id),
+                   [this, thread_id](const bool ok, std::string value) {
+                     if (!ok) {
+                       return;
+                     }
+                     // An empty name goes back to the automatic title.
+                     if (auto saved = presenter_.SetThreadLocalTitle(thread_id, value); !saved) {
+                       UserFeedback::Fail(saved.error().message);
+                     } else {
+                       host_.AfterThreadPrefsChanged();
+                     }
+                     host_.NotifySurfaceChanged();
+                   });
 }
 
 std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thread_id, const ui::Vector2i position) {
@@ -282,6 +312,11 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
         presenter_.SetPinned(thread_id, pin);
         host_.AfterThreadPrefsChanged();
       };
+      break;
+    case SessionMenuItem::Rename:
+      action.id = "session_rename";
+      action.label = Tr("sidebar.menu.rename");
+      action.run = [this, thread_id]() { RenameAiThread(thread_id); };
       break;
     case SessionMenuItem::Mute:
       action.id = "session_mute";

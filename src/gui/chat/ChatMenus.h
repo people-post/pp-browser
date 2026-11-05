@@ -98,6 +98,8 @@ public:
   std::vector<ContextMenuAction> SessionActions(const std::string& thread_id, ui::Vector2i position);
   /** A swipe button on a chats-list row: runs that row's matching long-press item (nothing if the menu lacks it). */
   void RunSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
+  /** Asks for a new name for an AI conversation and stores it as its local title (empty = the automatic title). */
+  void RenameAiThread(const std::string& thread_id);
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);

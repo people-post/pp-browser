@@ -1435,6 +1435,10 @@ input.checkbox:checked {
   background-color: #ff9f0a;
 }
 
+.session-swipe-btn--rename {
+  background-color: #30d158;
+}
+
 .session-swipe-btn--read {
   background-color: #0a84ff;
 }

@@ -171,8 +171,8 @@
     <div class="home-dock-fade"></div>
     <!-- The AI conversation list scrolls; its "PP 助手" large title scrolls up and collapses into the sticky bar,
          like the Chats page (Kenneth 2026-11-05). No search box (the assistant keeps context). Empty = just the title.
-         置顶/删除/改名/归档的滑动菜单在后续增量加；复用聊天行的 sidebar-session 样式。 -->
-    <div class="home-ai-list root-scroll" data-model="shell" data-if="!home_show_dynamic">
+         滑动菜单（右滑：置顶、重命名；左滑：更多、归档、删除）复用聊天行的 sidebar-session 样式和 SessionSwipeGesture。 -->
+    <div class="home-ai-list root-scroll" id="home-ai-sessions" data-model="shell" data-if="!home_show_dynamic">
       <p class="home-ai-header">{{i18n:nav.home}}</p>
       <div data-for="session : ai_sessions" class="sidebar-session sidebar-session--ai"
            data-attr-session-id="session.id"
@@ -202,6 +202,32 @@
             <p class="sidebar-session-preview">{{session.preview}}</p>
             <span class="badge-count sidebar-unread" data-if="session.unread_count &gt; 0">{{session.unread_display}}</span>
             <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
+          </div>
+        </div>
+        <div class="session-swipe session-swipe--end">
+          <div class="session-swipe-btn session-swipe-btn--more" swipe-action="more">
+            <svg src="../icons/v2/more.svg" width="22" height="22"></svg>
+            <p class="session-swipe-label">{{i18n:sidebar.swipe.more}}</p>
+          </div>
+          <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
+            <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
+            <p class="session-swipe-label" data-if="!showing_archived">{{i18n:sidebar.swipe.archive}}</p>
+            <p class="session-swipe-label" data-if="showing_archived">{{i18n:sidebar.swipe.unarchive}}</p>
+          </div>
+          <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
+            <svg src="../icons/v2/trash.svg" width="22" height="22"></svg>
+            <p class="session-swipe-label">{{i18n:sidebar.swipe.delete}}</p>
+          </div>
+        </div>
+        <div class="session-swipe session-swipe--start">
+          <div class="session-swipe-btn session-swipe-btn--pin" swipe-action="pin">
+            <svg src="../icons/v2/pin.svg" width="22" height="22"></svg>
+            <p class="session-swipe-label" data-if="!session.pinned">{{i18n:sidebar.swipe.pin}}</p>
+            <p class="session-swipe-label" data-if="session.pinned">{{i18n:sidebar.swipe.unpin}}</p>
+          </div>
+          <div class="session-swipe-btn session-swipe-btn--rename" swipe-action="rename">
+            <svg src="../icons/v2/compose.svg" width="22" height="22"></svg>
+            <p class="session-swipe-label">{{i18n:sidebar.swipe.rename}}</p>
           </div>
         </div>
       </div>

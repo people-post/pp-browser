@@ -85,6 +85,9 @@ PeerDisplayLabel PeerDisplayResolver::ResolveThread(const Thread& thread) const 
   if (thread.kind == ThreadKind::Ai) {
     PeerDisplayLabel label;
     label.title = thread.title.empty() ? Localized(kProductNameKey) : thread.title;
+    if (!thread.local_title.empty()) {
+      label.title = thread.local_title; // the user's own name for the conversation wins over the automatic one
+    }
     label.trust = PeerLabelTrust::Contact;
     label.stable_id = thread.id;
     return label;

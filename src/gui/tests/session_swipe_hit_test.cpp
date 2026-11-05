@@ -47,6 +47,7 @@ div { display: block; }
 .session-swipe--end { left: 100%; }
 .session-swipe--start { right: 100%; }
 .session-swipe-btn { width: 74px; height: 60px; }
+#home-ai-sessions { width: 400px; height: 100px; overflow-x: hidden; }
 </style></head><body><div id="page"><div id="sidebar-sessions">
 <div class="sidebar-session" id="row" session-id="t1">
   <div class="session-swipe session-swipe--end">
@@ -59,7 +60,22 @@ div { display: block; }
     <div class="session-swipe-btn" swipe-action="read"></div>
   </div>
 </div>
-</div></div></body></rml>)";
+</div>
+<div id="home-ai-sessions">
+<div class="sidebar-session" id="ai_row" session-id="ai1">
+  <div class="session-swipe session-swipe--end">
+    <div class="session-swipe-btn" swipe-action="more"></div>
+    <div class="session-swipe-btn" swipe-action="archive"></div>
+    <div class="session-swipe-btn" swipe-action="delete"></div>
+  </div>
+  <div class="session-swipe session-swipe--start">
+    <div class="session-swipe-btn" swipe-action="pin"></div>
+    <div class="session-swipe-btn" swipe-action="rename"></div>
+  </div>
+</div>
+</div>
+<div class="sidebar-session" id="outside_row" session-id="x1"></div>
+</div></body></rml>)";
 
 class SessionSwipeHitTest : public testing::Test {
 protected:
@@ -96,8 +112,8 @@ protected:
     ui::SetRenderInterface(nullptr);
   }
 
-  void Drag(const int from_x, const int to_x) {
-    constexpr int kY = 30;
+  void Drag(const int from_x, const int to_x, const int y = 30) {
+    const int kY = y;
     context_->ProcessMouseMove(from_x, kY, 0);
     context_->ProcessMouseButtonDown(0, 0);
     const int steps = 10;
@@ -109,8 +125,8 @@ protected:
     context_->Update();
   }
 
-  void Tap(const int x) {
-    context_->ProcessMouseMove(x, 30, 0);
+  void Tap(const int x, const int y = 30) {
+    context_->ProcessMouseMove(x, y, 0);
     context_->ProcessMouseButtonDown(0, 0);
     context_->ProcessMouseButtonUp(0, 0);
     context_->Update();
@@ -159,6 +175,37 @@ TEST_F(SessionSwipeHitTest, EachStartButtonGetsItsTap) {
     EXPECT_EQ(actions_, std::vector<std::string>{Action(tap.action)}) << tap.x;
     EXPECT_EQ(row_clicks_.clicks, 0) << tap.x;
   }
+}
+
+// The PP助手 page's AI list (#home-ai-sessions, below the 600px chats list): its rows swipe the same way, and the start
+// side's second button is Rename.
+TEST_F(SessionSwipeHitTest, AiListRowsSwipeAndTheStartSideOffersPinAndRename) {
+  constexpr int kAiY = 630;
+  ui::Element* ai_row = document_->GetElementById("ai_row");
+  ASSERT_NE(ai_row, nullptr);
+  const struct {
+    int x;
+    SessionSwipeAction action;
+  } taps[] = {{37, SessionSwipeAction::Pin}, {111, SessionSwipeAction::Rename}};
+  for (const auto& tap : taps) {
+    actions_.clear();
+    Drag(20, 168, kAiY);
+    ASSERT_TRUE(ai_row->IsClassSet("session-swipe-shown"));
+    Tap(tap.x, kAiY);
+    EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(tap.action))}) << tap.x;
+  }
+  actions_.clear();
+  Drag(380, 158, kAiY);
+  ASSERT_TRUE(ai_row->IsClassSet("session-swipe-shown"));
+  Tap(363, kAiY);
+  EXPECT_EQ(actions_, std::vector<std::string>{"ai1:" + std::to_string(static_cast<int>(SessionSwipeAction::Delete))});
+}
+
+TEST_F(SessionSwipeHitTest, ARowOutsideBothListsDoesNotSwipe) {
+  ui::Element* outside = document_->GetElementById("outside_row");
+  ASSERT_NE(outside, nullptr);
+  Drag(380, 158, 700);
+  EXPECT_FALSE(outside->IsClassSet("session-swipe-shown"));
 }
 
 TEST_F(SessionSwipeHitTest, TappingTheVisiblePartOfAnOpenRowClosesItWithoutOpeningTheChat) {

@@ -529,8 +529,8 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   if (!*thread) {
     return Error("Thread not found");
   }
-  if ((*thread)->kind != ThreadKind::Group) {
-    return Error("Local titles are only supported for groups");
+  if ((*thread)->kind != ThreadKind::Group && (*thread)->kind != ThreadKind::Ai) {
+    return Error("Local titles are only supported for groups and AI conversations");
   }
   Thread updated = **thread;
   updated.local_title = local_title;

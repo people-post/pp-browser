@@ -850,7 +850,19 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   case CloseChatPlan::Kind::DeleteAi:
     confirm_then("chat.delete_conversation",
                  plan.kind == CloseChatPlan::Kind::DeleteAi ? "chat.delete_confirm_ai" : "chat.delete_confirm",
-                 [this, thread_id]() { CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); }); });
+                 [this, thread_id, ai = plan.kind == CloseChatPlan::Kind::DeleteAi]() {
+                   CloseChatWith(thread_id, [this, thread_id, ai]() {
+                     if (ai) {
+                       // An AI conversation: stop its turn first (a late answer must not bring the thread back), and
+                       // clear what the AI remembered of it.
+                       agent_.ForgetThread(thread_id);
+                       if (facade_) {
+                         (void)facade_->ForgetThreadMemory(thread_id);
+                       }
+                     }
+                     return presenter_.CloseThread(thread_id);
+                   });
+                 });
     return;
   case CloseChatPlan::Kind::Dismiss:
     confirm_then("chat.group.dismiss_title", "chat.group.dismiss_confirm", [this, thread_id, group_id]() {
