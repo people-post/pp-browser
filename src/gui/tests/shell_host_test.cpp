@@ -328,3 +328,19 @@ TEST(ShellHostTest, AChatPickedOnThePhonesHomeOpensFromChats) {
   EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Compact, NavTab::Contacts));
   EXPECT_FALSE(ShellLayout::OpenChatSwitchesToChats(LayoutMode::Expanded, NavTab::Home)) << "the desktop keeps its panes";
 }
+
+TEST(ShellHostTest, AnOverLongPasteInThePinBoxIsHiddenNotRendered) {
+  // B166 (transfer code) then B167 (a transfer code pasted into the phrase box): rendering a multi-KB value in the
+  // RmlUi textarea froze the app on device. Anything too big to render is hidden behind a confirmation instead.
+  using namespace pbr;
+  // Transfer-code box (!phrase_flow): any non-empty paste is a code; hide it. Empty stays visible.
+  EXPECT_FALSE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/false, 0));
+  EXPECT_TRUE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/false, 20));
+  EXPECT_TRUE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/false, 4096));
+  // Phrase box: a typed or short-pasted 24-word phrase (hundreds of bytes) stays visible; a transfer code dropped in
+  // by mistake (kilobytes) is hidden.
+  EXPECT_FALSE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 0));
+  EXPECT_FALSE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 216));
+  EXPECT_FALSE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 512));
+  EXPECT_TRUE(ShellLayout::PinGatePayloadTooBigToRender(/*phrase_flow=*/true, 4096));
+}

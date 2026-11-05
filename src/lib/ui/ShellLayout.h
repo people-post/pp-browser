@@ -29,6 +29,10 @@ struct ShellLayout {
   /** A chat picked on the phone's Home (the "New messages" widget) opens from the Chats tab, as if picked in the Chats
    *  list: the chat overlay only opens over Chats, and its back lands on that list. */
   static bool OpenChatSwitchesToChats(LayoutMode mode, NavTab tab);
+  /** B166/B167: a paste too big to render freezes the RmlUi textarea, so it is kept in the model but hidden. A
+   *  transfer code (the !phrase flow) is always hidden once pasted; the phrase box hides only an over-long paste and
+   *  keeps a normal 24-word recovery phrase visible. `payload_len` is the pasted length in bytes. */
+  static bool PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len);
   /** A bottom inset at or above this is the on-screen keyboard (not the home indicator alone). */
   static constexpr int kImeLatchMinDp = 120;
   static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,

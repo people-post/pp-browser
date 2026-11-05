@@ -2435,12 +2435,10 @@ void ShellHost::PinGatePaste() {
     return;
   }
   state_.pin_gate.link_payload = text;
-  // B166/B167: rendering a multi-KB blob in the textarea freezes the app. A transfer code (the !phrase flow) is always
-  // hidden once pasted; the phrase box hides only an over-long paste (a transfer code dropped in the wrong box) and
-  // keeps a normal 24-word recovery phrase visible so it can be read and corrected.
-  constexpr size_t kPinGateRenderMax = 512;
+  // B166/B167: rendering a multi-KB blob in the textarea freezes the app, so an over-long paste is kept in the model
+  // but hidden behind a confirmation + Clear instead of being shown.
   state_.pin_gate.payload_hidden =
-      (!state_.pin_gate.phrase_flow && !text.empty()) || text.size() > kPinGateRenderMax;
+      ShellLayout::PinGatePayloadTooBigToRender(state_.pin_gate.phrase_flow, text.size());
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");
 }
