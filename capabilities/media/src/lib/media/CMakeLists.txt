@@ -3,6 +3,7 @@
 pp_browser_add_lib_library(pp_lib_media
   SOURCES
     AudioSessionHolds.cpp
+    AudioSessionInterruptions.cpp
     DecodeStallPolicy.h
     GuardedVideoCodec.cpp
     MediaDeviceArbiter.cpp

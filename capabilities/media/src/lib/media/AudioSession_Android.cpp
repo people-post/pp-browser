@@ -111,7 +111,6 @@ void CancelPendingDeactivate() {}
 
 void SetSystemManaged(bool /*managed*/) {}
 void NotifySystemActivation(bool /*active*/) {}
-void SetInterruptionEndedHandler(std::function<void()> /*fn*/) {}
 
 // Voice messages: SDL opens playback with the media role (speaker, media volume) and capture needs no switch.
 void ActivateForVoicePlayback() {}

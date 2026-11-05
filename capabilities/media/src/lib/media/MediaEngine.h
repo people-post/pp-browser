@@ -243,6 +243,8 @@ private:
 
   std::shared_ptr<Shared> shared_;
   std::shared_ptr<Retirements> retirements_;
+  /** This engine's AudioSession interruption-ended handler (added at construction, removed first at destruction). */
+  uint64_t interruption_handler_ = 0;
   mutable std::mutex session_mu_;
   std::shared_ptr<Impl> impl_;
 };
