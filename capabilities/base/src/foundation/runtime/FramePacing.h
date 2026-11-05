@@ -11,5 +11,12 @@ namespace pbr {
 inline constexpr double kLiveChromeFrameIntervalSec = 0.55;
 /** Idle (power save): the longest wait between frames. */
 inline constexpr double kIdleFrameMaxWaitSec = 2.0;
+/**
+ * While a call's video tile shows (self-view or a peer): the camera's rate. Nothing else wakes the
+ * frame loop when a video frame arrives — the engine only leaves it for the next frame to copy — so
+ * without this the self-view and the peer were drawn whenever something unrelated woke the loop
+ * (0.55 s at most; meters at most every 200 ms, and none in video mode), and both looked choppy.
+ */
+inline constexpr double kVideoFrameIntervalSec = 1.0 / 30.0;
 
 } // namespace pbr

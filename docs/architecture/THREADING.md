@@ -117,7 +117,7 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 ### Cross-thread rules
 
 - **UI** owns RmlUi and controller mutations. Post via `AppRuntime::PostUI`.
-- **UI delivery (hard):** a non-empty UI mailbox must be drained and Presentable soon — power-save must not starve it. `PostTask(UI)` → `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + `WakeEventLoop`). Idle wait is **Poll + ≤50ms Delay slices** (never `SDL_WaitEventTimeout`). See [PLATFORMS.md](PLATFORMS.md).
+- **UI delivery (hard):** a non-empty UI mailbox must be drained and Presentable soon — power-save must not starve it. `PostTask(UI)` → `SetUIWakeCallback` → `Backend::RequestForceFrame` (force next poll + `WakeEventLoop`). Idle wait is **Poll + ≤50ms Delay slices** (never `SDL_WaitEventTimeout`). See [PLATFORMS.md](PLATFORMS.md). How long a frame may wait is `FramePacing.h`: 2 s idle, 0.55 s while a ring or call panel shows, 1/30 s while a call's video tile shows (new video frames wake nothing themselves).
 - **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration.
 - **Coordinator** runs fast policy only; must not block — enqueue to pool.
 - **Amp MeshPump** runs short `Drive` only; must not run curl / Argon2 / long DB.

@@ -169,6 +169,31 @@ public:
 
   bool Tracking() const { return !call_.id.empty(); }
 
+  /**
+   * Every UI frame of a call: which video tiles show, and which got a new frame this frame. The
+   * summary's shown_self_fps / shown_peer_fps are what the screen drew — rx_fps / the camera's rate
+   * only say what the engine had.
+   */
+  void NoteVideoFrame(bool self_on, bool self_new, bool peer_on, bool peer_new, int64_t now_ms) {
+    if (call_.id.empty()) {
+      return;
+    }
+    if (call_.last_video_frame_ms > 0) {
+      const int64_t dt = now_ms - call_.last_video_frame_ms;
+      if (self_on && call_.self_tile_on) {
+        call_.self_tile_ms += dt;
+      }
+      if (peer_on && call_.peer_tile_on) {
+        call_.peer_tile_ms += dt;
+      }
+    }
+    call_.last_video_frame_ms = now_ms;
+    call_.self_tile_on = self_on;
+    call_.peer_tile_on = peer_on;
+    call_.self_frames_shown += self_on && self_new ? 1 : 0;
+    call_.peer_frames_shown += peer_on && peer_new ? 1 : 0;
+  }
+
 private:
   struct Call {
     std::string id;
@@ -203,6 +228,13 @@ private:
     DeviceVitals vitals_start;
     int thermal_max = -1;
     int thermal_last = -1;
+    int64_t last_video_frame_ms = 0;
+    bool self_tile_on = false;
+    bool peer_tile_on = false;
+    int64_t self_tile_ms = 0;
+    int64_t peer_tile_ms = 0;
+    int64_t self_frames_shown = 0;
+    int64_t peer_frames_shown = 0;
   };
 
   static uint64_t Delta(uint64_t now, uint64_t base) { return now >= base ? now - base : now; }
@@ -314,6 +346,12 @@ private:
         .Add("no_audio_s", static_cast<double>(call_.no_audio_ms) / 1000.0)
         .Add("ui_stalls", call_.stalls)
         .Add("ui_stall_max_ms", call_.stall_max_ms);
+    if (call_.self_tile_ms > 0) {
+      line.Add("shown_self_fps", static_cast<double>(call_.self_frames_shown) * 1000.0 / call_.self_tile_ms);
+    }
+    if (call_.peer_tile_ms > 0) {
+      line.Add("shown_peer_fps", static_cast<double>(call_.peer_frames_shown) * 1000.0 / call_.peer_tile_ms);
+    }
     if (call_.have_running_sample && call_.last_sample_stopped) {
       line.Add("ended_with_engine_stopped", 1);
     }

@@ -1029,7 +1029,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
 
   IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  bool self_new = false;
+  bool peer_new = false;
   if (in_call.local_preview) {
+    self_new = local_tile.seq != last_shown_self_seq_;
+    last_shown_self_seq_ = local_tile.seq;
     CallVideoTileRenderer::Frame frame;
     frame.width = local_tile.width;
     frame.height = local_tile.height;
@@ -1040,6 +1044,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   if (in_call.remote_video) {
     IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
+      peer_new = remote_tile.seq != last_shown_peer_seq_;
+      last_shown_peer_seq_ = remote_tile.seq;
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
       frame.height = remote_tile.height;
@@ -1049,8 +1055,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
 
-  std::vector<uint32_t> live_peer_streams;
   const int64_t now_ms = util::NowUnixMs();
+  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  std::vector<uint32_t> live_peer_streams;
   for (CallRosterParticipantState& row : in_call.roster) {
     if (row.is_local) {
       row.has_remote_video = false;

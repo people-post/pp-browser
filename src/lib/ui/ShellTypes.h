@@ -296,6 +296,22 @@ struct CallInProgressState {
   ui::String debug_subtitle;
 };
 
+/** A video tile of the call is drawn (self-view, the peer, or a peer in the roster): frames run at kVideoFrameIntervalSec. */
+inline bool CallVideoOnScreen(const CallInProgressState& call) {
+  if (!call.active) {
+    return false;
+  }
+  if (call.local_preview || call.remote_video) {
+    return true;
+  }
+  for (const CallRosterParticipantState& row : call.roster) {
+    if (row.has_remote_video) {
+      return true;
+    }
+  }
+  return false;
+}
+
 struct PaneVisibility {
   bool secondary = false;
   bool primary = true;
