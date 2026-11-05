@@ -116,5 +116,5 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 - **Permission:** Android 13+ asks for notifications at the app's start, as iOS does.
 
 **Rationale:** on Android a call to a phone whose app was swiped away, or killed by the system, rang nowhere (the wake reached no native code), and a ring in the background was an ordinary banner. A call should ring like a call, and a stopped app is the common case on phones.  
-**Follow-ups:** an in-call foreground service (microphone and camera in the background, Android 14+); Android's Telecom (`ConnectionService`) for the system's call routing and Bluetooth answer.  
+**Follow-ups:** an in-call foreground service (microphone in the background — done: p2p-av-calls V061); Android's Telecom (`ConnectionService`) for the system's call routing and Bluetooth answer.  
 **Cross-link:** `PpCallNotifications.java`, `AndroidCallSystemUi.cpp`, `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), P013.

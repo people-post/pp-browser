@@ -92,6 +92,10 @@ public class MainActivity extends SDLActivity {
     private static final int REQ_NOTIFICATIONS = 0x5053;
     /** Between onResume and onPause: a call push is rung by the app itself. */
     private static volatile boolean sInFront;
+    /** Main thread: the call this device is in (native OngoingCallService), and whether PpCallService runs for it. */
+    private static boolean sOngoingCall;
+    private static String sOngoingCallTitle;
+    private static boolean sOngoingCallServiceStarted;
 
     private HandlerThread mPixelCopyThread;
     private Handler mPixelCopyHandler;
@@ -304,6 +308,11 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onDestroy() {
         PpCallNotifications.appGone();
+        if (sOngoingCallServiceStarted) {
+            PpCallService.stop(getApplicationContext());  // the call goes with the app's native side
+        }
+        sOngoingCall = false;
+        sOngoingCallServiceStarted = false;
         uninstallKeyboardSafeAreaPublisher();
         if (mPixelCopyThread != null) {
             mPixelCopyThread.quitSafely();
@@ -554,6 +563,9 @@ public class MainActivity extends SDLActivity {
         mThumbnailCapturedForPause.set(false);
         super.onResume();
         sInFront = true;
+        if (sOngoingCall && !sOngoingCallServiceStarted) {
+            startOngoingCallServiceIfAllowed();  // the call started while the app was in the background
+        }
         // The app is open: what the push's "New message" stood for shows in the app.
         NotificationManagerCompat.from(this).cancel(PUSH_MESSAGE_NOTIFICATION_ID);
         mKeyboardProbeHandler.removeCallbacks(mKeyboardProbeRunnable);
@@ -971,6 +983,34 @@ public class MainActivity extends SDLActivity {
     @SuppressWarnings("deprecation")
     private void setPlainTaskDescription() {
         setTaskDescription(new ActivityManager.TaskDescription(getString(R.string.app_name)));
+    }
+
+    /**
+     * Called from native OngoingCallService (the app's UI thread): the call this device is in, or none. The service
+     * starts only with the app in front and the microphone allowed — a refused start after the launch would crash the
+     * app (startForegroundService without startForeground) — so a call that started in the background gets it at the
+     * next resume.
+     */
+    public void setOngoingCall(boolean on, String title) {
+        runOnUiThread(() -> {
+            sOngoingCall = on;
+            sOngoingCallTitle = title;
+            if (on) {
+                startOngoingCallServiceIfAllowed();
+            } else if (sOngoingCallServiceStarted) {
+                sOngoingCallServiceStarted = false;
+                PpCallService.stop(getApplicationContext());
+            }
+        });
+    }
+
+    private void startOngoingCallServiceIfAllowed() {
+        if (!sOngoingCall || !sInFront
+                || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        sOngoingCallServiceStarted = true;
+        PpCallService.start(getApplicationContext(), sOngoingCallTitle);  // a running one takes the new title
     }
 
     /** Called from native AndroidLocalNotifier when Me → Show notifications changes (any thread). */

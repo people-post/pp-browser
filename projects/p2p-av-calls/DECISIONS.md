@@ -1444,3 +1444,17 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Alternatives rejected:** the call-media heartbeat (500 ms, already on every 1:1 path): it has no group path, and the state would need plumbing through every layer between the coordinator and the screen; the roster already goes there. Muting instead of holding: the user's own mute is theirs to undo, and the other side could not tell the two apart.
 
+## V061 — Android keeps a call's microphone in the background
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05: the follow-ups of the interruption audit). Implemented: `OngoingCallService` (foundation/platform), `PpCallService.java`, `CallController::SyncOngoingCall`.
+
+**Context:** Android gives an app in the background silence from the microphone (9+) unless it runs a foreground service, and from Android 14 that service must be of the microphone type. Only the opt-in "Stay connected" service (P011, `specialUse`) ran one, so a call with the app in the background (another app opened, the screen locked) sent silence.
+
+**Decision:**
+1. **While this device is in a call** (the presenter's active call), `PpCallService` runs: a foreground service of type `microphone`, with an ongoing-call notification — who the call is with, Hang up (the system's call style; a tap opens the app). It stops when the call ends, or with the app's activity.
+2. **Started only when Android allows it:** the app in front and the microphone granted. A start the system refuses after the launch would crash the app (`startForegroundService` without `startForeground`), so the app checks first; a call that started in the background gets the service at the next resume.
+3. **The camera is not kept:** a call pauses it in the background (V060), so the service needs no camera type.
+
+**Later:** Android Telecom (`ConnectionService`, the `phoneCall` type) — the system's own call routing, Bluetooth answer and hold.
+
