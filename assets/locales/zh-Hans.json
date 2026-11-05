@@ -426,6 +426,8 @@
     "pin.link_paste_message": "把在另一台设备上复制的转移码粘贴到这里。转移码 15 分钟内有效。",
     "pin.link_paste_placeholder": "转移码",
     "pin.paste_button": "粘贴",
+    "pin.link_pasted": "✓ 已粘贴转移码，点下面「继续」",
+    "pin.clear_pasted": "清除重贴",
     "pin.link_paste_empty": "先粘贴转移码。",
     "pin.link_imported": "账号已搬到这台设备",
     "pin.identity_phrase": "用恢复短语找回账号",
