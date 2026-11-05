@@ -61,6 +61,15 @@ A link that is already up may carry traffic (P003). Relays and seeds use the pla
 
 **Who is a relay** (#379): circuit rendezvous — parking and circuit dialing — goes only through circuit relays: the configured org seeds and peers the directory or the DHT lists with `circuit_relay` (`KeepCircuitRelays` in `MeshHopPolicy`, applied in `MeshConnectivityWiring`). A contact's phone or a node the DHT merely knows is no relay; contacts stay punch introducers. A relay that refuses a circuit is tried after the others for ten minutes (pp-cpp-mesh `CircuitRelayRefusals`). Directory listings and a node's own published addresses leave out private-range and local-scope addresses beside a public one (`DialWorthyMultiaddrs`): a relay's container address is no use to a reader and only made dials fall back to it.
 
+**Relay choice against dishonest nodes** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)): a node's own claims (its directory row) only ever demote it, and nothing is dropped for distrust, only tried later (`RelaySetRules` in `lib/people`).
+- **Bands:** the park / circuit surface (`MeshConnectivityWiring`) and the group media hop ranking (`CallHopRanking`) order their relays in bands, order kept within each:
+  - the rest;
+  - a second non-anchor relay of an operator (account id) already listed;
+  - a node said to run older than `mesh.preferred_min_node_version` (or saying nothing);
+  - a node, or any node of an operator, this profile demoted.
+- **Anchors:** on the park / circuit surface an anchor (org seed or Friendly contact's node, as for trusted relays) leads, and at most two others come between anchors while anchors remain, so unknown nodes cannot crowd them out.
+- **Audit:** each policy refresh checks connected directory nodes' claims against what they told over channel 0, and a dial that met another wire version. A claim contradicted in the liar's favour (our wire version, a newer version than it runs, a feature it lacks) demotes the node and its operator in the profile's `MeshNodeReputation`: 7 days, doubling per strike up to 30, kept in `mesh_node_reputation.json`, never shared. The mesh still promotes what it verified itself: connected, live, last good.
+
 **Relay trust** (privacy T4): relays see both ends' addresses. `mesh.trusted_relays_only` (Me → Network → Trusted relays only) keeps every relay role — rendezvous parking, circuit dialing, punch introducers, call media hops — to the configured org seeds and Friendly contacts' nodes (`TrustedRelayPeerIds` / `KeepTrustedRelays` in `MeshHopPolicy`; applied in `MeshConnectivityWiring`, `CallHopRanking`, the hub's preferred bridge).
 
 ## Calls

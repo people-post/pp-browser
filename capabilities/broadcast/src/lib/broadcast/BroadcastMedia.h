@@ -11,7 +11,7 @@ namespace pbr {
 
 /**
  * Broadcast frame AEAD context (media-client-layers L006 / L013): `broadcast-media|program|join`.
- * Pass to `SealMediaRelayFrame` / `OpenMediaRelayFrame`; never the call label.
+ * Pass to `mesh::SealMediaFrame` / `OpenMediaFrame`; never the call label.
  */
 inline std::string BroadcastMediaFrameContext(const std::string& program_id, const std::string& join_handle) {
   return "broadcast-media|" + program_id + "|" + join_handle;

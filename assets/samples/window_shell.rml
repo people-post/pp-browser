@@ -6,7 +6,8 @@
   <link type="text/rcss" href="../themes/colors-light.rcss"/>
   <link type="text/rcss" href="../themes/colors-dark.rcss"/>
 </head>
-<body data-model="window" class="shell-body" data-class-shell-body--framed="titlebar_visible && !window_maximized">
+<body data-model="window" class="shell-body" data-class-shell-body--framed="titlebar_visible && !window_maximized"
+      data-class-shell-body--compact="layout_mode == 'compact'">
   <div id="shell-titlebar" class="shell-titlebar" data-if="titlebar_visible">
     <div id="shell-titlebar-controls" class="shell-titlebar-controls shell-titlebar-controls--traffic" data-if="titlebar_traffic_lights">
       <button class="shell-titlebar-btn shell-titlebar-btn--traffic shell-titlebar-btn--traffic-close" type="button" data-event-click="titlebar_close()">
@@ -54,9 +55,103 @@
     <div class="shell-activity-strip" data-if="activity_visible && !statusbar_visible"></div>
   </div>
   <div id="shell-root" class="shell-root"></div>
+  <!-- Phones: the band under the status bar, over the pages, so a top bar that hides on scroll slides under it, not
+       over the clock (ShellHost sizes it to the top inset). -->
+  <div id="shell-statusbar-strip" class="shell-statusbar-strip"></div>
   <!-- Bottom chrome / IME-replacement mount: sibling of shell-root so content can be
        lifted (shell-root bottom) while the panel paints in the freed bottom band. -->
   <div id="shell-emoji-keyboard-mount" class="shell-emoji-keyboard-mount"></div>
+  <!-- Phone AI dot (DESIGN-pp-ui §8.14): ShellAiDot shows, places and drags it; one look's layers at a time. The two
+       bubbles are parts that move apart (wave, high five, happy...); each part's eyes come open, happy (^ ^) and shut;
+       the cheeks, mouth, the plain look's symbols and the particles (arcs, typing dots, star, hearts, z's, lock) show
+       only during their action (components.rcss, .ai-dot-*). Stacking order: components.rcss (.shell-ai-dot-mount). -->
+  <div id="shell-ai-dot-mount" class="shell-ai-dot-mount">
+    <div id="shell-ai-dot" class="ai-dot" data-class-ai-dot--shown="ai_dot_shown"
+         data-class-ai-dot--sway="ai_dot_idle == 'sway'" data-class-ai-dot--blink="ai_dot_idle == 'blink'"
+         data-class-ai-dot--look="ai_dot_idle == 'look'" data-class-ai-dot--talk="ai_dot_idle == 'talk'"
+         data-class-ai-dot--shy="ai_dot_idle == 'shy'" data-class-ai-dot--wave="ai_dot_idle == 'wave'"
+         data-class-ai-dot--listen="ai_dot_idle == 'listen'" data-class-ai-dot--think="ai_dot_idle == 'think'"
+         data-class-ai-dot--five="ai_dot_idle == 'five'" data-class-ai-dot--happy="ai_dot_idle == 'happy'"
+         data-class-ai-dot--private="ai_dot_idle == 'private'" data-class-ai-dot--sleep="ai_dot_idle == 'sleep'"
+         data-class-ai-dot--poke="ai_dot_idle == 'poke'" data-class-ai-dot--pop="ai_dot_idle == 'pop'"
+         data-class-ai-dot--float="ai_dot_idle == 'float'"
+         data-class-ai-dot--asleep="ai_dot_asleep"
+         data-class-ai-dot--calm="ai_dot_look == 'c' || ai_dot_look == 'd'" data-class-ai-dot--plain="ai_dot_look == 'd'"
+         data-class-ai-dot--size-s="ai_dot_size == 's'" data-class-ai-dot--size-l="ai_dot_size == 'l'">
+      <div class="ai-dot-figure">
+        <div class="ai-dot-part ai-dot-back">
+          <svg class="ai-dot-layer" data-if="ai_dot_look != 'c'" src="../icons/mascot/body-back.svg"></svg>
+          <svg class="ai-dot-layer" data-if="ai_dot_look == 'c'" src="../icons/mascot/body-back-c.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-open" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-eyes-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-hap" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-hap-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-shut" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-shut-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-open" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-eyes-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-hap" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-hap-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-shut" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-shut-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-open" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eyes-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-hap" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-hap-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-back ai-dot-shut" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-shut-back.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-1" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/arc-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-2" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/arc-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-3" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/arc-3.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-1" data-if="ai_dot_look == 'c'" src="../icons/mascot/arc-c-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-2" data-if="ai_dot_look == 'c'" src="../icons/mascot/arc-c-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-arc ai-dot-arc-3" data-if="ai_dot_look == 'c'" src="../icons/mascot/arc-c-3.svg"></svg>
+        </div>
+        <div class="ai-dot-part ai-dot-front">
+          <svg class="ai-dot-layer" data-if="ai_dot_look != 'c'" src="../icons/mascot/body-front.svg"></svg>
+          <svg class="ai-dot-layer" data-if="ai_dot_look == 'c'" src="../icons/mascot/body-front-c.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-blush" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-blush.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-blush" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-blush.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-open" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-eyes-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-hap" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-hap-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-shut" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-shut-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-open" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-eyes-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-hap" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-hap-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-shut" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-shut-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-open" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eyes-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-hap" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-hap-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eyes-front ai-dot-shut" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-shut-front.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-mouth" data-if="ai_dot_look == 'a'" src="../icons/mascot/a-mouth.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-mouth" data-if="ai_dot_look == 'b'" src="../icons/mascot/b-mouth.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eq ai-dot-eq-1" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eq-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eq ai-dot-eq-2" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eq-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-eq ai-dot-eq-3" data-if="ai_dot_look == 'c'" src="../icons/mascot/c-eq-3.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-line ai-dot-line-1" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-line-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-line ai-dot-line-2" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-line-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-line ai-dot-line-3" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-line-3.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-bar ai-dot-bar-1" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-bar-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-bar ai-dot-bar-2" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-bar-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-bar ai-dot-bar-3" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-bar-3.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-bar ai-dot-bar-4" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-bar-4.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-bar ai-dot-bar-5" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-bar-5.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-ddot ai-dot-ddot-1" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-dot-1.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-ddot ai-dot-ddot-2" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-dot-2.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-ddot ai-dot-ddot-3" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-dot-3.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-check" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-check.svg"></svg>
+          <svg class="ai-dot-layer ai-dot-dlock" data-if="ai_dot_look == 'd'" src="../icons/mascot/d-lock.svg"></svg>
+        </div>
+        <svg class="ai-dot-layer ai-dot-bubble" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/bubble.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-bubble" data-if="ai_dot_look == 'c'" src="../icons/mascot/bubble-c.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-1" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/dot-1.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-2" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/dot-2.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-3" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/dot-3.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-1" data-if="ai_dot_look == 'c'" src="../icons/mascot/dot-c-1.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-2" data-if="ai_dot_look == 'c'" src="../icons/mascot/dot-c-2.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-tdot ai-dot-tdot-3" data-if="ai_dot_look == 'c'" src="../icons/mascot/dot-c-3.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-star" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/star.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-spark" data-if="ai_dot_look == 'c'" src="../icons/mascot/spark-c.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-spark" data-if="ai_dot_look == 'd'" src="../icons/mascot/spark-d.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-heart ai-dot-heart-1" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/heart-1.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-heart ai-dot-heart-2" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/heart-2.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-z ai-dot-z-1" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/z-1.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-z ai-dot-z-2" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/z-2.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-z ai-dot-z-3" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/z-3.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-lock" data-if="ai_dot_look == 'a' || ai_dot_look == 'b'" src="../icons/mascot/lock.svg"></svg>
+        <svg class="ai-dot-layer ai-dot-lock" data-if="ai_dot_look == 'c'" src="../icons/mascot/lock-c.svg"></svg>
+      </div>
+    </div>
+  </div>
   <div id="shell-statusbar" class="shell-statusbar" data-if="statusbar_visible">
     <div id="shell-statusbar-cluster" class="shell-statusbar-cluster"
          data-attr-title="statusbar_cluster_title"

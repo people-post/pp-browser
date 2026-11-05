@@ -4,6 +4,7 @@
 #include "foundation/platform/ICredentialStore.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <limits>
 #include <string_view>
 #include "common/PbrCompat.h"
@@ -487,6 +488,9 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("direct_connections", mesh::DirectAudienceName(config.direct_connections));
   object.set("trusted_relays_only", config.trusted_relays_only);
+  if (!config.preferred_min_node_version.empty()) {
+    object.set("preferred_min_node_version", config.preferred_min_node_version);
+  }
   object.set("reachable_without_relay", config.reachable_without_relay);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
@@ -533,6 +537,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto trusted = object.getIf<bool>("trusted_relays_only")) {
     config.trusted_relays_only = *trusted;
+  }
+  if (auto floor = object.getString("preferred_min_node_version")) {
+    config.preferred_min_node_version = *floor;
   }
   if (auto audience = object.getString("direct_connections")) {
     if (auto parsed = mesh::DirectAudienceFromName(*audience)) {
@@ -752,6 +759,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("appearance", prefs.appearance);
   object.set("language", prefs.language);
   object.set("pin_is_default", prefs.pin_is_default);
+  object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
   object.set("show_notification_preview", prefs.show_notification_preview);
@@ -765,6 +773,13 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_auto_on_cellular", prefs.attachment_auto_on_cellular);
   object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("onboarding_completed", prefs.onboarding_completed);
+  object.set("ai_panel_intro_seen", prefs.ai_panel_intro_seen);
+  object.set("ai_dot_shown", prefs.ai_dot_shown);
+  object.set("ai_dot_look", prefs.ai_dot_look);
+  object.set("ai_dot_size", prefs.ai_dot_size);
+  object.set("ai_dot_left", prefs.ai_dot_left);
+  object.set("ai_dot_y_permille", static_cast<int64_t>(prefs.ai_dot_y_permille));
+  object.set("ai_dot_tucked", prefs.ai_dot_tucked);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -773,6 +788,21 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("reachability_nudge_acked_status", prefs.reachability_nudge_acked_status);
   object.set("tool_permissions", ToolPermissionsToObject(prefs.tool_permissions));
   object.set("recent_emojis", makeArray(std::move(recent)));
+  std::vector<Value> hidden_widgets;
+  for (const std::string& id : prefs.home_widgets_hidden) {
+    hidden_widgets.emplace_back(id);
+  }
+  object.set("home_widgets_hidden", makeArray(std::move(hidden_widgets)));
+  std::vector<Value> widget_order;
+  for (const std::string& id : prefs.home_widgets_order) {
+    widget_order.emplace_back(id);
+  }
+  object.set("home_widgets_order", makeArray(std::move(widget_order)));
+  std::vector<Value> starred;
+  for (const std::string& id : prefs.starred_contacts) {
+    starred.emplace_back(id);
+  }
+  object.set("starred_contacts", makeArray(std::move(starred)));
   return object;
 }
 
@@ -794,6 +824,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto pin_is_default = object.getIf<bool>("pin_is_default")) {
     prefs.pin_is_default = *pin_is_default;
   }
+  prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
     prefs.auto_renew_registration = *auto_renew;
   } else {
@@ -839,6 +870,23 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   }
   prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
   prefs.onboarding_completed = object.getIf<bool>("onboarding_completed").value_or(false);
+  prefs.ai_panel_intro_seen = object.getIf<bool>("ai_panel_intro_seen").value_or(false);
+  prefs.ai_dot_shown = object.getIf<bool>("ai_dot_shown").value_or(true);
+  if (auto look = object.getString("ai_dot_look")) {
+    prefs.ai_dot_look = *look;
+  }
+  if (prefs.ai_dot_look != "a" && prefs.ai_dot_look != "b" && prefs.ai_dot_look != "c" && prefs.ai_dot_look != "d") {
+    prefs.ai_dot_look = "b";
+  }
+  if (auto size = object.getString("ai_dot_size")) {
+    prefs.ai_dot_size = *size;
+  }
+  if (prefs.ai_dot_size != "s" && prefs.ai_dot_size != "m" && prefs.ai_dot_size != "l") {
+    prefs.ai_dot_size = "m";
+  }
+  prefs.ai_dot_left = object.getIf<bool>("ai_dot_left").value_or(false);
+  prefs.ai_dot_y_permille = static_cast<int>(std::clamp<int64_t>(ReadI64(object, "ai_dot_y_permille").value_or(600), 0, 1000));
+  prefs.ai_dot_tucked = object.getIf<bool>("ai_dot_tucked").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {
@@ -879,6 +927,31 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     for (const Value& item : recent->elements) {
       if (auto emoji = asString(item)) {
         prefs.recent_emojis.push_back(*emoji);
+      }
+    }
+  }
+  prefs.home_widgets_hidden.clear();
+  if (const Array* hidden = object.getArray("home_widgets_hidden")) {
+    for (const Value& item : hidden->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_hidden.push_back(*id);
+      }
+    }
+  }
+  prefs.home_widgets_order.clear();
+  if (const Array* order = object.getArray("home_widgets_order")) {
+    for (const Value& item : order->elements) {
+      if (auto id = asString(item)) {
+        prefs.home_widgets_order.push_back(*id);
+      }
+    }
+  }
+  prefs.starred_contacts.clear();
+  if (const Array* starred = object.getArray("starred_contacts")) {
+    for (const Value& item : starred->elements) {
+      if (auto id = asString(item); id && !id->empty() &&
+          std::find(prefs.starred_contacts.begin(), prefs.starred_contacts.end(), *id) == prefs.starred_contacts.end()) {
+        prefs.starred_contacts.push_back(*id);
       }
     }
   }

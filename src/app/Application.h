@@ -13,6 +13,7 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/ProductStack.h"
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -45,6 +46,7 @@ class ShellHost;
 struct SettingsToolPorts;
 class PeoplePickerController;
 class EmojiPickerController;
+class UiPerfTestController;
 class ChatController;
 
 class Application : public Module {
@@ -89,6 +91,8 @@ private:
   void WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap);
   /** The hub's event callbacks; its Shutdown clears them, so a reset sets them again. */
   void WireHubCallbacks();
+  /** UI demo app: write the fixed sample data once, then refresh lists and badges. */
+  void SeedAndRefreshUiDemo();
   /**
    * Stop messaging behind the teardown quiesce, as quit does, but the process lives on. With
    * `with_secrets`, the profile secrets stop too (a profile reset re-creates them).
@@ -113,6 +117,7 @@ private:
   std::unique_ptr<FlowCoordinator> flow_;
   std::unique_ptr<ShellHost> shell_;
   std::unique_ptr<ChatController> chat_;
+  std::atomic<bool> peer_icons_refresh_posted_{false}; // a peer-icon refresh is queued on the UI thread
   std::unique_ptr<CallController> call_;
   std::unique_ptr<CallUiBackend> call_ui_;
   std::unique_ptr<SettingsController> settings_;
@@ -123,6 +128,8 @@ private:
   std::unique_ptr<PeoplePickerShellBridge> people_picker_shell_bridge_;
   std::unique_ptr<PeoplePickerController> people_picker_;
   std::unique_ptr<EmojiPickerController> emoji_picker_;
+  /** Developer builds only (kDevToolsBuild); null otherwise. */
+  std::unique_ptr<UiPerfTestController> ui_perf_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
   std::unique_ptr<OnboardingController> onboarding_;

@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <vector>
 
 TEST(CallChromeSyncTest, IdlePollUnchangedIsNone) {
@@ -45,17 +46,18 @@ TEST(CallChromeSyncTest, StatusSubtitleRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, ElapsedSubtitleTicksDirtyOnly) {
+// The clock ticking dirties the clock alone, not the whole call group (B146; the phone page idles between ticks).
+TEST(CallChromeSyncTest, ElapsedSubtitleTicksArePartsOnly) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   synced.in_call_subtitle = "0:01";
   pbr::CallChromeLayer next = synced;
   next.in_call_subtitle = "0:02";
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
 }
 
-TEST(CallChromeSyncTest, MicLevelOnlyDirties) {
+TEST(CallChromeSyncTest, MicLevelOnlyIsLevelsOnlyWhileMetersShow) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -64,7 +66,89 @@ TEST(CallChromeSyncTest, MicLevelOnlyDirties) {
   pbr::CallChromeLayer next = synced;
   next.in_call_mic_level = 3;
   next.in_call_mic_hint = "Speaking";
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::LevelsOnly);
+}
+
+TEST(CallChromeSyncTest, LevelChangeWithoutMetersOnScreenIsNone) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_peer_level = 4;
+  next.in_call_peer_hint = "Loud";
+
+  synced.in_call_show_roster = next.in_call_show_roster = true; // group call
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+
+  synced.in_call_show_roster = next.in_call_show_roster = false;
+  synced.in_call_mode = next.in_call_mode = pbr::CallChromeMode::Immersive;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+
+  synced.in_call_mode = next.in_call_mode = pbr::CallChromeMode::Minimized;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+}
+
+TEST(CallChromeSyncTest, LevelAndTimerTogetherArePartsOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_elapsed = "0:05";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_elapsed = "0:06";
+  next.in_call_mic_level = 2;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+}
+
+namespace {
+
+pbr::CallChromeLayer OneToOneCall(int mic_level) {
+  pbr::CallChromeLayer layer;
+  layer.in_call_active = true;
+  layer.in_call_id = "c1";
+  layer.in_call_mic_level = mic_level;
+  return layer;
+}
+
+} // namespace
+
+TEST(CallChromeSyncGateTest, MetersArePushedAtMostEveryIntervalAndTheHeldLevelCatchesUp) {
+  using std::chrono::milliseconds;
+  const auto t0 = std::chrono::steady_clock::time_point{} + std::chrono::hours(1);
+  pbr::CallChromeSyncGate gate;
+  ASSERT_EQ(gate.Decide(OneToOneCall(0), t0), pbr::CallChromeUpdate::Remount); // call appears
+
+  EXPECT_EQ(gate.Decide(OneToOneCall(2), t0 + milliseconds(10)), pbr::CallChromeUpdate::LevelsOnly);
+  // Inside the interval: held back.
+  EXPECT_EQ(gate.Decide(OneToOneCall(4), t0 + milliseconds(100)), pbr::CallChromeUpdate::None);
+  // The level then stays at 4; once the interval has passed the same poll pushes it.
+  EXPECT_EQ(gate.Decide(OneToOneCall(4), t0 + milliseconds(150)), pbr::CallChromeUpdate::None);
+  EXPECT_EQ(gate.Decide(OneToOneCall(4), t0 + milliseconds(260)), pbr::CallChromeUpdate::LevelsOnly);
+  // Pushed: nothing left to do.
+  EXPECT_EQ(gate.Decide(OneToOneCall(4), t0 + milliseconds(600)), pbr::CallChromeUpdate::None);
+}
+
+TEST(CallChromeSyncGateTest, OtherChangesAreNeverHeldBack) {
+  const auto t0 = std::chrono::steady_clock::time_point{} + std::chrono::hours(1);
+  pbr::CallChromeSyncGate gate;
+  gate.Decide(OneToOneCall(0), t0);
+  ASSERT_EQ(gate.Decide(OneToOneCall(3), t0), pbr::CallChromeUpdate::LevelsOnly);
+  pbr::CallChromeLayer muted = OneToOneCall(0);
+  muted.in_call_muted = true;
+  EXPECT_EQ(gate.Decide(muted, t0 + std::chrono::milliseconds(5)), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+TEST(CallChromeSyncGateTest, MetersComingBackOnScreenShowTheNewestLevel) {
+  const auto t0 = std::chrono::steady_clock::time_point{} + std::chrono::hours(1);
+  pbr::CallChromeSyncGate gate;
+  pbr::CallChromeLayer group = OneToOneCall(0);
+  group.in_call_show_roster = true;
+  gate.Decide(group, t0);
+  for (int level = 1; level <= 5; ++level) {
+    group.in_call_mic_level = level;
+    EXPECT_EQ(gate.Decide(group, t0 + std::chrono::milliseconds(level)), pbr::CallChromeUpdate::None);
+  }
+  // Leaving the roster remounts the chrome, which binds the whole snapshot (level 5 included).
+  EXPECT_EQ(gate.Decide(OneToOneCall(5), t0 + std::chrono::milliseconds(10)), pbr::CallChromeUpdate::Remount);
 }
 
 TEST(CallChromeSyncTest, SwitchCallIdRemounts) {
@@ -185,7 +269,7 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
-TEST(CallChromeSyncTest, QualityChipDirties) {
+TEST(CallChromeSyncTest, QualityChipIsPartsOnly) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -196,7 +280,94 @@ TEST(CallChromeSyncTest, QualityChipDirties) {
   next.in_call_quality_ok = false;
   next.in_call_quality_error = true;
   next.in_call_quality_label = "Poor";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+}
+
+// The phone page's signal bar, result line and top pill are bound parts: a change dirties only them.
+TEST(CallChromeSyncTest, PhoneStoryPartsArePartsOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_signal_bars = 2;
+  next.in_call_signal_tone = 1;
+  next.in_call_signal_word = "Fair";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+  next = synced;
+  next.in_call_result_text = "Connected directly · connected in 0.9 s";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+  next = synced;
+  next.in_call_notice_text = "Found a closer way and moved to it";
+  next.in_call_notice_fading = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+}
+
+// What the phone page writes into its markup remounts it: the story's steps going, the failure page, the sheet.
+TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_story_active = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_story_active = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_story_stage = 1;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_phone_failed = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_story_sheet_open = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  // A new timeline line remounts only while the sheet shows it.
+  synced.in_call_story_sheet_open = true;
+  next = synced;
+  next.in_call_story_lines.push_back({.time = "1:05", .text = "Found a closer way", .secure = true});
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced.in_call_story_sheet_open = next.in_call_story_sheet_open = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+}
+
+// The phone page has no audio meters: a level change there pushes nothing.
+TEST(CallChromeSyncTest, LevelChangeOnThePhonePageIsNone) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_mic_level = 3;
+  next.in_call_mic_hint = "Speaking";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+}
+
+// A roster row's mute or camera change still reaches the screen now that the clock tick no longer dirties all.
+TEST(CallChromeSyncTest, RosterRowChangeDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_roster = "Ana|11|--";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_roster = "Ana|11|m-";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+// PartsOnly / LevelsOnly dirty exactly the variables whose value changed.
+TEST(CallChromeSyncTest, ChangedVariablesAreOnlyTheOnesThatChanged) {
+  pbr::CallInProgressState before;
+  pbr::CallInProgressState after = before;
+  EXPECT_TRUE(pbr::CallChromeChangedVariables(before, after).empty());
+  after.signal_bars = 2;
+  after.subtitle = "0:07";
+  after.notice_fading = true;
+  after.title = "not a part";  // labels go through DirtyOnly, never here
+  const std::vector<const char*> changed = pbr::CallChromeChangedVariables(before, after);
+  std::vector<std::string> names(changed.begin(), changed.end());
+  EXPECT_EQ(names, (std::vector<std::string>{"call_in_progress_subtitle", "call_in_progress_signal_bars",
+                                             "call_in_progress_notice_fading"}));
 }
 
 TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
@@ -223,4 +394,17 @@ TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
   ports.apply_snapshot(snap, update);
   ASSERT_EQ(applied.size(), 1u);
   EXPECT_EQ(applied[0], pbr::CallChromeUpdate::DirtyOnly);
+}
+
+// V059: the spotlight (who, and fill / fit) changes the Immersive markup: a remount, like a mode change.
+TEST(CallChromeSyncTest, ASpotlightChangeRemounts) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_spotlight = "22";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced = next;
+  next.in_call_spotlight_fill = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }

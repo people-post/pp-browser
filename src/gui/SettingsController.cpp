@@ -3,6 +3,7 @@
 
 #include "lib/ui/DataEvent.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
@@ -40,6 +41,9 @@
 #include <ui/dom/ElementDocument.h>
 #include <ui/dom/Event.h>
 #include <ui/base/SystemInterface.h>
+
+#include <chrono>
+#include <thread>
 #include <SDL3/SDL.h>
 
 #include <filesystem>
@@ -161,6 +165,14 @@ void SettingsController::BindCommands(SettingsCommands commands) {
 
 void SettingsController::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
+}
+
+void SettingsController::BindOpenHomeEdit(std::function<void()> open) {
+  open_home_edit_ = std::move(open);
+}
+
+void SettingsController::BindOpenUiPerfTest(std::function<void()> open) {
+  open_ui_perf_test_ = std::move(open);
 }
 
 void SettingsController::BindShellFeedback(ShellFeedbackPorts ports) {
@@ -421,6 +433,10 @@ void SettingsController::SyncBindingsFromSession() {
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     handler->SyncFromSession(bootstrap, ui_state_);
   }
+  ai_dot_shown_ = bootstrap.profile_prefs.ai_dot_shown;
+  ai_dot_look_ = bootstrap.profile_prefs.ai_dot_look.c_str();
+  ai_dot_size_ = bootstrap.profile_prefs.ai_dot_size.c_str();
+  ai_dot_size_label_ = Tr("settings.ai_dot.size_" + bootstrap.profile_prefs.ai_dot_size).c_str();
   if (commands_.last_mesh_error) {
     ui_state_.mesh_status_message = commands_.last_mesh_error();
   } else {
@@ -490,13 +506,24 @@ bool SettingsController::RegisterModel(ui::Context* context) {
       mcp_handle.RegisterMember("args_text", &McpServerRow::args_text);
       mcp_handle.RegisterMember("enabled", &McpServerRow::enabled);
     }
+    if (auto option_handle = ctor.RegisterStruct<SettingsChoicePage::Option>()) {
+      option_handle.RegisterMember("id", &SettingsChoicePage::Option::id);
+      option_handle.RegisterMember("label", &SettingsChoicePage::Option::label);
+      option_handle.RegisterMember("selected", &SettingsChoicePage::Option::selected);
+    }
+    ctor.RegisterArray<std::vector<SettingsChoicePage::Option>>();
     ctor.RegisterArray<std::vector<SectionListRow>>();
     ctor.RegisterArray<std::vector<McpServerRow>>();
     ctor.Bind("sections", &controller.sections_);
     ctor.Bind("selected_id", &controller.selected_id_);
     ctor.Bind("selected_title", &controller.selected_title_);
-    ctor.Bind("in_account_sheet", &controller.in_account_sheet_);
     ctor.Bind("show_detail", &controller.show_detail_);
+    ctor.Bind("security_page", &controller.security_page_);
+    ctor.Bind("security_page_title", &controller.security_page_title_);
+    ctor.Bind("choice_options", &controller.choice_page_.Options());
+    ctor.Bind("choice_foot", &controller.choice_foot_);
+    ctor.Bind("choice_help_topic", &controller.choice_help_topic_);
+    ctor.Bind("blocked_count", &controller.blocked_count_);
     ctor.Bind("llm_preset", &controller.bindings_.llm_preset);
     ctor.Bind("llm_base_url", &controller.bindings_.llm_base_url);
     ctor.Bind("llm_model", &controller.bindings_.llm_model);
@@ -525,6 +552,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("dht_enabled", &controller.bindings_.dht_enabled);
     ctor.Bind("show_dht_toggle", &controller.bindings_.show_dht_toggle);
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
+    controller.bindings_.show_backend_switch = BackendSwitchVisible(kUiDemoBuild);
+    ctor.Bind("show_backend_switch", &controller.bindings_.show_backend_switch);
     ctor.Bind("backend_label", &controller.bindings_.backend_label);
     ctor.Bind("backend_restart_pending", &controller.bindings_.backend_restart_pending);
     ctor.Bind("backend_is_custom", &controller.bindings_.backend_is_custom);
@@ -554,6 +583,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("stay_connected", &controller.bindings_.stay_connected);
     controller.bindings_.stay_connected_available = Platform::Detect() == PlatformKind::Android;
     ctor.Bind("stay_connected_available", &controller.bindings_.stay_connected_available);
+    controller.bindings_.dev_tools_available = kDevToolsBuild;
+    ctor.Bind("dev_tools_available", &controller.bindings_.dev_tools_available);
     ctor.Bind("brief_llm_key_masked", &controller.bindings_.brief_llm_key_masked);
     ctor.Bind("appearance", &controller.bindings_.appearance);
     ctor.Bind("appearance_label", &controller.bindings_.appearance_label);
@@ -593,13 +624,32 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     own_devices_.Bind(ctor);
     storage_manager_.Bind(ctor);
     ctor.Bind("status", &controller.status_);
+    ctor.Bind("ai_dot_shown", &controller.ai_dot_shown_);
+    ctor.Bind("ai_dot_look", &controller.ai_dot_look_);
+    ctor.Bind("ai_dot_size_label", &controller.ai_dot_size_label_);
     ctor.BindEventCallback("select_section", DataEvent<std::string>([this](const std::string& id) { OnSelectSection(id); }));
     ctor.BindEventCallback("back_to_list", DataEvent<>([this]() { OnBackToList(); }));
+    ctor.BindEventCallback("open_security_page",
+                           DataEvent<std::string>([this](const std::string& page) { OpenSecurityPage(page); }));
+    ctor.BindEventCallback("close_security_page", DataEvent<>([this]() { OnCloseSecurityPage(); }));
+    ctor.BindEventCallback("pick_choice", DataEvent<std::string>([this](const std::string& id) { OnPickChoice(id); }));
+    ctor.BindEventCallback("open_blocked_people", DataEvent<>([this]() {
+      if (commands_.open_blocked_people) {
+        commands_.open_blocked_people();
+      }
+    }));
     ctor.BindEventCallback("reset_section", DataEvent<std::string>([this](const std::string& id) { OnResetSection(id); }));
     ctor.BindEventCallback("open_support_chat", DataEvent<>([this]() { OnOpenSupportChat(); }));
+    ctor.BindEventCallback("ask_setting_help", [this](ui::DataModelHandle, ui::Event& ev, const ui::VariantList& args) {
+      ev.StopPropagation(); // the "?" can sit inside a row that opens a page or toggles a switch
+      if (const auto key = data_event_detail::Arg<std::string>(args, 0)) {
+        OnAskSettingHelp(*key);
+      }
+    });
     ctor.BindEventCallback("on_llm_field_changed", DataEvent<>([this]() { MarkSectionDirty("llm"); }));
     ctor.BindEventCallback("on_llm_preset_changed", DataEventAt([this](ui::Event& ev) { OnLlmPresetChanged(ev); }));
     ctor.BindEventCallback("on_choose_theme", DataEventAt([this](ui::Event& ev) { OnChooseTheme(ev); }));
+    ctor.BindEventCallback("on_choose_ai_dot_size", DataEventAt([this](ui::Event& ev) { OnChooseAiDotSize(ev); }));
     ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
     ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
@@ -611,9 +661,24 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", DataEvent<>([this]() { ToggleShowNotifications(); }));
     ctor.BindEventCallback("toggle_show_notification_preview", DataEvent<>([this]() { ToggleShowNotificationPreview(); }));
     ctor.BindEventCallback("toggle_stay_connected", DataEvent<>([this]() { ToggleStayConnected(); }));
-    ctor.BindEventCallback("toggle_reduce_transparency", DataEvent<>([this]() { ToggleReduceTransparency(); }));
+    ctor.BindEventCallback("toggle_transparency", DataEvent<>([this]() { ToggleTransparency(); }));
     ctor.BindEventCallback("toggle_call_diagnostics", DataEvent<>([this]() { ToggleCallDiagnostics(); }));
+    ctor.BindEventCallback("open_ui_perf_test", DataEvent<>([this]() {
+      if constexpr (kDevToolsBuild) {
+        if (open_ui_perf_test_) {
+          open_ui_perf_test_();
+        }
+      }
+    }));
+    ctor.BindEventCallback("open_home_edit", DataEvent<>([this]() {
+      if (open_home_edit_) {
+        open_home_edit_();
+      }
+    }));
     ctor.BindEventCallback("toggle_show_advanced_settings", DataEvent<>([this]() { ToggleShowAdvancedSettings(); }));
+    ctor.BindEventCallback("toggle_ai_dot", DataEvent<>([this]() { ToggleAiDot(); }));
+    ctor.BindEventCallback("set_ai_dot_look",
+                           DataEvent<std::string>([this](const std::string& look) { SetAiDotLook(look); }));
     ctor.BindEventCallback("toggle_crash_reports", DataEvent<>([this]() { ToggleCrashReports(); }));
     ctor.BindEventCallback("toggle_auto_renew_registration", DataEvent<>([this]() { ToggleAutoRenewRegistration(); }));
     ctor.BindEventCallback("on_integrations_field_changed", DataEvent<>([this]() { MarkSectionDirty("integrations"); }));
@@ -645,8 +710,12 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "sections");
   host.Dirty("settings", "selected_id");
   host.Dirty("settings", "selected_title");
-  host.Dirty("settings", "in_account_sheet");
   host.Dirty("settings", "show_detail");
+  host.Dirty("settings", "security_page");
+  host.Dirty("settings", "security_page_title");
+  host.Dirty("settings", "choice_options");
+  host.Dirty("settings", "choice_foot");
+  host.Dirty("settings", "choice_help_topic");
   host.Dirty("settings", "llm_preset");
   host.Dirty("settings", "llm_base_url");
   host.Dirty("settings", "llm_model");
@@ -711,6 +780,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "show_advanced_settings");
+  host.Dirty("settings", "ai_dot_shown");
+  host.Dirty("settings", "ai_dot_look");
+  host.Dirty("settings", "ai_dot_size_label");
   host.Dirty("settings", "advanced");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
@@ -755,7 +827,7 @@ void SettingsController::FinishPaneResync() {
   // Select widgets can emit a spurious change on the frame after remount.
   AppRuntime::PostUI([this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
-    if (chrome.nav_tab != NavTab::Me && !chrome.account_sheet_open) {
+    if (chrome.nav_tab != NavTab::Me) {
       suppress_auto_save_ = false;
       UiEditSession::Instance().EndRemount();
       return;
@@ -771,6 +843,14 @@ void SettingsController::FinishPaneResync() {
   });
 }
 
+bool SettingsController::SheetMountEmpty() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return false;
+  }
+  ui::Element* mount = context_->GetDocument(0)->GetElementById("settings-section-mount-sheet");
+  return mount && mount->GetNumChildren() == 0;
+}
+
 void SettingsController::MountSelectedSettingsSection() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -780,7 +860,7 @@ void SettingsController::MountSelectedSettingsSection() {
     return;
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  const bool use_sheet_mount = show_detail_ || in_account_sheet_ || chrome.account_sheet_open;
+  const bool use_sheet_mount = show_detail_;
   const char* mount_id = use_sheet_mount ? "settings-section-mount-sheet" : "settings-section-mount-pane";
   ui::Element* mount = doc->GetElementById(mount_id);
   if (!mount) {
@@ -809,14 +889,16 @@ void SettingsController::OnShellLayoutSynced() {
   if (!suppress_auto_save_) {
     // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
     // detail pane's section mount; fill it again or the open section shows blank.
-    if (chrome.settings_detail_primary && !selected_id_.empty()) {
+    // Phones too: a page pushed over the open section (Security > Blocked) and popped again remounts the shell.
+    if (!selected_id_.empty() &&
+        (chrome.settings_detail_primary || (show_detail_ && chrome.nav_tab == NavTab::Me && SheetMountEmpty()))) {
       suppress_auto_save_ = true;
       UiEditSession::Instance().BeginRemount();
       FinishPaneResync();
     }
     return;
   }
-  if (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open) {
+  if (chrome.nav_tab == NavTab::Me) {
     FinishPaneResync();
   } else {
     suppress_auto_save_ = false;
@@ -832,7 +914,7 @@ void SettingsController::OnNavTabActivated() {
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
-  in_account_sheet_ = false;
+  ResetSecurityPage();
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_detail");
   }
@@ -848,36 +930,9 @@ void SettingsController::OnNavTabActivated() {
   }
 }
 
-void SettingsController::OnAccountSheetOpened() {
-  log().info << "OnAccountSheetOpened";
-  dirty_sections_.clear();
-  debounce_deadline_ms_ = 0;
-  show_detail_ = false;
-  selected_id_.clear();
-  selected_title_.clear();
-  if (shell_navigation_.clear_local_back) {
-    shell_navigation_.clear_local_back("settings_detail");
-  }
-  in_account_sheet_ = true;
-  suppress_auto_save_ = true;
-  UiEditSession::Instance().BeginRemount();
-  ReloadFromDisk();
-}
-
 void SettingsController::OnMeSurfaceClosed() {
   CommitProfileNickname(/*show_toast=*/false);
   FlushPending();
-}
-
-void SettingsController::OnAccountSheetClosed() {
-  OnMeSurfaceClosed();
-  in_account_sheet_ = false;
-  show_detail_ = false;
-  selected_id_.clear();
-  selected_title_.clear();
-  if (shell_navigation_.clear_local_back) {
-    shell_navigation_.clear_local_back("settings_detail");
-  }
 }
 
 void SettingsController::SyncLayoutMode() {
@@ -891,58 +946,43 @@ void SettingsController::SyncLayoutMode() {
   const ui::String saved_id = selected_id_;
   const ui::String saved_title = selected_title_;
   const bool had_detail = !saved_id.empty() || show_detail_;
+  ResetSecurityPage(); // desktop shows Change PIN / the transfer code inline
 
+  if (chrome.nav_tab != NavTab::Me) {
+    return;
+  }
   if (compact) {
-    if (chrome.nav_tab == NavTab::Me) {
-      if (shell_navigation_.clear_primary_pane) {
-        shell_navigation_.clear_primary_pane();
-      }
-      if (shell_navigation_.select_nav_tab) {
-        shell_navigation_.select_nav_tab(NavTab::Home);
-      }
-      selected_id_ = saved_id;
-      selected_title_ = saved_title;
-      show_detail_ = had_detail;
-      if (shell_navigation_.open_account_sheet) {
-        shell_navigation_.open_account_sheet();
-      }
-      // OpenAccountSheet resets selection; restore sheet detail state.
-      selected_id_ = saved_id;
-      selected_title_ = saved_title;
-      show_detail_ = had_detail;
-      in_account_sheet_ = true;
-      if (had_detail) {
-        if (shell_navigation_.clear_local_back) {
-          shell_navigation_.clear_local_back("settings_detail");
-        }
-        if (shell_navigation_.push_local_back) {
-          shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
-        }
-        storage_manager_.RestoreBackStack();
-      }
-      DirtyAll();
-      return;
-    }
-  } else if (chrome.account_sheet_open) {
-    if (shell_navigation_.close_account_sheet) {
-      shell_navigation_.close_account_sheet();
+    // Me stays the selected tab; a detail open in the expanded primary pane becomes the inline detail.
+    if (shell_navigation_.clear_primary_pane) {
+      shell_navigation_.clear_primary_pane();
     }
     selected_id_ = saved_id;
     selected_title_ = saved_title;
-    show_detail_ = false;
-    in_account_sheet_ = false;
-    if (shell_navigation_.select_nav_tab) {
-      shell_navigation_.select_nav_tab(NavTab::Me);
-    }
-    // SelectNavTab activates Me and clears selection; restore for primary pane.
-    selected_id_ = saved_id;
-    selected_title_ = saved_title;
-    if (had_detail && !selected_id_.empty()) {
-      OpenSettingsDetailPane();
+    show_detail_ = had_detail;
+    if (had_detail) {
+      if (shell_navigation_.clear_local_back) {
+        shell_navigation_.clear_local_back("settings_detail");
+      }
+      if (shell_navigation_.push_local_back) {
+        shell_navigation_.push_local_back("settings_detail", [this] { ApplyBackToListUi(); });
+      }
       storage_manager_.RestoreBackStack();
     }
     DirtyAll();
+    return;
   }
+  // Compact inline detail moves to the expanded primary pane.
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_detail");
+  }
+  selected_id_ = saved_id;
+  selected_title_ = saved_title;
+  show_detail_ = false;
+  if (had_detail && !selected_id_.empty()) {
+    OpenSettingsDetailPane();
+    storage_manager_.RestoreBackStack();
+  }
+  DirtyAll();
 }
 
 void SettingsController::MarkSectionDirty(const std::string& section_id, const bool show_toast) {
@@ -1106,10 +1146,10 @@ void SettingsController::OnResetSection(const std::string& section_id) {
     return;
   }
 
-  if (!shell_feedback_.show_confirm) {
+  if (!shell_feedback_.show_confirm_destructive) {
     return;
   }
-  shell_feedback_.show_confirm(
+  shell_feedback_.show_confirm_destructive(
       Tr("settings.reset_defaults_confirm_title"), Tr("settings.reset_defaults_confirm_message"),
       [this, section_id](const bool ok) {
         if (!ok) {
@@ -1135,6 +1175,7 @@ void SettingsController::PerformResetSection(const std::string& section_id) {
 void SettingsController::OnSelectSection(const std::string& section_id) {
   log().info << "OnSelectSection(" << section_id << ")";
   FlushPending();
+  ResetSecurityPage();
 
   selected_id_.clear();
   selected_title_.clear();
@@ -1150,16 +1191,19 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
   }
 
   status_ = "";
-  if (section_id == "security") {
+  // Send problem logs is on Security (desktop) and in About (phones): either page reads its label again.
+  if (section_id == "security" || section_id == "about") {
     security_actions_.RefreshDiagnostics();
+  }
+  if (section_id == "security") {
+    RefreshBlockedCount();
   }
   storage_manager_.Reset();
   if (section_id == "storage") {
     storage_manager_.Enter();
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  const bool sheet = chrome.account_sheet_open || in_account_sheet_;
-  if (sheet) {
+  if (chrome.layout_mode == LayoutMode::Compact) {
     show_detail_ = true;
     DirtyAll();
     if (context_) {
@@ -1197,8 +1241,8 @@ void SettingsController::OnSelectSection(const std::string& section_id) {
 void SettingsController::OpenSettingsDetailPane() {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   compact_layout_ = chrome.layout_mode == LayoutMode::Compact;
-  // Compact Me uses the account sheet, not transient panes.
-  if (compact_layout_ || chrome.account_sheet_open) {
+  // Compact Me shows the detail inline, not in a transient pane.
+  if (compact_layout_) {
     return;
   }
 
@@ -1231,6 +1275,7 @@ bool SettingsController::CloseSettingsDetailPane() {
 
 void SettingsController::OnDetailDismissed() {
   FlushPending();
+  ResetSecurityPage();
   selected_id_.clear();
   selected_title_.clear();
   show_detail_ = false;
@@ -1240,6 +1285,7 @@ void SettingsController::OnDetailDismissed() {
 
 void SettingsController::ApplyBackToListUi() {
   FlushPending();
+  ResetSecurityPage();
   show_detail_ = false;
   selected_id_.clear();
   selected_title_.clear();
@@ -1269,7 +1315,7 @@ void SettingsController::OnBackToList() {
     return;
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
-  if (in_account_sheet_ || chrome.account_sheet_open) {
+  if (chrome.layout_mode == LayoutMode::Compact) {
     ApplyBackToListUi();
     return;
   }
@@ -1278,6 +1324,79 @@ void SettingsController::OnBackToList() {
   } else {
     OnDetailDismissed();
   }
+}
+
+void SettingsController::RefreshBlockedCount() {
+  blocked_count_ = commands_.blocked_count ? commands_.blocked_count() : 0;
+  DataModelHost::Instance().Dirty("settings", "blocked_count");
+}
+
+void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (selected_id_ != "security" || !show_detail_) {
+    return; // phones only: desktop shows both inline
+  }
+  if (page == "change_pin") {
+    security_page_title_ = Tr("settings.security.change_pin").c_str();
+  } else if (page == "transfer") {
+    security_page_title_ = Tr("settings.security.transfer_row").c_str();
+  } else {
+    return;
+  }
+  log().info << "OpenSecurityPage " << page;
+  security_page_ = page.c_str();
+  status_ = "";
+  DirtyAll();
+  if (context_) {
+    context_->Update(); // the page must be in the DOM before the shell plays its push
+  }
+  if (shell_navigation_.push_local_back) {
+    shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
+  }
+}
+
+void SettingsController::OnCloseSecurityPage() {
+  if (shell_navigation_.has_local_back && shell_navigation_.has_local_back("settings_subpage")) {
+    if (shell_navigation_.request_dismiss_instant) {
+      shell_navigation_.request_dismiss_instant();
+    }
+    return;
+  }
+  ApplyCloseSecurityPage();
+}
+
+void SettingsController::ApplyCloseSecurityPage() {
+  security_page_ = "";
+  security_page_title_ = "";
+  choice_page_.Close();
+  choice_foot_ = "";
+  choice_help_topic_ = "";
+  status_ = "";
+  AppRuntime::PostUI([this]() {
+    DirtyAll();
+    if (context_) {
+      context_->Update();
+    }
+    if (shell_navigation_.refresh_dismiss_gestures) {
+      shell_navigation_.refresh_dismiss_gestures();
+    }
+  });
+}
+
+void SettingsController::ResetSecurityPage() {
+  if (shell_navigation_.clear_local_back) {
+    shell_navigation_.clear_local_back("settings_subpage");
+  }
+  if (security_page_.empty()) {
+    return;
+  }
+  security_page_ = "";
+  security_page_title_ = "";
+  choice_page_.Close();
+  choice_foot_ = "";
+  choice_help_topic_ = "";
+  DataModelHost::Instance().Dirty("settings", "security_page");
+  DataModelHost::Instance().Dirty("settings", "security_page_title");
+  DataModelHost::Instance().Dirty("settings", "choice_options");
 }
 
 void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
@@ -1319,30 +1438,73 @@ void SettingsController::OnLlmPresetChanged(ui::Event& ev) {
   FlushSection("llm");
 }
 
-void SettingsController::OnChooseTheme(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::ShowChoice(ui::Event& ev, const std::string& kind, const std::string& title,
+                                    const std::string& foot, const std::string& help_topic,
+                                    std::vector<SettingsChoicePage::Option> options,
+                                    std::function<void(const std::string&)> apply) {
+  if (!show_detail_ || !compact_layout_) {
+    // The desktop: the float menu under the row's value, as before.
+    const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+    std::vector<ContextMenuAction> actions;
+    actions.reserve(options.size());
+    for (const SettingsChoicePage::Option& option : options) {
+      const std::string id = option.id.c_str();
+      actions.push_back({.id = id,
+                         .label = option.label.c_str(),
+                         .enabled = {},
+                         .run = [apply, id]() { apply(id); },
+                         .icon = {},
+                         .danger = false,
+                         .selected = option.selected});
+    }
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+    return;
+  }
+  // Phones (Kenneth 2026-11-04): a page pushed over the section, one row per value, the current one checked.
+  log().info << "OpenChoicePage " << kind;
+  ++choice_pop_generation_;
+  choice_page_.Open(kind, title, foot, help_topic, std::move(options), std::move(apply));
+  security_page_ = "choice";
+  security_page_title_ = title.c_str();
+  choice_foot_ = foot.c_str();
+  choice_help_topic_ = help_topic.c_str();
+  status_ = "";
+  DirtyAll();
+  if (context_) {
+    context_->Update(); // the page must be in the DOM before the shell plays its push
+  }
+  if (shell_navigation_.push_local_back) {
+    shell_navigation_.push_local_back("settings_subpage", [this] { ApplyCloseSecurityPage(); });
+  }
+}
 
+void SettingsController::OnPickChoice(const std::string& id) {
+  if (security_page_ != "choice" || !choice_page_.Pick(id)) {
+    return;
+  }
+  // The value is applied (and its row's label updated) by now; the check shows on the picked row, then the page goes.
+  DataModelHost::Instance().Dirty("settings", "choice_options");
+  const uint64_t generation = ++choice_pop_generation_;
+  // A short beat so the check is seen landing; a thread, so the wait also ends while nothing else wakes the loop.
+  std::thread([this, generation]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(SettingsChoicePage::kPopDelayMs));
+    AppRuntime::PostUI([this, generation]() {
+      if (generation == choice_pop_generation_ && security_page_ == "choice") {
+        OnCloseSecurityPage();
+      }
+    });
+  }).detach();
+}
+
+void SettingsController::OnChooseTheme(ui::Event& ev) {
   const std::string current =
       bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
-
-  static const char* kThemeIds[] = {"system", "light", "dark"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kThemeIds) {
-    const std::string theme_id = id;
-    actions.push_back({.id = theme_id,
-                       .label = ThemeDisplayLabel(theme_id),
-                       .enabled = {},
-                       .run =
-                           [this, theme_id]() {
-                             ApplyThemeChoice(theme_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == theme_id});
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"system", "light", "dark"}) {
+    options.push_back({id, ThemeDisplayLabel(id).c_str(), current == id});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "theme", Tr("settings.theme.label"), Tr("settings.theme.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyThemeChoice(id); });
 }
 
 void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
@@ -1362,45 +1524,19 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
 }
 
 void SettingsController::OnChooseLanguage(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
-
   if (!commands_.language_display_label || !commands_.available_locales) {
     log().warning << "OnChooseLanguage: locale ports not bound";
     return;
   }
 
   const std::string current = bindings_.language.empty() ? "system" : std::string(bindings_.language.c_str());
-  const auto label_for = [this](const std::string& pref) {
-    return commands_.language_display_label(pref);
-  };
-
-  std::vector<ContextMenuAction> actions;
-  actions.push_back({.id = "system",
-                     .label = label_for("system"),
-                     .enabled = {},
-                     .run =
-                         [this]() {
-                           ApplyLanguageChoice("system");
-                         },
-                     .icon = {},
-                     .danger = false,
-                     .selected = current == "system"});
-
+  std::vector<SettingsChoicePage::Option> options;
+  options.push_back({"system", commands_.language_display_label("system").c_str(), current == "system"});
   for (const LocaleInfo& info : commands_.available_locales()) {
-    const std::string tag = info.tag;
-    actions.push_back({.id = tag,
-                       .label = label_for(tag),
-                       .enabled = {},
-                       .run =
-                           [this, tag]() {
-                             ApplyLanguageChoice(tag);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == tag});
+    options.push_back({info.tag.c_str(), commands_.language_display_label(info.tag).c_str(), current == info.tag});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "language", Tr("settings.language.label"), Tr("settings.language.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyLanguageChoice(id); });
 }
 
 void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
@@ -1420,22 +1556,16 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
 }
 
 void SettingsController::OnChooseBackend(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.backend_env.c_str();
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"prod", "qa", "custom"}) {
     if (std::string_view(id) == "qa" && !ui_state_.backend_qa_available) {
       continue;
     }
-    actions.push_back({.id = id,
-                       .label = BackendDisplayLabel(id),
-                       .enabled = {},
-                       .run = [this, env = std::string(id)]() { ApplyBackendChoice(env); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == id});
+    options.push_back({id, BackendDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "backend", Tr("settings.network.backend"), Tr("settings.network.backend.help"), {},
+             std::move(options), [this](const std::string& id) { ApplyBackendChoice(id); });
 }
 
 void SettingsController::ApplyBackendChoice(const std::string& env) {
@@ -1450,22 +1580,17 @@ void SettingsController::ApplyBackendChoice(const std::string& env) {
 }
 
 void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
       bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const mesh::DirectAudience audience :
        {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts, mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
     const std::string id = mesh::DirectAudienceName(audience);
-    actions.push_back({.id = id,
-                       .label = DirectConnectionsDisplayLabel(id),
-                       .enabled = {},
-                       .run = [this, id]() { ApplyDirectConnectionsChoice(id); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == id});
+    options.push_back({id.c_str(), DirectConnectionsDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "direct_connections", Tr("settings.network.direct_connections"),
+             Tr("settings.network.direct_connections.help"), "settings.network.direct_connections", std::move(options),
+             [this](const std::string& id) { ApplyDirectConnectionsChoice(id); });
 }
 
 void SettingsController::ApplyDirectConnectionsChoice(const std::string& audience) {
@@ -1481,21 +1606,14 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
 }
 
 void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current =
       bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
-  std::vector<ContextMenuAction> actions;
+  std::vector<SettingsChoicePage::Option> options;
   for (const char* id : {"everyone", "contacts_only", "nobody"}) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = CallInvitePolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run = [this, policy_id]() { ApplyCallInvitePolicyChoice(policy_id); },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
+    options.push_back({id, CallInvitePolicyDisplayLabel(id).c_str(), current == id});
   }
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "call_invite_policy", Tr("settings.security.calls"), Tr("settings.security.calls.help"), {},
+             std::move(options), [this](const std::string& id) { ApplyCallInvitePolicyChoice(id); });
 }
 
 void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) {
@@ -1511,30 +1629,16 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
 }
 
 void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
-  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
-
   const std::string current = bindings_.group_invite_policy.empty()
                                   ? "contacts_only"
                                   : std::string(bindings_.group_invite_policy.c_str());
-
-  static const char* kPolicyIds[] = {"everyone", "contacts_only", "nobody"};
-  std::vector<ContextMenuAction> actions;
-  actions.reserve(3);
-  for (const char* id : kPolicyIds) {
-    const std::string policy_id = id;
-    actions.push_back({.id = policy_id,
-                       .label = GroupInvitePolicyDisplayLabel(policy_id),
-                       .enabled = {},
-                       .run =
-                           [this, policy_id]() {
-                             ApplyGroupInvitePolicyChoice(policy_id);
-                           },
-                       .icon = {},
-                       .danger = false,
-                       .selected = current == policy_id});
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"everyone", "contacts_only", "nobody"}) {
+    options.push_back({id, GroupInvitePolicyDisplayLabel(id).c_str(), current == id});
   }
-
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  ShowChoice(ev, "group_invite_policy", Tr("settings.security.group_invites"),
+             Tr("settings.security.group_invites.help"), {}, std::move(options),
+             [this](const std::string& id) { ApplyGroupInvitePolicyChoice(id); });
 }
 
 void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy) {
@@ -1618,17 +1722,52 @@ void SettingsController::OnOpenSupportChat() {
   }
 }
 
+std::string SettingHelpQuestion(const std::string& label_key) {
+  if (label_key.rfind("settings.", 0) != 0) {
+    return {};
+  }
+  const std::string title = Tr(label_key);
+  if (title.empty() || title == label_key) {
+    return {};
+  }
+  return Tr("settings.help.question", {{"title", title}});
+}
+
+void SettingsController::OnAskSettingHelp(const std::string& label_key) {
+  const std::string question = SettingHelpQuestion(label_key);
+  if (question.empty()) {
+    return;
+  }
+  // Kenneth 2026-11-04 (DEV/PLAN-ui-batch5-ask-ai.md 原话 11–13): on phones the AI answers it in the half-screen panel,
+  // a one-off question with no earlier conversation; the panel keeps a "Ask PP Support" button for a person.
+  if (commands_.ask_ai_once && commands_.ask_ai_once(question)) {
+    return;
+  }
+  if (!commands_.ask_support) {
+    ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
+    return;
+  }
+  // The desktop (no panel yet): the question goes straight to PP 客服 and the user watches the answer come.
+  if (auto asked = commands_.ask_support(question); !asked) {
+    ReportFailure(asked.error());
+  }
+}
+
 void SettingsController::OpenNetworkSettings() {
+  OpenSection("network");
+}
+
+void SettingsController::OpenSection(const std::string& section_id) {
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.nav_tab != NavTab::Me) {
     if (shell_navigation_.select_nav_tab) {
       shell_navigation_.select_nav_tab(NavTab::Me);
     }
-    // OnNavTabActivated clears selection; open Network on the next UI turn.
-    AppRuntime::PostUI([this]() { OnSelectSection("network"); });
+    // OnNavTabActivated clears selection; open the page on the next UI turn.
+    AppRuntime::PostUI([this, section_id]() { OnSelectSection(section_id); });
     return;
   }
-  OnSelectSection("network");
+  OnSelectSection(section_id);
 }
 
 void SettingsController::ApplyReachability() {
@@ -1849,9 +1988,9 @@ void SettingsController::ToggleStayConnected() {
   DirtyAll();
 }
 
-void SettingsController::ToggleReduceTransparency() {
-  bindings_.reduce_transparency =
-      bindings_.reduce_transparency == "on" ? "off" : "on";
+void SettingsController::ToggleTransparency() {
+  // The switch reads "Transparency" (on by default): on is reduce_transparency off.
+  bindings_.reduce_transparency = bindings_.reduce_transparency == "on" ? "off" : "on";
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
@@ -1863,6 +2002,51 @@ void SettingsController::ToggleCallDiagnostics() {
   PullBindingsToUiState();
   MarkSectionDirty("appearance", /*show_toast=*/false);
   DirtyAll();
+}
+
+void SettingsController::ToggleAiDot() {
+  SaveAiDot(!ai_dot_shown_, ai_dot_look_.c_str(), ai_dot_size_.c_str());
+}
+
+void SettingsController::SetAiDotLook(const std::string& look) {
+  if (look != "a" && look != "b" && look != "c" && look != "d") {
+    return;
+  }
+  SaveAiDot(ai_dot_shown_, look, ai_dot_size_.c_str());
+}
+
+void SettingsController::OnChooseAiDotSize(ui::Event& ev) {
+  const std::string current = ai_dot_size_.c_str();
+  std::vector<SettingsChoicePage::Option> options;
+  for (const char* id : {"s", "m", "l"}) {
+    options.push_back({id, Tr(std::string("settings.ai_dot.size_") + id).c_str(), current == id});
+  }
+  ShowChoice(ev, "ai_dot_size", Tr("settings.ai_dot.size"), {}, {}, std::move(options),
+             [this](const std::string& id) { SaveAiDot(ai_dot_shown_, ai_dot_look_.c_str(), id); });
+}
+
+void SettingsController::SaveAiDot(const bool shown, const std::string& look, const std::string& size) {
+  if (!commands_.session_store) {
+    return;
+  }
+  // Saved at once (no section flush): ConfigApplyBridge hands the new prefs to the shell, which shows, hides or
+  // redraws the dot on the next frame.
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.ai_dot_shown = shown;
+  prefs.ai_dot_look = look;
+  prefs.ai_dot_size = size;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    ReportFailure(saved.error());
+    return;
+  }
+  ai_dot_shown_ = shown;
+  ai_dot_look_ = look.c_str();
+  ai_dot_size_ = size.c_str();
+  ai_dot_size_label_ = Tr("settings.ai_dot.size_" + size).c_str();
+  DataModelHost::Instance().Dirty("settings", "ai_dot_shown");
+  DataModelHost::Instance().Dirty("settings", "ai_dot_look");
+  DataModelHost::Instance().Dirty("settings", "ai_dot_size_label");
 }
 
 void SettingsController::ToggleShowAdvancedSettings() {

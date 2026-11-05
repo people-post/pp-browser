@@ -8,6 +8,9 @@
 
 #include <ui/dom/Event.h>
 
+#include <functional>
+#include <string>
+
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -27,6 +30,14 @@ public:
   void Open(ui::Event& ev);
   /** The group's member list (the header's "N members", and a peer sheet item). */
   void OpenGroupMembers();
+
+  // The group's naming, here and in the phone's group info sheet. `after` runs once the name was saved.
+  /** A name for the group on this device only (asks for it). */
+  void RenameForMe(const std::string& thread_id, std::function<void()> after = {});
+  /** The owner: the group's name for everyone (asks for it). */
+  void RenameForEveryone(const std::string& thread_id, std::function<void()> after = {});
+  /** Drops this device's own name for the group. */
+  void ClearMyName(const std::string& thread_id);
 
 private:
   std::vector<ContextMenuAction> DirectActions(const Thread& thread);

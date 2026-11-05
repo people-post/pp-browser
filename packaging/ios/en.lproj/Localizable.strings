@@ -1,3 +1,6 @@
 /* The relay's incoming-call alert (P012): the push carries these keys, the words are here. */
 "CALL_INCOMING_TITLE" = "Incoming call";
 "CALL_INCOMING_BODY" = "Someone is calling you";
+/* The relay's new-message alert: generic by design, never names the sender or the content. */
+"MESSAGE_INCOMING_TITLE" = "New message";
+"MESSAGE_INCOMING_BODY" = "You have a new message";

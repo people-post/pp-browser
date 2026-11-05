@@ -1,7 +1,7 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "mesh/types/MediaChannel.h"
 
-#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/shared/MediaFrame.h"
 #include "lib/broadcast/BroadcastJoinTicket.h"
 #include "lib/media/VideoLevelProfile.h"
 #include "lib/broadcast/BroadcastMedia.h"
@@ -67,8 +67,7 @@ struct BroadcastViewerWorkflow::FrameSink {
     if (!live.load(std::memory_order_acquire) || frame.stream_id != stream_id) {
       return;
     }
-    auto opened = mesh::OpenMediaRelayFrame(key, context, epoch, stream_id, static_cast<uint8_t>(frame.channel_id),
-                                      frame.payload);
+    auto opened = mesh::OpenMediaFrame(key, context, epoch, frame);
     if (!opened) {
       rejected.fetch_add(1, std::memory_order_relaxed);
       return;
@@ -76,9 +75,10 @@ struct BroadcastViewerWorkflow::FrameSink {
     MediaEngine::MediaPacket packet;
     packet.stream_id = stream_id;
     packet.channel_id = frame.channel_id;
-    packet.seq = opened->seq;
-    packet.mark = opened->mark;
-    packet.payload = std::move(opened->payload);
+    packet.seq = frame.seq;
+    packet.mark = frame.mark;
+    packet.instance = frame.instance;
+    packet.payload = std::move(*opened);
     engine->OnInboundPacket(packet);
   }
 };

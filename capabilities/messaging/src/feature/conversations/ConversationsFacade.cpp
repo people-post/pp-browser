@@ -218,6 +218,7 @@ Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
 void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread(); }
 
 Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().CreateNewAiThread(); }
+Roe<Thread> ConversationsFacade::CreateAiThread() { return hub_.Inbox().CreateAiThread(); }
 
 Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
   return hub_.Inbox().UpdatePreview(thread_id, preview);
@@ -282,6 +283,20 @@ void ConversationsFacade::SetOnThreadChanged(std::function<void()> callback) {
 
 PeerDisplayLabel ConversationsFacade::ResolveThreadLabel(const Thread& thread) {
   return hub_.Inbox().ResolveThreadLabel(thread);
+}
+
+std::string ConversationsFacade::ContactIconPath(const std::string& contact_id) {
+  if (contact_id.empty()) {
+    return {};
+  }
+  auto contact = hub_.Contacts().Get(contact_id);
+  if (!contact || !*contact) {
+    return {};
+  }
+  if ((*contact)->remote.icon && !(*contact)->remote.icon->url.empty()) {
+    hub_.EnsureContactIconCached(**contact);
+  }
+  return hub_.ContactIconLocalPath(**contact);
 }
 
 std::vector<TranscriptRow> ConversationsFacade::BuildTranscript(const std::string& thread_id,
@@ -385,6 +400,15 @@ std::set<std::string> ConversationsFacade::ThreadsWithMentions() {
   return threads ? std::move(*threads) : std::set<std::string>{};
 }
 
+std::map<std::string, int> ConversationsFacade::MentionCounts() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return {};
+  }
+  auto counts = mentions->Counts();
+  return counts ? std::move(*counts) : std::map<std::string, int>{};
+}
+
 std::optional<std::string> ConversationsFacade::OldestMention(const std::string& thread_id) {
   IThreadMentionsStore* mentions = hub_.ThreadMentions();
   if (!mentions) {
@@ -392,6 +416,15 @@ std::optional<std::string> ConversationsFacade::OldestMention(const std::string&
   }
   auto oldest = mentions->Oldest(thread_id);
   return oldest ? *oldest : std::nullopt;
+}
+
+std::optional<IThreadMentionsStore::Mention> ConversationsFacade::LatestMention() {
+  IThreadMentionsStore* mentions = hub_.ThreadMentions();
+  if (!mentions) {
+    return std::nullopt;
+  }
+  auto latest = mentions->Latest();
+  return latest ? *latest : std::nullopt;
 }
 
 Roe<ThreadMessage> ConversationsFacade::ShareContact(const std::string& thread_id, const std::string& contact_id) {
@@ -997,17 +1030,12 @@ void ConversationsFacade::RetryAttachmentDownload(const std::string& thread_id, 
 namespace {
 std::optional<ChatAttachmentFields> AttachmentFieldsOfMessage(ConversationsHub& hub, const std::string& thread_id,
                                                               const std::string& message_id) {
-  auto page = hub.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto found = hub.Store().GetMessage(thread_id, message_id); // by id: one row, not a 10000-row scan
+  if (!found || !found->has_value() || (*found)->content_type != ChatContentType::Attachment) {
     return std::nullopt;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id == message_id && message.content_type == ChatContentType::Attachment) {
-      if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-        return std::move(*fields);
-      }
-      return std::nullopt;
-    }
+  if (auto fields = ChatPayloadCodec::DecodeAttachmentJson((*found)->payload_json)) {
+    return std::move(*fields);
   }
   return std::nullopt;
 }
@@ -1022,7 +1050,11 @@ std::optional<ConversationsFacade::AttachmentInfo> ConversationsFacade::Attachme
 }
 
 std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                                          const std::string& message_id) {
+                                                                          const std::string& message_id,
+                                                                          bool* made_view) {
+  if (made_view) {
+    *made_view = false;
+  }
   auto fields = AttachmentFieldsOfMessage(hub_, thread_id, message_id);
   if (!fields) {
     return std::nullopt;
@@ -1040,6 +1072,9 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
   EmitAttachmentTransferMetric("open", fields->byte_length, util::NowUnixMs() - open_started_ms, ok);
   if (!ok) {
     return std::nullopt;
+  }
+  if (made_view) {
+    *made_view = true;
   }
   if (fields->byte_length > kMaxDirectAttachmentBytes) {
     hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
@@ -1069,20 +1104,14 @@ std::optional<std::string> ConversationsFacade::AiImageViewPath(const std::strin
 
 bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
                                                            const std::string& message_id) {
-  auto page = hub_.Store().GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto found = hub_.Store().GetMessage(thread_id, message_id);
+  if (!found || !found->has_value() || (*found)->content_type != ChatContentType::Attachment) {
     return true;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id != message_id || message.content_type != ChatContentType::Attachment) {
-      continue;
-    }
-    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      const std::string path = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
-                                                    fields->mime, fields->filename);
-      return !AttachmentSafeToAutoOpen(path, fields->mime);
-    }
-    return true;
+  if (auto fields = ChatPayloadCodec::DecodeAttachmentJson((*found)->payload_json)) {
+    const std::string path =
+        AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime, fields->filename);
+    return !AttachmentSafeToAutoOpen(path, fields->mime);
   }
   return true;
 }

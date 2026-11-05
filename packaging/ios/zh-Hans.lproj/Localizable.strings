@@ -1,3 +1,6 @@
 /* The relay's incoming-call alert (P012): the push carries these keys, the words are here. */
 "CALL_INCOMING_TITLE" = "来电";
 "CALL_INCOMING_BODY" = "有人正在呼叫你";
+/* The relay's new-message alert: generic by design, never names the sender or the content. */
+"MESSAGE_INCOMING_TITLE" = "新消息";
+"MESSAGE_INCOMING_BODY" = "你有一条新消息";

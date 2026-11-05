@@ -1405,3 +1405,24 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Rationale:** Control already reuses messaging. What it lacked was the "live" part (1) and a group-shaped edge onto it (2, 3), and none of that needs a wire change. Acks and a group key would cost a protocol for problems the call family already covers or that the size limit keeps small.
 
 **Consequence:** Phased (PHASES § cl), one commit per step.
+
+---
+
+## V059 — Spotlight one person in Immersive
+
+**Date:** 2026-11-04
+**Status:** Accepted (Hongwei, 2026-11-04). Implemented: `gui/CallSpotlight.h`, `gui/CallActiveSpeaker.h`, `ShellCallChromeRml`, `CallVideoTileRenderer` (fill).
+
+**Context:** Immersive (V031) shows every participant as an equal card. People want one person bigger — the peer in a 1:1 call, the one speaking or the one they care about in a group.
+
+**Decision:**
+1. **A tap on a card spotlights that person.** Their card fills the call area; everyone else lines up in a strip of small cards below, and a tap on one of those spotlights them instead. A grid button in the header goes back to the grid. A tap on the spotlight itself does nothing (a double tap toggles fill / fit, and with a remount between taps a tap-to-leave would toggle twice).
+2. **Defaults.** A 1:1 call's Immersive spotlights the peer (the self-view is a strip card; a tap swaps them). A group call spotlights its **active speaker** (`CallActiveSpeaker`: a peer whose level, `MediaStreamHealth::peak_level`, stays at or above 0.08 for 0.6 s; the spotlit one keeps it at least 3 s and gives it up only once quiet while someone else speaks; when everyone is quiet the last speaker stays) and shows the grid until someone speaks. The user's choice holds while that person is in the call and wins over the speaker; "back to grid" holds until the next tap; all reset with the call.
+3. **Fill or fit.** The spotlit tile covers its area, cropped evenly (`fit="fill"`); a double tap shows the whole frame, letterboxed (`fit`) — for a sender holding the phone the other way. Strip cards fill; grid cards fit, as before.
+4. **The chrome remounts on a spotlight change** (who, fill / fit), like a mode change; the spotlit row and the strip's rows are bound arrays of their own (`call_in_progress_spotlight_rows`, `_strip_rows`), not filters over the roster.
+5. **No cost on the wire or the battery:** the spotlit tile draws the same decoded stream, larger.
+
+**Later:** pinch to zoom in the spotlight; for a sharper group spotlight, a higher layer from that sender (simulcast). The speaking level (0.08) is a first guess: tune it from phone calls (the lab's probes send silence).
+
+**Alternatives rejected:** A draggable floating self-view in 1:1 (a strip card does the job with one layout); tap-the-spotlight-to-leave (see 1).
+

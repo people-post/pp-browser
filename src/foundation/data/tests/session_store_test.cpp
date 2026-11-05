@@ -7,6 +7,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -61,6 +62,22 @@ TEST(SessionStoreTest, SavesAndReloadsConfigAndProfilePreferences) {
 
   EXPECT_TRUE(store.ReloadProfilePrefs());
   EXPECT_EQ(store.Snapshot().profile_prefs.appearance, "dark");
+
+  // Edit Home's choices are written to the profile's preferences.json and read back after a restart.
+  prefs.home_widgets_hidden = {"brief"};
+  prefs.home_widgets_order = {"calls", "favorites"};
+  EXPECT_TRUE(store.SaveProfilePrefs(prefs));
+  auto with_widgets = pbr::UserPreferences::LoadProfile(profile_dir);
+  ASSERT_TRUE(static_cast<bool>(with_widgets));
+  EXPECT_EQ(with_widgets->home_widgets_hidden, std::vector<std::string>{"brief"});
+  EXPECT_EQ(with_widgets->home_widgets_order, (std::vector<std::string>{"calls", "favorites"}));
+
+  // A starred contact stays starred after a restart (device-only, in preferences.json).
+  prefs.starred_contacts = {"contact-7"};
+  EXPECT_TRUE(store.SaveProfilePrefs(prefs));
+  auto with_star = pbr::UserPreferences::LoadProfile(profile_dir);
+  ASSERT_TRUE(static_cast<bool>(with_star));
+  EXPECT_EQ(with_star->starred_contacts, std::vector<std::string>{"contact-7"});
 
   prefs.appearance = "light";
   EXPECT_TRUE(pbr::UserPreferences::SaveProfile(profile_dir, prefs));

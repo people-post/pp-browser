@@ -609,6 +609,36 @@ TEST_F(AgentSessionBriefStreamTest, FollowUpHistoryHasMarkerAndNoImage) {
   EXPECT_EQ(requests[1].history[1].content, "A cat.");
 }
 
+// The ask-AI panel's one-off question (settings "?", DEV/PLAN-ui-batch5-ask-ai.md 5a) runs in the Home session after
+// StartNewConversation: it goes without the earlier Home turns, and its own follow-up keeps it.
+TEST_F(AgentSessionBriefStreamTest, ANewHomeConversationSendsNoEarlierHistory) {
+  Start();
+  Script({Meta(), Token("a"), Done("Earlier answer.")}, BriefAiOutcome::Done);
+  session_->Submit("earlier question");
+  WaitForTurn();
+  ASSERT_TRUE(session_->StartNewConversation());
+  EXPECT_TRUE(session_->conversation().Entries().empty());
+  session_->Submit("What does Send crash reports do?");
+  WaitForTurn();
+  session_->Submit("And is it on by default?");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 3u);
+  EXPECT_TRUE(requests[1].history.empty()) << "the one-off question carries nothing from before";
+  ASSERT_EQ(requests[2].history.size(), 2u) << "its follow-up stays with it";
+  EXPECT_EQ(requests[2].history[0].content, "What does Send crash reports do?");
+}
+
+TEST_F(AgentSessionBriefStreamTest, ANewHomeConversationWaitsForTheRunningTurn) {
+  Start();
+  Script({Meta(), Token("a"), Done("A")}, BriefAiOutcome::Done);
+  session_->Submit("question");
+  EXPECT_FALSE(session_->StartNewConversation()) << "a running turn keeps its conversation";
+  WaitForTurn();
+  EXPECT_TRUE(session_->StartNewConversation());
+}
+
 // --- Home chips: tool payload turns run on the device, no stream and no completions call ---
 // The config's completions endpoint is a closed port, so a model call would surface as an Error event.
 
@@ -1145,6 +1175,26 @@ TEST_F(AgentSessionLocalAppActionTest, HitWithAnImageStillStreams) {
   EXPECT_TRUE(requests[0].image.has_value());
   EXPECT_TRUE(requests[0].capabilities.empty());
   EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+}
+
+// The ask-AI panel's one-off (settings "?") explains in words: the same sentence is not run as an app action, nothing
+// is offered to brief_AI to hand back, and no permission card is left waiting.
+TEST_F(AgentSessionLocalAppActionTest, AnExplanationIsNeverAnAppAction) {
+  StartWithMessagingTool();
+  ASSERT_EQ(session_->SubmitExplanation("加张三为好友"), SubmitOutcome::Started);
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u) << "answered by brief_AI, not run on the device";
+  EXPECT_TRUE(requests[0].capabilities.empty()) << "nothing offered to hand back";
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+  EXPECT_TRUE(session_->CanClose()) << "no permission card or question asked back left behind";
+
+  // The next ordinary Home question is an app action again.
+  session_->Submit("加张三为好友");
+  (void)WaitForTurn();
+  EXPECT_EQ(Requests().size(), 1u);
 }
 
 TEST_F(AgentSessionLocalAppActionTest, HitInTheHomeComposerAlsoSkipsTheStream) {

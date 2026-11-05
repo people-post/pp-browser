@@ -490,5 +490,20 @@ TEST_F(GroupRosterSyncTest, AnOwnersOtherDeviceEndsTheGroupAndNoOneElseCan) {
   EXPECT_EQ(heard.size(), 1u) << "a repeat is heard once";
 }
 
+// G013 amendment: a timed re-ask asks again only while its own check still waits — not once answered, and not when a
+// newer check (a member's message, a restart) began with its own re-asks.
+TEST(GroupRosterSyncReaskTest, OnlyTheCheckStillWaitingIsAskedAgain) {
+  GroupMetadata metadata;
+  metadata.sync_state = GroupSyncState::Checking;
+  metadata.sync_request_id = "req-1";
+  EXPECT_TRUE(group_roster_sync::StillAwaiting(metadata, "req-1"));
+  EXPECT_FALSE(group_roster_sync::StillAwaiting(metadata, "req-0")) << "a newer check began";
+  EXPECT_FALSE(group_roster_sync::StillAwaiting(metadata, "")) << "no request";
+  metadata.sync_state = GroupSyncState::Active;
+  EXPECT_FALSE(group_roster_sync::StillAwaiting(metadata, "req-1")) << "answered";
+  metadata.sync_state = GroupSyncState::Removed;
+  EXPECT_FALSE(group_roster_sync::StillAwaiting(metadata, "req-1"));
+}
+
 } // namespace
 } // namespace pbr

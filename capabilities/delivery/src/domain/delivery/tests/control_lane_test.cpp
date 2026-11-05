@@ -19,10 +19,13 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -161,7 +164,20 @@ TEST_F(ControlLaneTest, ASendToManyReportsEachPeerOnceInOrder) {
                       ++calls;
                       got = std::move(results);
                     });
-  ASSERT_TRUE(AppRuntime::DrainWorkersThenUI());
+  // On the results and the relay's sends, not a drain marker: the critical lane has more than one thread, so the
+  // marker can run while a send still does.
+  const auto until = [](const std::function<bool()>& done) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!done() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return done();
+  };
+  ASSERT_TRUE(until([&] {
+    std::lock_guard lock(mu);
+    return calls == 1;
+  }));
+  ASSERT_TRUE(until([&] { return relay_.To().size() == 2u; }));
   std::lock_guard lock(mu);
   EXPECT_EQ(calls, 1);
   ASSERT_EQ(got.size(), 3u);

@@ -1,5 +1,8 @@
 #include "app/node/NodeMeshPublish.h"
 
+#include "amp/L1/Types.h"
+#include "foundation/product/AppVersion.h"
+
 #include "lib/net/HttpClient.h"
 #include "domain/registration/RegistrationClient.h"
 #include "lib/net/RegistrationSignPayload.h"
@@ -44,7 +47,7 @@ public:
       }
       body.set("multiaddrs", ArrayValue(std::move(addrs)));
     }
-    ApplyPublish(body, publish);
+    ApplyRegistrationPublishOpts(body, publish);
     const auto response = HttpClient::Post(base_url_ + "/v1/register/start", DumpJson(body),
                                            {{"Content-Type", "application/json"}});
     if (!response) {
@@ -102,7 +105,7 @@ public:
       }
       body.set("multiaddrs", ArrayValue(std::move(addrs)));
     }
-    ApplyPublish(body, publish);
+    ApplyRegistrationPublishOpts(body, publish);
     const auto response = HttpClient::Post(base_url_ + "/v1/register/finish", DumpJson(body),
                                            {{"Content-Type", "application/json"}});
     if (!response) {
@@ -145,20 +148,6 @@ public:
   }
 
 private:
-  static void ApplyPublish(Object& body, const RegistrationPublishOpts& publish) {
-    if (!publish.entity_kind.empty()) {
-      body.set("entity_kind", publish.entity_kind);
-    }
-    if (publish.has_capabilities) {
-      Object caps;
-      caps.set("circuit_relay", publish.capabilities.circuit_relay);
-      caps.set("media_relay", publish.capabilities.media_relay);
-      caps.set("dht", publish.capabilities.dht);
-      caps.set("ledger_gateway", publish.capabilities.ledger_gateway);
-      body.set("capabilities", std::move(caps));
-    }
-  }
-
   std::string base_url_;
 };
 
@@ -184,6 +173,8 @@ Roe<bool> PublishOrRenewMeshNodeListing(const AppConfig& config, IdentityStore& 
   publish.capabilities.media_relay = config.mesh.capabilities.media_relay;
   publish.capabilities.dht = config.mesh.capabilities.dht;
   publish.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
+  publish.amp_wire = pp::adp::kWireVersion;
+  publish.node_version = AppVersionString();
 
   std::string nick = nickname;
   if (nick.empty()) {

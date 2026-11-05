@@ -72,6 +72,9 @@ private:
   static constexpr int64_t kRecoveryPhraseShownMs = 2 * 60 * 1000;
 
   bool diagnostics_sending_ = false;
+  /** Hidden in the UI demo app (it uploads nothing). */
+  bool show_diagnostics_send_ = true;
+  bool show_change_pin_ = true;
   ui::String diagnostics_send_label_;
   ui::String diagnostics_last_id_;
   ui::String diagnostics_last_label_;

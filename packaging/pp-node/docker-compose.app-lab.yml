@@ -38,6 +38,30 @@ services:
     ports:
       - "127.0.0.1:${PP_APP_LAB_HOP_STATUS_PORT:-18718}:18518"
 
+  # A second seed, for the scenarios where a user is near its own relay (call_path_*_two_hops): the same image
+  # and settings as hop, on 198.51.100.30, /status on 127.0.0.1:${PP_APP_LAB_HOP2_STATUS_PORT:-18728}. Not in
+  # the lab directory: only users given it as a bootstrap seed know it, so other scenarios still see one seed.
+  hop2:
+    image: pp-node:local
+    environment:
+      PP_BROWSER_PIN: local-test-pin
+      PP_NODE_AMP_UDP_PORT: 18517
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      PP_NODE_STATUS_ADDR: 0.0.0.0:18518
+      PP_NODE_CAP_CIRCUIT_RELAY: 1
+      PP_NODE_CAP_MEDIA_RELAY: 1
+      PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP2_ADVERTISE:-}
+      PP_NODE_MESH_PUBLISH: ${PP_APP_LAB_HOP2_PUBLISH:-false}
+      PP_NODE_REGISTRATION_BASE_URL: http://198.51.100.20:9097/api/relay
+      PP_NODE_LOG_LEVEL: ${PP_APP_LAB_HOP_LOG_LEVEL:-info}
+      PP_NODE_BOOTSTRAP_PEERS: /ip4/203.0.113.1/udp/443/adp/1.0.0/p2p/QmW6e19wEv2FozTzQXxCee7USqQLE7HAvcF77es4brdSWd
+    networks:
+      lab:
+        ipv4_address: 198.51.100.30
+    ports:
+      - "127.0.0.1:${PP_APP_LAB_HOP2_STATUS_PORT:-18728}:18518"
+    depends_on: [hop]
+
   relay-db:
     image: mongo:8-noble
     environment:

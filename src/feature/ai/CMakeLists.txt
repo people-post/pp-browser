@@ -4,6 +4,7 @@ pp_browser_add_feature_library(pp_feature_ai
     AgentSessions.cpp
     AgentUiPorts.cpp
     AiTurnPool.cpp
+    ArticleFeedFetch.cpp
     TurnExecutor.cpp
   PUBLIC_LIBS
     pp_lib_ai_tools

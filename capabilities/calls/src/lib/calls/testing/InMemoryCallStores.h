@@ -26,6 +26,7 @@ public:
   Roe<std::optional<CallSession>> LoadSession(const std::string& call_id) const override;
   Roe<std::vector<CallSession>> ListActiveSessions() const override;
   Roe<std::vector<CallSession>> ListSessionsForGroup(const std::string& group_id, size_t limit = 20) const override;
+  Roe<std::vector<CallSession>> ListRecentSessions(size_t limit) const override;
 
   Roe<void> UpsertParticipant(const CallParticipant& participant) const override;
   Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const override;

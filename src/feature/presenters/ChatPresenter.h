@@ -38,10 +38,25 @@ struct ChatSessionRow {
   bool unread_dot = false;
   /** An unread message here mentions us (G015): the row says "You were mentioned". */
   bool mentioned = false;
+  /** How many unread messages here mention us (Home's Mentions widget). */
+  int mention_count = 0;
   bool pinned = false;
   bool muted = false;
   std::string date_label;
+  /** Last activity, unix ms (Home's Recent chats and Favorites order by it, whatever is pinned). */
+  int64_t updated_at = 0;
   bool active = false;
+  /** A direct chat with someone who is not a saved contact (so not a blocked one either): a possible new friend. */
+  bool from_stranger = false;
+  /** A direct chat with a saved contact this device blocked: the row says so instead of the last message. */
+  bool blocked = false;
+  /** Letter and colour index (0..7) of the round avatar; the title decides both. */
+  std::string avatar_letter;
+  int avatar_tone = 0;
+  /** Local file of the person's cached profile photo (direct chats with a saved contact); empty: show the letter. */
+  std::string icon_path;
+  /** The saved contact a direct chat is with; empty for anyone else, groups and the AI. */
+  std::string contact_id;
 
   bool operator==(const ChatSessionRow&) const = default;
 };
@@ -77,6 +92,38 @@ struct CloseChatPlan {
 };
 const char* CloseChatPlanKindName(CloseChatPlan::Kind kind);
 
+/** Someone the owner may hand the group to when leaving (reachable, on the roster, not this device). */
+struct OwnerLeaveCandidate {
+  std::string identity;
+  std::string name;
+  /** Seed for the letter-avatar colour (the person's account id when they are a contact). */
+  std::string stable_id;
+
+  bool operator==(const OwnerLeaveCandidate&) const = default;
+};
+
+/**
+ * The phone's "choose a new owner" sheet (DEV/PLAN-ui-batch8-group-pages.md 3). Empty `thread_id`: the owner is not
+ * leaving this chat (not a group, not the owner, dissolved). No candidates: nobody can take over now, so the sheet
+ * offers only Dissolve.
+ */
+struct OwnerLeaveSheet {
+  std::string thread_id;
+  std::string group_id;
+  std::vector<OwnerLeaveCandidate> candidates;
+
+  bool operator==(const OwnerLeaveSheet&) const = default;
+};
+/** From the close plan (LeaveAsOwner or Dissolve), each successor named by `name_of`, sorted by name. */
+OwnerLeaveSheet BuildOwnerLeaveSheet(const std::string& thread_id, const CloseChatPlan& plan,
+                                     const std::function<std::string(const std::string& identity)>& name_of);
+/** The confirm, asked once after a pick: "Make {name} the owner and exit the group?". */
+std::string HandOverConfirmText(const std::string& name);
+/** The one picked left or went out of reach meanwhile: "{name} is no longer in the group. Choose someone else." */
+std::string HandOverGoneText(const std::string& name);
+/** `successor` can still take the group over, by a close plan read now. */
+bool HandOverStillPossible(const CloseChatPlan& plan, const std::string& successor);
+
 /** A group's side of the open chat's peer sheet. */
 struct ChatGroupSheet {
   /** This device owns the group. */
@@ -91,6 +138,8 @@ struct GroupMemberRow {
   std::string identity;
   /** Contact name, else the server nickname, else the short account id. */
   std::string title;
+  /** Seed for the letter-avatar colour: the contact's account id, else the member identity. */
+  std::string stable_id;
   /** The saved contact's id; empty for someone who is not a contact yet. */
   std::string contact_id;
   bool is_owner = false;
@@ -124,6 +173,80 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
                                               const std::string& card_nickname = {});
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
+
+/** One row of the owner's "Group admin" card on a member's profile (phones). */
+enum class GroupMemberAction { Reinvite, Remove };
+
+/** The grey note beside Re-invite: why the person is offered one. */
+enum class GroupReinviteNote { None, NotJoined, Unreachable };
+
+/** What a tap on someone in a group (member list, group info's member card, their avatar in the chat) does on a phone. */
+struct GroupMemberTap {
+  enum class Kind {
+    /** Our own row. */
+    Nothing,
+    /** Their profile sheet, for everyone (Kenneth 2026-11-04: the owner too, no menu first). */
+    OpenProfile,
+  };
+  Kind kind = Kind::Nothing;
+  /** The owner's "Group admin" card at the bottom of that profile; empty for anyone else. */
+  std::vector<GroupMemberAction> admin_actions;
+  GroupReinviteNote reinvite_note = GroupReinviteNote::None;
+
+  bool operator==(const GroupMemberTap&) const = default;
+};
+/**
+ * The profile for anyone but ourselves. The owner's card: Re-invite (a contact still waiting, noted "not joined yet",
+ * or out of reach, noted "can't be reached"), Remove (anyone on the roster). Handing the group over is not here: it
+ * happens when the owner leaves.
+ */
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
+
+/** What the phone's group info sheet is built from (ChatPresenter::GroupInfoOf reads it; tests give it). */
+struct GroupInfoFacts {
+  std::string thread_id;
+  std::string group_id;
+  /** The name the chat shows (this device's own name for it when one is set). */
+  std::string title;
+  /** This device renamed the group for itself ("Restore group name" then shows). */
+  bool has_local_title = false;
+  bool dissolved = false;
+  bool is_owner = false;
+  bool muted = false;
+  /** Everyone on the roster, this device too (its row is `self_identity`'s, already titled "You"). */
+  std::vector<GroupMemberRow> members;
+  std::string self_identity;
+};
+
+/** The group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1): which rows show, and the first members. */
+struct GroupInfoScreen {
+  std::string thread_id;
+  std::string group_id;
+  std::string title;
+  bool dissolved = false;
+  bool is_owner = false;
+  bool muted = false;
+  /** On the roster ("N people", "N members", "See all N members"). */
+  int member_count = 0;
+  /** The member card's first rows: the owner first, then as the member list sorts them. */
+  std::vector<GroupMemberRow> preview;
+  std::string self_identity;
+  /** Hidden for a dissolved group (G016): members, calls, renaming, leaving. */
+  bool show_members = false;
+  bool show_calls = false;
+  bool show_rename = false;
+  /** The owner renames the group for everyone; anyone else names it for themselves. */
+  bool rename_for_everyone = false;
+  bool show_restore_name = false;
+  bool show_add_member = false;
+  bool show_leave = false;
+  bool show_dissolve = false;
+
+  bool operator==(const GroupInfoScreen&) const = default;
+};
+/** The member card shows at most this many people; "See all" opens the whole list. */
+inline constexpr size_t kGroupInfoPreviewMembers = 5;
+GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts);
 
 /** Visual chat type of a thread: ai | private | public | group. */
 std::string ChatSessionKindName(const Thread& thread);
@@ -212,6 +335,10 @@ public:
   /** G016: the owner dissolves the group for everyone. The chat stays (read-only), so nothing is closed. */
   Roe<void> DissolveGroup(const std::string& group_id);
   Roe<void> HandOverAndClose(const std::string& thread_id, const std::string& group_id, const std::string& successor);
+  /** The owner's "choose a new owner" sheet for `thread_id`, read now (BuildOwnerLeaveSheet). */
+  OwnerLeaveSheet OwnerLeaveSheetOf(const std::string& thread_id);
+  /** `successor` can still take `thread_id`'s group over (asked again right before handing it over). */
+  bool CanHandOverTo(const std::string& thread_id, const std::string& successor);
 
   /** One chat's settings (defaults when it has none); nullopt when the store cannot be read. */
   std::optional<ThreadLocalPrefs> PrefsOf(const std::string& thread_id);
@@ -226,6 +353,8 @@ public:
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
+  /** The phone's group info sheet for group chat `thread_id` (an empty screen when it is not one). */
+  GroupInfoScreen GroupInfoOf(const std::string& thread_id);
   /**
    * The peer sheet's group actions. A failure's message is already the localized text to show (the engine's
    * own wording goes to the log only).

@@ -6,6 +6,7 @@
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
 #include "gui/SettingsCasLibrary.h"
+#include "gui/SettingsChoicePage.h"
 #include "gui/SettingsHost.h"
 #include "gui/SettingsProfileActions.h"
 #include "gui/SettingsOwnDevices.h"
@@ -61,10 +62,19 @@ public:
 
   /** App fills ports (session, messaging views, register, UPnP, …). Not a process singleton. */
   void BindCommands(SettingsCommands commands);
+  /**
+   * A "?" beside a hard setting: phones ask the AI in the ask-AI panel (a one-off question; the panel offers PP 客服
+   * too), the desktop asks PP 客服 (sends the question; the answer arrives in that chat).
+   */
+  void OnAskSettingHelp(const std::string& label_key);
   /** Shell layout / navigation. Clear via BindShellNavigation({}). */
   void BindShellNavigation(ShellNavigationPorts ports);
   /** Toast / dialog feedback. Clear via BindShellFeedback({}). */
   void BindShellFeedback(ShellFeedbackPorts ports);
+  /** Developer builds only: Settings -> About -> Engine test. Clear via BindOpenUiPerfTest({}). */
+  void BindOpenUiPerfTest(std::function<void()> open);
+  /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
+  void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
@@ -73,11 +83,15 @@ public:
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
   void OnMeSurfaceClosed();
   void SyncLayoutMode();
-  void OnAccountSheetOpened();
-  void OnAccountSheetClosed();
   /** Clear detail UI without touching the shell local-back stack (used by sheet dismiss). */
   void ApplyBackToListUi();
   void OnDetailDismissed();
+  /** Re-reads the "Blocked" row's count (the blocked list closed, or a person was blocked or unblocked). */
+  void RefreshBlockedCount();
+  /** Phones: the open section's mount was emptied by a shell remount (a page pushed over it and popped). */
+  bool SheetMountEmpty() const;
+  /** Phones: Account & security is the open section (change PIN, recovery phrase: the AI dot keeps off). */
+  bool ShowsSecuritySection() const { return show_detail_ && selected_id_ == "security"; }
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
@@ -86,6 +100,8 @@ public:
   void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
   void OpenNetworkSettings();
+  /** Me → `section_id` from elsewhere in the app (Home's Security widget opens "security"). */
+  void OpenSection(const std::string& section_id);
   /** Refresh reachability Connection card via SettingsCommands ports. */
   void SyncReachability();
   /** Persist skip/ack for the Me → Network reachability nudge (condition-keyed). */
@@ -124,6 +140,8 @@ private:
     ui::String backend_label;
     bool backend_restart_pending = false;
     bool backend_is_custom = false;
+    /** Hidden in the UI demo app (BackendSwitchVisible). */
+    bool show_backend_switch = true;
     ui::String direct_connections = "contacts";
     ui::String direct_connections_label;
     ui::String trusted_relays_only = "off";
@@ -150,6 +168,8 @@ private:
     ui::String stay_connected = "off";
     /** The "Stay connected" row shows (Android: phones without a push service). */
     bool stay_connected_available = false;
+    /** kDevToolsBuild: the About page shows the developer-only rows. */
+    bool dev_tools_available = false;
     ui::String brief_llm_key_masked;
     ui::String appearance = "system";
     ui::String appearance_label = "System";
@@ -206,9 +226,16 @@ private:
   void ToggleShowNotifications();
   void ToggleShowNotificationPreview();
   void ToggleStayConnected();
-  void ToggleReduceTransparency();
+  /** Me → Appearance → Transparency: flips the reduce_transparency pref (the switch shows it inverted). */
+  void ToggleTransparency();
   void ToggleCallDiagnostics();
   void ToggleShowAdvancedSettings();
+  /** Me → AI assistant: the AI dot's switch, look (`a`–`d`) and size (`s` / `m` / `l`), saved to the profile prefs at once. */
+  void ToggleAiDot();
+  void SetAiDotLook(const std::string& look);
+  /** "Assistant size": the pushed choice page (phones) with small / medium / large. */
+  void OnChooseAiDotSize(ui::Event& ev);
+  void SaveAiDot(bool shown, const std::string& look, const std::string& size);
   void ToggleCrashReports();
   void ToggleAutoRenewRegistration();
 
@@ -241,6 +268,13 @@ private:
   void OpenSettingsDetailPane();
   bool CloseSettingsDetailPane();
   void OnBackToList();
+  /** Phones: Security's own pages ("change_pin", "transfer"), pushed over the section with the local-back stack. */
+  void OpenSecurityPage(const std::string& page);
+  void OnCloseSecurityPage();
+  /** Drops the open security page (state only; the local-back entry is the caller's). */
+  void ApplyCloseSecurityPage();
+  /** Closes the security page with no animation and forgets its local-back entry (the detail is going away). */
+  void ResetSecurityPage();
   void OnResetSection(const std::string& section_id);
   void PerformResetSection(const std::string& section_id);
   /** `show_toast=false` for switches: the knob moving is the feedback (Kenneth 2026-10-14). */
@@ -257,6 +291,14 @@ private:
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);
+  /**
+   * A row that picks one value: on a phone the choice page (SettingsChoicePage, pushed like Security's pages), on the
+   * desktop the float menu under the row as before. `apply` is the same path for both.
+   */
+  void ShowChoice(ui::Event& ev, const std::string& kind, const std::string& title, const std::string& foot,
+                  const std::string& help_topic, std::vector<SettingsChoicePage::Option> options,
+                  std::function<void(const std::string&)> apply);
+  void OnPickChoice(const std::string& id);
   void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
   void OnChooseLanguage(ui::Event& ev);
@@ -279,8 +321,25 @@ private:
   std::vector<SectionListRow> sections_;
   ui::String selected_id_;
   ui::String selected_title_;
-  bool in_account_sheet_ = false;
   bool show_detail_ = false;
+  /**
+   * Phones: the page pushed over the section ("" none; Security's "change_pin", "transfer"; "choice", a pick-one-value
+   * page of any section) and its title.
+   */
+  ui::String security_page_;
+  ui::String security_page_title_;
+  SettingsChoicePage choice_page_;
+  ui::String choice_foot_;
+  ui::String choice_help_topic_;
+  /** Each pick schedules the page's way back; an older schedule finding a newer pick (or another page) does nothing. */
+  uint64_t choice_pop_generation_ = 0;
+  /** Security's "Blocked" row: how many people are blocked (0: no number shown). */
+  int blocked_count_ = 0;
+  /** Me → AI assistant (phones): the AI dot's switch, its look and size (with the size's name for its row). */
+  bool ai_dot_shown_ = true;
+  ui::String ai_dot_look_ = "b";
+  ui::String ai_dot_size_ = "m";
+  ui::String ai_dot_size_label_;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
@@ -297,6 +356,8 @@ private:
   SettingsCommands commands_;
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
+  std::function<void()> open_ui_perf_test_;
+  std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
@@ -305,9 +366,15 @@ private:
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
   StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {
     const ShellChromeSnapshot chrome = ChromeSnapshot();
-    return selected_id_ == "storage" && (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open);
+    return selected_id_ == "storage" && chrome.nav_tab == NavTab::Me;
   }};
 
 };
+
+/**
+ * What a "?" beside a setting asks PP 客服: "What does “<label>” do?" in the UI language. `label_key` is the
+ * setting's own label key (a "settings." key); anything else asks nothing ("").
+ */
+std::string SettingHelpQuestion(const std::string& label_key);
 
 } // namespace pbr

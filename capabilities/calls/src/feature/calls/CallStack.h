@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/people/MeshNodeReputation.h"
 #include "mesh/types/AddressDisclosure.h"
 #include "common/MeshConfig.h"
 #include "lib/media/MediaEngine.h"
@@ -74,6 +75,8 @@ struct CallStackDeps {
 
   /** Cached mesh_node rows from Brief directory (n-dir). */
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
+  /** N032: this profile's verdicts on mesh nodes (the media hop ranking demotes what it distrusts). */
+  std::function<std::shared_ptr<MeshNodeReputation>()> node_reputation;
   /** DHT peer_routing cache (n2-caps); directory-shaped nodes. */
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** Reachability seed probe — when false, hop policy skips org seed candidates. */

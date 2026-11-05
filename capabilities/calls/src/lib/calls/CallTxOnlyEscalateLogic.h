@@ -12,6 +12,7 @@ namespace pbr {
  * healthy same-LAN direct leg is not torn down before the peer's capture starts.
  */
 inline constexpr int64_t kCallTxOnlyEscalateGraceMs = 15000;
+/** Packets sent before "the peer sends nothing back" can be said: 3.2 s of audio at 40 ms packets. */
 inline constexpr uint64_t kCallTxOnlyEscalateMinTxFrames = 80;
 
 /**

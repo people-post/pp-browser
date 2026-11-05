@@ -23,6 +23,8 @@ struct CallChromeSnapshot {
 struct ShellCallChromePorts {
   /** Copy snapshot into ShellHost::State and apply Remount/Dirty from update. */
   std::function<void(const CallChromeSnapshot& snapshot, CallChromeUpdate update)> apply_snapshot;
+  /** The shell is in its phone layout (the full-screen call page, ShellCallChromeRml). Unset: false. */
+  std::function<bool()> phone_layout;
 };
 
 class ShellHost;

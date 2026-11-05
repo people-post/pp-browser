@@ -113,3 +113,15 @@ TEST(GroupInvitedRowTest, InviteeAlreadyOnTheRosterGetsNoRow) {
   const std::unordered_set<std::string> roster = {"acct:bob"};
   EXPECT_FALSE(BuildInvitedRow(Invite("acct:bob", 0), roster, std::nullopt, 10).has_value());
 }
+
+// One person, one colour: a member row seeds the avatar with the same id the Contacts list and the chat use (the
+// contact's account id), even when the roster stores the contact id, and a remark does not change it.
+TEST(GroupMemberRowTest, AvatarSeedIsTheContactsAccountIdNotTheRosterIdentity) {
+  Contact contact = SavedContact("demo-contact-10", "David");
+  contact.ids = {{mesh::ContactIdKind::Account, "account:david-0001", true}};
+  const GroupMemberRow row = BuildGroupMemberRow(Member("demo-contact-10"), contact, false);
+  EXPECT_EQ(row.stable_id, "account:david-0001");
+  contact.display_name = "Dave (work)";
+  EXPECT_EQ(BuildGroupMemberRow(Member("demo-contact-10"), contact, false).stable_id, "account:david-0001");
+  EXPECT_EQ(BuildGroupMemberRow(Member("account:stranger"), std::nullopt, false).stable_id, "account:stranger");
+}

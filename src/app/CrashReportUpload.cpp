@@ -5,6 +5,8 @@
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/CrashReportEnvelope.h"
 #include "common/Logger.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "common/PbrCompat.h"
 
 #include <chrono>
@@ -36,8 +38,8 @@ void MaybeUploadPendingCrashReport(const std::string& data_dir,
                                    const std::string& profile_data_dir,
                                    bool crash_reports_enabled,
                                    const std::string& relay_base_url) {
-  if (data_dir.empty() || !CrashDump::HasPending(data_dir)) {
-    return;
+  if (!UploadAllowed(kUiDemoBuild) || data_dir.empty() || !CrashDump::HasPending(data_dir)) {
+    return;  // the UI demo app uploads nothing, whatever address the profile cache holds
   }
 
   auto log = logging::getLogger("CrashReport");

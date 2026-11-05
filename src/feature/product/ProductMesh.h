@@ -7,6 +7,7 @@
 #include "mesh/media_plane/MeshMediaRelay.h"
 
 #include <memory>
+#include <mutex>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -14,6 +15,8 @@ namespace pbr {
 
 /** Last-good directory nodes file; per profile, hence per backend. */
 std::string MeshDirectoryNodesPath(const std::string& profile_data_dir);
+/** `{profile data dir}/mesh_node_reputation.json` (N032). */
+std::string MeshNodeReputationPath(const std::string& profile_data_dir);
 
 /**
  * The app's mesh: one `MeshHost`, built for the profile's role and lent to the conversations hub
@@ -45,6 +48,7 @@ public:
   void RefreshDirectory() override;
   void MaybeRefreshDirectory() override;
   void StopDirectoryCache() override;
+  std::shared_ptr<MeshNodeReputation> NodeReputation() const override;
   mesh::MeshConnectivity& Connectivity() override { return *connectivity_; }
   /** The media relay client (calls and broadcast). */
   mesh::MeshMediaRelay& MediaRelay() { return *media_relay_; }
@@ -78,6 +82,9 @@ private:
   std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   /** The directory's mesh nodes, for the profile's lifetime (across mesh restarts). */
   std::unique_ptr<mesh::MeshDirectoryCache> directory_cache_;
+  /** N032: this profile's verdicts on mesh nodes; replaced with the directory cache (a profile switch). */
+  mutable std::mutex reputation_mu_;
+  std::shared_ptr<MeshNodeReputation> node_reputation_ = std::make_shared<MeshNodeReputation>();
   /** A node tries UPnP on its first start only. */
   bool upnp_auto_tried_ = false;
 };

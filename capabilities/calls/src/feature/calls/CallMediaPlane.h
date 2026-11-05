@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/people/MeshNodeReputation.h"
 #include "common/MeshConfig.h"
 #include "lib/media/MediaEngine.h"
 #include "lib/calls/ICallSessionStore.h"
@@ -42,6 +43,8 @@ struct CallMediaPlaneDeps {
   std::function<mesh::MeshHost*()> mesh;
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
+  /** N032: this profile's verdicts on mesh nodes (the media hop ranking demotes what it distrusts). */
+  std::function<std::shared_ptr<MeshNodeReputation>()> node_reputation;
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   std::function<bool()> seed_dial_ok;
   /** Stack computes advertise set (role + ephemeral desire + MeshHost). */

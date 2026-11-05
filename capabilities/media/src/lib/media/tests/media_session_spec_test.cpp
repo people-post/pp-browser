@@ -11,6 +11,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -100,6 +101,54 @@ TEST_F(MediaSessionSpecTest, RemoteAudioTracksAreCapped) {
   EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "an existing track still receives";
   Deliver(MediaEngine::kMaxRemoteAudioTracks + 100, 1);
   EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "a dropped stream is not counted";
+}
+
+// A029: a sent audio packet holds 40 ms — half the packets, and half the per-packet headers, of 20 ms.
+TEST_F(MediaSessionSpecTest, SentAudioPacketsHoldFortyMs) {
+  std::mutex mu;
+  std::vector<int> samples;
+  ASSERT_TRUE(engine_.Start("session:cast", Spec::CaptureOnly(), [&](const MediaEngine::MediaPacket& pkt) {
+    std::lock_guard lock(mu);
+    samples.push_back(
+        opus_packet_get_nb_samples(pkt.payload.data(), static_cast<opus_int32>(pkt.payload.size()), 48000));
+  }));
+  EXPECT_TRUE(WaitFor(
+      [&] {
+        std::lock_guard lock(mu);
+        return samples.size() >= 3;
+      },
+      std::chrono::seconds(2)));
+  engine_.Stop();
+  std::lock_guard lock(mu);
+  for (const int n : samples) {
+    EXPECT_EQ(n, 48000 * 40 / 1000);
+  }
+}
+
+// A peer on a 20 ms build and one on 40 ms both play: the receiver reads each packet's length.
+TEST_F(MediaSessionSpecTest, ReceivesTwentyAndFortyMsPackets) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  int err = 0;
+  OpusEncoder* enc = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
+  ASSERT_EQ(err, OPUS_OK);
+  std::vector<int16_t> pcm(1920, 0);
+  std::vector<unsigned char> out(4000);
+  const int n = opus_encode(enc, pcm.data(), 1920, out.data(), static_cast<int>(out.size()));
+  opus_encoder_destroy(enc);
+  ASSERT_GT(n, 0);
+  const std::vector<uint8_t> forty(out.begin(), out.begin() + n);
+  for (uint32_t seq = 1; seq <= 5; ++seq) {
+    Deliver(42, seq); // 20 ms
+    MediaEngine::MediaPacket pkt;
+    pkt.stream_id = 43;
+    pkt.channel_id = mesh::kMediaChannelAudio;
+    pkt.seq = seq;
+    pkt.payload = forty;
+    engine_.OnInboundPacket(pkt);
+  }
+  const auto health = engine_.HealthSnapshot();
+  EXPECT_EQ(health.stream_count, 2u);
+  EXPECT_EQ(health.rx_audio_frames, 10u);
 }
 
 // Broadcaster shape: capture → encode → send; inbound packets are not decoded.

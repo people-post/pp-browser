@@ -1,12 +1,16 @@
 #include <stdexcept>
 #include "gui/CallController.h"
 
+#include <chrono>
+
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/AudioSession.h"
 #include "lib/calls/CallMediaAdaptation.h"
 #include "lib/media/IMediaView.h"
 #include "lib/media/CameraCaptureOrientation.h"
 #include "lib/media/DeviceVitals.h"
+#include "lib/media/ThreadCpu.h"
+#include "gui/UiFrameStats.h"
 #include "common/media/CallMediaHealth.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/calls/CallHopAttachLogic.h"
@@ -14,6 +18,8 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/people/ContactTypes.h"
 #include "foundation/runtime/AppLifecycle.h"
+#include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/CallSystemUi.h"
 #include "foundation/platform/IAssetLocator.h"
@@ -25,6 +31,9 @@
 #include "lib/calls/CallLifecycleTypes.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
+#include "gui/CallDemoScenes.h"
+#include "gui/chat/MessageTimeLabel.h"
+#include "foundation/product/DevTools.h"
 #include "gui/CallMetricsTracker.h"
 #include "lib/ui/CallConflictCopy.h"
 #include "lib/calls/CallMediaErrorText.h"
@@ -44,6 +53,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -98,7 +108,24 @@ constexpr int64_t kPeerVideoLiveMs = 500;
 /** A video call shows "Starting video…" at most this long while it waits for the first frame. */
 constexpr int64_t kVideoStartMs = 10'000;
 
-CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
+/** One key for an avatar written into the call page's markup: a change remounts it. */
+std::string AvatarKey(const bool group, const bool has_avatar, const ui::String& src, const ui::String& letter,
+                      const int tone) {
+  return std::string(group ? "g" : "p") + (has_avatar ? std::string(src.c_str()) : std::string(letter.c_str())) +
+         "|" + std::to_string(tone);
+}
+
+std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
+  std::string key;
+  for (const CallRosterParticipantState& p : roster) {
+    key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
+           (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") +
+           AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
+  }
+  return key;
+}
+
+CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call, const bool phone) {
   return {
       .ring_active = ring.active,
       .in_call_active = in_call.active,
@@ -138,12 +165,15 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_roster = in_call.show_roster,
       .in_call_show_invite = in_call.show_invite,
       .in_call_show_retry = in_call.show_retry,
+      .in_call_calling = in_call.calling,
       .in_call_show_speaker = in_call.show_speaker,
       .in_call_show_camera = in_call.show_camera,
       .in_call_show_flip = in_call.show_flip,
       .in_call_participant_count = in_call.participant_count,
       .in_call_status_hint = in_call.status_hint.c_str(),
       .in_call_mode = in_call.mode,
+      .in_call_spotlight = in_call.spotlight_stream.c_str(),
+      .in_call_spotlight_fill = in_call.spotlight_fill,
       .in_call_minimized_corner = in_call.minimized_corner,
       .in_call_quality_bars = in_call.quality_bars,
       .in_call_quality_ok = in_call.quality_ok,
@@ -153,8 +183,43 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_quality_hint = in_call.quality_hint.c_str(),
       .in_call_show_debug_subtitle = in_call.show_debug_subtitle,
       .in_call_debug_subtitle = in_call.debug_subtitle.c_str(),
+      .in_call_roster = RosterKey(in_call.roster),
+      .phone = phone,
+      .ring_phone_title = ring.phone_title.c_str(),
+      .ring_phone_subtitle = ring.phone_subtitle.c_str(),
+      .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
+      .in_call_phone_title = in_call.phone_title.c_str(),
+      .in_call_video = in_call.video,
+      .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src,
+                                   in_call.peer_avatar_letter, in_call.peer_avatar_tone) +
+                         AvatarKey(false, in_call.self_has_avatar, in_call.self_avatar_src,
+                                   in_call.self_avatar_letter, in_call.self_avatar_tone),
+      .in_call_phone_failed = in_call.phone_failed,
+      .in_call_failed_text = in_call.failed_text.c_str(),
+      .in_call_story_active = in_call.story_active,
+      .in_call_story_stage = in_call.story_stage,
+      .in_call_story_steps = std::string(in_call.story_step1.c_str()) + "|" + in_call.story_step2.c_str() + "|" +
+                             in_call.story_step3.c_str(),
+      .in_call_story_sheet_open = in_call.story_sheet_open,
+      .in_call_story_lines = in_call.story_lines,
+      .in_call_story_how = in_call.story_how.c_str(),
+      .in_call_result_text = in_call.result_text.c_str(),
+      .in_call_result_fading = in_call.result_fading,
+      .in_call_signal_shown = in_call.signal_shown,
+      .in_call_signal_bars = in_call.signal_bars,
+      .in_call_signal_tone = in_call.signal_tone,
+      .in_call_signal_word = in_call.signal_word.c_str(),
+      .in_call_notice_text = in_call.notice_text.c_str(),
+      .in_call_notice_warn = in_call.notice_warn,
+      .in_call_notice_fading = in_call.notice_fading,
   };
 }
+
+/** "1.8" from tenths of a second. */
+std::string FormatTenths(const int64_t tenths) {
+  return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10);
+}
+
 
 int QuantizeAudioLevel(float level) {
   if (level < 0.008f) {
@@ -246,9 +311,14 @@ void CallController::BindToMessaging() {
 }
 
 void CallController::Tick() {
+  if constexpr (kUiDemoBuild) {
+    if (RenderDemoScene()) {
+      return;  // the demo app's scripted call (PP_DEMO_CALL) stands in for the presenter
+    }
+  }
   presenter_.Tick();  // expired rings; the in-call screen (Calling… / timer / levels) every frame
   const int64_t now = util::NowUnixMs();
-  if (ring_.active) {
+  if (ring_.active && !phone_layout_) {  // the phone ring page has no pulse: no dirty, no forced frame
     if (now - last_pulse_toggle_ms_ >= 600) {
       ring_.pulse = !ring_.pulse;
       last_pulse_toggle_ms_ = now;
@@ -262,6 +332,10 @@ void CallController::Tick() {
     const bool call_live = ring_.active || !presenter_.ActiveCallId().empty() ||
                            (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
     EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
+    EmitPerfThreads(now);
+  } else {
+    perf_sample_ms_ = 0;
+    perf_thread_cpu_.clear();
   }
   // UI-stuck probe only while a call is tracked (a thread posting a ping every 500 ms).
   if (metrics_.Tracking() && !ui_probe_.Running()) {
@@ -272,6 +346,19 @@ void CallController::Tick() {
   }
 }
 
+void CallController::BindVideoFrameWake(IMediaView& media) {
+  if (video_wake_bound_ == &media) {
+    return;
+  }
+  video_wake_bound_ = &media;
+  // Any thread (the camera's, a decoder's): a new frame to draw. Nothing else wakes the frame loop for it.
+  media.SetOnVideoFrame([last = std::make_shared<std::atomic<int64_t>>(0)]() {
+    if (TakeVideoFrameWake(*last, util::NowUnixMs())) {
+      Backend::RequestForceFrame();
+    }
+  });
+}
+
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
   // UIDevice / getrusage: every couple of seconds is plenty for power and thermal trends.
   if (vitals_read_ms_ == 0 || now_ms - vitals_read_ms_ >= 2000) {
@@ -279,6 +366,50 @@ const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
     vitals_read_ms_ = now_ms;
   }
   return vitals_;
+}
+
+void CallController::EmitPerfThreads(const int64_t now_ms) {
+  constexpr int64_t kPerfIntervalMs = 10000;
+  if (perf_sample_ms_ != 0 && now_ms - perf_sample_ms_ < kPerfIntervalMs) {
+    return;
+  }
+  const DeviceVitals vitals = ReadDeviceVitals();
+  const std::vector<ThreadCpuSample> threads = ReadThreadCpu();
+  const auto top = TopThreadCpuDeltas(threads, perf_thread_cpu_, 8);
+  const auto top_raw = TopThreadCpuDeltasByOwnName(threads, perf_thread_cpu_raw_, 12);
+  const double prev_proc_cpu_s = perf_proc_cpu_s_;
+  const int64_t prev_sample_ms = perf_sample_ms_;
+  perf_proc_cpu_s_ = vitals.cpu_s;
+  perf_sample_ms_ = now_ms;
+  const UiFrameTotals frames = UiFrameStats::TakeAndReset();
+  if (prev_sample_ms == 0) {
+    return; // the first sample only sets the baseline
+  }
+  static constexpr ShareWord kKeys[] = {"t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8"};
+  static constexpr ShareWord kMsKeys[] = {"t1_ms", "t2_ms", "t3_ms", "t4_ms", "t5_ms", "t6_ms", "t7_ms", "t8_ms"};
+  MetricsLine line("perf.threads");
+  line.Add("interval_ms", now_ms - prev_sample_ms)
+      .Add("proc_cpu_ms", (vitals.cpu_s >= 0 && prev_proc_cpu_s >= 0) ? (vitals.cpu_s - prev_proc_cpu_s) * 1000.0 : -1.0)
+      .Add("thermal", vitals.thermal)
+      .Add("battery", vitals.battery_pct)
+      .Add("charging", vitals.charging)
+      .Add("video_on", in_call_.camera_on)
+      .Add("remote_video", in_call_.remote_video)
+      .Add("frames", frames.frames)
+      .Add("layout_ms", static_cast<double>(frames.layout_us) / 1000.0)
+      .Add("render_ms", static_cast<double>(frames.render_us) / 1000.0);
+  for (size_t i = 0; i < top.size(); ++i) {
+    line.Pick(kKeys[i], top[i].name, kKnownThreadNames).Add(kMsKeys[i], top[i].ms);
+  }
+  line.Emit();
+  // Every thread by its own name (network, worker pools, system queues) — the developer log only, which is
+  // never uploaded; the shareable line above folds unknown names into "other".
+  std::ostringstream raw;
+  raw << "perf.threads.raw interval_ms=" << (now_ms - prev_sample_ms) << " threads=" << threads.size();
+  for (const ThreadCpuDelta& t : top_raw) {
+    raw << ' ' << t.name << '=' << static_cast<int64_t>(t.ms + 0.5);
+  }
+  log().info << raw.str();
 }
 
 void CallController::EmitMetrics(const std::vector<ShareableLine>& lines) {
@@ -317,10 +448,13 @@ void CallController::ClearInCall() {
   minimized_corner_ = 0;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
+  last_debug_subtitle_ = {};
   audio_fault_gate_.Reset();
   peer_video_log_key_.clear();
   video_start_since_ms_ = 0;
   camera_sync_off_done_ = false;
+  story_.Reset();
+  story_sheet_open_ = false;
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -368,6 +502,74 @@ void CallController::ExpandChrome() {
   SetChromeMode(CallChromeMode::Expanded);
 }
 
+void CallController::ApplySpotlightToState(CallInProgressState& in_call) {
+  const std::string spotlit =
+      ResolveCallSpotlight(in_call.roster, in_call.show_roster, spotlight_choice_, active_speaker_.Current());
+  if (!spotlight_choice_.stream.empty() && spotlit != spotlight_choice_.stream) {
+    spotlight_choice_.stream.clear(); // they left the call
+  }
+  in_call.spotlight_stream = spotlit.c_str();
+  in_call.spotlight_fill = spotlight_fill_;
+  in_call.spotlight_rows.clear();
+  in_call.strip_rows.clear();
+  if (!spotlit.empty()) {
+    for (const CallRosterParticipantState& row : in_call.roster) {
+      (spotlit == row.stream_id.c_str() ? in_call.spotlight_rows : in_call.strip_rows).push_back(row);
+    }
+  }
+}
+
+void CallController::SpotlightParticipant(const std::string& stream_id) {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this, stream_id]() { SpotlightParticipant(stream_id); });
+    return;
+  }
+  spotlight_choice_.stream = stream_id;
+  spotlight_choice_.grid = false;
+  spotlight_fill_ = true;
+  ResyncSpotlight();
+}
+
+void CallController::SpotlightGrid() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { SpotlightGrid(); });
+    return;
+  }
+  spotlight_choice_ = {.grid = true};
+  ResyncSpotlight();
+}
+
+void CallController::ToggleSpotlightFill() {
+  if (!AppRuntime::CurrentlyOnUI()) {
+    AppRuntime::PostUI([this]() { ToggleSpotlightFill(); });
+    return;
+  }
+  spotlight_fill_ = !spotlight_fill_;
+  ResyncSpotlight();
+}
+
+void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const int64_t now_ms) {
+  if (!in_call_.show_roster) {
+    return; // 1:1: the peer is spotlit anyway
+  }
+  std::vector<std::pair<std::string, float>> levels;
+  levels.reserve(engine.streams.size());
+  for (const MediaStreamHealth& stream : engine.streams) {
+    levels.emplace_back(std::to_string(stream.stream_id), stream.peak_level);
+  }
+  const std::string before = active_speaker_.Current();
+  if (active_speaker_.Update(levels, now_ms) != before) {
+    ResyncSpotlight();
+  }
+}
+
+void CallController::ResyncSpotlight() {
+  if (in_call_.active) {
+    ApplySpotlightToState(in_call_);
+    SyncShellState();
+  }
+}
+
 void CallController::ImmersiveChrome() {
   SetChromeMode(CallChromeMode::Immersive);
 }
@@ -401,9 +603,8 @@ void CallController::SyncShellState() {
   if (!shell_call_chrome_.apply_snapshot) {
     return;
   }
-  const CallChromeLayer next = CaptureCallChrome(ring_, in_call_);
-  const CallChromeUpdate update = ClassifyCallChromeUpdate(synced_chrome_, next);
-  synced_chrome_ = next;
+  const CallChromeLayer next = CaptureCallChrome(ring_, in_call_, phone_layout_);
+  const CallChromeUpdate update = chrome_gate_.Decide(next, std::chrono::steady_clock::now());
 
   if (update == CallChromeUpdate::None) {
     return;
@@ -536,6 +737,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
 }
 
 void CallController::Render() {
+  phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
   const CallScreen& screen = presenter_.Screen();
   system_call_screen_.Sync(screen, presenter_.ActiveCallId(), AppLifecycle::IsForeground());
   // The chat header shows "In call": tell it when the call on screen changes.
@@ -547,25 +749,9 @@ void CallController::Render() {
     }
   }
   switch (screen.kind) {
-  case CallScreen::Kind::Answering: {
-    // Accept in flight (CALLS.md): the ring is gone; a Connecting bar so Accept does not look hung.
-    ClearRing();
-    in_call_.active = true;
-    in_call_.call_id = screen.ring_call_id;
-    in_call_.subtitle = Tr("call.status.connecting").c_str();
-    in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
-    const std::string caller = DisplayNameForIdentity(screen.caller_identity);
-    in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
-    // Answered with video: switch to the video stage right away (see kVideoStartMs).
-    in_call_.stage_visible = screen.answered_video;
-    in_call_.remote_video = false;
-    in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
-    in_call_.show_speaker = screen.show_speaker;
-    in_call_.speaker_on = screen.speaker_on;
-    SyncShellState();
-    SyncRingtone();
+  case CallScreen::Kind::Answering:
+    RenderAnswering(screen);
     return;
-  }
   case CallScreen::Kind::Ringing:
     RenderRing(screen);
     return;
@@ -587,6 +773,42 @@ void CallController::Render() {
     SyncShellState();
     return;
   }
+}
+
+void CallController::RenderAnswering(const CallScreen& screen) {
+  // Accept in flight (CALLS.md): the ring is gone; a Connecting bar so Accept does not look hung.
+  ClearRing();
+  in_call_.active = true;
+  in_call_.call_id = screen.ring_call_id;
+  in_call_.subtitle = Tr("call.status.connecting").c_str();
+  in_call_.title = screen.ring_video ? Tr("call.title.video").c_str() : Tr("call.title.voice").c_str();
+  const std::string caller = DisplayNameForIdentity(screen.caller_identity);
+  in_call_.peer_label = caller.empty() ? screen.caller_identity.c_str() : caller.c_str();
+  // Answered with video: switch to the video stage right away (see kVideoStartMs).
+  in_call_.stage_visible = screen.answered_video;
+  in_call_.remote_video = false;
+  in_call_.remote_placeholder = screen.answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
+  in_call_.show_speaker = screen.show_speaker;
+  in_call_.speaker_on = screen.speaker_on;
+  if (phone_layout_) {
+    // The phone page tells the answer's story from here ("You answered", setting up the encrypted line), in the
+    // layout the call will keep: a group's grid from the start, so it does not flash the 1:1 page first. Desktop
+    // keeps its Connecting bar as before.
+    in_call_.show_roster = screen.ring_group;
+    if (screen.ring_group) {
+      in_call_.title = screen.ring_video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
+    }
+    if (chrome_mode_call_id_ != screen.ring_call_id) {
+      chrome_mode_ = DefaultCallChromeMode(true);
+      restore_mode_ = chrome_mode_;
+      chrome_mode_call_id_ = screen.ring_call_id;
+    }
+    ApplyChromeModeToState(in_call_);
+    FillPhoneCallFields(screen);
+    ApplyConnectStory(screen, std::string(), CallPathQuality::Good, 4, util::NowUnixMs());
+  }
+  SyncShellState();
+  SyncRingtone();
 }
 
 void CallController::RenderRing(const CallScreen& screen) {
@@ -667,12 +889,31 @@ void CallController::RenderRing(const CallScreen& screen) {
     ring_.accept_short = Tr("call.ring.short.accept").c_str();
     ring_.voice_short = Tr("call.ring.short.voice").c_str();
   }
+  FillRingPhoneFields(screen, caller_label);
   SyncShellState();
   SyncRingtone();
 }
 
 void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backend) {
   ClearRing();
+  FillInCallFromScreen(screen);
+  ApplyAudioLevels(backend.Media());
+  {
+    static std::string last_sub_log;
+    const std::string sub = in_call_.subtitle.c_str();
+    if (sub != last_sub_log) {
+      last_sub_log = sub;
+      log().info << "in-call subtitle=\"" << sub << "\" phase=" << CallPhaseName(backend.Phase())
+                 << " status=" << CallMediaStatusName(backend.MediaStatus())
+                 << " screen=" << CallScreenStatusName(screen.status)
+                 << " media_live=" << (backend.MediaChromeLive() ? 1 : 0)
+                 << " media_active=" << (backend.Media().IsActive() ? 1 : 0);
+    }
+  }
+  SyncShellState();
+}
+
+void CallController::FillInCallFromScreen(const CallScreen& screen) {
   auto& in_call = in_call_;
   in_call.active = true;
   in_call.call_id = screen.call_id;
@@ -713,11 +954,15 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
 
   // V031: pick default once per call; preserve user mode across ticks.
   if (chrome_mode_call_id_ != screen.call_id) {
-    chrome_mode_ = DefaultCallChromeMode(in_call.show_roster);
+    chrome_mode_ = DefaultCallChromeMode(in_call.show_roster || phone_layout_);  // phones: the full call page
     restore_mode_ = chrome_mode_;
     chrome_mode_call_id_ = screen.call_id;
+    spotlight_choice_ = {};
+    spotlight_fill_ = true;
+    active_speaker_.Reset();
   }
   ApplyChromeModeToState(in_call);
+  ApplySpotlightToState(in_call);
 
   if (in_call.show_roster) {
     in_call.title = screen.video ? Tr("call.title.group_video").c_str() : Tr("call.title.group_voice").c_str();
@@ -731,6 +976,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
   }
   in_call.peer_label = in_call.show_roster ? Tr("call.label.others").c_str() : peer_label.c_str();
   in_call.show_retry = screen.show_retry;
+  in_call.calling = ShowsCancelCall(screen);
 
   // The status line (CallPresenter decides it: DecideInCallStatus).
   using Status = CallScreen::Status;
@@ -790,20 +1036,7 @@ void CallController::RenderInCall(const CallScreen& screen, CallUiBackend& backe
                           {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
                            .c_str();
   }
-  ApplyAudioLevels(backend.Media());
-  {
-    static std::string last_sub_log;
-    const std::string sub = in_call.subtitle.c_str();
-    if (sub != last_sub_log) {
-      last_sub_log = sub;
-      log().info << "in-call subtitle=\"" << sub << "\" phase=" << CallPhaseName(backend.Phase())
-                 << " status=" << CallMediaStatusName(backend.MediaStatus())
-                 << " screen=" << CallScreenStatusName(screen.status)
-                 << " media_live=" << (backend.MediaChromeLive() ? 1 : 0)
-                 << " media_active=" << (backend.Media().IsActive() ? 1 : 0);
-    }
-  }
-  SyncShellState();
+  FillPhoneCallFields(screen);
 }
 
 bool CallController::StartCall(const std::string& thread_id, const bool video_allowed) {
@@ -817,6 +1050,18 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
 
 bool CallController::CallJoinableInThread(const std::string& thread_id) {
   return presenter_.CallJoinableInThread(thread_id);
+}
+
+std::string CallController::CallJoinBarText(const std::string& thread_id) {
+  const CallJoinBar bar = presenter_.JoinBarInThread(thread_id);
+  if (!bar.shown) {
+    return {};
+  }
+  std::string text = Tr(bar.text_key);
+  if (bar.joined > 0) {
+    text += " · " + Tr("chat.call_bar.people", {{"count", std::to_string(bar.joined)}});
+  }
+  return text;
 }
 
 void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video_allowed) {
@@ -838,10 +1083,12 @@ bool CallController::VideoCallAvailable() {
 }
 
 void CallController::AcceptIncoming() {
+  EndDemoScene();
   (void)presenter_.Accept(false);
 }
 
 void CallController::AcceptIncomingVoiceOnly() {
+  EndDemoScene();
   (void)presenter_.Accept(true);
 }
 
@@ -850,6 +1097,7 @@ void CallController::AcceptIncomingWithCharge() {
 }
 
 void CallController::DeclineIncoming() {
+  EndDemoScene();
   (void)presenter_.Decline();
 }
 
@@ -873,6 +1121,7 @@ void CallController::EndDisconnectedCall(const int64_t now_ms) {
 }
 
 void CallController::LeaveActive() {
+  EndDemoScene();
   (void)presenter_.Leave();
   StopRingback(Backend());
 }
@@ -899,6 +1148,7 @@ void CallController::ToggleSpeaker() {
 
 void CallController::ApplyAudioLevels(IMediaView& media) {
   media.RefreshRemoteVideoHealth();
+  BindVideoFrameWake(media);
 
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
@@ -1027,7 +1277,11 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
 
   IMediaView::VideoTileFrame local_tile;
   in_call.local_preview = media.CopyLocalVideoFrame(local_tile);
+  bool self_new = false;
+  bool peer_new = false;
   if (in_call.local_preview) {
+    self_new = local_tile.seq != last_shown_self_seq_;
+    last_shown_self_seq_ = local_tile.seq;
     CallVideoTileRenderer::Frame frame;
     frame.width = local_tile.width;
     frame.height = local_tile.height;
@@ -1038,6 +1292,8 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
   if (in_call.remote_video) {
     IMediaView::VideoTileFrame remote_tile;
     if (media.CopyRemoteVideoFrame(remote_tile)) {
+      peer_new = remote_tile.seq != last_shown_peer_seq_;
+      last_shown_peer_seq_ = remote_tile.seq;
       CallVideoTileRenderer::Frame frame;
       frame.width = remote_tile.width;
       frame.height = remote_tile.height;
@@ -1047,8 +1303,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
 
-  std::vector<uint32_t> live_peer_streams;
   const int64_t now_ms = util::NowUnixMs();
+  metrics_.NoteVideoFrame(in_call.local_preview, self_new, in_call.remote_video, peer_new, now_ms);
+  std::vector<uint32_t> live_peer_streams;
   for (CallRosterParticipantState& row : in_call.roster) {
     if (row.is_local) {
       row.has_remote_video = false;
@@ -1072,6 +1329,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     CallVideoTileRenderer::Instance().SubmitPeerFrame(stream, std::move(frame));
   }
   CallVideoTileRenderer::Instance().RetainPeers(live_peer_streams);
+  ApplySpotlightToState(in_call); // the spotlight / strip copies take the rows' new video flags
 
   if (backend && backend->Available() && !presenter_.ActiveCallId().empty()) {
     for (uint32_t stream : media.TakePendingVideoRefreshStreamIds()) {
@@ -1202,6 +1460,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   SampleLinkHealth(backend, util::NowUnixMs());
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
+  NoteActiveSpeaker(view.engine, now_ms);
 
   if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
     last_metrics_media_ms_ = now_ms;
@@ -1259,8 +1518,10 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   } else if (view.path_kind == "direct") {
     path_key = "call.details.path.direct";
   }
+  // Phones say how the call goes in plain words (the connection story below); the path word stays on desktop.
   const bool show_path =
-      path_key && backend && backend->Available() && backend->MediaStatus() != CallMediaStatus::Reconnecting &&
+      !phone_layout_ && path_key && backend && backend->Available() &&
+      backend->MediaStatus() != CallMediaStatus::Reconnecting &&
       (backend->MediaChromeLive() ||
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
   if (show_path) {
@@ -1276,7 +1537,11 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
       call_ports_.call_diagnostics_enabled && call_ports_.call_diagnostics_enabled();
   in_call.show_debug_subtitle = diagnostics && media.IsActive();
   if (in_call.show_debug_subtitle) {
-    in_call.debug_subtitle = FormatCallDebugSubtitle(view, now_ms).c_str();
+    const auto now = std::chrono::steady_clock::now();
+    if (in_call.debug_subtitle.empty() || now - last_debug_subtitle_ >= kDebugSubtitleInterval) {
+      in_call.debug_subtitle = FormatCallDebugSubtitle(view, now_ms).c_str();
+      last_debug_subtitle_ = now;
+    }
   } else {
     in_call.debug_subtitle = "";
   }
@@ -1299,11 +1564,20 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
       UserFeedback::Fail(Tr(label_key));
     }
   }
+  ApplyConnectStory(presenter_.Screen(), view.path_kind, view.quality, view.quality_bars, now_ms);
 }
 
 void CallController::ShowCallDetails() {
   if (!AppRuntime::CurrentlyOnUI()) {
     AppRuntime::PostUI([this]() { ShowCallDetails(); });
+    return;
+  }
+  if (phone_layout_ && in_call_.active) {
+    // Phones: the signal bar opens (and its sheet's X, scrim and drag close) "how this call got through".
+    story_sheet_open_ = !story_sheet_open_;
+    in_call_.story_sheet_open = story_sheet_open_ && !in_call_.phone_failed;
+    FillStoryLines();
+    SyncShellState();
     return;
   }
   BindToMessaging();
@@ -1369,6 +1643,267 @@ void CallController::ShowCallDetails() {
         }
       },
       Tr("call.details.copy"));
+}
+
+bool CallController::RenderDemoScene() {
+  static const std::pair<std::string, int64_t> spec = []() {
+    const char* env = std::getenv("PP_DEMO_CALL");
+    return env && env[0] ? ParseDemoCallScene(env) : std::pair<std::string, int64_t>{};
+  }();
+  if (spec.first.empty()) {
+    return false;
+  }
+  const int64_t now = util::NowUnixMs();
+  if (demo_started_ms_ == 0) {
+    demo_started_ms_ = now - spec.second;
+  }
+  if (demo_ended_) {
+    return true;
+  }
+  const DemoCallFrame f = DemoCallSceneAt(spec.first, now - demo_started_ms_, now);
+  if (!f.valid) {
+    return false;
+  }
+  phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
+  if (f.screen.kind == CallScreen::Kind::Ringing) {
+    RenderRing(f.screen);
+    ringtone_.Stop();
+    return true;
+  }
+  if (f.screen.kind == CallScreen::Kind::Answering) {
+    RenderAnswering(f.screen);
+    ringtone_.Stop();
+    return true;
+  }
+  ClearRing();
+  FillInCallFromScreen(f.screen);
+  in_call_.stage_visible = f.video_stage;
+  in_call_.show_camera = true;
+  in_call_.camera_on = f.video_stage;
+  in_call_.show_flip = f.video_stage;
+  in_call_.remote_placeholder = "";
+  ApplyConnectStory(f.screen, f.path_kind, f.quality, f.quality_bars, now);
+  SyncShellState();
+  return true;
+}
+
+void CallController::EndDemoScene() {
+  if constexpr (kUiDemoBuild) {
+    if (demo_started_ms_ != 0 && !demo_ended_) {
+      demo_ended_ = true;
+      ClearInCall();
+      ClearRing();
+      SyncShellState();
+    }
+  }
+}
+
+std::string CallController::GroupTitle(const std::string& thread_id) {
+  // Read each time (a rename shows at once; a thread not readable yet is tried again), at most every 2 s per thread.
+  const int64_t now = util::NowUnixMs();
+  if (thread_id == group_title_thread_ && !group_title_.empty() && now - group_title_read_ms_ < 2000) {
+    return group_title_;
+  }
+  group_title_thread_ = thread_id;
+  group_title_read_ms_ = now;
+  group_title_.clear();
+  if (!thread_id.empty() && call_ports_.get_thread) {
+    if (auto thread = call_ports_.get_thread(thread_id); thread && *thread) {
+      group_title_ = (*thread)->local_title.empty() ? (*thread)->title : (*thread)->local_title;
+    }
+  }
+  return group_title_;
+}
+
+void CallController::FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label) {
+  ring_.group = screen.ring_group;
+  if (screen.ring_group) {
+    std::string title = GroupTitle(screen.thread_id);
+    ring_.phone_title = (title.empty() ? caller_label : title).c_str();
+    ring_.phone_subtitle =
+        Tr(screen.ring_video ? "call.ring.phone.group_video" : "call.ring.phone.group_voice", {{"name", caller_label}})
+            .c_str();
+    ring_.has_avatar = false;
+    ring_.avatar_src = "";
+    ring_.avatar_letter = "";
+    ring_.avatar_tone = 2;
+    return;
+  }
+  ring_.phone_title = caller_label.c_str();
+  ring_.phone_subtitle = Tr(screen.ring_video ? "call.ring.phone.video" : "call.ring.phone.voice").c_str();
+  const AvatarGlyph glyph = MakeAvatarGlyph(caller_label, screen.caller_identity);
+  ring_.avatar_letter = glyph.letter.c_str();
+  ring_.avatar_tone = glyph.tone;
+  const std::string photo =
+      call_ports_.identity_icon_local_path ? call_ports_.identity_icon_local_path(screen.caller_identity) : std::string();
+  ring_.has_avatar = !photo.empty();
+  ring_.avatar_src = photo.c_str();
+}
+
+void CallController::FillPhoneCallFields(const CallScreen& screen) {
+  auto& in_call = in_call_;
+  const bool answering = screen.kind == CallScreen::Kind::Answering;
+  const bool group = answering ? screen.ring_group : screen.group;
+  const std::string& peer = answering ? screen.caller_identity : screen.peer_identity;
+  in_call.video = answering ? screen.answered_video : screen.video;
+  const std::string name = peer.empty() ? std::string() : DisplayNameForIdentity(peer);
+  if (group) {
+    const std::string title = GroupTitle(screen.thread_id);
+    in_call.phone_title = title.empty() ? in_call.title : title.c_str();
+  } else {
+    in_call.phone_title = name.empty() ? Tr("call.label.them").c_str() : name.c_str();
+  }
+  const auto photo_for = [this](const std::string& identity) {
+    return call_ports_.identity_icon_local_path && !identity.empty() ? call_ports_.identity_icon_local_path(identity)
+                                                                     : std::string();
+  };
+  const AvatarGlyph peer_glyph = MakeAvatarGlyph(name, peer);
+  in_call.peer_avatar_letter = peer_glyph.letter.c_str();
+  in_call.peer_avatar_tone = peer_glyph.tone;
+  const std::string peer_photo = photo_for(peer);
+  in_call.peer_has_avatar = !peer_photo.empty();
+  in_call.peer_avatar_src = peer_photo.c_str();
+  std::string self;
+  for (const CallScreen::Member& member : screen.members) {
+    if (member.is_local) {
+      self = member.identity;
+    }
+  }
+  if (self.empty() && call_ports_.local_relay_identity) {
+    self = call_ports_.local_relay_identity().value_or(std::string{});
+  }
+  const AvatarGlyph self_glyph = MakeAvatarGlyph(Tr("call.label.you"), self);
+  in_call.self_avatar_letter = self_glyph.letter.c_str();
+  in_call.self_avatar_tone = self_glyph.tone;
+  const std::string self_photo = photo_for(self);
+  in_call.self_has_avatar = !self_photo.empty();
+  in_call.self_avatar_src = self_photo.c_str();
+
+  // Couldn't connect / disconnected: the failure page says it plainly; why is in the log (#31 / #37).
+  using Status = CallScreen::Status;
+  in_call.phone_failed = !answering && (screen.status == Status::CouldntConnect || screen.status == Status::Disconnected);
+  if (screen.status == Status::Disconnected) {
+    in_call.failed_text = Tr("call.status.disconnected").c_str();
+  } else if (group || screen.hint_missing_mic) {
+    in_call.failed_text = Tr("call.status.couldnt_connect").c_str();
+  } else {
+    in_call.failed_text = Tr("call.error.peer_unreachable").c_str();
+  }
+  in_call.story_sheet_open = story_sheet_open_ && !in_call.phone_failed;
+}
+
+void CallController::ApplyConnectStory(const CallScreen& screen, const std::string& path_kind,
+                                       const CallPathQuality quality, const int quality_bars, const int64_t now_ms) {
+  auto& in_call = in_call_;
+  const bool answering = screen.kind == CallScreen::Kind::Answering;
+  CallStoryInput in;
+  in.call_id = answering ? screen.ring_call_id : screen.call_id;
+  in.kind = screen.kind;
+  in.status = answering ? CallScreen::Status::Connecting : screen.status;
+  in.group = answering ? screen.ring_group : screen.group;
+  in.placed_here = !answering && screen.placed_here;
+  in.media_connected = !answering && screen.media_connected;
+  in.path_kind = path_kind;
+  in.quality = quality;
+  in.quality_bars = quality_bars;
+  in.now_ms = now_ms;
+  const CallStoryView& v = story_.Step(in);
+  if (in.call_id != story_logged_call_) {
+    story_logged_call_ = in.call_id;
+    story_events_logged_ = 0;
+  }
+  if (v.events.size() != story_events_logged_) {
+    // The story's moments with the technical words the screen never shows (TODO #76: the detail goes to the log).
+    for (size_t i = story_events_logged_; i < v.events.size(); ++i) {
+      log().info << "call story call_id=" << in.call_id << " event=" << static_cast<int>(v.events[i].kind)
+                 << " at_ms=" << v.events[i].at_ms << " path=" << path_kind;
+    }
+    story_events_logged_ = v.events.size();
+  }
+  if (!phone_layout_) {
+    return;  // desktop keeps its bar as it was
+  }
+  const std::string name = in_call.phone_title.c_str();
+  in_call.story_active = v.connecting && !in_call.phone_failed;
+  in_call.story_stage = v.stage;
+  if (in.group) {
+    in_call.story_step1 = Tr(v.stage == 0 ? "call.story.step.group_calling" : "call.story.step.group_joined").c_str();
+    in_call.story_step2 = Tr("call.story.step.group_line").c_str();
+    in_call.story_step3 = Tr("call.story.step.group_heard").c_str();
+  } else {
+    if (!v.outgoing) {
+      in_call.story_step1 = Tr("call.story.step.you_answered").c_str();
+    } else {
+      in_call.story_step1 =
+          Tr(v.stage == 0 ? "call.story.step.calling" : "call.story.step.peer_answered", {{"name", name}}).c_str();
+    }
+    in_call.story_step2 = Tr("call.story.step.securing").c_str();
+    in_call.story_step3 = Tr("call.story.step.connected").c_str();
+  }
+  in_call.result_text =
+      v.result_shown ? Tr("call.story.result", {{"how", Tr(CallRouteResultKey(v.result_route))},
+                                                {"seconds", FormatTenths(v.connect_tenths)}})
+                           .c_str()
+                     : "";
+  in_call.result_fading = v.result_shown && v.result_fading;
+  in_call.signal_shown = v.signal_shown && !in_call.phone_failed;
+  in_call.signal_bars = v.signal_bars;
+  in_call.signal_tone = v.signal_tone == CallSignalTone::Good ? 0 : (v.signal_tone == CallSignalTone::Fair ? 1 : 2);
+  const char* word = CallSignalWordKey(v.signal_quality);
+  in_call.signal_word = word[0] ? Tr(word).c_str() : "";
+  const char* notice = CallStoryNoticeKey(v.notice);
+  in_call.notice_text = notice[0] ? Tr(notice).c_str() : "";
+  in_call.notice_warn = v.notice == CallStoryNotice::Slow || v.notice == CallStoryNotice::Reconnecting;
+  in_call.notice_fading = v.notice_fading;
+  if (story_sheet_open_) {
+    FillStoryLines();
+  }
+}
+
+void CallController::FillStoryLines() {
+  auto& in_call = in_call_;
+  const CallStoryView& v = story_.View();
+  const std::string name = in_call.phone_title.c_str();
+  const bool group = in_call.show_roster;
+  in_call.story_lines.clear();
+  for (size_t i = 0; i < v.events.size(); ++i) {
+    const CallStoryEvent& event = v.events[i];
+    CallStoryLine line;
+    if (i == 0 || (event.at_ms == 0 && event.call_ms < 0)) {
+      // Where the story starts (or a call found already live): the time of day, never a "0.0 s".
+      line.time = MessageClockLabel(event.wall_ms);
+    } else if (event.call_ms >= 0) {
+      line.time = FormatMinSec(event.call_ms / 1000);  // after connect: on the call's clock
+    } else {
+      line.time = Tr("call.story.seconds", {{"seconds", FormatTenths((event.at_ms + 50) / 100)}});
+    }
+    using Kind = CallStoryEvent::Kind;
+    switch (event.kind) {
+    case Kind::Placed:
+      line.text = Tr("call.story.event.placed", {{"name", name}});
+      break;
+    case Kind::Answered:
+      line.text = Tr(group ? "call.story.event.joined" : "call.story.event.answered");
+      break;
+    case Kind::PeerAnswered:
+      line.text = Tr("call.story.event.peer_answered", {{"name", name}});
+      break;
+    case Kind::Connected:
+      line.text = Tr(group ? "call.story.event.group_connected" : CallRouteEventKey(event.route));
+      line.secure = true;
+      break;
+    case Kind::Encrypted:
+      line.text = Tr(group ? "call.story.event.group_encrypted" : "call.story.event.encrypted");
+      line.secure = true;
+      break;
+    case Kind::Closer:
+      line.text = Tr("call.story.event.closer", {{"name", name}});
+      line.secure = true;
+      break;
+    }
+    in_call.story_lines.push_back(std::move(line));
+  }
+  in_call.story_how = Tr(CallRouteHowKey(v.route)).c_str();
 }
 
 void CallController::RefreshCallLevels() {

@@ -1,5 +1,16 @@
 <div class="contacts-panel" data-model="contacts">
-  <div class="contacts-list-view">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
+    <p class="pane-nav-title">{{i18n:nav.contacts}}</p>
+    <div class="pane-nav-actions row">
+      <button class="pane-nav-btn" type="button" data-event-click="on_add_contact_menu()">
+        <svg src="../icons/v2/plus.svg" width="24" height="24"></svg>
+      </button>
+    </div>
+  </div>
+  <div class="contacts-list-view root-scroll">
+    <p class="large-title">{{i18n:nav.contacts}}</p>
     <div class="contacts-header row">
       <p class="contacts-header-title">{{i18n:contacts.title}}</p>
       <div class="contacts-header-actions row">
@@ -9,39 +20,51 @@
       </div>
     </div>
 
+    <div class="chat-search contacts-phone-search">
+      <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
+      <input class="chat-search-input" type="text" data-value="search_query"
+             data-event-change="on_search_changed()"/>
+      <p class="chat-search-label" data-if="search_query == ''">{{i18n:contacts.search_placeholder}}</p>
+    </div>
+
     <div class="contacts-search">
       <input class="field contacts-search-field" type="text" data-value="search_query"
              data-event-change="on_search_changed()" placeholder="{{i18n:contacts.search_placeholder}}"/>
     </div>
 
     <div class="contacts-list">
-      <div data-for="contact : contacts"
-           class="contacts-row"
-           data-class-contacts-row--active="contact.id == selected.id && selected.id != ''"
-           data-event-click="select_contact(contact.id)">
-        <div class="contacts-row-avatar-frame"
-             data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
-             data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
-             data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
-             data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
-             data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
-             data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
-             data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
-             data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
-          <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
-          <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
-        </div>
-        <div class="contacts-row-body">
-          <div class="contacts-row-title-line row">
-            <p class="contacts-row-title">{{contact.title}}</p>
-            <span class="contacts-trust-badge contacts-trust-badge--friendly"
-                  data-if="contact.trust == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
-            <span class="contacts-trust-badge contacts-trust-badge--blocked"
-                  data-if="contact.trust == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
-            <span class="badge-count contacts-unread"
-                  data-if="contact.unread_count > 0">{{contact.unread_display}}</span>
+      <div data-for="section : contact_sections" class="contacts-section">
+        <p class="nc-section-header contacts-section-header">{{section.letter}}</p>
+        <div data-for="contact : section.rows"
+             class="contacts-row"
+             data-class-contacts-row--active="contact.id == selected.id && selected.id != ''"
+             data-event-click="select_contact(contact.id)">
+          <div class="contacts-row-avatar-frame"
+               data-class-avatar-tone-0="!contact.has_icon && contact.avatar_tone == 0"
+               data-class-avatar-tone-1="!contact.has_icon && contact.avatar_tone == 1"
+               data-class-avatar-tone-2="!contact.has_icon && contact.avatar_tone == 2"
+               data-class-avatar-tone-3="!contact.has_icon && contact.avatar_tone == 3"
+               data-class-avatar-tone-4="!contact.has_icon && contact.avatar_tone == 4"
+               data-class-avatar-tone-5="!contact.has_icon && contact.avatar_tone == 5"
+               data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
+               data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
+            <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
+            <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
           </div>
-          <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
+          <div class="contacts-row-body">
+            <div class="contacts-row-title-line row">
+              <p class="contacts-row-title" data-class-contacts-row-title--starred="contact.starred">{{contact.title}}</p>
+              <svg class="contacts-row-star" src="../icons/v2/star-fill.svg" width="14" height="14"
+                   data-if="contact.starred"></svg>
+              <span class="contacts-trust-badge contacts-trust-badge--friendly"
+                    data-if="contact.trust == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
+              <span class="contacts-trust-badge contacts-trust-badge--blocked"
+                    data-if="contact.trust == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
+              <span class="badge-count contacts-unread"
+                    data-if="contact.unread_count > 0">{{contact.unread_display}}</span>
+            </div>
+            <p class="contacts-row-subtitle contacts-row-subtitle--desktop text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
+          </div>
         </div>
       </div>
 
@@ -54,5 +77,15 @@
       </div>
       <p class="text muted" data-if="contacts.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
+    <div class="tab-bar-clear"></div>
+  </div>
+  <div class="contacts-index" data-if="contacts.size > 0 && search_query == ''"
+       data-event-mousedown="contacts_index_at()" data-event-drag="contacts_index_at()"
+       data-event-mouseup="contacts_index_end()" data-event-dragend="contacts_index_end()">
+    <p data-for="item : contact_index" class="contacts-index-letter"
+       data-class-contacts-index-letter--present="item.present">{{item.letter}}</p>
+  </div>
+  <div class="contacts-index-bubble" data-if="contact_index_bubble != ''">
+    <p class="contacts-index-bubble-letter">{{contact_index_bubble}}</p>
   </div>
 </div>

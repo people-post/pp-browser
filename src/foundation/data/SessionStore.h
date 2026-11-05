@@ -3,6 +3,7 @@
 #include "foundation/data/BootstrapTypes.h"
 #include "foundation/data/ConfigSecrets.h"
 #include "common/Error.h"
+#include "foundation/product/DevTools.h"
 
 #include <functional>
 #include <string>
@@ -36,6 +37,9 @@ public:
   Roe<void> ReloadProfilePrefs();
   Roe<void> ReloadFromDisk();
 
+  /** Tests only: the UI demo rules (UiDemoConfig.h) for every reload; defaults to kUiDemoBuild. */
+  void SetUiDemo(bool ui_demo) { ui_demo_ = ui_demo; }
+
   void AddConfigListener(std::function<void(const AppConfig&)> listener);
   void AddProfilePrefsListener(std::function<void(const ProfilePreferences&)> listener);
   void AddAppearanceListener(std::function<void(const std::string& appearance)> listener);
@@ -57,6 +61,7 @@ private:
   Roe<void> OverlayStoredSecrets(AppConfig& config) const;
 
   bool initialized_ = false;
+  bool ui_demo_ = kUiDemoBuild;
   IConfigSecrets* config_secrets_ = nullptr;
   BootstrapResult bootstrap_;
   std::vector<std::function<void(const AppConfig&)>> config_listeners_;

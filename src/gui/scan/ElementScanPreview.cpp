@@ -86,6 +86,11 @@ void ElementScanPreview::OnRender() {
   ui::MeshUtilities::GenerateQuad(mesh, inset, size, ui::ColourbPremultiplied(255, 255, 255, 255));
   geometry_ = manager->MakeGeometry(std::move(mesh));
   geometry_.Render(GetAbsoluteOffset(ui::BoxArea::Content), texture_);
+  // Phones draw the viewfinder in the view instead (qr_scan.rml: a fixed square, its corners and a moving line over
+  // the full-screen camera); the desktop panel keeps this one, sized to the preview.
+  if (Closest(".shell-layer-compact")) {
+    return;
+  }
   if (manager != frame_manager_ || box != frame_box_) {
     frame_manager_ = manager;
     frame_box_ = box;

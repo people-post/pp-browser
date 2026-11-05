@@ -3,6 +3,7 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +27,12 @@ struct EncodedAccessUnit {
   std::vector<uint8_t> annex_b;
   bool keyframe = false;
 };
+
+/**
+ * Seconds between the encoder's own keyframes. A keyframe is several P-frames' worth of bytes, so fewer of them fit
+ * a thin uplink; a receiver that misses one asks for the next at once (NoteVideoRefreshNeeded), not on this cadence.
+ */
+inline constexpr int kKeyframeIntervalSeconds = 3;
 
 /** Decoded RGBA8 (non-premultiplied); caller may premultiply for GL. */
 struct VideoFrameRgba {
@@ -86,8 +93,14 @@ inline Roe<std::optional<VideoFrameRgba>> OneFrameDecodeResult(Roe<VideoFrameRgb
   return std::optional<VideoFrameRgba>(std::move(*frame));
 }
 
-/** OS-selected HW codec, or unavailable stub when no backend builds. */
+/** OS-selected HW codec, or unavailable stub when no backend builds (or the override's, when one is set). */
 std::unique_ptr<IVideoCodec> CreatePlatformVideoCodec();
+
+/**
+ * Every platform codec from `make` instead (the lab's SyntheticVideo, pp-app-probe --synthetic-video). Set it at
+ * startup, before any codec is made; empty restores the OS's.
+ */
+void SetPlatformVideoCodecOverride(std::function<std::unique_ptr<IVideoCodec>()> make);
 
 /** Whether this host can encode (probed once per process with a throwaway codec; any thread). */
 bool PlatformVideoEncoderSupported();

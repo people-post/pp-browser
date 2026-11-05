@@ -10,6 +10,7 @@
 #include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/data/UiDemoConfig.h"
 #include "common/ValueJson.h"
 
 #include <cstdlib>
@@ -66,9 +67,12 @@ Config& Config::Instance() {
   return config;
 }
 
-AppConfig Config::DefaultAppConfig() {
+AppConfig Config::DefaultAppConfig(const bool ui_demo) {
   AppConfig config = PlatformDefaults::For(Platform::Detect());
   NormalizeMeshConfig(config.mesh);
+  if (ui_demo) {
+    ApplyUiDemoConfig(config);
+  }
   return config;
 }
 
@@ -117,7 +121,7 @@ Roe<AppConfig> Config::Load(int argc, char** argv, const Fallback fallback) {
   return loaded.value();
 }
 
-Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
+Roe<AppConfig> Config::LoadFromFile(const std::string& path, const bool ui_demo) {
   std::ifstream in(path);
   if (!in) {
     return Error("Failed to open config file: " + path);
@@ -142,8 +146,8 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
     }
   }
 
-  AppConfig config = MergeConfig(DefaultAppConfig(), *root);
-  if (root->getObject("backend") == nullptr && HasLegacyCustomUrls(config, DefaultAppConfig())) {
+  AppConfig config = MergeConfig(DefaultAppConfig(ui_demo), *root);
+  if (root->getObject("backend") == nullptr && HasLegacyCustomUrls(config, DefaultAppConfig(ui_demo))) {
     config.backend.env = BackendEnvName(BackendEnv::Custom);
   }
   if (ParseBackendEnv(config.backend.env) == BackendEnv::Qa && !QaBackendAvailable()) {
@@ -153,7 +157,7 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   if (OriginEnvOverrideActive() || ActiveBackend() != BackendEnv::Custom) {
     ApplyBackendOverride(config);
   }
-  const AppConfig defaults = DefaultAppConfig();
+  const AppConfig defaults = DefaultAppConfig(ui_demo);
   if (config.relay.base_url.empty()) {
     config.relay.base_url = defaults.relay.base_url;
   }
@@ -167,6 +171,9 @@ Roe<AppConfig> Config::LoadFromFile(const std::string& path) {
   ResolveConfigCredentials(config);
   NormalizeLlmConfig(config);
   NormalizeMeshConfig(config.mesh);
+  if (ui_demo) {
+    ApplyUiDemoConfig(config);
+  }
   return config;
 }
 

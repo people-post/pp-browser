@@ -5,7 +5,9 @@
 #include "gui/DiagnosticsFeedback.h"
 #include "gui/shell/DataModelHost.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/platform/os/OsTime.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
@@ -41,6 +43,10 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("reset_tool_permissions", DataEvent<>([this]() { ResetToolPermissions(); }));
   ctor.BindEventCallback("reset_profile", DataEvent<>([this]() { ResetProfile(); }));
   ctor.BindEventCallback("reset_chats", DataEvent<>([this]() { ResetChats(); }));
+  show_change_pin_ = ChangePinVisible(kUiDemoBuild);
+  ctor.Bind("show_change_pin", &show_change_pin_);
+  show_diagnostics_send_ = UploadAllowed(kUiDemoBuild);
+  ctor.Bind("show_diagnostics_send", &show_diagnostics_send_);
   ctor.Bind("diagnostics_sending", &diagnostics_sending_);
   ctor.Bind("diagnostics_send_label", &diagnostics_send_label_);
   ctor.Bind("diagnostics_last_id", &diagnostics_last_id_);
@@ -108,13 +114,14 @@ void SettingsSecurityActions::CopyDiagnosticsId() {
 }
 
 void SettingsSecurityActions::OpenDiagnosticsHelp() {
-  // help_key "troubleshooting/send-diagnostics" is the support article; the question is prefilled, the user sends it.
-  if (!commands_.open_support_chat) {
+  // help_key "troubleshooting/send-diagnostics" is the support article; the question goes out at once (Kenneth
+  // 2026-11-04: no typing), the answer comes in the PP 客服 chat.
+  if (!commands_.ask_support) {
     host_.ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
-  if (auto opened = commands_.open_support_chat(Tr("settings.security.diagnostics.help_question")); !opened) {
-    host_.ReportFailure(opened.error());
+  if (auto asked = commands_.ask_support(Tr("settings.security.diagnostics.help_question")); !asked) {
+    host_.ReportFailure(asked.error());
   }
 }
 
@@ -252,6 +259,12 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
       }
       recovery_phrase_ = phrase->value().Reveal().c_str();  // shown to its owner, on their screen
       host_.PushToView(false);
+      // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
+      if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
+        ProfilePreferences prefs = host_.Store().Snapshot().profile_prefs;
+        prefs.recovery_phrase_seen = true;
+        (void)host_.Store().SaveProfilePrefs(prefs);
+      }
       // Not left on screen: it hides by itself.
       const uint64_t shown = ++recovery_shown_count_;
       AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kRecoveryPhraseShownMs), [this, shown]() {
@@ -314,10 +327,10 @@ void SettingsSecurityActions::ClearUndeliveredOlderThan() {
         Error("Messaging is not ready").WithUser(Tr("settings.security.clear_undelivered.not_ready")));
     return;
   }
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(
+  feedback_.show_confirm_destructive(
       Tr("settings.security.clear_undelivered_confirm_title"),
       Tr("settings.security.clear_undelivered_confirm_message"),
       [this](const bool ok) {
@@ -341,10 +354,10 @@ void SettingsSecurityActions::ClearUndeliveredOlderThan() {
 }
 
 void SettingsSecurityActions::ResetToolPermissions() {
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.security.tool_permissions.reset_title"),
+  feedback_.show_confirm_destructive(Tr("settings.security.tool_permissions.reset_title"),
                          Tr("settings.security.tool_permissions.reset_message"),
                          [this](const bool ok) {
                            if (!ok) {
@@ -372,7 +385,8 @@ void SettingsSecurityActions::ResetProfile() {
           return;
         }
         PerformResetProfile();
-      });
+      },
+      {});
 }
 
 void SettingsSecurityActions::PerformResetProfile() {
@@ -392,10 +406,10 @@ void SettingsSecurityActions::PerformResetProfile() {
 }
 
 void SettingsSecurityActions::ResetChats() {
-  if (!feedback_.show_confirm) {
+  if (!feedback_.show_confirm_destructive) {
     return;
   }
-  feedback_.show_confirm(Tr("settings.storage.reset_chats_confirm_title"),
+  feedback_.show_confirm_destructive(Tr("settings.storage.reset_chats_confirm_title"),
                          Tr("settings.storage.reset_chats_confirm_message"),
                          [this](const bool ok) {
                            if (ok) {

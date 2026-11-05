@@ -3,6 +3,7 @@
 #include "lib/ui/ShellTypes.h"
 #include "foundation/data/UserPreferences.h"
 #include "common/Module.h"
+#include "gui/shell/ShellAiDot.h"
 #include "gui/shell/ShellLayoutRml.h"
 #include "gui/shell/ShellStatusbar.h"
 #include "gui/shell/StatusbarText.h"
@@ -11,10 +12,14 @@
 #include "gui/FlowCoordinatorPorts.h"
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
-#include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "lib/ui/ShellGestureAxis.h"
+#include "gui/shell/ShellLargeTitleScroll.h"
+#include "gui/shell/ShellFavoritesSnap.h"
+#include "gui/shell/ShellNavBarScroll.h"
 #include "gui/shell/ShellSplitterDrag.h"
+#include "gui/shell/SessionSwipeGesture.h"
+#include "gui/shell/ShellPageSheetGesture.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -44,7 +49,6 @@ enum class DismissTarget {
   LocalBack,
   CompactChatOverlay,
   AuxiliarySheet,
-  AccountSheet,
   Transient,
   OverlayLayer,
 };
@@ -62,11 +66,16 @@ public:
     std::string appearance = "system";
     bool reduce_transparency = false;
     bool compact_chrome_frost = true;
+    /** Phone AI dot: shown or not, its look (`a`–`d`) and size (`s` / `m` / `l`). */
+    bool ai_dot = true;
+    std::string ai_dot_look = "b";
+    std::string ai_dot_size = "m";
 
     bool operator==(const ChromePrefs& other) const {
       return theme == other.theme && appearance == other.appearance &&
              reduce_transparency == other.reduce_transparency &&
-             compact_chrome_frost == other.compact_chrome_frost;
+             compact_chrome_frost == other.compact_chrome_frost && ai_dot == other.ai_dot &&
+             ai_dot_look == other.ai_dot_look && ai_dot_size == other.ai_dot_size;
     }
     bool operator!=(const ChromePrefs& other) const { return !(*this == other); }
   };
@@ -114,17 +123,21 @@ public:
   void CloseAuxiliary();
   void ToggleAuxiliary();
   void SelectNavTab(NavTab tab);
+  /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
+  void SetLargeTitleCollapsed(bool collapsed);
   void ClearTabContext();
   void SetPrimaryPane(const std::string& key);
   void ClearPrimaryPane();
   void OpenCompactChat();
   void CloseCompactChat();
-  void OpenAccountSheet();
-  void CloseAccountSheet();
   void PushTransient(const PaneSpec& spec);
   void PopTransient();
   int PushLayer(const PaneSpec& spec);
   void CloseLayer(int layer_id = -1);
+  /** Layer `layer_id` (PushLayer) is still open: not closed by its X, the scrim, a swipe or code. */
+  bool HasLayer(int layer_id) const;
+  /** Closes every page sheet layer, top first (each owner hears its own close as for a swipe). */
+  void ClosePageSheets();
 
   /**
    * Single dismiss entry for Escape, back buttons, and swipe gestures.
@@ -189,8 +202,8 @@ public:
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
-  void SetOnAccountSheetOpened(std::function<void()> callback);
-  void SetOnAccountSheetClosed(std::function<void()> callback);
+  /** Phone Chats list: a swipe-row button (or a full swipe) was used on `thread_id`. */
+  void SetOnSessionSwipeAction(SessionSwipeGesture::ActionCallback callback);
 
   /** Seed safe-area insets from machine.json (used when SDL reports zero). */
   void SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp);
@@ -209,6 +222,20 @@ public:
 
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
+
+  /**
+   * Phone AI dot (DESIGN-pp-ui §8.14): the Me → AI assistant switch, look (`a`–`d`) and size (`s` / `m` / `l`); takes
+   * effect at once.
+   */
+  void SetAiDot(bool enabled, const std::string& look, const std::string& size);
+  /** Where the AI dot rests, from disk (side, height in its band 0–1000). */
+  void SetAiDotPlace(bool left, int y_permille, bool tucked);
+  /** A tap on the AI dot (open the ask-AI panel). */
+  void SetOnAiDotTap(std::function<void()> callback);
+  /** The user dragged the AI dot to a new resting place (persist it). */
+  void SetOnAiDotMoved(std::function<void(bool left, int y_permille, bool tucked)> callback);
+  /** True while a page the AI dot must not sit on is up (Me → Account & security: change PIN, recovery phrase). */
+  void SetAiDotSecretPage(std::function<bool()> showing);
 
 
   bool RegisterWindowModel(ui::Context* context);
@@ -264,11 +291,13 @@ private:
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
   void AttachSplitterDrag();
+  void AttachLargeTitleScroll();
   void AttachAuxiliarySplitterDrag(ui::ElementDocument* doc);
   void NotifySidebarChanged();
-  void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
+  void AttachCallStorySheetGesture();
+  void ApplyCallStorySheetDetent();
   void ApplyLayoutModeFromContext(ui::Context* context);
   void OnLayoutModeChanged();
   int AllocatePaneId();
@@ -287,9 +316,21 @@ private:
   void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
+  /** Compact only: the element that slides out (and in) for `target`; null when it has no page to slide. */
+  ui::Element* PageElementFor(DismissTarget target) const;
+  /** Phone and the top overlay is a page sheet (PaneSpec::page_sheet). */
+  bool TopPageSheet() const;
+  /** A released drag moved a page sheet (PaneSpec::page_sheet) to `detent`. */
+  void SetSheetDetent(int layer_id, SheetDetent detent);
+  /** Slide the element with this id in from the right (adds the shell-page-enter class). */
+  void PlayPageEnter(const char* element_id);
   void CommitDismiss(DismissTarget target);
   void ApplySafeAreaLayout();
   bool ChromeFrostEnabled() const;
+  /** What is on screen now, for the AI dot (AiDotModel::Shown). */
+  AiDotScene AiDotSceneNow() const;
+  /** The AI dot's bound keys (ai_dot_*). */
+  void DirtyAiDot();
   struct SafeAreaFromSdl {
     int top_dp = 0;
     int bottom_dp = 0;
@@ -310,6 +351,8 @@ private:
   int last_ime_bottom_dp_ = 0;
   /** Synthetic bottom inset while bottom chrome (IME replacement) is open. */
   int bottom_chrome_height_dp_ = 0;
+  /** The panel keeps a share of the window's height (BottomChromeSpec::height_share), not the keyboard's. */
+  bool bottom_chrome_fixed_height_ = false;
   bool bottom_chrome_open_ = false;
   std::string bottom_chrome_key_;
   std::string bottom_chrome_rml_path_;
@@ -320,6 +363,12 @@ private:
   int next_overlay_id_ = 1;
   float elapsed_ms_ = 0.f;
   std::optional<PendingDismiss> pending_dismiss_;
+  /** Id of a page to slide in once the next SyncLayout has built it (transient page, chat overlay). */
+  std::string page_enter_pending_id_;
+  /** A page sheet just pushed: it gets .shell-page-sheet-enter (slide up) once the layout is built. */
+  std::string sheet_enter_pending_id_;
+  /** A swipe-back already started the slide-out; BeginAnimatedDismiss must not restart it. */
+  bool slide_out_started_ = false;
   std::vector<LocalBackEntry> local_back_stack_;
   ui::String saved_focus_id_;
   bool sync_pending_ = false;
@@ -340,10 +389,20 @@ private:
   bool restore_focus_after_sync_ = false;
   ShellGestureAxisLock gesture_axis_lock_;
   ShellSwipeBackGesture swipe_back_gesture_;
-  ShellBottomSheetGesture account_sheet_gesture_;
+  ShellPageSheetGesture page_sheet_gesture_;
+  /** The phone call page's "how this call got through" sheet (#call-story-sheet) and the stop it stands at. */
+  ShellPageSheetGesture call_story_sheet_gesture_;
+  SheetDetent call_story_sheet_detent_ = SheetDetent::Large;
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
   ShellSplitterDrag aux_splitter_drag_;
+  ShellLargeTitleScroll large_title_scroll_;
+  /** Phone chat header and pushed pages: their bars collapse while the content scrolls. */
+  ShellNavBarScroll nav_bar_scroll_;
+  /** Home's 关注联系人 row: eases onto a whole person once its scroll is at rest. */
+  ShellFavoritesSnap favorites_snap_;
+  SessionSwipeGesture session_swipe_;
+  SessionSwipeGesture::ActionCallback on_session_swipe_action_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;
@@ -352,14 +411,16 @@ private:
   std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
-  std::function<void()> on_account_sheet_opened_;
-  std::function<void()> on_account_sheet_closed_;
   MessagingShellPorts shell_messaging_ports_;
   ShellStatusbar statusbar_{state_, context_, shell_messaging_ports_, [this]() { ApplySafeAreaLayout(); }};
   PinGateActionPorts pin_gate_actions_;
   FlowCoordinatorPorts flow_coordinator_;
   CallActionsPorts call_actions_;
   std::function<void()> scan_action_;
+  ShellAiDot ai_dot_{state_};
+  std::function<void()> on_ai_dot_tap_;
+  std::function<void(bool, int, bool)> on_ai_dot_moved_;
+  std::function<bool()> ai_dot_secret_page_;
 
 };
 

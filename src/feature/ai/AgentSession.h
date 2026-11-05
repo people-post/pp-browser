@@ -70,6 +70,12 @@ struct AgentEvent {
   std::string error_kind;
   std::string approval_id;                                   // ApprovalClosed
   ApprovalOutcome approval_outcome = ApprovalOutcome::Stale; // ApprovalClosed
+  /**
+   * The session's turn this event belongs to (AgentSession::TurnGeneration when the step that pushed it was posted;
+   * 0: not known). Home events carry no thread, so the UI tells a stopped turn's late events from the next turn's
+   * by it.
+   */
+  uint64_t turn = 0;
 };
 
 /** Prefix of a stored user message that carried an image; later history sends it as plain text. */
@@ -157,6 +163,11 @@ public:
   bool IsAppActionRequest(const std::string& text) const;
   SubmitOutcome Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   /**
+   * A Home question answered in words only (the ask-AI panel's one-off, settings "?"): no app action is judged on the
+   * device or offered to brief_AI, no tool that changes anything runs, and no permission card is parked.
+   */
+  SubmitOutcome SubmitExplanation(const std::string& user_text);
+  /**
    * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
    * The thread stores the question as kAiImageTurnMarker + text, never the bytes.
    */
@@ -183,6 +194,8 @@ public:
   void Cancel();
   /** A turn runs in this session. */
   bool IsBusy() const;
+  /** The generation of the session's newest turn (raised by every Submit*); events carry it (AgentEvent::turn). */
+  uint64_t TurnGeneration() const;
   /** Block until in-flight ConfigureOnIO finishes (not callable from the IO thread). */
   void WaitForConfigureIdle();
   /**
@@ -190,6 +203,12 @@ public:
    * this session's permission card and question asked back in that thread. UI thread.
    */
   void ForgetThread(const std::string& thread_id);
+  /**
+   * The Home conversation (no thread) starts empty: no earlier turn, summary, card or question asked back goes
+   * with the next question. False (nothing changed) while a turn runs, also one stopped by Cancel() whose steps
+   * have not ended yet (it may still use the conversation). UI thread.
+   */
+  bool StartNewConversation();
 
   bool IsConfigured() const;
   const Conversation& conversation() const;
@@ -205,6 +224,7 @@ private:
   struct Impl;
 
   void BeginStreamTurn();
+  SubmitOutcome SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload, bool explain_only);
   /** Runs a step of a turn where turns run (AgentSessionShared::turn_pool). */
   static void PostTurnTask(const std::shared_ptr<Impl>& state, std::function<void()> task);
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);

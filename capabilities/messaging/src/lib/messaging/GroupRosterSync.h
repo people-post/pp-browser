@@ -91,6 +91,12 @@ inline constexpr const char kGroupDissolvedError[] = "chat.group.dissolved";
 /** A group may send only while active (not checking its members, not removed, not dissolved). */
 bool MaySend(const GroupMetadata& metadata);
 
+/**
+ * Check `request_id` is still the one waiting for an answer: the group is checking and no newer check began (that one
+ * has its own re-asks). What a timed re-ask asks before it asks again.
+ */
+bool StillAwaiting(const GroupMetadata& metadata, const std::string& request_id);
+
 } // namespace group_roster_sync
 
 } // namespace pbr

@@ -13,6 +13,7 @@
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
+#include "lib/messaging/IThreadMentionsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "lib/net/OrgBackendClients.h"
@@ -39,6 +40,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -112,6 +114,8 @@ public:
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
+  /** A new AI thread, stored but not opened (the ask-AI panel's conversation when there is none yet). */
+  Roe<Thread> CreateAiThread();
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
@@ -131,6 +135,11 @@ public:
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
+  /**
+   * Local file of a saved contact's cached profile photo, empty when none is cached yet (the letter avatar shows).
+   * Starts the photo fetch when the contact has one that is not cached, like the Contacts list does.
+   */
+  std::string ContactIconPath(const std::string& contact_id);
   /** The thread's transcript (D031 window); the GUI draws it with TranscriptFactsFor(). */
   std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
                                              std::optional<int64_t> newest_inclusive = std::nullopt);
@@ -162,8 +171,12 @@ public:
   Roe<ThreadMessage> SendGroupText(const std::string& thread_id, const std::string& text, std::vector<TextSpan> spans);
   /** The chats with an unread message that mentions us (G015 marker); empty when unknown. */
   std::set<std::string> ThreadsWithMentions();
+  /** Those chats with how many unread mentions each has; empty when unknown. */
+  std::map<std::string, int> MentionCounts();
   /** The oldest unread mention in a chat — where opening it can jump to; none when it has none. */
   std::optional<std::string> OldestMention(const std::string& thread_id);
+  /** The newest mention over every chat, read or not (Home's Mentions widget); none when none or unknown. */
+  std::optional<IThreadMentionsStore::Mention> LatestMention();
   /** Share contact `contact_id` into a chat as a contact card (ACCOUNT_CARD.md): its account's card, its name. */
   Roe<ThreadMessage> ShareContact(const std::string& thread_id, const std::string& contact_id);
   /** This account's locator, for a QR code or an invite line. */
@@ -350,8 +363,9 @@ public:
   };
   /** Declared type and size of an attachment message (none: not an attachment). */
   std::optional<AttachmentInfo> AttachmentInfoForMessage(const std::string& thread_id, const std::string& message_id);
-  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
-                                                           const std::string& message_id);
+  /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
+  std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                           bool* made_view = nullptr);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   struct StoredAiImage {
     std::vector<uint8_t> content_hash;

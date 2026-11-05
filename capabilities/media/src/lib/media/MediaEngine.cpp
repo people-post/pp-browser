@@ -1,4 +1,5 @@
 #include "lib/media/MediaEngine.h"
+#include "lib/media/MediaThreadName.h"
 
 #include "mesh/types/MediaChannel.h"
 #include "lib/media/VideoLevelProfile.h"
@@ -9,6 +10,7 @@
 #include "lib/media/CaptureStarvePolicy.h"
 #include "lib/media/DecodeStallPolicy.h"
 #include "lib/media/GuardedVideoCodec.h"
+#include "lib/media/VideoArrivalStats.h"
 #include "common/Metrics.h"
 #include "lib/media/IVideoCodec.h"
 #include "lib/media/MediaDeviceArbiter.h"
@@ -31,6 +33,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <random>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -48,6 +51,29 @@ constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 /** Bytes of one 20 ms mono s16 frame on the speaker. */
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+
+/**
+ * A random, nonzero media sender instance (the media frame nonce's, A029 H2): unique, not secret. pp-cpp-mesh's
+ * NewMediaSenderInstance is the same, out of lib/'s reach (mesh/types/ only).
+ */
+uint64_t NewSenderInstance() {
+  std::random_device rd;
+  uint64_t v = 0;
+  while (v == 0) {
+    v = (static_cast<uint64_t>(rd()) << 32) ^ rd();
+  }
+  return v;
+}
+
+/**
+ * One sent Opus packet holds 40 ms (two 20 ms device frames): half the packets of 20 ms, and with them half the
+ * per-packet headers — 41 kbit/s less on the wire per stream to the hop, for 20 ms more delay (A029). Playout
+ * still runs in 20 ms slots and takes any packet length a peer sends (its Opus TOC says).
+ */
+constexpr int kPacketMs = 40;
+constexpr int kPacketSamples = kSampleRate * kPacketMs / 1000;
+/** The longest Opus packet (120 ms): room for one decoded packet. */
+constexpr int kMaxPacketSamples = kSampleRate * 120 / 1000;
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
 constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
 /** +6 dB on the voice-processing (VPIO) path: the OS attenuates call output there by design and
@@ -56,7 +82,18 @@ constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
-constexpr int kVideoFps = 20;
+// Calls' video sends at 15 fps (with VideoLevelProfile's 250 kbit/s at level 1): with audio and overhead it
+// fits a phone's thin uplink, about 600 kbit/s, with room to spare (lab video_*_narrow, 2026-11-03).
+constexpr int kVideoFps = 15;
+/**
+ * The camera runs at the send rate: every frame it gives is sent and shown in the self-view. A faster camera (30 fps
+ * was tried) costs the sensor's power and converts frames only the self-view shows; at 15 fps, drawn as each frame
+ * comes (IMediaView::SetOnVideoFrame), the self-view is smooth enough. A frame is still encoded only once a send
+ * interval has passed, so a camera that gives more than it was asked for is sent at the send rate.
+ */
+constexpr int kCameraFps = kVideoFps;
+/** A frame is encoded once this long has passed since the last encode (a send period, less camera jitter). */
+constexpr auto kEncodeInterval = std::chrono::milliseconds(1000 / kVideoFps - 8);
 /** How often a session waiting for a busy or stuck device asks the arbiter again (L016). */
 constexpr auto kDeviceRetryPoll = std::chrono::milliseconds(100);
 /** A new session's first mic open waits this long for the previous session to let the mic go. */
@@ -199,6 +236,9 @@ void JoinThreadWatched(std::thread& thread, const char* context, const char* nam
  */
 struct MediaEngine::Shared {
   std::mutex mu;
+  /** SetOnVideoFrame's callback (every session's frames); called after a frame is published, outside its lock. */
+  std::mutex on_video_frame_mu;
+  std::function<void()> on_video_frame;
   /** Under `mu`; a session takes a copy when it starts. */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   /** Where devices come from: `own_devices` (constructor) or `test_devices` (skip-open); under `mu`. */
@@ -289,6 +329,8 @@ struct MediaEngine::Impl {
   std::mutex packet_send_call_mu;
   std::atomic<uint32_t> tx_audio_seq{0};
   std::atomic<uint32_t> tx_video_seq{0};
+  /** Picked with the counters above (they start here and only count up): the sender instance of every packet. */
+  const uint64_t tx_instance = NewSenderInstance();
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_send_video{true};
   std::atomic<int64_t>& adaptation_target_video_bps;
@@ -314,6 +356,11 @@ struct MediaEngine::Impl {
   std::atomic<int64_t> last_tx_audio_ms{0};
   std::atomic<uint64_t> rx_video_frames{0};
   std::atomic<uint64_t> tx_video_frames{0};
+  /** Frames shown in the self-view, and the encoder's time per frame (sum, count, slowest), this session. */
+  std::atomic<uint64_t> preview_frames{0};
+  std::atomic<int64_t> encode_us_total{0};
+  std::atomic<uint64_t> encodes{0};
+  std::atomic<int64_t> encode_us_max{0};
   std::atomic<int64_t> last_rx_video_ms{0};
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
@@ -343,6 +390,10 @@ struct MediaEngine::Impl {
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
     AudioJitterBuffer jitter;
+    /** Decoded samples not yet played: a 40 ms packet plays over two 20 ms slots. */
+    std::vector<int16_t> decoded;
+    /** The last packet's length (samples): what a lost packet is concealed as. */
+    int packet_samples = kFrameSamples;
     uint64_t rx_frames = 0;
     int64_t last_rx_ms = 0;
     float peak_level = 0.f;
@@ -380,6 +431,8 @@ struct MediaEngine::Impl {
     std::unique_ptr<IVideoCodec> codec;
   };
   std::unordered_map<uint32_t, std::shared_ptr<RemoteDecoder>> remote_decoders;
+  /** Per remote video stream: how its frames reached us, before decoding (the transport's share of smoothness). */
+  std::unordered_map<uint32_t, VideoArrivalStats> video_arrivals;
   /** Per remote video stream: when a stalled decoder is rebuilt (B125). Cleared with the decoders. */
   std::unordered_map<uint32_t, DecoderResetBudget> decoder_resets;
   std::atomic<int> video_decode_fail_logs{0};
@@ -391,6 +444,16 @@ struct MediaEngine::Impl {
    * UpdateCameraDisplayRotation (per-frame rotation).
    */
   std::atomic<int> camera_display_rotation{0};
+  void NotifyVideoFrame() {
+    std::function<void()> cb;
+    {
+      std::lock_guard lock(shared->on_video_frame_mu);
+      cb = shared->on_video_frame;
+    }
+    if (cb) {
+      cb();
+    }
+  }
   /** Facing the next camera open asks for: front at each session's start, turned over by FlipCamera. */
   std::atomic<bool> camera_prefer_front{true};
   /** FlipCamera asked the video thread to release the open camera and take the other facing. */
@@ -472,11 +535,14 @@ struct MediaEngine::Impl {
       MirrorRgbaInPlace(copy);
     }
     PremultiplyRgbaInPlace(copy.rgba);
-    std::lock_guard lock(video_frame_mutex);
-    local_video_frame.width = copy.width;
-    local_video_frame.height = copy.height;
-    local_video_frame.rgba = std::move(copy.rgba);
-    local_video_frame.seq = ++local_video_seq;
+    {
+      std::lock_guard lock(video_frame_mutex);
+      local_video_frame.width = copy.width;
+      local_video_frame.height = copy.height;
+      local_video_frame.rgba = std::move(copy.rgba);
+      local_video_frame.seq = ++local_video_seq;
+    }
+    NotifyVideoFrame();
   }
 
   /**
@@ -524,6 +590,11 @@ struct MediaEngine::Impl {
   }
 
   void PublishRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
+    StoreRemoteFrame(stream_id, std::move(frame));
+    NotifyVideoFrame();
+  }
+
+  void StoreRemoteFrame(uint32_t stream_id, VideoFrameRgba&& frame) {
     PremultiplyRgbaInPlace(frame.rgba);
     const int64_t now = util::NowUnixMs();
     std::lock_guard lock(video_frame_mutex);
@@ -673,18 +744,37 @@ struct MediaEngine::Impl {
   }
 
   /**
-   * One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. When the
-   * buffer is over its adaptive target, a first-pass decoded Packet that turns out to be silence is
-   * dropped and a second frame is popped/decoded to catch up by one slot without an audible gap
-   * (adaptive jitter §2).
+   * One 20 ms playout slot for one track into `mix`: from the samples a packet left (a 40 ms packet plays over two
+   * slots), else from the next packet popped and decoded (DecodeNextPacketLocked).
    */
   void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
     if (!track.decoder) {
       return;
     }
-    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
-    const auto plc = [&]() {
-      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+    if (track.decoded.size() < static_cast<size_t>(kFrameSamples)) {
+      DecodeNextPacketLocked(track);
+    }
+    const size_t n = std::min(track.decoded.size(), static_cast<size_t>(kFrameSamples));
+    if (n == 0) {
+      return;
+    }
+    std::vector<int16_t> pcm(track.decoded.begin(), track.decoded.begin() + static_cast<std::ptrdiff_t>(n));
+    track.decoded.erase(track.decoded.begin(), track.decoded.begin() + static_cast<std::ptrdiff_t>(n));
+    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), static_cast<int>(n)));
+    MixPcmSat(mix, pcm);
+    any = true;
+  }
+
+  /**
+   * Appends one packet's audio to `track.decoded`: Packet decoded / FEC-on-Gap / PLC-on-Gap at the lost packet's
+   * length / PLC-on-Empty for one slot. When the buffer is over its adaptive target, a first-pass decoded Packet
+   * that turns out to be silence is dropped and the next one popped/decoded to catch up without an audible gap
+   * (adaptive jitter §2).
+   */
+  void DecodeNextPacketLocked(RemoteAudioTrack& track) {
+    std::vector<int16_t> pcm(static_cast<size_t>(kMaxPacketSamples), 0);
+    const auto plc = [&](int samples) {
+      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), samples, 0);
       if (n > 0) {
         plc_frames_total.fetch_add(1, std::memory_order_relaxed);
       }
@@ -698,46 +788,47 @@ struct MediaEngine::Impl {
       switch (pop.kind) {
       case AudioPlayoutPop::Kind::Packet:
         decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                              kFrameSamples, 0);
+                              kMaxPacketSamples, 0);
+        if (decoded > 0) {
+          track.packet_samples = decoded;
+        }
         break;
       case AudioPlayoutPop::Kind::Gap:
-        // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
-        // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+        // The next packet's in-band FEC (LBRR) only covers the packet right before it; earlier
+        // missing packets of a wider hole are PLC. PLC also if the FEC decode fails. Either is
+        // asked for exactly the lost packet's length, as libopus requires.
         if (pop.fec_usable) {
           decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                                kFrameSamples, 1);
+                                track.packet_samples, 1);
         }
         if (decoded > 0) {
           // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
           // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
           fec_frames_total.fetch_add(1, std::memory_order_relaxed);
         } else {
-          decoded = plc();
+          decoded = plc(track.packet_samples);
         }
         break;
       case AudioPlayoutPop::Kind::Empty:
         // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
         // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+        // One slot of PLC: the next slot asks the buffer again.
         if (track.jitter.underruns() > underruns_before) {
           playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-          decoded = plc();
+          decoded = plc(kFrameSamples);
         }
         break;
       }
       if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
           IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
         track.jitter.NoteSilenceDrop();
-        continue; // catch up: pop and decode the next frame instead of playing this silent one
+        continue; // catch up: pop and decode the next packet instead of playing this silent one
       }
       break;
     }
-    if (decoded <= 0) {
-      return;
+    if (decoded > 0) {
+      track.decoded.insert(track.decoded.end(), pcm.begin(), pcm.begin() + decoded);
     }
-    pcm.resize(static_cast<size_t>(decoded));
-    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), decoded));
-    MixPcmSat(mix, pcm);
-    any = true;
   }
 
   /**
@@ -766,6 +857,7 @@ struct MediaEngine::Impl {
     playout_running = true;
     playout_stage.Set(MediaThreadStage::Idle);
     playout_thread = std::thread([this]() {
+      SetMediaThreadName("pp.playout");
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
       auto last_tick = std::chrono::steady_clock::now();
@@ -1059,6 +1151,7 @@ struct MediaEngine::Impl {
     vpio_disabled_for_session.store(false, std::memory_order_relaxed);
     capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
+      SetMediaThreadName("pp.capture");
       // Device open (and OS mic prompts) stay on this worker so the session's user (a call's accept)
       // can finish its signaling without freezing UI or the mesh.
       capture_stage.Set(MediaThreadStage::OpenDevices);
@@ -1072,9 +1165,9 @@ struct MediaEngine::Impl {
         return;
       }
 
-      std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
+      std::vector<int16_t> pcm(static_cast<size_t>(kPacketSamples));
       std::vector<int16_t> pending;
-      pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
+      pending.reserve(static_cast<size_t>(kPacketSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       int64_t last_capture_pcm_ms = util::NowUnixMs();
       // Opus encoders are not thread-safe: bitrate changes (ApplyTargets, any thread) are
@@ -1170,7 +1263,7 @@ struct MediaEngine::Impl {
               vpio_starve_reopens = 0;
             }
           }
-          if (pending.size() < static_cast<size_t>(kFrameSamples)) {
+          if (pending.size() < static_cast<size_t>(kPacketSamples)) {
             const int64_t now = util::NowUnixMs();
             // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
             // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen (voice
@@ -1208,8 +1301,8 @@ struct MediaEngine::Impl {
               continue;
             }
           } else {
-            std::copy_n(pending.begin(), kFrameSamples, pcm.begin());
-            pending.erase(pending.begin(), pending.begin() + kFrameSamples);
+            std::copy_n(pending.begin(), kPacketSamples, pcm.begin());
+            pending.erase(pending.begin(), pending.begin() + kPacketSamples);
             if (muted.load(std::memory_order_relaxed)) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
@@ -1224,7 +1317,7 @@ struct MediaEngine::Impl {
                 }
               }
 #endif
-              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
+              SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kPacketSamples));
             }
           }
         } else {
@@ -1257,7 +1350,7 @@ struct MediaEngine::Impl {
         }
         capture_stage.Set(MediaThreadStage::Encode);
         const int encoded =
-            opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
+            opus_encode(enc, pcm.data(), kPacketSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
           continue;
         }
@@ -1265,6 +1358,7 @@ struct MediaEngine::Impl {
           MediaPacket pkt;
           pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = tx_audio_seq.fetch_add(1) + 1;
+          pkt.instance = tx_instance;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
             capture_stage.Set(MediaThreadStage::Send);
@@ -1277,10 +1371,10 @@ struct MediaEngine::Impl {
           } catch (...) {
           }
         }
-        // Pace silence / starved-capture TX to one Opus frame per period.
+        // Pace silence / starved-capture TX to one Opus packet per its length.
         if (paced_silence_frame) {
           capture_stage.Set(MediaThreadStage::Sleep);
-          std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+          std::this_thread::sleep_for(std::chrono::milliseconds(kPacketMs));
         }
       }
       capture_stage.Set(MediaThreadStage::Exiting);
@@ -1290,7 +1384,10 @@ struct MediaEngine::Impl {
   void StartVideoLoop() {
     video_running = true;
     video_stage.Set(MediaThreadStage::Idle);
-    video_thread = std::thread([this]() { RunVideoLoop(); });
+    video_thread = std::thread([this]() {
+      SetMediaThreadName("pp.video");
+      RunVideoLoop();
+    });
   }
 
   void JoinVideoThread(const char* context) {
@@ -1309,7 +1406,7 @@ struct MediaEngine::Impl {
       request.holder = session_id;
     }
     request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
-    request.format.fps = kVideoFps;
+    request.format.fps = kCameraFps;
     request.format.prefer_front_facing = camera_prefer_front.load(std::memory_order_relaxed);
     auto lease = DeviceArbiter().AcquireCamera(request);
     if (!lease && !DeviceArbiter().CanAcquire(MediaDeviceKind::Camera)) {
@@ -1384,7 +1481,7 @@ struct MediaEngine::Impl {
 
   /** Video thread only: orient + crop → preview (mirrored like FaceTime / WhatsApp self-view, Kenneth
    *  2026-11-03 "视频显示自己是反的"); encode the un-mirrored frame → send on channel 1. */
-  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
+  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe, const bool encode) {
     // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
     // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
     const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
@@ -1400,17 +1497,24 @@ struct MediaEngine::Impl {
       if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width,
                               geometry.encode_height, preview_fitted)) {
         PublishLocalPreview(preview_fitted, geometry.mirror_preview);
+        preview_frames.fetch_add(1, std::memory_order_relaxed);
       }
     }
     const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
     VideoFrameRgba fitted;
-    VideoFrameI420 i420;
-    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
-        !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted)) {
       return;
     }
     if (preview_rotate_cw == rotate_cw) {
       PublishLocalPreview(fitted, geometry.mirror_preview);
+      preview_frames.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (!encode) {
+      return; // a self-view frame between two sends
+    }
+    VideoFrameI420 i420;
+    if (!RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+      return;
     }
     if (!adaptation_send_video.load(std::memory_order_relaxed)) {
       need_keyframe = true; // the path cannot carry video now: nothing goes out; a keyframe starts it again
@@ -1420,7 +1524,9 @@ struct MediaEngine::Impl {
       return;
     }
     video_stage.Set(MediaThreadStage::Encode);
+    const auto encode_started = std::chrono::steady_clock::now();
     auto encoded = video_codec->Encode(i420, need_keyframe);
+    NoteEncodeTime(std::chrono::steady_clock::now() - encode_started);
     if (!encoded || encoded->annex_b.empty()) {
       return;
     }
@@ -1439,6 +1545,7 @@ struct MediaEngine::Impl {
     MediaPacket pkt;
     pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = tx_video_seq.fetch_add(1) + 1;
+    pkt.instance = tx_instance;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
     try {
@@ -1452,9 +1559,19 @@ struct MediaEngine::Impl {
     }
   }
 
+  void NoteEncodeTime(const std::chrono::steady_clock::duration took) {
+    const int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(took).count();
+    encode_us_total.fetch_add(us, std::memory_order_relaxed);
+    encodes.fetch_add(1, std::memory_order_relaxed);
+    int64_t max = encode_us_max.load(std::memory_order_relaxed);
+    while (us > max && !encode_us_max.compare_exchange_weak(max, us, std::memory_order_relaxed)) {
+    }
+  }
+
   /** The camera lease lives on this thread: open when wanted, release when not, frames in between. */
   void RunVideoLoop() {
-    const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
+    const auto frame_period = std::chrono::milliseconds(1000 / kCameraFps);
+    std::optional<std::chrono::steady_clock::time_point> last_encode;
     std::unique_ptr<CameraDeviceLease> camera;
     CameraGeometry geometry;
     bool need_keyframe = true;
@@ -1569,7 +1686,12 @@ struct MediaEngine::Impl {
         camera_requested.reset();
       }
       video_stage.Set(MediaThreadStage::Convert);
-      EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      const auto now = std::chrono::steady_clock::now();
+      const bool encode = !last_encode || now - *last_encode >= kEncodeInterval;
+      if (encode) {
+        last_encode = now;
+      }
+      EncodeAndSend(std::move(*frame), geometry, need_keyframe, encode);
       (void)DropStuckEncoder();
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       video_stage.Set(MediaThreadStage::Sleep);
@@ -1602,6 +1724,11 @@ struct MediaEngine::Impl {
     AudioPacket packet;
     packet.seq = seq;
     packet.recv_ms = recv_mono_ms;
+    if (const int samples = opus_packet_get_nb_samples(reinterpret_cast<const unsigned char*>(data),
+                                                       static_cast<opus_int32>(size), kSampleRate);
+        samples > 0) {
+      packet.duration_ms = samples * 1000 / kSampleRate;
+    }
     packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1775,6 +1902,23 @@ struct MediaEngine::Impl {
    * on its own thread) and reports nothing. Never waits on a media thread or a device. Returns
    * whether anything ran (an idle session has nothing to clean up).
    */
+  /** Under `mutex`, as the session stops: one metrics line per remote video stream (Send diagnostics carries it). */
+  void EmitVideoArrivalsLocked() const {
+    for (const auto& [stream_id, stats] : video_arrivals) {
+      const VideoArrivalSummary a = stats.Summary();
+      MetricsLine("video.rx")
+          .Add("stream", static_cast<int64_t>(stream_id))
+          .Add("frames", static_cast<int64_t>(a.frames))
+          .Add("lost", static_cast<int64_t>(a.lost))
+          .Add("gap_p50_ms", a.gap_p50_ms)
+          .Add("gap_p95_ms", a.gap_p95_ms)
+          .Add("gap_max_ms", a.gap_max_ms)
+          .Add("stalls", static_cast<int64_t>(a.stalls))
+          .Add("bunched", static_cast<int64_t>(a.bunched))
+          .Emit();
+    }
+  }
+
   bool BeginRetire() {
     audio_session_seen = SessionGeneration();
     retired.store(true, std::memory_order_release);
@@ -1783,6 +1927,7 @@ struct MediaEngine::Impl {
         active || packet_mode || capture_thread.joinable() || playout_thread.joinable() || video_thread.joinable();
     if (running) {
       EngineLog().info << "media stop begin session=" << session_id;
+      EmitVideoArrivalsLocked();
     }
     active = false;
     muted.store(false, std::memory_order_relaxed);
@@ -2080,6 +2225,9 @@ void MediaEngine::OnInboundPacket(const MediaPacket& packet) {
       impl->OnRemoteOpusFrame(packet.stream_id, packet.seq, reinterpret_cast<const std::byte*>(packet.payload.data()),
                               packet.payload.size());
     } else if (mesh::IsVideoChannel(packet.channel_id)) {
+      impl->video_arrivals[packet.stream_id].Note(packet.seq, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                  std::chrono::steady_clock::now().time_since_epoch())
+                                                                  .count());
       video_decoder = impl->RemoteDecoderLocked(packet.stream_id);
     }
   }
@@ -2138,6 +2286,12 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
   h.last_tx_audio_ms = impl->last_tx_audio_ms.load(std::memory_order_relaxed);
   h.rx_video_frames = impl->rx_video_frames.load(std::memory_order_relaxed);
   h.tx_video_frames = impl->tx_video_frames.load(std::memory_order_relaxed);
+  h.preview_frames = impl->preview_frames.load(std::memory_order_relaxed);
+  if (const uint64_t n = impl->encodes.load(std::memory_order_relaxed); n > 0) {
+    h.encode_ms_avg =
+        static_cast<double>(impl->encode_us_total.load(std::memory_order_relaxed)) / 1000.0 / static_cast<double>(n);
+  }
+  h.encode_ms_max = static_cast<double>(impl->encode_us_max.load(std::memory_order_relaxed)) / 1000.0;
   h.last_rx_video_ms = impl->last_rx_video_ms.load(std::memory_order_relaxed);
   h.video_target_bps = impl->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl->local_input_level.load(std::memory_order_relaxed);
@@ -2152,6 +2306,9 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
     h.stream_count = impl->audio_tracks.size();
     h.packet_mode = impl->packet_mode;
     h.capture_available = impl->capture_available;
+    for (const auto& [id, stats] : impl->video_arrivals) {
+      h.video_arrivals.push_back(VideoStreamArrival{.stream_id = id, .arrival = stats.Summary()});
+    }
     h.streams.reserve(impl->audio_tracks.size());
     for (const auto& [id, track] : impl->audio_tracks) {
       if (!track) {
@@ -2163,10 +2320,10 @@ MediaEngineHealth MediaEngine::HealthSnapshot() const {
       s.last_rx_ms = track->last_rx_ms;
       s.peak_level = track->peak_level;
       h.streams.push_back(s);
-      h.jitter_target_ms = std::max(h.jitter_target_ms,
-                                     static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
-      h.jitter_depth_ms = std::max(h.jitter_depth_ms,
-                                    static_cast<int64_t>(track->jitter.size()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_target_ms =
+          std::max(h.jitter_target_ms, static_cast<int64_t>(track->jitter.TargetFrames()) * track->jitter.PacketMs());
+      h.jitter_depth_ms =
+          std::max(h.jitter_depth_ms, static_cast<int64_t>(track->jitter.size()) * track->jitter.PacketMs());
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
     }
@@ -2443,6 +2600,11 @@ float MediaEngine::LocalInputLevel() const {
 float MediaEngine::RemoteOutputLevel() const {
   const std::shared_ptr<Impl> impl = Session();
   return impl->remote_output_level.load(std::memory_order_relaxed);
+}
+
+void MediaEngine::SetOnVideoFrame(std::function<void()> on_frame) {
+  std::lock_guard lock(shared_->on_video_frame_mu);
+  shared_->on_video_frame = std::move(on_frame);
 }
 
 bool MediaEngine::CopyLocalVideoFrame(VideoTileFrame& out) const {

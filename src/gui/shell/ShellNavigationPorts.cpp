@@ -13,8 +13,6 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   };
   navigation.has_local_back = [&shell](const std::string& id) { return shell.HasLocalBack(id); };
   navigation.select_nav_tab = [&shell](const NavTab tab) { shell.SelectNavTab(tab); };
-  navigation.open_account_sheet = [&shell]() { shell.OpenAccountSheet(); };
-  navigation.close_account_sheet = [&shell]() { shell.CloseAccountSheet(); };
   navigation.clear_primary_pane = [&shell]() { shell.ClearPrimaryPane(); };
   navigation.set_primary_pane = [&shell](const std::string& key) { shell.SetPrimaryPane(key); };
   navigation.push_transient = [&shell](const PaneSpec& spec) { shell.PushTransient(spec); };
@@ -42,6 +40,8 @@ ShellNavigationPorts MakeShellNavigationPorts(ShellHost& shell) {
   navigation.close_auxiliary = [&shell]() { shell.CloseAuxiliary(); };
   navigation.push_layer = [&shell](const PaneSpec& spec) { return shell.PushLayer(spec); };
   navigation.close_layer = [&shell](const int layer_id) { shell.CloseLayer(layer_id); };
+  navigation.has_layer = [&shell](const int layer_id) { return shell.HasLayer(layer_id); };
+  navigation.close_page_sheets = [&shell]() { shell.ClosePageSheets(); };
   navigation.set_bottom_chrome = [&shell](const BottomChromeSpec& spec) { return shell.SetBottomChrome(spec); };
   navigation.clear_bottom_chrome = [&shell]() { shell.ClearBottomChrome(); };
   navigation.bottom_chrome_open = [&shell]() { return shell.BottomChromeOpen(); };

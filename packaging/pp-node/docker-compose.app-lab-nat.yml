@@ -32,7 +32,8 @@ x-app-lab-user: &app-lab-user
     context: .
     dockerfile: Dockerfile.hard-peer
   image: pp-hard-peer:local
-  cap_add: [NET_ADMIN]
+  # SYS_PTRACE: gdb in the container can take a hung probe's stacks (docker exec … gdb -p).
+  cap_add: [NET_ADMIN, SYS_PTRACE]
   volumes:
     - ${PP_APP_LAB_PROBE_DIR:-../../build/src/app/node}:/probes:ro
     - ${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}:${PP_APP_LAB_NAT_SHARE:-/tmp/pp-app-lab-nat}

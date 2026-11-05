@@ -31,6 +31,9 @@ DeviceVitals ReadDeviceVitals() {
     v.thermal = 3;
     break;
   }
+  if (@available(macOS 12.0, iOS 9.0, *)) {
+    v.low_power = [NSProcessInfo processInfo].isLowPowerModeEnabled;
+  }
 #if TARGET_OS_IPHONE
   UIDevice* device = [UIDevice currentDevice];
   if (!device.batteryMonitoringEnabled) {

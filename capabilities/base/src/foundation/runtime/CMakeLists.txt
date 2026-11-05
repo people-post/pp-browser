@@ -18,6 +18,10 @@ else()
   target_sources(pp_foundation_runtime_core PRIVATE BackgroundActivity_Default.cpp)
 endif()
 
+if(PP_BROWSER_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()
+
 if(PP_BROWSER_HEADLESS)
   return()
 endif()

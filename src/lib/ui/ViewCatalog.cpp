@@ -45,6 +45,14 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"nav_rail", "views/nav_rail.rml"},
       {"contacts", "views/contacts.rml"},
       {"contact_detail", "views/contact_detail.rml"},
+      {"new_chat", "views/new_chat.rml"},
+      {"add_contact", "views/add_contact.rml"},
+      {"my_qr", "views/my_qr.rml"},
+      {"ask_ai", "views/ask_ai.rml"},
+      {"group_info", "views/group_info.rml"},
+      {"group_leave", "views/group_leave.rml"},
+      {"home_edit", "views/home_edit.rml"},
+      {"blocked_people", "views/blocked_people.rml"},
       {"people_picker", "views/people_picker.rml"},
       {"qr_scan", "views/qr_scan.rml"},
       {"onboarding", "views/onboarding.rml"},
@@ -58,8 +66,11 @@ const std::unordered_map<std::string, std::string>& KnownKeys() {
       {"settings_section_network", "views/settings_section_network.rml"},
       {"settings_section_appearance", "views/settings_section_appearance.rml"},
       {"settings_section_security", "views/settings_section_security.rml"},
+      {"settings_security_pin", "views/settings_security_pin.rml"},
+      {"settings_security_transfer", "views/settings_security_transfer.rml"},
       {"settings_section_storage", "views/settings_section_storage.rml"},
       {"settings_section_about", "views/settings_section_about.rml"},
+      {"ui_perf_test", "views/ui_perf_test.rml"},
   };
   return keys;
 }

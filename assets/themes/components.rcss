@@ -73,25 +73,23 @@ select selectbox option {
 }
 
 .surface-chrome--frost {
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(20px);
 }
 
-.shell-bottom-chrome--frost .shell-nav-rail--compact .shell-nav-pill {
-  backdrop-filter: blur(12px);
+.shell-bottom-chrome--frost {
+  backdrop-filter: blur(20px);
 }
 
-.shell-bottom-chrome--solid .shell-nav-rail--compact .shell-nav-pill {
+.shell-bottom-chrome--solid {
   backdrop-filter: none;
 }
 
 .surface-chrome--solid,
-.shell-bottom-chrome--frost.surface-chrome--solid .shell-nav-rail--compact .shell-nav-pill,
+.shell-bottom-chrome--frost.shell-bottom-chrome--solid,
 .surface-chrome--solid.surface-chrome--frost,
-.shell-nav-rail--compact .shell-nav-pill.surface-chrome--solid,
 .shell-chat-overlay-chrome.surface-chrome--solid,
 .shell-transient-chrome.surface-chrome--solid,
 .shell-sheet-compact-chrome.surface-chrome--solid,
-.shell-account-sheet-header.surface-chrome--solid,
 .shell-composer-mount.surface-chrome--solid {
   backdrop-filter: none;
 }
@@ -332,33 +330,6 @@ select selectbox option {
   padding: 0 14dp;
   gap: 6dp;
   font-weight: bold;
-}
-
-.shell-profile-btn {
-  position: relative;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  min-width: 36dp;
-  padding: 0;
-  border: 0;
-  border-radius: 18dp;
-  cursor: pointer;
-}
-
-.shell-profile-btn svg {
-  flex-shrink: 0;
-  width: 18dp;
-  height: 18dp;
-}
-
-.badge-dot--profile {
-  position: absolute;
-  top: 0;
-  right: 0;
 }
 
 .messages {
@@ -691,6 +662,11 @@ select selectbox option {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+/* The phone's microphone at the row's end (the phone rules below show it); hidden elsewhere. */
+.prompt-voice-toggle-btn--end {
+  display: none;
 }
 
 /* Reply / Ask AI in progress: the quoted message, one line, above the composer box. */
@@ -1452,6 +1428,23 @@ select selectbox option {
   bottom: 0;
 }
 
+/* Phones: the band under the status bar (ShellHost sets its height to the top inset), over the chat page (25) and the
+   pushed pages (30), under the AI dot (40) and everything above it: a top bar that hides on scroll slides under it. */
+.shell-statusbar-strip {
+  display: none;
+}
+
+.shell-body--compact .shell-statusbar-strip {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
 /* Sibling of #shell-root — holds the mobile/compact emoji keyboard panel. */
 .shell-emoji-keyboard-mount {
   position: absolute;
@@ -1461,6 +1454,1316 @@ select selectbox option {
   bottom: 0;
   z-index: 50;
   pointer-events: none;
+}
+
+/* Phone AI dot (DESIGN-pp-ui §8.14; ShellAiDot places it with left / top). Sibling of #shell-root so a shell
+   remount keeps it. The mount lets every tap through; the dot takes its own. z-index 40: over the pages (chat page 25,
+   pushed page 30), under the call bar (45), the startup cover (48), sheets, panels and dialogs (50), menus (52), the
+   call ring (53), the PIN gate (55) and the toasts (110, in #shell-chrome). It also hides itself for most of those. */
+.shell-ai-dot-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+/* Me → AI assistant → Assistant size (AiDotModel::SizeDp): small 52dp, medium 64dp (default), large 76dp. The box is
+   also what takes the touch, so the hit area follows the size. */
+.ai-dot {
+  display: none;
+  position: absolute;
+  left: 0dp;
+  top: 0dp;
+  width: 64dp;
+  height: 64dp;
+  pointer-events: auto;
+}
+
+.ai-dot--size-s {
+  width: 52dp;
+  height: 52dp;
+}
+
+.ai-dot--size-l {
+  width: 76dp;
+  height: 76dp;
+}
+
+.ai-dot--shown {
+  display: block;
+}
+
+/* The figure is the 900-unit mascot box; it sways and leans from near its feet. Its two parts (the back and the front
+   bubble, each with its own eyes and symbols) and the particles are drawn in one square viewBox with room round the
+   mascot for the shadow (64 of its 900 units on each side), so they are 1028/900 of the dot wide, 64/900 of it out, at
+   every size. The shadow is in the SVGs (rasterized once), not an RCSS filter: a filter renders an extra layer every
+   frame the dot is drawn. */
+.ai-dot-figure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 85%;
+}
+
+.ai-dot-layer,
+.ai-dot-part {
+  position: absolute;
+  top: -7.1111%;
+  left: -7.1111%;
+  width: 114.2222%;
+  height: 114.2222%;
+}
+
+.ai-dot-part .ai-dot-layer {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Each part turns about the bottom middle of its bubble (the mockup's transform-origin 50% 100%, fill-box): the front
+   bubble's at 443, 790 and the back one's at 615, 530 of the 16 -24 1028 1028 viewBox. Percent translations below are of
+   the moved box, so in a part or layer 1 mockup unit is 0.0973%, in the figure 0.1111%. */
+.ai-dot-front {
+  transform-origin: 41.6% 79.2%;
+}
+
+.ai-dot-back {
+  transform-origin: 58.3% 53.9%;
+}
+
+/* Each pair of eyes blinks, grows and moves about its own middle (front 443, 540; back 699, 296). */
+.ai-dot-eyes-front {
+  transform-origin: 41.5% 54.9%;
+}
+
+.ai-dot-eyes-back {
+  transform-origin: 66.4% 31.1%;
+}
+
+/* Happy and shut eyes stand in for the open ones while an action asks for them (a class, no animation). */
+.ai-dot-hap,
+.ai-dot-shut {
+  display: none;
+}
+
+/* The cheeks, mouth, the plain look's symbols and the particles show only during their action. Under its class each
+   rests at opacity 0: RmlUi drops an RCSS animation's value when it ends, so the layer then falls back to invisible,
+   not to a still picture, for the short while before AiDotModel takes the class off. */
+.ai-dot-blush,
+.ai-dot-mouth,
+.ai-dot-eq,
+.ai-dot-line,
+.ai-dot-bar,
+.ai-dot-ddot,
+.ai-dot-check,
+.ai-dot-dlock,
+.ai-dot-arc,
+.ai-dot-bubble,
+.ai-dot-tdot,
+.ai-dot-star,
+.ai-dot-spark,
+.ai-dot-heart,
+.ai-dot-z,
+.ai-dot-lock {
+  display: none;
+}
+
+/* Where the particles grow from: B's mouth (443, 630; A's and C's within a few units), C's bars (420 / 443 / 466, 617),
+   D's lines from their left end (x 340), its bars (375 + 34n, 540), its check from its left end (382, 541), its lock
+   (443, 558); the star (650, 410), the sparkle (671, 355), the hearts (300, 322 and 820, 175), the lock badge (610, 700). */
+.ai-dot-mouth {
+  transform-origin: 41.5% 63.6%;
+}
+
+.ai-dot-eq-1 {
+  transform-origin: 39.3% 62.4%;
+}
+
+.ai-dot-eq-2 {
+  transform-origin: 41.5% 62.4%;
+}
+
+.ai-dot-eq-3 {
+  transform-origin: 43.8% 62.4%;
+}
+
+.ai-dot-line {
+  transform-origin: 31.5% 54.9%;
+}
+
+.ai-dot-bar-1 {
+  transform-origin: 34.9% 54.9%;
+}
+
+.ai-dot-bar-2 {
+  transform-origin: 38.2% 54.9%;
+}
+
+.ai-dot-bar-3 {
+  transform-origin: 41.5% 54.9%;
+}
+
+.ai-dot-bar-4 {
+  transform-origin: 44.8% 54.9%;
+}
+
+.ai-dot-bar-5 {
+  transform-origin: 48.2% 54.9%;
+}
+
+.ai-dot-check {
+  transform-origin: 35.6% 55%;
+}
+
+.ai-dot-dlock {
+  transform-origin: 41.5% 56.6%;
+}
+
+.ai-dot-star {
+  transform-origin: 61.7% 42.2%;
+}
+
+.ai-dot-spark {
+  transform-origin: 63.7% 36.9%;
+}
+
+.ai-dot-heart-1 {
+  transform-origin: 27.6% 33.7%;
+}
+
+.ai-dot-heart-2 {
+  transform-origin: 78.2% 19.4%;
+}
+
+.ai-dot-lock {
+  transform-origin: 57.8% 70.4%;
+}
+
+/* Actions (AiDotModel::IdleLengthMs; the mockups' motions, DEV/ui-mockups/mascot-v1.html, mascot-v2.html,
+   mascot-compare.html): one run each, started and ended by a class; between them nothing animates, so the app draws
+   nothing for the dot. The mockup loops each state; here an action plays its loop once or twice, and particles that
+   loop out of step there (arcs, dots, bars, z's, hearts) start later or have their phase baked in, so each one starts
+   and ends invisible within the action. C and D (calm) use the mockup's smaller, slower variants. Every keyframe list
+   starts and ends at rest. */
+
+/* Sway: rocks side to side. */
+@keyframes ai-dot-sway {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(-9deg); }
+  45% { transform: rotate(7deg); }
+  70% { transform: rotate(-4deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-sway-calm {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  60% { transform: rotate(2deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.ai-dot--sway .ai-dot-figure {
+  animation: 1.2s sine-in-out ai-dot-sway;
+}
+
+.ai-dot--calm.ai-dot--sway .ai-dot-figure {
+  animation: 1.2s sine-in-out ai-dot-sway-calm;
+}
+
+/* Float: the mockup's float (translateY 0, -10, 0 units; calm floatC -5), once for 2.5 s instead of a loop, and back
+   at rest (AiDotModel::kFloatMs). */
+/* Two soft bobs, ~4.5dp at the medium size: the mockup's 1% drift was invisible on a phone. */
+@keyframes ai-dot-float {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-7%); }
+  50% { transform: translateY(-1%); }
+  75% { transform: translateY(-5%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-float-calm {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-4%); }
+  50% { transform: translateY(-0.5%); }
+  75% { transform: translateY(-3%); }
+  100% { transform: translateY(0%); }
+}
+
+.ai-dot--float .ai-dot-figure {
+  animation: 2.5s sine-in-out ai-dot-float;
+}
+
+.ai-dot--calm.ai-dot--float .ai-dot-figure {
+  animation: 2.5s sine-in-out ai-dot-float-calm;
+}
+
+/* Blink. */
+@keyframes ai-dot-blink {
+  0% { transform: scaleY(1); }
+  35% { transform: scaleY(0.1); }
+  70% { transform: scaleY(1); }
+  100% { transform: scaleY(1); }
+}
+
+.ai-dot--blink .ai-dot-eyes-front,
+.ai-dot--blink .ai-dot-eyes-back {
+  animation: 0.5s quadratic-in-out ai-dot-blink;
+}
+
+/* Look: the mockup's idle glance, the two look at each other (front eyes 18, -12; back eyes -10, 8) for a moment. */
+@keyframes ai-dot-look-front {
+  0% { transform: translate(0%, 0%); }
+  17% { transform: translate(1.75%, -1.17%); }
+  82% { transform: translate(1.75%, -1.17%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-look-back {
+  0% { transform: translate(0%, 0%); }
+  17% { transform: translate(-0.97%, 0.78%); }
+  82% { transform: translate(-0.97%, 0.78%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+.ai-dot--look .ai-dot-eyes-front {
+  animation: 2s sine-in-out ai-dot-look-front;
+}
+
+.ai-dot--look .ai-dot-eyes-back {
+  animation: 2s sine-in-out ai-dot-look-back;
+}
+
+/* Nod: the partner's (talk, listen) and both bubbles' while listening; 3deg and 4 units up. */
+@keyframes ai-dot-nod {
+  0% { transform: translateY(0%) rotate(0deg); }
+  50% { transform: translateY(-0.39%) rotate(3deg); }
+  100% { transform: translateY(0%) rotate(0deg); }
+}
+
+/* Talk: the mouth opens and shuts four times (the mockup's 0.42 s beats), the front eyes glance up, the partner nods.
+   C talks with three equalizer bars, D writes three text lines one after another. */
+@keyframes ai-dot-talk-mouth {
+  0% { opacity: 0; transform: scale(0.9, 0.25); }
+  8% { opacity: 1; transform: scale(0.92, 0.4); }
+  25% { opacity: 1; transform: scale(1, 1); }
+  50% { opacity: 1; transform: scale(0.9, 0.25); }
+  75% { opacity: 1; transform: scale(1, 1); }
+  92% { opacity: 1; transform: scale(0.92, 0.4); }
+  100% { opacity: 0; transform: scale(0.9, 0.25); }
+}
+
+@keyframes ai-dot-talk-eyes {
+  0% { transform: translateY(0%); }
+  15% { transform: translateY(-1.17%); }
+  85% { transform: translateY(-1.17%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-line {
+  0% { opacity: 1; transform: scaleX(0); }
+  35% { opacity: 1; transform: scaleX(1); }
+  85% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+/* C's bars, D's bars and the typing dots move out of step: their phases are baked in, sampled over the action (the
+   mockup's eqC and dot loops with their delays), each starting and ending invisible. */
+@keyframes ai-dot-eq-1 {
+  0% { opacity: 0.00; transform: scaleY(0.30); }
+  6.25% { opacity: 1.00; transform: scaleY(0.37); }
+  12.5% { opacity: 1.00; transform: scaleY(0.56); }
+  18.75% { opacity: 1.00; transform: scaleY(0.79); }
+  25% { opacity: 1.00; transform: scaleY(0.96); }
+  31.25% { opacity: 1.00; transform: scaleY(1.00); }
+  37.5% { opacity: 1.00; transform: scaleY(0.89); }
+  43.75% { opacity: 1.00; transform: scaleY(0.68); }
+  50% { opacity: 1.00; transform: scaleY(0.46); }
+  56.25% { opacity: 1.00; transform: scaleY(0.32); }
+  62.5% { opacity: 1.00; transform: scaleY(0.32); }
+  68.75% { opacity: 1.00; transform: scaleY(0.45); }
+  75% { opacity: 1.00; transform: scaleY(0.67); }
+  81.25% { opacity: 1.00; transform: scaleY(0.88); }
+  87.5% { opacity: 1.00; transform: scaleY(0.99); }
+  93.75% { opacity: 1.00; transform: scaleY(0.96); }
+  100% { opacity: 0.00; transform: scaleY(0.80); }
+}
+@keyframes ai-dot-eq-2 {
+  0% { opacity: 0.00; transform: scaleY(0.48); }
+  6.25% { opacity: 1.00; transform: scaleY(0.33); }
+  12.5% { opacity: 1.00; transform: scaleY(0.31); }
+  18.75% { opacity: 1.00; transform: scaleY(0.44); }
+  25% { opacity: 1.00; transform: scaleY(0.65); }
+  31.25% { opacity: 1.00; transform: scaleY(0.86); }
+  37.5% { opacity: 1.00; transform: scaleY(0.99); }
+  43.75% { opacity: 1.00; transform: scaleY(0.97); }
+  50% { opacity: 1.00; transform: scaleY(0.82); }
+  56.25% { opacity: 1.00; transform: scaleY(0.60); }
+  62.5% { opacity: 1.00; transform: scaleY(0.39); }
+  68.75% { opacity: 1.00; transform: scaleY(0.30); }
+  75% { opacity: 1.00; transform: scaleY(0.35); }
+  81.25% { opacity: 1.00; transform: scaleY(0.53); }
+  87.5% { opacity: 1.00; transform: scaleY(0.76); }
+  93.75% { opacity: 1.00; transform: scaleY(0.94); }
+  100% { opacity: 0.00; transform: scaleY(1.00); }
+}
+@keyframes ai-dot-eq-3 {
+  0% { opacity: 0.00; transform: scaleY(0.84); }
+  6.25% { opacity: 1.00; transform: scaleY(0.62); }
+  12.5% { opacity: 1.00; transform: scaleY(0.41); }
+  18.75% { opacity: 1.00; transform: scaleY(0.30); }
+  25% { opacity: 1.00; transform: scaleY(0.34); }
+  31.25% { opacity: 1.00; transform: scaleY(0.51); }
+  37.5% { opacity: 1.00; transform: scaleY(0.74); }
+  43.75% { opacity: 1.00; transform: scaleY(0.93); }
+  50% { opacity: 1.00; transform: scaleY(1.00); }
+  56.25% { opacity: 1.00; transform: scaleY(0.93); }
+  62.5% { opacity: 1.00; transform: scaleY(0.74); }
+  68.75% { opacity: 1.00; transform: scaleY(0.51); }
+  75% { opacity: 1.00; transform: scaleY(0.34); }
+  81.25% { opacity: 1.00; transform: scaleY(0.30); }
+  87.5% { opacity: 1.00; transform: scaleY(0.41); }
+  93.75% { opacity: 1.00; transform: scaleY(0.62); }
+  100% { opacity: 0.00; transform: scaleY(0.84); }
+}
+@keyframes ai-dot-bar-1 {
+  0% { opacity: 0.00; transform: scaleY(0.30); }
+  4.17% { opacity: 0.67; transform: scaleY(0.38); }
+  8.33% { opacity: 1.00; transform: scaleY(0.59); }
+  12.5% { opacity: 1.00; transform: scaleY(0.82); }
+  16.67% { opacity: 1.00; transform: scaleY(0.98); }
+  20.83% { opacity: 1.00; transform: scaleY(0.98); }
+  25% { opacity: 1.00; transform: scaleY(0.82); }
+  29.17% { opacity: 1.00; transform: scaleY(0.59); }
+  33.33% { opacity: 1.00; transform: scaleY(0.38); }
+  37.5% { opacity: 1.00; transform: scaleY(0.30); }
+  41.67% { opacity: 1.00; transform: scaleY(0.38); }
+  45.83% { opacity: 1.00; transform: scaleY(0.59); }
+  50% { opacity: 1.00; transform: scaleY(0.82); }
+  54.17% { opacity: 1.00; transform: scaleY(0.98); }
+  58.33% { opacity: 1.00; transform: scaleY(0.98); }
+  62.5% { opacity: 1.00; transform: scaleY(0.83); }
+  66.67% { opacity: 1.00; transform: scaleY(0.59); }
+  70.83% { opacity: 1.00; transform: scaleY(0.38); }
+  75% { opacity: 1.00; transform: scaleY(0.30); }
+  79.17% { opacity: 1.00; transform: scaleY(0.38); }
+  83.33% { opacity: 1.00; transform: scaleY(0.59); }
+  87.5% { opacity: 1.00; transform: scaleY(0.83); }
+  91.67% { opacity: 1.00; transform: scaleY(0.98); }
+  95.83% { opacity: 0.67; transform: scaleY(0.98); }
+  100% { opacity: 0.00; transform: scaleY(0.83); }
+}
+@keyframes ai-dot-bar-2 {
+  0% { opacity: 0.00; transform: scaleY(0.42); }
+  4.17% { opacity: 0.67; transform: scaleY(0.30); }
+  8.33% { opacity: 1.00; transform: scaleY(0.35); }
+  12.5% { opacity: 1.00; transform: scaleY(0.54); }
+  16.67% { opacity: 1.00; transform: scaleY(0.78); }
+  20.83% { opacity: 1.00; transform: scaleY(0.96); }
+  25% { opacity: 1.00; transform: scaleY(0.99); }
+  29.17% { opacity: 1.00; transform: scaleY(0.87); }
+  33.33% { opacity: 1.00; transform: scaleY(0.64); }
+  37.5% { opacity: 1.00; transform: scaleY(0.42); }
+  41.67% { opacity: 1.00; transform: scaleY(0.30); }
+  45.83% { opacity: 1.00; transform: scaleY(0.35); }
+  50% { opacity: 1.00; transform: scaleY(0.54); }
+  54.17% { opacity: 1.00; transform: scaleY(0.78); }
+  58.33% { opacity: 1.00; transform: scaleY(0.96); }
+  62.5% { opacity: 1.00; transform: scaleY(0.99); }
+  66.67% { opacity: 1.00; transform: scaleY(0.87); }
+  70.83% { opacity: 1.00; transform: scaleY(0.64); }
+  75% { opacity: 1.00; transform: scaleY(0.42); }
+  79.17% { opacity: 1.00; transform: scaleY(0.30); }
+  83.33% { opacity: 1.00; transform: scaleY(0.35); }
+  87.5% { opacity: 1.00; transform: scaleY(0.54); }
+  91.67% { opacity: 1.00; transform: scaleY(0.78); }
+  95.83% { opacity: 0.67; transform: scaleY(0.96); }
+  100% { opacity: 0.00; transform: scaleY(0.99); }
+}
+@keyframes ai-dot-bar-3 {
+  0% { opacity: 0.00; transform: scaleY(0.69); }
+  4.17% { opacity: 0.67; transform: scaleY(0.45); }
+  8.33% { opacity: 1.00; transform: scaleY(0.31); }
+  12.5% { opacity: 1.00; transform: scaleY(0.33); }
+  16.67% { opacity: 1.00; transform: scaleY(0.50); }
+  20.83% { opacity: 1.00; transform: scaleY(0.73); }
+  25% { opacity: 1.00; transform: scaleY(0.93); }
+  29.17% { opacity: 1.00; transform: scaleY(1.00); }
+  33.33% { opacity: 1.00; transform: scaleY(0.90); }
+  37.5% { opacity: 1.00; transform: scaleY(0.69); }
+  41.67% { opacity: 1.00; transform: scaleY(0.45); }
+  45.83% { opacity: 1.00; transform: scaleY(0.31); }
+  50% { opacity: 1.00; transform: scaleY(0.33); }
+  54.17% { opacity: 1.00; transform: scaleY(0.50); }
+  58.33% { opacity: 1.00; transform: scaleY(0.73); }
+  62.5% { opacity: 1.00; transform: scaleY(0.93); }
+  66.67% { opacity: 1.00; transform: scaleY(1.00); }
+  70.83% { opacity: 1.00; transform: scaleY(0.90); }
+  75% { opacity: 1.00; transform: scaleY(0.69); }
+  79.17% { opacity: 1.00; transform: scaleY(0.45); }
+  83.33% { opacity: 1.00; transform: scaleY(0.31); }
+  87.5% { opacity: 1.00; transform: scaleY(0.33); }
+  91.67% { opacity: 1.00; transform: scaleY(0.50); }
+  95.83% { opacity: 0.67; transform: scaleY(0.73); }
+  100% { opacity: 0.00; transform: scaleY(0.93); }
+}
+@keyframes ai-dot-bar-4 {
+  0% { opacity: 0.00; transform: scaleY(0.35); }
+  4.17% { opacity: 0.67; transform: scaleY(0.30); }
+  8.33% { opacity: 1.00; transform: scaleY(0.42); }
+  12.5% { opacity: 1.00; transform: scaleY(0.64); }
+  16.67% { opacity: 1.00; transform: scaleY(0.87); }
+  20.83% { opacity: 1.00; transform: scaleY(0.99); }
+  25% { opacity: 1.00; transform: scaleY(0.96); }
+  29.17% { opacity: 1.00; transform: scaleY(0.78); }
+  33.33% { opacity: 1.00; transform: scaleY(0.54); }
+  37.5% { opacity: 1.00; transform: scaleY(0.35); }
+  41.67% { opacity: 1.00; transform: scaleY(0.30); }
+  45.83% { opacity: 1.00; transform: scaleY(0.42); }
+  50% { opacity: 1.00; transform: scaleY(0.64); }
+  54.17% { opacity: 1.00; transform: scaleY(0.87); }
+  58.33% { opacity: 1.00; transform: scaleY(0.99); }
+  62.5% { opacity: 1.00; transform: scaleY(0.96); }
+  66.67% { opacity: 1.00; transform: scaleY(0.78); }
+  70.83% { opacity: 1.00; transform: scaleY(0.54); }
+  75% { opacity: 1.00; transform: scaleY(0.35); }
+  79.17% { opacity: 1.00; transform: scaleY(0.30); }
+  83.33% { opacity: 1.00; transform: scaleY(0.42); }
+  87.5% { opacity: 1.00; transform: scaleY(0.64); }
+  91.67% { opacity: 1.00; transform: scaleY(0.87); }
+  95.83% { opacity: 0.67; transform: scaleY(0.99); }
+  100% { opacity: 0.00; transform: scaleY(0.96); }
+}
+@keyframes ai-dot-bar-5 {
+  0% { opacity: 0.00; transform: scaleY(0.59); }
+  4.17% { opacity: 0.67; transform: scaleY(0.38); }
+  8.33% { opacity: 1.00; transform: scaleY(0.30); }
+  12.5% { opacity: 1.00; transform: scaleY(0.38); }
+  16.67% { opacity: 1.00; transform: scaleY(0.59); }
+  20.83% { opacity: 1.00; transform: scaleY(0.82); }
+  25% { opacity: 1.00; transform: scaleY(0.98); }
+  29.17% { opacity: 1.00; transform: scaleY(0.98); }
+  33.33% { opacity: 1.00; transform: scaleY(0.83); }
+  37.5% { opacity: 1.00; transform: scaleY(0.59); }
+  41.67% { opacity: 1.00; transform: scaleY(0.38); }
+  45.83% { opacity: 1.00; transform: scaleY(0.30); }
+  50% { opacity: 1.00; transform: scaleY(0.38); }
+  54.17% { opacity: 1.00; transform: scaleY(0.59); }
+  58.33% { opacity: 1.00; transform: scaleY(0.83); }
+  62.5% { opacity: 1.00; transform: scaleY(0.98); }
+  66.67% { opacity: 1.00; transform: scaleY(0.98); }
+  70.83% { opacity: 1.00; transform: scaleY(0.83); }
+  75% { opacity: 1.00; transform: scaleY(0.59); }
+  79.17% { opacity: 1.00; transform: scaleY(0.38); }
+  83.33% { opacity: 1.00; transform: scaleY(0.30); }
+  87.5% { opacity: 1.00; transform: scaleY(0.38); }
+  91.67% { opacity: 1.00; transform: scaleY(0.59); }
+  95.83% { opacity: 0.67; transform: scaleY(0.82); }
+  100% { opacity: 0.00; transform: scaleY(0.98); }
+}
+@keyframes ai-dot-tdot-1 {
+  0% { opacity: 0.00; transform: translateY(-0.00%); }
+  4.17% { opacity: 0.28; transform: translateY(-0.20%); }
+  8.33% { opacity: 0.81; transform: translateY(-0.64%); }
+  12.5% { opacity: 0.99; transform: translateY(-0.95%); }
+  16.67% { opacity: 0.94; transform: translateY(-0.87%); }
+  20.83% { opacity: 0.71; transform: translateY(-0.46%); }
+  25% { opacity: 0.49; transform: translateY(-0.08%); }
+  29.17% { opacity: 0.45; transform: translateY(-0.00%); }
+  33.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  37.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  41.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  45.83% { opacity: 0.45; transform: translateY(-0.00%); }
+  50% { opacity: 0.57; transform: translateY(-0.20%); }
+  54.17% { opacity: 0.81; transform: translateY(-0.64%); }
+  58.33% { opacity: 0.99; transform: translateY(-0.95%); }
+  62.5% { opacity: 0.94; transform: translateY(-0.87%); }
+  66.67% { opacity: 0.71; transform: translateY(-0.46%); }
+  70.83% { opacity: 0.49; transform: translateY(-0.08%); }
+  75% { opacity: 0.45; transform: translateY(-0.00%); }
+  79.17% { opacity: 0.45; transform: translateY(-0.00%); }
+  83.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  87.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  91.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  95.83% { opacity: 0.28; transform: translateY(-0.20%); }
+  100% { opacity: 0.00; transform: translateY(-0.64%); }
+}
+@keyframes ai-dot-tdot-2 {
+  0% { opacity: 0.00; transform: translateY(-0.00%); }
+  4.17% { opacity: 0.22; transform: translateY(-0.00%); }
+  8.33% { opacity: 0.48; transform: translateY(-0.05%); }
+  12.5% { opacity: 0.69; transform: translateY(-0.42%); }
+  16.67% { opacity: 0.92; transform: translateY(-0.84%); }
+  20.83% { opacity: 1.00; transform: translateY(-0.96%); }
+  25% { opacity: 0.84; transform: translateY(-0.69%); }
+  29.17% { opacity: 0.59; transform: translateY(-0.24%); }
+  33.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  37.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  41.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  45.83% { opacity: 0.45; transform: translateY(-0.00%); }
+  50% { opacity: 0.45; transform: translateY(-0.00%); }
+  54.17% { opacity: 0.48; transform: translateY(-0.05%); }
+  58.33% { opacity: 0.69; transform: translateY(-0.42%); }
+  62.5% { opacity: 0.92; transform: translateY(-0.84%); }
+  66.67% { opacity: 1.00; transform: translateY(-0.96%); }
+  70.83% { opacity: 0.84; transform: translateY(-0.69%); }
+  75% { opacity: 0.59; transform: translateY(-0.24%); }
+  79.17% { opacity: 0.45; transform: translateY(-0.00%); }
+  83.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  87.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  91.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  95.83% { opacity: 0.23; transform: translateY(-0.00%); }
+  100% { opacity: 0.00; transform: translateY(-0.05%); }
+}
+@keyframes ai-dot-tdot-3 {
+  0% { opacity: 0.00; transform: translateY(-0.00%); }
+  4.17% { opacity: 0.22; transform: translateY(-0.00%); }
+  8.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  12.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  16.67% { opacity: 0.57; transform: translateY(-0.20%); }
+  20.83% { opacity: 0.81; transform: translateY(-0.64%); }
+  25% { opacity: 0.99; transform: translateY(-0.95%); }
+  29.17% { opacity: 0.94; transform: translateY(-0.87%); }
+  33.33% { opacity: 0.71; transform: translateY(-0.46%); }
+  37.5% { opacity: 0.49; transform: translateY(-0.08%); }
+  41.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  45.83% { opacity: 0.45; transform: translateY(-0.00%); }
+  50% { opacity: 0.45; transform: translateY(-0.00%); }
+  54.17% { opacity: 0.45; transform: translateY(-0.00%); }
+  58.33% { opacity: 0.45; transform: translateY(-0.00%); }
+  62.5% { opacity: 0.57; transform: translateY(-0.20%); }
+  66.67% { opacity: 0.81; transform: translateY(-0.64%); }
+  70.83% { opacity: 0.99; transform: translateY(-0.95%); }
+  75% { opacity: 0.94; transform: translateY(-0.87%); }
+  79.17% { opacity: 0.71; transform: translateY(-0.46%); }
+  83.33% { opacity: 0.49; transform: translateY(-0.08%); }
+  87.5% { opacity: 0.45; transform: translateY(-0.00%); }
+  91.67% { opacity: 0.45; transform: translateY(-0.00%); }
+  95.83% { opacity: 0.23; transform: translateY(-0.00%); }
+  100% { opacity: 0.00; transform: translateY(-0.00%); }
+}
+
+.ai-dot--talk .ai-dot-mouth {
+  display: block;
+  opacity: 0;
+  animation: 1.68s sine-in-out ai-dot-talk-mouth;
+}
+
+.ai-dot--talk .ai-dot-eyes-front {
+  animation: 1.68s sine-in-out ai-dot-talk-eyes;
+}
+
+.ai-dot--talk .ai-dot-back {
+  animation: 0.84s sine-in-out 2 ai-dot-nod;
+}
+
+.ai-dot--talk .ai-dot-eq,
+.ai-dot--talk .ai-dot-line {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--talk .ai-dot-eq-1 {
+  animation: 1.68s linear-in-out ai-dot-eq-1;
+}
+
+.ai-dot--talk .ai-dot-eq-2 {
+  animation: 1.68s linear-in-out ai-dot-eq-2;
+}
+
+.ai-dot--talk .ai-dot-eq-3 {
+  animation: 1.68s linear-in-out ai-dot-eq-3;
+}
+
+.ai-dot--talk .ai-dot-line-1 {
+  animation: 1s cubic-out ai-dot-line;
+}
+
+.ai-dot--talk .ai-dot-line-2 {
+  animation: 1s 0.34s cubic-out ai-dot-line;
+}
+
+.ai-dot--talk .ai-dot-line-3 {
+  animation: 1s 0.68s cubic-out ai-dot-line;
+}
+
+/* Shy: the front bubble leans away and peeks aside with its eyes half shut and pink cheeks, the partner ducks down
+   behind it (the mockup's edge peek, played in place). C leans half as far and has no cheeks. */
+@keyframes ai-dot-shy-front {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-12deg); }
+  75% { transform: rotate(-12deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-shy-front-calm {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-6deg); }
+  75% { transform: rotate(-6deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-shy-back {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(6.81%, 5.84%) rotate(6deg); }
+  75% { transform: translate(6.81%, 5.84%) rotate(6deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-shy-eyes-front {
+  0% { transform: translate(0%, 0%) scale(1, 1); }
+  30% { transform: translate(-2.92%, 0.58%) scale(1, 0.5); }
+  75% { transform: translate(-2.92%, 0.58%) scale(1, 0.5); }
+  100% { transform: translate(0%, 0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-shy-eyes-back {
+  0% { transform: translate(0%, 0%); }
+  30% { transform: translate(-1.17%, 0.58%); }
+  75% { transform: translate(-1.17%, 0.58%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-shy-blush {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.ai-dot--shy .ai-dot-front {
+  animation: 1.6s sine-in-out ai-dot-shy-front;
+}
+
+.ai-dot--calm.ai-dot--shy .ai-dot-front {
+  animation: 1.6s sine-in-out ai-dot-shy-front-calm;
+}
+
+.ai-dot--shy .ai-dot-back {
+  animation: 1.6s sine-in-out ai-dot-shy-back;
+}
+
+.ai-dot--shy .ai-dot-eyes-front {
+  animation: 1.6s sine-in-out ai-dot-shy-eyes-front;
+}
+
+.ai-dot--shy .ai-dot-eyes-back {
+  animation: 1.6s sine-in-out ai-dot-shy-eyes-back;
+}
+
+.ai-dot--shy .ai-dot-blush {
+  display: block;
+  opacity: 0;
+  animation: 1.6s sine-in-out ai-dot-shy-blush;
+}
+
+/* Wave: the front bubble waves its whole body with happy eyes and cheeks, the partner hops twice (34 and 22 units).
+   Calm: a small tilt and one low hop over 2.2 s, eyes open, no cheeks. */
+@keyframes ai-dot-wave {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(-9deg); }
+  35% { transform: rotate(7deg); }
+  55% { transform: rotate(-9deg); }
+  75% { transform: rotate(5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop {
+  0% { transform: translateY(0%); }
+  20% { transform: translateY(-3.31%); }
+  40% { transform: translateY(0%); }
+  60% { transform: translateY(0%); }
+  70% { transform: translateY(-2.14%); }
+  80% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-tilt-calm {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(-5deg); }
+  40% { transform: rotate(2deg); }
+  60% { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-hop-calm {
+  0% { transform: translateY(0%); }
+  25% { transform: translateY(-1.17%); }
+  50% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-glow-in {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.ai-dot--wave .ai-dot-front {
+  animation: 1.6s sine-in-out ai-dot-wave;
+}
+
+.ai-dot--wave .ai-dot-back {
+  animation: 1.6s sine-in-out ai-dot-hop;
+}
+
+.ai-dot--wave .ai-dot-blush {
+  display: block;
+  opacity: 0;
+  animation: 1.6s linear-in-out ai-dot-glow-in;
+}
+
+.ai-dot--calm.ai-dot--wave .ai-dot-front {
+  animation: 2.2s sine-in-out ai-dot-tilt-calm;
+}
+
+.ai-dot--calm.ai-dot--wave .ai-dot-back {
+  animation: 2.2s sine-in-out ai-dot-hop-calm;
+}
+
+/* Listen: it leans in a little bigger with big eyes, both bubbles nod out of step, and three signal arcs pulse one
+   after another beside the partner. C's eyes grow less and pulse; D shows five equalizer bars in its bubble. */
+@keyframes ai-dot-lean {
+  0% { transform: translateX(0%) scale(1); }
+  15% { transform: translateX(-1.11%) scale(1.04); }
+  85% { transform: translateX(-1.11%) scale(1.04); }
+  100% { transform: translateX(0%) scale(1); }
+}
+
+@keyframes ai-dot-big-eyes {
+  0% { transform: scale(1); }
+  15% { transform: scale(1.18); }
+  85% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ai-dot-big-eyes-calm {
+  0% { opacity: 1; transform: scale(1); }
+  15% { opacity: 0.8; transform: scale(1.08); }
+  23% { opacity: 0.6; transform: scale(1.08); }
+  46% { opacity: 1; transform: scale(1.08); }
+  69% { opacity: 0.6; transform: scale(1.08); }
+  85% { opacity: 0.9; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ai-dot-arc {
+  0% { opacity: 0; }
+  30% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.ai-dot--listen .ai-dot-figure {
+  animation: 2.4s sine-in-out ai-dot-lean;
+}
+
+.ai-dot--listen .ai-dot-front {
+  animation: 1.1s sine-in-out 2 ai-dot-nod;
+}
+
+.ai-dot--listen .ai-dot-back {
+  animation: 1.1s 0.2s sine-in-out 2 ai-dot-nod;
+}
+
+.ai-dot--listen .ai-dot-eyes-front,
+.ai-dot--listen .ai-dot-eyes-back {
+  animation: 2.4s sine-in-out ai-dot-big-eyes;
+}
+
+.ai-dot--calm.ai-dot--listen .ai-dot-eyes-front,
+.ai-dot--calm.ai-dot--listen .ai-dot-eyes-back {
+  animation: 2.4s sine-in-out ai-dot-big-eyes-calm;
+}
+
+.ai-dot--listen .ai-dot-arc,
+.ai-dot--listen .ai-dot-bar {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--listen .ai-dot-arc-1 {
+  animation: 1s cubic-out 2 ai-dot-arc;
+}
+
+.ai-dot--listen .ai-dot-arc-2 {
+  animation: 1s 0.18s cubic-out 2 ai-dot-arc;
+}
+
+.ai-dot--listen .ai-dot-arc-3 {
+  animation: 1s 0.36s cubic-out 2 ai-dot-arc;
+}
+
+.ai-dot--listen .ai-dot-bar-1 {
+  animation: 2.4s linear-in-out ai-dot-bar-1;
+}
+
+.ai-dot--listen .ai-dot-bar-2 {
+  animation: 2.4s linear-in-out ai-dot-bar-2;
+}
+
+.ai-dot--listen .ai-dot-bar-3 {
+  animation: 2.4s linear-in-out ai-dot-bar-3;
+}
+
+.ai-dot--listen .ai-dot-bar-4 {
+  animation: 2.4s linear-in-out ai-dot-bar-4;
+}
+
+.ai-dot--listen .ai-dot-bar-5 {
+  animation: 2.4s linear-in-out ai-dot-bar-5;
+}
+
+/* Think: the eyes go up and right (front 22, -24; back 8, -12), the front bubble tips back a little, and a "typing"
+   bubble with three bouncing dots pops up at the top right (C: a dark one with glowing dots; D: the dots in its own
+   bubble). */
+@keyframes ai-dot-think-front {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(-3deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-think-eyes-front {
+  0% { transform: translate(0%, 0%); }
+  15% { transform: translate(2.14%, -2.33%); }
+  85% { transform: translate(2.14%, -2.33%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-think-eyes-back {
+  0% { transform: translate(0%, 0%); }
+  15% { transform: translate(0.78%, -1.17%); }
+  85% { transform: translate(0.78%, -1.17%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-bubble {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.ai-dot--think .ai-dot-front {
+  animation: 2.4s sine-in-out ai-dot-think-front;
+}
+
+.ai-dot--think .ai-dot-eyes-front {
+  animation: 2.4s sine-in-out ai-dot-think-eyes-front;
+}
+
+.ai-dot--think .ai-dot-eyes-back {
+  animation: 2.4s sine-in-out ai-dot-think-eyes-back;
+}
+
+.ai-dot--think .ai-dot-bubble,
+.ai-dot--think .ai-dot-tdot,
+.ai-dot--think .ai-dot-ddot {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--think .ai-dot-bubble {
+  animation: 2.4s linear-in-out ai-dot-bubble;
+}
+
+.ai-dot--think .ai-dot-tdot-1,
+.ai-dot--think .ai-dot-ddot-1 {
+  animation: 2.4s linear-in-out ai-dot-tdot-1;
+}
+
+.ai-dot--think .ai-dot-tdot-2,
+.ai-dot--think .ai-dot-ddot-2 {
+  animation: 2.4s linear-in-out ai-dot-tdot-2;
+}
+
+.ai-dot--think .ai-dot-tdot-3,
+.ai-dot--think .ai-dot-ddot-3 {
+  animation: 2.4s linear-in-out ai-dot-tdot-3;
+}
+
+/* Five (high five): the two pull apart and bump together, with happy eyes, and a star bursts where they meet. C keeps
+   its eyes open; C and D burst sparkle lines instead of a star. */
+@keyframes ai-dot-five-front {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(-2.53%, 2.53%) rotate(-7deg); }
+  48% { transform: translate(0.97%, -0.97%) rotate(3deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-five-back {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(4.47%, -4.47%) rotate(9deg); }
+  48% { transform: translate(-1.36%, 1.36%) rotate(-4deg); }
+  62% { transform: translate(0%, 0%) rotate(0deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-star {
+  0% { opacity: 0; transform: scale(0) rotate(0deg); }
+  44% { opacity: 0; transform: scale(0) rotate(0deg); }
+  52% { opacity: 1; transform: scale(1.25) rotate(20deg); }
+  80% { opacity: 0; transform: scale(0.6) rotate(50deg); }
+  100% { opacity: 0; transform: scale(0.6) rotate(50deg); }
+}
+
+@keyframes ai-dot-spark {
+  0% { opacity: 0; transform: scale(0.4); }
+  44% { opacity: 0; transform: scale(0.4); }
+  52% { opacity: 1; transform: scale(1); }
+  80% { opacity: 0; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.15); }
+}
+
+.ai-dot--five .ai-dot-front {
+  animation: 1.5s cubic-in-out ai-dot-five-front;
+}
+
+.ai-dot--five .ai-dot-back {
+  animation: 1.5s cubic-in-out ai-dot-five-back;
+}
+
+.ai-dot--five .ai-dot-star,
+.ai-dot--five .ai-dot-spark {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--five .ai-dot-star {
+  animation: 1.5s cubic-out ai-dot-star;
+}
+
+.ai-dot--five .ai-dot-spark {
+  animation: 1.5s cubic-out ai-dot-spark;
+}
+
+/* Happy: the two jump one after the other (110 units, squash and stretch) with happy eyes and pink cheeks, and two
+   hearts float up. Calm: both nod up 18 units one after the other; C keeps the happy eyes, D draws a check in its
+   bubble. */
+@keyframes ai-dot-jump {
+  0% { transform: translateY(0%) scale(1, 1); }
+  14% { transform: translateY(0%) scale(1.08, 0.88); }
+  38% { transform: translateY(-10.7%) scale(0.94, 1.07); }
+  60% { transform: translateY(0%) scale(1.1, 0.86); }
+  74% { transform: translateY(0%) scale(0.98, 1.03); }
+  86% { transform: translateY(0%) scale(1, 1); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-nod-calm {
+  0% { transform: translateY(0%); }
+  30% { transform: translateY(-1.75%); }
+  55% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-heart {
+  0% { opacity: 0; transform: translateY(0%) scale(0.4); }
+  25% { opacity: 1; transform: translateY(-2.19%) scale(0.55); }
+  100% { opacity: 0; transform: translateY(-8.76%) scale(1); }
+}
+
+@keyframes ai-dot-check {
+  0% { opacity: 1; transform: scaleX(0); }
+  40% { opacity: 1; transform: scaleX(1); }
+  85% { opacity: 1; transform: scaleX(1); }
+  100% { opacity: 0; transform: scaleX(1); }
+}
+
+.ai-dot--happy .ai-dot-front {
+  animation: 1.3s quadratic-in-out ai-dot-jump;
+}
+
+.ai-dot--happy .ai-dot-back {
+  animation: 1.3s 0.16s quadratic-in-out ai-dot-jump;
+}
+
+.ai-dot--calm.ai-dot--happy .ai-dot-front {
+  animation: 1.6s sine-in-out ai-dot-nod-calm;
+}
+
+.ai-dot--calm.ai-dot--happy .ai-dot-back {
+  animation: 1.6s 0.2s sine-in-out ai-dot-nod-calm;
+}
+
+.ai-dot--happy .ai-dot-blush,
+.ai-dot--happy .ai-dot-heart,
+.ai-dot--happy .ai-dot-check {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--happy .ai-dot-blush {
+  animation: 1.8s linear-in-out ai-dot-glow-in;
+}
+
+.ai-dot--happy .ai-dot-heart-1 {
+  animation: 1.3s cubic-out ai-dot-heart;
+}
+
+.ai-dot--happy .ai-dot-heart-2 {
+  animation: 1.3s 0.5s cubic-out ai-dot-heart;
+}
+
+.ai-dot--happy .ai-dot-check {
+  animation: 1.6s cubic-out ai-dot-check;
+}
+
+/* Private ("I don't read your chats"): it shuts its eyes, the front bubble turns away, the partner steps aside, and a
+   lock pops up (D: the lock fills its bubble). */
+@keyframes ai-dot-private-front {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(-6deg); }
+  80% { transform: rotate(-6deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes ai-dot-private-back {
+  0% { transform: translate(0%, 0%) rotate(0deg); }
+  30% { transform: translate(1.56%, -0.97%) rotate(6deg); }
+  80% { transform: translate(1.56%, -0.97%) rotate(6deg); }
+  100% { transform: translate(0%, 0%) rotate(0deg); }
+}
+
+@keyframes ai-dot-private-eyes {
+  0% { transform: translate(0%, 0%); }
+  30% { transform: translate(-1.36%, -0.78%); }
+  80% { transform: translate(-1.36%, -0.78%); }
+  100% { transform: translate(0%, 0%); }
+}
+
+@keyframes ai-dot-lock-in {
+  0% { opacity: 1; transform: scale(0); }
+  20% { opacity: 1; transform: scale(1.15); }
+  28% { opacity: 1; transform: scale(1); }
+  82% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.6); }
+}
+
+.ai-dot--private .ai-dot-front {
+  animation: 2s sine-in-out ai-dot-private-front;
+}
+
+.ai-dot--private .ai-dot-back {
+  animation: 2s sine-in-out ai-dot-private-back;
+}
+
+.ai-dot--private .ai-dot-eyes-front {
+  animation: 2s sine-in-out ai-dot-private-eyes;
+}
+
+.ai-dot--private .ai-dot-lock,
+.ai-dot--private .ai-dot-dlock {
+  display: block;
+  opacity: 0;
+  animation: 2s cubic-out ai-dot-lock-in;
+}
+
+/* Sleep (AiDotModel: only after two minutes without a touch, then it stays asleep): eyes shut, the front bubble nods
+   off to one side, one slow breath, and three z's drift up one after another. C's shut eyes glow up and dim, D fades
+   to half. Asleep afterwards it holds the end pose without animating (one redraw), until a touch wakes it. */
+@keyframes ai-dot-doze {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(-4deg); }
+  100% { transform: rotate(-4deg); }
+}
+
+@keyframes ai-dot-breathe {
+  0% { transform: scale(1, 1); }
+  50% { transform: scale(1.03, 0.97); }
+  100% { transform: scale(1, 1); }
+}
+
+@keyframes ai-dot-breathe-calm {
+  0% { transform: translateY(0%); }
+  50% { transform: translateY(-0.56%); }
+  100% { transform: translateY(0%); }
+}
+
+@keyframes ai-dot-fade-plain {
+  0% { opacity: 1; transform: translateY(0%); }
+  20% { opacity: 0.55; transform: translateY(-0.28%); }
+  50% { opacity: 0.55; transform: translateY(-0.56%); }
+  100% { opacity: 0.55; transform: translateY(0%); }
+}
+
+@keyframes ai-dot-dim-calm {
+  0% { opacity: 1; }
+  50% { opacity: 0.9; }
+  100% { opacity: 0.35; }
+}
+
+@keyframes ai-dot-z {
+  0% { opacity: 0; transform: translate(0%, 0%); }
+  20% { opacity: 1; transform: translate(0.78%, -2.14%); }
+  100% { opacity: 0; transform: translate(3.89%, -10.7%); }
+}
+
+.ai-dot--sleep .ai-dot-open,
+.ai-dot--asleep .ai-dot-open,
+.ai-dot--private .ai-dot-open {
+  display: none;
+}
+
+.ai-dot--sleep .ai-dot-shut,
+.ai-dot--asleep .ai-dot-shut,
+.ai-dot--private .ai-dot-shut {
+  display: block;
+}
+
+.ai-dot--asleep .ai-dot-front {
+  transform: rotate(-4deg);
+}
+
+.ai-dot--calm.ai-dot--asleep .ai-dot-shut {
+  opacity: 0.35;
+}
+
+.ai-dot--plain.ai-dot--asleep .ai-dot-figure {
+  opacity: 0.55;
+}
+
+.ai-dot--sleep .ai-dot-front {
+  animation: 4s sine-in-out ai-dot-doze;
+}
+
+.ai-dot--sleep .ai-dot-figure {
+  animation: 4s sine-in-out ai-dot-breathe;
+}
+
+.ai-dot--calm.ai-dot--sleep .ai-dot-figure {
+  animation: 4s sine-in-out ai-dot-breathe-calm;
+}
+
+.ai-dot--plain.ai-dot--sleep .ai-dot-figure {
+  animation: 4s sine-in-out ai-dot-fade-plain;
+}
+
+.ai-dot--calm.ai-dot--sleep .ai-dot-shut {
+  animation: 4s sine-in-out ai-dot-dim-calm;
+}
+
+.ai-dot--sleep .ai-dot-z {
+  display: block;
+  opacity: 0;
+}
+
+.ai-dot--sleep .ai-dot-z-1 {
+  animation: 2.4s cubic-out ai-dot-z;
+}
+
+.ai-dot--sleep .ai-dot-z-2 {
+  animation: 2.4s 0.8s cubic-out ai-dot-z;
+}
+
+.ai-dot--sleep .ai-dot-z-3 {
+  animation: 2.4s 1.6s cubic-out ai-dot-z;
+}
+
+/* Poke (a tap, before the panel opens): the front bubble squashes and wobbles, the eyes go wide. Calm: a small
+   squash. */
+@keyframes ai-dot-poke {
+  0% { transform: scale(1, 1) rotate(0deg); }
+  20% { transform: scale(1.1, 0.84) rotate(0deg); }
+  40% { transform: scale(0.94, 1.08) rotate(-4deg); }
+  60% { transform: scale(1, 1) rotate(4deg); }
+  80% { transform: scale(1, 1) rotate(-2deg); }
+  100% { transform: scale(1, 1) rotate(0deg); }
+}
+
+@keyframes ai-dot-poke-calm {
+  0% { transform: scale(1, 1); }
+  30% { transform: scale(1.04, 0.95); }
+  100% { transform: scale(1, 1); }
+}
+
+@keyframes ai-dot-wide-eyes {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  75% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ai-dot-wide-eyes-calm {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.12); }
+  75% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+.ai-dot--poke .ai-dot-front {
+  animation: 0.6s cubic-out ai-dot-poke;
+}
+
+.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--poke .ai-dot-eyes-back {
+  animation: 0.6s cubic-out ai-dot-wide-eyes;
+}
+
+.ai-dot--calm.ai-dot--poke .ai-dot-front {
+  animation: 0.45s cubic-out ai-dot-poke-calm;
+}
+
+.ai-dot--calm.ai-dot--poke .ai-dot-eyes-front,
+.ai-dot--calm.ai-dot--poke .ai-dot-eyes-back {
+  animation: 0.45s cubic-out ai-dot-wide-eyes-calm;
+}
+
+/* Pop (a tap on it tucked): while it slides out of the tuck it jumps once, the mockups' squash-and-stretch jump
+   (calm: a small hop); the panel opens when it has landed. */
+@keyframes ai-dot-pop {
+  0% { transform: translateY(0%) scale(1, 1); }
+  15% { transform: translateY(0%) scale(1.08, 0.88); }
+  45% { transform: translateY(-12%) scale(0.94, 1.07); }
+  72% { transform: translateY(0%) scale(1.1, 0.86); }
+  88% { transform: translateY(0%) scale(0.98, 1.03); }
+  100% { transform: translateY(0%) scale(1, 1); }
+}
+
+@keyframes ai-dot-pop-calm {
+  0% { transform: translateY(0%); }
+  40% { transform: translateY(-4%); }
+  75% { transform: translateY(0%); }
+  100% { transform: translateY(0%); }
+}
+
+.ai-dot--pop .ai-dot-figure {
+  animation: 0.7s quadratic-in-out ai-dot-pop;
+}
+
+.ai-dot--calm.ai-dot--pop .ai-dot-figure {
+  animation: 0.7s sine-in-out ai-dot-pop-calm;
+}
+
+/* Happy eyes: the front ones while waving, all while giving five or happy; the calm looks keep theirs open for wave and
+   five (C's happy eyes show for happy). */
+.ai-dot--wave .ai-dot-front .ai-dot-open,
+.ai-dot--five .ai-dot-open,
+.ai-dot--happy .ai-dot-open {
+  display: none;
+}
+
+.ai-dot--wave .ai-dot-front .ai-dot-hap,
+.ai-dot--five .ai-dot-hap,
+.ai-dot--happy .ai-dot-hap {
+  display: block;
+}
+
+.ai-dot--calm.ai-dot--wave .ai-dot-front .ai-dot-open,
+.ai-dot--calm.ai-dot--five .ai-dot-open {
+  display: block;
+}
+
+.ai-dot--calm.ai-dot--wave .ai-dot-front .ai-dot-hap,
+.ai-dot--calm.ai-dot--five .ai-dot-hap,
+.ai-dot--calm.ai-dot--wave .ai-dot-blush {
+  display: none;
 }
 
 .shell-banner {
@@ -1507,6 +2810,42 @@ select selectbox option {
   display: block;
   margin-top: 0;
   margin-bottom: 0;
+}
+
+/* Phone toast (Kenneth 2026-11-04: the dark slab top right looked stuck on): a centred pill near the bottom,
+   above the tab bar / composer. The chrome box fills the body (it lets taps through) so ShellHost can set the
+   stack's `bottom` (CompactChromeLayout::toast_bottom_dp); the pills let taps through too. */
+.shell-body--compact .shell-chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.shell-body--compact .shell-toast-stack {
+  left: 0;
+  right: 0;
+  display: block;
+  text-align: center;
+  pointer-events: none;
+}
+
+.shell-body--compact .shell-chrome .shell-toast {
+  display: inline-block;
+  max-width: 80%;
+  border-width: 1dp;
+  padding: 10dp 18dp;
+  margin: 6dp 0 0 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.shell-body--compact .shell-toast-text {
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
 }
 
 .shell-activity-strip {
@@ -1682,7 +3021,7 @@ select selectbox option {
   flex: 0 0 auto;
   flex-direction: row;
   width: 100%;
-  height: 56dp;
+  height: 49dp;
   box-sizing: border-box;
   background-color: transparent;
 }
@@ -1694,59 +3033,21 @@ select selectbox option {
   height: 100%;
   align-items: center;
   justify-content: flex-start;
-  gap: 4dp;
+  gap: 0;
   padding: 8dp 4dp;
   box-sizing: border-box;
 }
 
-.shell-nav-pill {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
-.shell-nav-pill--secondary {
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  justify-content: flex-start;
-}
-
+/* Phone tab bar: four equal-width tabs, no pills. */
 .shell-nav-rail--compact .shell-nav-rail-inner {
   flex-direction: row;
   justify-content: space-between;
-  align-items: center;
-  gap: 12dp;
-  height: 56dp;
+  align-items: stretch;
+  height: 49dp;
   padding: 0;
 }
 
-.shell-nav-rail--compact .shell-nav-pill {
-  flex-direction: row;
-  align-items: center;
-  height: 56dp;
-  padding: 4dp 6dp;
-  border-radius: 24dp;
-  overflow: hidden;
-  width: auto;
-  flex: 0 0 auto;
-}
-
-.shell-nav-rail--compact .shell-nav-pill--secondary {
-  flex: 0 0 auto;
-  width: auto;
-  min-height: 0;
-}
-
 .shell-nav-spacer {
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 0;
-}
-
-.shell-nav-pill--secondary > .shell-nav-spacer {
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
@@ -1775,12 +3076,23 @@ select selectbox option {
 }
 
 .shell-nav-rail--compact .shell-nav-tab {
-  height: 48dp;
-  border-radius: 20dp;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  height: 49dp;
+  border-radius: 0;
+  gap: 2dp;
 }
 
 .shell-nav-tab svg {
   flex-shrink: 0;
+}
+
+/* 28dp tab icons, one step up from §8.2's 24dp (Kenneth 2026-11-04: "图标好像小了一点，感觉很小气"); the 11dp label
+   stays. Size in dp so the layout box matches the drawn icon on every density. */
+.shell-nav-rail--compact .shell-nav-tab svg {
+  width: 28dp;
+  height: 28dp;
 }
 
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
@@ -1804,6 +3116,12 @@ select selectbox option {
   line-height: 1.1;
 }
 
+/* caption-2 */
+.shell-nav-rail--compact .shell-nav-tab-label {
+  font-size: 11dp;
+  line-height: 13dp;
+}
+
 .shell-nav-page {
   flex: 1;
   min-height: 0;
@@ -1811,7 +3129,7 @@ select selectbox option {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
-  padding-bottom: 56dp;
+  padding-bottom: 49dp;
 }
 
 .shell-nav-page .shell-pane-body {
@@ -1824,6 +3142,204 @@ select selectbox option {
   height: auto;
 }
 
+/* Root-page nav bar + large title (DESIGN-pp-ui 4.1 / 8.1). Phone layout only: on desktop the panes keep their own
+   headers and these parts stay hidden. The nav bar floats over the scroller (padding-top clears it), its background
+   and bottom separator fade in once the large title has scrolled away (.large-title-collapsed on the nav page). */
+.pane-nav,
+.large-title {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-header,
+.shell-layer-compact .settings-header,
+.shell-layer-compact .contacts-header {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-panel,
+.shell-layer-compact .contacts-panel,
+.shell-layer-compact .settings-panel,
+.shell-layer-compact .home-panel {
+  position: relative;
+  padding-top: 0;
+}
+
+.shell-layer-compact .pane-nav {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44dp;
+  z-index: 3;
+}
+
+.pane-nav-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44dp;
+  box-sizing: border-box;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav-bg {
+  opacity: 1;
+}
+
+.pane-nav-title {
+  position: absolute;
+  top: 0;
+  left: 96dp;
+  right: 96dp;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav-title {
+  opacity: 1;
+}
+
+/* Phone bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 65-67): no hairline under a top bar or over the tab bar; a
+   16dp fade from the bar colour to clear takes its place (colors-*.rcss), on every top bar, the tab bar and the
+   composer alike. With Transparency on, the bar that is on top is frosted (a see-through bar colour plus blur, only
+   on the bar itself) and the page scrolls under it; off, or under a dialog, the bars are solid. */
+.bar-fade {
+  display: none;
+}
+
+.shell-layer-compact .bar-fade {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 16dp;
+  pointer-events: none;
+}
+
+/* Above a bottom bar (the tab bar), fading down into it. */
+.shell-layer-compact .bar-fade--up {
+  top: auto;
+  bottom: 100%;
+}
+
+/* A tab page's fade shows with its bar, once the large title has scrolled away. */
+.pane-nav .bar-fade {
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-nav-page.large-title-collapsed .pane-nav .bar-fade {
+  opacity: 1;
+}
+
+/* Frosted only while the bar shows (at rest it is clear). */
+.shell-nav-page--frost.large-title-collapsed .pane-nav-bg {
+  backdrop-filter: blur(20px);
+}
+
+/* Home's tab bar sits under its opaque dock, which has its own fade. */
+.shell-bottom-chrome--home .bar-fade {
+  display: none;
+}
+
+.pane-nav-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 44dp;
+  align-items: center;
+}
+
+/* Wraps a button whose event lives in the window model (e.g. Scan QR on Contacts). */
+.pane-nav-btn-wrap {
+  display: flex;
+}
+
+.pane-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.pane-nav-btn svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+/* A word in place of the icon (Home's "Edit"): as tall as the icon buttons, as wide as its word. */
+.pane-nav-btn.pane-nav-btn--text {
+  display: block;
+  width: auto;
+  min-width: 44dp;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 44dp;
+}
+
+.shell-layer-compact .large-title {
+  display: block;
+  flex-shrink: 0;
+  height: 52dp;
+  margin: 0;
+  padding: 0 4dp;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
+}
+
+/* The whole page scrolls (large title, search, rows), not just its list. It runs under the nav bar and the 49dp tab
+   bar (ShellHost pads the nav page by the home-indicator strip only): its top padding keeps the first row clear of
+   the bar; the engine leaves a scroller's own bottom padding out of its scroll height, so the last row is kept clear
+   of the tab bar by a spacer at the end of the page (.tab-bar-clear: 49dp + 16dp; Kenneth 2026-11-05 原话 94). */
+.shell-layer-compact .sidebar-sessions,
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  overflow-y: auto;
+  padding-top: 44dp;
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+.tab-bar-clear {
+  display: none;
+}
+
+.shell-layer-compact .tab-bar-clear {
+  display: block;
+  flex: none;
+  height: 65dp;
+}
+
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  display: block;
+}
+
+.shell-layer-compact .contacts-list,
+.shell-layer-compact .settings-list {
+  flex: none;
+  overflow-y: visible;
+}
+
 .shell-pane-home {
   flex: 1;
   min-height: 0;
@@ -1834,6 +3350,30 @@ select selectbox option {
   flex: 1;
   min-height: 0;
   height: auto;
+}
+
+/* Page push / back (DESIGN-pp-ui §7): 0.3s ease-out slide from / to the right. ShellHost adds
+   .shell-page-enter once after the page is built; the swipe gesture and BeginAnimatedDismiss set an inline
+   transform and the transition below runs it. Dragging turns the transition off so the page follows the finger. */
+@keyframes shell-page-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0%); }
+}
+
+.shell-page-enter {
+  animation: 0.3s cubic-out shell-page-in;
+}
+
+.shell-chat-overlay,
+.shell-layer-transient,
+.settings-detail-view {
+  transition: transform 0.3s cubic-out;
+}
+
+.shell-chat-overlay.shell-swipe-dragging,
+.shell-layer-transient.shell-swipe-dragging,
+.settings-detail-view.shell-swipe-dragging {
+  transition: none;
 }
 
 .shell-chat-overlay {
@@ -1853,80 +3393,8 @@ select selectbox option {
 .shell-chat-overlay--dragging {
 }
 
-.shell-account-sheet-scrim {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* Above auxiliary sheet (26/27); below dialog/overlay layers. */
-  z-index: 28;
-  focus: none;
-}
-
-.shell-account-sheet {
-  position: absolute;
-  left: 0;
-  right: 0;
-  /* Nearly full-height sheet: small top peek; bottom is shell floor (covers nav). */
-  top: 48dp;
-  bottom: 0;
-  z-index: 29;
-  display: flex;
-  flex-direction: column;
-  border-radius: 16dp 16dp 0 0;
-  overflow: hidden;
-  box-sizing: border-box;
-  transform: translateY(0);
-}
-
-.shell-account-sheet--dragging {
-}
-
-.shell-account-sheet-grabber {
-  flex-shrink: 0;
-  width: 36dp;
-  height: 5dp;
-  margin: 8dp auto 4dp;
-  border-radius: 3dp;
-}
-
-.shell-account-sheet-header {
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16dp 8dp;
-  box-sizing: border-box;
-}
-
-.shell-account-sheet-header .heading-2 {
-  margin: 0;
-}
-
-/* Header flow (overrides absolute overlay .shell-close-btn). */
-.shell-account-sheet-header .shell-close-btn {
-  position: relative;
-  top: auto;
-  right: auto;
-  flex-shrink: 0;
-  width: 32dp;
-  height: 32dp;
-  min-width: 32dp;
-  border-radius: 16dp;
-}
-
-.shell-account-sheet-header .shell-close-btn svg {
-  width: 14dp;
-  height: 14dp;
-}
-
-.shell-account-sheet-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
+/* Phone chat: ONE nav bar (DESIGN-pp-ui 8.1), 56dp at rest. This row is the bar's material and the back button;
+   the chat pane's own header row is lifted onto it, right of the button (see .chat-header below). */
 .shell-chat-overlay-chrome {
   position: absolute;
   top: 0;
@@ -1935,16 +3403,207 @@ select selectbox option {
   z-index: 2;
   flex-shrink: 0;
   align-items: center;
-  min-height: 48dp;
-  padding: 4dp 4dp;
+  height: 56dp;
+  padding: 0;
   box-sizing: border-box;
+}
+
+.shell-chat-overlay-chrome .shell-back-btn,
+.shell-layer-compact .shell-transient-chrome .shell-back-btn {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  border-radius: 0;
 }
 
 .shell-chat-overlay .shell-pane-body {
   flex: 1;
   min-height: 0;
-  padding-top: 48dp;
+  padding-top: 56dp;
   box-sizing: border-box;
+}
+
+.shell-chat-overlay .chat-panel {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.shell-chat-overlay .chat-header {
+  position: relative;
+  z-index: 3;
+  height: 55dp;
+  margin: -56dp -12dp 8dp 32dp;
+  padding: 0 8dp 0 0;
+  border-radius: 0;
+  border-left-width: 0;
+  overflow: hidden;
+}
+
+.shell-chat-overlay .chat-header-main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+}
+
+.shell-chat-overlay .chat-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-chat-overlay .chat-header-type-icon {
+  display: none;
+}
+
+.shell-chat-overlay .chat-header-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  overflow: hidden;
+}
+
+.shell-chat-overlay .chat-header-avatar .avatar-photo {
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-chat-overlay .chat-header-avatar .chat-row-avatar-letter {
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-chat-overlay .chat-header-avatar .chat-row-avatar-icon {
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-chat-overlay .chat-header-title {
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Phones: no encryption / link-path line; a group shows only its member count. */
+.shell-chat-overlay .chat-header-meta-row {
+  display: none;
+}
+
+.shell-chat-overlay .chat-header-phone-subtitle {
+  display: block;
+  margin: 0;
+  font-size: 12dp;
+  line-height: 15dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-chat-overlay .chat-header-subtitle {
+  font-size: 13dp;
+  line-height: 16dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-chat-overlay .chat-header-actions {
+  gap: 0;
+}
+
+.shell-chat-overlay .chat-header-call-btn,
+.shell-chat-overlay .chat-header-more-btn {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  border-radius: 0;
+}
+
+.shell-chat-overlay .chat-header-call-btn--join {
+  width: auto;
+  height: 32dp;
+  min-width: 0;
+  border-radius: 16dp;
+}
+
+.chat-header-avatar,
+.chat-header-phone-subtitle {
+  display: none;
+}
+
+/* Phone chat header hides on scroll (Kenneth 2026-11-05, PLAN-ui-refresh-impl 原话 78, 80; NavBarCollapseModel): read
+   away from the newest messages and the whole bar (material, back arrow, header row) slides up out of view; scroll back
+   towards the newest, or reach them, and it slides back. The overlay clips at the screen's top inset, so nothing runs
+   under the clock. Nothing is laid out again: transforms only, the transcript runs under the bar either way and keeps
+   its scroll position. A call bar or a banner moves up into the bar's place. ShellNavBarScroll sets .chat-bar-hidden
+   (never while searching in the chat: the search field is in the bar). */
+.shell-chat-overlay-chrome,
+.shell-chat-overlay .chat-header,
+.shell-chat-overlay .chat-call-bar,
+.shell-chat-overlay .chat-gap-banner {
+  transition: transform 0.25s cubic-out;
+}
+
+/* Up by the 56dp bar and its 16dp fade. Hidden, it takes no taps. */
+.shell-chat-overlay.chat-bar-hidden .shell-chat-overlay-chrome,
+.shell-chat-overlay.chat-bar-hidden .chat-header {
+  transform: translateY(-72dp);
+  pointer-events: none;
+}
+
+.shell-chat-overlay.chat-bar-hidden .chat-call-bar,
+.shell-chat-overlay.chat-bar-hidden .chat-gap-banner {
+  transform: translateY(-63dp);
+}
+
+/* Phones: a group call goes on here (DEV/PLAN-ui-batch8-group-pages.md 4). A 44dp bar under the header: a dot, what
+   call it is, and the header's own green "Join" pill inside a 44dp target. */
+.chat-call-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  height: 44dp;
+  padding: 0 8dp 0 16dp;
+  box-sizing: border-box;
+}
+
+.chat-call-bar-dot {
+  flex-shrink: 0;
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
+}
+
+.chat-call-bar-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-call-bar-join {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
 }
 
 .shell-chat-overlay .shell-composer-mount {
@@ -2010,8 +3669,8 @@ select selectbox option {
 .shell-bottom-chrome {
   position: absolute;
   bottom: 0;
-  left: 12dp;
-  right: 12dp;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   z-index: 15;
@@ -2149,6 +3808,13 @@ select selectbox option {
   height: 18dp;
 }
 
+/* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
+.shell-layer-compact .shell-transient-chrome--titled {
+  min-height: 48dp;
+  height: 48dp;
+  padding: 2dp 0;
+}
+
 .shell-layer-transient {
   display: flex;
   flex-direction: column;
@@ -2164,6 +3830,17 @@ select selectbox option {
 .shell-layer-transient .shell-pane-transient {
   flex: 1;
   min-height: 0;
+  padding-top: 48dp;
+  box-sizing: border-box;
+}
+
+/* Phones: the pushed pages start under their bar and keep their first row clear of it at rest. */
+.shell-layer-transient.shell-layer-compact .shell-pane-transient {
+  padding-top: 0;
+}
+
+.shell-pane-transient .contact-detail-panel,
+.shell-pane-transient .blocked-page {
   padding-top: 48dp;
   box-sizing: border-box;
 }
@@ -2185,6 +3862,49 @@ select selectbox option {
 
 .shell-overlay-chrome-mount--dialog {
   z-index: 50;
+}
+
+.shell-overlay-chrome-mount--photo {
+  z-index: 56;
+}
+
+/* Picture preview (tap on a picture): the bubble's picture fitted to the screen, a spinner over it. */
+.photo-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+@keyframes photo-preview-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.photo-preview-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 28dp;
+  height: 28dp;
+  margin-top: -17dp;
+  margin-left: -17dp;
+  border-width: 3dp;
+  border-style: solid;
+  border-radius: 17dp;
+  animation: 0.9s linear infinite photo-preview-spin;
 }
 
 .shell-overlay-chrome-mount--pin {
@@ -2320,6 +4040,403 @@ select selectbox option {
   flex-direction: column;
   overflow: auto;
   clip: always;
+}
+
+/* Phone page sheet (iOS, Kenneth 2026-11-04: the centred new-group panel looked odd; then every sheet alike). It
+   rises from the bottom to about 4/5 of the screen (--large), the page behind dimmed by the scrim, rounded top
+   corners and a grab handle; it is dragged to full height (no class), down to half (--half) and a third (--small),
+   and let go low it closes (ShellPageSheetGesture, PageSheetModel: keep the tops here and its constants the same). ShellHost pads the bottom
+   by the home-indicator inset. */
+@keyframes shell-page-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0%); }
+}
+
+.shell-page-sheet {
+  position: absolute;
+  top: 10dp;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16dp 16dp 0 16dp;
+  border-radius: 12dp 12dp 0 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
+  transform: translateY(0);
+  transition: transform 0.3s cubic-out, top 0.3s cubic-out;
+}
+
+.shell-page-sheet.shell-swipe-dragging {
+  transition: none;
+}
+
+/* Where every sheet opens: a fifth of the page behind stays in sight above it. */
+.shell-page-sheet.shell-page-sheet--large {
+  top: 20%;
+}
+
+/* At half: its top at 45% of the screen, the page behind it dimmed less, so what the user was doing stays in sight. */
+.shell-page-sheet.shell-page-sheet--half {
+  top: 45%;
+}
+
+.shell-layer-sheet--half .shell-scrim {
+  opacity: 0.5;
+}
+
+/* At small: about a third of the screen (the title row and the top of the content), the page behind dimmed least. */
+.shell-page-sheet.shell-page-sheet--small {
+  top: 66%;
+}
+
+.shell-layer-sheet--small .shell-scrim {
+  opacity: 0.25;
+}
+
+.shell-page-sheet-enter {
+  animation: 0.3s cubic-out shell-page-sheet-in;
+}
+
+.shell-page-sheet-grabber {
+  position: absolute;
+  top: 6dp;
+  left: 0;
+  right: 0;
+  width: 36dp;
+  height: 5dp;
+  margin: 0 auto;
+  border-radius: 2.5dp;
+}
+
+/* One title row for every sheet (Kenneth 2026-11-04): 44dp under the grab handle, the title centred (17dp bold), the
+   sheet's X at its right end. Each view marks its row .sheet-header and its title .sheet-title; the row keeps clear
+   of the X on both sides so the title stays centred (the people picker's sheet keeps its 16dp side padding, so its row
+   needs 16dp less). */
+.shell-page-sheet .sheet-header {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0 52dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet--people_picker .sheet-header {
+  padding: 0 36dp;
+}
+
+/* A second button left of the X (ask-AI's "Open in AI chat"): the row keeps clear of both. */
+.shell-page-sheet .sheet-header.sheet-header--two-buttons {
+  padding: 0 96dp;
+}
+
+.shell-page-sheet .sheet-header .sheet-title {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The header's buttons (iOS): a 44dp target around a quiet 30dp grey disc holding a small secondary-colour icon. The
+   X is the sheet's own (ShellLayoutRml), top right on the title row. */
+.shell-page-sheet .shell-page-sheet-close {
+  top: 16dp;
+  right: 4dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  border-radius: 22dp;
+}
+
+.shell-page-sheet .sheet-icon-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+.shell-page-sheet .shell-page-sheet-close svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+.shell-page-sheet .people-picker-row {
+  min-height: 50dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet .people-picker-row-title {
+  font-size: 17dp;
+  font-weight: normal;
+}
+
+.shell-page-sheet .people-picker-check {
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+  border-width: 2dp;
+  box-sizing: border-box;
+}
+
+.shell-page-sheet .people-picker-check-mark {
+  display: none;
+}
+
+.shell-page-sheet .people-picker-row--selected .people-picker-check {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+/* The page behind is dimmed up through the status bar, as iOS does. */
+.shell-layer-sheet .shell-scrim {
+  top: -100dp;
+}
+
+/* The engine draws no placeholder: a hint sits over the empty search field (sheet only; desktop unchanged). */
+.people-picker-search-hint {
+  display: none;
+}
+
+.shell-page-sheet .people-picker-search {
+  position: relative;
+}
+
+.shell-page-sheet .people-picker-search-field {
+  height: 36dp;
+  min-height: 36dp;
+  padding: 7dp 12dp;
+  border-width: 0;
+  border-radius: 10dp;
+  font-size: 17dp;
+  /* A 22dp line between 7dp paddings: text and a line-tall caret sit in the middle (a 36dp line drew a full-height caret). */
+  line-height: 22dp;
+}
+
+.shell-page-sheet .people-picker-search-hint {
+  display: block;
+  position: absolute;
+  left: 12dp;
+  top: 0;
+  height: 36dp;
+  font-size: 17dp;
+  line-height: 36dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.shell-page-sheet .people-picker-footer-actions {
+  gap: 12dp;
+}
+
+.shell-page-sheet .people-picker-footer .btn {
+  flex: 1;
+  height: 50dp;
+  min-height: 50dp;
+  line-height: 50dp;
+  padding: 0 20dp;
+  font-size: 17dp;
+}
+
+/* The ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a, design §8.14) in its sheet: the sheet's title row (an "Open in AI
+   chat" icon left of the X), one line on what goes to the AI, the bubbles, the input row and the reminder under it. */
+.shell-page-sheet.shell-page-sheet--ask_ai {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ask-ai {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Left of the sheet's X (right 4dp, 44dp wide): the same 44dp target and grey disc. */
+.ask-ai-open-chat {
+  position: absolute;
+  top: 0;
+  right: 48dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.ask-ai-open-chat svg {
+  width: 14dp;
+  height: 14dp;
+}
+
+.ask-ai-privacy {
+  flex-shrink: 0;
+  margin: 0 16dp 6dp 16dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.ask-ai-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8dp 16dp 8dp 16dp;
+}
+
+.ask-ai-intro {
+  margin: 0 0 16dp 0;
+  padding: 14dp 16dp 4dp 16dp;
+  border-radius: 12dp;
+}
+
+.ask-ai-intro-body {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.ask-ai-intro-ok {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  margin-top: 6dp;
+  border: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.ask-ai-section {
+  margin: 0 0 10dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.ask-ai-empty {
+  margin: 24dp 0;
+  font-size: 15dp;
+  line-height: 21dp;
+  text-align: center;
+}
+
+.ask-ai .bubble-user,
+.ask-ai .bubble-assistant {
+  max-width: 88%;
+}
+
+/* The chat page's bubble tails are drawn for its own rows only. */
+.ask-ai .bubble-tail {
+  display: none;
+}
+
+.ask-ai-error {
+  margin: 4dp 0 0 0;
+  font-size: 15dp;
+  line-height: 21dp;
+}
+
+.ask-ai-support {
+  display: inline-block;
+  height: 44dp;
+  margin-top: 10dp;
+  padding: 0 18dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 15dp;
+  line-height: 44dp;
+}
+
+.ask-ai-input-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  flex-shrink: 0;
+  padding: 8dp 16dp 0 16dp;
+}
+
+/* The picture waiting to be sent: a thumbnail and an X. */
+.ask-ai-picture {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 8dp 16dp 0 16dp;
+}
+
+.ask-ai-picture-box {
+  width: 56dp;
+  height: 56dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.ask-ai-picture-img {
+  display: block;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 10dp;
+}
+
+.ask-ai-picture-note {
+  margin: 0 0 0 12dp;
+  font-size: 13dp;
+}
+
+.ask-ai-picture-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 0 0 4dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+}
+
+.ask-ai-picture-remove svg {
+  width: 14dp;
+  height: 14dp;
+}
+
+.ask-ai-reminder {
+  flex-shrink: 0;
+  margin: 6dp 16dp 6dp 16dp;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
+/* New chat in a sheet (Kenneth 2026-11-04): the sheets' title row, the rows edge to edge (the rows pad themselves, so
+   the sheet drops its side padding). */
+.shell-page-sheet.shell-page-sheet--new_chat,
+.shell-page-sheet.shell-page-sheet--group_info,
+.shell-page-sheet.shell-page-sheet--group_leave,
+.shell-page-sheet.shell-page-sheet--contact_detail {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .shell-dialog {
@@ -2627,7 +4744,8 @@ call-video-tile {
   min-width: 44dp;
 }
 
-.shell-call-expand {
+.shell-call-expand,
+.shell-call-grid {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -2642,10 +4760,15 @@ call-video-tile {
   cursor: pointer;
 }
 
-.shell-call-expand svg {
+.shell-call-expand svg,
+.shell-call-grid svg {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+.shell-call-grid {
+  margin-right: 8dp;
 }
 
 .shell-call-chrome--dragging {
@@ -2822,6 +4945,77 @@ call-video-tile {
   min-height: 16dp;
 }
 
+/* V059 spotlight: one card fills the call area, the others line up in a strip below (a tap spotlights them). */
+.shell-call-immersive-spotlight {
+  flex-grow: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4dp 0 8dp 0;
+}
+
+.shell-call-peer-card--spotlit {
+  flex-grow: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 8dp;
+}
+
+.shell-call-peer-card--spotlit .shell-call-peer-tile {
+  flex-grow: 1;
+  height: auto;
+  min-height: 160dp;
+  margin: 0 0 8dp 0;
+}
+
+.shell-call-peer-card--spotlit .shell-call-peer-avatar,
+.shell-call-peer-card--spotlit .shell-call-peer-avatar-image {
+  width: 96dp;
+  height: 96dp;
+  border-radius: 48dp;
+  margin: auto auto 12dp auto;
+}
+
+.shell-call-immersive-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 8dp;
+  overflow-x: auto;
+  padding: 0 0 8dp 0;
+}
+
+.shell-call-peer-card--strip {
+  flex-grow: 0;
+  flex-shrink: 0;
+  width: 112dp;
+  min-width: 112dp;
+  padding: 6dp;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-tile {
+  height: 72dp;
+  margin: 0 0 4dp 0;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-avatar,
+.shell-call-peer-card--strip .shell-call-peer-avatar-image {
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+  margin: 0 auto 4dp auto;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-name {
+  font-size: 12dp;
+}
+
+.shell-call-peer-card--strip .shell-call-peer-badges {
+  margin-top: 2dp;
+}
+
 .shell-call-immersive-controls {
   flex-shrink: 0;
   padding-top: 8dp;
@@ -2830,6 +5024,913 @@ call-video-tile {
 .shell-call-immersive-controls .shell-call-bar-actions {
   justify-content: center;
   flex-wrap: wrap;
+}
+
+/* An outgoing call still ringing: a wide labelled Cancel on phones (Kenneth 2026-11-04); desktop keeps its End. */
+.shell-call-cancel-row {
+  display: none;
+}
+
+/* Phones, ringing: the wide Cancel is the one way to hang up, so the small round End goes. */
+.shell-body--compact .shell-call-leave--ringing {
+  display: none;
+}
+
+.shell-body--compact .shell-call-cancel-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  padding: 12dp 16dp;
+}
+
+.shell-body--compact .shell-call-cancel {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8dp;
+  width: 100%;
+  max-width: 320dp;
+  height: 50dp;
+  padding: 0 20dp;
+  border: 0;
+  border-radius: 25dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-body--compact .shell-call-cancel svg {
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-body--compact .shell-call-cancel-label {
+  font-size: 17dp;
+  font-weight: bold;
+  line-height: 50dp;
+}
+
+/* ---- Phone call pages (DESIGN-pp-ui 8.12 + its 2026-11-04 connection story; mockups 06-Call*, 08-call-connect-story).
+   Full screen and always dark; ShellHost lifts the page under the status bar and pads it by the safe areas
+   (ApplySafeAreaLayout). The only animations are the connecting line's spark, the current step's ring and the tips,
+   and they exist only in the markup written before connect (B146: after connect the page idles). */
+.shell-layer-call-phone {
+  z-index: 45;
+}
+
+.call-phone {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.call-phone-remote {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-remote-note {
+  margin: 0;
+  padding-top: 45%;
+  font-size: 15dp;
+  text-align: center;
+}
+
+.call-phone-video-dim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-video-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 160dp;
+}
+
+.call-phone-top {
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 44dp;
+  padding: 0 8dp;
+}
+
+.call-phone-top-btn,
+.call-phone-top-spacer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.call-phone-sealed {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4dp;
+}
+
+.call-phone-sealed-text {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* The top pill (DESIGN-pp-ui 8.11), under the top row. */
+.call-phone-notice {
+  position: absolute;
+  top: 50dp;
+  left: 8dp;
+  right: 8dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  padding: 10dp 14dp;
+  border-radius: 16dp;
+  opacity: 1;
+  transition: opacity 0.3s cubic-out;
+}
+
+.call-phone-notice--fading {
+  opacity: 0;
+}
+
+.call-phone-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+  border-radius: 12dp;
+}
+
+.call-phone-notice-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* 1:1 voice and the failure page: the person big in the middle. */
+.call-phone-hero {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 79dp 24dp 0 24dp;
+}
+
+.call-phone-hero--ring {
+  padding-top: 123dp;
+}
+
+.call-phone-avatar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.call-phone-avatar--big {
+  width: 120dp;
+  height: 120dp;
+  border-radius: 60dp;
+}
+
+.call-phone-avatar--big .avatar-letter {
+  font-size: 48dp;
+}
+
+.call-phone-avatar--pair {
+  width: 76dp;
+  height: 76dp;
+  border-radius: 38dp;
+}
+
+.call-phone-avatar--pair .avatar-letter {
+  font-size: 30dp;
+}
+
+.call-phone-avatar--tile {
+  width: 72dp;
+  height: 72dp;
+  border-radius: 36dp;
+}
+
+.call-phone-avatar--tile .avatar-letter {
+  font-size: 28dp;
+}
+
+.call-phone-name {
+  margin: 20dp 0 4dp 0;
+  font-size: 28dp;
+  line-height: 34dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.call-phone-status {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: center;
+}
+
+.call-phone-debug {
+  margin: 6dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+  text-align: center;
+}
+
+.call-phone-hint {
+  margin: 8dp 0 0 0;
+  max-width: 300dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* PP's own signal: two dots joined by a line, then four bars. */
+.call-phone-signal-slot {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
+
+.call-phone-signal {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6dp;
+  height: 28dp;
+  margin: 10dp 0 0 0;
+  padding: 0 10dp 0 8dp;
+  border: 0;
+  border-radius: 14dp;
+  box-sizing: border-box;
+}
+
+.call-phone-signal--compact {
+  height: 24dp;
+  margin: 0;
+  padding: 0 8dp 0 6dp;
+  border-radius: 12dp;
+}
+
+.call-phone-signal--sheet {
+  margin: 0;
+}
+
+.call-phone-signal-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 20dp;
+  height: 12dp;
+}
+
+.call-phone-signal-dot {
+  flex-shrink: 0;
+  width: 6dp;
+  height: 6dp;
+  border-radius: 3dp;
+}
+
+.call-phone-signal-line {
+  flex: 1;
+  height: 2dp;
+}
+
+.call-phone-signal-bars {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 2dp;
+  height: 14dp;
+}
+
+.call-phone-signal-bar {
+  width: 4dp;
+  border-radius: 2dp;
+}
+
+.call-phone-signal-bar--1 {
+  height: 5dp;
+}
+
+.call-phone-signal-bar--2 {
+  height: 8dp;
+}
+
+.call-phone-signal-bar--3 {
+  height: 11dp;
+}
+
+.call-phone-signal-bar--4 {
+  height: 14dp;
+}
+
+.call-phone-signal-word {
+  font-size: 13dp;
+  line-height: 18dp;
+  font-weight: bold;
+}
+
+/* "Connected directly, 0.9 s": 4 s under the name, then it fades (C++ sets --fading, this transition runs). */
+.call-phone-result {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  margin-top: 14dp;
+  padding: 8dp 14dp;
+  border-radius: 18dp;
+  opacity: 1;
+  transition: opacity 0.4s cubic-out;
+}
+
+.call-phone-result--fading {
+  opacity: 0;
+}
+
+.call-phone-result-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
+}
+
+.call-phone-result-text {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Before connect: you and them with the moving line, then the steps. */
+.call-phone-story {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 59dp 24dp 0 24dp;
+}
+
+.call-phone-story--card {
+  justify-content: center;
+  padding-top: 0;
+}
+
+.call-phone-story--group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18dp 18dp 20dp 18dp;
+  border-radius: 22dp;
+}
+
+.call-phone-pair {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 300dp;
+  height: 120dp;
+}
+
+.call-phone-pair-path {
+  position: relative;
+  flex: 1;
+  height: 12dp;
+}
+
+.call-phone-pair-dots {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 12dp;
+  padding: 0 10dp;
+}
+
+.call-phone-pair-dot {
+  width: 3dp;
+  height: 3dp;
+  border-radius: 1.5dp;
+}
+
+@keyframes call-phone-spark {
+  from { transform: translateX(0dp); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  to { transform: translateX(126dp); opacity: 0; }
+}
+
+.call-phone-pair-spark {
+  position: absolute;
+  top: 1dp;
+  left: 6dp;
+  width: 10dp;
+  height: 10dp;
+  border-radius: 5dp;
+  animation: 1.4s linear-in-out infinite call-phone-spark;
+}
+
+.call-phone-pair-names {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  width: 300dp;
+  margin-top: 6dp;
+}
+
+.call-phone-pair-name {
+  width: 92dp;
+  margin: 0 -8dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.call-phone-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12dp;
+  width: 300dp;
+  margin-top: 22dp;
+}
+
+.call-phone-story--group .call-phone-card {
+  width: 300dp;
+  box-sizing: border-box;
+}
+
+.call-phone-story--group .call-phone-steps {
+  width: 270dp;
+  margin-top: 0;
+}
+
+.call-phone-step {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+}
+
+.call-phone-step-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+  border-width: 2dp;
+  border-radius: 11dp;
+  box-sizing: border-box;
+}
+
+.call-phone-step--done .call-phone-step-dot {
+  border-width: 0;
+}
+
+@keyframes call-phone-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.call-phone-step--current .call-phone-step-dot {
+  animation: 1s linear-in-out infinite call-phone-spin;
+}
+
+.call-phone-step-text {
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+}
+
+.call-phone-step--current .call-phone-step-text {
+  font-weight: bold;
+}
+
+/* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
+.call-phone-tips {
+  position: relative;
+  flex-shrink: 0;
+  height: 44dp;
+  margin: 0 28dp 16dp 28dp;
+}
+
+@keyframes call-phone-tip {
+  from { opacity: 0; }
+  4% { opacity: 1; }
+  23% { opacity: 1; }
+  25% { opacity: 0; }
+  to { opacity: 0; }
+}
+
+.call-phone-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  font-size: 14dp;
+  line-height: 20dp;
+  text-align: center;
+  opacity: 0;
+  animation: 12s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--2 {
+  animation: 12s 3s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--3 {
+  animation: 12s 6s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip--4 {
+  animation: 12s 9s linear-in-out infinite call-phone-tip;
+}
+
+.call-phone-tip-text {
+  font-weight: bold;
+}
+
+/* 1:1 video: the other person's camera fills the page; name, time and the signal top left; our camera top right. */
+.call-phone-video-body {
+  position: relative;
+  z-index: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.call-phone-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4dp;
+  padding: 8dp 140dp 0 16dp;
+}
+
+.call-phone-who .call-phone-result {
+  margin-top: 4dp;
+}
+
+.call-phone-who-name {
+  margin: 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+}
+
+.call-phone-who-status {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-pip {
+  position: absolute;
+  top: 8dp;
+  right: 12dp;
+  width: 110dp;
+  height: 160dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+/* Group: the name, "4 people · 12:04" with the signal, then the people's tiles two by two. */
+.call-phone-head {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6dp;
+  padding: 4dp 16dp 0 16dp;
+}
+
+.call-phone-group-name {
+  margin: 0;
+  font-size: 22dp;
+  line-height: 28dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.call-phone-sub-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+}
+
+.call-phone-sub {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-group-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 16dp 12dp 16dp 12dp;
+}
+
+.call-phone-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-content: flex-start;
+  overflow-y: auto;
+}
+
+.call-phone-grid--dim {
+  opacity: 0.35;
+}
+
+.call-phone-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10dp;
+  width: 49%;
+  height: 49%;
+  margin-bottom: 2%;
+  border-radius: 18dp;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.call-phone-tile-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.call-phone-tile-note {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.call-phone-tile-label {
+  position: absolute;
+  left: 8dp;
+  bottom: 8dp;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4dp;
+  max-width: 80%;
+  padding: 2dp 8dp;
+  border-radius: 6dp;
+}
+
+.call-phone-tile-name {
+  font-size: 13dp;
+  line-height: 18dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The bar of round buttons with their words. */
+.call-phone-controls {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  margin: 0 12dp 22dp 12dp;
+  padding: 12dp 4dp 8dp 4dp;
+  border-radius: 18dp;
+}
+
+.call-phone-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4dp;
+  width: 64dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
+}
+
+.call-phone-control-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.call-phone-control-label {
+  font-size: 11dp;
+  line-height: 13dp;
+  white-space: nowrap;
+}
+
+/* Ring: decline / voice / video, 72dp. */
+.call-phone-answer {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 0 32dp;
+  margin-bottom: 48dp;
+}
+
+.call-phone-answer-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8dp;
+  width: 96dp;
+}
+
+.call-phone-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72dp;
+  height: 72dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 36dp;
+}
+
+.call-phone-answer-label {
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.call-phone-charge,
+.call-phone-failed-actions {
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+  padding: 0 24dp 40dp 24dp;
+}
+
+.call-phone-pill-btn {
+  display: block;
+  width: 100%;
+  height: 50dp;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 25dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* "How this call got through" (DESIGN-pp-ui 8.14 sheet). */
+.call-phone-sheet-layer {
+  z-index: 8;
+}
+
+.call-phone-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4dp 4dp 16dp 4dp;
+}
+
+.call-phone-sheet-lead {
+  margin: 0 0 16dp 0;
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.call-phone-timeline {
+  position: relative;
+  margin: 0 0 18dp 0;
+  padding-left: 26dp;
+}
+
+.call-phone-event {
+  position: relative;
+  margin-bottom: 14dp;
+}
+
+.call-phone-event-dot {
+  position: absolute;
+  left: -23dp;
+  top: 4dp;
+  width: 12dp;
+  height: 12dp;
+  border-radius: 6dp;
+}
+
+.call-phone-event-time {
+  margin: 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.call-phone-event-text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.call-phone-sheet-group {
+  border-radius: 12dp;
+  overflow: hidden;
+}
+
+.call-phone-kv {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44dp;
+  padding: 0 14dp;
+  border-bottom-width: 1dp;
+}
+
+.call-phone-kv--last {
+  border-bottom-width: 0;
+}
+
+.call-phone-kv-key,
+.call-phone-kv-value {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
 }
 
 .shell-call-ring-eyebrow {
@@ -2913,10 +6014,137 @@ input.checkbox {
   cursor: pointer;
 }
 
+/* Phone checkboxes (DESIGN-pp-ui §8): an iOS circle, outlined when off, accent-filled with a white tick when on.
+   The row around it (a label) is at least 44dp tall so the whole row is the tap target. */
+.shell-body--compact input.checkbox {
+  width: 24dp;
+  height: 24dp;
+  border-width: 2dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.shell-body--compact input.checkbox:checked {
+  decorator: svg(../icons/v2/check.svg);
+}
+
+.shell-body--compact .shell-dialog-checkbox,
+.shell-body--compact .people-picker-video-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 44dp;
+  margin-top: 8dp;
+  font-size: 15dp;
+  cursor: pointer;
+}
+
 .shell-dialog-actions {
   justify-content: flex-end;
   gap: 8dp;
   margin-top: 16dp;
+}
+
+/* Phone alerts look like a UIAlertController (DESIGN-pp-ui §9): a 270dp rounded card, centred 17dp title and 13dp
+   message, a prompt field, then a flush button area under a hairline: two buttons side by side split by a vertical
+   hairline, a longer pair stacked (the confirm on top). Text-only buttons, 44dp tall; the confirm is bold. */
+.shell-body--compact .shell-dialog--alert {
+  width: 270dp;
+  max-width: 270dp;
+  padding: 0;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-body {
+  display: block;
+  padding: 20dp 16dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-title {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-message {
+  margin: 4dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-prompt {
+  height: 38dp;
+  min-height: 38dp;
+  margin: 14dp 0 0 0;
+  padding: 0 10dp;
+  border-width: 0;
+  border-radius: 8dp;
+  font-size: 15dp;
+  line-height: 38dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-checkbox {
+  gap: 10dp;
+  min-height: 44dp;
+  margin: 10dp 0 -10dp 0;
+  font-size: 13dp;
+  text-align: left;
+}
+
+.shell-body--compact .shell-dialog--alert input.checkbox {
+  width: 20dp;
+  height: 20dp;
+  border-radius: 10dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  margin: 0;
+  border-top-width: 1dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack {
+  flex-direction: column-reverse;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions .btn {
+  display: block;
+  flex: 1 1 0;
+  width: auto;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0 4dp;
+  border-width: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: normal;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok {
+  font-weight: bold;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-ok--split {
+  border-left-width: 1dp;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack .shell-dialog-ok--split {
+  border-left-width: 0;
+}
+
+.shell-body--compact .shell-dialog--alert .shell-dialog-actions--stack .shell-dialog-cancel {
+  border-top-width: 1dp;
 }
 
 .shell-pin-gate-chooser {
@@ -2973,12 +6201,6 @@ input.checkbox {
   gap: 12dp;
   margin-bottom: 12dp;
   padding: 8dp 4dp;
-}
-
-.home-header-actions {
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8dp;
 }
 
 .home-brand {
@@ -3086,6 +6308,55 @@ input.checkbox {
 
 .chat-reaction-chip--mine {
   background-color: rgba(64, 128, 255, 0.18);
+}
+
+/* Reactions hung on a bubble or card (WhatsApp style): small pills over its bottom edge, inset from its start side.
+   Absolute, so the row's height stays the bubble's (avatar, tail and bubble bottom line up); the row keeps the room
+   below (message-row-has-reactions). Each chip is a 32dp hit box; the 24dp pill is drawn inside it. Tint: colors-*. */
+.chat-reaction-host {
+  position: relative;
+}
+
+.chat-reaction-row--overlay {
+  position: absolute;
+  left: 10dp;
+  bottom: -16dp;
+  z-index: 1;
+  margin: 0;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.chat-reaction-row--overlay .chat-reaction-chip {
+  height: 32dp;
+  min-height: 32dp;
+  margin: 0 2dp 0 0;
+  padding: 4dp 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
+.chat-reaction-row--overlay .chat-reaction-pill {
+  display: inline-block;
+  height: 24dp;
+  padding: 1dp 7dp;
+  border-width: 2dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
+.chat-reaction-count {
+  margin-left: 3dp;
+  font-size: 12dp;
+}
+
+.message-row-has-reactions {
+  padding-bottom: 14dp;
 }
 
 .chat-system-line {
@@ -3317,14 +6588,19 @@ input.checkbox {
   text-align: center;
 }
 
+/* tab-badge pill: 18dp high, caption-1 600, at the icon's top-right. */
 .badge-count--nav {
   position: absolute;
-  top: -4dp;
-  right: -8dp;
-  min-width: 16dp;
-  padding: 1dp 4dp;
-  font-size: 10dp;
-  line-height: 1.1;
+  top: -6dp;
+  right: -12dp;
+  min-width: 18dp;
+  height: 18dp;
+  padding: 0 5dp;
+  box-sizing: border-box;
+  border-radius: 9dp;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 18dp;
 }
 
 .badge-dot {
@@ -3366,6 +6642,255 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Phone chat list (DESIGN-pp-ui 8.3 / 8.8): full-width 76dp rows, a 52dp round avatar, a hairline inset from 80dp.
+   The avatar, type icon, muted bell and search box only exist on the phone; desktop keeps the card rows. */
+.chat-search,
+.chat-row-avatar,
+.chat-row-type,
+.chat-row-mute,
+.chat-row-blocked {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .sidebar-sessions .large-title {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .chat-search {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-shrink: 0;
+  height: 36dp;
+  margin: 0 16dp 8dp 16dp;
+  padding: 0 8dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+}
+
+.chat-search-icon {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
+.chat-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 36dp;
+  margin: 0;
+  padding: 0 0 0 6dp;
+  border: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  background-color: transparent;
+}
+
+/* Text and caret centred in the 36dp pill: the engine draws them one line tall at the top of the content box, so
+   the box is a 22dp line with 7dp above and below (Kenneth 2026-11-04: the caret was not in the middle). Phones only. */
+.shell-layer-compact .chat-search-input {
+  padding-top: 7dp;
+  padding-bottom: 7dp;
+  line-height: 22dp;
+}
+
+/* The input renders no placeholder: this label sits over it while it is empty and lets clicks through. */
+.chat-search-label {
+  position: absolute;
+  top: 0;
+  left: 30dp;
+  height: 36dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 36dp;
+  pointer-events: none;
+}
+
+.shell-layer-compact .sidebar-archived-entry {
+  margin: 0 16dp 4dp 16dp;
+}
+
+.shell-layer-compact .sidebar-sessions .text {
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .sidebar-session {
+  gap: 12dp;
+  height: 76dp;
+  min-height: 76dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Swipe actions (phone Chats list): the buttons sit just outside the row and ride along as it slides. */
+.session-swipe {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-sessions {
+  overflow-x: hidden;
+}
+
+/* Moved with `left` (SessionSwipeGesture), so its buttons are hit where they are drawn. */
+.shell-layer-compact .sidebar-session {
+  position: relative;
+  transition: left 0.2s cubic-out;
+}
+
+.shell-layer-compact .sidebar-session.session-swipe-dragging {
+  transition: none;
+}
+
+.shell-layer-compact .session-swipe {
+  display: none;
+}
+
+.shell-layer-compact .sidebar-session.session-swipe-shown .session-swipe {
+  display: flex;
+  flex-direction: row;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.shell-layer-compact .session-swipe--end {
+  left: 100%;
+}
+
+.shell-layer-compact .session-swipe--start {
+  right: 100%;
+}
+
+.shell-layer-compact .session-swipe-btn {
+  width: 74dp;
+  min-height: 44dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.shell-layer-compact .session-swipe-label {
+  margin: 2dp 0 0 0;
+  font-size: 11dp;
+  text-align: center;
+}
+
+.shell-layer-compact .sidebar-session-icon,
+.shell-layer-compact .sidebar-session-flag--pin,
+.shell-layer-compact .sidebar-session-flag--muted {
+  display: none;
+}
+
+/* One leading column on every phone list (Kenneth 2026-11-04, PLAN-ui-refresh-impl 68): 16dp in, a 44dp avatar (or a
+   36dp icon tile centred in 44dp), 12dp to the text, so text starts 72dp into the row on Chats, Contacts, Me and the
+   member lists alike. */
+.shell-layer-compact .chat-row-avatar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+  overflow: hidden;
+}
+
+/* A cached profile photo replaces the letter: the round frame clips it. */
+.shell-layer-compact .chat-row-avatar .avatar-photo {
+  width: 44dp;
+  height: 44dp;
+}
+
+.chat-row-avatar-letter {
+  margin: 0;
+  font-size: 19dp;
+  line-height: 24dp;
+  font-weight: bold;
+}
+
+.chat-row-avatar-icon {
+  width: 28dp;
+  height: 28dp;
+}
+
+.shell-layer-compact .sidebar-session-body {
+  height: 76dp;
+  padding-right: 16dp;
+  box-sizing: border-box;
+  justify-content: center;
+  gap: 5dp;
+}
+
+.shell-layer-compact .sidebar-session-line {
+  min-height: 22dp;
+}
+
+.shell-layer-compact .sidebar-session-line + .sidebar-session-line {
+  min-height: 20dp;
+}
+
+.shell-layer-compact .sidebar-session-title {
+  font-size: 16dp;
+  line-height: 21dp;
+  font-weight: bold;
+}
+
+/* Kenneth 2026-11-03: one size smaller than the spec's subhead, more air ("不要塞的太满"). */
+.shell-layer-compact .sidebar-session-preview,
+.shell-layer-compact .sidebar-session-mention {
+  font-size: 14dp;
+  line-height: 19dp;
+}
+
+.shell-layer-compact .sidebar-session-date {
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+.shell-layer-compact .chat-row-type,
+.shell-layer-compact .chat-row-mute {
+  display: block;
+  flex-shrink: 0;
+}
+
+.shell-layer-compact .chat-row-type {
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .chat-row-mute {
+  width: 16dp;
+  height: 16dp;
+}
+
+/* A chat with someone blocked (Kenneth 2026-11-04): a small block mark before "Blocked", kept quiet. */
+.shell-layer-compact .chat-row-blocked {
+  display: block;
+  flex-shrink: 0;
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .sidebar-unread {
+  min-width: 20dp;
+  height: 20dp;
+  padding: 0 6dp;
+  box-sizing: border-box;
+  border-radius: 10dp;
+  font-size: 12dp;
+  font-weight: bold;
+  line-height: 20dp;
+}
+
 .message-row-peer {
   margin: 8dp 0;
   padding-right: 48dp;
@@ -3385,7 +6910,6 @@ input.checkbox {
    so it wins over a row's own tint (.message-row-mentions-me in colors-*.rcss); see-through, so it reads on
    either theme. */
 .message-row.message-row-jump-target {
-  background-color: rgba(255, 196, 0, 0.22);
   border-radius: 8dp;
 }
 
@@ -3500,6 +7024,22 @@ input.checkbox {
 }
 
 .settings-detail-view.shell-swipe-dragging {
+}
+
+/* The transfer page's explanation starts below the bar with the room a card would have. */
+.shell-layer-compact .settings-subpage-view .settings-transfer {
+  padding-top: 14dp;
+}
+
+/* Phones: a page pushed over a settings section (Security > Change PIN): it covers the section, which stays
+   underneath so a swipe back shows it. */
+.settings-subpage-view {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
 }
 
 .settings-header,
@@ -4568,9 +8108,40 @@ input.checkbox {
   white-space: nowrap;
 }
 
-/* Compact ShowActions: iOS-style bottom action sheet.
-   Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
-   Block stack (not flex) avoids min-content overflow past the viewport frame. */
+/* Phone pull-down from a header button (ContextMenuHost::ShowActionsPopover): a rounded card right-aligned under
+   the button, 50dp rows, label on the left and icon on the right (iOS pull-down menu). */
+.context-menu-layer--popover .context-menu-panel {
+  min-width: 230dp;
+  max-width: 300dp;
+  padding: 0;
+  border: 0;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.context-menu-layer--popover .context-menu-item {
+  flex-direction: row-reverse;
+  gap: 12dp;
+  min-height: 50dp;
+  padding: 0 16dp;
+  border-radius: 0;
+}
+
+.context-menu-layer--popover .context-menu-item-label {
+  font-size: 17dp;
+  white-space: nowrap;
+}
+
+.context-menu-layer--popover .context-menu-item-icon {
+  width: 20dp;
+  height: 20dp;
+}
+
+/* Phone menus (ContextMenuHost, Presentation::ActionSheet): the small sheet, the page sheets' family (Kenneth
+   2026-11-04, ui-mockups/09-sheets-unify): edge to edge at the bottom, 12dp top corners, the grab handle, a 44dp row
+   with the centred title and the grey close disc, then one card of 50dp rows. Its height follows the rows, up to about
+   a third of the screen (LayoutActionSheet sets the list's max-height and the home-indicator padding); a drag down,
+   the disc or the scrim closes it. */
 .context-menu-layer--sheet {
   box-sizing: border-box;
 }
@@ -4579,41 +8150,162 @@ input.checkbox {
   position: absolute;
   z-index: 1;
   display: block;
-  overflow: hidden;
+  padding: 16dp 16dp 8dp 16dp;
+  border-radius: 12dp 12dp 0 0;
   box-sizing: border-box;
+  transform: translateY(0px);
+  transition: transform 0.25s cubic-out;
+  animation: 0.3s cubic-out shell-page-sheet-in;
+}
+
+.context-menu-sheet.context-menu-sheet--dragging {
+  transition: none;
+}
+
+.context-menu-sheet-grabber {
+  position: absolute;
+  top: 6dp;
+  left: 0;
+  right: 0;
+  width: 36dp;
+  height: 5dp;
+  margin: 0 auto;
+  border-radius: 2.5dp;
+}
+
+/* The title row keeps clear of the disc on both sides so the title stays centred (the sheet has 16dp side padding). */
+.context-menu-sheet-header {
+  display: block;
+  height: 44dp;
+  margin: 0;
+  padding: 0 36dp;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-title {
+  display: block;
+  height: 44dp;
+  margin: 0;
+  font-family: LatoLatin;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A 44dp target round a 30dp grey disc, where the page sheets have theirs. */
+.context-menu-sheet-close {
+  position: absolute;
+  top: 16dp;
+  right: 4dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.context-menu-sheet-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+/* Reactions over a chat message: one card row of emoji above the actions, the user's last-used first; it scrolls
+   sideways when they do not all fit, the "+" stays at the right end. */
+.context-menu-sheet-quick {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin: 4dp 0 8dp 0;
+  padding: 4dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+}
+
+.context-menu-sheet-quick-scroll {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: row;
+  gap: 4dp;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.context-menu-sheet-quick .context-menu-item {
+  flex-shrink: 0;
+}
+
+/* Scrolled by touch: no room kept for the engine's 16dp scrollbars (the row would grow and the emoji ride high). */
+.context-menu-sheet-quick-scroll scrollbarhorizontal {
+  height: 0dp;
+}
+
+/* A menu action with an expander grew the sheet (ContextMenuHost::ExpandSheet sets its height, the large stop): the
+   quick row and the rows give way to what it mounts. */
+.context-menu-sheet--expanded {
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-sheet-header {
+  flex-shrink: 0;
+}
+
+.context-menu-sheet-expand,
+.context-menu-sheet--expanded .context-menu-sheet-quick,
+.context-menu-sheet--expanded .context-menu-sheet-list {
+  display: none;
+}
+
+.context-menu-sheet--expanded .context-menu-sheet-expand {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin: 4dp 0 0 0;
+  border-radius: 12dp;
+  overflow: hidden;
+  clip: always;
+}
+
+.context-menu-sheet-quick .context-menu-item {
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  min-height: 44dp;
+  padding: 0;
+  justify-content: center;
+  border-radius: 22dp;
+}
+
+.context-menu-sheet-quick .context-menu-item-label {
+  flex: 0 0 auto;
+  font-size: 24dp;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .context-menu-sheet-list {
   display: block;
   width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  margin: 0;
-  margin-bottom: 8dp;
-  padding: 4dp;
+  margin: 4dp 0 0 0;
+  padding: 0;
   border-radius: 12dp;
   overflow: auto;
-  max-height: 320dp;
-  box-sizing: border-box;
-  /* No box-shadow: blur extend (~1.5*radius) exceeds the 12dp sheet inset and
-     RmlUi clips the shadow texture to the window, which clips the painted panel. */
-}
-
-.context-menu-sheet-cancel {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  min-height: 48dp;
-  margin: 0;
-  padding: 12dp 16dp;
-  border: 0;
-  border-radius: 12dp;
-  font-family: LatoLatin;
-  font-size: 16dp;
-  font-weight: bold;
-  text-align: center;
-  cursor: pointer;
   box-sizing: border-box;
 }
 
@@ -4635,18 +8327,34 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-.context-menu-layer--sheet .context-menu-item {
-  width: 100%;
-  max-width: 100%;
+/* A sheet row, like iOS's context menu: 50dp, the label from 16dp in, a small icon at the right end 16dp from the
+   edge; the hairline is the body's top edge, so it is inset 16dp on both sides. */
+.context-menu-sheet-list .context-menu-item {
+  align-items: stretch;
+  gap: 0;
+  min-height: 50dp;
+  padding: 0 16dp;
+  border-radius: 0;
+}
+
+.context-menu-sheet-list .context-menu-item-body {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
   min-width: 0;
-  min-height: 48dp;
-  padding: 12dp 16dp;
-  border-radius: 8dp;
+  min-height: 50dp;
+  padding: 0;
   box-sizing: border-box;
 }
 
-.context-menu-layer--sheet .context-menu-item-label {
-  font-size: 16dp;
+.context-menu-sheet-list .context-menu-item:first-child .context-menu-item-body {
+  border-top-width: 0;
+}
+
+.context-menu-sheet-list .context-menu-item-label {
+  font-size: 17dp;
 }
 
 .context-menu-item-icon {
@@ -4660,6 +8368,13 @@ input.checkbox {
 
 .context-menu-item-icon svg {
   flex-shrink: 0;
+}
+
+/* Phone sheet: an 18dp trailing icon (the svg itself is emitted at 18dp). */
+.context-menu-sheet-list .context-menu-item-icon {
+  align-self: center;
+  width: 18dp;
+  height: 18dp;
 }
 
 .context-menu-item-label {
@@ -4696,6 +8411,9 @@ input.checkbox {
   pointer-events: auto;
 }
 
+/* Phones: the composer's emoji sheet (Kenneth 2026-11-05 原话 79, 82): about a third of the screen (ShellHost sets the
+   height), right under the message field. The panel is square and the composer's colour; the rounded sheet on it
+   (.shell-emoji-keyboard-sheet) is a page sheet's colour, so the bar above runs on behind its corners. */
 .shell-emoji-keyboard-panel {
   position: absolute;
   left: 0;
@@ -4704,13 +8422,24 @@ input.checkbox {
   height: 280dp;
   display: flex;
   flex-direction: column;
-  border-radius: 12dp 12dp 0 0;
-  padding: 8dp 8dp 4dp 8dp;
+  padding: 0;
   box-sizing: border-box;
   overflow: hidden;
   /* Force scissor even when flex children absorb overflow (scroll lives on .emoji-picker-body). */
   clip: always;
   z-index: 51;
+}
+
+.shell-emoji-keyboard-sheet {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 8dp;
+  border-radius: 12dp 12dp 0 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  clip: always;
 }
 
 .shell-emoji-keyboard-body {
@@ -4727,6 +8456,101 @@ input.checkbox {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+/* The phone sheets' top (emoji_picker.rml): the composer's sheet shows its grabber, title and X; a page sheet (the
+   reaction picker) brings its own grabber and X, so only the title row shows. The desktop keeps its header. */
+.emoji-sheet-top {
+  display: none;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-top,
+.shell-page-sheet .emoji-sheet-top {
+  display: block;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.shell-emoji-keyboard-body .emoji-picker-header,
+.shell-page-sheet .emoji-picker-header,
+.shell-page-sheet .emoji-sheet-grabber,
+.shell-page-sheet .emoji-sheet-close {
+  display: none;
+}
+
+.shell-emoji-keyboard-body .emoji-picker,
+.shell-page-sheet .emoji-picker {
+  gap: 0;
+}
+
+.emoji-sheet-grabber {
+  width: 36dp;
+  height: 5dp;
+  margin: 6dp auto 0 auto;
+  border-radius: 2.5dp;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  height: 44dp;
+  margin: 0 48dp;
+}
+
+.shell-emoji-keyboard-body .emoji-sheet-header .sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* A 44dp target around the small grey disc, at the right end of the title row (as on the page sheets). */
+.emoji-sheet-close {
+  position: absolute;
+  top: 8dp;
+  right: -4dp;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.emoji-sheet-close .sheet-icon-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+}
+
+.emoji-sheet-close svg {
+  width: 12dp;
+  height: 12dp;
+}
+
+/* Section names scroll with their emoji (a sticky name sat on the first row on the phone). */
+.shell-emoji-keyboard-body .emoji-picker-section-label,
+.shell-page-sheet .emoji-picker-section-label {
+  position: static;
+}
+
+.shell-emoji-keyboard-body .emoji-picker-body scrollbarvertical,
+.shell-page-sheet .emoji-picker-body scrollbarvertical {
+  width: 0dp;
 }
 
 /* Emoji picker overlay (expanded desktop modal) */
@@ -4877,6 +8701,2793 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* Phone scanner (Kenneth 2026-11-04, WeChat style; ShellLayoutRml's full-screen layer): the camera and the finder
+   fill the whole screen behind the back button and the bottom button, which stay inside the safe areas the shell
+   pads the body by. The finder is a 250dp square in the middle with corner marks and a line sweeping it, dimmed
+   round it, the hint under it. Colours: colors.rcss.tmpl. */
+.qr-scan-finder,
+.qr-scan-back,
+.qr-scan-tools {
+  display: none;
+}
+
+.shell-layer-full-screen {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The camera fills the layer (the absolute parts' box), not this padded body, so the body neither clips nor scrolls. */
+.shell-layer-full-screen .shell-overlay-body {
+  flex: 1;
+  overflow: visible;
+  clip: auto;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-scan {
+  justify-content: space-between;
+  gap: 0;
+}
+
+.shell-layer-compact .qr-scan-title,
+.shell-layer-compact .qr-scan-status,
+.shell-layer-compact .qr-scan-actions {
+  display: none;
+}
+
+.shell-layer-compact .qr-scan-camera,
+.shell-layer-compact .qr-scan-finder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  min-height: 0;
+}
+
+.shell-layer-compact .qr-scan-finder {
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-layer-compact .qr-scan-dim {
+  flex: 1;
+}
+
+.shell-layer-compact .qr-scan-finder-row {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  height: 250dp;
+}
+
+.shell-layer-compact .qr-scan-frame {
+  position: relative;
+  flex-shrink: 0;
+  width: 250dp;
+  height: 250dp;
+}
+
+.shell-layer-compact .qr-scan-corner {
+  position: absolute;
+  width: 24dp;
+  height: 24dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-scan-corner--tl {
+  top: 0;
+  left: 0;
+  border-width: 3dp 0 0 3dp;
+}
+
+.shell-layer-compact .qr-scan-corner--tr {
+  top: 0;
+  right: 0;
+  border-width: 3dp 3dp 0 0;
+}
+
+.shell-layer-compact .qr-scan-corner--bl {
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 3dp 3dp;
+}
+
+.shell-layer-compact .qr-scan-corner--br {
+  right: 0;
+  bottom: 0;
+  border-width: 0 3dp 3dp 0;
+}
+
+@keyframes qr-scan-sweep {
+  from { transform: translateY(0dp); }
+  to { transform: translateY(234dp); }
+}
+
+/* Only while scanning: it goes with the failure line. */
+.shell-layer-compact .qr-scan-line {
+  position: absolute;
+  top: 7dp;
+  left: 10dp;
+  right: 10dp;
+  height: 2dp;
+  border-radius: 1dp;
+  animation: 1.2s cubic-in-out infinite alternate qr-scan-sweep;
+}
+
+/* Out of the flow, so the dimmed bands above and below the frame stay equal and the frame stays in the middle. */
+.shell-layer-compact .qr-scan-below {
+  position: relative;
+}
+
+.shell-layer-compact .qr-scan-below-text {
+  position: absolute;
+  top: 24dp;
+  left: 32dp;
+  right: 32dp;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shell-layer-compact .qr-scan-hint {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+.shell-layer-compact .qr-scan-retry {
+  height: 44dp;
+  margin: 16dp 0 0 0;
+  padding: 0 24dp;
+  border: 0;
+  border-radius: 22dp;
+  font-size: 17dp;
+  line-height: 44dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-back {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  width: 44dp;
+  height: 44dp;
+  margin: 0 0 0 8dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-back svg {
+  width: 24dp;
+  height: 24dp;
+}
+
+.shell-layer-compact .qr-scan-tools {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  padding: 0 0 24dp 0;
+}
+
+.shell-layer-compact .qr-scan-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 88dp;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .qr-scan-tool-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56dp;
+  height: 56dp;
+  border-radius: 28dp;
+}
+
+.shell-layer-compact .qr-scan-tool-disc svg {
+  width: 26dp;
+  height: 26dp;
+}
+
+.shell-layer-compact .qr-scan-tool-label {
+  margin-top: 8dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* Phone Contacts (DESIGN-pp-ui 8.6 / 8.7 / 8.8): full-width 60dp rows with a 40dp avatar and the last 6 characters of the
+   account id; the detail page is a centred 96dp avatar, round action button and grouped cards. Desktop keeps its layout;
+   the phone-only elements are hidden until the compact layer. */
+.contacts-phone-search,
+.contacts-row-subtitle--phone,
+.cd-phone,
+.cd-account {
+  display: none;
+}
+
+.shell-layer-compact .contacts-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .contacts-list-view .large-title {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .contacts-search,
+.shell-layer-compact .contacts-row-subtitle--desktop,
+.shell-layer-compact .contacts-trust-badge,
+.shell-layer-compact .contacts-unread {
+  display: none;
+}
+
+.shell-layer-compact .contacts-empty {
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .contacts-list > .text {
+  padding: 8dp 16dp;
+}
+
+.shell-layer-compact .contacts-row {
+  gap: 12dp;
+  height: 60dp;
+  min-height: 60dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+}
+
+.shell-layer-compact .contacts-row-avatar-frame {
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+.shell-layer-compact .contacts-row-avatar-image {
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-layer-compact .contacts-row-avatar-frame .avatar-letter {
+  font-size: 18dp;
+}
+
+.shell-layer-compact .contacts-row-body {
+  justify-content: center;
+  height: 60dp;
+  padding-right: 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .contacts-row-title {
+  margin-bottom: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+/* A starred contact (常用联系人): a small star right after the name; the badges still go to the row's end. */
+.contacts-row-star {
+  display: none;
+}
+
+.shell-layer-compact .contacts-row-title--starred {
+  flex: 0 1 auto;
+}
+
+.shell-layer-compact .contacts-row-star {
+  display: block;
+  flex: none;
+  width: 14dp;
+  height: 14dp;
+  margin-right: auto;
+}
+
+.shell-layer-compact .contacts-row-subtitle--phone {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Phone Contacts A-Z: a small letter header over each section, and an index strip on the right edge (letters 11dp,
+   touch width 28dp, the list's height) that jumps the list while pressed or dragged, with the letter in a centred
+   bubble. The desktop list is sorted the same way but shows neither. Colours: colors.rcss.tmpl. */
+.contacts-section-header,
+.contacts-index,
+.contacts-index-bubble {
+  display: none;
+}
+
+.shell-layer-compact .contacts-section-header {
+  display: block;
+}
+
+.shell-layer-compact .contacts-index {
+  position: absolute;
+  top: 44dp;
+  right: 0;
+  bottom: 49dp;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  width: 28dp;
+  padding-right: 3dp;
+  box-sizing: border-box;
+  drag: drag;
+  z-index: 2;
+}
+
+.shell-layer-compact .contacts-index-letter {
+  display: block;
+  width: 16dp;
+  height: 14dp;
+  margin: 0;
+  font-size: 11dp;
+  line-height: 14dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .contacts-index-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 72dp;
+  height: 72dp;
+  margin: -36dp 0 0 -36dp;
+  border-radius: 14dp;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.shell-layer-compact .contacts-index-bubble-letter {
+  margin: 0;
+  font-size: 34dp;
+  line-height: 72dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+/* Phone "New chat" page (pushed from the Chats compose button): title, search, three 56dp action rows with a 36dp
+   coloured round icon, then Frequent and A-Z groups of the Contacts tab's 60dp rows. Colours: colors.rcss.tmpl. */
+/* The title row above the list (it does not scroll), the list taking the rest. */
+.nc-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.nc-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .nc-title {
+  padding: 12dp 16dp 0 16dp;
+}
+
+/* A name-only row: centre the name in the 60dp row. */
+/* A name-only row: the body keeps the full 60dp (its separator runs along the bottom), the one line fills it. */
+.shell-layer-compact .nc-page .contacts-row-title {
+  margin: 0;
+  line-height: 59dp;
+}
+
+.nc-actions {
+  padding-bottom: 8dp;
+}
+
+.nc-action {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 56dp;
+  padding: 0 16dp;
+  gap: 12dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.nc-action-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.nc-action-icon svg {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.nc-action-label {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.nc-section-header {
+  height: 28dp;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 13dp;
+  line-height: 28dp;
+  font-weight: bold;
+}
+
+/* Phone Add contact sheet (Kenneth 2026-11-04): a search field, my account card (avatar, name, account id, quiet copy and
+   share buttons of 44dp), then four big tiles. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .ac-page,
+.shell-layer-compact .qr-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-search {
+  margin-top: 8dp;
+}
+
+.shell-layer-compact .ac-card {
+  margin: 12dp 16dp 0 16dp;
+  border-radius: 12dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .ac-account {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 76dp;
+  padding: 12dp 4dp 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .ac-avatar,
+.shell-layer-compact .ac-avatar-image {
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.shell-layer-compact .ac-avatar .avatar-letter {
+  font-size: 22dp;
+}
+
+.shell-layer-compact .ac-account-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .ac-account-name {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .ac-account-id {
+  margin: 2dp 0 0 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.shell-layer-compact .ac-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+/* Scan, My QR code, Invite and New group as four big tiles, two to a row with an even 12dp gap, the rows lined up
+   with the account card (Kenneth 2026-11-04: "直接用大图标大按钮"). The whole tile is the button. */
+.shell-layer-compact .ac-tiles {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 12dp;
+  margin: 12dp 16dp 0 16dp;
+}
+
+.shell-layer-compact .ac-tile {
+  flex: 1 1 40%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 104dp;
+  padding: 12dp 8dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-layer-compact .ac-tile:active {
+  opacity: 0.6;
+}
+
+.shell-layer-compact .ac-tile-disc {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.shell-layer-compact .ac-tile-icon {
+  flex-shrink: 0;
+  width: 28dp;
+  height: 28dp;
+}
+
+.shell-layer-compact .ac-tile-label {
+  margin: 8dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+.shell-layer-compact .ac-results {
+  margin-top: 4dp;
+}
+
+.shell-layer-compact .ac-note {
+  margin: 0;
+  padding: 32dp 16dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* My QR code sheet: the code on a white card, my name under it, one line of help. */
+.shell-layer-compact .qr-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24dp 16dp 32dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .qr-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 260dp;
+  height: 260dp;
+  border-radius: 16dp;
+}
+
+.shell-layer-compact .qr-code {
+  width: 240dp;
+  height: 240dp;
+}
+
+.shell-layer-compact .qr-name {
+  margin: 20dp 0 0 0;
+  font-size: 20dp;
+  line-height: 26dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .qr-hint {
+  margin: 6dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+/* Phone "Blocked" list (Settings > Security; Kenneth 2026-11-04): a short note, a card of 60dp rows (avatar, name,
+   a 44dp Unblock on the right); a tap on the avatar or name opens the person's page. The result line goes under it. */
+.blocked-page {
+  height: 100%;
+  overflow-y: auto;
+  padding-bottom: 32dp;
+  box-sizing: border-box;
+}
+
+.blocked-page .blocked-help {
+  margin-top: 16dp;
+}
+
+.blocked-page .blocked-list {
+  margin-top: 12dp;
+}
+
+.blocked-page .blocked-empty {
+  margin-top: 48dp;
+  font-size: 15dp;
+  line-height: 20dp;
+  text-align: center;
+}
+
+.blocked-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  height: 60dp;
+  padding-left: 16dp;
+}
+
+.blocked-row-avatar {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.blocked-row-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 60dp;
+  box-sizing: border-box;
+}
+
+.blocked-row-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 60dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.blocked-unblock {
+  flex-shrink: 0;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0 16dp;
+  border: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  cursor: pointer;
+}
+
+/* Contact detail, phone. */
+.shell-layer-compact .contact-detail-panel {
+  display: block;
+  padding: 0 0 32dp 0;
+  overflow-y: auto;
+}
+
+.shell-layer-compact .contacts-detail-body,
+.shell-layer-compact .contacts-actions,
+.shell-layer-compact .contact-detail-panel .contacts-trust-badge,
+.shell-layer-compact .contact-detail-panel .contacts-row-subtitle--desktop {
+  display: none;
+}
+
+.shell-layer-compact .contacts-detail-header {
+  margin: 0;
+  padding: 16dp 16dp 0 16dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-row {
+  flex-direction: column;
+  align-items: center;
+  gap: 8dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-frame {
+  width: 96dp;
+  height: 96dp;
+  border-radius: 48dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-image {
+  width: 96dp;
+  height: 96dp;
+}
+
+.shell-layer-compact .contact-detail-avatar-frame .avatar-letter {
+  font-size: 40dp;
+}
+
+.shell-layer-compact .contact-detail-title-block {
+  flex: none;
+  align-items: center;
+}
+
+.shell-layer-compact .contact-detail-panel .contacts-header-title {
+  font-size: 22dp;
+  line-height: 28dp;
+}
+
+.shell-layer-compact .contact-detail-panel .contacts-row-title-line {
+  justify-content: center;
+}
+
+.shell-layer-compact .cd-account {
+  display: block;
+  width: 100%;
+  margin: 0;
+  text-align: center;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .cd-phone {
+  display: block;
+}
+
+.cd-acts {
+  justify-content: center;
+  gap: 16dp;
+  margin-top: 16dp;
+}
+
+.cd-act {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 76dp;
+  height: 64dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 13dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.cd-act-icon {
+  width: 24dp;
+  height: 24dp;
+}
+
+.cd-act-label {
+  margin: 3dp 0 0 0;
+  font-size: 11dp;
+  line-height: 13dp;
+}
+
+.cd-card {
+  margin: 20dp 16dp 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.cd-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  height: 44dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: LatoLatin;
+}
+
+.cd-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8dp;
+  height: 44dp;
+  padding-right: 12dp;
+  box-sizing: border-box;
+}
+
+/* Each row sits 1dp up so its top separator overlaps the row above; the card clips the first one, whichever
+   rows data-if has hidden. */
+.cd-card .cd-row {
+  margin-top: -1dp;
+}
+
+.cd-row-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cd-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Same pattern as the settings inputs: label above, field full width, text and caret from the left. */
+.cd-row--field {
+  height: auto;
+  min-height: 44dp;
+}
+
+.cd-row--field .cd-row-body {
+  display: block;
+  height: auto;
+  padding: 10dp 12dp 4dp 0;
+}
+
+.cd-row--field .cd-row-text {
+  display: block;
+  flex: none;
+  width: auto;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.cd-field {
+  display: block;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+  font-size: 17dp;
+  text-align: left;
+  background-color: transparent;
+}
+
+.shell-layer-compact .cd-row--field .cd-row-body {
+  position: relative;
+  padding-bottom: 0;
+}
+
+/* Text and caret centred in the 44dp box (Kenneth 2026-11-04: the note sat at the top): the engine draws them one
+   line tall at the top of the content box, so the box is a 22dp line with 11dp above and below, as the search fields. */
+.shell-layer-compact .cd-field {
+  margin: 0 0 10dp 0;
+  padding: 11dp 12dp;
+  border-radius: 10dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .cd-row--field .group-field-hint {
+  bottom: 10dp;
+}
+
+.cd-switch {
+  width: 51dp;
+  height: 31dp;
+  min-width: 51dp;
+}
+
+.cd-switch .settings-switch-knob {
+  width: 27dp;
+  height: 27dp;
+}
+
+.cd-switch.settings-switch--on .settings-switch-knob {
+  transform: translateX(20dp);
+}
+
+.cd-icon-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background-color: transparent;
+}
+
+.cd-icon {
+  width: 20dp;
+  height: 20dp;
+}
+
+.cd-chevron {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
+.cd-footnote {
+  margin: 6dp 0 0 0;
+  padding: 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* The contact page's sheet title row: only in a page sheet (the pushed page and the desktop pane have a title bar). The
+   page under it scrolls on its own, so the row stays put. */
+.cd-sheet-header {
+  display: none;
+}
+
+.shell-page-sheet .cd-sheet-header {
+  display: flex;
+}
+
+.shell-page-sheet .contact-detail-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+/* A card's header line above it (the group info's "5 members"): the card then sits right under it. */
+.cd-header {
+  margin: 20dp 0 6dp 0;
+  padding: 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.cd-card.cd-card--headed {
+  margin-top: 0;
+}
+
+/* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'
+   leading column, text at 72dp). */
+.cd-row.cd-row--member {
+  height: 60dp;
+  gap: 12dp;
+}
+
+.cd-row--member .cd-row-body {
+  height: 60dp;
+}
+
+.cd-row--static {
+  cursor: default;
+}
+
+.cd-row-avatar,
+.cd-row-plus {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+/* The add row's plus: a 36dp disc centred in the 44dp column, its text at 72dp like the members'. */
+.cd-row-plus {
+  width: 36dp;
+  height: 36dp;
+  margin: 0 16dp 0 4dp;
+  border-radius: 18dp;
+}
+
+.cd-row-avatar .avatar-letter {
+  font-size: 18dp;
+}
+
+/* A small label after a name in a row ("Owner", "Can't reach"). */
+.cd-tag {
+  flex-shrink: 0;
+  height: 20dp;
+  padding: 0 6dp;
+  border-radius: 6dp;
+  box-sizing: border-box;
+  font-size: 12dp;
+  line-height: 20dp;
+  font-weight: bold;
+}
+
+/* The owner's "Group admin" card (a person's page opened from their group): 50dp rows with a 22dp icon before the
+   label (accent for Re-invite, red for Remove), the hairline from the label; a grey note at the right end. */
+.cd-row.cd-row--admin {
+  height: 50dp;
+  gap: 12dp;
+}
+
+.cd-row--admin .cd-row-body {
+  height: 50dp;
+}
+
+.cd-admin-icon {
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.cd-admin {
+  padding-bottom: 24dp;
+}
+
+/* Group member page: help line sits centred under the Add contact button. */
+.cd-footnote--center {
+  margin-top: 16dp;
+  text-align: center;
+}
+
+/* ---- Phone chat window (UI refresh batch 3, DESIGN-pp-ui.md 8.4 / 8.5): the desktop keeps the rules above. ---- */
+
+.chat-date-strip,
+.chat-group-name,
+.chat-row-avatar-col,
+.bubble-time,
+.prompt-composer-label,
+.prompt-icon-v2 {
+  display: none;
+}
+
+.prompt-composer-pill {
+  position: relative;
+}
+
+.shell-chat-overlay .messages {
+  padding-left: 8dp;
+  padding-right: 8dp;
+}
+
+/* The transcript runs close to the screen edges (avatars 8dp, own bubbles 10dp so their tail ends 2dp short of the
+   edge): the panel's 12dp side padding is cancelled under it (offsets on the absolute scroller; a negative right
+   margin on the flex item is not applied by the engine). */
+.shell-chat-overlay .chat-messages-wrap .messages {
+  left: -12dp;
+  right: -12dp;
+  padding-right: 10dp;
+}
+
+/* The transcript runs up under the header bar (the wrap starts 63dp down: the 56dp bar, the header row's 8dp margin
+   less the 1dp it overlaps) and ends at the composer, fading into it; its padding keeps the first and last bubbles
+   clear at rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner
+   between header and transcript covers what runs under it. */
+.shell-chat-overlay .chat-messages-wrap .messages {
+  top: -63dp;
+  padding-top: 63dp;
+  padding-bottom: 12dp;
+}
+
+.shell-chat-overlay .chat-gap-banner,
+.shell-chat-overlay .chat-call-bar {
+  position: relative;
+  z-index: 1;
+}
+
+.shell-chat-overlay .chat-composer-fade {
+  top: auto;
+  bottom: 0;
+  z-index: 1;
+}
+
+/* The engine reserves 16dp for an (undrawn) scrollbar; on the phone the transcript scrolls by touch, so own bubbles
+   keep only the 8dp margin on the right. */
+.shell-chat-overlay .messages scrollbarvertical {
+  width: 0dp;
+}
+
+/* A video card is a plain block on phones (a flex column would take the card's full 240dp). */
+.shell-chat-overlay .chat-attachment-video {
+  display: block;
+}
+
+.shell-chat-overlay .chat-attachment-video-badge {
+  padding: 0;
+}
+
+/* Rows: 2dp inside a run, 8dp between runs; bubbles take at most 72% of the width (a clear gap on the opposite side), so the desktop's side gutters go. */
+.shell-chat-overlay .message-row {
+  margin: 2dp 0 0 0;
+}
+
+.shell-chat-overlay .message-row-run-start {
+  margin-top: 8dp;
+}
+
+.shell-chat-overlay .message-row-peer,
+.shell-chat-overlay .message-row-ai {
+  padding-right: 0;
+}
+
+.shell-chat-overlay .message-row-user {
+  padding-left: 0;
+}
+
+/* The per-message "name · time" line is replaced by date strips, the in-bubble time and the group name. */
+.shell-chat-overlay .sender-label {
+  display: none;
+}
+
+.shell-chat-overlay .chat-date-strip {
+  display: block;
+  margin: 8dp 0;
+  text-align: center;
+}
+
+.shell-chat-overlay .chat-date-pill,
+.shell-chat-overlay .chat-system-line p {
+  display: inline-block;
+  margin: 0;
+  padding: 4dp 10dp;
+  max-width: 80%;
+  border-radius: 999dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* A group invitation (and the owner-unreachable notice) waiting for an answer: a received bubble's width (72%, at most
+   280dp) with the group name, one line of text and its buttons as plain accent text rows; once answered it is a
+   system line (TranscriptRml). Kenneth 2026-11-04: the card spread over the whole width. */
+.shell-chat-overlay .chat-group-invite {
+  display: inline-block;
+  width: 72%;
+  max-width: 280dp;
+  margin: 0;
+  padding: 10dp 12dp 0 12dp;
+  border-width: 0;
+  border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-chat-overlay .chat-group-invite .heading-3 {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+}
+
+.shell-chat-overlay .chat-group-invite .text {
+  margin: 2dp 0 4dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-chat-overlay .chat-group-invite .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+.shell-chat-overlay .chat-group-name {
+  display: block;
+  margin: 0 0 2dp 12dp;
+  max-width: 72%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13dp;
+  font-weight: bold;
+  text-align: left;
+}
+
+/* Group chats: the sender's name sits at the top of the bubble (first bubble of a run). A tap opens their page: the
+   name's hit box is 44dp tall and spans the bubble (padding out into the bubble's own, cancelled by margins). */
+.shell-chat-overlay .bubble .chat-group-name {
+  margin: -14dp -12dp -11dp -12dp;
+  padding: 14dp 12dp 13dp 12dp;
+  max-width: none;
+}
+
+/* Group chats: a 32dp avatar column + 8dp gap on every received row, so all received bubbles share one left edge. */
+.shell-chat-overlay .chat-row-body--group {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+.shell-chat-overlay .chat-row-avatar-col {
+  display: block;
+  flex-shrink: 0;
+  width: 32dp;
+  margin-right: 6dp;
+  align-self: flex-end;
+}
+
+/* The avatar's 44dp hit box: 6dp out on each side and 12dp above, cancelled by margins (the column stays 32dp). */
+.shell-chat-overlay .chat-row-avatar-hit {
+  display: block;
+  margin: -12dp -6dp 0 -6dp;
+  padding: 12dp 6dp 0 6dp;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+  overflow: hidden;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar .avatar-photo {
+  width: 32dp;
+  height: 32dp;
+}
+
+.shell-chat-overlay .chat-row-avatar-col-avatar .chat-row-avatar-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-chat-overlay .chat-row-body--group .chat-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+
+.shell-chat-overlay .bubble {
+  padding: 8dp 12dp;
+  border-radius: 18dp;
+}
+
+.shell-chat-overlay .bubble-user,
+.shell-chat-overlay .bubble-assistant {
+  max-width: 72%;
+}
+
+.shell-chat-overlay .bubble-assistant {
+  border-width: 0;
+}
+
+.shell-chat-overlay .bubble-time {
+  display: block;
+  margin-top: 2dp;
+  font-size: 11dp;
+  line-height: 13dp;
+  text-align: right;
+}
+
+.shell-chat-overlay .bubble-deleted .bubble-time {
+  display: none;
+}
+
+.shell-chat-overlay .chat-quote {
+  margin-top: 0;
+  padding: 5dp 8dp;
+  border-radius: 6dp;
+}
+
+/* Pictures, files and voice notes take the bubble colours and corners. Files and videos are compact cards (at most
+   240dp, small display text, a 44dp-tall plain "Open" row); a picture card is a 3dp frame around the picture, which
+   keeps its own shape inside a 200 x 240dp box: TranscriptRml gives the picture its fitted size (width / height), so
+   the frame is laid out for it on every shape (left to max-width / max-height, a very tall one spilled out). */
+.shell-chat-overlay .chat-attachment-card {
+  display: inline-block;
+  min-width: 160dp;
+  max-width: 240dp;
+  padding: 8dp 12dp 0 12dp;
+  border-width: 0;
+  border-radius: 18dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.shell-chat-overlay .chat-attachment-card .heading-3,
+.shell-chat-overlay .chat-attachment-card .text {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-chat-overlay .chat-attachment-card .muted {
+  margin: 2dp 0 0 0;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* A status line last on a file card ("Downloading 40%", "Couldn't download") keeps 8dp under it, like the top; only
+   when reactions hang on that card does it grow by the pills' overlap, so they sit under the line, not on it. A card
+   ending in its 44dp action row needs nothing: the pills land in the row's empty lower part (Kenneth 2026-11-05). */
+.shell-chat-overlay .chat-attachment-card .muted:last-child {
+  margin-bottom: 8dp;
+}
+
+.shell-chat-overlay .chat-attachment-card.chat-reaction-host .muted:last-child {
+  margin-bottom: 20dp;
+}
+
+.shell-chat-overlay .chat-attachment-video-poster {
+  max-width: 216dp;
+}
+
+.shell-chat-overlay .chat-attachment-card .chat-suggestion {
+  display: block;
+  width: 100%;
+  height: 44dp;
+  min-height: 44dp;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  font-size: 15dp;
+  line-height: 44dp;
+  text-align: left;
+}
+
+/* 12dp corners: the engine does not round the picture itself, so a tighter frame corner keeps its square corner inside. */
+.shell-chat-overlay .chat-attachment-card--image {
+  min-width: 0;
+  max-width: none;
+  padding: 3dp;
+  border-radius: 12dp;
+}
+
+/* The engine does not round an <img> itself, so the picture sits in a clip box (size set inline from the fitted size)
+   whose rounded corners and overflow:hidden cut it: 12dp frame minus the 3dp padding = 9dp. The box is inline, so the
+   card's shrink-to-fit width counts it (a block one counted as 0 and spilled out of its frame). */
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-clip {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 200dp;
+  max-height: 240dp;
+  overflow: hidden;
+  border-radius: 9dp;
+}
+
+.shell-chat-overlay .chat-attachment-card--image .chat-attachment-image {
+  display: block;
+  max-width: 200dp;
+  max-height: 240dp;
+  margin: 0;
+  border-radius: 9dp;
+}
+
+/* On a picture card the tail goes behind the card, so its inner half does not cover the picture's corner; the hook
+   outside the card still shows. */
+.shell-chat-overlay .chat-attachment-card--image .bubble-tail {
+  z-index: -1;
+}
+
+/* Speech-bubble tail on the last bubble of a run: a 10x12dp shape half outside the bubble's bottom corner (received:
+   left, sent: right); that corner is squared off so the tail grows out of it. Tint: colors-*.rcss. */
+.shell-chat-overlay .bubble-tail-host {
+  position: relative;
+}
+
+.shell-chat-overlay .bubble-tail-host--in {
+  border-bottom-left-radius: 4dp;
+}
+
+.shell-chat-overlay .bubble-tail-host--out {
+  border-bottom-right-radius: 4dp;
+}
+
+/* 16x20dp: the inner half overlaps the bubble's squared corner, the outer 8dp is the visible hook. */
+.shell-chat-overlay .bubble-tail {
+  position: absolute;
+  bottom: 0;
+  width: 16dp;
+  height: 20dp;
+}
+
+.shell-chat-overlay .bubble-tail-in {
+  left: -8dp;
+}
+
+.shell-chat-overlay .bubble-tail-out {
+  right: -8dp;
+}
+
+/* Composer: a 36dp pill on a 52dp bar; the engine draws no placeholder, so the label sits over the empty input. The
+   ask-AI panel's input row is the same row (Kenneth 2026-11-04: "风格不统一…能不能统一一下"). */
+.shell-chat-overlay .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
+  min-height: 36dp;
+  padding: 0 4dp 0 12dp;
+  border-radius: 18dp;
+}
+
+.shell-chat-overlay .prompt-composer-input,
+.ask-ai .prompt-composer-input {
+  padding: 7dp 0;
+}
+
+.shell-chat-overlay .prompt-composer-label,
+.ask-ai .prompt-composer-label {
+  display: block;
+  position: absolute;
+  top: 2dp;
+  left: 12dp;
+  height: 34dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 34dp;
+  pointer-events: none;
+}
+
+/* Every button is a 44dp target round its 20dp icon; -4dp above and below keeps the one-line row at the pill's 36dp
+   (the buttons stay on the last line while the text grows). */
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
+.ask-ai .prompt-composer-row .prompt-send-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-capture-btn {
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: -4dp 0;
+  border-radius: 22dp;
+}
+
+/* Send: a clear 44dp target round a 32dp accent disc (colors-*.rcss); the desktop's button is the disc itself. */
+.shell-chat-overlay .prompt-send-disc,
+.ask-ai .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+/* WhatsApp's row on phones: emoji, the pill, then the microphone where Send shows once there is text. */
+.shell-chat-overlay .prompt-voice-toggle-btn--start {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-voice-toggle-btn--end {
+  display: flex;
+}
+
+.shell-chat-overlay .prompt-icon-classic,
+.ask-ai .prompt-icon-classic {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-icon-v2,
+.ask-ai .prompt-icon-v2 {
+  display: block;
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+/* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
+   contact-detail cards above. The plain group-* classes are inert on desktop; everything visual is scoped to
+   .shell-layer-compact. */
+.group-row-body {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 12dp;
+}
+
+.group-row-body--field {
+  display: block;
+}
+
+/* "?" beside a hard setting (Kenneth 2026-11-04): a 44dp target round a 20dp icon right after the label; a tap
+   asks PP 客服 about it (SettingsController::OnAskSettingHelp). */
+.settings-q-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.group-row-body .settings-q-label .group-row-text,
+.group-row-label.settings-q-label .group-row-text {
+  flex: 0 1 auto;
+}
+
+.settings-q-head {
+  align-items: center;
+}
+
+.settings-q-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: -10dp 0 -10dp -6dp;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  cursor: pointer;
+}
+
+.settings-q-icon {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.settings-phone-only,
+.settings-back-v2 {
+  display: none;
+}
+
+.shell-layer-compact .settings-phone-only {
+  display: block;
+}
+
+/* Me → AI assistant → Assistant look: the four looks side by side in one card, the chosen one ringed. */
+.shell-layer-compact .ai-look-picker.settings-phone-only {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 12dp 4dp;
+  box-sizing: border-box;
+}
+
+.ai-look {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 6dp;
+  cursor: pointer;
+}
+
+.ai-look-art {
+  display: block;
+  width: 68dp;
+  height: 68dp;
+  padding: 4dp;
+  border-width: 2dp;
+  border-radius: 13dp;
+  box-sizing: border-box;
+}
+
+.ai-look-art svg {
+  display: block;
+  width: 56dp;
+  height: 56dp;
+}
+
+.ai-look-name {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-desktop-only,
+.shell-layer-compact .settings-back-old {
+  display: none;
+}
+
+.shell-layer-compact .settings-back-v2 {
+  display: block;
+}
+
+.shell-layer-compact .settings-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .settings-list-view {
+  padding-bottom: 81dp;
+}
+
+.shell-layer-compact .settings-list-view .large-title {
+  padding: 0 16dp;
+}
+
+/* Pushed detail page: 44dp bar, plain accent back arrow, centred title. The bar floats over the body, which scrolls
+   under it (and under the tab bar) from 44dp down. */
+.shell-layer-compact .settings-detail-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: block;
+  height: 44dp;
+  margin: 0;
+}
+
+.shell-nav-page--frost .settings-detail-header {
+  backdrop-filter: blur(20px);
+}
+
+.shell-layer-compact .settings-back-btn {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  border-radius: 0;
+  z-index: 1;
+}
+
+.shell-layer-compact .settings-header-title {
+  position: absolute;
+  top: 0;
+  left: 96dp;
+  right: 96dp;
+  height: 44dp;
+  font-size: 17dp;
+  line-height: 44dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .settings-detail-body {
+  gap: 0;
+  padding-top: 44dp;
+  padding-bottom: 81dp;
+  box-sizing: border-box;
+}
+
+/* The engine leaves a scroller's own bottom padding out of its scroll height, so the clearance above the tab bar
+   goes on the section inside it: with the large title on top, the end of a longer page (Security) would otherwise
+   stay under the tab bar where it cannot be scrolled to. */
+.shell-layer-compact #settings-section-mount-sheet {
+  padding-bottom: 81dp;
+}
+
+/* Pushed pages (Kenneth 2026-11-04/05, PLAN-ui-refresh-impl 原话 71, 78, 80; NavBarCollapseModel): a settings page,
+   a pushed page over it (Change PIN, a choice page) and the blocked list open with a 28dp title at the top of their
+   content, under a slim, clear bar (back arrow, "?"); the title scrolls with the content (no small title in the bar).
+   The contact / member page has no title at all (原话 80): its bar holds only the back arrow.
+   Scrolled away from the top the bar slides up out of view, back towards the top it slides back
+   (.nav-bar-hidden on the page, .nav-bar-host); shown over content (.nav-bar-scrolled) it has its material and fade.
+   Page sheets keep their centred title row (the large title shows only on the pushed page). */
+.page-large-title {
+  display: none;
+}
+
+.shell-layer-compact .settings-detail-view .page-large-title,
+.shell-layer-transient.shell-layer-compact .page-large-title {
+  display: block;
+  flex-shrink: 0;
+  height: 41dp;
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 28dp;
+  line-height: 34dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once a page overflows; pushed pages scroll by touch, so their cards
+   keep their 16dp margins on both sides (the large title makes more pages long enough to scroll). */
+.shell-layer-compact .nav-bar-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+/* A page pushed over a settings page has a clear bar at rest too: the page under it hides its own bar meanwhile. */
+.shell-layer-compact .settings-panel--subpage #settings-detail-view .settings-detail-header {
+  visibility: hidden;
+}
+
+/* The pushed contact page starts under its 48dp bar like the blocked list (the phone rule above zeroed its top). */
+.shell-layer-transient.shell-layer-compact .contact-detail-panel {
+  padding-top: 48dp;
+}
+
+/* No small title in a pushed page's bar: the large one is in the page. */
+.shell-layer-compact .nav-bar-host .settings-header-title {
+  display: none;
+}
+
+.shell-layer-compact .nav-bar-host .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome .bar-fade {
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-scrolled .settings-detail-header .bar-fade,
+.shell-layer-transient.nav-bar-host.nav-bar-scrolled .shell-transient-chrome .bar-fade {
+  opacity: 1;
+}
+
+/* The bar's material is its own first child (.nav-bar-bg), like the tab pages' .pane-nav-bg: it shows once content is
+   under the bar and is frosted only then. The engine draws no backdrop blur for a bar that carries a z-index and
+   children itself, so the bar stays clear and the child carries colour and blur. */
+.nav-bar-bg {
+  display: none;
+}
+
+.shell-nav-page--frost .nav-bar-host .settings-detail-header,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome.surface-chrome--frost {
+  backdrop-filter: none;
+}
+
+.shell-layer-compact .nav-bar-host .nav-bar-bg,
+.shell-layer-compact.nav-bar-host .nav-bar-bg {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0;
+  transition: opacity 0.2s cubic-out;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-scrolled .nav-bar-bg,
+.shell-layer-compact.nav-bar-host.nav-bar-scrolled .nav-bar-bg {
+  opacity: 1;
+}
+
+.shell-nav-page--frost .nav-bar-host.nav-bar-scrolled .nav-bar-bg,
+.shell-layer-transient.nav-bar-host.nav-bar-scrolled .surface-chrome--frost .nav-bar-bg {
+  backdrop-filter: blur(20px);
+}
+
+/* Hiding: the bar and its 16dp fade slide up out of view, under the page's top edge (the tab page and the pushed layer
+   clip there, under the status bar); hidden, it takes no taps. */
+.shell-layer-compact .nav-bar-host .settings-detail-header,
+.shell-layer-transient.nav-bar-host .shell-transient-chrome {
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-hidden .settings-detail-header {
+  transform: translateY(-60dp);
+  pointer-events: none;
+}
+
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .shell-transient-chrome {
+  transform: translateY(-64dp);
+  pointer-events: none;
+}
+
+.shell-layer-transient.shell-layer-compact.nav-bar-host {
+  overflow: hidden;
+}
+
+/* Above the material (a static button would paint under the positioned child). */
+.shell-layer-transient.nav-bar-host .shell-transient-chrome .shell-back-btn {
+  position: relative;
+}
+
+.shell-layer-compact .settings-section {
+  margin-top: 0;
+  padding: 0 16dp;
+}
+
+.shell-layer-compact .settings-section--grouped {
+  padding: 0;
+}
+
+.shell-layer-compact .group-card {
+  margin: 20dp 16dp 0 16dp;
+  border-radius: 10dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .group-card--top {
+  margin-top: 8dp;
+}
+
+.shell-layer-compact .group-head + .group-card {
+  margin-top: 0;
+}
+
+.shell-layer-compact .group-card--pad {
+  padding: 12dp 16dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .group-card-title {
+  margin: 0 0 4dp 0;
+  font-size: 17dp;
+  line-height: 22dp;
+}
+
+.shell-layer-compact .group-note {
+  margin: 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+.shell-layer-compact .group-head {
+  margin: 20dp 32dp 6dp 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+/* A "?" right after the heading: the heading gives up its right margin (the button's own -6dp pulls it in). */
+.shell-layer-compact .settings-q-head .group-head {
+  margin-right: 0;
+}
+
+.shell-layer-compact .group-foot {
+  margin: 6dp 32dp 0 32dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .group-title {
+  margin: 20dp 16dp 0 16dp;
+  font-size: 22dp;
+  line-height: 28dp;
+  text-align: center;
+}
+
+.shell-layer-compact .group-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 50dp;
+  margin: 0;
+  padding: 0 0 0 16dp;
+  border: 0;
+  border-radius: 0;
+  gap: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font-family: LatoLatin;
+}
+
+/* Each row sits 1dp up so its top separator overlaps the row above; the card clips the first one. */
+.shell-layer-compact .group-card .group-row {
+  margin-top: -1dp;
+}
+
+.shell-layer-compact .group-row-body {
+  gap: 8dp;
+  min-height: 50dp;
+  padding: 0 12dp 0 0;
+  box-sizing: border-box;
+}
+
+/* A 36dp tile centred in the lists' 44dp leading column (4dp each side, then the 12dp gap): text at 72dp like Chats. */
+.shell-layer-compact .group-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  margin: 0 16dp 0 4dp;
+  border-radius: 8dp;
+}
+
+.shell-layer-compact .group-icon svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-layer-compact .group-row-label {
+  flex: 1;
+  min-width: 0;
+  padding: 10dp 0 10dp 0;
+}
+
+.shell-layer-compact .group-row-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-row-label .group-row-text {
+  display: block;
+}
+
+.shell-layer-compact .group-row-sub {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-chevron,
+.shell-layer-compact .group-row .settings-row-chevron {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+  margin-left: 0;
+}
+
+/* A pick-one-value page (SettingsChoicePage, Kenneth 2026-11-04): one 50dp row per value, the current one with an
+   accent check at the right end (iOS Settings). */
+.shell-layer-compact .settings-choice-option .group-row-body {
+  padding-right: 16dp;
+}
+
+.shell-layer-compact .settings-choice-check {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+/* The pushed page's "?" sits at the right end of its bar, a 44dp target like the back arrow. */
+.shell-layer-compact .settings-detail-header .settings-subpage-help {
+  position: absolute;
+  top: 0;
+  right: 4dp;
+  margin: 0;
+}
+
+/* Current value on the right of a row that opens a choice: one size below the 17dp title. */
+.shell-layer-compact .group-row .settings-choice-value-text {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+/* Text inputs on settings and profile pages: label above the field, both starting at the left edge. The field fills
+   the row and its text and caret start at the left (a right-aligned field put the caret mid-row or at the far end). */
+.shell-layer-compact .group-row--field .group-row-body {
+  position: relative;
+  display: block;
+  min-height: 0;
+  padding: 10dp 16dp 0 0;
+}
+
+.shell-layer-compact .group-row--field .group-row-text {
+  display: block;
+  flex: none;
+  width: auto;
+  margin: 0 0 2dp 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: left;
+}
+
+/* The field is a filled rounded box (like the search field) so it reads as something to type into. */
+.shell-layer-compact .group-card .field {
+  display: block;
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  height: 44dp;
+  min-height: 44dp;
+  max-height: 44dp;
+  margin: 0 0 10dp 0;
+  /* A 22dp line between 11dp paddings: text and a line-tall caret in the middle (a 44dp line drew a full-height caret). */
+  padding: 11dp 12dp;
+  border: 0;
+  border-radius: 10dp;
+  box-sizing: border-box;
+  font-size: 17dp;
+  line-height: 22dp;
+  text-align: left;
+}
+
+/* The engine draws no placeholder: this hint sits over the empty field and lets taps through to it. */
+.group-field-hint {
+  display: none;
+}
+
+.shell-layer-compact .group-field-hint {
+  position: absolute;
+  left: 12dp;
+  bottom: 10dp;
+  display: block;
+  height: 44dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* While an IME composes (pinyin), the bound value is still empty but the field already shows the composition: the
+   engine marks the field :composing, and the placeholder label after it hides (Kenneth 2026-11-04: "消息" stayed under
+   the pinyin). The prefixed forms outrank the phone rules that show the labels. */
+input:composing ~ .group-field-hint,
+input:composing ~ .chat-search-label,
+input:composing ~ .people-picker-search-hint,
+textarea:composing ~ .prompt-composer-label,
+.shell-layer-compact input:composing ~ .group-field-hint,
+.shell-layer-compact input:composing ~ .chat-search-label,
+.shell-layer-compact .shell-page-sheet input:composing ~ .people-picker-search-hint,
+.shell-layer-compact textarea:composing ~ .prompt-composer-label {
+  display: none;
+}
+
+/* A row that only shows a value (nothing to tap). */
+.shell-layer-compact .group-row--static {
+  cursor: default;
+}
+
+/* Account ID row on the profile page: label over value on the left, Copy / Share / QR icon buttons on the right. */
+.shell-layer-compact .group-id-row {
+  cursor: default;
+}
+
+.shell-layer-compact .group-id-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 8dp 0;
+}
+
+.shell-layer-compact .group-id-label {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .group-id-value {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .group-id-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .group-row .settings-switch {
+  width: 51dp;
+  height: 31dp;
+  min-width: 51dp;
+}
+
+.shell-layer-compact .group-row .settings-switch-knob {
+  width: 27dp;
+  height: 27dp;
+}
+
+.shell-layer-compact .group-row .settings-switch--on .settings-switch-knob {
+  transform: translateX(20dp);
+}
+
+/* Me profile card. */
+.shell-layer-compact .me-card-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding-right: 8dp;
+}
+
+.shell-layer-compact .me-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  margin: 0;
+  padding: 12dp;
+  border: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .me-card-avatar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60dp;
+  height: 60dp;
+  border-radius: 30dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .me-card-avatar .avatar-letter {
+  font-size: 24dp;
+}
+
+.shell-layer-compact .me-card-avatar-image {
+  width: 60dp;
+  height: 60dp;
+}
+
+.shell-layer-compact .me-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .me-card-name {
+  margin: 0;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .me-card-meta {
+  margin: 1dp 0 0 0;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Buttons on settings pages (DESIGN-pp-ui 8.10): 50dp pill, full width. Inside a card they shrink to 36dp pills. */
+.shell-layer-compact .settings-section--grouped .btn {
+  display: block;
+  width: auto;
+  height: 50dp;
+  min-height: 50dp;
+  margin: 16dp 16dp 0 16dp;
+  padding: 0 16dp;
+  font-size: 17dp;
+  line-height: 50dp;
+  font-weight: bold;
+  text-align: center;
+}
+
+.shell-layer-compact .settings-section--grouped .btn-icon {
+  display: flex;
+}
+
+/* Desktop-only buttons (the profile page's Copy / Share / QR live in the Account ID row on phones; Send problem logs
+   lives in About on phones). */
+.shell-layer-compact .settings-section--grouped .btn.settings-desktop-only,
+.shell-layer-compact .settings-section--grouped .group-actions.settings-desktop-only {
+  display: none;
+}
+
+/* The disabled Send problem logs row (while it sends) reads as waiting. */
+.shell-layer-compact .settings-improve-send:disabled {
+  opacity: 0.5;
+}
+
+.shell-layer-compact .settings-section--grouped .settings-action-bar {
+  width: auto;
+}
+
+.shell-layer-compact .settings-section--grouped .settings-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-layer-compact .settings-section--grouped .me-profile-actions {
+  display: block;
+  margin-top: 0;
+}
+
+.shell-layer-compact .settings-section--grouped .group-actions {
+  display: flex;
+  flex-direction: row;
+  /* Not .settings-toggle-row's 100%: with the 16dp margins the row ran 32dp past the screen and cut off its "?". */
+  width: auto;
+  margin: 16dp 16dp 0 16dp;
+  gap: 8dp;
+}
+
+.shell-layer-compact .settings-section--grouped .group-card .btn,
+.shell-layer-compact .settings-section--grouped .group-actions .btn {
+  flex: 1;
+  height: 36dp;
+  min-height: 36dp;
+  margin: 8dp 8dp 0 0;
+  font-size: 15dp;
+  line-height: 36dp;
+}
+
+.shell-layer-compact .settings-section--grouped .group-actions .btn {
+  margin: 0;
+}
+
+.shell-layer-compact .me-profile-avatar-row {
+  margin-bottom: 0;
+}
+
+.shell-layer-compact .settings-device-actions {
+  gap: 0;
+}
+
+.shell-layer-compact .settings-device-title {
+  gap: 8dp;
+}
+
+/* ---- Phone Today page (UI refresh batch 4, DESIGN-pp-ui.md 8.16). The desktop keeps the brand header and the centred
+   composer above; the scroller below only exists on the phone. ---- */
+
+.home-scroll {
+  display: none;
+}
+
+.shell-layer-compact .home-panel {
+  padding: 0;
+}
+
+.shell-layer-compact .home-header {
+  display: none;
+}
+
+.shell-layer-compact .home-scroll {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 44dp 0 16dp 0;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-date {
+  margin: 0;
+  padding: 0 16dp;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-scroll .large-title {
+  padding: 0 16dp;
+}
+
+/* The engine keeps 16dp for an (undrawn) scrollbar once the widgets overflow; Home scrolls by touch, so the cards
+   keep their 16dp margins on both sides. */
+.shell-layer-compact .home-scroll scrollbarvertical {
+  width: 0dp;
+}
+
+/* The widgets, iPhone style (mockup 10-home-widgets): 20dp corners, 12dp apart; a wide card takes a row, two small
+   ones share it. Each slot pads 6dp, so the grid's -6dp edge keeps the cards on the 16dp margins. */
+.shell-layer-compact .home-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: stretch;
+  margin: 6dp 10dp 0 10dp;
+}
+
+.shell-layer-compact .home-slot {
+  display: flex;
+  flex-direction: column;
+  width: 50%;
+  padding: 6dp;
+  box-sizing: border-box;
+}
+
+.shell-layer-compact .home-slot--wide {
+  width: 100%;
+}
+
+.shell-layer-compact .home-w {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 12dp 14dp;
+  border: 0;
+  border-radius: 20dp;
+  box-sizing: border-box;
+  text-align: left;
+  font-family: LatoLatin;
+}
+
+/* A small card is one target: at least 140dp tall, like the mockup. */
+.shell-layer-compact .home-w--tap {
+  min-height: 140dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-wh {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 22dp;
+  margin: 0 0 8dp 0;
+}
+
+.shell-layer-compact .home-wh-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20dp;
+  height: 20dp;
+  margin-right: 6dp;
+  border-radius: 6dp;
+}
+
+.shell-layer-compact .home-wh-icon svg {
+  width: 13dp;
+  height: 13dp;
+}
+
+.shell-layer-compact .home-wh-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 13dp;
+  line-height: 18dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "See all": a 44dp-tall target that does not push the header apart. */
+.shell-layer-compact .home-wh-more {
+  flex: none;
+  margin: -11dp -14dp -11dp 0;
+  padding: 11dp 14dp 11dp 12dp;
+  border: 0;
+  background-color: transparent;
+  font-size: 15dp;
+  line-height: 22dp;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-w-hint {
+  margin: 4dp 0 2dp 0;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* Favorites (关注联系人, Kenneth 2026-11-05 原话 75-77): exactly four people across the card, each a quarter of the
+   row, on every screen width; the avatar's size comes from the window width (FavoritesRowModel, bound as
+   home_fav_avatar: about 64dp on a 393dp phone, 56-72dp). More than four scroll sideways with momentum (the engine locks
+   a touch to one axis, so Home still scrolls up and down) and settle on a whole person (ShellFavoritesSnap). */
+.shell-layer-compact .home-avs {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* Touch-scrolled: no room kept for an (undrawn) scrollbar under the names. */
+.shell-layer-compact .home-avs scrollbarhorizontal {
+  height: 0dp;
+}
+
+.shell-layer-compact .home-av {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 25%;
+  margin: 0;
+  padding: 2dp 4dp;
+  border: 0;
+  box-sizing: border-box;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-av-frame {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 64dp;
+  height: 64dp;
+  border-radius: 32dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .home-av-frame .avatar-photo {
+  width: 64dp;
+  height: 64dp;
+}
+
+.shell-layer-compact .home-av-letter {
+  font-size: 24dp;
+  line-height: 28dp;
+  font-weight: bold;
+}
+
+/* Mentions / New people with nothing to show (mockup 12, option C): a faint 40dp icon centred over one grey line,
+   in the space the number and its lines take otherwise. Tints: colors-*. */
+.shell-layer-compact .home-empty {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.shell-layer-compact .home-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40dp;
+  height: 40dp;
+  margin-bottom: 8dp;
+  border-radius: 12dp;
+}
+
+.shell-layer-compact .home-av-suggest {
+  margin-right: 2dp;
+  vertical-align: -1dp;
+}
+
+.shell-layer-compact .home-av-name {
+  display: block;
+  width: 100%;
+  margin-top: 6dp;
+  font-size: 13dp;
+  line-height: 18dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Recent chats: 52dp rows (36dp avatar, name over a one-line preview, the unread count at the end). */
+.shell-layer-compact .home-chat {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 100%;
+  min-height: 52dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-chat-av {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin-right: 12dp;
+  border-radius: 22dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .home-chat-av .avatar-photo {
+  width: 44dp;
+  height: 44dp;
+}
+
+.shell-layer-compact .home-chat-letter {
+  font-size: 15dp;
+  line-height: 20dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-chat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-layer-compact .home-chat-title,
+.shell-layer-compact .home-chat-preview {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .home-chat-title {
+  font-size: 15dp;
+  line-height: 20dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-chat-preview {
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-chat-badge {
+  margin-left: 8dp;
+}
+
+/* Small cards: a large count, then what it counts and one more line (two at most). */
+.shell-layer-compact .home-num {
+  display: block;
+  font-size: 34dp;
+  line-height: 41dp;
+  font-weight: bold;
+}
+
+.shell-layer-compact .home-num--word {
+  font-size: 17dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .home-small {
+  display: block;
+  font-size: 13dp;
+  line-height: 18dp;
+}
+
+.shell-layer-compact .home-small--two {
+  max-height: 36dp;
+  margin-top: 2dp;
+  overflow: hidden;
+}
+
+/* Today's briefs: the first headline larger over two lines at most, two smaller ones under a hairline. */
+.shell-layer-compact .home-brief {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 44dp;
+  margin: 0;
+  padding: 6dp 0;
+  border: 0;
+  background-color: transparent;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-brief-title {
+  display: block;
+  font-size: 15dp;
+  line-height: 20dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .home-brief--head {
+  padding-top: 0;
+}
+
+.shell-layer-compact .home-brief--head .home-brief-title {
+  max-height: 44dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: normal;
+}
+
+.shell-layer-compact .home-brief-meta {
+  display: block;
+  margin-top: 2dp;
+  font-size: 12dp;
+  line-height: 16dp;
+}
+
+/* Edit Home (mockup 10-home-widgets B): a red minus / green plus at the start of each row, the size at its end. */
+.shell-layer-compact .home-edit-row {
+  position: relative;
+  padding-left: 0;
+}
+
+/* The held row (ChatController moves it on transform): above the others with a soft shadow (colors-*.rcss), a moving
+   element being the one exception to "no shadows". The card lets it out while a row is held. */
+.shell-layer-compact .home-edit-row--lifted {
+  z-index: 2;
+}
+
+.shell-layer-compact .home-edit-card--dragging {
+  overflow: visible;
+}
+
+.shell-layer-compact .home-edit-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 52dp;
+  height: 50dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-edit-sign {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22dp;
+  height: 22dp;
+  border-radius: 11dp;
+}
+
+.shell-layer-compact .home-edit-sign svg {
+  width: 14dp;
+  height: 14dp;
+}
+
+.shell-layer-compact .home-edit-size {
+  flex: none;
+  font-size: 15dp;
+  line-height: 20dp;
+}
+
+/* The drag handle: a 44 x 50dp target at the row's end; holding it drags the row (the list does not scroll). */
+.shell-layer-compact .group-row-body .home-edit-handle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 50dp;
+  margin: 0 -12dp 0 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  drag: drag;
+  cursor: pointer;
+}
+
+.shell-layer-compact .home-edit-handle svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+/* "More widgets" rows have no handle: the same room, so the sizes line up with the rows above. */
+.shell-layer-compact .home-edit-handle-gap {
+  display: block;
+  flex: none;
+  width: 32dp;
+}
+
+/* The chips row is pinned above the tab bar and does not scroll with the widgets. */
+.shell-layer-compact .home-landing {
+  position: relative;
+  flex: none;
+  display: block;
+  padding: 8dp 0 12dp 0;
+  box-sizing: border-box;
+}
+
+/* The widgets fade into the dock over 28dp (no divider line); touches pass through. Gradient: colors-*.rcss. */
+.home-dock-fade,
+.home-dock-seam {
+  display: none;
+}
+
+.shell-layer-compact .home-dock-fade {
+  display: block;
+  position: absolute;
+  top: -28dp;
+  left: 0;
+  right: 0;
+  height: 28dp;
+  pointer-events: none;
+}
+
+/* The dock's bottom 10dp melt into the tab bar's shade. */
+.shell-layer-compact .home-dock-seam {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 10dp;
+  pointer-events: none;
+}
+
+/* Home: dock and tab bar are one opaque area (colors-*.rcss), so the bar's blur has nothing to do. */
+.shell-bottom-chrome--home,
+.shell-bottom-chrome--home.shell-bottom-chrome--frost {
+  backdrop-filter: none;
+}
+
+.shell-layer-compact .home-landing-inner {
+  max-width: none;
+  gap: 8dp;
+}
+
+/* Phones have no ask-AI field on Home, only the chips (Kenneth 2026-11-04); the AI dot opens the panel. */
+.shell-layer-compact .home-composer-mount {
+  display: none;
+}
+
+.shell-layer-compact .home-suggestions {
+  display: flex;
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 16dp;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shell-layer-compact .home-suggestions .chat-suggestion {
+  flex: none;
+  height: 32dp;
+  min-height: 32dp;
+  margin: 0 8dp 0 0;
+  padding: 0 12dp;
+  font-size: 15dp;
+  line-height: 32dp;
+}
+
 /* Me → Storage and its "Manage storage" pages (DEV/PLAN-storage-manager.md): iOS-style grouped lists, in-place
  * choice rows with a check, a usage bar, segmented tabs, a 3-column grid and select mode. Surfaces borrow the
  * themed `.settings-row` / `.settings-choice-row` / `.settings-toggle-label` / `.settings-choice-value-text`
@@ -4912,7 +11523,6 @@ input.checkbox {
   height: 10dp;
   border-radius: 5dp;
   overflow: hidden;
-  background-color: #8e8e9333;
 }
 
 .storage-bar-seg {
@@ -4943,11 +11553,6 @@ input.checkbox {
   max-width: none;
 }
 
-.storage-c-picture { background-color: #0a84ff; }
-.storage-c-video { background-color: #af52de; }
-.storage-c-file { background-color: #ff9f0a; }
-.storage-c-chats { background-color: #8e8e93; }
-.storage-c-other { background-color: #b0b0b8; }
 
 .storage-group-head {
   display: block;
@@ -4977,7 +11582,7 @@ input.checkbox {
 }
 
 .storage-row + .storage-row {
-  border-top: 1dp #8e8e9340;
+  border-top-width: 1dp;
 }
 
 .storage-row--indent {
@@ -5010,7 +11615,6 @@ input.checkbox {
 
 .settings-radio-check {
   flex-shrink: 0;
-  image-color: #4a6cf7;
 }
 
 .storage-avatar {
@@ -5043,13 +11647,11 @@ input.checkbox {
   padding: 4dp 6dp;
   border: 0;
   background-color: transparent;
-  color: #4a6cf7;
   font-size: 15dp;
   cursor: pointer;
 }
 
 .storage-nav-back-icon {
-  image-color: #4a6cf7;
 }
 
 .storage-nav-title {
@@ -5069,7 +11671,6 @@ input.checkbox {
   padding: 2dp;
   margin-bottom: 12dp;
   border-radius: 9dp;
-  background-color: #8e8e9326;
 }
 
 .storage-seg .storage-seg-tab {
@@ -5120,11 +11721,9 @@ input.checkbox {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: #0a84ff40;
 }
 
 .storage-tile--video .storage-tile-frame {
-  background-color: #af52de40;
 }
 
 .storage-tile--picked .storage-tile-frame {
@@ -5142,15 +11741,12 @@ input.checkbox {
   left: 6dp;
   bottom: 5dp;
   font-size: 11dp;
-  color: #ffffff;
-  font-effect: shadow(1dp 1dp #00000099);
 }
 
 .storage-tile-play {
   position: absolute;
   right: 6dp;
   bottom: 6dp;
-  image-color: #ffffff;
 }
 
 .storage-check {
@@ -5161,7 +11757,6 @@ input.checkbox {
   width: 22dp;
   height: 22dp;
   border-width: 2dp;
-  border-color: #8e8e93;
   border-radius: 11dp;
   box-sizing: border-box;
 }
@@ -5170,18 +11765,13 @@ input.checkbox {
   position: absolute;
   top: 6dp;
   right: 6dp;
-  border-color: #ffffff;
-  background-color: #00000026;
 }
 
 .storage-check--on,
 .storage-tile-check.storage-check--on {
-  border-color: #4a6cf7;
-  background-color: #4a6cf7;
 }
 
 .storage-check-icon {
-  image-color: #ffffff;
 }
 
 .storage-file-type {
@@ -5192,13 +11782,11 @@ input.checkbox {
   width: 34dp;
   height: 40dp;
   border-radius: 6dp;
-  background-color: #ff9f0a;
 }
 
 .storage-file-type-text {
   font-size: 10dp;
   font-weight: bold;
-  color: #ffffff;
 }
 
 .storage-more {

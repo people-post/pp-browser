@@ -1,21 +1,20 @@
 <div class="shell-nav-rail-inner">
-  <div class="shell-nav-pill shell-nav-pill--primary">
     <button class="shell-nav-tab" type="button"
             data-class-shell-nav-tab--active="nav_tab == 'home'"
             data-event-click="select_nav_tab('home')">
       <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/sparkle.svg" width="22" height="22" crop-to-content="true"></svg>
+        <svg data-if="nav_tab != 'home'" src="../icons/v2/tab-home.svg" width="24" height="24"></svg>
+        <svg data-if="nav_tab == 'home'" src="../icons/v2/tab-home-fill.svg" width="24" height="24"></svg>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.home}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
-  </div>
-  <div class="shell-nav-pill shell-nav-pill--secondary">
     <button class="shell-nav-tab" type="button"
             data-class-shell-nav-tab--active="nav_tab == 'sessions'"
             data-event-click="select_nav_tab('sessions')">
       <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/sessions.svg" width="22" height="22" crop-to-content="true"></svg>
+        <svg data-if="nav_tab != 'sessions'" src="../icons/v2/tab-chats.svg" width="24" height="24"></svg>
+        <svg data-if="nav_tab == 'sessions'" src="../icons/v2/tab-chats-fill.svg" width="24" height="24"></svg>
         <span class="badge-count badge-count--nav"
               data-if="nav_sessions_unread > 0">{{nav_sessions_unread_display}}</span>
       </div>
@@ -26,7 +25,8 @@
             data-class-shell-nav-tab--active="nav_tab == 'contacts'"
             data-event-click="select_nav_tab('contacts')">
       <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/contacts.svg" width="22" height="22" crop-to-content="true"></svg>
+        <svg data-if="nav_tab != 'contacts'" src="../icons/v2/group.svg" width="24" height="24"></svg>
+        <svg data-if="nav_tab == 'contacts'" src="../icons/v2/tab-contacts-fill.svg" width="24" height="24"></svg>
         <span class="badge-count badge-count--nav"
               data-if="nav_contacts_unread > 0">{{nav_contacts_unread_display}}</span>
       </div>
@@ -37,17 +37,16 @@
             data-if="layout_mode == 'expanded'"
             data-event-click="open_scan_qr()" title="{{i18n:scan.title}}">
       <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/qr-scan.svg" width="22" height="22" crop-to-content="true"></svg>
+        <svg src="../icons/v2/qr-code.svg" width="24" height="24"></svg>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:scan.title}}</p>
       <p class="shell-nav-tab-label muted" data-if="!fonts_ready">…</p>
     </button>
     <button class="shell-nav-tab" type="button"
-            data-if="layout_mode == 'expanded'"
             data-class-shell-nav-tab--active="nav_tab == 'me'"
             data-event-click="select_nav_tab('me')">
       <div class="shell-nav-tab-icon-wrap">
-        <svg src="../icons/me.svg" width="22" height="22" crop-to-content="true"></svg>
+        <svg src="../icons/v2/tab-me.svg" width="24" height="24"></svg>
         <span class="badge-dot badge-dot--nav" data-if="nav_me_attention"></span>
       </div>
       <p class="shell-nav-tab-label" data-if="fonts_ready">{{i18n:nav.me}}</p>
@@ -64,5 +63,4 @@
             data-event-click="toggle_sidebar()" title="{{i18n:shell.sidebar.expand}}">
       <svg src="../icons/chevrons-right.svg" width="12" height="12" crop-to-content="true"></svg>
     </button>
-  </div>
 </div>

@@ -29,7 +29,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_BROWSER_CONFIG` | config file path | Or `--config`. Without either, pp-node runs on defaults and these overlays — it never reads the desktop app's config file of the same user (`~/.config/pp-browser/config.json` and the like) |
 | `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
 | `PP_NODE_AMP_UDP_PORT` | `libp2p.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
-| `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/1.0.0/p2p/…`) |
+| `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/2/p2p/…`; the legacy `/adp/1.0.0/` still dials) |
 | `PP_NODE_CAP_CIRCUIT_RELAY` | `capabilities.circuit_relay` | `true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off` |
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
@@ -124,7 +124,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Auxiliary pane (expanded layout):** `preferences.json` → `auxiliary_width_dp` (default 320, clamped 280–640). Written by `ShellHost` after a splitter drag on the pane's left edge ends; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 
-**Compact chrome materials:** `preferences.json` → `reduce_transparency` (Me → Appearance; opaque shell, no backdrop frost) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
+**Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque bars, no backdrop frost; Me → Appearance → **Transparency** shows it inverted, on by default; the AI assistant's `set_reduce_transparency` sets it too) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
 **Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.
 
@@ -172,13 +172,13 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/34.233.23.235/udp/443/adp/1.0.0/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
-      "/ip4/50.18.237.202/udp/443/adp/1.0.0/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
-      "/ip4/54.217.120.211/udp/443/adp/1.0.0/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
-      "/ip4/35.158.70.252/udp/443/adp/1.0.0/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
-      "/ip4/57.181.254.92/udp/443/adp/1.0.0/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
-      "/ip4/15.164.114.146/udp/443/adp/1.0.0/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
-      "/ip4/3.1.86.213/udp/443/adp/1.0.0/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j"
+      "/ip4/34.233.23.235/udp/443/adp/2/p2p/QmZyhSEd95N31Az5Fvr9ZJ9Ugarzy5B1pbFfuUXtxEC9Cv",
+      "/ip4/50.18.237.202/udp/443/adp/2/p2p/QmdyKbzCcjUe89Go4oB8nb2gRFCjDCP3bZCRTLkMUdkFkw",
+      "/ip4/54.217.120.211/udp/443/adp/2/p2p/QmRmTERfW4NbMf8Seu6WyNg68j6sfXWtsKoDdLHVoMVhnv",
+      "/ip4/35.158.70.252/udp/443/adp/2/p2p/Qmc1TDTb6K4ymGNKMBHG6c45kxu7qA7TtCXdDfZxupStTj",
+      "/ip4/57.181.254.92/udp/443/adp/2/p2p/QmXYY8waMbbuh4cpUXtKiwum8G6no8BKuEmCxFhS1hGwS1",
+      "/ip4/15.164.114.146/udp/443/adp/2/p2p/QmWpQr3JEyeEVbePLmvRe1onbuM4dwhPG1P5Lo8Su3r97y",
+      "/ip4/3.1.86.213/udp/443/adp/2/p2p/QmW9utyUR2S9N8Avite7aiS4LCcb2w6fJcd3PzyM2ozL5j"
     ]
   }
 }
@@ -189,7 +189,7 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 - **`mcp_servers`** — additional MCP servers (custom tool bucket). Legacy `"mcp"` key loads into `promoted_mcp`.
 - **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. Saving the switch also unbinds this device's push token from the running backend (best effort); switching back before the restart registers it again. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
 - **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
-- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/1.0.0/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/1.0.0/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
+- **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/2/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/2/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
 
 ### Mesh DHT (n2)
 
@@ -214,6 +214,10 @@ Enter an **API key** directly in Me → Assistant (kept in the profile's `secret
 ### Direct connections (`mesh.direct_connections`)
 
 Who may connect to this device directly and so learn its IP address: `everyone` | `contacts` (default) | `friendly` | `nobody` (always relay). Blocked contacts never; the Node role is always `everyone`. Me → Network → **Direct connections**; the settings assistant's `set_mesh_capabilities` takes it too. Applies at once (no mesh restart). Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy). The hard-lab call probe discloses to `everyone` unless `PP_PROBE_DIRECT_CONNECTIONS` says otherwise.
+
+### Preferred minimum node version (`mesh.preferred_min_node_version`)
+
+Default empty (no floor). A relay whose directory row says it runs an older pp-node than this, or says nothing, is tried after the others for parking, circuits and call media hops — never dropped ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes)). Compared on `MAJOR.MINOR.PATCH`; a pre-release suffix is ignored. Raise it as a node rollout progresses. Behaviour: [NETWORKING § Relay choice](../architecture/NETWORKING.md).
 
 ### Trusted relays only (`mesh.trusted_relays_only`)
 
@@ -263,6 +267,7 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
 | `--no-log-file` | Disable the file log (console only) |
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+| `--ui-perf-test` | Developer builds only (`-DPP_BROWSER_DEV_TOOLS=ON` or a baked-in `PP_BROWSER_DEV_PIN`): open the engine test page at startup (frame-time stats; log lines `ui.perftest …`). On phones: Settings → About → Engine test |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
 Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):

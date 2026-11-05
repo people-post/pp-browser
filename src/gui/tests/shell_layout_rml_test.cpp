@@ -1,7 +1,11 @@
 #include "gui/shell/ShellLayoutRml.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <string>
 
 namespace pbr {
@@ -28,6 +32,121 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
+TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Me;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "id=\"shell-nav-rail-mount\"")) << "the tab bar mounts here";
+  EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\"")) << "Me fills the page like any other tab";
+  EXPECT_FALSE(Has(rml, "account-sheet"));
+  EXPECT_FALSE(Has(rml, "close_account_sheet"));
+}
+
+// Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
+TEST(ShellLayoutRmlTest, ThePhoneTabIconsAre28dpAndTheLabels11dp) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.6): the icons one step bigger, the words as they were.
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string css = buffer.str();
+  const size_t icon = css.find(".shell-nav-rail--compact .shell-nav-tab svg {");
+  ASSERT_NE(icon, std::string::npos);
+  EXPECT_EQ(css.find("width: 28dp;\n  height: 28dp;", icon), css.find("width:", icon));
+  const size_t label = css.find(".shell-nav-rail--compact .shell-nav-tab-label {");
+  ASSERT_NE(label, std::string::npos);
+  EXPECT_EQ(css.find("font-size: 11dp;", label), css.find("font-size:", label));
+}
+
+TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Home;
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome--home"));
+  for (const NavTab tab : {NavTab::Sessions, NavTab::Contacts, NavTab::Me}) {
+    state.nav_tab = tab;
+    EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome--home"));
+  }
+}
+
+// Every phone sheet (Kenneth 2026-11-04): its stop is its class (4/5 = --large, --half and --small also lighten the
+// scrim, full has none), and its X is a 44dp button around a small grey disc.
+TEST(ShellLayoutRmlTest, ASheetCarriesTheClassOfItsStop) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  OverlayEntry sheet;
+  sheet.id = 7;
+  sheet.key = "new_chat";
+  sheet.page_sheet = true;
+  state.overlay_stack.push_back(sheet);
+  std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "shell-page-sheet--large")) << "every sheet opens at 4/5";
+  EXPECT_FALSE(Has(rml, "--half"));
+  EXPECT_TRUE(Has(rml, "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\""));
+  state.overlay_stack.back().sheet_detent = SheetDetent::Half;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "shell-page-sheet--half"));
+  EXPECT_TRUE(Has(rml, "shell-layer-sheet--half"));
+  EXPECT_FALSE(Has(rml, "shell-page-sheet--large"));
+  state.overlay_stack.back().sheet_detent = SheetDetent::Small;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "shell-page-sheet--small"));
+  EXPECT_TRUE(Has(rml, "shell-layer-sheet--small")) << "the scrim lightest at a third";
+  EXPECT_FALSE(Has(rml, "--half"));
+  state.overlay_stack.back().sheet_detent = SheetDetent::Full;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(rml, "--half"));
+  EXPECT_FALSE(Has(rml, "--small"));
+  EXPECT_FALSE(Has(rml, "--large"));
+}
+
+// The phone scanner (Kenneth 2026-11-04, WeChat style): a full-screen layer with no scrim, frame or X of the shell's;
+// the view brings its own back. Desktop keeps the centred panel with its close button.
+TEST(ShellLayoutRmlTest, AFullScreenLayerHasNoScrimFrameOrCloseButtonOnPhones) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  OverlayEntry scan;
+  scan.id = 9;
+  scan.key = "qr_scan";
+  scan.full_screen = true;
+  state.overlay_stack.push_back(scan);
+  std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "class=\"shell-layer shell-layer-overlay shell-layer-full-screen\" id=\"shell-full-screen-9\""));
+  EXPECT_TRUE(Has(rml, "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-9\">"));
+  EXPECT_FALSE(Has(rml, "close_layer(9)")) << "no scrim tap or X closes it: the view's back does";
+  EXPECT_FALSE(Has(rml, "shell-frame"));
+  state.layout_mode = LayoutMode::Expanded;
+  rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_FALSE(Has(rml, "shell-layer-full-screen"));
+  EXPECT_TRUE(Has(rml, "shell-frame"));
+  EXPECT_TRUE(Has(rml, "close_layer(9)"));
+}
+
+TEST(ShellLayoutRmlTest, ACompactChatOverlayHasOneHeaderRowHoldingTheBackButton) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  const size_t chrome = rml.find("shell-chat-overlay-chrome");
+  ASSERT_NE(chrome, std::string::npos);
+  EXPECT_EQ(rml.find("shell-chat-overlay-chrome", chrome + 1), std::string::npos) << "exactly one bar";
+  const size_t back = rml.find("compact_chat_back()", chrome);
+  const size_t body = rml.find("id=\"pane-body-chat\"");
+  ASSERT_NE(back, std::string::npos);
+  ASSERT_NE(body, std::string::npos);
+  EXPECT_LT(back, body) << "the back button is in the bar above the chat pane";
+  EXPECT_TRUE(Has(rml, "icons/v2/back.svg"));
+  // The title, avatar and menu are the chat pane's header row, lifted onto this bar by the theme; the shell
+  // root must not draw a second one.
+  EXPECT_FALSE(Has(rml, "chat-header"));
+}
+
+TEST(ShellLayoutRmlTest, TheCompactNavPageFollowsTheLargeTitleState) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  state.nav_tab = NavTab::Contacts;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "id=\"shell-nav-page\" data-class-large-title-collapsed=\"large_title_collapsed\""));
+}
+
 TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoot) {
   // A full layout sync while a dialog is open rebuilds the root and then fills the dialog mount;
   // an inline copy in the root would survive dialog_close as a dead OK button over the whole app.
@@ -39,6 +158,40 @@ TEST(ShellLayoutRmlTest, AnActiveDialogIsRenderedByItsMountOnlyNotInlineInTheRoo
   EXPECT_TRUE(Has(rml.Dialog(), "shell-layer-dialog"));
   EXPECT_FALSE(Has(rml.ShellRoot(), "shell-layer-dialog"));
   EXPECT_TRUE(Has(rml.ShellRoot(), "id=\"shell-dialog-mount\""));
+}
+
+TEST(ShellLayoutRmlTest, ADestructiveConfirmCarriesTheDangerClassAndASplitButtonPair) {
+  // The buttons' default labels are words ("OK", "Cancel"); with no strings loaded they would be the long keys and
+  // stack, so the result would depend on which test loaded the strings first.
+  ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.dialog.active = true;
+  state.dialog.kind = OverlayKind::Confirm;
+  state.dialog.show_cancel = true;
+  const std::string plain = ShellLayoutRml(state, false, "").Dialog();
+  EXPECT_FALSE(Has(plain, "shell-dialog--destructive"));
+  EXPECT_TRUE(Has(plain, "shell-dialog-ok shell-dialog-ok--split"));
+  EXPECT_FALSE(Has(plain, "shell-dialog-actions--stack"));
+
+  state.dialog.destructive = true;
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog--destructive"));
+
+  // An alert has the one button, with no vertical hairline beside it.
+  state.dialog.show_cancel = false;
+  EXPECT_FALSE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-ok--split"));
+}
+
+TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
+  EXPECT_FALSE(ShellLayoutRml::DialogButtonsStacked("Cancel", "Delete"));
+  EXPECT_FALSE(ShellLayoutRml::DialogButtonsStacked("取消", "移除联系人"));
+  EXPECT_TRUE(ShellLayoutRml::DialogButtonsStacked("Cancel", "Remove this device"));
+  EXPECT_TRUE(ShellLayoutRml::DialogButtonsStacked("取消", "移除这台设备并退出登录"));
+
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.dialog.active = true;
+  state.dialog.show_cancel = true;
+  state.dialog.ok_label = "Remove this device";
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
 TEST(ShellLayoutRmlTest, NoDialogNoPinGateNoMarkup) {

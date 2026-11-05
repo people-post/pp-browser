@@ -102,6 +102,8 @@ void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
   const bool material_changed =
       !previous || next.reduce_transparency != previous->reduce_transparency ||
       next.compact_chrome_frost != previous->compact_chrome_frost;
+  const bool ai_dot_changed = !previous || next.ai_dot != previous->ai_dot || next.ai_dot_look != previous->ai_dot_look ||
+                              next.ai_dot_size != previous->ai_dot_size;
 
   if (theme_changed && resolve_asset_) {
     Theme::LoadBase(resolve_asset_(next.theme));
@@ -116,7 +118,7 @@ void ConfigApplyBridge::ApplyChrome(const ShellHost::ChromePrefs& next,
       Theme::ApplyAppearance(ctx, Theme::ParseAppearance(next.appearance));
     }
   }
-  if (material_changed && shell_) {
+  if ((material_changed || ai_dot_changed) && shell_) {
     shell_->Apply(next);
   }
 }

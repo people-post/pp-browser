@@ -1,5 +1,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 
+#include "foundation/product/DevTools.h"
+
 #include <cstdlib>
 #include <optional>
 
@@ -80,15 +82,19 @@ void ResetActiveBackendForTest() {
 }
 
 bool OriginEnvOverrideActive() {
+  // The UI demo app ignores the variable (ResolveBriefOrigin), so its profile key never turns into custom-<hash>.
   const char* env = std::getenv("PP_BROWSER_ORIGIN");
-  return env != nullptr && *env != '\0';
+  return !kUiDemoBuild && env != nullptr && *env != '\0';
 }
 
-std::string BriefOrigin() {
+std::string ResolveBriefOrigin(const bool ui_demo, const char* env_origin, const BackendEnv backend) {
+  if (ui_demo) {
+    return {};
+  }
   std::string origin;
-  if (const char* env = std::getenv("PP_BROWSER_ORIGIN"); env && *env) {
-    origin = env;
-  } else if (ActiveBackend() == BackendEnv::Qa) {
+  if (env_origin && *env_origin) {
+    origin = env_origin;
+  } else if (backend == BackendEnv::Qa) {
     origin = CompiledQaOrigin();
   } else {
     origin = CompiledDefaultOrigin();
@@ -99,20 +105,44 @@ std::string BriefOrigin() {
   return origin;
 }
 
+std::string BriefOrigin() {
+  return ResolveBriefOrigin(kUiDemoBuild, std::getenv("PP_BROWSER_ORIGIN"), ActiveBackend());
+}
+
 std::string BriefLlmBaseUrl() {
   return Derive("/api/llm/v1");
 }
 
+std::string ResolveBriefStreamUrlOverride(const bool ui_demo, const char* env_url) {
+  return (ui_demo || !env_url) ? std::string() : std::string(env_url);
+}
+
 std::string BriefStreamUrlOverride() {
-  const char* value = std::getenv("PP_BROWSER_BRIEF_STREAM_URL");
-  return value ? std::string(value) : std::string();
+  return ResolveBriefStreamUrlOverride(kUiDemoBuild, std::getenv("PP_BROWSER_BRIEF_STREAM_URL"));
+}
+
+std::string ResolveDiagnosticsUploadUrl(const bool ui_demo, const char* env_url, const std::string& origin) {
+  if (ui_demo) {
+    return {};
+  }
+  if (env_url && *env_url) {
+    return env_url;
+  }
+  return origin.empty() ? std::string() : origin + "/api/support/diagnostics";
 }
 
 std::string DiagnosticsUploadUrl() {
-  if (const char* value = std::getenv("PP_BROWSER_DIAGNOSTICS_URL"); value && *value) {
-    return value;
+  return ResolveDiagnosticsUploadUrl(kUiDemoBuild, std::getenv("PP_BROWSER_DIAGNOSTICS_URL"), BriefOrigin());
+}
+
+bool RunIfUploadAllowed(const bool ui_demo, const std::function<void()>& sender) {
+  if (!UploadAllowed(ui_demo)) {
+    return false;
   }
-  return Derive("/api/support/diagnostics");
+  if (sender) {
+    sender();
+  }
+  return true;
 }
 
 std::string BriefRelayBaseUrl() {

@@ -1,5 +1,7 @@
 #include "foundation/platform/ImageEncode.h"
 
+#include "common/ImageMetadata.h"
+
 #include <SDL3_image/SDL_image.h>
 
 #include <algorithm>
@@ -122,6 +124,21 @@ SDL_Surface* ApplyExifOrientation(SDL_Surface* source, const int orientation) {
   }
   SDL_DestroySurface(source);
   return out;
+}
+
+SDL_Surface* DecodeImageUpright(const uint8_t* bytes, const size_t size, const char* type_hint) {
+  if (!bytes || size == 0) {
+    return nullptr;
+  }
+  SDL_Surface* surface = IMG_LoadTyped_IO(SDL_IOFromConstMem(bytes, size), true, type_hint ? type_hint : "");
+  if (!surface) {
+    return nullptr;
+  }
+  // The orientation sits in the head of the file (EXIF comes before the image data); the same window as
+  // ReadImageHeader, which sizes the bubble, so a picture is never laid out turned but drawn sideways.
+  const std::vector<uint8_t> head(bytes, bytes + std::min(size, kImageHeaderReadBytes));
+  const std::optional<ImageHeaderInfo> header = ReadImageHeaderBytes(head);
+  return header ? ApplyExifOrientation(surface, header->exif_orientation) : surface;
 }
 
 } // namespace pbr

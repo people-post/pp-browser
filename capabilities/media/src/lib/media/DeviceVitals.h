@@ -13,6 +13,8 @@ struct DeviceVitals {
   /** Battery charge, percent. */
   int battery_pct = -1;
   bool charging = false;
+  /** Low Power Mode (iOS) / Battery Saver (Android): the user asked the phone to save power. */
+  bool low_power = false;
 };
 
 /** UI thread (iOS reads UIDevice). Cheap enough for once every couple of seconds. */

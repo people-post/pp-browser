@@ -183,6 +183,8 @@ void CallPresenter::Refresh() {
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
     next.answered_video = auto_camera_pending_ && auto_camera_call_id_ == top.call_id;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     // The Connecting bar has the speaker button too: the choice may be made before media opens.
     next.show_speaker = AudioSession::SupportsSpeakerToggle();
     next.speaker_on = AudioSession::IsSpeakerphoneOn();
@@ -193,6 +195,8 @@ void CallPresenter::Refresh() {
     next.ring_call_id = top.call_id;
     next.caller_identity = top.inviter_identity;
     next.ring_video = top.video_allowed;
+    next.ring_group = top.origin_group_id.has_value();
+    next.thread_id = top.origin_thread_id.value_or(std::string{});
     if (surface.active) {
       // Ringing over the call we are in: answering ends that one. Keep it as the active call.
       next.conflict = true;
@@ -225,6 +229,10 @@ void CallPresenter::Refresh() {
     ring_shown_ = false;
     FillInCall(next, *backend, surface.active->call_id, surface.active->video_allowed,
                surface.active->origin_group_id.has_value());
+    next.thread_id = surface.active->origin_thread_id.value_or(std::string{});
+    const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
+                                                          : std::string{};
+    next.placed_here = !local.empty() && surface.active->initiator_identity == local;
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
@@ -494,6 +502,26 @@ void CallPresenter::RequestStart(const std::string& thread_id, const bool video,
     }
     Refresh();
   }));
+}
+
+CallJoinBar MakeCallJoinBar(const std::optional<CallUiBackend::JoinableCallInfo>& call) {
+  CallJoinBar bar;
+  if (!call) {
+    return bar;
+  }
+  bar.shown = true;
+  bar.video = call->media_mode == CallMediaMode::Video;
+  bar.joined = call->joined_count && *call->joined_count > 0 ? *call->joined_count : 0;
+  bar.text_key = bar.video ? "chat.call_bar.video" : "chat.call_bar.voice";
+  return bar;
+}
+
+CallJoinBar CallPresenter::JoinBarInThread(const std::string& thread_id) const {
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
+    return {};
+  }
+  return MakeCallJoinBar(backend->JoinableCallInfoInThread(thread_id));
 }
 
 bool CallPresenter::CallJoinableInThread(const std::string& thread_id) const {

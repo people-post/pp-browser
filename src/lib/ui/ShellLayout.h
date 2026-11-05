@@ -26,10 +26,16 @@ struct ShellLayout {
   static bool SecondaryPaneShown(const ShellState& state);
   /** Collapsed flag after the user picks `tab` in the nav rail: tabs with a secondary pane re-expand it. */
   static bool SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab);
+  /** A chat picked on the phone's Home (the "New messages" widget) opens from the Chats tab, as if picked in the Chats
+   *  list: the chat overlay only opens over Chats, and its back lands on that list. */
+  static bool OpenChatSwitchesToChats(LayoutMode mode, NavTab tab);
+  /** A bottom inset at or above this is the on-screen keyboard (not the home indicator alone). */
+  static constexpr int kImeLatchMinDp = 120;
   static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
                                                         int safe_area_top_dp,
                                                         int safe_area_bottom_dp,
-                                                        float titlebar_height_dp = 0.f);
+                                                        float titlebar_height_dp = 0.f,
+                                                        CompactBottomSurface bottom_surface = CompactBottomSurface::None);
 };
 
 } // namespace pbr

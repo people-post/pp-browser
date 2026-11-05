@@ -50,7 +50,8 @@ private:
   void MakeMain(int index);
   /** Runs `change` for the device at `index` on a worker once confirmed; then the list again and `done`. */
   void ConfirmChange(int index, const std::string& title, const std::string& message, const std::string& ok_label,
-                     std::function<Roe<void>(const std::string& peer_id)> change, const std::string& done);
+                     std::function<Roe<void>(const std::string& peer_id)> change, const std::string& done,
+                     bool destructive = false);
   const OwnDeviceView* ManageableAt(int index) const;
 
   const SettingsCommands& commands_;

@@ -355,5 +355,31 @@ TEST(CameraFlipTest, CameraAndFlipStayWhileTheCameraIsOnWhenThePathStopsAllowing
   EXPECT_FALSE(ShowsCameraButton(/*encoder_available=*/false, true, true)) << "no encoder, no camera button";
 }
 
+// Kenneth 2026-11-04: a group call he started rang everyone with no clear way to cancel it.
+TEST(CancelCallTest, ShownWhileAnOutgoingCallStillRings) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.status = Status::Calling;
+  EXPECT_TRUE(ShowsCancelCall(screen));
+  screen.group = true;
+  EXPECT_TRUE(ShowsCancelCall(screen)) << "a group call ringing its members too";
+}
+
+TEST(CancelCallTest, GoneOnceTheCallMovesOnOrForOtherScreens) {
+  CallScreen screen;
+  screen.kind = CallScreen::Kind::InCall;
+  screen.status = Status::Connecting;
+  EXPECT_FALSE(ShowsCancelCall(screen)) << "someone answered: the End button ends it";
+  screen.status = Status::Connected;
+  EXPECT_FALSE(ShowsCancelCall(screen));
+  screen.status = Status::Calling;
+  screen.was_connected = true;
+  EXPECT_FALSE(ShowsCancelCall(screen)) << "a call that was live is not cancelled";
+  CallScreen ringing;
+  ringing.kind = CallScreen::Kind::Ringing;
+  EXPECT_FALSE(ShowsCancelCall(ringing)) << "an incoming ring has Decline";
+  EXPECT_FALSE(ShowsCancelCall(CallScreen{})) << "no call";
+}
+
 } // namespace
 } // namespace pbr

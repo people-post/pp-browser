@@ -443,6 +443,8 @@ private:
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
+  /** The sender instance of audio_seq_'s numbering: drawn anew whenever it restarts (A029 H2 media frame nonce). */
+  std::atomic<uint64_t> audio_instance_{0};
   /** What 1:1 receive reads on the transport's I/O thread; the owner publishes it. */
   struct ReceiveGate {
     /** Cleared when the bridge goes: frames still in flight on I/O drop. */

@@ -1,4 +1,5 @@
 #include "lib/media/MediaDeviceArbiter.h"
+#include "lib/media/MediaThreadName.h"
 
 #include "common/Diag.h"
 #include "common/Logger.h"
@@ -145,7 +146,10 @@ struct MediaDeviceLane {
   bool stuck_reported = false;
 
   void Start() {
-    thread = std::thread([this]() { Run(); });
+    thread = std::thread([this]() {
+      SetMediaThreadName("pp.devices");
+      Run();
+    });
     thread_id = thread.get_id();
   }
 
@@ -586,12 +590,25 @@ MediaDeviceArbiter::~MediaDeviceArbiter() {
 namespace {
 std::once_flag g_default_once;
 std::atomic<MediaDeviceArbiter*> g_default{nullptr};
+std::mutex g_default_factory_mu;
+std::function<std::unique_ptr<IMediaDeviceBackend>()> g_default_factory;
 } // namespace
+
+bool MediaDeviceArbiter::SetDefaultBackendFactory(std::function<std::unique_ptr<IMediaDeviceBackend>()> make) {
+  std::lock_guard lock(g_default_factory_mu);
+  if (g_default.load(std::memory_order_acquire) != nullptr) {
+    return false;
+  }
+  g_default_factory = std::move(make);
+  return true;
+}
 
 MediaDeviceArbiter& MediaDeviceArbiter::Default() {
   // Never destroyed: leases may be released during static destruction; ShutdownDefault stops the thread.
   std::call_once(g_default_once, []() {
-    g_default.store(new MediaDeviceArbiter(CreateSdlMediaDeviceBackend()), std::memory_order_release);
+    std::lock_guard lock(g_default_factory_mu);
+    g_default.store(new MediaDeviceArbiter(g_default_factory ? g_default_factory() : CreateSdlMediaDeviceBackend()),
+                    std::memory_order_release);
   });
   return *g_default.load(std::memory_order_acquire);
 }

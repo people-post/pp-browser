@@ -150,6 +150,25 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
     const mesh::ReachabilitySignals signals = mesh_->Reachability().Snapshot().signals;
     return signals.seed_dial_ok || signals.seed_dial_error.empty();
   };
+  reach.node_reputation = [this]() -> std::shared_ptr<MeshNodeReputation> {
+    return mesh_owner_ ? mesh_owner_->NodeReputation() : nullptr;
+  };
+  reach.observe_node = [this](const std::string& peer_id) {
+    ObservedNode seen;
+    if (mesh_ && mesh_->Amp()) {
+      if (auto told = mesh_->Amp()->Links().RemoteCapabilityExtension(peer_id)) {
+        seen.told = true;
+        seen.amp_wire = told->amp_wire;
+        seen.node_version = told->node_version;
+        seen.features = told->features;
+      }
+    }
+    if (mesh_owner_) {
+      seen.answered_other_wire =
+          mesh_owner_->Connectivity().ReachFacts(peer_id).last_failure == mesh::PeerReachFailure::VersionMismatch;
+    }
+    return seen;
+  };
   reach.note_lan_peer_id = [this](const std::string& peer_id) { NoteLanMdnsPeerId(peer_id); };
   reach.register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
     if (mesh_messaging_) {
@@ -1510,17 +1529,7 @@ std::string ConversationsHub::IdentityIconLocalPath(const std::string& identity)
       }
     }
   }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::Account)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::RelayUser)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  return ProfileIconLocalPath(data_dir_, SanitizeProfileIconCacheKey(identity));
+  return ProfileIconLocalPathForIdentity(data_dir_, *contacts_, identity);
 }
 
 void ConversationsHub::EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit) {
@@ -3349,12 +3358,75 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
   return *peer_labels_;
 }
 
+namespace {
+
+// Registration() / Blob() hand out references, but a build with no backend address creates neither client (the UI
+// demo app, or a custom backend left blank). These stand in so a call reports an error instead of dereferencing null.
+class UnconfiguredRegistrationClient final : public IRegistrationClient {
+public:
+  Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
+                                                 const std::string&, const std::string&,
+                                                 const std::vector<std::string>&,
+                                                 const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
+                                             const std::string&, int64_t, const std::string&, const std::string&,
+                                             const std::string&, const std::string&,
+                                             const std::vector<std::string>&, int64_t,
+                                             const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t,
+                                         const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
+    return Unavailable();
+  }
+
+private:
+  static Error Unavailable() { return Error("registration not configured"); }
+};
+
+class UnconfiguredBlobClient final : public IBlobClient {
+public:
+  Roe<BlobPresignResult> Presign(const std::string&, const std::string&, uint64_t, BlobPurpose) override {
+    return Unavailable();
+  }
+  Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&,
+                           const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
+  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override {
+    return Unavailable();
+  }
+  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
+
+private:
+  static Error Unavailable() { return Error("blob service not configured"); }
+};
+
+} // namespace
+
 IRegistrationClient& ConversationsHub::Registration() {
-  return *registration_;
+  static UnconfiguredRegistrationClient unconfigured;
+  return registration_ ? *registration_ : unconfigured;
 }
 
 IBlobClient& ConversationsHub::Blob() {
-  return *blob_;
+  static UnconfiguredBlobClient unconfigured;
+  return blob_ ? *blob_ : unconfigured;
 }
 
 IPushDeviceClient* ConversationsHub::PushDevices() {

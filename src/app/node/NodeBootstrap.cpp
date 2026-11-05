@@ -1,4 +1,6 @@
 #include "app/node/NodeBootstrap.h"
+
+#include "foundation/product/AppVersion.h"
 #include "foundation/runtime/AppRuntimeMeshExecutors.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
@@ -128,7 +130,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       return Error(mesh->AmpLastError().empty() ? "amp stack failed" : mesh->AmpLastError());
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
-    StartOrgSeedServices(*mesh, *identity, config->mesh, ResolveMeshRole(config->mesh) == MeshRole::Node);
+    StartOrgSeedServices(*mesh, *identity, config->mesh, ResolveMeshRole(config->mesh) == MeshRole::Node,
+                         AppVersionString());
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }

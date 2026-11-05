@@ -184,7 +184,7 @@ void ChatMentionPicker::Show(const std::vector<MentionCandidate>& lines) {
     const ui::Vector2f offset = draft->GetAbsoluteOffset(ui::BoxArea::Border);
     position = ui::Vector2i(static_cast<int>(offset.x), static_cast<int>(offset.y) - 4);
   }
-  ContextMenuHost::Instance().ShowActionsAbove(position, std::move(actions));
+  ContextMenuHost::Instance().ShowActionsAbove(position, std::move(actions), {}, Tr("chat.mention.title"));
 }
 
 void ChatMentionPicker::Choose(const MentionCandidate& line) {

@@ -400,13 +400,13 @@ std::string FormatAttachmentByteSize(const uint64_t byte_length) {
     return std::to_string(byte_length) + " B";
   }
   if (byte_length < 1024 * 1024) {
-    return std::to_string(byte_length / 1024) + " KiB";
+    return std::to_string(byte_length / 1024) + " KB";
   }
   if (byte_length < 1024ULL * 1024ULL * 1024ULL) {
-    return std::to_string(byte_length / (1024 * 1024)) + " MiB";
+    return std::to_string(byte_length / (1024 * 1024)) + " MB";
   }
   const uint64_t tenths = byte_length * 10 / (1024ULL * 1024ULL * 1024ULL);
-  return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " GiB";
+  return std::to_string(tenths / 10) + "." + std::to_string(tenths % 10) + " GB";
 }
 
 std::string AttachmentLocalPath(const std::string& profile_dir, const std::string& thread_id,

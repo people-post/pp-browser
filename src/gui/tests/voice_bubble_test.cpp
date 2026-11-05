@@ -71,7 +71,21 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
 TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
   const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
   EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
-  EXPECT_NE(rml.find("data-event-click=\"open_attachment('p1')\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("data-event-click=\"open_picture('p1','"), std::string::npos) << rml;
+}
+
+// Kenneth 2026-11-03: picture bubbles had one fixed size (a portrait picture filled two thirds, the rest was empty). The
+// picture card carries its own modifier, so on phones it shrinks to the picture's shape; a file card does not.
+TEST(VoiceBubbleRender, APictureCardIsMarkedAndKeepsItsTailAndReactions) {
+  TranscriptRow picture = Attachment("p2", "photo.png", "image/png", 50000);
+  picture.reactions.push_back(TranscriptReaction{"\xF0\x9F\x91\x8D", 1, false});
+  const std::string rml = Render(picture, Facts(true));
+  EXPECT_EQ(rml.rfind("<div class=\"chat-card chat-attachment-card chat-attachment-card--image", 0), 0u) << rml;
+  EXPECT_NE(rml.find("bubble-tail-in"), std::string::npos) << "the last bubble of a run keeps its tail";
+  EXPECT_NE(rml.find("chat-reaction-row--overlay"), std::string::npos) << rml;
+  const std::string file = Render(Attachment("f1", "notes.pdf", "application/pdf", 50000), Facts(true));
+  EXPECT_EQ(file.find("chat-attachment-card--image"), std::string::npos) << file;
+  EXPECT_NE(file.find("chat-attachment-card"), std::string::npos) << file;
 }
 
 TEST(VoiceBubbleRender, NothingToPlayUntilItHasBeenDownloaded) {
@@ -138,6 +152,45 @@ TEST(VoiceBubbleRender, ALargePictureWithAThumbnailIsAnInlineImage) {
   const std::string rml = Render(Attachment("m9", "big.jpg", "image/jpeg", 6u * 1024 * 1024), facts);
   EXPECT_NE(rml.find("chat-attachment-image"), std::string::npos) << rml;
   EXPECT_NE(rml.find("/tmp/thumb.poster.jpg"), std::string::npos);
+}
+
+// Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.3): pictures spilled out of their bubble. Every shape fits a
+// 200 x 240dp box with its own ratio, and the picture carries that size so its 3dp frame is laid out round it.
+TEST(PictureBubbleFit, EveryShapeFitsTheBoxWithItsOwnRatio) {
+  const auto fit = [](const int w, const int h) {
+    const PictureBubbleSize size = FitPictureInBubble(w, h);
+    return std::make_pair(size.width_dp, size.height_dp);
+  };
+  EXPECT_EQ(fit(4032, 3024), std::make_pair(200, 150)) << "a landscape photo";
+  EXPECT_EQ(fit(3024, 4032), std::make_pair(180, 240)) << "a portrait photo";
+  EXPECT_EQ(fit(600, 2400), std::make_pair(60, 240)) << "very tall";
+  EXPECT_EQ(fit(2400, 400), std::make_pair(200, 33)) << "very wide";
+  EXPECT_EQ(fit(20000, 10), std::make_pair(200, 1)) << "a sliver keeps 1dp";
+  EXPECT_EQ(fit(120, 90), std::make_pair(120, 90)) << "a small picture is not enlarged";
+  EXPECT_EQ(fit(0, 300), std::make_pair(0, 0)) << "unknown size";
+}
+
+TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
+  TranscriptFacts facts;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/tall.jpg";
+    view.image_width = 3024;  // upright: InboxController has swapped a quarter-turned photo's sides
+    view.image_height = 4032;
+    return view;
+  };
+  const std::string rml = Render(Attachment("p3", "tall.jpg", "image/jpeg", 50000), facts);
+  EXPECT_NE(rml.find("width=\"180\" height=\"240\""), std::string::npos) << rml;
+  // The picture sits in a same-sized clip box that rounds its corners (the engine does not round an <img>).
+  EXPECT_NE(rml.find("<div class=\"chat-attachment-clip\" style=\"width:180dp;height:240dp\"><img "),
+            std::string::npos)
+      << rml;
+  EXPECT_NE(rml.find("')\"/></div>"), std::string::npos) << rml;
+  // Without a known size the picture is left to the stylesheet's limits.
+  const std::string unknown = Render(Attachment("p4", "x.jpg", "image/jpeg", 50000), Facts(true));
+  EXPECT_NE(unknown.find("class=\"chat-attachment-image\" src=\"/tmp/x\" data-event-click="), std::string::npos)
+      << unknown;
 }
 
 } // namespace

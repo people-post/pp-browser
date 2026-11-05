@@ -12,6 +12,7 @@
 #include "foundation/platform/os/OsTime.h"
 #include "common/runtime/AppRuntime.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/product/ProductBranding.h"
 #include "lib/net/HttpClient.h"
 
@@ -128,6 +129,12 @@ DiagnosticsUploadResult Upload(const DiagnosticsUploadDeps& deps, const std::str
 } // namespace
 
 void SendDiagnostics(DiagnosticsUploadDeps deps, std::function<void(DiagnosticsUploadResult)> on_done) {
+  if (!UploadAllowed(kUiDemoBuild)) {  // the UI demo app sends nothing, wherever the address would come from
+    if (on_done) {
+      on_done(Failed(DiagnosticsUploadKind::Unavailable));
+    }
+    return;
+  }
   const std::string client_token = ClientToken().Acquire();
   AppRuntime::PostWorkerAndReplyOnUI<DiagnosticsUploadResult>(
       WorkerLane::Normal,

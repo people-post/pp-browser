@@ -66,6 +66,10 @@ bool ShellLayout::SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab) {
   return TabHasSecondary(tab) ? false : collapsed;
 }
 
+bool ShellLayout::OpenChatSwitchesToChats(const LayoutMode mode, const NavTab tab) {
+  return mode == LayoutMode::Compact && tab == NavTab::Home;
+}
+
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   PaneVisibility vis{};
   vis.primary = true;
@@ -85,7 +89,8 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
 CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& config,
                                                             int safe_area_top_dp,
                                                             int safe_area_bottom_dp,
-                                                            float titlebar_height_dp) {
+                                                            float titlebar_height_dp,
+                                                            CompactBottomSurface bottom_surface) {
   CompactChromeLayout layout{};
   const float safe_top = static_cast<float>(std::max(0, safe_area_top_dp));
   const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
@@ -97,11 +102,28 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   // bottom of that rect and content only needs nav-height padding.
   layout.shell_top_dp = 0.f;
   layout.content_top_dp = safe_top + titlebar;
-  layout.shell_bottom_dp = safe_bottom;
-  layout.content_padding_bottom_dp = config.compact_nav_height_dp;
+  // Without a keyboard, the bottom surface paints down through the home-indicator strip: the document
+  // goes full-bleed and the surface pads itself by the inset. With a keyboard up the body shrinks.
+  const bool keyboard = safe_area_bottom_dp >= kImeLatchMinDp;
+  const bool covers_strip = bottom_surface != CompactBottomSurface::None && !keyboard;
+  layout.shell_bottom_dp = covers_strip ? 0.f : safe_bottom;
+  layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
+  const float tab_bar_inset =
+      bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
+  layout.content_padding_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_bottom_dp = 0.f;
-  layout.sheet_bottom_dp = config.compact_nav_height_dp;
+  layout.sheet_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;
+  if (bottom_surface != CompactBottomSurface::None) {
+    // The bar the toast must clear: tab bar, or the composer's one-line height (DESIGN-pp-ui 8.5); a pushed
+    // page has none. Below it the home-indicator strip (with a keyboard up the body already ends above it).
+    constexpr float kComposerMinHeightDp = 52.f;
+    constexpr float kToastGapDp = 12.f;
+    const float bar = bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
+                      : bottom_surface == CompactBottomSurface::Composer ? kComposerMinHeightDp
+                                                                         : 0.f;
+    layout.toast_bottom_dp = layout.bottom_surface_padding_dp + bar + kToastGapDp;
+  }
   return layout;
 }
 

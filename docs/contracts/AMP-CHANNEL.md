@@ -2,7 +2,7 @@
 
 **Status:** Foundation spec (2026-08-30). Normative for `lib/amp/L3/`.
 **Stack:** [STACK.md](../../projects/adp/STACK.md) · L2 [AMP-SESSION.md](AMP-SESSION.md) · L1 [ADP.md](ADP.md)  
-**Version axes:** `channel_frame_version`, per-channel `protocol_id`
+**Version axes:** the ADP wire version (a packet's first byte), per-channel `protocol_id`
 
 ## Role
 
@@ -45,9 +45,10 @@ All multi-byte integers **little-endian** unless noted.
 
 ### Common header
 
+9 B, sealed inside the packet (wire v2, [A029](../../projects/adp/DECISIONS.md#a029--a-smaller-packet-one-sealed-header-derived-nonces-no-second-tag) H1): a path observer sees neither channel nor seq. The packet's first byte carries the wire version; the frame has none.
+
 | Field | Size | Notes |
 |-------|------|-------|
-| `frame_version` | 1 | `1` |
 | `frame_type` | 1 | see below |
 | `channel_id` | 4 | u32 |
 | `channel_seq` | 4 | per-channel, per-direction; Reliable channels only |
@@ -65,7 +66,7 @@ All multi-byte integers **little-endian** unless noted.
 
 **LenUtf8:** `u32` LE byte count + UTF-8 (same profile as [WIRE_SCHEMAS § pp Binary Wire Profile](WIRE_SCHEMAS.md#pp-binary-wire-profile-d088) but LE length for L3).
 
-After L2 decrypt, parser validates `frame_version`, dispatches on `frame_type`, enforces per-channel ordering for Reliable.
+After the link opens the packet, the parser dispatches on `frame_type` and enforces per-channel ordering for Reliable.
 
 ## Channel lifecycle
 
@@ -104,13 +105,15 @@ Opened immediately after Session `Established`.
 - `protocols[]` supported (includes circuit / media-relay protocol ids when hosted)
 - `capabilities` object (circuit_relay, media_relay, … — mirrors today’s Identify extensions; v1 binary codec carries flags via `protocols[]` until an explicit flags field is added)
 
+**Extension** ([N032](../../projects/p2p-mesh/DECISIONS.md#n032--node-versions-claims-only-exclude-verification-promotes), pp-cpp-amp v4.1.0): after the payload above (the dialer on the responder's reply, the responder right after its reply), each side sends one more message on channel 0. Leading byte `3` (`1` is the payload above, `2` session control): `amp_wire` (u8), `node_version` (len-prefixed UTF-8), `features[]` (string list). A peer before it refuses it as an unknown payload version and drops it, after the exchange above has completed; a decoder ignores bytes past the fields it knows. pp-node (and a desktop in the node role) fills `node_version` with its build's version; an app in the client role sends it empty. `RemoteCapabilityExtension(peer_id)` reads a connected peer's.
+
 Channel 0 may stay open (long-lived control) or close after exchange — implementation policy; default **long-lived, Reliable Control**.
 
 Replaces libp2p Identify stream on the AMP path.
 
 ## Fragmentation (L3)
 
-**L1 max ADP payload 1200 B is fixed.** L3 fragments large L4 messages:
+**A link's frame budget** decides when a message fragments: the largest frame its transport carries in one packet (`ChannelMux::SetMaxFrameBytes`). A direct ADP link carries one sealed packet's payload, **1203 B** (a DATA frame up to 1194 B of message, fragments of 1178 B). A carrier-backed (nested) link carries what rides one DATA frame of its outer link whole, less the inner packet's lane wrapper, header and tag: **1168 B** (1143 B per fragment), so the outer link never fragments an inner packet again. L3 fragments larger L4 messages:
 
 | Field (Frag payload) | Size |
 |----------------------|------|
@@ -183,7 +186,8 @@ The closed callback can run while the component's own lock is held (a write that
 | `/pp/rpc/history/1.0.0` | request JSON → response JSON |
 | `/pp/blob/1.0.0` | JSON meta → ciphertext or error JSON |
 | `/pp/realtime/1.0.0` | Reliable hello + BestEffort media AEAD frames (see [Call-media bundle](#call-media-bundle)) |
-| `/pp-mesh/datagram-relay/1.0.0` | duplex realtime + control |
+| `/pp-mesh/datagram-relay/1.0.0` | Reliable control JSON (quote / accept / attach / subscribe); media too while the participant has no data lane |
+| `/pp-mesh/media-relay-data/1.0.0` | A participant's data lane to the hop: `MediaDataFrame`s both ways, BestEffort, the oldest dropped (`MediaRelayDataChannelPolicy`) |
 | `/pp-mesh/circuit/1.0.0` | tunnel setup → forwarded L3 frames ([A019](../../projects/adp/DECISIONS.md#a019--circuit-relay--channel-tunnel)) |
 | `/pp-mesh/reach/1.0.0` | short JSON |
 
@@ -221,7 +225,7 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 ### Path liveness and failover (call-path-resilience k4)
 
 - **Heartbeat** on each path's control channel (either direction): `{"v":1,"type":"hb","active":true}` every 500 ms on the sender's active path, `{"v":1,"type":"hb"}` every 10 s on its standby. Anything received on a path (heartbeat, control, media) proves it alive. Older peers ignore the type.
-- **Standby:** a released path (step 5) stays bound as the call's warm **standby** instead of closing — one per call, a relayed one preferred.
+- **Standby:** a released path (step 5) stays bound as the call's warm **standby** instead of closing — one per call, a relayed one preferred. Its link stays up because the call's control channel asks for the **hot** keepalive tier while it is open (`CallMediaControlChannelPolicy`, amp `ChannelPolicy::keepalive` — K008), at both ends; the tier goes when the call's channels close and leaves whatever else holds the link (chat's warm mark) as it was. A standby carries nothing until a failover: without it a direct standby went cold and was evicted 5 s after it came up.
 - **Failover** (no handshake — the standby's channels are bound and RX takes every path): TX moves to the standby when the active path's link is lost, or when it has been silent **1.5 s** while the peer is known to heartbeat (a muted mic still heartbeats and sends silence frames). A standby silent 25 s is not taken. After a failover, silence alone does not switch again for 3 s.
 - **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
 - **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window**. A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out fails the call. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
@@ -241,7 +245,7 @@ Relay hosts `/pp-mesh/circuit/1.0.0`. After a JSON bridge handshake, the relay *
   "op": "bridge",
   "timeout_ms": 8000,
   "target_peer_id": "<base58>",
-  "target_multiaddr": "/ip4/.../udp/.../adp/1.0.0/p2p/...",
+  "target_multiaddr": "/ip4/.../udp/.../adp/2/p2p/...",
   "target_protocol": "/pp/realtime/1.0.0"
 }
 ```
@@ -279,6 +283,17 @@ For Amp **call-media** over circuit, the bridged channel is **not** the product 
 1. A and B run **inner MSH** over the carrier (`PeerLink` carrier mode; non-chunked `AmpAdpCarrier` MSH/sealed frames as ChannelSession DATA).
 2. Inner `Session` + `ChannelMux` becomes a normal PeerLink; `OpenChannel` opens A021 control+media on that mux.
 3. Outer policy: `CircuitCarrierChannelPolicy` (BestEffort Realtime, large outbound queue) so media FRAG bursts are not stalled by ADP `reliable_window`.
+
+**Carrier payloads** (one per carrier DATA message, first byte the kind):
+
+| Kind | Layout | Use |
+|------|--------|-----|
+| `0` Msh / `2` MshChunk | `[kind][msh type][body]` | inner handshake |
+| `1` Sealed / `5` SealedReliable | `[kind][number u32 LE][frame ciphertext][tag 16]` | inner data, sealed by the inner session ([AMP-SESSION.md § Sealing packets](AMP-SESSION.md#sealing-packets)): spaces CarrierBestEffort / CarrierReliable, `[kind][number]` the associated data |
+| `3` LaneData | `[kind][lane seq u32 LE][inner payload]` | the reliable lane around a SealedReliable packet |
+| `4` LaneAck | `[kind][cumulative u32][selective u64]` | lane acks; cumulative 0 + no bits = the lane probe |
+
+Each inner space keeps a replay window (best effort 128, reliable 1024): a relay between the ends could replay an inner packet, and the window turns it away. An inner frame is at most the nested link's budget (§ Fragmentation), so a sealed inner packet rides one outer DATA frame whole.
 
 Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Session is call-media only. See [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).
 

@@ -1062,6 +1062,38 @@ TEST_F(CallPathMigrationTest, AddedStandbyKeepsTheCallWhereItIsAndTakesOverOnLos
   EXPECT_FALSE(b_failed_.load());
 }
 
+// K008: a standby path carries nothing until a failover, so the call's own channels keep its link hot — at
+// both ends — and only while the call holds them. Chat warmed the same peer: when the call ends the link
+// is back to chat's warm tier, not cold, and not left hot.
+TEST_F(CallPathMigrationTest, AStandbyKeepsItsLinkHotOnlyWhileTheCallHoldsIt) {
+  LiveRelayedCallWithDirectLink();
+  harness_->mgr_a().MarkWarm("b-direct"); // chat to the same peer
+  std::atomic<bool> done{false};
+  a_call_->AddStandbyLegOfKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void>) { done = true; });
+  for (int i = 0; i < 400 && !(done.load() && b_call_->PathState(b_call_->PrimaryLegId()).standby); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(done.load());
+  const auto tiers = [&] {
+    std::pair<pp::amp::KeepaliveTier, pp::amp::KeepaliveTier> out{};
+    harness_->mgr_a().WithLiveLink(direct_link_, [&](pp::amp::PeerLink& link) { out.first = link.GetKeepaliveTier(); });
+    if (auto* b = harness_->mgr_b().FindLinkByPeerId(harness_->peer_id_a); b && !b->IsCarrierBacked()) {
+      out.second = b->GetKeepaliveTier();
+    }
+    return out;
+  };
+  EXPECT_EQ(tiers().first, pp::amp::KeepaliveTier::Hot) << "the call's standby keeps the link hot";
+  EXPECT_EQ(tiers().second, pp::amp::KeepaliveTier::Hot) << "at the far end too";
+
+  a_call_->DetachLeg(leg_);
+  for (int i = 0; i < 50; ++i) {
+    harness_->PumpAll();
+  }
+  EXPECT_EQ(tiers().first, pp::amp::KeepaliveTier::Warm) << "the call is over: chat's warm mark, not hot";
+  EXPECT_EQ(tiers().second, pp::amp::KeepaliveTier::None) << "the far end held it for the call only";
+}
+
 // A peer from before k6 does not know `path_add`: the add times out and the call is unharmed.
 TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallWithoutAStandby) {
   LiveRelayedCallWithDirectLink();

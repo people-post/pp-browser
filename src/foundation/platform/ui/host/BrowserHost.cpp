@@ -3,6 +3,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
 #include "foundation/runtime/FramePacing.h"
+#include "foundation/platform/ImageEncode.h"
 #include <ui/platform/Platform_SDL.h>
 #include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
@@ -17,6 +18,9 @@
 #include <ui/base/Profiling.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <utility>
 #include <cmath>
 #include <cstdio>
@@ -68,7 +72,8 @@ public:
 		ui::String extension = (i_ext == ui::String::npos ? ui::String() : source.substr(i_ext + 1));
 
 #if SDL_MAJOR_VERSION >= 3
-		auto CreateSurface = [&]() { return IMG_LoadTyped_IO(SDL_IOFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str()); };
+		// A phone's portrait photo stands up (EXIF orientation) in a chat bubble and in the picture preview.
+		auto CreateSurface = [&]() { return pbr::DecodeImageUpright(reinterpret_cast<const uint8_t*>(buffer.get()), buffer_size, extension.c_str()); };
 		auto GetSurfaceFormat = [](SDL_Surface* surface) { return surface->format; };
 		auto ConvertSurface = [](SDL_Surface* surface, SDL_PixelFormat format) { return SDL_ConvertSurface(surface, format); };
 		auto DestroySurface = [](SDL_Surface* surface) { SDL_DestroySurface(surface); };
@@ -222,6 +227,13 @@ static bool SDLCALL LiveResizeEventWatch(void* /*userdata*/, SDL_Event* event)
 // Custom SDL user event that wakes SDL_WaitEventTimeout when UI work is posted.
 static Uint32 g_wake_event_type = 0;
 static std::atomic<bool> g_wake_pending{false};
+/**
+ * The idle wait sleeps on this, not SDL_Delay: RequestForceFrame from another thread (a posted UI task, a new
+ * call video frame) ends the wait at once instead of at the end of a 50 ms slice — at video rate a slice-bound
+ * wake drew at most ~20 fps, unevenly. SDL input is still polled every slice.
+ */
+static std::mutex g_idle_wait_mu;
+static std::condition_variable g_idle_wait_cv;
 
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless)
 {
@@ -588,7 +600,12 @@ bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callb
 			if (remaining > 50) {
 				remaining = 50; // ≤50ms slices so PushEvent / ForceFrame are observed promptly
 			}
-			SDL_Delay(static_cast<Uint32>(remaining));
+			{
+				std::unique_lock lock(g_idle_wait_mu);
+				g_idle_wait_cv.wait_for(lock, std::chrono::milliseconds(remaining), [] {
+					return data->force_next_frame.load(std::memory_order_acquire);
+				});
+			}
 			SDL_PumpEvents();
 			has_event = SDL_PollEvent(&ev);
 		}
@@ -734,6 +751,10 @@ void Backend::RequestForceFrame()
 	if (!data)
 		return;
 	data->force_next_frame.store(true, std::memory_order_release);
+	{
+		std::lock_guard lock(g_idle_wait_mu); // a waiter between its check and its sleep sees the flag
+	}
+	g_idle_wait_cv.notify_one();
 	WakeEventLoop();
 }
 

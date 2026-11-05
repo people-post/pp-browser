@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -160,4 +161,20 @@ TEST(SessionMenuTest, DirectChatWithAContactOffersBlockOrUnblock) {
   EXPECT_FALSE(Has(Items(SessionKind::Group), Item::Block));
   EXPECT_TRUE(SessionMenuItemIsDestructive(Item::Block));
   EXPECT_FALSE(SessionMenuItemIsDestructive(Item::Unblock));
+}
+
+TEST(SessionMenuTest, EveryItemHasAnIconThatExists) {
+  const SessionKind kinds[] = {SessionKind::Ai, SessionKind::Direct, SessionKind::Group};
+  for (const SessionKind kind : kinds) {
+    for (const bool flip : {false, true}) {
+      SessionMenuState state{.kind = kind, .unread = flip, .has_contact = true, .blocked = flip, .pinned = flip,
+                             .muted = flip, .mute_mentions = flip, .share_ai_confirmed = true, .archived = flip};
+      for (const Item item : SessionMenuItems(state)) {
+        const std::string icon = SessionMenuIcon(item);
+        ASSERT_FALSE(icon.empty());
+        // "../icons/v2/x.svg" is relative to assets/views/.
+        EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / icon)) << icon;
+      }
+    }
+  }
 }

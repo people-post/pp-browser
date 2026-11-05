@@ -101,6 +101,17 @@ struct SettingsCommands {
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
   /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
   std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** Opens the PP 客服 chat and sends `question` in it, as if typed (a settings "?"; the answer comes in that chat). */
+  std::function<Roe<void>(const std::string& question)> ask_support;
+  /**
+   * Phones: the ask-AI panel opens over the setting with `question` asked as a one-off (DEV/PLAN-ui-batch5-ask-ai.md
+   * 5a). False when there is no panel (the desktop): the settings "?" then asks PP 客服 (ask_support) as before.
+   */
+  std::function<bool(const std::string& question)> ask_ai_once;
+  /** How many saved contacts this device blocked (Security's "Blocked" row). */
+  std::function<int()> blocked_count;
+  /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
+  std::function<void()> open_blocked_people;
   /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
