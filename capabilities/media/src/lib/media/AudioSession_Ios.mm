@@ -8,7 +8,9 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
+#include <utility>
 
 // Enum cases are not preprocessor macros — do not use #if !defined(...).
 // SDK 26+: AllowBluetoothHFP; older SDKs: AllowBluetooth (same bit).
@@ -35,6 +37,9 @@ std::condition_variable g_system_cv;
 constexpr std::chrono::milliseconds kSystemActivationWait{3000};
 constexpr int kDeactivateRetries = 5;
 constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
+
+std::mutex g_interruption_mu;
+std::function<void()> g_interruption_ended;
 
 /** Diagnostic: what iOS actually ended up with (category / mode / options / output port). */
 void LogRoute(const char* where) {
@@ -148,6 +153,9 @@ void SetSystemManaged(bool managed) {
   {
     std::lock_guard<std::mutex> lock(g_session_mu);
     g_system_managed = managed;
+    if (!managed) {
+      g_system_active = false;  // a stale "active" would skip the next setActive:YES
+    }
   }
   g_system_cv.notify_all();
 }
@@ -158,6 +166,51 @@ void NotifySystemActivation(bool active) {
     g_system_active = active;
   }
   g_system_cv.notify_all();
+}
+
+namespace {
+
+/** Re-takes the live session after the OS interrupted it (it also stops the audio units), then lets media reopen. */
+void ResumeAfterInterruption(const char* why) {
+  if (!g_session_active.load()) {
+    return;
+  }
+  NSLog(@"AudioSession %s: resuming", why);
+  ActivateForVoip();
+  std::lock_guard<std::mutex> lock(g_interruption_mu);
+  if (g_interruption_ended) {
+    g_interruption_ended();
+  }
+}
+
+} // namespace
+
+void SetInterruptionEndedHandler(std::function<void()> fn) {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    // Off the posting thread: ActivateForVoip may wait for CallKit's activation.
+    [center addObserverForName:AVAudioSessionInterruptionNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification* note) {
+                      const auto type = static_cast<AVAudioSessionInterruptionType>(
+                          [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue]);
+                      if (type == AVAudioSessionInterruptionTypeEnded) {
+                        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                       ^{ ResumeAfterInterruption("interruption ended"); });
+                      }
+                    }];
+    [center addObserverForName:AVAudioSessionMediaServicesWereResetNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification*) {
+                      dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                                     ^{ ResumeAfterInterruption("media services reset"); });
+                    }];
+  });
+  std::lock_guard<std::mutex> lock(g_interruption_mu);
+  g_interruption_ended = std::move(fn);
 }
 
 namespace {
