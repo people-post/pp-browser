@@ -97,6 +97,14 @@ public:
   bool HasPendingPushCall() const override { return pending_ != nil; }
   void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
 
+  void EndPendingPushCall() override {
+    if (pending_ == nil) {
+      return;
+    }
+    [provider_ reportCallWithUUID:pending_ endedAtDate:nil reason:CXCallEndedReasonAnsweredElsewhere];
+    ClearPending();
+  }
+
   void NotifyMessagingReady() override {
     app_ready_ = true;
     if (pending_ != nil) {
@@ -295,6 +303,9 @@ private:
     ++pending_generation_;
     if (had) {
       NotifyPendingChanged();
+      if (callbacks_.pending_gone) {
+        callbacks_.pending_gone();
+      }
     }
   }
 

@@ -23,6 +23,7 @@ CallSystemUiBridge::CallSystemUiBridge(ICallSystemUi& ui, Actions actions) : ui_
   callbacks.end = [this](const std::string& call_id) { OnEnd(call_id); };
   callbacks.set_muted = [this](const std::string& call_id, const bool muted) { OnSetMuted(call_id, muted); };
   callbacks.audio_session = [this](const bool active) { OnAudioSession(active); };
+  callbacks.pending_gone = [this]() { OnPendingGone(); };
   ui_.SetCallbacks(std::move(callbacks));
 }
 
@@ -61,11 +62,19 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     if (!ringing && !answering && !in_call) {
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
       shown_.clear();
+      AudioSession::SetSystemManaged(false);
     } else if (!ringing && !shown_answered_) {
       // Answered in the app: its own call screen shows the call.
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::AnsweredElsewhere);
       shown_.clear();
     }
+  }
+
+  // The app is already in a call no ring announced (a join answered on its own): the push's call is an orphan.
+  if (shown_.empty() && ui_.HasPendingPushCall() &&
+      (screen.kind == CallScreen::Kind::Answering || screen.kind == CallScreen::Kind::InCall)) {
+    Note("pending_orphan");
+    ui_.EndPendingPushCall();
   }
 
   // A ring for the system screen.
@@ -90,6 +99,7 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     if (answered) {
       shown_answered_ = true;
       Note("accept_applied");
+      AudioSession::SetSystemManaged(true);
       if (actions_.accept) {
         actions_.accept(!screen.ring_video);
       }
@@ -121,10 +131,17 @@ void CallSystemUiBridge::OnAudioSession(const bool active) {
   }
 }
 
+void CallSystemUiBridge::OnPendingGone() {
+  Note("pending_gone");
+  answer_pending_at_ms_ = 0;
+  decline_pending_at_ms_ = 0;
+  AudioSession::SetSystemManaged(false);
+}
+
 void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
   if (call_id.empty()) {
+    // Managed only once the ring matches (Sync): a placeholder that never does must leave no managed state.
     Note("answer_pending");
-    AudioSession::SetSystemManaged(true);
     answer_pending_at_ms_ = Now();
     decline_pending_at_ms_ = 0;
     return;
