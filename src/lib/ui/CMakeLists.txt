@@ -9,7 +9,9 @@ pp_browser_add_lib_library(pp_lib_ui
     ChatWidgetConfigBuilders.cpp
     ContextMenuHost.cpp
     EmojiCatalog.cpp
+    FrameTimeStats.cpp
     InputCoordinator.cpp
+    NameIndex.cpp
     QrSvg.cpp
     RmlVariantHelpers.cpp
     ShellInterruption.cpp

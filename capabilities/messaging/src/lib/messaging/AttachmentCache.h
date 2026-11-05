@@ -148,9 +148,6 @@ Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, 
 void RemovePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 
-/** Total bytes under CAS private + thread `blobs_view/` / `blob_cipher/`. */
-uint64_t AttachmentCacheByteSize(const std::string& profile_dir);
-
 /** Wipe downloaded attachment bytes for every thread and clear private CAS. */
 Roe<void> WipeAllAttachmentCaches(const std::string& profile_dir);
 

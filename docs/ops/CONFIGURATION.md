@@ -124,7 +124,7 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Auxiliary pane (expanded layout):** `preferences.json` → `auxiliary_width_dp` (default 320, clamped 280–640). Written by `ShellHost` after a splitter drag on the pane's left edge ends; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
 
-**Compact chrome materials:** `preferences.json` → `reduce_transparency` (Me → Appearance; opaque shell, no backdrop frost) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
+**Compact chrome materials:** `preferences.json` → `reduce_transparency` (opaque bars, no backdrop frost; Me → Appearance → **Transparency** shows it inverted, on by default; the AI assistant's `set_reduce_transparency` sets it too) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
 **Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.
 
@@ -267,6 +267,7 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
 | `--no-log-file` | Disable the file log (console only) |
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+| `--ui-perf-test` | Developer builds only (`-DPP_BROWSER_DEV_TOOLS=ON` or a baked-in `PP_BROWSER_DEV_PIN`): open the engine test page at startup (frame-time stats; log lines `ui.perftest …`). On phones: Settings → About → Engine test |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
 Two channels write shareable lines (`common/ShareableLine.h`: `event=… k=v`, no free text or raw ids) to files of their own next to it, rotated the same way and written at any log level (with `--debug` they also appear in the main log):

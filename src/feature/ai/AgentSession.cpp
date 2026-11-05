@@ -1,5 +1,6 @@
 #include "feature/ai/AgentSession.h"
 #include "feature/ai/AiTurnPool.h"
+#include "feature/ai/ArticleFeedFetch.h"
 #include "foundation/platform/Platform.h"
 
 #include "lib/ai/AppActionClassifier.h"
@@ -23,9 +24,7 @@
 #include "lib/ai/conversation/TurnCoordinator.h"
 #include "foundation/error/AppError.h"
 #include "lib/ai/mcp/McpClient.h"
-#include "lib/net/HttpClient.h"
 
-#include <map>
 #include "lib/ai/mcp/McpRuntime.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
@@ -153,6 +152,13 @@ struct AgentSession::Impl : public Module {
   /** ...and it was judged on this device rather than by a handoff event. */
   bool handoff_local = false;
   std::atomic<bool> busy{false};
+  /**
+   * A turn's steps may still run: set with `busy` when a turn is taken, cleared where the turn really ends (with
+   * `busy` in FinishTurn). Unlike `busy`, Cancel() leaves it: a stopped turn still uses the conversation until then.
+   */
+  std::atomic<bool> turn_in_flight{false};
+  /** This turn answers in words only (SubmitExplanation): no app action, no changing tool, no permission card. */
+  bool explain_only = false;
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
   int configure_inflight = 0;
@@ -247,6 +253,9 @@ bool AgentSession::StaleStep(const std::shared_ptr<Impl>& state, const char* whe
 }
 
 void AgentSession::PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event) {
+  // The turn of the step that pushes it (a stopped turn's late step keeps its own); outside a step, the newest.
+  event.turn = tl_turn_step.owner == state.get() ? tl_turn_step.generation
+                                                 : state->turn_generation.load(std::memory_order_acquire);
   AppRuntime::PostUI([shared = state->shared, event = std::move(event)]() mutable {
     std::lock_guard lock(shared->event_mutex);
     shared->pending_events.push_back(std::move(event));
@@ -263,6 +272,10 @@ void AgentSession::PushLoading(const std::shared_ptr<Impl>& state, const bool lo
 
 bool AgentSession::IsBusy() const {
   return impl_ && impl_->busy.load();
+}
+
+uint64_t AgentSession::TurnGeneration() const {
+  return impl_->turn_generation.load(std::memory_order_acquire);
 }
 
 void AgentSession::PushApprovalClosed(const std::shared_ptr<Impl>& state, const ParkedApproval& park,
@@ -352,6 +365,7 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->assist_mode = AtAiMode::Local;
   state->turn_mode = AgentTurnMode::Conversation;
   // Released last: a send taken the instant it is free sets up its own turn, which nothing above may wipe.
+  state->turn_in_flight = false;
   state->busy = false;
   if (TurnReleasedHook()) {
     TurnReleasedHook()();
@@ -447,6 +461,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
     std::lock_guard lock(state->park_mutex);
     const ApprovalResumeError err = ValidateParkedResume(state->parked_approval, approval_id, /*busy=*/false);
     if (err != ApprovalResumeError::Ok) {
+      state->turn_in_flight = false;
       state->busy = false; // no turn started: nothing was announced, so nothing to end
       PushError(state, std::string("Permission prompt inactive: ") + ApprovalResumeErrorCode(err));
       return;
@@ -1156,6 +1171,12 @@ void AgentSession::ExecutePlan(const std::shared_ptr<Impl>& state, TurnPlan plan
   TurnExecutionOptions options;
   options.permissions = state->tool_permissions;
   options.cancel = &state->cancelled;
+  if (state->explain_only) {
+    // Words only: the default permissions (a read runs, anything that changes data asks) and every ask refused, so a
+    // remembered "always allow" changes nothing and no card is parked.
+    options.permissions = ToolPermissionsPrefs{};
+    options.deny_on_ask = true;
+  }
   if (state->turn_plan.local) {
     // Remarks for people-list rows: only in app-action turns, whose entries never reach a model as history.
     options.local_contacts = state->local_contacts;
@@ -1332,6 +1353,12 @@ bool AgentSession::TryPendingLocalAnswer(const std::shared_ptr<Impl>& state) {
 
 void AgentSession::HandleHandoff(const std::shared_ptr<Impl>& state, const std::string& capability,
                                  const std::string& reason) {
+  if (state->explain_only) {
+    // It offered no capability, so nothing may run for it.
+    state->Log().warning << "brief_AI handed back an explanation turn; answered on the device";
+    FinishLocalAnswer(state, RenderLocalUnsupported(), RenderMode::Markdown);
+    return;
+  }
   const std::vector<std::string> declared = AppActionCapabilities(state);
   if (capability.empty() || std::find(declared.begin(), declared.end(), capability) == declared.end()) {
     state->Log().info << "brief_AI handed the turn back for an unknown capability; answered on the device";
@@ -1597,7 +1624,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   }
   // A turn with an image is never handed back, so it advertises no capabilities; neither does "@ai" in a
   // chat (contract: only the question goes out).
-  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist) {
+  // An explanation offers none either: brief_AI then never hands it back to run an app action.
+  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist && !state->explain_only) {
     request.capabilities = AppActionCapabilities(state);
   }
 
@@ -1938,7 +1966,8 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
   if (UseBriefStream(state)) {
-    if (TryPendingLocalAnswer(state) || TryLocalAppAction(state)) {
+    // An explanation (SubmitExplanation) is never an app action: "what does X mean?" must not turn X on.
+    if (!state->explain_only && (TryPendingLocalAnswer(state) || TryLocalAppAction(state))) {
       return;
     }
     // Context layout: [system, history..., pending user]; the policy appends the pending user message last.
@@ -2018,14 +2047,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
 
     const AppConfig defaults = Config::DefaultAppConfig();
-    McpClient::SetHttpPost([](const std::string& url, const std::string& body,
-                              const std::map<std::string, std::string>& headers, const long timeout_s) {
-      HttpTimeout timeout;
-      if (timeout_s > 0) {
-        timeout.total_s = timeout_s;
-      }
-      return HttpClient::Post(url, body, headers, kMaxHttpClientBodyBytes, timeout);
-    });
+    WireMcpHttpPost();
     state->mcp.Start(state->config, defaults);
 
     std::vector<std::string> custom_prefixes;
@@ -2095,6 +2117,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   } else {
     // A Cancel raced configure; do not leave busy stuck from Submit, and tell the UI the turn is over (it shows
     // "thinking" in that thread until it hears so).
+    state->turn_in_flight = false;
     state->busy = false;
     PushLoading(state, false, state->pending_thread_id);
   }
@@ -2180,6 +2203,8 @@ SubmitOutcome AgentSession::SubmitLocalAction(const std::string& thread_id, cons
     impl_->Log().info << "local action not taken: a turn runs in this session (" << tool << ")";
     return SubmitOutcome::BusyHere;
   }
+  impl_->turn_in_flight = true;
+  impl_->explain_only = false;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2230,6 +2255,7 @@ Roe<void> AgentSession::ResumeToolPermission(const std::string& approval_id, con
     if (impl_->busy.exchange(true)) {
       return Error(ApprovalResumeErrorCode(ApprovalResumeError::TurnBusy));
     }
+    impl_->turn_in_flight = true;
   }
 
   PostTurnTask(impl_,
@@ -2329,6 +2355,15 @@ void AgentSession::BeginStreamTurn() {
 }
 
 SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
+  return SubmitHomeTurn(user_text, std::move(user_payload), /*explain_only=*/false);
+}
+
+SubmitOutcome AgentSession::SubmitExplanation(const std::string& user_text) {
+  return SubmitHomeTurn(user_text, std::nullopt, /*explain_only=*/true);
+}
+
+SubmitOutcome AgentSession::SubmitHomeTurn(const std::string& user_text, std::optional<std::string> user_payload,
+                                           const bool explain_only) {
   if (user_text.empty()) {
     return SubmitOutcome::Ignored;
   }
@@ -2336,6 +2371,8 @@ SubmitOutcome AgentSession::Submit(const std::string& user_text, std::optional<s
     impl_->Log().info << "send not taken: a turn runs in this session";
     return SubmitOutcome::BusyHere;
   }
+  impl_->turn_in_flight = true;
+  impl_->explain_only = explain_only;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2365,6 +2402,8 @@ SubmitOutcome AgentSession::SubmitToThread(const std::string& thread_id, const s
     impl_->Log().info << "send not taken: a turn runs in this session";
     return SubmitOutcome::BusyHere;
   }
+  impl_->turn_in_flight = true;
+  impl_->explain_only = false;
 
   impl_->cancelled = false;
   BeginStreamTurn();
@@ -2394,6 +2433,8 @@ SubmitOutcome AgentSession::SubmitScopedAssist(const std::string& thread_id, con
                       << ")";
     return SubmitOutcome::BusyHere;
   }
+  impl_->turn_in_flight = true;
+  impl_->explain_only = false;
   impl_->Log().info << "scoped assist mode=" << static_cast<int>(mode) << " prompt_chars=" << prompt.size()
                     << " configured=" << (impl_->configured ? 1 : 0);
 
@@ -2438,6 +2479,15 @@ void AgentSession::Cancel() {
 void AgentSession::WaitForConfigureIdle() {
   std::unique_lock lock(impl_->configure_mutex);
   impl_->configure_cv.wait(lock, [&] { return impl_->configure_inflight == 0; });
+}
+
+bool AgentSession::StartNewConversation() {
+  if (impl_->busy.load() || impl_->turn_in_flight.load()) {
+    return false; // a turn stopped by Cancel() may still be using the conversation: wait for its end
+  }
+  ForgetThread({});
+  impl_->conversation.StartNewConversation();
+  return true;
 }
 
 void AgentSession::ForgetThread(const std::string& thread_id) {

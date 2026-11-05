@@ -6,6 +6,7 @@
 #include "feature/product/MessagingPeoplePickerPorts.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
+#include "gui/contacts/ContactsNotifyPorts.h"
 #include "gui/FlowCoordinatorPorts.h"
 #include "lib/ui/PeoplePickerLogic.h"
 #include "gui/contacts/PeoplePickerSurfaceNotifyPorts.h"
@@ -53,6 +54,8 @@ public:
   void BindShellFeedback(ShellFeedbackPorts ports);
   /** Push surface snapshot to app PeoplePickerShellBridge. */
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
+  /** A member's profile (a page sheet on phones). Clear via BindContactsNotify({}). */
+  void BindContactsNotify(ContactsNotifyPorts ports);
 
   struct PickerRow {
     ui::String id;
@@ -85,6 +88,17 @@ public:
   /** The member list of the group chat `thread_id`; the owner adds, removes and re-invites from it. */
   void OpenForGroupMembers(const std::string& thread_id);
 
+  /** Add members to the group chat `thread_id` straight away (the group info sheet's "Add members"); closes when done. */
+  void OpenForGroupAddMembers(const std::string& thread_id);
+
+  /** Someone tapped on the group info sheet's member card: the same as a tap in the member list. */
+  void TapGroupMember(const std::string& thread_id, const std::string& identity);
+  /**
+   * A member's profile was just opened from the group chat `thread_id` (their avatar or name; `sender` a contact id or
+   * an account id): if we own the group, the profile gets the "Group admin" card.
+   */
+  void OfferGroupAdmin(const std::string& thread_id, const std::string& sender);
+
   void Close();
 
 private:
@@ -106,8 +120,25 @@ private:
   void RefreshGroupAddLimit();
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
-  void ReinviteMember(const GroupMemberRow& row);
-  void RemoveMember(const GroupMemberRow& row);
+  /** Phones: everyone goes to the profile; the owner's has the "Group admin" card (DecideGroupMemberTap). */
+  void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, bool viewer_is_owner, bool is_self);
+  /** The owner's card on the profile just opened for `row` (nothing when `tap` offers no admin action). */
+  void OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id, const GroupMemberRow& row);
+  /** Someone on the roster of the group chat `thread_id`, found by `matches`, with what we know about them and us. */
+  struct MemberInGroup {
+    std::string group_id;
+    GroupMemberRow row;
+    bool viewer_is_owner = false;
+    bool is_self = false;
+  };
+  std::optional<MemberInGroup> FindMemberInGroup(const std::string& thread_id,
+                                                 const std::function<bool(const GroupRosterMember&)>& matches) const;
+  /** The member's profile as a page sheet (their contact page, or its member state). */
+  void OpenMemberProfile(const GroupMemberRow& row);
+  bool CompactLayout() const;
+  void ReinviteMember(const std::string& group_id, const GroupMemberRow& row);
+  /** Asks first; `removed` runs once the person is out (the owner's profile sheet then closes). */
+  void RemoveMember(const std::string& group_id, const GroupMemberRow& row, std::function<void()> removed = {});
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
@@ -172,6 +203,7 @@ private:
   ShellNavigationPorts shell_navigation_;
   ShellFeedbackPorts shell_feedback_;
   PeoplePickerSurfaceNotifyPorts surface_notify_;
+  ContactsNotifyPorts contacts_notify_;
   std::string call_thread_id_;
   std::string call_id_;
   bool call_video_allowed_ = false;
@@ -187,6 +219,8 @@ private:
   /** The latest invite batch; an older one finishing does not end the current send. */
   uint64_t invite_batch_ = 0;
   int group_roster_count_ = 0;
+  /** Add members was opened from the member list (its Cancel / Invite go back there), not over the group info. */
+  bool add_returns_to_list_ = true;
   std::unordered_map<std::string, GroupMemberRow> member_rows_;
 
   static PeoplePickerController* installed_instance_;

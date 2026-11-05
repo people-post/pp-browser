@@ -58,6 +58,8 @@ struct CallScreen {
   bool charge_enabled = false;
   /** Answering: answered with video (the camera comes on once connected). */
   bool answered_video = false;
+  /** Ringing / Answering: a group's call (the phone ring shows the group, and who started it). */
+  bool ring_group = false;
 
   // InCall
   std::string call_id;
@@ -67,6 +69,10 @@ struct CallScreen {
   std::vector<Member> members;
   /** The 1:1 peer. */
   std::string peer_identity;
+  /** This device started the call (the session's initiator is the local account); else it answered or joined. */
+  bool placed_here = false;
+  /** This device's chat the call belongs to (the group's, or the DM): local only; the phone page names the group. */
+  std::string thread_id;
   bool muted = false;
   bool show_speaker = false;
   bool speaker_on = false;
@@ -99,6 +105,12 @@ const char* CallScreenStatusName(CallScreen::Status status);
  * an activity, reconnecting, sending only, couldn't connect, disconnected, or a call not yet live.
  */
 bool ShowsParticipantCount(const CallScreen& screen);
+
+/**
+ * The labelled Cancel button: an outgoing call still ringing the others (on screen, never live, still "Calling").
+ * Its tap is the End button's (CallPresenter::Leave): with nobody in yet the call ends for everyone it rang.
+ */
+bool ShowsCancelCall(const CallScreen& screen);
 
 /**
  * The camera button: needs a video encoder and a path that allows video — but never hides while the

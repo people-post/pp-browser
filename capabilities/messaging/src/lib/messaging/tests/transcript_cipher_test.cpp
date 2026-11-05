@@ -1,6 +1,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "lib/messaging/TranscriptBodyCodec.h"
 #include "lib/messaging/TranscriptCipher.h"
+#include "lib/messaging/GroupMembershipCodec.h"
 
 #include <gtest/gtest.h>
 
@@ -48,6 +49,49 @@ TEST(TranscriptBodyCodecTest, MessageWithoutAiImageStaysWithout) {
   auto decoded = TranscriptBodyCodec::Decode(*encoded);
   ASSERT_TRUE(decoded);
   EXPECT_FALSE(decoded->ai_image_json);
+}
+
+TEST(TranscriptBodyCodecTest, AnAnsweredInvitationStaysAnsweredWhenReadBack) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.2): after Accept / Decline the card came back, whole width, no buttons.
+  GroupInvitePayload invite;
+  invite.group_id = "group:hike";
+  invite.group_title = "Hike";
+  invite.inviter_identity = "acct-ann";
+  invite.invitee_identity = "acct-me";
+  invite.invite_nonce = "n1";
+  const auto detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+  auto message = GroupMembershipCodec::BuildSystemMessage("t", GroupMembershipControlType::GroupInvite,
+                                                          "Group invitation: Hike", *detail, "acct-ann");
+  ASSERT_TRUE(message);
+  message->chat_actions = GroupMembershipCodec::BuildInviteChatActions(invite);
+  GroupMembershipCodec::ApplyInviteResolution(*message, InviteStatus::Declined, "You declined Hike");
+
+  auto body = TranscriptBodyCodec::FromMessage(*message);
+  ASSERT_TRUE(body);
+  auto encoded = TranscriptBodyCodec::Encode(*body);
+  ASSERT_TRUE(encoded);
+  auto decoded = TranscriptBodyCodec::Decode(*encoded);
+  ASSERT_TRUE(decoded);
+  ThreadMessage read;
+  read.id = message->id;
+  read.thread_id = "t";
+  ASSERT_TRUE(TranscriptBodyCodec::ApplyToMessage(*decoded, read));
+  EXPECT_EQ(read.content_type, ChatContentType::System);
+  EXPECT_EQ(GroupMembershipCodec::InviteResolutionFromMessage(read), InviteStatus::Declined);
+  ASSERT_TRUE(GroupMembershipCodec::DecodeInviteFromMessage(read)) << "the invitation's detail is still there";
+  EXPECT_EQ(GroupMembershipCodec::DecodeInviteFromMessage(read)->group_title, "Hike");
+  EXPECT_TRUE(read.chat_actions.empty());
+
+  // A system message nobody answered reads back without one.
+  auto pending = GroupMembershipCodec::BuildSystemMessage("t", GroupMembershipControlType::GroupInvite,
+                                                          "Group invitation: Hike", *detail, "acct-ann");
+  ASSERT_TRUE(pending);
+  auto pending_body = TranscriptBodyCodec::FromMessage(*pending);
+  ASSERT_TRUE(pending_body);
+  ThreadMessage pending_read;
+  ASSERT_TRUE(TranscriptBodyCodec::ApplyToMessage(*pending_body, pending_read));
+  EXPECT_FALSE(GroupMembershipCodec::InviteResolutionFromMessage(pending_read));
 }
 
 TEST(TranscriptCipherTest, MessageBodyRoundTripAndAadBind) {

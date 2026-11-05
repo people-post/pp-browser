@@ -1,0 +1,12 @@
+<!-- Me > Security > Move to a new device: the transfer code (inline on desktop, its own page on phones;
+     there the page title says what the heading says). -->
+<div class="stack settings-actions settings-transfer">
+  <p class="text group-head settings-desktop-only">{{i18n:settings.security.link_device}}</p>
+  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.help}}</p>
+  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
+  <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.reset_hint}}</p>
+  <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main"
+          data-event-click="export_link_device()">
+    {{i18n:settings.security.link_device.export}}
+  </button>
+</div>

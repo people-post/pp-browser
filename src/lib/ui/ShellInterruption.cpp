@@ -21,9 +21,6 @@ InterruptionKind ShellInterruption::Top(const ShellState& state) {
   if (!state.transient_stack.empty()) {
     return InterruptionKind::Transient;
   }
-  if (state.account_sheet_open) {
-    return InterruptionKind::AccountSheet;
-  }
   if (state.layout_mode == LayoutMode::Compact && state.auxiliary_open) {
     return InterruptionKind::AuxiliarySheet;
   }
@@ -48,8 +45,6 @@ CompactChromeFrostSurface ShellInterruption::ResolveFrostSurface(const ShellStat
     return CompactChromeFrostSurface::None;
   case InterruptionKind::Transient:
     return CompactChromeFrostSurface::TransientHeader;
-  case InterruptionKind::AccountSheet:
-    return CompactChromeFrostSurface::AccountSheetHeader;
   case InterruptionKind::AuxiliarySheet:
     return CompactChromeFrostSurface::AuxiliarySheetChrome;
   case InterruptionKind::CompactChatOverlay:
@@ -80,9 +75,6 @@ bool ShellInterruption::DismissTop(ShellState& state) {
   case InterruptionKind::Transient:
     state.transient_stack.pop_back();
     state.transient_active = !state.transient_stack.empty();
-    return true;
-  case InterruptionKind::AccountSheet:
-    state.account_sheet_open = false;
     return true;
   case InterruptionKind::AuxiliarySheet:
     state.auxiliary_open = false;

@@ -5,6 +5,7 @@
 #include "common/directory/PeopleDiscoveryBlocks.h"
 #include "common/ValueJson.h"
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <stdexcept>
@@ -37,6 +38,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
 #include "lib/messaging/AttachmentCache.h"
@@ -56,6 +58,7 @@
 #include "foundation/error/AppError.h"
 #include "lib/net/BriefGuestLlmClient.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 
 namespace pbr {
 
@@ -322,12 +325,16 @@ void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id,
 }
 
 void AgentTurnController::OnAttachAiImage() {
-  NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
-    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+  PickAiImage([this](std::string path) { StartAiImagePrepare(std::move(path)); });
+}
+
+void AgentTurnController::PickAiImage(std::function<void(std::string path)> picked) {
+  NativeFileDialogCallback on_picked = [picked = std::move(picked)](std::vector<std::string> paths) {
+    AppRuntime::PostUI([picked, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         return;
       }
-      StartAiImagePrepare(std::move(paths.front()));
+      picked(std::move(paths.front()));
     });
   };
   if (!Platform::IsMobile()) {
@@ -337,6 +344,59 @@ void AgentTurnController::OnAttachAiImage() {
   // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
   host_.ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
                    [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+}
+
+void AgentTurnController::CaptureAiPhoto(std::function<void(std::string path)> picked) {
+  ShowCameraCapture(Backend::GetWindow(), CameraCaptureKind::Photo, 0, 0,
+                    [picked = std::move(picked)](const CameraCaptureOutcome outcome, std::vector<std::string> paths) {
+                      AppRuntime::PostUI([picked, outcome, paths = std::move(paths)]() mutable {
+                        if (outcome == CameraCaptureOutcome::Picked && !paths.empty()) {
+                          picked(std::move(paths.front()));
+                        } else if (outcome == CameraCaptureOutcome::Unavailable ||
+                                   outcome == CameraCaptureOutcome::Unprocessable) {
+                          UserFeedback::Fail(Tr("chat.attach.camera_unavailable"));
+                        }
+                      });
+                    });
+}
+
+void AgentTurnController::PrepareAiImage(std::string path, std::function<void(Roe<PendingAiImage>)> done) {
+  const std::string profile_dir = host_.Facade() ? host_.Facade()->ProfileDataDir() : std::string();
+  AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, done = std::move(done)]() mutable {
+    Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    ReleasePickedFile(path); // the draft keeps its own copy
+    AppRuntime::PostUI([this, result = std::move(result), done = std::move(done)]() mutable {
+      if (!result) {
+        // Sizes and kinds only in the log: no file name, no path.
+        log().warning << "AI image not prepared: kind=" << result.error().code;
+        done(result.error());
+        return;
+      }
+      log().info << "AI image ready: " << result->image.data.size() << " bytes";
+      done(PendingAiImage{.image = std::move(result->image),
+                          .name = {},
+                          .file_path = std::move(result->file_path),
+                          .width = result->width,
+                          .height = result->height});
+    });
+  });
+}
+
+void AgentTurnController::DropAiImage(const PendingAiImage& image) {
+  RemoveSessionFile(image.file_path);
+}
+
+AgentTurnController::ImageSend AgentTurnController::SendAiImageTo(const std::string& thread_id,
+                                                                  const std::string& text, PendingAiImage image) {
+  if (thread_id.empty() || !host_.MessagingIsReady() || !host_.Facade() || !agent_ports_.submit_image_to_thread ||
+      !AgentCloudReady()) {
+    return ImageSend::Unavailable;
+  }
+  if (const TurnStart start = CanStart(thread_id); start != TurnStart::Yes) {
+    return start == TurnStart::Full ? ImageSend::Full : ImageSend::BusyHere;
+  }
+  StartPreparedImageSend(thread_id, text, std::move(image));
+  return ImageSend::Started;
 }
 
 void AgentTurnController::StartAiImagePrepare(std::string path) {
@@ -489,8 +549,12 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   chat_.image_thumb_ready = false;
   chat_.image_thumb_src = "";
   chat_.image_draft_name = "";
+  StartPreparedImageSend(host_.ActiveThreadId(), text, std::move(image));
+  return true;
+}
 
-  const std::string thread_id = host_.ActiveThreadId();
+void AgentTurnController::StartPreparedImageSend(const std::string& thread_id, const std::string& text,
+                                                 PendingAiImage image) {
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
   const std::string message_id = util::GenerateUuid();
   widgets_.ExpireOpenForms();
@@ -523,7 +587,6 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
       SubmitStoredImageQuestion(thread_id, text, question, message_id, std::move(image), std::move(ai_image_json));
     });
   });
-  return true;
 }
 
 void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id, const std::string& text,
@@ -570,13 +633,21 @@ void AgentTurnController::SubmitStoredImageQuestion(const std::string& thread_id
   UserFeedback::Fail(Tr(outcome == SubmitOutcome::Full ? "chat.ai_queue.image_busy" : "chat.ai_queue.image_busy_here"));
 }
 
-void AgentTurnController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
+void AgentTurnController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows,
+                                              const std::string& thread_id) const {
   // Only the user's own questions in an AI thread carry the marker; a peer's or the AI's text that
   // happens to start with it is left alone.
   if (!host_.Facade()) {
     return;
   }
-  auto thread = host_.Facade()->GetActiveThread();
+  std::optional<Thread> thread;
+  if (thread_id.empty()) {
+    if (auto active = host_.Facade()->GetActiveThread()) {
+      thread = *active;
+    }
+  } else if (auto found = host_.Facade()->GetThread(thread_id); found && *found) {
+    thread = **found;
+  }
   if (!thread || thread->kind != ThreadKind::Ai) {
     return;
   }
@@ -609,6 +680,9 @@ void AgentTurnController::OnAssistantDelta(const AgentEvent& event) {
     return;
   }
   const std::string thread_id = EventThread(event); // a Home turn streams into the chat it shows in
+  if (thread_id.empty()) {
+    return; // a Home turn with no chat to show in: never the open one
+  }
   const auto it = streaming_.find(thread_id);
   if (it == streaming_.end() || it->second.row_id != "streaming-" + event.entry_id) {
     ClearStreamingRow(thread_id);
@@ -693,6 +767,36 @@ void AgentTurnController::SubmitHomeQuestion(const std::string& thread_id, const
   }
   MarkAgentBusy(thread_id);     // "thinking" shows in the chat it was typed in
   home_turn_thread_ = thread_id; // but it runs in the Home session: stop and recovery ask that one
+  NoteHomeTurnStarted();
+}
+
+void AgentTurnController::NoteHomeTurnStarted() {
+  if (agent_ports_.home_turn) {
+    home_turn_ = std::max(home_turn_, agent_ports_.home_turn());
+  }
+}
+
+SubmitOutcome AgentTurnController::SubmitAskAiOnce(const std::string& text) {
+  if (!agent_ports_.submit_home_explanation) {
+    return SubmitOutcome::Ignored;
+  }
+  const SubmitOutcome outcome = agent_ports_.submit_home_explanation(text);
+  if (outcome == SubmitOutcome::Started) {
+    MarkAgentBusy(kAskAiOnceThread);
+    home_turn_thread_ = kAskAiOnceThread; // the Home session's events belong to the panel, not to a chat
+    NoteHomeTurnStarted();                // and a stopped earlier one-off's late events are dropped
+  }
+  return outcome;
+}
+
+std::string AgentTurnController::StreamingText(const std::string& thread_id) const {
+  const auto it = streaming_.find(thread_id);
+  return it == streaming_.end() ? std::string() : it->second.text;
+}
+
+std::string AgentTurnController::QueuedText(const std::string& thread_id) const {
+  const QueuedAgentSend* queued = queue_.Find(thread_id);
+  return queued ? queued->text : std::string();
 }
 
 TurnStart AgentTurnController::CanStart(const std::string& thread_id) const {
@@ -979,6 +1083,10 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
                                     const std::string& finish_reason, const std::string& thread_id,
                                     ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode,
                                     const std::vector<BriefAiSource>& sources) {
+  if (thread_id.empty()) {
+    log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
+    return;
+  }
   const bool markdown = render_mode == RenderMode::Markdown;
   if (!from_llm && !markdown) {
     response_goal = InferResponseGoalFromBlocksJson(raw_output);
@@ -1006,8 +1114,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
       log().warning << "LLM finish_reason: " << finish_reason;
     }
     if (host_.MessagingIsReady()) {
-      const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
-      auto found = host_.Facade()->GetMessage(active_thread, entry_id);
+      auto found = host_.Facade()->GetMessage(thread_id, entry_id);
       if (found && found->has_value()) {
         ThreadMessage message = **found;
         message.content_rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", parsed.error) +
@@ -1034,7 +1141,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
     // Working-set / bubble buttons must key send_chat_action to the ThreadMessage that
     // actually stores chat_actions — not a stale agent entry id when we append a new row.
     std::string action_entry_id = entry_id;
-    const std::string active_thread = thread_id.empty() ? host_.ActiveThreadId() : thread_id;
+    const std::string& active_thread = thread_id;
     bool message_exists = false;
     if (host_.MessagingIsReady() && !action_entry_id.empty()) {
       auto found = host_.Facade()->GetMessage(active_thread, action_entry_id);
@@ -1132,14 +1239,15 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 
   // An answer that arrived in a chat the user is not looking at shows as unread in the chat list (Kenneth
   // 2026-10-28: "在那个对话框列表那显示……一或者是二这样的一个提醒"). The open chat is never counted.
-  if (!thread_id.empty() && host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id)) {
+  if (host_.Facade() && !ChatPageShows(host_.ChromeSnapshot(), host_.ActiveThreadId(), thread_id) &&
+      !host_.AskAiPanelShows(thread_id)) {
     host_.Facade()->IncrementUnread(thread_id);
   }
   host_.SyncDisplayFromThread();
   host_.SyncShellSessions();
   chat_.status = "";
   if (!use_llm_) {
-    MarkAgentIdle(thread_id.empty() ? host_.ActiveThreadId() : thread_id); // the mock has no session to say it ended
+    MarkAgentIdle(thread_id); // the mock has no session to say it ended
     DrainQueue();
   } else {
     RefreshBusyForActiveThread(); // the session's LoadingChanged(false) ends "busy"
@@ -1149,6 +1257,14 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
 }
 
 void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
+  if (event.thread_id.empty() && event.turn != 0) {
+    // A Home event carries no thread: its turn tells a stopped turn's late answer or end from the turn now running.
+    if (event.turn < home_turn_) {
+      log().info << "Late event of a stopped Home turn dropped (type " << static_cast<int>(event.type) << ")";
+      return;
+    }
+    home_turn_ = event.turn; // a Home turn started elsewhere (a card, a button) is newer
+  }
   // An image turn rejected by the server (413 / 400) is worded here, not with the server's text.
   const char* image_error_key = AiImageErrorKindKey(event.error_kind);
   const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
@@ -1197,12 +1313,23 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
   case AgentEventType::AssistantDelta:
     OnAssistantDelta(event);
     break;
-  case AgentEventType::AssistantReady:
-    ClearStreamingRow(EventThread(event));
-    FinishAssistantReply(event.entry_id, event.text, event.from_model,
-                         event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
-                         event.shared_ai_mode, event.sources);
+  case AgentEventType::AssistantReady: {
+    const std::string thread = EventThread(event);
+    ClearStreamingRow(thread);
+    if (thread == kAskAiOnceThread) {
+      host_.OnAskAiOnceReply(event); // the panel's one-off answer: shown there, stored nowhere
+      break;
+    }
+    if (thread.empty()) {
+      // A Home answer whose turn the UI no longer knows: storing it in the open chat could put it in a chat with a
+      // person. Dropped, said in the log.
+      log().warning << "AI answer with no chat to go in dropped (never stored in the open chat)";
+      break;
+    }
+    FinishAssistantReply(event.entry_id, event.text, event.from_model, event.finish_reason, thread,
+                         event.response_goal, event.render_mode, event.shared_ai_mode, event.sources);
     break;
+  }
   case AgentEventType::ApprovalClosed:
     CloseApprovalCard(event.thread_id, event.entry_id, event.approval_outcome, event.approval_id);
     break;
@@ -1236,7 +1363,9 @@ void AgentTurnController::RefreshLlmSetupBanner() {
   const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
   if (!use_llm_) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
+    if (MockReplyBannerVisible(kUiDemoBuild)) {
+      UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
+    }
     return;
   }
   if (ResolvePreset(config) == "brief") {

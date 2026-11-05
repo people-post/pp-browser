@@ -1,0 +1,13 @@
+<div class="qr-page" data-model="contacts">
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:contacts.my_qr}}</p>
+  </div>
+  <div class="qr-body">
+    <div class="qr-card">
+      <svg class="me-invite-qr-code qr-code" viewBox="0 0 100 100" width="240" height="240"
+           data-rml="my_qr_svg_rml"></svg>
+    </div>
+    <p class="qr-name">{{my_name}}</p>
+    <p class="qr-hint">{{i18n:contacts.my_qr_hint}}</p>
+  </div>
+</div>

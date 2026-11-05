@@ -29,6 +29,11 @@ TEST(CallMediaErrorTextTest, DialFailures) {
   EXPECT_STREQ(CallMediaErrorUserKey("dial failed [link: amp link: dial aborted]"), "call.error.dial_failed");
 }
 
+TEST(CallMediaErrorTextTest, MeshConnectTimeoutBecomesPlainConnectFailed) {
+  // SurfaceConnectFailed before the call ever connected: a plain "try again" sentence, not the raw phrase.
+  EXPECT_STREQ(CallMediaErrorUserKey("mesh connect timeout"), "call.error.connect_failed");
+}
+
 TEST(CallMediaErrorTextTest, UnknownTransportTextGetsTheGenericSentence) {
   EXPECT_STREQ(CallMediaErrorUserKey("amp circuit-relay: channel open failed"), "call.error.media_failed");
   EXPECT_STREQ(CallMediaErrorUserKey("something odd [relay: refused]"), "call.error.media_failed");

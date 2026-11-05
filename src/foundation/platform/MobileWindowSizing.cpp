@@ -21,4 +21,12 @@ void ResolveMobileWindowSize(int& width, int& height) {
   }
 }
 
+float PrimaryDisplayRefreshHz() {
+  if (!SDL_WasInit(SDL_INIT_VIDEO)) {
+    return 0.0f;
+  }
+  const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
+  return mode ? mode->refresh_rate : 0.0f;
+}
+
 } // namespace pbr

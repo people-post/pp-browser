@@ -35,6 +35,9 @@ struct TranscriptAttachmentView {
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
    */
   bool inline_image_ok = true;
+  /** A picture's size in pixels the right way up (its EXIF orientation applied); 0 when unknown. */
+  int image_width = 0;
+  int image_height = 0;
   /**
    * A file above the direct size: stored encrypted, shown as a file row (a video: a placeholder with its size)
    * with Open until an Open has made its view for this session. `local_path` is that view, empty before.
@@ -55,6 +58,10 @@ struct VoiceBubbleState {
 /** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
 struct TranscriptFacts {
   std::function<std::string(const std::string& contact_id)> sender_label;
+  /** Local file of a sender's cached profile photo; empty: none cached, the letter avatar shows. */
+  std::function<std::string(const std::string& contact_id)> sender_icon;
+  /** The id a sender's letter-avatar colour is seeded with (the person's account id when known). */
+  std::function<std::string(const std::string& contact_id)> sender_stable_id;
   /** A feature's control message line, names included; none: the message's own text. */
   std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
   std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
@@ -93,6 +100,8 @@ public:
   Roe<Thread> OpenThread(const std::string& thread_id);
   void ClearActiveThread();
   Roe<Thread> CreateNewAiThread();
+  /** A new AI thread, stored but not opened (the open chat stays as it is). */
+  Roe<Thread> CreateAiThread();
   Roe<Thread> CreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
@@ -168,8 +177,13 @@ private:
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
-  /** Pixel-cap verdict per view file, so a render does not re-read the head of every picture. */
-  mutable std::unordered_map<std::string, bool> inline_image_ok_;
+  /** Pixel-cap verdict and upright size per view file, so a render does not re-read the head of every picture. */
+  struct InlineImageFacts {
+    bool ok = false;
+    int width = 0;
+    int height = 0;
+  };
+  mutable std::unordered_map<std::string, InlineImageFacts> inline_image_ok_;
   std::string active_thread_id_;
   IThreadMentionsStore* mentions_ = nullptr;
   ThreadChangedCallback on_thread_changed_;

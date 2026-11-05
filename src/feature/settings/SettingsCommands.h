@@ -10,6 +10,7 @@
 #include "lib/net/ClientCompat.h"
 #include "common/Error.h"
 #include "feature/settings/SettingsPortsViews.h"
+#include "feature/settings/StorageManagerPorts.h"
 
 #include <functional>
 #include <optional>
@@ -37,8 +38,6 @@ struct SettingsCommands {
   std::function<Roe<void>()> clear_profile_icon;
   std::function<Roe<BlobQuotaRecoveryPlan>(const Error& quota_error)> plan_relay_quota_recovery;
   BlobQuotaFreeSlot delete_relay_file;
-  std::function<void()> drain_pending_attachment_media;
-  std::function<Roe<void>()> clear_downloaded_attachments;
   /** CAS library (P3): filter all|private|public|cache. */
   std::function<Roe<std::vector<CasLibraryItemView>>(std::string filter)> list_cas_library;
   std::function<Roe<void>(const std::string& private_content_id_hex)> share_cas_publicly;
@@ -102,10 +101,23 @@ struct SettingsCommands {
   std::function<std::optional<ClientCompatSupport>()> load_support_discovery;
   /** Ensure PP Support contact + open Direct e2e_public chat; `prefilled_text` (may be empty) goes in the composer, unsent. */
   std::function<Roe<void>(const std::string& prefilled_text)> open_support_chat;
+  /** Opens the PP 客服 chat and sends `question` in it, as if typed (a settings "?"; the answer comes in that chat). */
+  std::function<Roe<void>(const std::string& question)> ask_support;
+  /**
+   * Phones: the ask-AI panel opens over the setting with `question` asked as a one-off (DEV/PLAN-ui-batch5-ask-ai.md
+   * 5a). False when there is no panel (the desktop): the settings "?" then asks PP 客服 (ask_support) as before.
+   */
+  std::function<bool(const std::string& question)> ask_ai_once;
+  /** How many saved contacts this device blocked (Security's "Blocked" row). */
+  std::function<int()> blocked_count;
+  /** Phones: the list of blocked people, pushed over Settings (each with Unblock). */
+  std::function<void()> open_blocked_people;
   /** Send diagnostics (Security): bundles and uploads on a worker; `on_done` runs on UI. One at a time. */
   std::function<void(std::function<void(DiagnosticsUploadResult)> on_done)> send_diagnostics;
   /** Reference of the last successful send (`diagnostics/last_upload.json`); "" when none. */
   std::function<std::string()> last_diagnostics_id;
+  /** Me → Storage → Manage storage. */
+  StorageManagerPorts storage;
 };
 
 } // namespace pbr

@@ -40,6 +40,11 @@ const char* CallMediaErrorUserKey(const std::string& technical) {
   if (Has(technical, "no path within the reconnect window")) {
     return "call.error.reconnect_failed";
   }
+  // Giving up before the call ever connected (CallDirectPath SurfaceConnectFailed, e.g. "mesh connect timeout"):
+  // the user sees plain words, the raw reason stays in the log (B-2026-11-05, Kenneth phone test).
+  if (Has(technical, "mesh connect")) {
+    return "call.error.connect_failed";
+  }
   if (!LooksTechnical(technical)) {
     return nullptr;
   }

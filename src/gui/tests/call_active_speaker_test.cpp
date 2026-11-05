@@ -36,5 +36,22 @@ TEST(CallActiveSpeakerTest, TheSpotlightDoesNotFlickerBetweenTwoTalking) {
   EXPECT_EQ(Feed(speaker, {{"22", 0.5f}, {"33", 0.01f}}, now, 3000), "22") << "after the hold";
 }
 
+// The speaking rings: whoever reached kSpeakingLevel within kSpeakingRingMs, a cough included; the ring outlasts a
+// short pause between words and goes once quiet. The spotlight decision is not touched by it.
+TEST(CallActiveSpeakerTest, SpeakingListsWhoWasHeardJustNow) {
+  CallActiveSpeaker speaker;
+  int64_t now = 1000;
+  EXPECT_TRUE(speaker.Speaking(now).empty());
+  Feed(speaker, {{"33", 0.3f}, {"22", 0.3f}, {"44", 0.01f}}, now, 100);
+  EXPECT_EQ(speaker.Speaking(now), (std::vector<std::string>{"22", "33"})) << "sorted; 44 is quiet";
+  EXPECT_EQ(speaker.Current(), "") << "100 ms does not take the spotlight";
+  Feed(speaker, {{"33", 0.01f}, {"22", 0.3f}}, now, CallActiveSpeaker::kSpeakingRingMs - 100);
+  EXPECT_EQ(speaker.Speaking(now), (std::vector<std::string>{"22", "33"})) << "33 paused briefly";
+  Feed(speaker, {{"33", 0.01f}, {"22", 0.3f}}, now, 200);
+  EXPECT_EQ(speaker.Speaking(now), (std::vector<std::string>{"22"}));
+  speaker.Reset();
+  EXPECT_TRUE(speaker.Speaking(now).empty());
+}
+
 } // namespace
 } // namespace pbr

@@ -18,8 +18,8 @@ AttachmentDownloadPolicy AttachmentDownloadPolicyFromString(const std::string& v
  * `network_allows_all_auto`: the current network is one the person ticked for "download everything"; on any
  * other network AlwaysAuto behaves as Smart.
  */
-bool ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy policy, uint64_t byte_length, bool backlog_drain,
-                                 uint64_t smart_max_bytes, bool network_allows_all_auto);
+bool ShouldAutoEnqueueAttachment(AttachmentDownloadPolicy policy, uint64_t byte_length, uint64_t smart_max_bytes,
+                                 bool network_allows_all_auto);
 
 /** AlwaysAuto with neither network ticked is Smart (it could never download more than Smart). */
 AttachmentDownloadPolicy EffectiveAttachmentDownloadPolicy(AttachmentDownloadPolicy policy, bool auto_on_wifi,

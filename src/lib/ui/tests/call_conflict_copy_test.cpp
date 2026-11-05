@@ -27,8 +27,8 @@ TEST(CallConflictCopyTest, NoConflictUsesAcceptDecline) {
 TEST(CallConflictCopyTest, SamePeerCallbackHint) {
   LoadLocales();
   const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, true, "Alice", "Alice");
-  EXPECT_EQ(copy.eyebrow, "You're already calling");
-  EXPECT_EQ(copy.accept_label, "End & Accept");
+  EXPECT_EQ(copy.eyebrow, "You're already in a call");
+  EXPECT_EQ(copy.accept_label, "End & accept");
   EXPECT_EQ(copy.decline_label, "Ignore");
   EXPECT_EQ(copy.hint, "Alice is calling you back. Answering ends your outgoing call.");
 }
@@ -36,7 +36,7 @@ TEST(CallConflictCopyTest, SamePeerCallbackHint) {
 TEST(CallConflictCopyTest, DifferentPeerEndsCurrentCall) {
   LoadLocales();
   const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, false, "Carol", "Bob");
-  EXPECT_EQ(copy.accept_label, "End & Accept");
+  EXPECT_EQ(copy.accept_label, "End & accept");
   EXPECT_EQ(copy.decline_label, "Ignore");
   EXPECT_EQ(copy.hint, "Answering will end your current call with Bob.");
 }

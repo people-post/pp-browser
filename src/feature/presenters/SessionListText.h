@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/CivilTime.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -164,13 +165,33 @@ std::string FindChipThreadId(const Threads& threads, std::string_view chip_messa
 }
 
 /**
- * When a session was last active, for the list row: date and time within this year ("10/3 14:05"),
- * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
+ * When a session was last active, for the list row: the time today ("14:05"), "Yesterday", the weekday name for
+ * 2-6 days ago ("Wednesday"), the date earlier this year ("10/3"), the full date for earlier years ("2025/12/31").
+ * Empty for an unset timestamp.
  */
 inline std::string SessionDateLabel(const std::tm& when, const std::tm& now) {
   char buf[64];
-  if (when.tm_year == now.tm_year) {
-    std::snprintf(buf, sizeof(buf), "%d/%d %02d:%02d", when.tm_mon + 1, when.tm_mday, when.tm_hour, when.tm_min);
+  // Whole days between the two dates, and the weekday, from noon copies (tm_wday / tm_yday of the inputs may be unset).
+  auto noon = [](std::tm t) {
+    t.tm_hour = 12;
+    t.tm_min = 0;
+    t.tm_sec = 0;
+    t.tm_isdst = -1;
+    const std::time_t secs = std::mktime(&t);
+    return std::pair<std::time_t, int>(secs, t.tm_wday);
+  };
+  const auto [when_noon, when_wday] = noon(when);
+  const auto [now_noon, now_wday] = noon(now);
+  (void)now_wday;
+  const long days = static_cast<long>((now_noon - when_noon + 43200) / 86400);
+  if (when.tm_year == now.tm_year && when.tm_yday == now.tm_yday) {
+    std::snprintf(buf, sizeof(buf), "%02d:%02d", when.tm_hour, when.tm_min);
+  } else if (days == 1) {
+    return Tr("chat.date.yesterday");
+  } else if (days >= 2 && days <= 6) {
+    return Tr("home.weekday." + std::to_string(when_wday));
+  } else if (when.tm_year == now.tm_year) {
+    std::snprintf(buf, sizeof(buf), "%d/%d", when.tm_mon + 1, when.tm_mday);
   } else {
     std::snprintf(buf, sizeof(buf), "%d/%d/%d", when.tm_year + 1900, when.tm_mon + 1, when.tm_mday);
   }

@@ -84,7 +84,7 @@ void SettingsOwnDevices::Remove(const int index) {
   ConfirmChange(index, Tr("settings.security.devices.remove_confirm_title"),
                 Tr("settings.security.devices.remove_confirm_message"),
                 Tr("settings.security.devices.remove_confirm_ok"), commands_.remove_own_device,
-                Tr("settings.security.devices.removed"));
+                Tr("settings.security.devices.removed"), true);
 }
 
 void SettingsOwnDevices::MakeMain(const int index) {
@@ -97,7 +97,7 @@ void SettingsOwnDevices::MakeMain(const int index) {
 void SettingsOwnDevices::ConfirmChange(const int index, const std::string& title, const std::string& message,
                                        const std::string& ok_label,
                                        std::function<Roe<void>(const std::string& peer_id)> change,
-                                       const std::string& done) {
+                                       const std::string& done, const bool destructive) {
   const OwnDeviceView* device = ManageableAt(index);
   if (!device || !feedback_.show_confirm) {
     return;
@@ -106,7 +106,9 @@ void SettingsOwnDevices::ConfirmChange(const int index, const std::string& title
     report_failure_(Error("Messaging is not ready"));
     return;
   }
-  feedback_.show_confirm(
+  const auto& show_confirm = destructive && feedback_.show_confirm_destructive ? feedback_.show_confirm_destructive
+                                                                                 : feedback_.show_confirm;
+  show_confirm(
       title, message,
       [this, peer_id = device->peer_id, change = std::move(change), done](const bool ok) {
         if (!ok) {

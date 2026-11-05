@@ -84,6 +84,20 @@ std::string ProfileIconCacheKeyForContact(const Contact& contact) {
   return {};
 }
 
+std::string ProfileIconLocalPathForIdentity(const std::string& profile_dir, const IContactBook& contacts,
+                                            const std::string& identity) {
+  if (identity.empty()) {
+    return {};
+  }
+  for (const mesh::ContactIdKind kind : {mesh::ContactIdKind::Account, mesh::ContactIdKind::RelayUser}) {
+    if (auto found = contacts.FindByIdentity(identity, kind); found && found->has_value()) {
+      const std::string key = ProfileIconCacheKeyForContact(**found);
+      return key.empty() ? std::string() : ProfileIconLocalPath(profile_dir, key);
+    }
+  }
+  return ProfileIconLocalPath(profile_dir, SanitizeProfileIconCacheKey(identity));
+}
+
 std::string ProfileIconCacheRoot(const std::string& profile_dir, const std::string& cache_key) {
   const std::string key = cache_key.empty() ? kSelfCacheKey : cache_key;
   return (std::filesystem::path(profile_dir) / "cache" / "icons" / key).string();

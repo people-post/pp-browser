@@ -107,15 +107,20 @@ private:
 class InMemoryThreadMentionsStore : public IThreadMentionsStore {
 public:
   Roe<void> Add(const std::string& thread_id, const std::string& message_id, int64_t created_at) const override;
+  Roe<void> MarkThreadRead(const std::string& thread_id) const override;
   Roe<void> DropThread(const std::string& thread_id) const override;
   Roe<void> DropMessage(const std::string& thread_id, const std::string& message_id) const override;
   Roe<std::set<std::string>> Threads() const override;
+  Roe<std::map<std::string, int>> Counts() const override;
   Roe<std::optional<std::string>> Oldest(const std::string& thread_id) const override;
+  Roe<std::optional<Mention>> Latest() const override;
 
 private:
   mutable std::mutex mutex_;
   /** Per thread: (created_at, message id), oldest first. */
   mutable std::map<std::string, std::set<std::pair<int64_t, std::string>>> mentions_;
+  /** Per thread: its newest read mention (as SQLite's thread_mentions_read). */
+  mutable std::map<std::string, std::pair<int64_t, std::string>> read_;
 };
 
 } // namespace pbr

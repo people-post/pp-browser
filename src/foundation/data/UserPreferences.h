@@ -45,6 +45,8 @@ struct ProfilePreferences {
   std::string language = "system";
   /** True when vault was created with kDefaultProfilePin and not yet changed. */
   bool pin_is_default = false;
+  /** The user has opened their recovery phrase on Me → Security once (Home's Security widget; device-only). */
+  bool recovery_phrase_seen = false;
   /** When true, renew network registration near/past expiry after unlock. */
   bool auto_renew_registration = true;
   /** P005 (amended by P010) — message banners; push stays registered and calls ring either way. */
@@ -76,6 +78,19 @@ struct ProfilePreferences {
   bool show_advanced_settings = false;
   /** First-run wizard finished or skipped (or an account was brought over). */
   bool onboarding_completed = false;
+  /** The ask-AI panel's one-time privacy card was dismissed ("Got it"; DEV/PLAN-ui-batch5-ask-ai.md 5a). */
+  bool ai_panel_intro_seen = false;
+  /** Phone AI dot (DESIGN-pp-ui §8.14): Me → AI assistant → Show AI dot. */
+  bool ai_dot_shown = true;
+  /** Its look: `a` one eye, `b` two eyes (default), `c` cool, `d` plain. */
+  std::string ai_dot_look = "b";
+  /** Its size: `s` 52dp, `m` 64dp (default), `l` 76dp (Me → AI assistant → Assistant size). */
+  std::string ai_dot_size = "m";
+  /** Where it rests: the left or right edge, and how far down its band (0 top – 1000 bottom). */
+  bool ai_dot_left = false;
+  int ai_dot_y_permille = 600;
+  /** Tucked half off that edge (flung or dragged into it); stays tucked until dragged out. */
+  bool ai_dot_tucked = false;
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */
@@ -95,6 +110,18 @@ struct ProfilePreferences {
   ToolPermissionsPrefs tool_permissions;
   /** MRU emoji glyphs for the in-app picker (schema v12; cap enforced by EmojiCatalog). */
   std::vector<std::string> recent_emojis;
+  /**
+   * Phone Home widgets the user switched off in Edit Home (`messages`, `new_people`, `brief`); empty shows all.
+   * Device-only, like thread_local_prefs: never synced.
+   */
+  std::vector<std::string> home_widgets_hidden;
+  /** Their order on Home (Edit Home's drag handles); empty: the default order. Device-only, never synced. */
+  std::vector<std::string> home_widgets_order;
+  /**
+   * Contacts starred as favourites ("常用联系人"; contact ids, in the order they were starred): first in Home's
+   * Favourites widget and the New chat page's frequent group. Device-only, like thread_local_prefs: never synced.
+   */
+  std::vector<std::string> starred_contacts;
 };
 
 class UserPreferences {

@@ -48,6 +48,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   account_locker.json       # account locker sync state: highest_version_by_locker, contact_clock (plaintext; ACCOUNT_LOCKER.md § On disk)
   contacts.json             # address book (schema_version 2: local + remote + overrides{}; v2 = remarks that copied the nickname are cleared once on load); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
+  home_brief.json           # phone Home "Today's briefs": the article feed's general headlines (schema_version 1; fetched_at_ms,
+                            # feed cn|en, items[] of title / category (the site) / time_ms / url); plaintext, refetched when over
+                            # 3 h old while the widget is on; device-only, never synced; optional
   threads/
     profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4;
                             # restart_pending: a public session kept through Reset chats starts its next epoch on the next send — additive);
@@ -56,6 +59,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # that mentions this account, unread: a row on arrival (or when a held mention is decided, G015), all of a thread's
                             # rows dropped when it is opened, a message's row when that message is deleted (for everyone or here), the thread's
                             # when it goes; never written by history sync; per device. "You were mentioned" and jump-to-mention read it (additive)
+                            # thread_mentions_read (thread_id PRIMARY KEY, message_id, created_at) — the newest read mention of a thread: written
+                            # when the thread is opened (its newest unread row, if newer), dropped with that message or the thread / its
+                            # history; Home's Mentions widget reads the newest over both tables to stay up 7 days (additive)
                             # thread_local_prefs.mute_mentions INTEGER NOT NULL DEFAULT 0 (1: while the thread is muted, mentions are silent too;
                             # G015. Added on open when missing — user_version unchanged)
                             # thread_local_prefs.share_ai_confirmed INTEGER NOT NULL DEFAULT 0 (1: "don't ask again" before sharing this chat
@@ -182,6 +188,17 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `attachment_auto_on_wifi` | `preferences.json` | boolean, optional; default true. With `always_auto`: download everything on Wi-Fi |
 | `attachment_auto_on_cellular` | `preferences.json` | boolean, optional; default false. With `always_auto`: download everything on the mobile network (phones only) |
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
+| `ai_dot_shown` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default true. Me → AI assistant → Show AI dot (phones) |
+| `ai_dot_look` | `preferences.json` | string `a` (one eye) \| `b` (two eyes, default) \| `c` (cool) \| `d` (plain); anything else reads back as `b` |
+| `ai_dot_size` | `preferences.json` | string `s` (52dp) \| `m` (64dp, default) \| `l` (76dp); anything else reads back as `m`. Me → AI assistant → Assistant size (phones) |
+| `ai_dot_left` | `preferences.json` | boolean, optional; default false (right edge). The side the phone AI dot rests on, written after a drag |
+| `ai_dot_y_permille` | `preferences.json` | integer 0–1000, optional; default 600. How far down its band (under the navigation bar, above the tab bar) the dot rests |
+| `ai_dot_tucked` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. The phone AI dot is tucked half off its edge (flung or dragged into it) until dragged out. Device-only |
+| `ai_panel_intro_seen` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. The ask-AI panel's one-time privacy card was dismissed ("Got it"). Device-only |
+| `home_widgets_hidden` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (all shown). Phone Home widgets removed in Edit Home: `favorites` \| `recent_chats` \| `calls` \| `mentions` \| `new_people` \| `brief` \| `security`; unknown ids (the retired `messages`) are ignored. A removed widget is not drawn or computed: a removed `calls` does not read `call_sessions`, a removed `brief` is not fetched. Device-only, never synced (like `thread_local_prefs`) |
+| `home_widgets_order` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (the default order: `favorites`, `calls`, `mentions`, `recent_chats`, `brief`, `new_people`). The phone Home widgets' order, set with Edit Home's drag handles; unknown and repeated ids are dropped, a widget it lacks goes at the end. Device-only, never synced (like `thread_local_prefs`) |
+| `starred_contacts` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty. Contact ids starred on the contact page ("Add to Favorites"), in the order they were starred; empty ids and repeats are dropped on read, an id with no contact is ignored. They come first in the phone Home Favorites widget and the New chat page's frequent group. Device-only, never synced or sent (like `thread_local_prefs`) |
+| `recovery_phrase_seen` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Set once the user has opened their recovery phrase on Me → Security; the phone Home Security widget shows "Protected" after that, "Save recovery phrase" before. Never cleared by the app. Device-only, never synced or sent (like `thread_local_prefs`) |
 
 `tool_permissions` shape:
 

@@ -242,5 +242,62 @@ TEST_F(CallSessionQueriesTest, WhoMayJoinAGroupCallAndWhichCallIsJoinable) {
   EXPECT_FALSE(call_queries::JoinableGroupCall(*calls_, "group-1", "account:bob", now)) << "nobody left in it";
 }
 
+TEST(RecentCallsTest, NewestFirstAndAnIncomingCallNeverAnsweredIsMissed) {
+  InMemoryCallSessionStore calls;
+  const auto add = [&calls](const std::string& id, int64_t at, const std::string& initiator, CallSessionState state,
+                            std::optional<CallParticipantState> self, bool video = false, bool group = false) {
+    CallSession session;
+    session.call_id = id;
+    session.origin_thread_id = "thread-" + id;
+    session.initiator_identity = initiator;
+    session.state = state;
+    session.created_at = at;
+    session.media_mode = video ? CallMediaMode::Video : CallMediaMode::Voice;
+    if (group) {
+      session.origin_group_id = "group-1";
+    }
+    ASSERT_TRUE(calls.UpsertSession(session));
+    if (self) {
+      CallParticipant me;
+      me.call_id = id;
+      me.identity = "account:me";
+      me.state = *self;
+      ASSERT_TRUE(calls.UpsertParticipant(me));
+    }
+  };
+  add("rang-out", 10, "account:ann", CallSessionState::Ended, CallParticipantState::Ringing, true);
+  add("declined", 20, "account:ann", CallSessionState::Ended, CallParticipantState::Declined);
+  add("answered", 30, "account:ann", CallSessionState::Ended, CallParticipantState::Left);
+  add("mine", 40, "account:me", CallSessionState::Ended, CallParticipantState::Left);
+  add("group-missed", 50, "account:bob", CallSessionState::Ended, CallParticipantState::Missed, false, true);
+  add("ringing-now", 60, "account:ann", CallSessionState::Ringing, CallParticipantState::Ringing);
+  {
+    CallSession live;
+    live.call_id = "broadcast";
+    live.initiator_identity = "account:ann";
+    live.state = CallSessionState::Ended;
+    live.created_at = 70;
+    live.session_kind = CallSessionKind::Broadcast;
+    ASSERT_TRUE(calls.UpsertSession(live));
+  }
+
+  const std::vector<call_queries::RecentCall> recent = call_queries::RecentCalls(calls, "account:me", 20);
+  ASSERT_EQ(recent.size(), 6u) << "a live broadcast is no call";
+  EXPECT_EQ(recent[0].call_id, "ringing-now");
+  EXPECT_FALSE(recent[0].missed) << "still ringing: not missed yet";
+  EXPECT_EQ(recent[1].call_id, "group-missed");
+  EXPECT_TRUE(recent[1].missed);
+  EXPECT_TRUE(recent[1].group);
+  EXPECT_FALSE(recent[2].incoming) << "we started it";
+  EXPECT_FALSE(recent[2].missed);
+  EXPECT_FALSE(recent[3].missed) << "answered";
+  EXPECT_FALSE(recent[4].missed) << "declined is not missed";
+  EXPECT_EQ(recent[5].call_id, "rang-out");
+  EXPECT_TRUE(recent[5].missed);
+  EXPECT_TRUE(recent[5].video);
+  EXPECT_EQ(recent[5].thread_id, "thread-rang-out");
+  EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 2u) << "`limit` rows read, the broadcast among them";
+}
+
 } // namespace
 } // namespace pbr

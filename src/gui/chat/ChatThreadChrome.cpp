@@ -5,9 +5,12 @@
 #include "gui/chat/PeerLinkText.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/DeploymentProfile.h"
+#include "foundation/product/DevTools.h"
 #include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
+#include "lib/people/AvatarGlyph.h"
 #include "lib/people/PeerDisplayLabel.h"
 
 #include <ui/Core.h>
@@ -60,14 +63,7 @@ void ShowConfirmWithCheckbox(const ShellFeedbackPorts& ports, const std::string&
                              const std::string& checkbox_label, const bool checkbox_default,
                              std::function<void(bool, bool)> on_result) {
   if (ports.show_confirm_with_checkbox) {
-    ports.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
-  }
-}
-
-void ShowAlert(const ShellFeedbackPorts& ports, const std::string& title, const std::string& message,
-               std::function<void()> on_ok) {
-  if (ports.show_alert) {
-    ports.show_alert(title, message, std::move(on_ok), {});
+    ports.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result), {});
   }
 }
 
@@ -92,6 +88,7 @@ bool ChatThreadChrome::ShowAttachWithoutThread() const {
 void ChatThreadChrome::ResetPanelState() {
   view_.thread_title = "";
   view_.thread_subtitle = "";
+  view_.thread_phone_subtitle = "";
   view_.peer_link_status = "";
   view_.peer_link_banner = "";
   view_.show_peer_link = false;
@@ -109,6 +106,10 @@ void ChatThreadChrome::ResetPanelState() {
   view_.thread_is_private = false;
   view_.thread_is_public = false;
   view_.thread_is_group = false;
+  view_.thread_avatar_letter = "";
+  view_.thread_avatar_tone = 0;
+  view_.thread_icon_src = "";
+  view_.thread_has_icon = false;
   view_.compose_disabled = false;
   view_.show_attach_button = ShowAttachWithoutThread();
   view_.show_thread_actions = false;
@@ -171,7 +172,7 @@ void ChatThreadChrome::UpdatePeerLink() {
     return;
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
-  const PeerLinkText link_text = PeerLinkTextFor(link);
+  const PeerLinkText link_text = PeerLinkStatusVisible(kUiDemoBuild) ? PeerLinkTextFor(link) : PeerLinkText{};
   LogPeerLinkDetail(link.detail);
   view_.show_peer_link = link_text.status_key != nullptr || in_call;
   if (in_call) {
@@ -227,6 +228,18 @@ void ChatThreadChrome::Update() {
     // The stored default AI title is English; show it in the UI language.
     if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
       view_.thread_title = Tr("chat.new_chat").c_str();
+    }
+    // Same glyph as the chat list row (ChatPresenter): the colour is seeded with the same id.
+    const AvatarGlyph glyph = MakeAvatarGlyph(view_.thread_title.c_str(), label.stable_id);
+    view_.thread_avatar_letter = glyph.letter.c_str();
+    view_.thread_avatar_tone = glyph.tone;
+    // The person's own photo when it is cached here, else the letter.
+    view_.thread_icon_src = "";
+    view_.thread_has_icon = false;
+    if (thread->kind == ThreadKind::Direct && label.contact_id) {
+      const std::string icon_path = facade_->ContactIconPath(*label.contact_id);
+      view_.thread_icon_src = icon_path.c_str();
+      view_.thread_has_icon = !icon_path.empty();
     }
     view_.thread_encrypted = thread->encrypted;
     const ui::String visual_kind = SessionVisualKind(*thread);
@@ -336,6 +349,8 @@ void ChatThreadChrome::Update() {
         view_.status = Tr("call.error.payment_unavailable").c_str();
       }
     }
+    // The phone header shows no second line, except a group's member count; the full subtitle stays for the desktop.
+    view_.thread_phone_subtitle = "";
     if (thread->kind == ThreadKind::Ai) {
       view_.thread_subtitle = Tr("chat.ai_thread.subtitle").c_str();
       view_.draft_placeholder = Tr("chat.ai_thread.placeholder").c_str();
@@ -370,6 +385,10 @@ void ChatThreadChrome::Update() {
         if (facade_) {
           if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
             roster_label += " · " + Tr("chat.subtitle.members", {{"count", std::to_string(roster->size())}});
+            view_.thread_phone_subtitle =
+                (roster->size() == 1 ? Tr("chat.subtitle.members_short_one")
+                                     : Tr("chat.subtitle.members_short_many", {{"count", std::to_string(roster->size())}}))
+                    .c_str();
           }
         }
         if (facade_ && facade_->IsOwnerUnreachable(*thread->group_id)) {
@@ -390,6 +409,7 @@ void ChatThreadChrome::Update() {
   } else {
     view_.thread_title = "";
     view_.thread_subtitle = "";
+    view_.thread_phone_subtitle = "";
     view_.show_peer_sheet = false;
     view_.peer_link_status = "";
     view_.peer_link_banner = "";
@@ -408,6 +428,10 @@ void ChatThreadChrome::Update() {
     view_.thread_is_private = false;
     view_.thread_is_public = false;
     view_.thread_is_group = false;
+  view_.thread_avatar_letter = "";
+  view_.thread_avatar_tone = 0;
+  view_.thread_icon_src = "";
+  view_.thread_has_icon = false;
     view_.compose_disabled = false;
     view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;
@@ -802,10 +826,9 @@ void ChatThreadChrome::OnRotatePskExport() {
         if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(*bundle);
         }
-        ShowAlert(
-            shell_feedback_, Tr("chat.psk.rotated_title"),
-            Tr("chat.psk.rotated_body"),
-            {});
+        if (shell_feedback_.show_toast) {
+          shell_feedback_.show_toast(Tr("chat.psk.rotated_title"), ToastDuration::Short); // the line below says what to do next
+        }
         view_.status = Tr("chat.psk.rotated").c_str();
         if (refresh_) {
           refresh_();

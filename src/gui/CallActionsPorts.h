@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lib/calls/CallSessionQueries.h"
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -19,6 +21,13 @@ struct CallActionsPorts {
   std::function<bool()> video_call_available;
   /** A group call goes on in this chat that this device may join (the call button reads "Join"). */
   std::function<bool(const std::string& thread_id)> call_joinable;
+  /** Phones: the bar under a group chat's header while its call may be joined ("" = no bar). */
+  std::function<std::string(const std::string& thread_id)> call_join_bar_text;
+  /**
+   * Phone Home's Calls widget: called on the UI thread, it returns a read of this profile's newest calls (at most
+   * `limit`) that is safe to run on a worker (it opens its own store handle); empty while there is no profile.
+   */
+  std::function<std::function<std::vector<call_queries::RecentCall>()>(size_t limit)> recent_calls_reader;
 
   // PeoplePicker
   std::function<void(const std::vector<std::string>& identities)> invite_identities;

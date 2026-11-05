@@ -6,6 +6,9 @@
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#endif
 
 namespace pbr {
 
@@ -34,6 +37,14 @@ bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
 
 bool Platform::EarlyInit() {
 #if defined(__ANDROID__)
+  // B126: something closes a file descriptor it does not own (another unique_fd's) during group video; fdsan's
+  // default for apps aborts the process. Until it is found, warn once instead: Android still logs the offending
+  // close() with its backtrace (logcat, a non-fatal debuggerd dump), and the call goes on. API 29+ only, so looked
+  // up at run time (minSdk 24). 1 = ANDROID_FDSAN_ERROR_LEVEL_WARN_ONCE (<android/fdsan.h>).
+  using FdsanSetErrorLevel = int (*)(int);
+  if (auto set_level = reinterpret_cast<FdsanSetErrorLevel>(dlsym(RTLD_DEFAULT, "android_fdsan_set_error_level"))) {
+    set_level(1);
+  }
   // The main loop keeps running when paused, so posted UI work (a background banner) still runs;
   // it stops drawing there instead (ShouldDrawFrame). SDL_Init(EVENTS) reads this hint.
   SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");

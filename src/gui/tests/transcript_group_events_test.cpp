@@ -153,6 +153,50 @@ TEST_P(GroupEventLineTest, DeclinedOwnershipGroupFullAndForkedAreWordedToo) {
       << full;
 }
 
+TEST_P(GroupEventLineTest, AnAnsweredInvitationIsASmallLineInTheReadersLanguage) {
+  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.2): after Accept / Decline the card spread over the whole width.
+  GroupInvitePayload invite;
+  invite.group_id = kGroup;
+  invite.group_title = "Hike";
+  invite.inviter_identity = kAnn;
+  invite.invitee_identity = kMe;
+  invite.invite_nonce = "n1";
+  const auto detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+  auto message = GroupMembershipCodec::BuildSystemMessage("t", GroupMembershipControlType::GroupInvite,
+                                                          "Group invitation: Hike", *detail, kAnn);
+  ASSERT_TRUE(message);
+  message->chat_actions = GroupMembershipCodec::BuildInviteChatActions(invite);
+  const auto render = [](const ThreadMessage& m) {
+    TranscriptRow row;
+    row.message = m;
+    const auto rows = RenderTranscript({row}, Facts());
+    return rows.empty() ? std::string() : std::string(rows[0].content_rml.c_str());
+  };
+  const std::string pending = render(*message);
+  EXPECT_NE(pending.find("chat-card chat-group-invite"), std::string::npos) << "waiting: the card with its buttons";
+  EXPECT_NE(pending.find("send_chat_action"), std::string::npos);
+
+  ThreadMessage joined = *message;
+  GroupMembershipCodec::ApplyInviteResolution(joined, InviteStatus::Accepted, "You joined Hike");
+  const std::string joined_rml = render(joined);
+  EXPECT_EQ(joined_rml.find("chat-group-invite"), std::string::npos);
+  EXPECT_NE(joined_rml.find("chat-system-line"), std::string::npos);
+  EXPECT_NE(joined_rml.find(zh_ ? "\xE4\xBD\xA0\xE5\xB7\xB2\xE5\x8A\xA0\xE5\x85\xA5\xE3\x80\x8CHike\xE3\x80\x8D"
+                                : "You joined \xE2\x80\x9CHike\xE2\x80\x9D"),
+            std::string::npos)
+      << joined_rml;
+
+  ThreadMessage declined = *message;
+  GroupMembershipCodec::ApplyInviteResolution(declined, InviteStatus::Declined, "You declined Hike");
+  const std::string declined_rml = render(declined);
+  EXPECT_NE(declined_rml.find("chat-system-line"), std::string::npos);
+  EXPECT_NE(declined_rml.find(zh_ ? "\xE4\xBD\xA0\xE6\x8B\x92\xE7\xBB\x9D\xE4\xBA\x86\xE3\x80\x8CHike\xE3\x80\x8D"
+                                  : "You declined the invitation to \xE2\x80\x9CHike\xE2\x80\x9D"),
+            std::string::npos)
+      << declined_rml;
+}
+
 TEST(GroupEventLineFallbackTest, ANameIsLookedUpOncePerBuild) {
   ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
   int lookups = 0;

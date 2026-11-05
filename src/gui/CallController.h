@@ -10,12 +10,14 @@
 #include "lib/ui/ShellTypes.h"
 #include "common/Module.h"
 #include "feature/calls/CallFunctionalPorts.h"
+#include "feature/presenters/CallConnectStory.h"
 #include "feature/presenters/CallPresenter.h"
 #include "feature/presenters/CallSystemUiBridge.h"
 #include "gui/CallChromeSync.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 
+#include <unordered_map>
 #include <chrono>
 #include <memory>
 #include <cstdint>
@@ -60,6 +62,8 @@ public:
   bool StartCall(const std::string& thread_id, bool video_allowed);
   /** A group call goes on in this chat that this device may join (V053): the call button joins it. */
   bool CallJoinableInThread(const std::string& thread_id);
+  /** The group chat's call bar ("A voice call is on · 3 people"); "" when there is no call to join. */
+  std::string CallJoinBarText(const std::string& thread_id);
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -102,7 +106,15 @@ private:
   /** The presenter's screen into the shell's ring / in-call state. */
   void Render();
   void RenderRing(const CallScreen& screen);
+  /** Accept in flight: the ring is gone, a Connecting page / bar shows. */
+  void RenderAnswering(const CallScreen& screen);
   void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
+  /** The in-call state from the presenter's screen (names, roster, status line, phone page fields). */
+  void FillInCallFromScreen(const CallScreen& screen);
+  /** UI demo app only (kUiDemoBuild): draws the scripted call PP_DEMO_CALL names; false when none is set. */
+  bool RenderDemoScene();
+  /** UI demo app only: an answer / decline / hang-up ends the scripted call. */
+  void EndDemoScene();
   void ShowNotice(const CallNotice& notice);
   void SyncShellState();
   void ClearRing();
@@ -128,6 +140,16 @@ private:
   void ApplyMediaHealth(IMediaView& media, CallUiBackend* backend, bool media_reconnect);
   CallMediaHealthView BuildMediaHealthView(IMediaView& media, CallUiBackend* backend, bool media_reconnect) const;
   std::string DisplayNameForIdentity(const std::string& identity) const;
+  /** The phone call page's names, avatars and failure line (ShellCallChromeRml). */
+  void FillPhoneCallFields(const CallScreen& screen);
+  void FillRingPhoneFields(const CallScreen& screen, const std::string& caller_label);
+  /** Steps the connection story (CallConnectStory) and writes what the phone page shows; desktop is left alone. */
+  void ApplyConnectStory(const CallScreen& screen, const std::string& path_kind, CallPathQuality quality,
+                         int quality_bars, int64_t now_ms);
+  /** The "how this call got through" sheet's lines from the story's events. */
+  void FillStoryLines();
+  /** A group's name for the phone page (read once per thread). */
+  std::string GroupTitle(const std::string& thread_id);
   static std::string FormatElapsed(int64_t connected_at_ms);
   static std::string FormatMinSec(int64_t seconds);
 
@@ -170,6 +192,13 @@ private:
   int64_t last_link_sample_ms_ = 0;
   DeviceVitals vitals_;
   int64_t vitals_read_ms_ = 0;
+  /** perf.threads: once every 10 s while a call is tracked (where the CPU goes). */
+  void EmitPerfThreads(int64_t now_ms);
+  int64_t perf_sample_ms_ = 0;
+  double perf_proc_cpu_s_ = -1.0;
+  std::unordered_map<uint32_t, double> perf_thread_cpu_;
+  /** The same per own thread name, for the developer log (perf.threads.raw). */
+  std::unordered_map<uint32_t, double> perf_thread_cpu_raw_;
   /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */
   std::string peer_video_log_key_;
   /** When this video call started waiting for the peer's first frame (0: not yet). */
@@ -184,10 +213,18 @@ private:
   /** Group calls: who is speaking, for the spotlight when nobody chose (V059). */
   CallActiveSpeaker active_speaker_;
   bool spotlight_fill_ = true;
+  /** The tiles' speaking rings change at most this often (B146: each change dirties only the roster rows). */
+  static constexpr int64_t kSpeakingRingRefreshMs = 400;
+  /** Group calls: the stream_ids whose tile shows the speaking ring (sorted), when that last changed, and when our own
+   * microphone last reached CallActiveSpeaker::kSpeakingLevel. */
+  std::vector<std::string> speaking_shown_;
+  int64_t speaking_shown_ms_ = 0;
+  int64_t self_heard_ms_ = 0;
   void ApplySpotlightToState(CallInProgressState& in_call);
   void ResyncSpotlight();
-  /** Group calls: feed the active speaker each frame; a new one moves the spotlight (unless someone chose). */
-  void NoteActiveSpeaker(const MediaEngineHealth& engine, int64_t now_ms);
+  /** Group calls: feed the active speaker each frame; a new one moves the spotlight (unless someone chose). Also
+   * the speaking rings: the others by their streams' levels, we by `self_level` (0 when muted). */
+  void NoteActiveSpeaker(const MediaEngineHealth& engine, float self_level, int64_t now_ms);
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;
   int minimized_corner_ = 0;
@@ -202,6 +239,19 @@ private:
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;
+  /** Shell in its phone layout (ShellCallChromePorts::phone_layout), read each render. */
+  bool phone_layout_ = false;
+  CallConnectStory story_;
+  std::string story_logged_call_;
+  size_t story_events_logged_ = 0;
+  bool story_sheet_open_ = false;
+  int64_t demo_started_ms_ = 0;
+  bool demo_ended_ = false;
+  /** UI demo only: when its stand-in camera pictures were last handed to the tiles. */
+  int64_t demo_frames_ms_ = 0;
+  std::string group_title_thread_;
+  std::string group_title_;
+  int64_t group_title_read_ms_ = 0;
 };
 
 } // namespace pbr

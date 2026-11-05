@@ -1,4 +1,15 @@
 <div class="emoji-picker" data-model="emoji_picker">
+  <!-- Phones: the sheet's top (the composer's emoji sheet: a grabber to drag it down and an X, both back to the
+       keyboard; in a page sheet the sheet brings its own grabber and X, so only the title shows). -->
+  <div class="emoji-sheet-top">
+    <div class="emoji-sheet-grabber"></div>
+    <div class="sheet-header emoji-sheet-header">
+      <p class="sheet-title">{{title}}</p>
+    </div>
+    <button class="emoji-sheet-close" type="button" data-event-click="close_to_keyboard()">
+      <span class="sheet-icon-disc"><svg src="../icons/v2/close.svg" width="12" height="12"></svg></span>
+    </button>
+  </div>
   <div class="emoji-picker-header row">
     <p class="emoji-picker-title">{{title}}</p>
   </div>

@@ -1,30 +1,176 @@
 <div class="home-panel" data-model="chat">
+  <div class="pane-nav">
+    <div class="pane-nav-bg"></div>
+    <div class="bar-fade"></div>
+    <p class="pane-nav-title">{{i18n:home.title}}</p>
+    <div class="pane-nav-actions row">
+      <div class="pane-nav-btn-wrap" data-model="shell">
+        <button class="pane-nav-btn" type="button"
+                data-event-click="home_edit_open()" title="{{i18n:home.edit}}">
+          <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
+        </button>
+      </div>
+    </div>
+  </div>
   <div class="home-header row">
     <div class="home-brand stack">
       <h1 class="home-brand-name">{{i18n:app.name}}</h1>
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="fonts_ready">{{i18n:app.tagline}}</p>
       <p class="text-xs muted home-brand-tagline" data-model="window" data-if="!fonts_ready">…</p>
     </div>
-    <div class="home-header-actions row" data-model="window"
-         data-if="layout_mode == 'compact' && !account_sheet_open">
-      <button class="shell-profile-btn" type="button" title="{{i18n:scan.title}}"
-              data-event-click="open_scan_qr()">
-        <svg src="../icons/qr-scan.svg" width="18" height="18" crop-to-content="true"></svg>
-      </button>
-      <button class="shell-profile-btn" type="button" title="{{i18n:nav.me}}"
-              data-event-click="open_account_sheet()">
-        <svg src="../icons/me.svg" width="18" height="18" crop-to-content="true"></svg>
-        <span class="badge-dot badge-dot--profile" data-if="nav_me_attention"></span>
-      </button>
+  </div>
+  <!-- Phone only (hidden on the desktop): date line, large title and the widgets (DESIGN-pp-ui 8.16, mockup
+       10-home-widgets), iPhone-widget style: a wide card takes a row, two small ones sit side by side, in the order
+       the user set in Edit Home. A widget with nothing to show is not drawn (Favorites always is). -->
+  <div class="home-scroll root-scroll" data-model="shell">
+    <p class="home-date">{{home_date_label}}</p>
+    <p class="large-title">{{i18n:home.title}}</p>
+    <div class="home-grid">
+      <div class="home-slot" data-for="w : home_widgets" data-class-home-slot--wide="w.wide">
+        <!-- Favorites (关注联系人): the starred contacts in star order, four across the card; more scroll sideways and
+             settle on a whole person (ShellFavoritesSnap). Under four starred, people chatted with lately fill the row,
+             their names grey after a small sparkle (suggested, not followed). A tap opens the chat. -->
+        <div class="home-w" data-if="w.id == 'favorites'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--favorites"><svg src="../icons/v2/star-fill.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.favorites}}</p>
+          </div>
+          <div class="home-avs" data-if="home_favorites.size > 0">
+            <button class="home-av" type="button" data-for="f, f_index : home_favorites"
+                    data-event-click="home_open_favorite(f_index)">
+              <span class="home-av-frame"
+                    data-style-width="home_fav_avatar" data-style-height="home_fav_avatar"
+                    data-style-border-radius="home_fav_avatar_radius"
+                    data-class-avatar-tone-0="!f.has_icon && f.avatar_tone == 0"
+                    data-class-avatar-tone-1="!f.has_icon && f.avatar_tone == 1"
+                    data-class-avatar-tone-2="!f.has_icon && f.avatar_tone == 2"
+                    data-class-avatar-tone-3="!f.has_icon && f.avatar_tone == 3"
+                    data-class-avatar-tone-4="!f.has_icon && f.avatar_tone == 4"
+                    data-class-avatar-tone-5="!f.has_icon && f.avatar_tone == 5"
+                    data-class-avatar-tone-6="!f.has_icon && f.avatar_tone == 6"
+                    data-class-avatar-tone-7="!f.has_icon && f.avatar_tone == 7">
+                <img class="avatar-photo" data-if="f.has_icon" data-attr-src="f.icon_src"
+                     data-style-width="home_fav_avatar" data-style-height="home_fav_avatar"/>
+                <span class="home-av-letter" data-if="!f.has_icon">{{f.avatar_letter}}</span>
+              </span>
+              <span class="home-av-name" data-class-home-av-name--suggested="f.suggested"><svg class="home-av-suggest" src="../icons/v2/sparkle-fill.svg" width="11" height="11" data-if="f.suggested"></svg>{{f.title}}</span>
+            </button>
+          </div>
+          <p class="home-w-hint" data-if="home_favorites.size == 0">{{i18n:home.favorites.empty}}</p>
+        </div>
+        <!-- Recent chats: the three latest, read or not; "See all" opens Chats. -->
+        <div class="home-w" data-if="w.id == 'recent_chats'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--recent"><svg src="../icons/v2/tab-chats-fill.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.recent_chats}}</p>
+            <button class="home-wh-more" type="button" data-event-click="home_open_chats()">{{i18n:home.see_all}}</button>
+          </div>
+          <button class="home-chat" type="button" data-for="session : home_recent" data-event-click="select_thread(session.id)">
+            <span class="home-chat-av"
+                  data-class-chat-row-avatar--ai="session.kind == 'ai'"
+                  data-class-chat-row-avatar--group="session.kind == 'group'"
+                  data-class-avatar-tone-0="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 0"
+                  data-class-avatar-tone-1="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 1"
+                  data-class-avatar-tone-2="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 2"
+                  data-class-avatar-tone-3="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 3"
+                  data-class-avatar-tone-4="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 4"
+                  data-class-avatar-tone-5="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 5"
+                  data-class-avatar-tone-6="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 6"
+                  data-class-avatar-tone-7="session.kind != 'ai' && session.kind != 'group' && !session.has_icon && session.avatar_tone == 7">
+              <img class="avatar-photo" data-if="session.kind != 'ai' && session.kind != 'group' && session.has_icon" data-attr-src="session.icon_src"/>
+              <span class="home-chat-letter" data-if="session.kind != 'ai' && session.kind != 'group' && !session.has_icon">{{session.avatar_letter}}</span>
+              <svg class="home-chat-icon" src="../icons/v2/sparkle-fill.svg" width="18" height="18" data-if="session.kind == 'ai'"></svg>
+              <svg class="home-chat-icon" src="../icons/v2/group.svg" width="18" height="18" data-if="session.kind == 'group'"></svg>
+            </span>
+            <span class="home-chat-body">
+              <span class="home-chat-title">{{session.title}}</span>
+              <span class="home-chat-preview">{{session.preview}}</span>
+            </span>
+            <span class="badge-count home-chat-badge" data-if="session.unread_count > 0">{{session.unread_display}}</span>
+          </button>
+        </div>
+        <!-- Calls: missed today and the latest call; a tap opens that call's chat. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'calls'" data-event-click="home_open_calls()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--calls"><svg src="../icons/v2/phone.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.calls}}</span>
+          </span>
+          <span class="home-num" data-if="home_missed_calls > 0">{{home_missed_calls}}</span>
+          <span class="home-small" data-if="home_missed_calls > 0">{{i18n:home.calls.missed}}</span>
+          <span class="home-small home-small--two" data-if="home_missed_calls > 0 && home_calls_latest != ''">{{home_calls_latest}}</span>
+          <span class="home-empty" data-if="home_missed_calls == 0">
+            <span class="home-empty-icon home-empty-icon--calls"><svg src="../icons/v2/phone.svg" width="20" height="20"></svg></span>
+            <span class="home-small" data-if="home_calls_latest != ''">{{home_calls_latest}}</span>
+            <span class="home-small" data-if="home_calls_latest == ''">{{i18n:home.calls.none}}</span>
+          </span>
+        </button>
+        <!-- Mentions: @me in groups from the last 7 days, read or not (like Calls); the number counts the unread ones,
+             none unread: "Recent mention"; none at all: a faint @ over "No one has mentioned you". A tap opens the chat (at its oldest unread mention, if any). -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'mentions'" data-event-click="home_open_mentions()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.mentions}}</span>
+          </span>
+          <span class="home-num" data-if="home_mentions > 0">{{home_mentions}}</span>
+          <span class="home-num home-num--word" data-if="home_mentions == 0 && home_mentions_where != ''">{{i18n:home.mentions.recent}}</span>
+          <span class="home-small home-small--two" data-if="home_mentions_where != ''">{{home_mentions_where}}</span>
+          <span class="home-empty" data-if="home_mentions == 0 && home_mentions_where == ''">
+            <span class="home-empty-icon home-empty-icon--mentions"><svg src="../icons/v2/at-sign.svg" width="20" height="20"></svg></span>
+            <span class="home-small">{{i18n:home.mentions.none}}</span>
+          </span>
+        </button>
+        <!-- New people: unread chats from people who are not contacts (none: a faint person over "No new people yet"); a tap opens the first. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'new_people'" data-event-click="home_open_new_people()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--new-people"><svg src="../icons/v2/user-plus.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.new_people}}</span>
+          </span>
+          <span class="home-num" data-if="home_new_people > 0">{{home_new_people}}</span>
+          <span class="home-small home-small--two" data-if="home_new_people > 0">{{i18n:home.new_people.count}}</span>
+          <span class="home-empty" data-if="home_new_people == 0">
+            <span class="home-empty-icon home-empty-icon--new-people"><svg src="../icons/v2/user-plus.svg" width="20" height="20"></svg></span>
+            <span class="home-small">{{i18n:home.new_people.none}}</span>
+          </span>
+        </button>
+        <!-- Security (Kenneth 2026-11-05 原话 92, 98): whether the recovery phrase has been opened once on Me → Security
+             (recovery_phrase_seen); a tap opens that page. Pairs with New people so the small cards fill their row. -->
+        <button class="home-w home-w--tap" type="button" data-if="w.id == 'security'" data-event-click="home_open_security()">
+          <span class="home-wh">
+            <span class="home-wh-icon home-wh-icon--security"><svg src="../icons/v2/shield.svg" width="13" height="13"></svg></span>
+            <span class="home-wh-title">{{i18n:home.widget.security}}</span>
+          </span>
+          <span class="home-num home-num--word home-num--ok" data-if="home_security_ok">{{i18n:home.security.ok}}</span>
+          <span class="home-small home-small--two" data-if="home_security_ok">{{i18n:home.security.ok_line}}</span>
+          <span class="home-num home-num--word home-num--todo" data-if="!home_security_ok">{{i18n:home.security.todo}}</span>
+          <span class="home-small home-small--two" data-if="!home_security_ok">{{i18n:home.security.todo_line}}</span>
+        </button>
+        <!-- Today's briefs: the first headline larger, two more under it (cached, refreshed when over 3 hours old);
+             "See all" shows the feed in the AI chat like the Latest briefs chip. -->
+        <div class="home-w" data-if="w.id == 'brief'">
+          <div class="home-wh">
+            <span class="home-wh-icon home-wh-icon--brief"><svg src="../icons/v2/globe.svg" width="13" height="13"></svg></span>
+            <p class="home-wh-title">{{i18n:home.widget.brief}}</p>
+            <button class="home-wh-more" type="button" data-event-click="home_brief_all()">{{i18n:home.see_all}}</button>
+          </div>
+          <button class="home-brief" type="button" data-for="item, item_index : home_brief"
+                  data-class-home-brief--head="item_index == 0" data-event-click="home_open_brief(item_index)">
+            <span class="home-brief-title">{{item.title}}</span>
+            <span class="home-brief-meta" data-if="item.meta != ''">{{item.meta}}</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="home-landing">
+    <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
+    <div class="home-dock-fade"></div>
     <div class="home-landing-inner stack">
+      <!-- The desktop's ask-AI field; phones have only the chips below (Kenneth 2026-11-04). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.find_someone}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.headlines_prompt}}')"
+        <button class="chat-suggestion" data-event-click="send_suggestion_in_chat('{{i18n:home.suggestion.headlines_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
         <button class="chat-suggestion" data-event-click="send_suggestion_action('articles')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.articles}}</button>
@@ -34,5 +180,6 @@
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.capabilities}}</button>
       </div>
     </div>
+    <div class="home-dock-seam"></div>
   </div>
 </div>

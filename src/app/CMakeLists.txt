@@ -16,6 +16,7 @@ set(PP_BROWSER_APP_SOURCES
   ContactsShellBridge.cpp
   ChatShellBridge.cpp
   PeoplePickerShellBridge.cpp
+  StorageManagerBridge.cpp
 )
 
 include(PpBrowserWarnings)
@@ -101,13 +102,16 @@ if(NOT PP_BROWSER_IS_MOBILE)
 
   if(APPLE AND PP_BROWSER_PACKAGED_BUILD)
     install(TARGETS ${PP_BROWSER_APP_TARGET} BUNDLE DESTINATION .)
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION ${PP_BROWSER_PRODUCT_NAME}.app/Contents/Resources/assets)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION ${PP_BROWSER_PRODUCT_NAME}.app/Contents/Resources/assets
+            PATTERN "demo" EXCLUDE)
   elseif(WIN32 AND PP_BROWSER_PACKAGED_BUILD)
     install(TARGETS ${PP_BROWSER_APP_TARGET} RUNTIME DESTINATION .)
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION assets)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION assets
+            PATTERN "demo" EXCLUDE)
   else()
     install(TARGETS ${PP_BROWSER_APP_TARGET} RUNTIME DESTINATION bin)
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION share/pp-browser/assets)
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/ DESTINATION share/pp-browser/assets
+            PATTERN "demo" EXCLUDE)
   endif()
 
   if(PP_BROWSER_PACKAGED_BUILD AND (APPLE OR WIN32))

@@ -46,14 +46,15 @@ TEST(CallChromeSyncTest, StatusSubtitleRemounts) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
 
-TEST(CallChromeSyncTest, ElapsedSubtitleTicksDirtyOnly) {
+// The clock ticking dirties the clock alone, not the whole call group (B146; the phone page idles between ticks).
+TEST(CallChromeSyncTest, ElapsedSubtitleTicksArePartsOnly) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
   synced.in_call_subtitle = "0:01";
   pbr::CallChromeLayer next = synced;
   next.in_call_subtitle = "0:02";
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
 }
 
 TEST(CallChromeSyncTest, MicLevelOnlyIsLevelsOnlyWhileMetersShow) {
@@ -87,7 +88,7 @@ TEST(CallChromeSyncTest, LevelChangeWithoutMetersOnScreenIsNone) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
 }
 
-TEST(CallChromeSyncTest, LevelAndTimerTogetherDirtyEverything) {
+TEST(CallChromeSyncTest, LevelAndTimerTogetherArePartsOnly) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -95,7 +96,7 @@ TEST(CallChromeSyncTest, LevelAndTimerTogetherDirtyEverything) {
   pbr::CallChromeLayer next = synced;
   next.in_call_elapsed = "0:06";
   next.in_call_mic_level = 2;
-  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
 }
 
 namespace {
@@ -268,7 +269,7 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
-TEST(CallChromeSyncTest, QualityChipDirties) {
+TEST(CallChromeSyncTest, QualityChipIsPartsOnly) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;
   synced.in_call_id = "c1";
@@ -279,7 +280,94 @@ TEST(CallChromeSyncTest, QualityChipDirties) {
   next.in_call_quality_ok = false;
   next.in_call_quality_error = true;
   next.in_call_quality_label = "Poor";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+}
+
+// The phone page's signal bar, result line and top pill are bound parts: a change dirties only them.
+TEST(CallChromeSyncTest, PhoneStoryPartsArePartsOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_signal_bars = 2;
+  next.in_call_signal_tone = 1;
+  next.in_call_signal_word = "Fair";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+  next = synced;
+  next.in_call_result_text = "Connected directly · connected in 0.9 s";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+  next = synced;
+  next.in_call_notice_text = "Found a closer way and moved to it";
+  next.in_call_notice_fading = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+}
+
+// What the phone page writes into its markup remounts it: the story's steps going, the failure page, the sheet.
+TEST(CallChromeSyncTest, PhoneMarkupChangesRemount) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_story_active = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_story_active = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_story_stage = 1;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_phone_failed = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  next = synced;
+  next.in_call_story_sheet_open = true;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  // A new timeline line remounts only while the sheet shows it.
+  synced.in_call_story_sheet_open = true;
+  next = synced;
+  next.in_call_story_lines.push_back({.time = "1:05", .text = "Found a closer way", .secure = true});
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+  synced.in_call_story_sheet_open = next.in_call_story_sheet_open = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+}
+
+// The phone page has no audio meters: a level change there pushes nothing.
+TEST(CallChromeSyncTest, LevelChangeOnThePhonePageIsNone) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_mic_level = 3;
+  next.in_call_mic_hint = "Speaking";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::None);
+}
+
+// A roster row's mute or camera change still reaches the screen now that the clock tick no longer dirties all.
+TEST(CallChromeSyncTest, RosterRowChangeDirties) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_roster = "Ana|11|--";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_roster = "Ana|11|m-";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
+// PartsOnly / LevelsOnly dirty exactly the variables whose value changed.
+TEST(CallChromeSyncTest, ChangedVariablesAreOnlyTheOnesThatChanged) {
+  pbr::CallInProgressState before;
+  pbr::CallInProgressState after = before;
+  EXPECT_TRUE(pbr::CallChromeChangedVariables(before, after).empty());
+  after.signal_bars = 2;
+  after.subtitle = "0:07";
+  after.notice_fading = true;
+  after.title = "not a part";  // labels go through DirtyOnly, never here
+  const std::vector<const char*> changed = pbr::CallChromeChangedVariables(before, after);
+  std::vector<std::string> names(changed.begin(), changed.end());
+  EXPECT_EQ(names, (std::vector<std::string>{"call_in_progress_subtitle", "call_in_progress_signal_bars",
+                                             "call_in_progress_notice_fading"}));
 }
 
 TEST(CallChromePortsTest, MuteClassifyNotifiesDirtyOnly) {
@@ -319,4 +407,33 @@ TEST(CallChromeSyncTest, ASpotlightChangeRemounts) {
   synced = next;
   next.in_call_spotlight_fill = false;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
+}
+
+// The phone page's speaking rings are bound parts (B146): a ring going on or off dirties only the roster arrays
+// whose rows changed, never the whole call group nor a remount.
+TEST(CallChromeSyncTest, ASpeakingRingIsPartsOnlyAndDirtiesOnlyItsRows) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_show_roster = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  synced.in_call_roster = "Ana|11|--;Bo|22|--";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_speaking = "22;";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+
+  pbr::CallInProgressState before;
+  before.roster.resize(2);
+  before.roster[0].stream_id = "11";
+  before.roster[1].stream_id = "22";
+  before.spotlight_rows = {before.roster[1]};
+  before.strip_rows = {before.roster[0]};
+  pbr::CallInProgressState after = before;
+  after.roster[1].speaking = true;
+  after.spotlight_rows[0].speaking = true;
+  const std::vector<const char*> changed = pbr::CallChromeChangedVariables(before, after);
+  std::vector<std::string> names(changed.begin(), changed.end());
+  EXPECT_EQ(names, (std::vector<std::string>{"call_in_progress_roster", "call_in_progress_spotlight_rows"}))
+      << "the strip's rows did not change";
 }

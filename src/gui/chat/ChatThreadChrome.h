@@ -24,6 +24,7 @@ public:
     ui::String& status;
     ui::String& thread_title;
     ui::String& thread_subtitle;
+    ui::String& thread_phone_subtitle;
     ui::String& peer_link_status;
     ui::String& peer_link_banner;
     bool& show_peer_link;
@@ -41,6 +42,10 @@ public:
     bool& thread_is_private;
     bool& thread_is_public;
     bool& thread_is_group;
+    ui::String& thread_avatar_letter;
+    int& thread_avatar_tone;
+    ui::String& thread_icon_src;
+    bool& thread_has_icon;
     bool& compose_disabled;
     bool& show_attach_button;
     bool& show_thread_actions;

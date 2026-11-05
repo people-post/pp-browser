@@ -156,6 +156,10 @@ bool ShellCallChromeGesture::ShouldIgnoreTarget(ui::Element* target) const {
     if (node->IsClassSet("btn") || node->IsClassSet("shell-close-btn")) {
       return true;
     }
+    // The phone page's "how this call got through" sheet drags itself (ShellPageSheetGesture).
+    if (node->IsClassSet("shell-page-sheet") || node->IsClassSet("call-phone-sheet-scrim")) {
+      return true;
+    }
   }
   return false;
 }
@@ -169,7 +173,7 @@ bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(ui::Element* target) con
     if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
       return true;
     }
-    if (node->IsClassSet("shell-overlay-chrome-mount") || node->IsClassSet("shell-account-sheet-scrim") ||
+    if (node->IsClassSet("shell-overlay-chrome-mount") ||
         node->IsClassSet("shell-sheet-scrim") || node->IsClassSet("shell-scrim")) {
       return true;
     }

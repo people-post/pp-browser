@@ -1,4 +1,5 @@
 #include "lib/media/MediaEngine.h"
+#include "lib/media/MediaThreadName.h"
 
 #include "mesh/types/MediaChannel.h"
 #include "lib/media/VideoLevelProfile.h"
@@ -856,6 +857,7 @@ struct MediaEngine::Impl {
     playout_running = true;
     playout_stage.Set(MediaThreadStage::Idle);
     playout_thread = std::thread([this]() {
+      SetMediaThreadName("pp.playout");
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
       auto last_tick = std::chrono::steady_clock::now();
@@ -1149,6 +1151,7 @@ struct MediaEngine::Impl {
     vpio_disabled_for_session.store(false, std::memory_order_relaxed);
     capture_stage.Set(MediaThreadStage::Idle);
     capture_thread = std::thread([this]() {
+      SetMediaThreadName("pp.capture");
       // Device open (and OS mic prompts) stay on this worker so the session's user (a call's accept)
       // can finish its signaling without freezing UI or the mesh.
       capture_stage.Set(MediaThreadStage::OpenDevices);
@@ -1381,7 +1384,10 @@ struct MediaEngine::Impl {
   void StartVideoLoop() {
     video_running = true;
     video_stage.Set(MediaThreadStage::Idle);
-    video_thread = std::thread([this]() { RunVideoLoop(); });
+    video_thread = std::thread([this]() {
+      SetMediaThreadName("pp.video");
+      RunVideoLoop();
+    });
   }
 
   void JoinVideoThread(const char* context) {

@@ -916,6 +916,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   content_ = std::make_shared<CasStore>(data_dir_, profile_id_, open_content_index_(data_dir_));
   at_rest_ = std::move(opened_stores->at_rest);
   profile_db_path_ = std::move(opened_stores->profile_db_path);
+  message_store_bytes_ = std::move(opened_stores->message_store_bytes);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
   // Contacts decide who may learn our address: republish on every change (any thread → UI).
   contacts_->SetOnChanged([this]() {
@@ -1485,6 +1486,17 @@ void ConversationsHub::SetOnReachabilityUpdated(std::function<void()> callback) 
   on_reachability_updated_ = std::move(callback);
 }
 
+void ConversationsHub::SetOnStoredAttachmentsChanged(std::function<void()> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_stored_attachments_changed_ = std::move(callback);
+}
+
+void ConversationsHub::SetOnGridThumbnailReady(
+    std::function<void(const std::string& thread_id, const std::vector<uint8_t>& content_hash)> callback) {
+  std::lock_guard lock(storage_callbacks_mu_);
+  on_grid_thumbnail_ready_ = std::move(callback);
+}
+
 void ConversationsHub::SetOnPeerIconsChanged(std::function<void()> callback) {
   on_peer_icons_changed_ = std::move(callback);
 }
@@ -1517,17 +1529,7 @@ std::string ConversationsHub::IdentityIconLocalPath(const std::string& identity)
       }
     }
   }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::Account)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  if (auto found = contacts_->FindByIdentity(identity, mesh::ContactIdKind::RelayUser)) {
-    if (found->has_value()) {
-      return ContactIconLocalPath(**found);
-    }
-  }
-  return ProfileIconLocalPath(data_dir_, SanitizeProfileIconCacheKey(identity));
+  return ProfileIconLocalPathForIdentity(data_dir_, *contacts_, identity);
 }
 
 void ConversationsHub::EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit) {
@@ -1615,12 +1617,37 @@ void ConversationsHub::ScheduleContactIconFetch(const Contact& contact) {
   if (key.empty()) {
     return;
   }
-  const mesh::ProfileIconRef icon = *contact.remote.icon;
-  AppRuntime::PostWorkerBackground([this, icon, key]() {
-    if (!ProfileIconNeedsFetch(data_dir_, key, icon)) {
+  constexpr auto kIconFetchRetryAfter = std::chrono::minutes(5);
+  {
+    std::lock_guard<std::mutex> lock(icon_fetch_mu_);
+    if (icon_fetch_inflight_.count(key) > 0) {
       return;
     }
-    if (FetchProfileIcon(data_dir_, key, icon)) {
+    const auto failed = icon_fetch_failed_at_.find(key);
+    if (failed != icon_fetch_failed_at_.end() &&
+        std::chrono::steady_clock::now() - failed->second < kIconFetchRetryAfter) {
+      return;
+    }
+    icon_fetch_inflight_.insert(key);
+  }
+  const mesh::ProfileIconRef icon = *contact.remote.icon;
+  AppRuntime::PostWorkerBackground([this, icon, key]() {
+    bool fetched = false;
+    bool failed = false;
+    if (ProfileIconNeedsFetch(data_dir_, key, icon)) {
+      fetched = static_cast<bool>(FetchProfileIcon(data_dir_, key, icon));
+      failed = !fetched;
+    }
+    {
+      std::lock_guard<std::mutex> lock(icon_fetch_mu_);
+      icon_fetch_inflight_.erase(key);
+      if (failed) {
+        icon_fetch_failed_at_[key] = std::chrono::steady_clock::now();
+      } else {
+        icon_fetch_failed_at_.erase(key);
+      }
+    }
+    if (fetched) {
       AppRuntime::PostUI([this]() { NotifyPeerIconsChanged(); });
     }
   });
@@ -2389,11 +2416,15 @@ void ConversationsHub::FinishAttachmentSend(const std::shared_ptr<AttachmentSend
     }
   };
 
+  // Me → Storage may be deleting the same bytes: they are held (without waiting) until the message and the sent copy
+  // are written, so a delete running or scanning meanwhile keeps them.
+  Attachments().AcquireBytesForSend(job->thread_id, fields->content_hash);
   auto sent = job->kind == ThreadKind::Group ? MeshMessaging().SendGroupMessage(job->thread_id, display, opts)
                                              : MeshMessaging().SendUserMessage(job->thread_id, display, opts);
   if (sent) {
     keep_sent_copy(*sent);
   }
+  Attachments().ReleaseBytesForSend(fields->content_hash);
   EmitAttachmentTransferMetric("send", job->bytes, elapsed(), static_cast<bool>(sent));
   finish(std::move(sent));
 }
@@ -2454,11 +2485,32 @@ void ConversationsHub::WireAttachmentDownloads() {
       }
     }));
   }
-  attachment_downloads_->SetOnChanged([this]() {
+  // Bound to the hub's run: a report still queued when it shuts down (or goes) never reaches it.
+  attachment_downloads_->SetOnChanged(storage_callbacks_lifetime_.Bind([this]() {
     if (mesh_messaging_) {
       mesh_messaging_->NotifyMessagesChanged();
     }
-  });
+    std::function<void()> callback;
+    {
+      std::lock_guard lock(storage_callbacks_mu_);
+      callback = on_stored_attachments_changed_;
+    }
+    if (callback) {
+      AppRuntime::PostUI(storage_callbacks_lifetime_.Bind(std::move(callback)));
+    }
+  }));
+  // A grid cell's thumbnail: only that cell is refreshed (no chat re-render, no recount of the storage lists).
+  attachment_downloads_->SetOnGridThumbnailReady(
+      storage_callbacks_lifetime_.Bind([this](const std::string& thread_id, const std::vector<uint8_t>& content_hash) {
+        std::function<void(const std::string&, const std::vector<uint8_t>&)> callback;
+        {
+          std::lock_guard lock(storage_callbacks_mu_);
+          callback = on_grid_thumbnail_ready_;
+        }
+        if (callback) {
+          callback(thread_id, content_hash);
+        }
+      }));
   if (inbox_) {
     inbox_->SetProfileDataDir(data_dir_);
     inbox_->SetAttachmentDownloads(attachment_downloads_.get());
@@ -2493,22 +2545,55 @@ void ConversationsHub::RequestAttachmentDownload(const std::string& thread_id, c
   Attachments().RequestDownload(thread_id, message_id, Store());
 }
 
-void ConversationsHub::DrainPendingAttachmentMedia() {
+std::vector<StoredAttachmentItem> ConversationsHub::ListStoredAttachments() {
+  if (!IsInitialized()) {
+    return {};
+  }
+  return Attachments().ListStoredAttachments(Store());
+}
+
+uint64_t ConversationsHub::ReleasableAttachmentBytes(const std::vector<StoredAttachmentRef>& items) {
+  if (!IsInitialized()) {
+    return 0;
+  }
+  return Attachments().ReleasableBytes(Store(), items);
+}
+
+void ConversationsHub::DeleteLocalAttachments(std::vector<StoredAttachmentRef> items,
+                                              std::function<void(StoredAttachmentDeleteResult)> done) {
+  if (!IsInitialized()) {
+    if (done) {
+      done(StoredAttachmentDeleteResult{});
+    }
+    return;
+  }
+  Attachments().DeleteLocalAttachments(Store(), std::move(items), std::move(done));
+}
+
+uint64_t ConversationsHub::MessageStoreBytes() const {
+  return message_store_bytes_ ? message_store_bytes_() : 0;
+}
+
+void ConversationsHub::RequestGridThumbnail(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                            const std::string& mime, const uint64_t page_generation) {
   if (!IsInitialized()) {
     return;
   }
-  Attachments().DrainPendingMediaBacklog(Store());
+  Attachments().RequestGridThumbnail(thread_id, content_hash, mime, page_generation);
 }
 
-Roe<void> ConversationsHub::ClearDownloadedAttachments() {
+void ConversationsHub::CancelGridThumbnails(const uint64_t page_generation) {
+  if (attachment_downloads_) {
+    attachment_downloads_->CancelGridThumbnails(page_generation);
+  }
+}
+
+std::string ConversationsHub::GridThumbnailPath(const std::string& thread_id,
+                                                const std::vector<uint8_t>& content_hash) {
   if (!IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    return {};
   }
-  auto cleared = Attachments().ClearAllDownloadedMedia(Store());
-  if (cleared && mesh_messaging_) {
-    mesh_messaging_->NotifyMessagesChanged();
-  }
-  return cleared;
+  return Attachments().GridThumbnailPath(thread_id, content_hash);
 }
 
 Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
@@ -2956,6 +3041,7 @@ void ConversationsHub::Shutdown() {
   // The unknown-network timer (and its UI post) of this run never reach the hub again; a later run arms its own.
   attachment_network_lifetime_.InvalidateAndWait();
   attachment_network_timer_armed_.store(false);
+  storage_callbacks_lifetime_.InvalidateAndWait(); // the attachment change reports of this run (rewired at Initialize)
   transfer_lane_.Shutdown(); // aborts a transfer at its next progress tick and joins both lane threads
   AppLifecycle::RemoveListener(lifecycle_background_id_);
   AppLifecycle::RemoveListener(lifecycle_foreground_id_);
@@ -3297,12 +3383,75 @@ PeerDisplayResolver& ConversationsHub::PeerLabels() {
   return *peer_labels_;
 }
 
+namespace {
+
+// Registration() / Blob() hand out references, but a build with no backend address creates neither client (the UI
+// demo app, or a custom backend left blank). These stand in so a call reports an error instead of dereferencing null.
+class UnconfiguredRegistrationClient final : public IRegistrationClient {
+public:
+  Roe<RegistrationStartResult> StartRegistration(const std::string&, const std::string&, const std::string&,
+                                                 const std::string&, const std::string&,
+                                                 const std::vector<std::string>&,
+                                                 const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> FinishRegistration(const std::string&, const std::string&, const std::string&,
+                                             const std::string&, int64_t, const std::string&, const std::string&,
+                                             const std::string&, const std::string&,
+                                             const std::vector<std::string>&, int64_t,
+                                             const RegistrationPublishOpts&) override {
+    return Unavailable();
+  }
+  Roe<RegistrationResult> UpdateNickname(const std::string&, const std::string&, int64_t,
+                                         const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> RevokeRegistration(const std::string&, const std::string&, int64_t) override {
+    return Unavailable();
+  }
+
+private:
+  static Error Unavailable() { return Error("registration not configured"); }
+};
+
+class UnconfiguredBlobClient final : public IBlobClient {
+public:
+  Roe<BlobPresignResult> Presign(const std::string&, const std::string&, uint64_t, BlobPurpose) override {
+    return Unavailable();
+  }
+  Roe<void> Retain(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> Delete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<void> SetProfileIcon(const std::string&, const std::string&, const std::string&,
+                           const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> PutUpload(const std::string&, const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<RelayFileStartResult> FileStart(const std::string&, uint64_t) override { return Unavailable(); }
+  Roe<RelayFilePartResult> FilePart(const std::string&, const std::string&, uint64_t) override {
+    return Unavailable();
+  }
+  Roe<RelayFileCompleteResult> FileComplete(const std::string&, const std::string&) override {
+    return Unavailable();
+  }
+  Roe<void> FileDelete(const std::string&, const std::string&) override { return Unavailable(); }
+  Roe<RelayFileListResult> FileList(const std::string&, const std::string&) override { return Unavailable(); }
+
+private:
+  static Error Unavailable() { return Error("blob service not configured"); }
+};
+
+} // namespace
+
 IRegistrationClient& ConversationsHub::Registration() {
-  return *registration_;
+  static UnconfiguredRegistrationClient unconfigured;
+  return registration_ ? *registration_ : unconfigured;
 }
 
 IBlobClient& ConversationsHub::Blob() {
-  return *blob_;
+  static UnconfiguredBlobClient unconfigured;
+  return blob_ ? *blob_ : unconfigured;
 }
 
 IPushDeviceClient* ConversationsHub::PushDevices() {

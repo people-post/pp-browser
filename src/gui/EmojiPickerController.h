@@ -7,8 +7,10 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
+#include <ui/base/ObserverPtr.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
+#include <ui/dom/EventListener.h>
 #include <ui/base/Types.h>
 
 #include <functional>
@@ -60,8 +62,14 @@ public:
   bool RegisterModel(ui::Context* context);
 
   void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
+  /** On phones a page sheet that opens at about a third of the screen (Kenneth 2026-11-05 原话 81). */
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
   void Close();
+  /**
+   * The phone composer's emoji sheet: closes it and brings the keyboard up in the message field (its X, a drag down
+   * on its top, the emoji button again, a tap in the field). A tap on the transcript only closes it (Close).
+   */
+  void CloseToKeyboard();
   /** Shown as an overlay or as the keyboard-area panel. */
   bool IsOpen() const { return layer_id_ >= 0 || bottom_chrome_mode_; }
 
@@ -95,6 +103,27 @@ private:
   static void SelectCategoryCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args);
   static void OnScrollCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&);
   static void CancelCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&);
+  static void CloseToKeyboardCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&);
+
+  /**
+   * While the composer's emoji sheet is open (phone): a press in the message field or a drag down on the sheet's top
+   * switches to the keyboard, a press on the transcript closes the sheet. One bubbling listener on the document.
+   */
+  class SheetTaps : public ui::EventListener {
+  public:
+    explicit SheetTaps(EmojiPickerController& owner) : owner_(owner) {}
+    ~SheetTaps() override { Detach(); }
+    void Attach(ui::Element* document);
+    void Detach();
+    void ProcessEvent(ui::Event& event) override;
+
+  private:
+    EmojiPickerController& owner_;
+    ui::ObserverPtr<ui::Element> document_;
+    /** Where a press on the sheet's top (grabber and title row) started, in px; < 0: none. */
+    float drag_start_y_ = -1.f;
+  };
+  SheetTaps sheet_taps_{*this};
 
   ui::Context* context_ = nullptr;
   int layer_id_ = -1;

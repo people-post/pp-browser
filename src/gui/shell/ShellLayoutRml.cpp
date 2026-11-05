@@ -100,34 +100,6 @@ std::string ShellLayoutRml::ExpandedBase() const {
     }
   }
   out << "</div></div>";
-  out << AccountSheet();
-  return out.str();
-}
-
-std::string ShellLayoutRml::AccountSheet() const {
-  if (!state_.account_sheet_open) {
-    return {};
-  }
-  const CompactChromeFrostSurface frost = ShellInterruption::ResolveFrostSurface(state_);
-  const bool frost_enabled = ChromeFrostEnabled();
-  const bool solid = state_.reduce_transparency;
-  std::ostringstream out;
-  out << "<div class=\"shell-account-sheet-scrim\" data-event-click=\"close_account_sheet()\"></div>";
-  out << "<div class=\"shell-account-sheet surface-chrome";
-  if (solid) {
-    out << " surface-chrome--solid";
-  }
-  out << "\" id=\"shell-account-sheet\">";
-  out << "<div class=\"shell-account-sheet-grabber\"></div>";
-  out << "<div class=\"shell-account-sheet-header row "
-      << SurfaceChromeClass(CompactChromeFrostSurface::AccountSheetHeader, frost, frost_enabled, solid) << "\">";
-  out << "<h2 class=\"heading-2\">Me</h2>";
-  out << "<button class=\"shell-close-btn\" type=\"button\" data-event-click=\"close_account_sheet()\">";
-  out << "<svg src=\"../icons/close.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>";
-  out << "</button>";
-  out << "</div>";
-  out << "<div class=\"shell-pane-body shell-account-sheet-body\" id=\"pane-body-settings\"></div>";
-  out << "</div>";
   return out.str();
 }
 
@@ -144,7 +116,12 @@ std::string ShellLayoutRml::CompactBase() const {
     if (home_inline) {
       out << " shell-nav-page--home";
     }
-    out << "\" id=\"shell-nav-page\">";
+    // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
+    if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
+      out << " shell-nav-page--frost";
+    }
+    // Root pages (Chats / Contacts / Me): the nav bar's small title and fade follow the scroll.
+    out << "\" id=\"shell-nav-page\" data-class-large-title-collapsed=\"large_title_collapsed\">";
     if (const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab)) {
       out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     } else if (home_inline) {
@@ -162,8 +139,9 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
     out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
-    out << "<svg src=\"../icons/back.svg\"></svg>";
+    out << "<svg src=\"../icons/v2/back.svg\"></svg>";
     out << "</button>";
+    out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
     out << "<div class=\"shell-composer-mount surface-chrome";
@@ -200,12 +178,16 @@ std::string ShellLayoutRml::CompactBase() const {
     if (solid) {
       out << " shell-bottom-chrome--solid";
     }
+    if (state_.nav_tab == NavTab::Home) {
+      // Home: the tab bar takes the ask-AI dock's colour, one bottom area with no line or seam between them.
+      out << " shell-bottom-chrome--home";
+    }
     out << "\" id=\"shell-bottom-chrome\">";
+    out << "<div class=\"bar-fade bar-fade--up\"></div>";
     out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 
-  out << AccountSheet();
   out << "</div>";
   return out.str();
 }
@@ -219,12 +201,23 @@ std::string ShellLayoutRml::TransientLayer() const {
   const bool frost_enabled = ChromeFrostEnabled();
   const bool solid = state_.reduce_transparency;
   std::ostringstream out;
-  out << "<div class=\"shell-layer shell-layer-transient\" id=\"shell-transient-layer\" data-model=\"window\">";
-  out << "<div class=\"shell-transient-chrome "
+  // On phones the pushed page gets the compact class too, so the phone styles of the page it shows apply.
+  const char* compact = state_.layout_mode == LayoutMode::Compact ? " shell-layer-compact" : "";
+  // The contact page and the blocked list have a 48dp bar on phones with only the back arrow, the colour of every phone
+  // bar, no lines; it hides while the page is scrolled away from its top (ShellNavBarScroll).
+  const bool titled =
+      compact[0] != '\0' && (top.spec.key == "contact_detail" || top.spec.key == "blocked_people");
+  out << "<div class=\"shell-layer shell-layer-transient" << compact << (titled ? " nav-bar-host" : "")
+      << "\" id=\"shell-transient-layer\" data-model=\"window\">";
+  out << "<div class=\"shell-transient-chrome " << (titled ? "shell-transient-chrome--titled " : "")
       << SurfaceChromeClass(CompactChromeFrostSurface::TransientHeader, frost, frost_enabled, solid) << "\">";
+  if (titled) {
+    out << "<div class=\"nav-bar-bg\"></div>";
+  }
   out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
-         "<svg src=\"../icons/back.svg\"></svg>"
+         "<svg src=\"../icons/v2/back.svg\"></svg>"
          "</button>";
+  out << "<div class=\"bar-fade\"></div>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");
   out << "</div>";
@@ -234,6 +227,44 @@ std::string ShellLayoutRml::TransientLayer() const {
 std::string ShellLayoutRml::Overlays() const {
   std::ostringstream out;
   for (const OverlayEntry& overlay : state_.overlay_stack) {
+    if (overlay.full_screen && state_.layout_mode == LayoutMode::Compact) {
+      // Phone full-screen page (the scanner): no scrim, frame or close button; the view has its own back. ShellHost
+      // lifts the layer under the status bar and pads the body by the safe areas.
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-full-screen\" id=\"shell-full-screen-"
+          << overlay.id << "\" data-model=\"window\">";
+      out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      out << "</div>";
+      continue;
+    }
+    if (overlay.page_sheet && state_.layout_mode == LayoutMode::Compact) {
+      // Phone page sheet: the scrim dims the page behind; ShellHost slides the sheet in and attaches its drag
+      // (ShellPageSheetGesture). The view keeps its own Cancel and its title row (.sheet-header); the close button
+      // sits at the right end of that row: a 44dp target around a small grey disc with the X.
+      // The stop's class sets the top edge (ShellHost switches to full height while the keyboard is up); at half and
+      // small the page behind is dimmed less.
+      const SheetDetent detent = overlay.sheet_detent;
+      const char* stop = detent == SheetDetent::Small   ? " shell-page-sheet--small"
+                         : detent == SheetDetent::Half  ? " shell-page-sheet--half"
+                         : detent == SheetDetent::Large ? " shell-page-sheet--large"
+                                                        : "";
+      const char* layer_stop = detent == SheetDetent::Small  ? " shell-layer-sheet--small"
+                               : detent == SheetDetent::Half ? " shell-layer-sheet--half"
+                                                             : "";
+      out << "<div class=\"shell-layer shell-layer-overlay shell-layer-sheet" << layer_stop << "\" data-model=\"window\">";
+      out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
+      // The view's key as a modifier class: a page with its own edge-to-edge rows (New chat) drops the side padding.
+      out << "<div class=\"shell-page-sheet shell-page-sheet--" << overlay.key << stop << "\" id=\"shell-page-sheet-"
+          << overlay.id << "\">";
+      out << "<div class=\"shell-page-sheet-grabber\"></div>";
+      out << "<button class=\"shell-close-btn shell-page-sheet-close\" type=\"button\" data-event-click=\"close_layer("
+          << overlay.id << ")\">";
+      out << "<span class=\"sheet-icon-disc\"><svg src=\"../icons/v2/close.svg\" width=\"12\" height=\"12\"></svg></span>";
+      out << "</button>";
+      // The compact class: a phone page shown in a sheet (New chat) keeps its phone styles.
+      out << "<div class=\"shell-overlay-body shell-layer-compact\" id=\"overlay-body-" << overlay.id << "\"></div>";
+      out << "</div></div>";
+      continue;
+    }
     out << "<div class=\"shell-layer shell-layer-overlay\" data-model=\"window\">";
     out << "<div class=\"shell-scrim\" data-event-click=\"close_layer(" << overlay.id << ")\"></div>";
     out << "<div class=\"shell-frame\">";
@@ -259,9 +290,31 @@ std::string ShellLayoutRml::BottomChrome() const {
     out << " surface-chrome--solid";
   }
   out << "\" id=\"shell-emoji-keyboard-panel\">";
+  // The rounded sheet stands on the panel, which is the composer's colour, so the bar above runs on behind its corners.
+  out << "<div class=\"shell-emoji-keyboard-sheet\">";
   out << "<div class=\"shell-emoji-keyboard-body\" id=\"shell-bottom-chrome-body\"></div>";
-  out << "</div></div>";
+  out << "</div></div></div>";
   return out.str();
+}
+
+bool ShellLayoutRml::DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label) {
+  // Two buttons share the 270dp card side by side (17dp text, a few dp of padding each); a label that would
+  // not fit in half of it sends the pair to a column, like UIAlertController does.
+  constexpr float kCjkDp = 17.f;
+  constexpr float kLatinDp = 9.f;
+  constexpr float kHalfButtonTextDp = 112.f;
+  const auto text_width = [](const std::string& label) {
+    float width = 0.f;
+    for (const unsigned char c : label) {
+      if (c >= 0xE0) {
+        width += kCjkDp; // lead byte of a 3-byte sequence (CJK)
+      } else if (c < 0x80) {
+        width += kLatinDp;
+      }
+    }
+    return width;
+  };
+  return text_width(cancel_label) > kHalfButtonTextDp || text_width(ok_label) > kHalfButtonTextDp;
 }
 
 std::string ShellLayoutRml::Dialog() const {
@@ -275,7 +328,13 @@ std::string ShellLayoutRml::Dialog() const {
   } else {
     out << "<div class=\"shell-scrim\" data-event-click=\"dialog_ok()\"></div>";
   }
-  out << "<div class=\"shell-dialog\">";
+  const std::string ok_label =
+      state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str());
+  const std::string cancel_label = Tr("common.cancel");
+  const bool stacked = state_.dialog.show_cancel && DialogButtonsStacked(cancel_label, ok_label);
+  out << "<div class=\"shell-dialog shell-dialog--alert" << (state_.dialog.destructive ? " shell-dialog--destructive" : "")
+      << "\">";
+  out << "<div class=\"shell-dialog-body\">";
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{dialog_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{dialog_message}}</p>";
   out << "<label class=\"shell-dialog-checkbox row\" data-if=\"dialog_show_checkbox\">";
@@ -285,13 +344,13 @@ std::string ShellLayoutRml::Dialog() const {
   out << "</label>";
   out << "<input class=\"shell-dialog-prompt\" type=\"text\" data-if=\"dialog_show_prompt\" "
          "data-value=\"dialog_prompt_value\"/>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"dialog_show_cancel\" "
+  out << "</div>";
+  out << "<div class=\"shell-dialog-actions row" << (stacked ? " shell-dialog-actions--stack" : "") << "\">";
+  out << "<button class=\"btn btn-secondary shell-dialog-cancel\" data-if=\"dialog_show_cancel\" "
          "data-event-click=\"dialog_cancel()\">"
-      << Tr("common.cancel") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"dialog_ok()\">"
-      << (state_.dialog.ok_label.empty() ? Tr("common.ok") : std::string(state_.dialog.ok_label.c_str()))
-      << "</button>";
+      << cancel_label << "</button>";
+  out << "<button class=\"btn btn-primary shell-dialog-ok" << (state_.dialog.show_cancel ? " shell-dialog-ok--split" : "")
+      << "\" data-event-click=\"dialog_ok()\">" << ok_label << "</button>";
   out << "</div></div></div>";
   return out.str();
 }
@@ -377,6 +436,7 @@ std::string ShellLayoutRml::ShellRoot() const {
   // (scan -> confirm: cancel left a dead OK button and a scrim over the whole app, 2026-10-28).
   // Overlay chrome mounts stay empty here; Remount* fills them (avoids full-shell remount).
   out << "<div id=\"shell-dialog-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--dialog\"></div>";
+  out << "<div id=\"shell-photo-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--photo\"></div>";
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";

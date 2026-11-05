@@ -23,6 +23,8 @@ public:
   virtual Roe<std::vector<CallSession>> ListActiveSessions() const = 0;
   /** A group's calls in any state, newest first (at most `limit`). */
   virtual Roe<std::vector<CallSession>> ListSessionsForGroup(const std::string& group_id, size_t limit = 20) const = 0;
+  /** Every call in any state, newest first (at most `limit`): the phone Home's Calls widget. */
+  virtual Roe<std::vector<CallSession>> ListRecentSessions(size_t limit) const = 0;
 
   virtual Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const = 0;
   virtual Roe<std::optional<CallParticipant>> FindParticipant(const std::string& call_id,

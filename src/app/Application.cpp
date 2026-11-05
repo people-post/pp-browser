@@ -6,6 +6,7 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 #include "app/DiagnosticsUpload.h"
+#include "feature/product/DemoDataSeeder.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/platform/DeploymentProfile.h"
@@ -36,6 +37,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/media/MediaDeviceArbiter.h"
 #include "lib/delivery/ChatPayloadValidator.h"
+#include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteThreadSchema.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/AppLifecycle.h"
@@ -72,6 +74,7 @@
 #include "feature/settings/ReachabilityNudge.h"
 #include "feature/settings/SettingsCommands.h"
 #include "gui/BadgeNotifyPorts.h"
+#include "gui/UiFrameStats.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/ChatSessionPorts.h"
 #include "app/ChatShellBridge.h"
@@ -99,8 +102,11 @@
 #include "gui/contacts/PeoplePickerController.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/EmojiPickerController.h"
+#include "gui/UiPerfTestController.h"
+#include "foundation/product/DevTools.h"
 #include "gui/EmojiPickerNotifyPorts.h"
 #include "gui/SettingsController.h"
+#include "app/StorageManagerBridge.h"
 #include "gui/shell/ShellFeedback.h"
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellHost.h"
@@ -159,7 +165,7 @@ constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 InputCoordinator* g_input_coordinator = nullptr;
 
 void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings,
-                                 ContactsController& contacts, ChatController& chat) {
+                                 ContactsController& contacts, ChatController& chat, UiPerfTestController* ui_perf) {
   shell.SetOnNavTabChanged([badges, &shell, &settings, &contacts, &chat](NavTab tab) {
     static NavTab previous = NavTab::Home;
     chat.CancelVoice(); // a recording is not carried to another tab, and a clip stops
@@ -202,17 +208,30 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     chat.OnShellLayoutSynced();
   });
 
-  shell.SetOnTransientPopped([&settings, &contacts](const std::string& key) {
+  shell.SetOnSessionSwipeAction([&chat](const std::string& thread_id, SessionSwipeAction action) {
+    chat.OnSessionSwipeAction(thread_id, action);
+  });
+
+  shell.SetOnTransientMounted([ui_perf](const std::string& key) {
+    if (ui_perf && key == "ui_perf_test") {
+      ui_perf->OnMounted();
+    }
+  });
+  shell.SetOnTransientPopped([&settings, &contacts, ui_perf](const std::string& key) {
+    if (ui_perf && key == "ui_perf_test") {
+      ui_perf->OnClosed();
+    }
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
+    }
+    if (key == "blocked_people") {
+      contacts.OnBlockedPeopleDismissed();
+      settings.RefreshBlockedCount();
     }
     if (key == "settings_detail") {
       settings.OnDetailDismissed();
     }
   });
-
-  shell.SetOnAccountSheetOpened([&settings]() { settings.OnAccountSheetOpened(); });
-  shell.SetOnAccountSheetClosed([&settings]() { settings.OnAccountSheetClosed(); });
 }
 
 bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier,
@@ -312,6 +331,9 @@ Application::Application() {
   PeoplePickerController::InstallInstance(*people_picker_);
   emoji_picker_ = std::make_unique<EmojiPickerController>();
   EmojiPickerController::InstallInstance(*emoji_picker_);
+  if constexpr (kDevToolsBuild) {
+    ui_perf_ = std::make_unique<UiPerfTestController>();
+  }
   chat_ = std::make_unique<ChatController>();
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
@@ -568,6 +590,14 @@ bool Application::InitializeUiHost(const char* window_title, int window_width, i
     StartupPhase phase("LoadFontFace:LatoLatin");
     ui::LoadFontFace(AssetsPath("fonts/LatoLatin-Regular.ttf"));
   }
+  {
+    // Family "Inter" in four weights (each file's own weight); RCSS opts in with font-family: Inter.
+    StartupPhase phase("LoadFontFace:Inter");
+    for (const char* file : {"fonts/Inter-Regular.ttf", "fonts/Inter-Medium.ttf", "fonts/Inter-SemiBold.ttf",
+                             "fonts/Inter-Bold.ttf"}) {
+      ui::LoadFontFace(AssetsPath(file));
+    }
+  }
 
   {
     StartupPhase phase("Localization::LoadFromAssets");
@@ -652,8 +682,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.delete_relay_file = [&facade](const std::string& blob_id) {
     return facade.DeleteRelayFileById(blob_id);
   };
-  settings_commands.drain_pending_attachment_media = [&facade]() { facade.DrainPendingAttachmentMedia(); };
-  settings_commands.clear_downloaded_attachments = [&facade]() { return facade.ClearDownloadedAttachments(); };
   // Me → Storage works on the hub's content store: open from messaging's Initialize to its teardown.
   const auto content_store = [this]() -> std::shared_ptr<CasStore> {
     return messaging_ != nullptr ? messaging_->Content() : nullptr;
@@ -866,6 +894,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
   settings_commands.load_support_discovery = [this]() -> std::optional<ClientCompatSupport> {
     return support_discovery_;
   };
+  settings_commands.blocked_count = [this]() { return contacts_ ? contacts_->BlockedCount() : 0; };
+  settings_commands.open_blocked_people = [this]() {
+    if (contacts_) {
+      contacts_->OpenBlockedPeople();
+    }
+  };
   settings_commands.open_support_chat = [this, &facade](const std::string& prefilled_text) -> Roe<void> {
     if (!support_discovery_ || !support_discovery_->enabled || support_discovery_->account_id.empty()) {
       return Error(Tr("support.unavailable"));
@@ -912,9 +946,6 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
 
     const ShellNavigationPorts nav = MakeShellNavigationPorts(*shell_);
-    if (nav.close_account_sheet) {
-      nav.close_account_sheet();
-    }
     if (nav.select_nav_tab) {
       nav.select_nav_tab(NavTab::Sessions);
     }
@@ -927,6 +958,20 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     }
     return {};
   };
+  settings_commands.ask_support = [this, open = settings_commands.open_support_chat](const std::string& question)
+      -> Roe<void> {
+    if (auto opened = open({}); !opened) {
+      return opened;
+    }
+    if (chat_) {
+      chat_->SendTypedText(question);
+    }
+    return {};
+  };
+  settings_commands.ask_ai_once = [this](const std::string& question) { return chat_ && chat_->AskAiOnce(question); };
+  if (chat_) {
+    chat_->BindAskSupport(settings_commands.ask_support); // the ask-AI panel's "Ask PP Support"
+  }
   settings_commands.send_diagnostics = [this, &facade](std::function<void(DiagnosticsUploadResult)> on_done) {
     DiagnosticsUploadDeps deps;
     deps.data_dir = store_.Snapshot().data_dir;
@@ -980,6 +1025,8 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     const auto last = ReadLastUpload(store_.Snapshot().data_dir);
     return last ? last->upload_id : std::string();
   };
+  settings_commands.storage =
+      MakeStorageManagerPorts(facade, [this]() { return store_.Snapshot().profile_data_dir; });
   // Copy ports before BindCommands moves the command bag.
   SettingsToolPorts settings_tool_ports = SettingsToolPortsFromCommands(settings_commands);
   settings_tool_ports.open_support_chat = [open = settings_commands.open_support_chat]() {
@@ -1002,12 +1049,17 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   settings_->BindShellNavigation(shell_navigation);
 
   chat_->BindSessionStore(store_);
+  contacts_->BindSessionStore(&store_);
 
   contacts_->BindShellNavigation(shell_navigation);
   contacts_->BindShellFeedback(shared_feedback);
   qr_scan_->BindShellNavigation(shell_navigation);
+  qr_scan_->BindShowMyQr([this]() { contacts_->OpenMyQr(); });
   contacts_->BindScanPorts(ScanPorts{
       .scan_qr = [this](QrScanResultCallback done) { qr_scan_->Open(std::move(done)); },
+  });
+  contacts_->BindAccountPorts(ContactsAccountPorts{
+      .load_identity = [&facade]() { return facade.LoadProfileIdentityView(); },
   });
   shell.BindScanAction([this]() { contacts_->OnScanQr(); });
   contacts_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "contacts_chrome"));
@@ -1019,6 +1071,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
 
   chat_->BindShellNavigation(shell_navigation);
   chat_->BindShellFeedback(shared_feedback);
+  settings_->BindOpenHomeEdit([this]() { chat_->OpenHomeEdit(); });
+  chat_->BindOpenSettingsSection([this](const std::string& section_id) { settings_->OpenSection(section_id); });
   chat_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "chat_chrome"));
   chat_->BindSurfaceNotify(ChatSurfaceNotifyPorts{
       .push_surface = [this](const ChatSurfaceSnapshot& snap) { chat_shell_bridge_->OnSurface(snap); },
@@ -1060,6 +1114,10 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
         people_picker_shell_bridge_->OnSurface(snap);
       },
   });
+  if (ui_perf_) {
+    ui_perf_->BindShellNavigation(shell_navigation);
+    settings_->BindOpenUiPerfTest([this]() { ui_perf_->Open(); });
+  }
   emoji_picker_->BindShellNavigation(shell_navigation);
   emoji_picker_->BindShellFeedback(shared_feedback);
   emoji_picker_->BindSessionStore(store_);
@@ -1130,6 +1188,18 @@ void Application::WireCalls() {
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
     call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.call_joinable = [this](const std::string& thread_id) { return call_->CallJoinableInThread(thread_id); };
+    call_actions.call_join_bar_text = [this](const std::string& thread_id) { return call_->CallJoinBarText(thread_id); };
+    call_actions.recent_calls_reader = [this](const size_t limit) -> std::function<std::vector<call_queries::RecentCall>()> {
+      ConversationsHub& hub = Conversations();
+      const std::optional<LocalIdentity> identity = messaging_facade_ ? messaging_facade_->GetIdentity() : std::nullopt;
+      if (!hub.IsInitialized() || hub.ProfileDbPath().empty() || !identity || identity->account_id.empty()) {
+        return {};
+      }
+      // Its own handle on profile.db (each call opens and closes it), so the read can run on a worker.
+      return [db_path = hub.ProfileDbPath(), local = identity->account_id, limit]() {
+        return call_queries::RecentCalls(SqliteCallSessionStore(db_path), local, limit);
+      };
+    };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
@@ -1366,6 +1436,8 @@ void Application::WireUnlockPinAndFlow() {
     flow_ports.notify_layer_closing = [this](int layer_id) { flow_->NotifyLayerClosing(layer_id); };
     shell_->BindFlowCoordinator(flow_ports);
     people_picker_->BindFlowCoordinator(flow_ports);
+    contacts_->BindFlowCoordinator(flow_ports);
+    chat_->BindFlowCoordinator(flow_ports);
     qr_scan_->BindFlowCoordinator(flow_ports);
     emoji_picker_->BindFlowCoordinator(std::move(flow_ports));
   }
@@ -1470,6 +1542,16 @@ void Application::WireAgentAndConfig() {
   contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
   store_.AddProfilePrefsListener(
       [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
+  // A contact starred or unstarred (on their page), or the recovery phrase opened: Home's widgets follow.
+  store_.AddProfilePrefsListener(
+      [this, starred = store_.Snapshot().profile_prefs.starred_contacts,
+       phrase_seen = store_.Snapshot().profile_prefs.recovery_phrase_seen](const ProfilePreferences& prefs) mutable {
+        if (prefs.starred_contacts != starred || prefs.recovery_phrase_seen != phrase_seen) {
+          starred = prefs.starred_contacts;
+          phrase_seen = prefs.recovery_phrase_seen;
+          chat_->OnHomePrefsChanged();
+        }
+      });
 }
 
 bool Application::MountPresenters(ui::Context* context) {
@@ -1497,6 +1579,10 @@ bool Application::MountPresenters(ui::Context* context) {
     log().error << "EmojiPickerController RegisterModel failed";
     return false;
   }
+  if (ui_perf_ && !ui_perf_->RegisterModel(context)) {
+    log().error << "UiPerfTestController RegisterModel failed";
+    return false;
+  }
   if (!onboarding_->RegisterModel(context)) {
     log().error << "OnboardingController RegisterModel failed";
     return false;
@@ -1510,6 +1596,15 @@ bool Application::MountPresenters(ui::Context* context) {
   ContactsNotifyPorts contacts_notify;
   contacts_notify.refresh = [this]() { contacts_->Refresh(); };
   contacts_notify.select_contact = [this](const std::string& id) { contacts_->OnSelectContact(id); };
+  contacts_notify.select_contact_sheet = [this](const std::string& id) { contacts_->OnSelectContactSheet(id); };
+  contacts_notify.show_member_sheet = [this](const std::string& account_id, const std::string& name,
+                                            const std::string& icon_src) {
+    contacts_->OnShowMemberSheet(account_id, name, icon_src);
+  };
+  contacts_notify.set_group_admin = [this](GroupAdminCard card) { contacts_->SetGroupAdminCard(std::move(card)); };
+  contacts_notify.open_new_chat = [this]() { contacts_->OpenNewChatPage(); };
+  contacts_notify.message_contact = [this](const std::string& id) { contacts_->MessageContact(id); };
+  people_picker_->BindContactsNotify(contacts_notify); // a member's profile from the member list
   chat_->BindContactsNotify(std::move(contacts_notify));
 
   PeoplePickerNotifyPorts chat_people_picker_notify;
@@ -1517,6 +1612,15 @@ bool Application::MountPresenters(ui::Context* context) {
   chat_people_picker_notify.open_from_dm = [this](const std::string& id) { people_picker_->OpenFromDm(id); };
   chat_people_picker_notify.open_group_members = [this](const std::string& thread_id) {
     people_picker_->OpenForGroupMembers(thread_id);
+  };
+  chat_people_picker_notify.open_group_add_members = [this](const std::string& thread_id) {
+    people_picker_->OpenForGroupAddMembers(thread_id);
+  };
+  chat_people_picker_notify.tap_group_member = [this](const std::string& thread_id, const std::string& identity) {
+    people_picker_->TapGroupMember(thread_id, identity);
+  };
+  chat_people_picker_notify.offer_group_admin = [this](const std::string& thread_id, const std::string& sender) {
+    people_picker_->OfferGroupAdmin(thread_id, sender);
   };
   chat_->BindPeoplePickerNotify(std::move(chat_people_picker_notify));
 
@@ -1562,6 +1666,8 @@ bool Application::MountPresenters(ui::Context* context) {
       contacts_shell_bridge_->Clear();
     }
     contacts_->BindContactsPorts({});
+    contacts_->BindSessionStore(nullptr);
+    settings_->BindOpenHomeEdit({});
     chat_->BindShellNavigation({});
     chat_->BindShellFeedback({});
     chat_->BindSurfaceNotify({});
@@ -1575,6 +1681,7 @@ bool Application::MountPresenters(ui::Context* context) {
       messaging_facade_->BindAgentInbound({});
     }
     chat_->BindContactsNotify({});
+    people_picker_->BindContactsNotify({});
     chat_->BindPeoplePickerNotify({});
     chat_->BindEmojiPickerNotify({});
     chat_->BindMessagingUi({});
@@ -1594,6 +1701,10 @@ bool Application::MountPresenters(ui::Context* context) {
       emoji_picker_->BindShellNavigation({});
       emoji_picker_->BindShellFeedback({});
       emoji_picker_->BindFlowCoordinator({});
+    }
+    if (ui_perf_) {
+      settings_->BindOpenUiPerfTest({});
+      ui_perf_->BindShellNavigation({});
     }
     if (client_compat_) {
       client_compat_->BindCompatPorts({});
@@ -1657,9 +1768,62 @@ bool Application::MountPresenters(ui::Context* context) {
   return true;
 }
 
+namespace {
+
+/** UI demo app only: fixed fake data, written once per process before any controller reads the stores. */
+bool SeedUiDemoDataOnce(ConversationsHub& messaging, SessionStore& store) {
+  static DemoDataSeeder seeder;
+  auto log = logging::getLogger("Application");
+  auto deps = MakeDemoSeedDeps(messaging);
+  if (!deps) {
+    log.error << "Demo data not written: " << deps.error().message;
+    return false;
+  }
+  // Home's widgets: missed calls in profile.db, and a couple of starred contacts when none is starred.
+  const SqliteCallSessionStore calls(messaging.ProfileDbPath());
+  deps->calls = &calls;
+  deps->star_contacts = [&store, &log](const std::vector<std::string>& ids) {
+    ProfilePreferences prefs = store.Snapshot().profile_prefs;
+    if (!prefs.starred_contacts.empty()) {
+      return;
+    }
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    prefs.starred_contacts = ids;
+    if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
+      log.warning << "Demo stars not saved: " << saved.error().message;
+    }
+  };
+  auto seeded = seeder.SeedOnce(*deps);
+  if (!seeded) {
+    log.error << "Demo data not written: " << seeded.error().message;
+    return false;
+  }
+  return *seeded;
+}
+
+} // namespace
+
+void Application::SeedAndRefreshUiDemo() {
+  if (!SeedUiDemoDataOnce(Conversations(), store_)) {
+    return;  // already seeded, or failed (logged as an error by the seeder wrapper)
+  }
+  // The lists may already have loaded the empty stores: tell them (and the tab badges) about the new rows.
+  chat_->OnMessagingReady();
+  contacts_->Refresh();
+  if (messaging_facade_) {
+    messaging_facade_->NotifyThreadChanged();
+  }
+  if (badges_) {
+    badges_->Refresh();
+  }
+}
+
 void Application::WireHubCallbacks() {
   ConversationsHub& messaging = Conversations();
-  messaging.SetOnMessagingReady([this]() {
+  const auto on_ready = [this]() {
+    if constexpr (kUiDemoBuild) {
+      SeedAndRefreshUiDemo();  // first and synchronous: chat_ and contacts_ read the rows right after
+    }
     // at-rest A011 (temporary): the Keychain backup item earlier builds wrote; nothing reads it now.
     AppRuntime::PostWorkerNormal([this]() {
       if (auto removed = RemoveRetiredKeychainBackup(OsSecureBlobStore()); !removed) {
@@ -1672,12 +1836,18 @@ void Application::WireHubCallbacks() {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);
     }
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell_->State());
-    if (chrome.account_sheet_open) {
-      settings_->OnAccountSheetOpened();
-    } else if (chrome.nav_tab == NavTab::Me) {
+    if (chrome.nav_tab == NavTab::Me) {
       settings_->OnNavTabActivated();
     }
-  });
+  };
+  messaging.SetOnMessagingReady(on_ready);
+  // The demo app unlocks at bootstrap, before this callback exists, so its ready event was already missed. The
+  // controllers are not mounted yet and read the stores when they are: seeding now is early enough.
+  if constexpr (kUiDemoBuild) {
+    if (messaging.IsMessagingReady()) {
+      SeedAndRefreshUiDemo();
+    }
+  }
   messaging.SetOnMeshReady([this]() {
     chat_->OnMeshReady();
     contacts_->Refresh();
@@ -1708,9 +1878,19 @@ void Application::WireHubCallbacks() {
     });
   });
   messaging.SetOnPeerIconsChanged([this]() {
+    // A burst of icons (a group's members) is one refresh: the flag is cleared when the posted task runs.
+    if (peer_icons_refresh_posted_.exchange(true)) {
+      return;
+    }
     AppRuntime::PostUI([this]() {
+      peer_icons_refresh_posted_ = false;
       if (contacts_) {
         contacts_->Refresh();
+        contacts_->RefreshMemberIcon(
+            [this](const std::string& identity) { return Conversations().IdentityIconLocalPath(identity); });
+      }
+      if (chat_) {
+        chat_->OnPeerIconsChanged();
       }
       if (call_) {
         call_->RefreshPendingRing();
@@ -1725,10 +1905,12 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   chat_ports.finalize_thread_display = [this]() { chat_->FinalizeThreadDisplay(); };
   chat_ports.select_thread = [this](const std::string& id) { chat_->OnSelectThread(id); };
   chat_ports.on_find_someone = [this]() { chat_->OnFindSomeone(); };
+  chat_ports.open_new_group = [this]() { people_picker_->OpenFree(); };
+  chat_ports.new_ai_chat = [this]() { chat_->StartNewAiChat(); };
   contacts_->BindChatPorts(chat_ports);
   people_picker_->BindChatPorts(std::move(chat_ports));
 
-  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_);
+  WireShellPresentationEvents(shell, badges_.get(), *settings_, *contacts_, *chat_, ui_perf_.get());
   shell_->SetOnBottomChromeDismissed([this]() {
     if (emoji_picker_) {
       emoji_picker_->Close();
@@ -1776,6 +1958,27 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     prefs.sidebar_collapsed = collapsed;
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     (void)store_.SaveProfilePrefs(prefs);
+  });
+  // Phone AI dot (DESIGN-pp-ui §8.14): on / look / size follow Me → AI assistant through ConfigApplyBridge; where it rests
+  // is written here after a drag. A tap opens the ask-AI panel; it keeps off Me → Account & security.
+  shell_->SetAiDot(bootstrap.profile_prefs.ai_dot_shown, bootstrap.profile_prefs.ai_dot_look,
+                   bootstrap.profile_prefs.ai_dot_size);
+  shell_->SetAiDotPlace(bootstrap.profile_prefs.ai_dot_left, bootstrap.profile_prefs.ai_dot_y_permille,
+                         bootstrap.profile_prefs.ai_dot_tucked);
+  shell_->SetOnAiDotTap([this]() { chat_->OpenAskAiFromDot(); });
+  shell_->SetOnAiDotMoved([this](const bool left, const int y_permille, const bool tucked) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.ai_dot_left == left && prefs.ai_dot_y_permille == y_permille && prefs.ai_dot_tucked == tucked) {
+      return;
+    }
+    prefs.ai_dot_left = left;
+    prefs.ai_dot_y_permille = y_permille;
+    prefs.ai_dot_tucked = tucked;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
+  shell_->SetAiDotSecretPage([this]() {
+    return shell_->State().nav_tab == NavTab::Me && settings_->ShowsSecuritySection();
   });
   shell_->SetAuxiliaryWidthPref(bootstrap.profile_prefs.auxiliary_width_dp);
   shell_->SetOnAuxiliaryWidthChanged([this](int width_dp) {
@@ -1892,10 +2095,11 @@ void Application::Run() {
     AppRuntime::RunUITasks();
     const auto tasks_done = std::chrono::steady_clock::now();
 
-    if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
+    if (shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
     }
-    if (shell_->State().nav_tab == NavTab::Contacts) {
+    // The contact page also ticks while it is a page sheet over another tab (its edits, its close).
+    if (shell_->State().nav_tab == NavTab::Contacts || contacts_->DetailSheetOpen()) {
       contacts_->Tick();
     }
     call_->Tick();
@@ -1919,6 +2123,9 @@ void Application::Run() {
       // Our own work ends here. Present can block on vsync or an occluded window, which is not jank.
       const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
+      if (ui_perf_ && ui_perf_->IsOpen()) {
+        ui_perf_->OnFrame(std::chrono::steady_clock::now()); // engine test page: frame-to-frame timing
+      }
       if (!logged_first_present) {
         first_present_seen->store(true);
         StartupMark("first_present");
@@ -1928,6 +2135,9 @@ void Application::Run() {
                                                               .count()))
             .Emit();
         logged_first_present = true;
+        if (ui_perf_ && UiPerfTestController::OpenAtStartupRequested()) {
+          AppRuntime::PostUI([this]() { ui_perf_->Open(); }); // --ui-perf-test
+        }
         AppRuntime::PostUI([this]() {
           OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));
         });
@@ -1937,6 +2147,9 @@ void Application::Run() {
       // the swap is left out). The first presented
       // frame is not counted, and at most one line a second is written, carrying how many were skipped.
       const auto frame_done = std::chrono::steady_clock::now();
+      UiFrameStats::AddFrame(
+          std::chrono::duration_cast<std::chrono::microseconds>(layout_done - tasks_done).count(),
+          std::chrono::duration_cast<std::chrono::microseconds>(draw_done - draw_started).count());
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
@@ -1979,8 +2192,10 @@ void Application::Shutdown() {
     qr_scan_->Shutdown();
     qr_scan_->BindShellNavigation({});
     qr_scan_->BindFlowCoordinator({});
+    qr_scan_->BindShowMyQr({});
   }
   contacts_->BindScanPorts({});
+  contacts_->BindAccountPorts({});
   shell_->BindScanAction({});
 
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
@@ -2019,6 +2234,7 @@ void Application::Shutdown() {
     messaging_facade_->BindAgentInbound({});
   }
   chat_->BindContactsNotify({});
+  people_picker_->BindContactsNotify({});
   chat_->BindPeoplePickerNotify({});
   chat_->BindEmojiPickerNotify({});
   chat_->BindMessagingUi({});

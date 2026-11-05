@@ -16,11 +16,17 @@ enum class NavTab { Home, Sessions, Contacts, Me };
 
 enum class OverlayKind { Generic, Alert, Confirm, Custom };
 
+/**
+ * Where a phone page sheet stops (Kenneth 2026-11-04, every sheet alike): Large is the height it opens at (about 4/5
+ * of the screen, a strip of the page behind left in sight); Full near the top of the screen; Half about half of it;
+ * Small about a third (the title row and the top of the content).
+ */
+enum class SheetDetent { Full, Large, Half, Small };
+
 enum class InterruptionKind {
   None,
   CompactChatOverlay,
   AuxiliarySheet,
-  AccountSheet,
   Transient,
   OverlayLayer,
   Dialog,
@@ -29,13 +35,12 @@ enum class InterruptionKind {
   PinGate,
 };
 
-/** At most one compact chrome bar uses backdrop frost per frame. */
+/** Which compact chrome is frosted: one surface at a time (BottomNav: the tab page's nav bar and its tab bar). */
 enum class CompactChromeFrostSurface {
   None,
   BottomNav,
   ChatOverlayHeader,
   AuxiliarySheetChrome,
-  AccountSheetHeader,
   TransientHeader,
 };
 
@@ -58,11 +63,19 @@ struct ShellConfig {
   float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
   /** Compact bottom nav bar height (excludes safe-area inset). */
-  float compact_nav_height_dp = 56.f;
-  /** Horizontal inset for floating compact nav pill (lg1 layout). */
-  float compact_nav_horizontal_inset_dp = 12.f;
+  float compact_nav_height_dp = 49.f;
+  /** Horizontal inset for the compact tab bar (full-width, so 0). */
+  float compact_nav_horizontal_inset_dp = 0.f;
   size_t max_toasts = 3;
   float toast_short_ms = 3000.f;
+};
+
+/** What paints along the bottom edge of the compact shell (decides who covers the home-indicator strip). */
+enum class CompactBottomSurface {
+  None,     ///< Desktop / nothing: the document body shrinks by the inset.
+  TabBar,   ///< Tab bar shown: the bar grows by the inset and paints the strip.
+  Composer, ///< Chat overlay (no tab bar): the composer mount pads by the inset and paints the strip.
+  Page,     ///< Transient page: the page pads by the inset and paints the strip.
 };
 
 /** Derived dp offsets for compact floating chrome + safe-area (lg1). */
@@ -82,9 +95,19 @@ struct CompactChromeLayout {
   /** Extra padding inside content so the last row clears the floating nav. */
   float content_padding_bottom_dp = 0.f;
   float chrome_bottom_dp = 0.f;
-  /** Auxiliary sheet offset above the compact nav rail (account sheet uses chrome_bottom_dp). */
+  /**
+   * Home-indicator inset the bottom surface (tab bar / composer mount / transient page) pads itself by
+   * so its background reaches the screen edge. 0 while the keyboard is up or on desktop.
+   */
+  float bottom_surface_padding_dp = 0.f;
+  /** Auxiliary sheet offset above the compact nav rail. */
   float sheet_bottom_dp = 0.f;
   float chrome_horizontal_inset_dp = 0.f;
+  /**
+   * Phone toast: distance of the toast stack from the bottom of the document body, so the pill sits just
+   * above the tab bar / composer (and so above the keyboard). 0 when there is no bottom surface (desktop).
+   */
+  float toast_bottom_dp = 0.f;
 };
 
 struct PaneSpec {
@@ -98,12 +121,30 @@ struct PaneSpec {
    * instead of the live focus element (often the button that opened the overlay).
    */
   std::string return_focus_id;
+  /**
+   * PushLayer on phones: an iOS page sheet (rises from the bottom to SheetDetent::Large, rounded top, grab handle,
+   * the page behind dimmed; dragged between small, half, large and full, let go low or flicked down from small to
+   * close) instead of the centred
+   * panel. Desktop is unchanged.
+   */
+  bool page_sheet = false;
+  /**
+   * PushLayer on phones: a full-screen page reaching every screen edge (under the status bar and the home indicator)
+   * with no scrim, frame or close button: the view brings its own way out and keeps its controls inside the
+   * shell-overlay-body, which ShellHost pads by the safe areas. Desktop is unchanged.
+   */
+  bool full_screen = false;
+  /** A phone page sheet's first stop (the reaction emoji picker opens at Small, about a third of the screen). */
+  SheetDetent sheet_detent = SheetDetent::Large;
 };
 
 /** IME-replacement bottom panel (mobile/compact); not a modal overlay. */
 struct BottomChromeSpec {
   std::string key;
   std::string rml_path;
+  /** > 0: the panel is this share of the window's height (a sheet, Kenneth 2026-11-05: about a third) and keeps it;
+   *  0: it takes the on-screen keyboard's height, like the keyboard it stands in for. */
+  float height_share = 0.f;
 };
 
 struct PaneState {
@@ -118,6 +159,12 @@ struct OverlayEntry {
   std::string key;
   std::string rml_path;
   std::function<void(bool)> on_result;
+  /** PaneSpec::page_sheet: shown as a page sheet on phones. */
+  bool page_sheet = false;
+  /** Where the sheet stands now (moved by its drag); while the keyboard is up it shows full height anyway. */
+  SheetDetent sheet_detent = SheetDetent::Large;
+  /** PaneSpec::full_screen: edge to edge on phones. */
+  bool full_screen = false;
 };
 
 struct ToastEntry {
@@ -134,6 +181,8 @@ struct DialogState {
   /** When non-empty, used as the primary button label instead of common.ok. */
   ui::String ok_label;
   bool show_cancel = false;
+  /** The confirm button deletes / removes / resets something: shown in the danger colour on the phone. */
+  bool destructive = false;
   bool show_checkbox = false;
   ui::String checkbox_label;
   bool checkbox_checked = false;
@@ -196,6 +245,25 @@ struct CallRingState {
   ui::String accept_short;
   /** Short label under the round voice-answer circle button. */
   ui::String voice_short;
+  // Phone ring page (DESIGN-pp-ui 8.12, mockups 06-CallRing / 06-CallGroupRing): the caller (or the group) big, what
+  // kind of call under it. Avatar fields are written into the markup (a change remounts).
+  ui::String phone_title;
+  ui::String phone_subtitle;
+  bool group = false;
+  bool has_avatar = false;
+  ui::String avatar_src;
+  ui::String avatar_letter = "?";
+  int avatar_tone = 0;
+};
+
+/** One line of the phone call's "how this call got through" sheet (CallConnectStory events, in words). */
+struct CallStoryLine {
+  std::string time;
+  std::string text;
+  /** Drawn in the secure colour (how it connected, the encryption, a closer way); else success green. */
+  bool secure = false;
+
+  bool operator==(const CallStoryLine&) const = default;
 };
 
 /** One row in the in-call participant roster strip. */
@@ -213,6 +281,9 @@ struct CallRosterParticipantState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  /** Speaking now (CallActiveSpeaker::Speaking; we by our microphone): the phone page rings the tile. Bound, and
+   * part-dirtied on its own (CallChromeChangedVariables), at most every CallController::kSpeakingRingRefreshMs. */
+  bool speaking = false;
 };
 
 /** In-call chrome presentation mode (V031). */
@@ -250,6 +321,8 @@ struct CallInProgressState {
   bool show_invite = false;
   /** Show Retry after 1:1 P2P connect fail/timeout. */
   bool show_retry = false;
+  /** An outgoing call still ringing: the phone shows a labelled Cancel (ShowsCancelCall). */
+  bool calling = false;
   /** Phone-like devices: earpiece / speakerphone toggle. */
   bool show_speaker = false;
   /** Hide Camera when video disallowed, encoder missing, or hop A↑ too small for video_lo. */
@@ -301,6 +374,46 @@ struct CallInProgressState {
   /** Debug-only subtitle under elapsed (`SFU · 24k · …`). */
   bool show_debug_subtitle = false;
   ui::String debug_subtitle;
+
+  // --- Phone call page (DESIGN-pp-ui 8.12 with its 2026-11-04 connection story; mockups 06-Call*, 08). Fields
+  // written into the markup remount when they change (CallChromeSync); the bound ones dirty only themselves.
+  /** The other person's name (1:1) or the group's name. */
+  ui::String phone_title;
+  bool video = false;
+  bool peer_has_avatar = false;
+  ui::String peer_avatar_src;
+  ui::String peer_avatar_letter = "?";
+  int peer_avatar_tone = 0;
+  bool self_has_avatar = false;
+  ui::String self_avatar_src;
+  ui::String self_avatar_letter = "?";
+  int self_avatar_tone = 0;
+  /** Couldn't connect / disconnected: the failure page (plain words, Try again / Close). */
+  bool phone_failed = false;
+  ui::String failed_text;
+  /** Before connect: the moving line, the steps (0: calling, 1: answered) and the rotating tips (RCSS only). */
+  bool story_active = false;
+  int story_stage = 0;
+  ui::String story_step1;
+  ui::String story_step2;
+  ui::String story_step3;
+  /** Just connected (1:1): "Connected directly, 0.9 s" for 4 s, then it fades (bound). */
+  ui::String result_text;
+  bool result_fading = false;
+  /** In call: PP's own signal bar, two dots joined by a line and four bars (bound; changes at most every 500 ms). */
+  bool signal_shown = false;
+  int signal_bars = 4;
+  /** 0 good (secure), 1 fair (warn + word), 2 poor (danger + word). */
+  int signal_tone = 0;
+  ui::String signal_word;
+  /** The top pill (DESIGN-pp-ui 8.11): slower line, reconnecting, closer way (bound). */
+  ui::String notice_text;
+  bool notice_warn = false;
+  bool notice_fading = false;
+  /** The "how this call got through" sheet (a tap on the signal bar). */
+  bool story_sheet_open = false;
+  std::vector<CallStoryLine> story_lines;
+  ui::String story_how;
 };
 
 struct PaneVisibility {
@@ -331,7 +444,6 @@ struct ShellState {
   std::vector<OverlayEntry> overlay_stack;
 
   bool compact_chat_open = false;
-  bool account_sheet_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;
@@ -339,6 +451,8 @@ struct ShellState {
   /** Expanded layout only: secondary pane width (dp, clamped by ShellLayout) and user collapse. */
   int sidebar_width_dp = 240;
   bool sidebar_collapsed = false;
+  /** Phone layout: the active root page (Chats / Contacts / Me) has scrolled its 52dp large title away. */
+  bool large_title_collapsed = false;
   /** Expanded layout only: auxiliary pane width (dp, clamped by ShellLayout). */
   int auxiliary_width_dp = 320;
 
@@ -422,6 +536,25 @@ struct ShellState {
   int safe_area_top_dp = 0;
   /** Bottom safe-area inset in dp (SDL and/or machine prefs). */
   int safe_area_bottom_dp = 0;
+
+  /**
+   * Phone AI dot (DESIGN-pp-ui §8.14; ShellAiDot). From profile prefs: Me → AI assistant → Show AI dot and the
+   * assistant look (`a` one eye, `b` two eyes, `c` cool, `d` plain), its size (`s` 52dp, `m` 64dp, `l` 76dp; bound),
+   * and where it rests (side, height in the band).
+   */
+  bool ai_dot_enabled = true;
+  ui::String ai_dot_look = "b";
+  ui::String ai_dot_size = "m";
+  bool ai_dot_left = false;
+  int ai_dot_y_permille = 600;
+  /** Tucked half off its side by the user (flung or dragged into the edge); kept with the place. */
+  bool ai_dot_tucked = false;
+  /** Bound: the dot is on screen now; its action now (AiDotModel::IdleName: `sway`, `blink`, `look`, `talk`, `shy`,
+   * `wave`, `listen`, `think`, `five`, `happy`, `private`, `sleep`, `poke`, `pop`, or empty); asleep (eyes shut, still) after
+   * its sleep until the next touch. */
+  bool ai_dot_shown = false;
+  ui::String ai_dot_idle;
+  bool ai_dot_asleep = false;
 
   /** From profile prefs — opaque compact chrome only (no backdrop frost). */
   bool reduce_transparency = false;

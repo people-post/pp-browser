@@ -8,6 +8,7 @@
 #include "lib/calls/CallMobility.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/platform/IncomingLink.h"
+#include "gui/UiPerfTestController.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
@@ -17,6 +18,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/platform/PlatformHooks.h"
 #include "foundation/product/AppVersion.h"
+#include "foundation/product/DevTools.h"
 #include "foundation/product/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
@@ -64,6 +66,10 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--debug") == 0) {
       debug_mode = true;
+    } else if (std::strcmp(argv[i], "--ui-perf-test") == 0) {
+      pbr::UiPerfTestController::RequestOpenAtStartup(); // developer builds only: open Settings -> About -> Engine test page
+    } else if (std::strcmp(argv[i], "--ui-perf-test-stress") == 0) {
+      pbr::UiPerfTestController::RequestOpenAtStartup(true); // same page, starting on the 2000-row stress list
     } else if (std::strcmp(argv[i], "--startup-timing") == 0) {
       startup_timing = true;
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
@@ -171,10 +177,12 @@ int main(int argc, char** argv) {
   // cannot hold the window back. The pending dump is cleared only after the worker's upload succeeds.
   {
     const auto& snapshot = app.Store().Snapshot();
-    pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
-                                           enabled = snapshot.profile_prefs.crash_reports_enabled,
-                                           base_url = snapshot.config.relay.base_url]() {
-      pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+    pbr::RunIfUploadAllowed(pbr::kUiDemoBuild, [&snapshot] {
+      pbr::AppRuntime::PostWorkerBackground([data_dir = snapshot.data_dir, profile_data_dir = snapshot.profile_data_dir,
+                                             enabled = snapshot.profile_prefs.crash_reports_enabled,
+                                             base_url = snapshot.config.relay.base_url]() {
+        pbr::MaybeUploadPendingCrashReport(data_dir, profile_data_dir, enabled, base_url);
+      });
     });
   }
   pbr::StartupMark("enter_Application::Run");

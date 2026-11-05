@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <thread>
 #include <stdexcept>
 #include <filesystem>
@@ -22,10 +23,15 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "feature/conversations/MessageRouter.h"
 #include "gui/shell/ShellSetupPorts.h"
+#include "gui/shell/FavoritesRowModel.h"
+#include "lib/ui/ShellLayout.h"
+#include "lib/ui/EmojiCatalog.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/NotificationBody.h"
+#include "feature/ai/ArticleFeedFetch.h"
+#include "feature/presenters/HomeToday.h"
 #include "feature/presenters/SessionListText.h"
 #include "feature/presenters/SessionMenu.h"
 #include "feature/presenters/ThreadSearch.h"
@@ -69,6 +75,9 @@
 #include "common/StartupTiming.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "lib/messaging/GroupTypes.h"
+#include "lib/people/AvatarGlyph.h"
+#include "lib/people/ContactIdentity.h"
+#include "lib/people/ContactTypes.h"
 #include "lib/people/PeerDisplayLabel.h"
 #include "lib/people/PeopleLookupFailure.h"
 #include "lib/people/ContactJson.h"
@@ -88,10 +97,13 @@
 #include "gui/shell/DeferredStartup.h"
 #include "gui/CallActionsPorts.h"
 #include "gui/UnlockEnsurePorts.h"
+#include "gui/chat/PhotoPreview.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/SettingsController.h"
 #include "lib/ui/PaymentFeedback.h"
 #include "gui/UserFeedback.h"
+#include "feature/product/DemoDataSeeder.h"
+#include "foundation/product/DevTools.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "mesh/reachability/Reachability.h"
 #include "foundation/data/Config.h"
@@ -114,6 +126,9 @@
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Element.h>
+#include <ui/base/Tween.h>
+#include <ui/style/Property.h>
+#include <ui/style/Transform.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/widgets/ElementFormControlTextArea.h>
 #include <ui/base/StringUtilities.h>
@@ -132,6 +147,13 @@ static_assert(kSessionMutedForever == kThreadMutedForever,
               "SessionMenu.h and IThreadLocalPrefsStore.h must agree on \"always\"");
 
 namespace {
+
+/** The desktop menu's Cancel row; the phone sheet leaves it out (its close disc, the scrim or a drag down cancel). */
+ContextMenuAction AttachCancelAction() {
+  ContextMenuAction cancel{"attach_cancel", Tr("common.cancel"), nullptr, []() {}};
+  cancel.cancel = true;
+  return cancel;
+}
 
 /** Search inside a chat: typing settles this long before the query is applied (plan: 250 ms, 400 if IME jumps). */
 constexpr auto kSearchDebounce = std::chrono::milliseconds(250);
@@ -299,6 +321,7 @@ ChatController::ChatController()
                  .status = chat_.status,
                  .thread_title = chat_.thread_title,
                  .thread_subtitle = chat_.thread_subtitle,
+                 .thread_phone_subtitle = chat_.thread_phone_subtitle,
                  .peer_link_status = chat_.peer_link_status,
                  .peer_link_banner = chat_.peer_link_banner,
                  .show_peer_link = chat_.show_peer_link,
@@ -316,6 +339,10 @@ ChatController::ChatController()
                  .thread_is_private = chat_.thread_is_private,
                  .thread_is_public = chat_.thread_is_public,
                  .thread_is_group = chat_.thread_is_group,
+                 .thread_avatar_letter = chat_.thread_avatar_letter,
+                 .thread_avatar_tone = chat_.thread_avatar_tone,
+                 .thread_icon_src = chat_.thread_icon_src,
+                 .thread_has_icon = chat_.thread_has_icon,
                  .compose_disabled = chat_.compose_disabled,
                  .show_attach_button = chat_.show_attach_button,
                  .show_thread_actions = chat_.show_thread_actions,
@@ -666,17 +693,20 @@ void ChatController::ShowToast(const std::string& message, const ToastDuration d
 }
 
 void ChatController::ShowConfirm(const std::string& title, const std::string& message,
-                                 std::function<void(bool)> on_result) {
-  if (shell_feedback_.show_confirm) {
+                                 std::function<void(bool)> on_result, const bool destructive) {
+  if (destructive && shell_feedback_.show_confirm_destructive) {
+    shell_feedback_.show_confirm_destructive(title, message, std::move(on_result), {});
+  } else if (shell_feedback_.show_confirm) {
     shell_feedback_.show_confirm(title, message, std::move(on_result), {});
   }
 }
 
 void ChatController::ShowConfirmWithCheckbox(const std::string& title, const std::string& message,
                                              const std::string& checkbox_label, const bool checkbox_default,
-                                             std::function<void(bool, bool)> on_result) {
+                                             std::function<void(bool, bool)> on_result, const std::string& ok_label) {
   if (shell_feedback_.show_confirm_with_checkbox) {
-    shell_feedback_.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result));
+    shell_feedback_.show_confirm_with_checkbox(title, message, checkbox_label, checkbox_default, std::move(on_result),
+                                               ok_label);
   }
 }
 
@@ -734,18 +764,24 @@ void ChatController::OnHomeTabActivated() {
   RefreshFromMessaging();
   ShellSyncLayout();
   NotifySurfaceChanged();
+  RefreshHomeBrief();
 }
 
 void ChatController::OnSessionsTabActivated() {
   working_set_.ClearAll();
 }
 
-void ChatController::OnSelectThread(const std::string& thread_id) {
+void ChatController::OnSelectThread(std::string thread_id) {  // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;
   }
   if (thread_id != search_thread_) {
     CloseSearch(); // another chat: the search and its index belong to the one left
+  }
+  // A row of Home's "New messages" widget: go to Chats first, as a tap in the Chats list would, so the chat opens
+  // (the phone's chat overlay only opens over Chats) instead of the row just being read and vanishing.
+  if (ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
+    ShellSelectNavTab(NavTab::Sessions);
   }
   if (presenter_.SelectThread(thread_id)) {
     ShellSetPrimaryPane("chat");
@@ -799,7 +835,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       if (ok) {
         run();
       }
-    });
+    }, true);
   };
   switch (plan.kind) {
   case CloseChatPlan::Kind::Delete:
@@ -814,6 +850,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     });
     return;
   case CloseChatPlan::Kind::Dissolve:
+    // Phones: the owner's sheet says nobody can take over and offers Dissolve (with its own confirm).
+    if (AskAiCompact() && group_leave_.Open(thread_id)) {
+      return;
+    }
     DissolveGroupAfterConfirm(group_id);
     return;
   case CloseChatPlan::Kind::Leave:
@@ -822,6 +862,10 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     });
     return;
   case CloseChatPlan::Kind::LeaveAsOwner:
+    // Phones: choose the new owner in a sheet; the one confirm comes after the pick, naming them.
+    if (AskAiCompact() && group_leave_.Open(thread_id)) {
+      return;
+    }
     confirm_then("chat.group.leave_title", "chat.group.leave_owner_confirm",
                  [this, thread_id, group_id, successors = plan.successors]() {
                    std::vector<ContextMenuAction> actions;
@@ -874,12 +918,19 @@ void ChatController::DissolveGroupAfterConfirm(const std::string& group_id) {
       UserFeedback::Fail(dissolved.error().message);
     }
     RefreshFromMessaging();
-  });
+  }, true);
 }
 
 void ChatController::AfterThreadPrefsChanged() {
   RefreshFromMessaging();
+  group_info_.Refresh(); // its mute button follows at once
   NotifySurfaceChanged();
+}
+
+void ChatController::OnSessionsSearchChanged() {
+  ApplySessionList();
+  DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "sessions_more");
 }
 
 void ChatController::OnToggleArchived() {
@@ -917,7 +968,7 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
     }
     presenter_.ForgetCachedPrefs();  // clearing also resets the chat's "don't ask again" for the AI
     AfterHistoryCleared(thread_id);
-  });
+  }, true);
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
@@ -952,7 +1003,7 @@ void ChatController::OnForgetMemory() {
           return;
         }
         NotifySurfaceChanged();
-      });
+      }, true);
 }
 
 void ChatController::RefreshFromMessaging() {
@@ -976,6 +1027,19 @@ void ChatController::RefreshFromMessaging() {
   if (badges.sessions_unread != prev_sessions || badges.contacts_unread != prev_contacts) {
     ShellRemountNavRail();
   }
+}
+
+void ChatController::OnPeerIconsChanged() {
+  if (!messaging_ready_) {
+    return;
+  }
+  SyncShellSessions(); // chats list rows and Home's widgets are built from the presenter's list
+  SyncDisplayFromThread();
+  UpdateThreadChrome();
+  group_info_.Refresh();
+  DirtyChat();
+  DirtyShell();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnProfileDataReset() {
@@ -1011,6 +1075,45 @@ void ChatController::SyncShellSessions() {
   presenter_.Refresh();  // ApplySessionList copies it in
 }
 
+namespace {
+std::string LowerAscii(std::string s) {
+  for (char& c : s) {
+    if (c >= 'A' && c <= 'Z') {
+      c = static_cast<char>(c - 'A' + 'a');
+    }
+  }
+  return s;
+}
+
+}  // namespace
+
+// One chats-list row as the RML binds it. Both texts are bound as text ({{session.title}}), so names and message text
+// need no escaping here.
+SessionDisplayRow ToSessionDisplayRow(const ChatSessionRow& from) {
+  SessionDisplayRow row;
+  row.id = from.id.c_str();
+  row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
+  row.preview = from.preview.c_str();
+  row.avatar_letter = from.avatar_letter.c_str();
+  row.avatar_tone = from.avatar_tone;
+  row.has_icon = !from.icon_path.empty();
+  row.icon_src = from.icon_path.c_str();
+  row.kind = from.kind.c_str();
+  row.unread_count = from.unread_count;
+  row.unread_display = FormatBadgeCount(from.unread_count).c_str();
+  row.date_label = from.date_label.c_str();
+  row.active = from.active;
+  row.pinned = from.pinned;
+  row.muted = from.muted;
+  row.unread_dot = from.unread_dot;
+  row.mentioned = from.mentioned;
+  row.blocked = from.blocked;
+  if (from.blocked) {
+    row.preview = Tr("sidebar.blocked_preview").c_str();
+  }
+  return row;
+}
+
 void ChatController::ApplySessionList() {
   const ChatListScreen& list = presenter_.List();
   shell_.sessions.clear();
@@ -1026,26 +1129,508 @@ void ChatController::ApplySessionList() {
       break;
     }
   }
-  const size_t visible = session_window_.Visible(list.rows.size());
-  shell_.sessions_more = session_window_.More(list.rows.size());
+  // A search shows every match, not just the loaded window.
+  const std::string query = LowerAscii(shell_.sessions_query.c_str());
+  const bool searching = !query.empty();
+  const size_t visible = searching ? list.rows.size() : session_window_.Visible(list.rows.size());
+  shell_.sessions_more = !searching && session_window_.More(list.rows.size());
   shell_.sessions.reserve(visible);
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
-    SessionRow row;
-    row.id = from.id.c_str();
-    // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
-    row.title = from.title_is_default_ai ? Tr("chat.new_chat").c_str() : from.title.c_str();
-    row.preview = from.preview.c_str();
-    row.kind = from.kind.c_str();
-    row.unread_count = from.unread_count;
-    row.unread_display = FormatBadgeCount(from.unread_count).c_str();
-    row.date_label = from.date_label.c_str();
-    row.active = from.active;
-    row.pinned = from.pinned;
-    row.muted = from.muted;
-    row.unread_dot = from.unread_dot;
-    row.mentioned = from.mentioned;
+    SessionRow row = ToSessionDisplayRow(from);
+    if (searching && LowerAscii(row.title.c_str()).find(query) == std::string::npos &&
+        LowerAscii(from.preview).find(query) == std::string::npos) {
+      continue;
+    }
     shell_.sessions.push_back(std::move(row));
+  }
+  ApplyHomeToday(list);
+}
+
+void ChatController::ApplyHomeToday(const ChatListScreen& list) {
+  std::tm now{};
+  if (pp::civil_time::LocalTime(static_cast<std::time_t>(util::NowUnixMs() / 1000), &now)) {
+    shell_.home_date_label = HomeDateLabel(now).c_str();
+  }
+  // The archived list replaces the rows while it shows: the Today widgets keep what the main list said.
+  if (list.showing_archived) {
+    return;
+  }
+  const HomeWidgetLayout layout = HomeLayout();
+  // The newest mention, read or not, keeps the Mentions widget while it is recent (only read when it is kept).
+  const std::optional<IThreadMentionsStore::Mention> latest_mention =
+      layout.Kept(kHomeWidgetMentions) && messaging_ready_ && facade_ ? facade_->LatestMention() : std::nullopt;
+  home_summary_ = SummarizeHomeToday(list.rows, layout, latest_mention, util::NowUnixMs());
+  shell_.home_recent.clear();
+  for (const ChatSessionRow& from : home_summary_.recent) {
+    shell_.home_recent.push_back(ToSessionDisplayRow(from));
+  }
+  shell_.home_mentions = home_summary_.mentions.count;
+  shell_.home_mentions_where =
+      home_summary_.mentions.preview.empty()
+          ? home_summary_.mentions.title.c_str()
+          : (home_summary_.mentions.title + " · " + home_summary_.mentions.preview).c_str();
+  shell_.home_new_people = home_summary_.new_contacts;
+  shell_.home_security_ok = session_store_ && Store().Snapshot().profile_prefs.recovery_phrase_seen;
+  if (layout.Kept(kHomeWidgetFavorites)) {
+    ApplyHomeFavorites(list.rows);
+  } else {
+    home_favorites_.clear();
+    shell_.home_favorites.clear();
+  }
+  ApplyHomeWidgets();
+  RefreshHomeCalls(); // a missed call arrives as a chat change
+}
+
+void ChatController::ApplyHomeFavorites(const std::vector<ChatSessionRow>& rows) {
+  const std::vector<std::string> starred = session_store_ ? Store().Snapshot().profile_prefs.starred_contacts
+                                                          : std::vector<std::string>{};
+  // A starred contact with no chat yet is looked up (the contacts store; a handful at most).
+  std::vector<HomeFavorite> without_chat;
+  if (facade_) {
+    for (const std::string& id : StarredWithoutChat(rows, starred)) {
+      auto contact = facade_->GetContact(id);
+      if (!contact || !*contact || (*contact)->trust == TrustLevel::Blocked) {
+        continue;
+      }
+      std::string title = ContactEffectiveTitle(**contact);
+      if (title.empty()) {
+        title = Tr("people_picker.unnamed");
+      }
+      const AvatarGlyph glyph = MakeAvatarGlyph(title, ContactAvatarStableId(**contact));
+      without_chat.push_back({.contact_id = id,
+                              .thread_id = {},
+                              .title = title,
+                              .avatar_letter = glyph.letter,
+                              .avatar_tone = glyph.tone,
+                              .icon_path = facade_->ContactIconPath(id)});
+    }
+  }
+  home_favorites_ = HomeFavorites(rows, starred, without_chat);
+  SyncHomeFavoriteSize();
+  shell_.home_favorites.clear();
+  for (const HomeFavorite& favorite : home_favorites_) {
+    shell_.home_favorites.push_back({.contact_id = favorite.contact_id.c_str(),
+                                     .title = favorite.title.c_str(),
+                                     .avatar_letter = favorite.avatar_letter.c_str(),
+                                     .avatar_tone = favorite.avatar_tone,
+                                     .has_icon = !favorite.icon_path.empty(),
+                                     .icon_src = favorite.icon_path.c_str(),
+                                     .suggested = favorite.suggested});
+  }
+}
+
+void ChatController::SyncHomeFavoriteSize() {
+  if (!context_) {
+    return;
+  }
+  const float ratio = context_->GetDensityIndependentPixelRatio();
+  const float width_dp = static_cast<float>(context_->GetDimensions().x) / (ratio > 0.f ? ratio : 1.f);
+  const int avatar = FavoritesRowModel::AvatarDp(width_dp);
+  const ui::String size = (std::to_string(avatar) + "dp").c_str();
+  if (size == shell_.home_fav_avatar) {
+    return;
+  }
+  shell_.home_fav_avatar = size;
+  shell_.home_fav_avatar_radius = (std::to_string((avatar + 1) / 2) + "dp").c_str();
+  DataModelHost::Instance().Dirty("shell", "home_fav_avatar");
+  DataModelHost::Instance().Dirty("shell", "home_fav_avatar_radius");
+}
+
+void ChatController::ApplyHomeWidgets() {
+  const int64_t now_ms = util::NowUnixMs();
+  const HomeWidgetLayout layout = HomeLayout();
+  const std::vector<HomeBriefItem> top =
+      layout.Kept(kHomeWidgetBrief) ? HomeBriefTop(home_brief_, HomeBriefFeed()) : std::vector<HomeBriefItem>{};
+  shell_.home_brief.clear();
+  for (const HomeBriefItem& item : top) {
+    shell_.home_brief.push_back({.title = item.title.c_str(), .meta = HomeBriefMeta(item, now_ms).c_str()});
+  }
+  const HomeCalls calls = layout.Kept(kHomeWidgetCalls)
+                              ? SummarizeHomeCalls(home_calls_, LocalMidnightMs(now_ms), now_ms)
+                              : HomeCalls{};
+  shell_.home_missed_calls = calls.missed_today;
+  shell_.home_calls_latest = "";
+  if (calls.latest) {
+    // The chat's name as the Chats list shows it (the DM or the group); none when the chat is gone.
+    std::string name;
+    for (const SessionDisplayRow& row : shell_.sessions) {
+      if (row.id.c_str() == calls.latest->thread_id) {
+        name = row.title.c_str();
+        break;
+      }
+    }
+    std::string line = Tr(calls.latest->video ? "home.calls.video" : "home.calls.voice");
+    if (!name.empty()) {
+      line = name + " · " + line;
+    }
+    line += " · " + SessionDateLabel(calls.latest->at_ms, now_ms);
+    shell_.home_calls_latest = Tr("home.calls.latest", {{"call", line}}).c_str();
+  }
+  shell_.home_widgets.clear();
+  for (const std::string& id : ShownHomeWidgets(layout, HomeWidgetDataOf(home_summary_, calls, top.size()))) {
+    shell_.home_widgets.push_back({.id = id.c_str(), .wide = HomeWidgetWide(id)});
+  }
+  ApplyHomeEditRows(home_edit_drag_ ? *home_edit_drag_ : layout);
+}
+
+void ChatController::ApplyHomeEditRows(const HomeWidgetLayout& layout) {
+  shell_.home_edit_on.clear();
+  shell_.home_edit_off.clear();
+  for (const std::string& id : layout.order) {
+    HomeEditRow row{.id = id.c_str(),
+                    .name = Tr("home.widget." + id).c_str(),
+                    .size = Tr(HomeWidgetWide(id) ? "home_edit.wide" : "home_edit.small").c_str()};
+    (layout.Kept(id) ? shell_.home_edit_on : shell_.home_edit_off).push_back(std::move(row));
+  }
+  shell_.home_edit_dragging = home_edit_drag_ ? home_edit_drag_id_.c_str() : "";
+}
+
+namespace {
+
+// Edit Home's drag, like iOS (Kenneth 2026-11-04): the held row is lifted (a little larger, above the others, with a
+// shadow) and follows the finger; a row it passes slides into its new slot; on release it settles into its own.
+// Everything moves on `transform` (layout and the slot maths stay put) and only while a row is held or settling.
+constexpr float kHomeEditLift = 1.03f;
+constexpr float kHomeEditSlideSeconds = 0.2f;
+constexpr float kHomeEditFollowSeconds = 0.05f;
+
+ui::Property HomeEditRowTransform(const float dy_px, const float scale) {
+  return ui::Transform::MakeProperty({ui::Transforms::TranslateY(dy_px, ui::Unit::PX), ui::Transforms::Scale2D(scale)});
+}
+
+const ui::Tween kHomeEditEase(ui::Tween::Cubic, ui::Tween::Out);
+
+/** A row's slot centre on the page, px (transforms do not move the layout box). */
+float HomeEditSlotCentre(ui::Element* row) {
+  return row->GetAbsoluteOffset(ui::BoxArea::Border).y + row->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+}
+
+/** The rows on Home in `card`, in order: the list's hidden template row (data-for) is left out. */
+ui::ElementList HomeEditRows(ui::Element* card) {
+  ui::ElementList all;
+  card->QuerySelectorAll(all, ".home-edit-row");
+  ui::ElementList rows;
+  for (ui::Element* row : all) {
+    if (row->IsVisible()) {
+      rows.push_back(row);
+    }
+  }
+  return rows;
+}
+
+} // namespace
+
+void ChatController::OnHomeEditDragStart(const std::string& id) {
+  const HomeWidgetLayout layout = HomeLayout();
+  if (!layout.Kept(id)) {
+    return;
+  }
+  home_edit_drag_ = layout;
+  home_edit_drag_id_ = id;
+  home_edit_grabbed_ = false;
+  ApplyHomeEditRows(*home_edit_drag_);
+  DirtyShell();
+}
+
+void ChatController::OnHomeEditDrag(ui::Event& event) {
+  if (!home_edit_drag_) {
+    return;
+  }
+  // The row whose centre is nearest the finger (the list of rows on Home, in the card the handle is in).
+  ui::Element* card = event.GetCurrentElement();
+  while (card && !card->IsClassSet("home-edit-card")) {
+    card = card->GetParentNode();
+  }
+  if (!card) {
+    return;
+  }
+  home_edit_card_ = card->GetObserverPtr();
+  const float y = static_cast<float>(event.GetParameter<int>("mouse_y", 0));
+  const ui::ElementList rows = HomeEditRows(card);
+  const std::vector<std::string> on_home = home_edit_drag_->OnHome();
+  const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
+  if (rows.empty() || at == on_home.end() || static_cast<size_t>(at - on_home.begin()) >= rows.size()) {
+    return;
+  }
+  size_t current = static_cast<size_t>(at - on_home.begin());
+  if (!home_edit_grabbed_) {
+    // Where on the row the finger is (a handle is on the row, so at most half its height from the centre).
+    const float half = rows[current]->GetBox().GetSize(ui::BoxArea::Border).y * 0.5f;
+    home_edit_grab_px_ = std::clamp(y - HomeEditSlotCentre(rows[current]), -half, half);
+    home_edit_grabbed_ = true;
+  }
+  // The row's centre where the finger holds it, kept between the first and last slots.
+  const float first = HomeEditSlotCentre(rows.front());
+  const float last = HomeEditSlotCentre(rows.back());
+  const float held = std::clamp(y - home_edit_grab_px_, first, last);
+  size_t nearest = current;
+  float nearest_distance = std::abs(HomeEditSlotCentre(rows[current]) - held);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    const float distance = std::abs(HomeEditSlotCentre(rows[i]) - held);
+    if (distance < nearest_distance) {
+      nearest = i;
+      nearest_distance = distance;
+    }
+  }
+  if (nearest != current) {
+    home_edit_drag_ = MoveHomeWidget(*home_edit_drag_, home_edit_drag_id_, nearest);
+    ApplyHomeEditRows(*home_edit_drag_);
+    DirtyShell();
+    // The list keeps its elements by position: each row between the old and new slot now shows the widget that was
+    // one slot over, so it starts where that widget was drawn and slides home.
+    const bool down = nearest > current;
+    const size_t lo = down ? current : nearest + 1;
+    const size_t hi = down ? nearest : current + 1;
+    for (size_t i = lo; i < hi; ++i) {
+      const size_t was = down ? i + 1 : i - 1;
+      const ui::Property from = HomeEditRowTransform(HomeEditSlotCentre(rows[was]) - HomeEditSlotCentre(rows[i]), 1.f);
+      rows[i]->Animate("transform", HomeEditRowTransform(0.f, 1.f), kHomeEditSlideSeconds, kHomeEditEase, 1, false,
+                       0.f, &from);
+    }
+    current = nearest;
+  }
+  // The held row follows the finger (a short ease smooths the touch samples).
+  rows[current]->Animate("transform", HomeEditRowTransform(held - HomeEditSlotCentre(rows[current]), kHomeEditLift),
+                         kHomeEditFollowSeconds, kHomeEditEase);
+}
+
+void ChatController::OnHomeEditDragEnd() {
+  if (!home_edit_drag_) {
+    return;
+  }
+  const HomeWidgetLayout dragged = *home_edit_drag_;
+  // The held row settles into its slot and comes back to its size.
+  if (ui::Element* card = home_edit_card_.get(); card && home_edit_grabbed_) {
+    const ui::ElementList rows = HomeEditRows(card);
+    const std::vector<std::string> on_home = dragged.OnHome();
+    const auto at = std::find(on_home.begin(), on_home.end(), home_edit_drag_id_);
+    if (at != on_home.end() && static_cast<size_t>(at - on_home.begin()) < rows.size()) {
+      rows[static_cast<size_t>(at - on_home.begin())]->Animate("transform", HomeEditRowTransform(0.f, 1.f),
+                                                              kHomeEditSlideSeconds, kHomeEditEase);
+    }
+  }
+  home_edit_card_ = nullptr;
+  home_edit_grabbed_ = false;
+  home_edit_drag_.reset();
+  home_edit_drag_id_.clear();
+  SaveHomeLayout(dragged);
+  ApplyHomeWidgets(); // the lifted row comes down even when the order did not change
+  DirtyShell();
+}
+
+void ChatController::RefreshHomeCalls() {
+  // The widgets exist only on phones and are read while Home shows; a removed Calls widget is not read.
+  if (home_calls_reading_) {
+    home_calls_again_ = true; // a call may have been stored after that read began
+    return;
+  }
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact ||
+      ChromeSnapshot().nav_tab != NavTab::Home || !HomeLayout().Kept(kHomeWidgetCalls) ||
+      !call_actions_.recent_calls_reader) {
+    return;
+  }
+  std::function<std::vector<call_queries::RecentCall>()> read = call_actions_.recent_calls_reader(kHomeCallsRead);
+  if (!read) {
+    return;
+  }
+  home_calls_reading_ = true;
+  AppRuntime::PostWorkerAndReplyOnUI<std::vector<call_queries::RecentCall>>(
+      WorkerLane::Background, [read = std::move(read)]() { return read(); },
+      [this](std::vector<call_queries::RecentCall> calls) {
+        home_calls_reading_ = false;
+        if (calls != home_calls_) {
+          home_calls_ = std::move(calls);
+          ApplyHomeWidgets();
+          DirtyShell();
+        }
+        if (std::exchange(home_calls_again_, false)) {
+          RefreshHomeCalls();
+        }
+      });
+}
+
+void ChatController::OnHomePrefsChanged() {
+  ApplyHomeToday(presenter_.List());
+  DirtyShell();
+}
+
+HomeWidgetLayout ChatController::HomeLayout() const {
+  if (!session_store_) {
+    return HomeWidgetLayoutFrom({}, {});
+  }
+  const ProfilePreferences& prefs = Store().Snapshot().profile_prefs;
+  return HomeWidgetLayoutFrom(prefs.home_widgets_order, prefs.home_widgets_hidden);
+}
+
+void ChatController::OpenHomeEdit() {
+  if (home_edit_layer_ >= 0 || !shell_navigation_.push_layer) {
+    return;
+  }
+  ApplyHomeWidgets();
+  DirtyShell();
+  PaneSpec spec;
+  spec.key = "home_edit";
+  spec.page_sheet = true;
+  home_edit_layer_ = shell_navigation_.push_layer(spec);
+  if (home_edit_layer_ >= 0 && flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(home_edit_layer_, {}, [this]() { home_edit_layer_ = -1; });
+  }
+}
+
+void ChatController::SaveHomeLayout(const HomeWidgetLayout& layout) {
+  if (!session_store_ || layout == HomeLayout()) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  prefs.home_widgets_hidden = HiddenHomeWidgets(layout);
+  prefs.home_widgets_order = layout.order;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Edit Home: could not save the choice: " << saved.error().message;
+    ShowToast(UserFeedback::FailFrom(saved.error()));
+    return;
+  }
+  // A widget put back is computed again; Calls and Today's briefs read / fetch when they need to.
+  ApplyHomeToday(presenter_.List());
+  DirtyShell();
+  RefreshHomeBrief();
+}
+
+std::string ChatController::HomeBriefFeed() {
+  return ArticleFeedName(LocalizationService::Instance().ResolvedLanguage());
+}
+
+void ChatController::RefreshHomeBrief() {
+  // The widgets exist only on phones; the desktop's Home is the centred composer.
+  if (!facade_ || ChromeSnapshot().layout_mode != LayoutMode::Compact) {
+    return;
+  }
+  const std::string profile_dir = facade_->ProfileDataDir();
+  if (profile_dir.empty()) {
+    return;
+  }
+  if (profile_dir != home_brief_dir_) {
+    home_brief_dir_ = profile_dir;
+    home_brief_ = LoadHomeBriefCache(profile_dir);
+    home_brief_failed_ms_ = 0;
+    ApplyHomeWidgets();
+    DirtyShell();
+  }
+  const std::string feed = HomeBriefFeed();
+  const int64_t now_ms = util::NowUnixMs();
+  // The demo app has no network: DemoDataSeeder's made-up headlines stand in for the feed.
+  if constexpr (kUiDemoBuild) {
+    if (home_brief_.feed != feed) {
+      // As the feed would send them, so the items go through the same reading as a real answer.
+      std::vector<Value> articles;
+      for (const DemoHeadline& line : DemoBriefHeadlines(feed == "cn")) {
+        Object article;
+        article.set("title", std::string(line.title));
+        article.set("link_to", std::string(line.url));
+        article.set("created_at", now_ms - int64_t{line.minutes_ago} * 60 * 1000);
+        articles.push_back(ObjectValue(std::move(article)));
+      }
+      Object doc;
+      doc.set("articles", ArrayValue(std::move(articles)));
+      home_brief_ = {.fetched_at_ms = now_ms,
+                     .feed = feed,
+                     .items = ParseHomeBriefArticles(DumpJson(doc)).value_or(std::vector<HomeBriefItem>{})};
+      ApplyHomeWidgets();
+      DirtyShell();
+    }
+    return;
+  }
+  // A widget the user removed is not fetched.
+  if (!ShouldFetchHomeBrief(HomeLayout().Kept(kHomeWidgetBrief), home_brief_fetching_, home_brief_failed_ms_,
+                            home_brief_, feed, now_ms)) {
+    return;
+  }
+  home_brief_fetching_ = true;
+  const AppConfig config = Store().Snapshot().config;
+  const Object arguments = ArticleFeedArguments(LocalizationService::Instance().ResolvedLanguage());
+  // The worker's answer: the new cache, or why there is none.
+  using Fetched = std::pair<std::optional<HomeBriefCache>, std::string>;
+  AppRuntime::PostWorkerAndReplyOnUI<Fetched>(
+      WorkerLane::Background,
+      [config, arguments, feed, profile_dir]() -> Fetched {
+        auto answer = FetchArticleFeed(config, arguments);
+        if (!answer) {
+          return {std::nullopt, answer.error().message};
+        }
+        auto items = ParseHomeBriefArticles(*answer);
+        if (!items) {
+          return {std::nullopt, "the feed answer is not an article list"};
+        }
+        HomeBriefCache cache;
+        cache.fetched_at_ms = util::NowUnixMs();
+        cache.feed = feed;
+        cache.items = std::move(*items);
+        std::string note;
+        if (auto saved = SaveHomeBriefCache(profile_dir, cache); !saved) {
+          note = "cache not saved: " + saved.error().message;
+        }
+        return {std::move(cache), std::move(note)};
+      },
+      [this, profile_dir](Fetched fetched) {
+        home_brief_fetching_ = false;
+        if (!fetched.second.empty()) {
+          log().info << "Home briefs: " << fetched.second;
+        }
+        if (profile_dir != home_brief_dir_) {
+          return; // another profile is open now
+        }
+        if (!fetched.first) {
+          home_brief_failed_ms_ = util::NowUnixMs();
+          return;
+        }
+        home_brief_failed_ms_ = 0;
+        home_brief_ = std::move(*fetched.first);
+        ApplyHomeWidgets();
+        DirtyShell();
+      });
+}
+
+void ChatController::OpenHomeBrief(const int index) {
+  const std::vector<HomeBriefItem> top = HomeBriefTop(home_brief_, HomeBriefFeed());
+  if (index < 0 || static_cast<size_t>(index) >= top.size()) {
+    return;
+  }
+  if (!top[static_cast<size_t>(index)].url.empty()) {
+    OpenTrustedUrl(top[static_cast<size_t>(index)].url); // our own brief feed
+    return;
+  }
+  SendSuggestionAction("articles");
+}
+
+void ChatController::OpenHomeNewPeople() {
+  if (!home_summary_.first_stranger_thread_id.empty()) {
+    OnSelectThread(home_summary_.first_stranger_thread_id);
+  }
+}
+
+void ChatController::OpenHomeFavorite(const int index) {
+  if (index < 0 || static_cast<size_t>(index) >= home_favorites_.size()) {
+    return;
+  }
+  const HomeFavorite& favorite = home_favorites_[static_cast<size_t>(index)];
+  if (!favorite.thread_id.empty()) {
+    OnSelectThread(favorite.thread_id);
+  } else if (contacts_notify_.message_contact) {
+    contacts_notify_.message_contact(favorite.contact_id);
+  }
+}
+
+void ChatController::OpenHomeCalls() {
+  const HomeCalls calls = SummarizeHomeCalls(home_calls_, LocalMidnightMs(util::NowUnixMs()), util::NowUnixMs());
+  if (calls.latest && !calls.latest->thread_id.empty()) {
+    OnSelectThread(calls.latest->thread_id);
+  }
+}
+
+void ChatController::OpenHomeMentions() {
+  if (!home_summary_.mentions.thread_id.empty()) {
+    OnSelectThread(home_summary_.mentions.thread_id); // opens at its oldest unread mention (G015)
   }
 }
 
@@ -1337,13 +1922,14 @@ void ChatController::OnAttachFile(ui::Event* ev) {
   // have their own entries.
   std::vector<ContextMenuAction> actions;
   if (Platform::IsMobile()) {
-    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video()});
+    actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, pick_photo_or_video(), "../icons/v2/photo.svg"});
   } else {
     actions.push_back({"attach_picture", Tr("chat.attach.picture"), nullptr, pick_image()});
   }
-  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file()});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, pick_file(), "../icons/v2/file.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.title"));
 }
 
 void ChatController::ShowPictureSendChoice(std::string path) {
@@ -1357,7 +1943,8 @@ void ChatController::ShowPictureSendChoice(std::string path) {
       },
       release, Tr("chat.attach.send_compressed"), Tr("chat.attach.send_original"), Tr("common.cancel"));
   ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions),
-                                               [release, picture = std::move(path)]() { release(picture); });
+                                               [release, picture = std::move(path)]() { release(picture); },
+                                               Tr("chat.attach.send_photo_title"));
 }
 
 void ChatController::OnAttachCapture(ui::Event* ev) {
@@ -1377,11 +1964,12 @@ void ChatController::OnAttachCapture(ui::Event* ev) {
   // Android has one system camera intent per kind: ask which.
   std::vector<ContextMenuAction> actions;
   actions.push_back({"capture_photo", Tr("chat.attach.capture_photo"), nullptr,
-                     [this]() { OpenCameraCapture(CameraCaptureKind::Photo); }});
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Photo); }, "../icons/v2/camera.svg"});
   actions.push_back({"capture_video", Tr("chat.attach.capture_video"), nullptr,
-                     [this]() { OpenCameraCapture(CameraCaptureKind::Video); }});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+                     [this]() { OpenCameraCapture(CameraCaptureKind::Video); }, "../icons/v2/video.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.capture"));
 }
 
 void ChatController::OpenCameraCapture(const CameraCaptureKind kind) {
@@ -1707,10 +2295,11 @@ bool ChatController::InAiComposerContext() const {
 void ChatController::ShowAttachChoice(std::function<void()> photo, std::function<void()> file) {
   // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
   std::vector<ContextMenuAction> actions;
-  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
-  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions));
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo), "../icons/v2/photo.svg"});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file), "../icons/v2/file.svg"});
+  actions.push_back(AttachCancelAction());
+  ContextMenuHost::Instance().ShowActionsAbove(ui::Vector2i(attach_menu_x_, attach_menu_y_), std::move(actions), {},
+                                               Tr("chat.attach.title"));
 }
 
 
@@ -1727,10 +2316,56 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
-  agent_.DecorateAiImageRows(rows);
+  agent_.DecorateAiImageRows(rows, thread_id);
   return rows;
 }
 
+
+void ChatController::OpenGroupSender(const std::string& message_id) {
+  if (!messaging_ready_ || !facade_ || message_id.empty()) {
+    return;
+  }
+  auto message = facade_->GetMessage(facade_->ActiveThreadId(), message_id);
+  if (!message || !*message) {
+    return;
+  }
+  // The sender is a contact id, or the account id of someone who is not a contact (as PeerDisplayResolver reads it);
+  // our own and the assistant's rows have no avatar or name to tap.
+  const std::string sender = (*message)->sender_contact_id;
+  if (sender.empty() || sender == kLocalSelfContactId || sender == kAiAssistantContactId) {
+    return;
+  }
+  auto contact = facade_->GetContact(sender);
+  if (!contact || !*contact) {
+    contact = facade_->FindContactByIdentity(sender, mesh::ContactIdKind::Account);
+  }
+  // Over the chat as a page sheet on phones (Kenneth 2026-11-04: swiped down, back in the chat); the desktop's pane.
+  if (contact && *contact) {
+    if (contacts_notify_.select_contact_sheet) {
+      contacts_notify_.select_contact_sheet((*contact)->id);
+    }
+  } else if (contacts_notify_.show_member_sheet) {
+    // Not a contact: the same page in its member state (name, photo, Account ID, Add contact).
+    const TranscriptFacts facts = facade_->TranscriptFactsFor();
+    contacts_notify_.show_member_sheet(sender, facts.sender_label ? facts.sender_label(sender) : std::string(),
+                                       facts.sender_icon ? facts.sender_icon(sender) : std::string());
+  }
+  // The group's owner finds the "Group admin" card at the bottom, as from the member list.
+  if (people_picker_notify_.offer_group_admin) {
+    people_picker_notify_.offer_group_admin(facade_->ActiveThreadId(), sender);
+  }
+}
+
+void ChatController::OpenPicture(const std::string& message_id, const std::string& local_path) {
+  if (!messaging_ready_ || !facade_ || message_id.empty() || opening_message_ids_.count(message_id) != 0) {
+    return;
+  }
+  // The picture the bubble shows, full screen with a spinner, in this frame; the viewer opens over it.
+  if (!local_path.empty() && shell_feedback_.mount_photo_preview && photo_preview_.Begin(message_id)) {
+    shell_feedback_.mount_photo_preview(PhotoPreviewRml(local_path));
+  }
+  OpenAttachment(message_id);
+}
 
 void ChatController::OpenAttachment(const std::string& message_id) {
   if (!messaging_ready_ || !facade_ || message_id.empty()) {
@@ -1741,30 +2376,60 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     return;
   }
   const std::string thread_id = ActiveThreadId();
-  const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
-  const bool is_video = info && IsAttachmentVideoMime(info->mime);
-  if (info && info->byte_length > kMaxDirectAttachmentBytes) {
-    UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
-  }
-  // The decrypt of a stored copy is blocking work (seconds for a large file): off the UI thread.
-  AppRuntime::PostWorkerNormal([this, thread_id, message_id, is_video]() {
-    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
+  const auto tapped = std::chrono::steady_clock::now();
+  // The lookup, the decrypt of a stored copy and the checks are blocking work: off the UI thread.
+  AppRuntime::PostWorkerNormal([this, thread_id, message_id, tapped]() {
+    const auto ms_since = [](const std::chrono::steady_clock::time_point from) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - from).count();
+    };
+    const auto info = facade_->AttachmentInfoForMessage(thread_id, message_id);
+    const int64_t lookup_ms = ms_since(tapped);
+    const bool is_video = info && IsAttachmentVideoMime(info->mime);
+    if (info && OpenShowsOpeningToast(/*picture_preview=*/false, info->byte_length)) {
+      AppRuntime::PostUI([this, message_id]() {
+        if (opening_message_ids_.count(message_id) != 0 && !photo_preview_.Up()) {
+          UserFeedback::Ok(Tr("chat.attachment.opening")); // decrypting a large file takes a moment
+        }
+      });
+    }
+    bool made_view = false;
+    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
-    AppRuntime::PostUI([this, thread_id, message_id, is_video, path = std::move(path), needs_confirm]() {
+    const int64_t worker_ms = ms_since(tapped);
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,
+                        path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
+      // Result in (ready or not): the preview goes, on the next frame so the viewer is already presenting.
+      const bool clear_preview = photo_preview_.Finish(message_id);
+      const auto dismiss_preview = [this, clear_preview]() {
+        if (clear_preview && shell_feedback_.mount_photo_preview) {
+          AppRuntime::PostUI([this]() { shell_feedback_.mount_photo_preview(std::string()); });
+        }
+      };
       if (!path) {
+        dismiss_preview();
         UserFeedback::Fail(Tr("chat.attachment.not_ready"));
         return;
       }
-      SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
-      const auto open_file = [path = *path, is_video]() {
-        if (!PlatformOpenFile(path)) {
+      if (made_view) {
+        SyncDisplayFromThread(); // the card now has its view (a large video, its poster)
+      }
+      const auto open_file = [path = *path, is_video, dismiss_preview, needs_confirm]() {
+        const bool opened = PlatformOpenFile(path);
+        if (!needs_confirm) {
+          dismiss_preview(); // a confirmed open already dismissed it before the question
+        }
+        if (!opened) {
           // A video this device has no player for (an iPhone's HEVC .mov on an Android phone or a Windows PC,
           // a codec the system lacks): say so plainly instead of a generic failure.
           UserFeedback::Fail(Tr(is_video ? "chat.attachment.video_unplayable" : "chat.attachment.open_failed"));
         }
       };
+      log().info << "Attachment tap: lookup " << lookup_ms << " ms, worker " << worker_ms << " ms, to open call "
+                 << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tapped).count()
+                 << " ms" << (made_view ? " (made view)" : "");
       if (needs_confirm) {
+        dismiss_preview();
         ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
                     [open_file](const bool ok) {
                       if (ok) {
@@ -1898,11 +2563,11 @@ void ChatController::SyncDisplayFromThread() {
 
 
 
-void ChatController::OpenChatLink(const std::string& entry_id, const int link_index) {
+void ChatController::OpenChatLinkIn(const std::string& thread_id, const std::string& entry_id, const int link_index) {
   auto links = chat_links_.find(entry_id);
   if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
     // After a restart the map is empty: rebuild from the message's own stored text.
-    if (auto messages = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 10000)) {
+    if (auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000)) {
       for (const ThreadMessage& message : *messages) {
         if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
           links = chat_links_.emplace(entry_id, RecoverChatLinks(message.text)).first;
@@ -1918,7 +2583,21 @@ void ChatController::OpenChatLink(const std::string& entry_id, const int link_in
   if (!url) {
     return;
   }
-  ConfirmAndOpenUrl(*url);
+  OpenTrustedUrl(*url); // chat_links_ holds the AI assistant's answers only (articles, sources)
+}
+
+bool ChatController::MessageFromAssistant(const std::string& thread_id, const std::string& entry_id) {
+  if (!messaging_ready_ || !facade_) {
+    return false;
+  }
+  auto found = facade_->GetMessage(thread_id, entry_id);
+  return found && found->has_value() && (*found)->sender_contact_id == kAiAssistantContactId;
+}
+
+void ChatController::OpenTrustedUrl(const std::string& url) {
+  if (IsOpenableUrl(url)) {
+    (void)PlatformOpenUrl(url);
+  }
 }
 
 void ChatController::ConfirmAndOpenUrl(const std::string& url) {
@@ -1929,15 +2608,18 @@ void ChatController::ConfirmAndOpenUrl(const std::string& url) {
     (void)PlatformOpenUrl(url);
     return;
   }
-  // The opt-out lives in memory only: the next launch asks again.
-  ShowConfirmWithCheckbox(Tr("chat.open_link_title", {{"host", UrlHost(url)}}), Tr("chat.open_link_body", {{"url", url}}),
-                          Tr("chat.open_link_skip"), false, [this, url](const bool ok, const bool skip) {
+  // One fixed question and the host only, never the whole address (Kenneth 2026-11-04). The opt-out lives in
+  // memory only: the next launch asks again.
+  ShowConfirmWithCheckbox(Tr("chat.open_link_title"), Tr("chat.open_link_from", {{"host", UrlHost(url)}}),
+                          Tr("chat.open_link_skip"), false,
+                          [this, url](const bool ok, const bool skip) {
                             if (!ok) {
                               return;
                             }
                             skip_link_confirm_this_run_ = skip;
                             (void)PlatformOpenUrl(url);
-                          });
+                          },
+                          Tr("chat.open_link_open"));
 }
 
 void ChatController::RestoreWorkingSetsFromActiveThread() {
@@ -1964,8 +2646,8 @@ void ChatController::RestoreWorkingSetsFromActiveThread() {
   }
 }
 
-void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload,
-                                       const std::string& entry_id) {
+void ChatController::HandleLocalActionIn(const std::string& thread_id, const std::string& message,
+                                         const std::optional<std::string>& payload, const std::string& entry_id) {
   if (payload && !payload->empty()) {
     auto action_json = TryParseObject(*payload);
     auto action_type = action_json ? action_json->getString("type") : std::nullopt;
@@ -1986,7 +2668,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
           break;
         case ApprovalTapReaction::StaleRewrite:
           ShowToast(Tr("chat.permission.stale"));
-          agent_.CloseApprovalCard(ActiveThreadId(), entry_id, ApprovalOutcome::Stale);
+          agent_.CloseApprovalCard(thread_id, entry_id, ApprovalOutcome::Stale); // the card's chat, not the open one
           break;
         }
       }
@@ -2010,8 +2692,14 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       return;
     }
     if (action_type && *action_type == "open_url") {
-      // Same guard as open_chat_link: https only, and the user confirms the host first.
-      ConfirmAndOpenUrl(action_json->getString("url").value_or(""));
+      // An article card's button: straight to the browser when the AI assistant wrote it (our own feed), else the
+      // host is confirmed first. https only either way.
+      const std::string url = action_json->getString("url").value_or("");
+      if (MessageFromAssistant(thread_id, entry_id)) {
+        OpenTrustedUrl(url);
+      } else {
+        ConfirmAndOpenUrl(url);
+      }
       return;
     }
     if (!action_type && action_json && !action_json->getString("tool").value_or("").empty() && chat_.thread_is_ai) {
@@ -2265,6 +2953,24 @@ void ChatController::ToggleReaction(const std::string& message_id, const std::st
   NotifySurfaceChanged();
 }
 
+std::vector<std::string> ChatController::RecentEmojis() const {
+  return session_store_ ? session_store_->Snapshot().profile_prefs.recent_emojis : std::vector<std::string>{};
+}
+
+void ChatController::RememberEmoji(const std::string& emoji) {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = session_store_->Snapshot().profile_prefs;
+  const std::vector<std::string> before = prefs.recent_emojis;
+  EmojiCatalog::TouchRecent(prefs.recent_emojis, emoji);
+  if (prefs.recent_emojis == before) {
+    return;  // already first: nothing to write
+  }
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  (void)session_store_->SaveProfilePrefs(prefs);
+}
+
 void ChatController::DeleteMessageForMe(const std::string& message_id) {
   if (auto deleted = presenter_.DeleteForMe(message_id); !deleted) {
     ShowToast(AppError::Display(deleted.error()));
@@ -2460,6 +3166,36 @@ void ChatController::RefreshCallJoinable(const std::chrono::steady_clock::time_p
     chat_.call_joinable = joinable;
     DataModelHost::Instance().Dirty("chat", "call_joinable");
   }
+  // Phones: the bar under the header says which call goes on, and how many are in it (CallPresenter decides).
+  const std::string bar = joinable && AskAiCompact() && call_actions_.call_join_bar_text
+                              ? call_actions_.call_join_bar_text(thread_id)
+                              : std::string();
+  SetCallBarText(bar);
+}
+
+void ChatController::SetCallBarText(const std::string& text) {
+  if (text != chat_.call_bar_text.c_str()) {
+    chat_.call_bar_text = text.c_str();
+    DataModelHost::Instance().Dirty("chat", "call_bar_text");
+  }
+}
+
+void ChatController::OnJoinGroupCall() {
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty() || !call_actions_.start_call) {
+    return;
+  }
+  // Read again: a call that ended since the bar was drawn is said so, and the bar goes.
+  if (!call_actions_.call_joinable || !call_actions_.call_joinable(thread_id)) {
+    SetCallBarText({});
+    if (chat_.call_joinable) {
+      chat_.call_joinable = false;
+      DataModelHost::Instance().Dirty("chat", "call_joinable");
+    }
+    ShowToast(Tr("chat.call_bar.ended"));
+    return;
+  }
+  (void)call_actions_.start_call(thread_id, false); // joins it; any other failure is the call's own error notice
 }
 
 void ChatController::OnFindSomeone() {
@@ -2483,9 +3219,14 @@ void ChatController::PrefillDraft(const std::string& text) {
   DirtyChatChrome();
 }
 
+void ChatController::OnSessionSwipeAction(const std::string& thread_id, const SessionSwipeAction action) {
+  menus_.RunSessionSwipeAction(thread_id, action);
+}
+
 void ChatController::OnShellLayoutSynced() {
   // SyncLayout remounts the shell DOM and resets scroll offsets — re-arm follow-tail.
   scroller_.OnShellRemounted();
+  SyncHomeFavoriteSize();  // a turn or a resize changes the width the row divides
   if (!focus_draft_after_sync_) {
     return;
   }
@@ -2658,6 +3399,35 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     (void)facade_->AppendMessage(user_message);
     SyncDisplayFromThread();
     DirtyChatTurns();
+    if constexpr (kUiDemoBuild) {
+      // The demo app: my message stays on the right and the answer comes from the other side, on the left. (The
+      // mock reply below is keyed to my message's id, so it was written over my message, as if I had sent it.)
+      std::optional<Thread> thread;
+      if (auto found = facade_->GetThread(thread_id); found && *found) {
+        thread = **found;
+      }
+      if (thread && thread->kind != ThreadKind::Ai && !thread->participant_contact_ids.empty()) {
+        ThreadMessage reply;
+        reply.id = util::GenerateUuid();
+        reply.thread_id = thread_id;
+        reply.sender_contact_id = thread->participant_contact_ids.front();
+        reply.text = DemoPeerReply(trimmed);
+        reply.timestamp = user_message.timestamp + 1;
+        reply.transport = MessageTransport::Relay;
+        reply.delivery = MessageDelivery::Relayed;
+        (void)facade_->AppendMessage(reply);
+        (void)facade_->UpdatePreview(thread_id, reply.text);
+        SyncDisplayFromThread();
+        SyncShellSessions();
+        DirtyChatTurns();
+        return;
+      }
+      // An AI chat: the mock answer as a new message from the assistant.
+      agent_.MarkAgentBusy(thread_id);
+      pending_reply_ = PendingReply{.entry_id = std::string(), .thread_id = thread_id,
+                                    .output = MockAssistantRespond(trimmed), .from_llm = false};
+      return;
+    }
     log().debug << "Using mock assistant response";
     agent_.MarkAgentBusy(thread_id);
     pending_reply_ = PendingReply{.entry_id = user_message.id, .thread_id = thread_id,
@@ -3228,7 +3998,16 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatScreenState(ctor, chat_);
         ctor.BindEventCallback("send_message", DataEvent([this] { OnSendMessage(); }));
         ctor.BindEventCallback("send_suggestion", DataEvent<std::string>([this](const std::string& text) {
+          // Phones: Get started / What can you do raise the ask-AI panel over Home and ask there (PLAN-ui-batch5-ask-ai).
+          if (ChromeSnapshot().nav_tab == NavTab::Home && ask_ai_.OpenAndAsk(AskAiEntry::HomeChip, text)) {
+            return;
+          }
           // A Home chip continues its own thread instead of opening a new one on every tap.
+          SendUserText(text, std::nullopt, /*from_home_chip=*/true);
+        }));
+        // Today's headlines go to the AI chat page as before, phones too (Kenneth 2026-11-04: users follow up on the
+        // news there).
+        ctor.BindEventCallback("send_suggestion_in_chat", DataEvent<std::string>([this](const std::string& text) {
           SendUserText(text, std::nullopt, /*from_home_chip=*/true);
         }));
         ctor.BindEventCallback("send_example", DataEvent<std::string>([this](const std::string& text) {
@@ -3271,8 +4050,14 @@ bool ChatController::Setup(ui::Context* context) {
             contacts_notify_.select_contact(*contact);
           }
         }));
+        ctor.BindEventCallback("open_sender", DataEvent<std::string>(
+            [this](const std::string& message_id) { OpenGroupSender(message_id); }));
         ctor.BindEventCallback("open_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { OpenAttachment(message_id); }));
+        ctor.BindEventCallback("open_picture", DataEvent<std::string, std::string>(
+            [this](const std::string& message_id, const std::string& local_path) {
+              OpenPicture(message_id, local_path);
+            }));
         ctor.BindEventCallback("download_attachment", DataEvent<std::string>(
             [this](const std::string& message_id) { DownloadAttachment(message_id); }));
         ctor.BindEventCallback("retry_attachment", DataEvent<std::string>(
@@ -3287,8 +4072,9 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_thread_actions_menu", DataEventAt(
             [this](ui::Event& ev) { menus_.OpenThreadActions(ev); }));
         ctor.BindEventCallback("start_call", DataEventAt([this](ui::Event& ev) { menus_.StartCall(ev); }));
+        ctor.BindEventCallback("join_group_call", DataEvent([this] { OnJoinGroupCall(); }));
         ctor.BindEventCallback("open_group_members", DataEvent([this] { peer_sheet_.OpenGroupMembers(); }));
-        ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { peer_sheet_.Open(ev); }));
+        ctor.BindEventCallback("open_peer_sheet", DataEventAt([this](ui::Event& ev) { OpenPeerSheet(ev); }));
         ctor.BindEventCallback("sync_with_peer", DataEvent([this] { OnSyncWithPeer(); }));
         ctor.BindEventCallback("retry_gap_sync", DataEvent([this] { OnRetryGapSync(); }));
         ctor.BindEventCallback("start_new_secure_chat", DataEvent([this] { OnStartNewSecureChat(); }));
@@ -3306,17 +4092,57 @@ bool ChatController::Setup(ui::Context* context) {
       })) {
     return false;
   }
+  if (!ask_ai_.Register(context)) {
+    return false;
+  }
+  if (!group_info_.Register(context)) {
+    return false;
+  }
+  if (!group_leave_.Register(context)) {
+    return false;
+  }
+  if constexpr (kUiDemoBuild) {
+    ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
+  }
 
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
+        ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
-        ctor.BindEventCallback("open_new_session_menu", DataEventAt(
-            [this](ui::Event& ev) { menus_.OpenNewSession(ev); }));
+        ctor.BindEventCallback("open_new_session_menu", DataEventAt([this](ui::Event& ev) {
+          // The phone goes straight to a full-screen page; the desktop keeps its small menu.
+          if (ChromeSnapshot().layout_mode == LayoutMode::Compact && contacts_notify_.open_new_chat) {
+            contacts_notify_.open_new_chat();
+            return;
+          }
+          menus_.OpenNewSession(ev);
+        }));
         ctor.BindEventCallback("select_thread", DataEvent<std::string>(
             [this](const std::string& thread_id) { OnSelectThread(thread_id); }));
+        ctor.BindEventCallback("home_open_brief", DataEvent<int>([this](const int index) { OpenHomeBrief(index); }));
+        ctor.BindEventCallback("home_brief_all", DataEvent([this] { SendSuggestionAction("articles"); }));
+        ctor.BindEventCallback("home_open_new_people", DataEvent([this] { OpenHomeNewPeople(); }));
+        ctor.BindEventCallback("home_open_security", DataEvent([this] {
+          if (open_settings_section_) {
+            open_settings_section_("security");
+          }
+        }));
+        ctor.BindEventCallback("home_open_favorite", DataEvent<int>([this](const int index) { OpenHomeFavorite(index); }));
+        ctor.BindEventCallback("home_open_calls", DataEvent([this] { OpenHomeCalls(); }));
+        ctor.BindEventCallback("home_open_chats", DataEvent([this] { ShellSelectNavTab(NavTab::Sessions); }));
+        ctor.BindEventCallback("home_open_mentions", DataEvent([this] { OpenHomeMentions(); }));
+        ctor.BindEventCallback("home_edit_open", DataEvent([this] { OpenHomeEdit(); }));
+        ctor.BindEventCallback("home_widget_remove", DataEvent<std::string>(
+            [this](const std::string& id) { SaveHomeLayout(RemoveHomeWidget(HomeLayout(), id)); }));
+        ctor.BindEventCallback("home_widget_add", DataEvent<std::string>(
+            [this](const std::string& id) { SaveHomeLayout(AddHomeWidget(HomeLayout(), id)); }));
+        ctor.BindEventCallback("home_edit_drag_start", DataEvent<std::string>(
+            [this](const std::string& id) { OnHomeEditDragStart(id); }));
+        ctor.BindEventCallback("home_edit_drag", DataEventAt([this](ui::Event& ev) { OnHomeEditDrag(ev); }));
+        ctor.BindEventCallback("home_edit_drag_end", DataEvent([this] { OnHomeEditDragEnd(); }));
         BindSharedEvents(ctor);
       })) {
     return false;
@@ -3328,6 +4154,8 @@ bool ChatController::Setup(ui::Context* context) {
 
   ContextMenuHost::Instance().RegisterProvider(
       [this](const ContextMenuRequest& request) { return menus_.ForRequest(request); });
+  ContextMenuHost::Instance().SetTitleResolver(
+      [this](const ContextMenuRequest& request) { return menus_.MenuTitleFor(request); });
   ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
     for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
       if (cur->HasAttribute("message-id") || cur->HasAttribute("share-text")) {
@@ -3356,6 +4184,8 @@ bool ChatController::Setup(ui::Context* context) {
                                        .provides_composer = true});
   shell_setup_.register_pane(
       {.key = "contact_detail", .rml_path = "views/contact_detail.rml", .role = PaneRole::Primary});
+  shell_setup_.register_pane(
+      {.key = "new_chat", .rml_path = "views/new_chat.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
       {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
@@ -3466,6 +4296,9 @@ void ChatController::Update() {
   }
 
   agent_.Tick();  // the streamed row, a held send, the agent's events
+  ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
+  group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
+  group_leave_.Tick(std::chrono::steady_clock::now());
 
   if (search_.view().open) {
     const auto search_now = std::chrono::steady_clock::now();
@@ -3736,6 +4569,276 @@ void ChatController::OnSearchMessagesChanged() {
 void ChatController::OnAgentTurnEnded(const std::string& thread_id) {
   if (!thread_id.empty() && thread_id == search_thread_) {
     OnSearchMessagesChanged(); // the answer is stored now
+  }
+  ask_ai_.OnTurnEnded(thread_id);
+}
+
+// --- the ask-AI panel (DEV/PLAN-ui-batch5-ask-ai.md 5a) ---------------------------------------------------
+
+bool ChatController::AskAiCompact() const {
+  return ChromeSnapshot().layout_mode == LayoutMode::Compact;
+}
+
+std::string ChatController::AskAiSharedThread(const bool create) {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  // The AI chat used last is the conversation Home, the panel and "AI chat" continue.
+  std::string best;
+  int64_t best_at = std::numeric_limits<int64_t>::min();
+  if (auto threads = facade_->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Ai && thread.listed && thread.updated_at > best_at) {
+        best = thread.id;
+        best_at = thread.updated_at;
+      }
+    }
+  }
+  if (best.empty() && create) {
+    // Not opened: the page under the panel (maybe a chat with a person) stays as it is.
+    if (auto created = facade_->CreateAiThread()) {
+      best = created->id;
+      SyncShellSessions();
+    } else {
+      log().warning << "Ask AI: could not create the AI chat: " << created.error().message;
+    }
+  }
+  return best;
+}
+
+std::vector<AskAiRow> ChatController::AskAiRecentRows(const std::string& thread_id, const size_t limit) {
+  std::vector<AskAiRow> out;
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return out;
+  }
+  auto page = facade_->GetMessagesPage(thread_id, std::nullopt, static_cast<int>(limit));
+  if (!page || page->empty()) {
+    return out;
+  }
+  int64_t oldest = page->front().display_order;
+  for (const ThreadMessage& message : *page) {
+    oldest = std::min(oldest, message.display_order);
+  }
+  for (const MessageDisplayRow& row : BuildMessageRows(thread_id, oldest, std::nullopt)) {
+    if (row.content_rml.empty()) {
+      continue;
+    }
+    out.push_back({row.message_id, row.row_class == "message-row-user", row.content_rml});
+  }
+  return out;
+}
+
+bool ChatController::AskAiLastIsQuestion(const std::string& thread_id) {
+  if (!messaging_ready_ || !facade_ || thread_id.empty()) {
+    return false;
+  }
+  auto newest = facade_->GetMessagesPage(thread_id, std::nullopt, 1);
+  return newest && !newest->empty() && newest->back().sender_contact_id == kLocalSelfContactId;
+}
+
+std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, const std::string& text) {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  ThreadMessage message;
+  message.id = util::GenerateUuid();
+  message.thread_id = thread_id;
+  message.sender_contact_id = kLocalSelfContactId;
+  message.text = text;
+  message.timestamp = util::NowUnixMs();
+  message.transport = MessageTransport::Local;
+  auto stored = facade_->AppendMessage(message);
+  if (!stored) {
+    log().warning << "Ask AI: could not store the question: " << stored.error().message;
+    return {};
+  }
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(text));
+  (void)facade_->UpdatePreview(thread_id, text);
+  SyncShellSessions();
+  return stored->id.empty() ? message.id : stored->id;
+}
+
+int ChatController::AskAiPushSheet(const PaneSpec& spec, std::function<void()> on_closed) {
+  if (!shell_navigation_.push_layer) {
+    return -1;
+  }
+  const int layer_id = shell_navigation_.push_layer(spec);
+  if (flow_coordinator_.begin_modal) {
+    flow_coordinator_.begin_modal(layer_id, {}, std::move(on_closed));
+  }
+  return layer_id;
+}
+
+void ChatController::AskAiCloseSheet(const int layer_id) {
+  if (layer_id >= 0 && shell_navigation_.close_layer) {
+    shell_navigation_.close_layer(layer_id); // the coordinator hears it closing and tells the panel
+  }
+}
+
+// --- the group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1) -------------------------------------------------
+
+void ChatController::OpenPeerSheet(ui::Event& ev) {
+  if (messaging_ready_ && facade_ && chat_.show_peer_sheet) {
+    auto thread = facade_->GetActiveThread();
+    const bool group = thread && thread->kind == ThreadKind::Group && thread->group_id;
+    if (ChooseChatHeaderSheet(AskAiCompact(), group) == ChatHeaderSheet::GroupInfo) {
+      (void)group_info_.Open(thread->id);
+      return;
+    }
+  }
+  peer_sheet_.Open(ev);
+}
+
+GroupInfoScreen ChatController::GroupInfoRead(const std::string& thread_id) {
+  return messaging_ready_ ? presenter_.GroupInfoOf(thread_id) : GroupInfoScreen{};
+}
+
+int ChatController::GroupInfoPushSheet(const PaneSpec& spec) {
+  return shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
+}
+
+void ChatController::GroupInfoCloseSheet(const int layer_id) {
+  if (shell_navigation_.close_layer && GroupInfoSheetOpen(layer_id)) {
+    shell_navigation_.close_layer(layer_id);
+  }
+}
+
+bool ChatController::GroupInfoSheetOpen(const int layer_id) const {
+  return layer_id >= 0 && shell_navigation_.has_layer && shell_navigation_.has_layer(layer_id);
+}
+
+void ChatController::GroupInfoCall(const std::string& thread_id, const bool video) {
+  if (call_actions_.start_call) {
+    (void)call_actions_.start_call(thread_id, video); // joins the call that goes on, else the member picker
+  }
+}
+
+void ChatController::GroupInfoMute(const std::string& thread_id, const bool muted) {
+  menus_.OpenMute(thread_id, ui::Vector2i(120, 120), /*offer_unmute=*/muted); // an action sheet on the phone
+}
+
+void ChatController::GroupInfoRename(const std::string& thread_id, const bool for_everyone) {
+  auto refresh = [this]() { group_info_.Refresh(); };
+  if (for_everyone) {
+    peer_sheet_.RenameForEveryone(thread_id, refresh);
+  } else {
+    peer_sheet_.RenameForMe(thread_id, refresh);
+  }
+}
+
+void ChatController::GroupInfoRestoreName(const std::string& thread_id) {
+  peer_sheet_.ClearMyName(thread_id);
+  RefreshFromMessaging();
+}
+
+void ChatController::GroupInfoViewAll(const std::string& thread_id) {
+  if (people_picker_notify_.open_group_members) {
+    people_picker_notify_.open_group_members(thread_id);
+  }
+}
+
+void ChatController::GroupInfoAddMember(const std::string& thread_id) {
+  if (people_picker_notify_.open_group_add_members) {
+    people_picker_notify_.open_group_add_members(thread_id);
+  }
+}
+
+void ChatController::GroupInfoTapMember(const std::string& thread_id, const std::string& identity) {
+  if (people_picker_notify_.tap_group_member) {
+    people_picker_notify_.tap_group_member(thread_id, identity);
+  }
+}
+
+void ChatController::GroupInfoLeave(const std::string& thread_id) {
+  OnCloseThread(thread_id); // asks first; an owner hands the group over or dissolves it
+}
+
+void ChatController::GroupInfoDissolve(const std::string& group_id) {
+  DissolveGroupAfterConfirm(group_id);
+}
+
+void ChatController::GroupLeaveConfirm(const std::string& message, std::function<void(bool ok)> done) {
+  ShowConfirm(Tr("chat.group.leave_title"), message, std::move(done), /*destructive=*/true);
+}
+
+void ChatController::GroupLeaveHandOver(const std::string& thread_id, const std::string& group_id,
+                                        const std::string& identity) {
+  CloseChatWith(
+      thread_id, [this, thread_id, group_id, identity]() { return presenter_.HandOverAndClose(thread_id, group_id, identity); },
+      /*show_error_text=*/true);
+}
+
+void ChatController::ShowThreadInChat(const std::string& thread_id) {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  if (auto opened = facade_->OpenThread(thread_id); !opened) {
+    log().warning << "Ask AI: could not open the AI chat: " << opened.error().message;
+    return;
+  }
+  ShellSelectNavTab(NavTab::Sessions);
+  ShellSetPrimaryPane("chat");
+  FinalizeThreadDisplay();
+  NotifySurfaceChanged();
+}
+
+void ChatController::AskAiOpenInChat(const std::string& thread_id) {
+  // After the tap's own handler: the sheet and the page under it are rebuilt.
+  AppRuntime::PostUI([this, thread_id]() { ShowThreadInChat(thread_id); });
+}
+
+void ChatController::AskAiSupport(const std::string& question) {
+  AppRuntime::PostUI([this, question]() {
+    if (!ask_support_) {
+      UserFeedback::Fail(Tr("settings.support.unavailable"));
+      return;
+    }
+    if (auto asked = ask_support_(question); !asked) {
+      (void)UserFeedback::FailFrom(asked.error());
+    }
+  });
+}
+
+void ChatController::AskAiRunAction(const std::string& thread_id, const std::string& entry_id, const int action_index) {
+  if (!messaging_ready_ || !facade_ || action_index < 0) {
+    return;
+  }
+  auto found = facade_->GetMessage(thread_id, entry_id);
+  if (!found || !found->has_value() || static_cast<size_t>(action_index) >= (*found)->chat_actions.size()) {
+    log().warning << "Ask AI: answer button not found (index " << action_index << ")";
+    return;
+  }
+  const TranscriptChatAction action = (*found)->chat_actions[static_cast<size_t>(action_index)];
+  const auto payload = action.payload ? TryParseObject(*action.payload) : std::nullopt;
+  const std::string type = payload ? payload->getString("type").value_or("") : std::string();
+  // A permission card and a link are answered where they are; the session holding the card is found by its id.
+  if (type == "tool_permission" || type == "open_url") {
+    AppRuntime::PostUI([this, thread_id, action, entry_id]() {
+      HandleLocalActionIn(thread_id, action.message, action.payload, entry_id); // a stale card is closed there
+    });
+    return;
+  }
+  // Anything else continues in the full AI chat, where its answer (a list, a form) can show.
+  AppRuntime::PostUI([this, thread_id, action, entry_id]() {
+    ask_ai_.Close();
+    ShowThreadInChat(thread_id);
+    HandleLocalActionIn(thread_id, action.message, action.payload, entry_id);
+  });
+}
+
+bool ChatController::AskAiIntroSeen() const {
+  return session_store_ && Store().Snapshot().profile_prefs.ai_panel_intro_seen;
+}
+
+void ChatController::AskAiMarkIntroSeen() {
+  if (!session_store_) {
+    return;
+  }
+  ProfilePreferences prefs = Store().Snapshot().profile_prefs;
+  prefs.schema_version = ProfilePreferences::kSchemaVersion;
+  prefs.ai_panel_intro_seen = true;
+  if (auto saved = Store().SaveProfilePrefs(prefs); !saved) {
+    log().warning << "Ask AI: could not remember the privacy card: " << saved.error().message;
   }
 }
 

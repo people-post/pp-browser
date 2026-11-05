@@ -14,6 +14,8 @@ enum class PeerLabelTrust { Contact, DirectoryUnverified, RawId, Group };
 
 struct PeerDisplayLabel {
   std::string title;
+  /** Seed for the letter-avatar colour: the same id on every screen, so a rename never recolours a person. */
+  std::string stable_id;
   PeerLabelTrust trust = PeerLabelTrust::RawId;
   std::optional<std::string> contact_id;
   /** Shared group title when local override is active (for subtitle). */

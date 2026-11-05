@@ -21,13 +21,14 @@ public:
   std::string BottomChrome() const;
   std::string Dialog() const;
   std::string PinGate() const;
+  /** True when a Cancel + OK pair would not fit side by side in the phone alert card: the buttons stack instead. */
+  static bool DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label);
 
 private:
   std::string PaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
                        int flex_width_dp = 0) const;
   std::string ExpandedBase() const;
   std::string CompactBase() const;
-  std::string AccountSheet() const;
   std::string TransientLayer() const;
   std::string Overlays() const;
   const PaneState* FindPane(const std::string& key) const;
