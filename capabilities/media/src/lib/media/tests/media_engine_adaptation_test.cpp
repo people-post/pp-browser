@@ -143,15 +143,16 @@ TEST(MediaEngineAdaptationTest, EachSelfViewFrameIsAnnouncedAndIsASentFrame) {
   ASSERT_TRUE(engine.SetCameraEnabled(true, 0));
   ASSERT_TRUE(WaitFor([&] { return encodes.Count() >= 2; })) << "the camera never sent video";
 
+  // Counted over a number of frames, not a wall-clock second: a busy CI runner gives fewer a second (macOS: 6).
   const uint64_t previews_at = engine.HealthSnapshot().preview_frames;
   const uint64_t announced_at = announced.load();
   const size_t sent_at = encodes.Count();
-  std::this_thread::sleep_for(1000ms);
+  ASSERT_TRUE(WaitFor([&] { return engine.HealthSnapshot().preview_frames - previews_at >= 10; }, 10s))
+      << "the camera's frames did not reach the self-view";
   const uint64_t previews = engine.HealthSnapshot().preview_frames - previews_at;
   const uint64_t calls = announced.load() - announced_at;
   const uint64_t sent = encodes.Count() - sent_at;
   EXPECT_GE(calls, previews) << "a self-view frame the UI was not told of";
-  EXPECT_GE(previews, 10u) << "the self-view runs at about the send rate (15 fps)";
   EXPECT_LE(previews, sent + 1) << "the self-view shows the frames that are sent, no more";
   EXPECT_GE(previews + 1, sent) << "every sent frame is shown";
   engine.Stop();
