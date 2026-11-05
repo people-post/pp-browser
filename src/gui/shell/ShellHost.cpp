@@ -228,6 +228,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("avatar_src", &CallRosterParticipantState::avatar_src);
       roster_handle.RegisterMember("avatar_letter", &CallRosterParticipantState::avatar_letter);
       roster_handle.RegisterMember("avatar_tone", &CallRosterParticipantState::avatar_tone);
+      roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);

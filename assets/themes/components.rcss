@@ -5134,6 +5134,18 @@ call-video-tile {
   padding: 0 8dp;
 }
 
+/* With a spotlight: the chevron's side and the grid + add-people side, equally wide so the middle stays centred. */
+.call-phone-top-side {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  width: 88dp;
+}
+
+.call-phone-top-side--end {
+  justify-content: flex-end;
+}
+
 .call-phone-top-btn,
 .call-phone-top-spacer {
   display: flex;
@@ -5714,6 +5726,7 @@ call-video-tile {
   height: 49%;
   margin-bottom: 2%;
   border-radius: 18dp;
+  border: 3dp transparent;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -5751,6 +5764,83 @@ call-video-tile {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* V059 on the phone: the spotlit person (the one speaking, or the one tapped) fills the group's area, everyone else
+   in a strip above the buttons. Whoever speaks has a ring: only the border's colour changes (colors.rcss.tmpl), no
+   layout and no animation (B146). */
+.call-phone-spotlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+}
+
+.call-phone-tile--spotlit {
+  width: 100%;
+  height: 100%;
+  margin-bottom: 0;
+}
+
+.call-phone-tile--spotlit .call-phone-avatar--tile {
+  width: 120dp;
+  height: 120dp;
+  border-radius: 60dp;
+}
+
+.call-phone-tile--spotlit .call-phone-avatar--tile .avatar-letter {
+  font-size: 48dp;
+}
+
+.call-phone-strip {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 8dp;
+  height: 120dp;
+  margin: 0 12dp 16dp 12dp;
+  overflow: hidden;
+}
+
+.call-phone-tile--strip {
+  flex: 0 1 104dp;
+  min-width: 60dp;
+  width: auto;
+  height: 100%;
+  margin-bottom: 0;
+  gap: 6dp;
+  border-radius: 14dp;
+}
+
+.call-phone-tile--strip .call-phone-avatar--tile {
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
+}
+
+.call-phone-tile--strip .call-phone-avatar--tile .avatar-letter {
+  font-size: 18dp;
+}
+
+.call-phone-tile--strip .call-phone-tile-label {
+  left: 4dp;
+  bottom: 4dp;
+  max-width: 90%;
+  padding: 1dp 6dp;
+}
+
+.call-phone-tile--strip .call-phone-tile-name {
+  font-size: 11dp;
+  line-height: 15dp;
+}
+
+.call-phone-tile--strip .call-phone-tile-note {
+  display: none;
 }
 
 /* The bar of round buttons with their words. */

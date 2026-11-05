@@ -125,6 +125,17 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   return key;
 }
 
+/** The rows whose speaking ring is on, in one key (kept out of RosterKey: a ring change dirties only the rows). */
+std::string SpeakingKey(const std::vector<CallRosterParticipantState>& roster) {
+  std::string key;
+  for (const CallRosterParticipantState& p : roster) {
+    if (p.speaking) {
+      key += std::string(p.stream_id.c_str()) + ";";
+    }
+  }
+  return key;
+}
+
 CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call, const bool phone) {
   return {
       .ring_active = ring.active,
@@ -184,6 +195,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_debug_subtitle = in_call.show_debug_subtitle,
       .in_call_debug_subtitle = in_call.debug_subtitle.c_str(),
       .in_call_roster = RosterKey(in_call.roster),
+      .in_call_speaking = phone ? SpeakingKey(in_call.roster) : std::string{},  // only the phone page rings
       .phone = phone,
       .ring_phone_title = ring.phone_title.c_str(),
       .ring_phone_subtitle = ring.phone_subtitle.c_str(),
@@ -251,6 +263,25 @@ std::string LevelHint(int level, bool remote, bool muted) {
     return Tr("call.level.speaking");
   }
   return Tr("call.level.loud");
+}
+
+/** UI demo only: a stand-in camera picture (the simulator has none), a top-to-bottom blend of two colours. */
+CallVideoTileRenderer::Frame DemoCameraFrame(const uint64_t seq, const uint8_t top[3], const uint8_t bottom[3]) {
+  CallVideoTileRenderer::Frame frame;
+  frame.width = 90;
+  frame.height = 160;
+  frame.seq = seq;
+  frame.rgba.resize(static_cast<size_t>(frame.width) * frame.height * 4);
+  for (int y = 0; y < frame.height; ++y) {
+    for (int x = 0; x < frame.width; ++x) {
+      uint8_t* px = &frame.rgba[(static_cast<size_t>(y) * frame.width + x) * 4];
+      for (int c = 0; c < 3; ++c) {
+        px[c] = static_cast<uint8_t>(top[c] + (bottom[c] - top[c]) * y / (frame.height - 1));
+      }
+      px[3] = 255;
+    }
+  }
+  return frame;
 }
 
 /** "0:43 · 重新连接中…" — the call timer keeps running while the path is being found again. */
@@ -510,6 +541,10 @@ void CallController::ApplySpotlightToState(CallInProgressState& in_call) {
   }
   in_call.spotlight_stream = spotlit.c_str();
   in_call.spotlight_fill = spotlight_fill_;
+  for (CallRosterParticipantState& row : in_call.roster) {
+    row.speaking =
+        std::binary_search(speaking_shown_.begin(), speaking_shown_.end(), std::string(row.stream_id.c_str()));
+  }
   in_call.spotlight_rows.clear();
   in_call.strip_rows.clear();
   if (!spotlit.empty()) {
@@ -548,7 +583,8 @@ void CallController::ToggleSpotlightFill() {
   ResyncSpotlight();
 }
 
-void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const int64_t now_ms) {
+void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const float self_level,
+                                       const int64_t now_ms) {
   if (!in_call_.show_roster) {
     return; // 1:1: the peer is spotlit anyway
   }
@@ -558,8 +594,32 @@ void CallController::NoteActiveSpeaker(const MediaEngineHealth& engine, const in
     levels.emplace_back(std::to_string(stream.stream_id), stream.peak_level);
   }
   const std::string before = active_speaker_.Current();
-  if (active_speaker_.Update(levels, now_ms) != before) {
+  const bool speaker_moved = active_speaker_.Update(levels, now_ms) != before;
+
+  // The speaking rings: the others by their streams, we by our microphone (never the spotlight: that stays the
+  // others'). A change shows at most every kSpeakingRingRefreshMs; it dirties the rows only (CallChromeSync).
+  if (self_level >= CallActiveSpeaker::kSpeakingLevel) {
+    self_heard_ms_ = now_ms;
+  }
+  std::vector<std::string> speaking = active_speaker_.Speaking(now_ms);
+  if (self_heard_ms_ != 0 && now_ms - self_heard_ms_ <= CallActiveSpeaker::kSpeakingRingMs) {
+    for (const CallRosterParticipantState& row : in_call_.roster) {
+      if (row.is_local) {
+        speaking.emplace_back(row.stream_id.c_str());
+      }
+    }
+    std::sort(speaking.begin(), speaking.end());
+  }
+  bool rings_changed = false;
+  if (speaking != speaking_shown_ && now_ms - speaking_shown_ms_ >= kSpeakingRingRefreshMs) {
+    speaking_shown_ = std::move(speaking);
+    speaking_shown_ms_ = now_ms;
+    rings_changed = true;
+  }
+  if (speaker_moved) {
     ResyncSpotlight();
+  } else if (rings_changed) {
+    ApplySpotlightToState(in_call_);  // the render's SyncShellState pushes it
   }
 }
 
@@ -960,6 +1020,9 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     spotlight_choice_ = {};
     spotlight_fill_ = true;
     active_speaker_.Reset();
+    speaking_shown_.clear();
+    speaking_shown_ms_ = 0;
+    self_heard_ms_ = 0;
   }
   ApplyChromeModeToState(in_call);
   ApplySpotlightToState(in_call);
@@ -1460,7 +1523,7 @@ void CallController::ApplyMediaHealth(IMediaView& media, CallUiBackend* backend,
   SampleLinkHealth(backend, util::NowUnixMs());
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
-  NoteActiveSpeaker(view.engine, now_ms);
+  NoteActiveSpeaker(view.engine, in_call.muted ? 0.f : media.LocalInputLevel(), now_ms);
 
   if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
     last_metrics_media_ms_ = now_ms;
@@ -1683,6 +1746,29 @@ bool CallController::RenderDemoScene() {
   in_call_.show_flip = f.video_stage;
   in_call_.remote_placeholder = "";
   ApplyConnectStory(f.screen, f.path_kind, f.quality, f.quality_bars, now);
+  MediaEngineHealth engine;  // the scene's made-up levels, for the speaking rings and the spotlight
+  for (const auto& [identity, level] : f.levels) {
+    for (const CallRosterParticipantState& row : in_call_.roster) {
+      if (identity == row.identity.c_str()) {
+        const auto stream = static_cast<uint32_t>(std::strtoul(row.stream_id.c_str(), nullptr, 10));
+        engine.streams.push_back({.stream_id = stream, .peak_level = level});
+      }
+    }
+  }
+  NoteActiveSpeaker(engine, f.self_level, now);
+  if (f.video_stage) {
+    // Stand-in cameras, ours blue and theirs warm, so the 1:1 swap shows on the simulator.
+    in_call_.local_preview = true;
+    in_call_.remote_video = f.screen.status == CallScreen::Status::Connected;
+    if (now - demo_frames_ms_ >= 1000) {
+      const uint64_t seq = static_cast<uint64_t>(now);
+      static constexpr uint8_t kSelfTop[3] = {40, 90, 200}, kSelfBottom[3] = {20, 30, 70};
+      static constexpr uint8_t kPeerTop[3] = {230, 140, 60}, kPeerBottom[3] = {120, 40, 90};
+      CallVideoTileRenderer::Instance().SubmitLocalFrame(DemoCameraFrame(seq, kSelfTop, kSelfBottom));
+      CallVideoTileRenderer::Instance().SubmitRemoteFrame(DemoCameraFrame(seq, kPeerTop, kPeerBottom));
+      demo_frames_ms_ = now;
+    }
+  }
   SyncShellState();
   return true;
 }

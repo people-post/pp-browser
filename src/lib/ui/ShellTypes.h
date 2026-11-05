@@ -281,6 +281,9 @@ struct CallRosterParticipantState {
   ui::String avatar_src;
   ui::String avatar_letter = "?";
   int avatar_tone = 0;
+  /** Speaking now (CallActiveSpeaker::Speaking; we by our microphone): the phone page rings the tile. Bound, and
+   * part-dirtied on its own (CallChromeChangedVariables), at most every CallController::kSpeakingRingRefreshMs. */
+  bool speaking = false;
 };
 
 /** In-call chrome presentation mode (V031). */

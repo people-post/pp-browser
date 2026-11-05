@@ -28,6 +28,20 @@ bool CallChromeStatusLabelChanged(const std::string& synced, const std::string& 
   return a == 2; // status string changed (Connecting… → Connected)
 }
 
+/** A row's speaking ring differs (any row, or the rows themselves). */
+bool SpeakingChanged(const std::vector<CallRosterParticipantState>& before,
+                     const std::vector<CallRosterParticipantState>& after) {
+  if (before.size() != after.size()) {
+    return true;
+  }
+  for (size_t i = 0; i < before.size(); ++i) {
+    if (before[i].speaking != after[i].speaking) {
+      return true;
+    }
+  }
+  return false;
+}
+
 } // namespace
 
 CallChromeMode DefaultCallChromeMode(bool show_roster) {
@@ -115,7 +129,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
   }
 
   // The clock ticking ("0:05" → "0:06", a status kind change remounted above), the quality chip, and the phone's
-  // result line / signal bar / top pill: each changed variable alone (B146).
+  // result line / signal bar / top pill / speaking rings: each changed variable alone (B146).
   const bool parts_changed = synced.in_call_subtitle != next.in_call_subtitle ||
                              synced.in_call_elapsed != next.in_call_elapsed ||
                              synced.in_call_quality_bars != next.in_call_quality_bars ||
@@ -134,7 +148,8 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                              synced.in_call_notice_warn != next.in_call_notice_warn ||
                              synced.in_call_notice_fading != next.in_call_notice_fading ||
                              synced.in_call_show_debug_subtitle != next.in_call_show_debug_subtitle ||
-                             synced.in_call_debug_subtitle != next.in_call_debug_subtitle;
+                             synced.in_call_debug_subtitle != next.in_call_debug_subtitle ||
+                             synced.in_call_speaking != next.in_call_speaking;
   if (parts_changed) {
     return CallChromeUpdate::PartsOnly; // the meters' variables go too when they changed
   }
@@ -184,6 +199,10 @@ std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& b
   add(before.notice_fading != after.notice_fading, "call_in_progress_notice_fading");
   add(before.show_debug_subtitle != after.show_debug_subtitle, "call_in_progress_show_debug_subtitle");
   add(before.debug_subtitle != after.debug_subtitle, "call_in_progress_debug_subtitle");
+  // The phone page's speaking rings: only the arrays whose rows' ring changed.
+  add(SpeakingChanged(before.roster, after.roster), "call_in_progress_roster");
+  add(SpeakingChanged(before.spotlight_rows, after.spotlight_rows), "call_in_progress_spotlight_rows");
+  add(SpeakingChanged(before.strip_rows, after.strip_rows), "call_in_progress_strip_rows");
   return out;
 }
 

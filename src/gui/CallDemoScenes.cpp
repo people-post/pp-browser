@@ -34,6 +34,10 @@ CallScreen InCall(const char* call_id, const bool video, const bool group) {
   } else {
     s.peer_identity = kPeer;
     s.placed_here = true;  // the 1:1 scenes are calls this device placed
+    if (video) {
+      s.members.push_back({.identity = kPeer, .video_enabled = true});
+      s.members.push_back({.identity = kSelf, .is_local = true, .video_enabled = true});
+    }
   }
   return s;
 }
@@ -149,6 +153,10 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
         f.quality = CallPathQuality::Poor;
         f.quality_bars = 1;
       }
+      // Who speaks: we (5-11 s), then the first member (11-20 s), then the second (20-30 s).
+      f.self_level = t < 11'000 ? 0.2f : 0.f;
+      f.levels = {{"demo-acct-demo-contact-01", t >= 11'000 && t < 20'000 ? 0.25f : 0.f},
+                  {"demo-acct-demo-contact-02", t >= 20'000 && t < 30'000 ? 0.25f : 0.f}};
     }
     return f;
   }

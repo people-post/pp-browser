@@ -213,10 +213,18 @@ private:
   /** Group calls: who is speaking, for the spotlight when nobody chose (V059). */
   CallActiveSpeaker active_speaker_;
   bool spotlight_fill_ = true;
+  /** The tiles' speaking rings change at most this often (B146: each change dirties only the roster rows). */
+  static constexpr int64_t kSpeakingRingRefreshMs = 400;
+  /** Group calls: the stream_ids whose tile shows the speaking ring (sorted), when that last changed, and when our own
+   * microphone last reached CallActiveSpeaker::kSpeakingLevel. */
+  std::vector<std::string> speaking_shown_;
+  int64_t speaking_shown_ms_ = 0;
+  int64_t self_heard_ms_ = 0;
   void ApplySpotlightToState(CallInProgressState& in_call);
   void ResyncSpotlight();
-  /** Group calls: feed the active speaker each frame; a new one moves the spotlight (unless someone chose). */
-  void NoteActiveSpeaker(const MediaEngineHealth& engine, int64_t now_ms);
+  /** Group calls: feed the active speaker each frame; a new one moves the spotlight (unless someone chose). Also
+   * the speaking rings: the others by their streams' levels, we by `self_level` (0 when muted). */
+  void NoteActiveSpeaker(const MediaEngineHealth& engine, float self_level, int64_t now_ms);
   /** Mode to restore when leaving Minimized (Expanded or Immersive). */
   CallChromeMode restore_mode_ = CallChromeMode::Expanded;
   int minimized_corner_ = 0;
@@ -239,6 +247,8 @@ private:
   bool story_sheet_open_ = false;
   int64_t demo_started_ms_ = 0;
   bool demo_ended_ = false;
+  /** UI demo only: when its stand-in camera pictures were last handed to the tiles. */
+  int64_t demo_frames_ms_ = 0;
   std::string group_title_thread_;
   std::string group_title_;
   int64_t group_title_read_ms_ = 0;

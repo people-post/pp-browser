@@ -71,6 +71,9 @@ struct CallChromeLayer {
   /** The roster rows' bound fields in one key: a mute or camera change in a row dirties the call group (the clock
    * tick no longer does, so it cannot carry them any more). */
   std::string in_call_roster;
+  /** The phone page's speaking rings (the rows' `speaking`, kept out of in_call_roster): part-dirtied, never the
+   * whole call group nor a remount (B146). */
+  std::string in_call_speaking;
 
   // Phone call page (ShellCallChromeRml). Written into the markup: a change remounts.
   bool phone = false;
@@ -120,8 +123,8 @@ inline constexpr std::array<const char*, 4> kCallLevelVariables = {
 
 /**
  * The window-model variables of the in-call chrome's bound parts whose value differs between `before` and `after`:
- * the meters, the call clock, the quality chip, the phone's result line, signal bar and top pill. LevelsOnly and
- * PartsOnly dirty exactly these.
+ * the meters, the call clock, the quality chip, the phone's result line, signal bar and top pill, and the roster arrays
+ * whose speaking rings changed. LevelsOnly and PartsOnly dirty exactly these.
  */
 std::vector<const char*> CallChromeChangedVariables(const CallInProgressState& before, const CallInProgressState& after);
 

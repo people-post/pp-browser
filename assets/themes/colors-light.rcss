@@ -2992,6 +2992,10 @@ input.checkbox:checked {
   background-color: #ffffff17;
 }
 
+.call-phone-tile.call-phone-tile--speaking {
+  border-color: #34c759;
+}
+
 .call-phone-tile-label {
   background-color: #00000073;
 }

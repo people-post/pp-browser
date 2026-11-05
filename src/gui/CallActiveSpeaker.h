@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -21,6 +22,8 @@ public:
   static constexpr int64_t kSpeakForMs = 600;
   /** The spotlit speaker keeps it at least this long. */
   static constexpr int64_t kHoldMs = 3000;
+  /** A peer still counts as speaking (its tile's ring) this long after its level last reached kSpeakingLevel. */
+  static constexpr int64_t kSpeakingRingMs = 500;
 
   /** Each peer's stream_id and level now; returns the spotlit speaker's stream_id (empty: none yet). */
   const std::string& Update(const std::vector<std::pair<std::string, float>>& levels, const int64_t now_ms) {
@@ -31,6 +34,7 @@ public:
       if (level < kSpeakingLevel) {
         continue;
       }
+      heard_ms_[stream] = now_ms;
       const auto it = speaking_since_.find(stream);
       const int64_t since = it != speaking_since_.end() ? it->second : now_ms;
       speaking.emplace(stream, since);
@@ -53,13 +57,33 @@ public:
 
   const std::string& Current() const { return current_; }
 
+  /**
+   * Who is speaking now, for the ring on their tile (not the spotlight): heard at kSpeakingLevel within the last
+   * kSpeakingRingMs, so the ring does not blink between words. Sorted stream_ids.
+   */
+  std::vector<std::string> Speaking(const int64_t now_ms) {
+    std::vector<std::string> out;
+    for (auto it = heard_ms_.begin(); it != heard_ms_.end();) {
+      if (now_ms - it->second > kSpeakingRingMs) {
+        it = heard_ms_.erase(it);
+        continue;
+      }
+      out.push_back(it->first);
+      ++it;
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+
   void Reset() {
+    heard_ms_.clear();
     speaking_since_.clear();
     current_.clear();
     current_since_ms_ = 0;
   }
 
 private:
+  std::unordered_map<std::string, int64_t> heard_ms_;
   std::unordered_map<std::string, int64_t> speaking_since_;
   std::string current_;
   int64_t current_since_ms_ = 0;

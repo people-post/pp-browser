@@ -408,3 +408,32 @@ TEST(CallChromeSyncTest, ASpotlightChangeRemounts) {
   next.in_call_spotlight_fill = false;
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::Remount);
 }
+
+// The phone page's speaking rings are bound parts (B146): a ring going on or off dirties only the roster arrays
+// whose rows changed, never the whole call group nor a remount.
+TEST(CallChromeSyncTest, ASpeakingRingIsPartsOnlyAndDirtiesOnlyItsRows) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.phone = true;
+  synced.in_call_show_roster = true;
+  synced.in_call_mode = pbr::CallChromeMode::Immersive;
+  synced.in_call_roster = "Ana|11|--;Bo|22|--";
+  pbr::CallChromeLayer next = synced;
+  next.in_call_speaking = "22;";
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::PartsOnly);
+
+  pbr::CallInProgressState before;
+  before.roster.resize(2);
+  before.roster[0].stream_id = "11";
+  before.roster[1].stream_id = "22";
+  before.spotlight_rows = {before.roster[1]};
+  before.strip_rows = {before.roster[0]};
+  pbr::CallInProgressState after = before;
+  after.roster[1].speaking = true;
+  after.spotlight_rows[0].speaking = true;
+  const std::vector<const char*> changed = pbr::CallChromeChangedVariables(before, after);
+  std::vector<std::string> names(changed.begin(), changed.end());
+  EXPECT_EQ(names, (std::vector<std::string>{"call_in_progress_roster", "call_in_progress_spotlight_rows"}))
+      << "the strip's rows did not change";
+}

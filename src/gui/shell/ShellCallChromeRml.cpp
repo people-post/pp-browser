@@ -275,6 +275,38 @@ void AppendStorySheet(std::ostringstream& out, const CallInProgressState& call) 
   out << "</div></div></div></div>";
 }
 
+/**
+ * The group page's people as tiles, one per row of the bound array `rows` (data-for): their camera, else their
+ * photo or initial, and their name. `extra_class` sizes them (grid, spotlight, strip), `events` is the tap, `fit` how a
+ * camera fills the tile ("fit" / "fill"). With `rings`, whoever speaks gets a ring (p.speaking: bound, refreshed on
+ * its own at most every few hundred ms, B146).
+ */
+void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* extra_class, const char* events,
+                      const char* fit, const bool rings) {
+  out << "<div data-for=\"p : " << rows << "\" class=\"call-phone-tile" << extra_class << "\"";
+  if (rings) {
+    out << " data-class-call-phone-tile--speaking=\"p.speaking\"";
+  }
+  out << events << ">";
+  out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"local\"" << fit
+      << " data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
+  out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"peer\" data-attr-stream=\"p.stream_id\"" << fit
+      << " data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
+  const char* no_video = "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))";
+  out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && " << no_video << "\"";
+  for (int tone = 0; tone < 8; ++tone) {
+    out << " data-class-avatar-tone-" << tone << "=\"p.avatar_tone == " << tone << "\"";
+  }
+  out << "><p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
+  out << "<img class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"p.has_avatar && " << no_video
+      << "\" data-attr-src=\"p.avatar_src\"/>";
+  out << "<p class=\"call-phone-tile-note\" data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\">"
+         "{{call_in_progress_remote_placeholder}}</p>";
+  out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
+         "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span></div>";
+  out << "</div>";
+}
+
 /** The phone ring page (mockups 06-CallRing / 06-CallGroupRing): full screen, the caller big, three round answers. */
 std::string CallRingPhoneRml(const ShellState& state) {
   const CallRingState& ring = state.call_ring;
@@ -321,6 +353,15 @@ std::string CallPhoneRml(const ShellState& state) {
   const CallInProgressState& call = state.call_in_progress;
   const bool group = call.show_roster;
   const bool video_layout = !group && call.stage_visible && !call.phone_failed;
+  // Group, connected: someone spotlit (CallSpotlight.h, V059) fills the area and the others line up in a strip.
+  const bool spotlit = group && !call.story_active && !call.phone_failed && !call.spotlight_stream.empty();
+  // 1:1 video: our own camera and theirs, which is big; a tap on the small one swaps them (V059).
+  std::string self_stream;
+  std::string peer_stream;
+  for (const CallRosterParticipantState& row : call.roster) {
+    (row.is_local ? self_stream : peer_stream) = Plain(row.stream_id.c_str());
+  }
+  const bool self_big = !group && !self_stream.empty() && call.spotlight_stream.c_str() == self_stream;
   std::ostringstream out;
   out << "<div id=\"shell-call-chrome-root\" class=\"shell-layer shell-layer-call-phone\" data-model=\"window\">";
   out << "<div id=\"call-phone-page\" class=\"call-phone" << (video_layout ? " call-phone--video" : "")
@@ -333,7 +374,13 @@ std::string CallPhoneRml(const ShellState& state) {
              "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
       out << "<div class=\"call-phone-video-dim\"></div>";
     } else {
-      out << "<call-video-tile class=\"call-phone-remote\" id=\"call-remote-tile\" tile=\"remote\">";
+      // Swapped: our camera big while it is on (theirs is big again once it goes off).
+      if (self_big) {
+        out << "<call-video-tile class=\"call-phone-remote\" tile=\"local\" "
+               "data-if=\"call_in_progress_local_preview\"></call-video-tile>";
+      }
+      out << "<call-video-tile class=\"call-phone-remote\" id=\"call-remote-tile\" tile=\"remote\""
+          << (self_big ? " data-if=\"!call_in_progress_local_preview\"" : "") << ">";
       out << "<p class=\"call-phone-remote-note\" data-if=\"!call_in_progress_remote_video\">"
              "{{call_in_progress_remote_placeholder}}</p>";
       out << "</call-video-tile>";
@@ -341,17 +388,33 @@ std::string CallPhoneRml(const ShellState& state) {
     }
   }
 
-  // Top row: shrink, "end-to-end encrypted", add people.
+  // Top row: shrink, "end-to-end encrypted", back to the grid (with a spotlight), add people.
   out << "<div class=\"call-phone-top\">";
+  const bool invite = call.show_invite && !call.phone_failed;
+  const bool wide_sides = spotlit && invite;
+  out << (wide_sides ? "<div class=\"call-phone-top-side\">" : "");
   out << "<button class=\"call-phone-top-btn\" type=\"button\" data-event-click=\"call_minimize()\">"
          "<svg src=\"../icons/v2/chevron-down.svg\" width=\"26\" height=\"26\"></svg></button>";
+  out << (wide_sides ? "</div>" : "");
   out << "<div class=\"call-phone-sealed\"><svg src=\"../icons/v2/lock.svg\" width=\"12\" height=\"12\"></svg>"
          "<span class=\"call-phone-sealed-text\">" << Tr("call.top.e2e") << "</span></div>";
-  if (call.show_invite && !call.phone_failed) {
+  // With a spotlight, the grid button sits before add-people; the chevron's side widens to match, keeping the
+  // middle centred.
+  if (wide_sides) {
+    out << "<div class=\"call-phone-top-side call-phone-top-side--end\">";
+  }
+  if (spotlit) {
+    out << "<button class=\"call-phone-top-btn\" type=\"button\" data-event-click=\"call_spotlight_grid()\">"
+           "<svg src=\"../icons/grid.svg\" width=\"22\" height=\"22\"></svg></button>";
+  }
+  if (invite) {
     out << "<button class=\"call-phone-top-btn\" type=\"button\" data-event-click=\"call_invite()\">"
            "<svg src=\"../icons/v2/user-plus.svg\" width=\"24\" height=\"24\"></svg></button>";
-  } else {
+  } else if (!spotlit) {
     out << "<div class=\"call-phone-top-spacer\"></div>";
+  }
+  if (wide_sides) {
+    out << "</div>";
   }
   // The top pill (DESIGN-pp-ui 8.11) hangs under this row: a slower line, a reconnect, a closer way; gone after 3 s.
   out << "<div class=\"call-phone-notice\" data-if=\"call_in_progress_notice_text != ''\" "
@@ -390,32 +453,34 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendHints(out);
     out << "</div>";
     out << "<div class=\"call-phone-group-body\">";
-    out << "<div class=\"call-phone-grid" << (call.story_active ? " call-phone-grid--dim" : "") << "\">";
-    out << "<div data-for=\"p : call_in_progress_roster\" class=\"call-phone-tile\">";
-    out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"local\" "
-           "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
-    out << "<call-video-tile class=\"call-phone-tile-video\" tile=\"peer\" data-attr-stream=\"p.stream_id\" "
-           "data-if=\"!p.is_local && p.has_remote_video\"></call-video-tile>";
-    const char* no_video =
-        "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))";
-    out << "<div class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"!p.has_avatar && " << no_video << "\"";
-    for (int tone = 0; tone < 8; ++tone) {
-      out << " data-class-avatar-tone-" << tone << "=\"p.avatar_tone == " << tone << "\"";
+    if (!spotlit) {
+      // The 2x2 grid; once connected a tap on someone spotlights them (V059). Before connect: dimmed under the steps.
+      out << "<div class=\"call-phone-grid" << (call.story_active ? " call-phone-grid--dim" : "") << "\">";
+      AppendPhoneTiles(out, "call_in_progress_roster", "",
+                       call.story_active ? "" : " data-event-click=\"call_spotlight(p.stream_id)\"", "",
+                       !call.story_active);
+      out << "</div>";
+    } else {
+      // The spotlit person (the one speaking, or the one tapped) fills the area; a double tap: whole frame / cropped.
+      out << "<div class=\"call-phone-spotlight\">";
+      AppendPhoneTiles(out, "call_in_progress_spotlight_rows", " call-phone-tile--spotlit",
+                       " data-event-dblclick=\"call_spotlight_fit()\"",
+                       call.spotlight_fill ? " fit=\"fill\"" : " fit=\"fit\"", true);
+      out << "</div>";
     }
-    out << "><p class=\"avatar-letter\">{{p.avatar_letter}}</p></div>";
-    out << "<img class=\"call-phone-avatar call-phone-avatar--tile\" data-if=\"p.has_avatar && " << no_video
-        << "\" data-attr-src=\"p.avatar_src\"/>";
-    out << "<p class=\"call-phone-tile-note\" data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\">"
-           "{{call_in_progress_remote_placeholder}}</p>";
-    out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
-           "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span></div>";
-    out << "</div></div>";
     if (call.story_active) {
       out << "<div class=\"call-phone-story call-phone-story--card call-phone-story--group\"><div class=\"call-phone-card\">";
       AppendSteps(out, call.story_stage);
       out << "</div></div>";
     }
     out << "</div>";
+    if (spotlit) {
+      // Everyone else in a row of small tiles above the buttons; a tap spotlights them instead.
+      out << "<div class=\"call-phone-strip\">";
+      AppendPhoneTiles(out, "call_in_progress_strip_rows", " call-phone-tile--strip",
+                       " data-event-click=\"call_spotlight(p.stream_id)\"", " fit=\"fill\"", true);
+      out << "</div>";
+    }
   } else if (video_layout && !call.story_active) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
@@ -424,8 +489,13 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendSignalSlot(out, "call-phone-signal--compact");
     AppendHints(out);
     out << "</div>";
-    out << "<call-video-tile class=\"call-phone-pip\" id=\"call-local-tile\" tile=\"local\" "
-           "data-if=\"call_in_progress_local_preview\"></call-video-tile></div>";
+    // The small picture: ours, or theirs when swapped; a tap swaps (spotlights the one it shows).
+    const std::string swap_to = self_big ? peer_stream : self_stream;
+    const std::string swap =
+        swap_to.empty() ? std::string{} : " data-event-click=\"call_spotlight('" + swap_to + "')\"";
+    out << "<call-video-tile class=\"call-phone-pip\""
+        << (self_big ? " tile=\"remote\"" : " id=\"call-local-tile\" tile=\"local\"")
+        << " data-if=\"call_in_progress_local_preview\"" << swap << "></call-video-tile></div>";
   } else if (call.story_active) {
     out << "<div class=\"call-phone-story" << (video_layout ? " call-phone-story--card" : "") << "\">";
     out << (video_layout ? "<div class=\"call-phone-card\">" : "");
