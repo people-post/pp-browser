@@ -96,7 +96,8 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
   - A ring goes there when the app is not in the foreground, or when a push's call is waiting.
   - Answered there, it stays there; answered in the app, CallKit lets it go.
   - Declined or hung up there, the presenter declines or leaves.
-  - Answered or declined before its ring was known (the app still waking, or PIN-locked, P003), the choice applies to the ring once it shows, within 60 s.
+  - Answered or declined before its ring was known (the app still waking, or PIN-locked, P003), the choice applies to the ring once it shows, within 60 s counted from the unlock (messaging up) when that came later, and never later than 3 min after the choice. Until then the push's call stays on CallKit's screen (an unanswered one for 75 s, an answered one up to 3 min) and the PIN screen reads "Enter your PIN to connect your call."; after the unlock it waits 20 s (45 s once answered) for its ring, which is then accepted at once.
+  - Audio of a call answered there starts when CallKit activates the audio session (`didActivateAudioSession`), not before: `AudioSession::SetSystemManaged` makes `ActivateForVoip` wait for it (3 s at most) and leaves the release to CallKit.
   - The app's own ringtone stays quiet while CallKit rings.
 - **Privacy:** a generic handle, and no calls in the phone's recents or iCloud call history.
 

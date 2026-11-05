@@ -56,6 +56,8 @@ public:
   /** After inbox sync / call_wake — fetch pending invites and show ring if needed. */
   void RefreshPendingRing();
   void OnCallWake();
+  /** Messaging is up (vault unlocked): a call answered on the phone's call screen meanwhile now finds its ring. */
+  void OnMessagingReady();
   /** Join ringtone before Backend::Shutdown / SDL_Quit (accept-dialog quit hang). */
   void PrepareForShutdown();
 

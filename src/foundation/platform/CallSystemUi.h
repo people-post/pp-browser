@@ -21,6 +21,8 @@ public:
     /** The user ended (declined, hung up) on the system screen; empty: the push's call. */
     std::function<void(const std::string& call_id)> end;
     std::function<void(const std::string& call_id, bool muted)> set_muted;
+    /** The system activated (true) or deactivated (false) the audio session of a call it owns. */
+    std::function<void(bool active)> audio_session;
   };
   enum class EndReason { Ended, AnsweredElsewhere, Failed };
 
@@ -33,6 +35,13 @@ public:
    * for the app to find the ring it announced.
    */
   virtual bool HasPendingPushCall() const { return false; }
+  /**
+   * The app can find rings now (vault unlocked, messaging up). The push's call waits for its ring
+   * unboundedly (up to an absolute cap) until this, then the usual short timeouts count from here.
+   */
+  virtual void NotifyMessagingReady() {}
+  /** `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. */
+  virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
   /** Ring `call_id` on the system screen (fills in the push's pending call when there is one). */
   virtual void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) {
     (void)call_id;

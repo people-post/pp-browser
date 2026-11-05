@@ -62,6 +62,9 @@ void ProfileUnlockGate::DrainQueue(const bool unlocked) {
 
 void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
   unlock_in_progress_ = in_progress;
+  if (in_progress) {
+    DiagLine("unlock.start").Emit();
+  }
   if (ports_.ui.set_unlock_in_progress) {
     ports_.ui.set_unlock_in_progress(in_progress);
   }

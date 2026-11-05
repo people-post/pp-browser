@@ -1,5 +1,6 @@
 #include "app/Application.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
+#include "foundation/platform/CallSystemUi.h"
 #include "common/ValueJson.h"
 #include <map>
 #include "foundation/platform/IncomingLink.h"
@@ -1097,6 +1098,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
+  ICallSystemUi::Instance().SetPendingChangedHandler([this]() { pin_gate_->RefreshCallHint(); });
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
   MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();
@@ -1831,6 +1833,7 @@ void Application::WireHubCallbacks() {
       }
     });
     chat_->OnMessagingReady();
+    call_->OnMessagingReady();
     contacts_->Refresh();
     if (messaging_facade_ && support_discovery_ && support_discovery_->enabled) {
       messaging_facade_->SetSupportAccountId(support_discovery_->account_id);

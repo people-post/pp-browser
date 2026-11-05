@@ -19,7 +19,9 @@ namespace pbr {
  * - Answered there, the call stays there until it ends; answered in the app, the system screen lets
  *   it go (the app's own call screen shows it).
  * - Answered or declined on the system screen before the ring was known (the push's call; the app
- *   was still waking, or locked): done to the ring once it shows, if within kPendingChoiceMs.
+ *   was still waking, or locked): done to the ring once it shows. The window is kPendingChoiceMs
+ *   counted from the later of the choice and OnMessagingReady (a PIN may come first), and never
+ *   longer than kPendingMaxMs after the choice.
  *
  * UI thread. Holds no GUI: CallController wires it to the presenter.
  */
@@ -35,6 +37,7 @@ public:
     std::function<int64_t()> now_ms;
   };
   static constexpr int64_t kPendingChoiceMs = 60'000;
+  static constexpr int64_t kPendingMaxMs = 180'000;
 
   CallSystemUiBridge(ICallSystemUi& ui, Actions actions);
   ~CallSystemUiBridge();
@@ -48,14 +51,20 @@ public:
   /** A ring showing now goes to the system screen (so the app posts no "Incoming call" banner). */
   bool TakesRing(bool app_foreground) const;
 
+  /** Messaging is up (after the PIN): the pending choices' window counts from now. */
+  void OnMessagingReady();
+
   // ICallSystemUi::Callbacks (public for tests).
   void OnAnswer(const std::string& call_id);
   void OnEnd(const std::string& call_id);
   void OnSetMuted(const std::string& call_id, bool muted);
+  void OnAudioSession(bool active);
 
 private:
   int64_t Now() const;
   bool Ringing(const std::string& call_id) const;
+  /** A choice made at `at_ms` on the push's call is still good for the ring found now. */
+  bool ChoiceLive(int64_t at_ms) const;
 
   ICallSystemUi& ui_;
   Actions actions_;
@@ -68,6 +77,8 @@ private:
   /** The push's call was answered / declined before its ring showed (0: no such choice). */
   int64_t answer_pending_at_ms_ = 0;
   int64_t decline_pending_at_ms_ = 0;
+  /** Messaging came up at this time (0: not seen). */
+  int64_t ready_at_ms_ = 0;
 };
 
 } // namespace pbr

@@ -8,6 +8,7 @@
 #include "foundation/platform/IosCallSystemUi.h"
 
 #include "foundation/platform/CallSystemUi.h"
+#include "common/Diag.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -16,6 +17,8 @@
 #import <Foundation/Foundation.h>
 #import <PushKit/PushKit.h>
 
+#include <algorithm>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -24,9 +27,18 @@
 namespace pbr {
 namespace {
 
-/** The push's call waits this long for its ring; answered, this long more (the app may be locked). */
-constexpr int64_t kPendingRingNs = 20 * NSEC_PER_SEC;
-constexpr int64_t kPendingAnsweredNs = 45 * NSEC_PER_SEC;
+/**
+ * With the app unlocked, the push's call waits this long for its ring (counted from the push, or from the
+ * unlock when that came later); answered, this long from the answer.
+ */
+constexpr double kPendingRingSec = 20;
+constexpr double kPendingAnsweredSec = 45;
+/**
+ * Locked, no ring can be found (the invite is end-to-end encrypted): an unanswered call waits as long as
+ * an invite lives, an answered one until the unlock. Never longer than kPendingMaxSec from the push.
+ */
+constexpr double kPendingLockedRingSec = 75;
+constexpr double kPendingMaxSec = 180;
 
 std::mutex g_voip_token_mu;
 std::string g_voip_token;
@@ -52,6 +64,19 @@ NSString* UnknownCallerName() {
   return [[NSBundle mainBundle] localizedStringForKey:@"CALL_INCOMING_TITLE" value:@"Incoming call" table:nil];
 }
 
+void Note(const ShareWord what, const double wait_sec = -1) {
+  DiagLine line("call.system");
+  line.Add("what", what);
+  if (wait_sec >= 0) {
+    line.Add("ms", std::chrono::milliseconds(static_cast<int64_t>(wait_sec * 1000)));
+  }
+  line.Emit();
+}
+
+double UptimeSec() {
+  return [NSProcessInfo processInfo].systemUptime;
+}
+
 /** Main thread only (CallKit's and PushKit's delegate queue, and the app's UI thread). */
 class IosCallSystemUi final : public ICallSystemUi {
 public:
@@ -70,6 +95,14 @@ public:
   bool Available() const override { return provider_ != nil; }
   void SetCallbacks(Callbacks callbacks) override { callbacks_ = std::move(callbacks); }
   bool HasPendingPushCall() const override { return pending_ != nil; }
+  void SetPendingChangedHandler(std::function<void()> fn) override { pending_changed_ = std::move(fn); }
+
+  void NotifyMessagingReady() override {
+    app_ready_ = true;
+    if (pending_ != nil) {
+      RearmPending();
+    }
+  }
 
   void ReportIncoming(const std::string& call_id, const std::string& caller_name, const bool video) override {
     CXCallUpdate* update = Update(caller_name, video);
@@ -81,8 +114,10 @@ public:
       // The push's call is this ring: it takes the caller's name (and pending_'s retain).
       NSUUID* uuid = pending_;
       pending_ = nil;
+      pending_answered_ = false;
       ++pending_generation_;
       calls_[call_id] = uuid;
+      NotifyPendingChanged();
       [provider_ reportCallWithUUID:uuid updated:update];
       return;
     }
@@ -121,6 +156,11 @@ public:
   void OnCallPush(void (^completion)(void)) {
     NSUUID* uuid = [[NSUUID alloc] init];
     const bool busy = pending_ != nil || !calls_.empty();
+    if (app_ready_) {
+      Note("push");
+    } else {
+      Note("push_locked");
+    }
     [provider_ reportNewIncomingCallWithUUID:uuid
                                       update:Update({}, false)
                                   completion:^(NSError* error) {
@@ -144,7 +184,10 @@ public:
                                   }];
     if (!busy) {
       pending_ = [uuid retain];
-      ArmPendingTimer(kPendingRingNs);
+      pending_since_ = UptimeSec();
+      pending_answered_ = false;
+      RearmPending();
+      NotifyPendingChanged();
     }
     BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   }
@@ -162,7 +205,8 @@ public:
   void OnAnswer(CXAnswerCallAction* action) {
     ConfigureAudioSession();
     if (pending_ != nil && [action.callUUID isEqual:pending_]) {
-      ArmPendingTimer(kPendingAnsweredNs);
+      pending_answered_ = true;
+      RearmPending();
       Call(callbacks_.answer, std::string());
     } else if (const std::string call_id = IdOf(action.callUUID); !call_id.empty()) {
       Call(callbacks_.answer, call_id);
@@ -179,6 +223,12 @@ public:
       Call(callbacks_.end, call_id);
     }
     [action fulfill];
+  }
+
+  void OnAudioSession(const bool active) {
+    if (callbacks_.audio_session) {
+      callbacks_.audio_session(active);
+    }
   }
 
   void OnSetMuted(CXSetMutedCallAction* action) {
@@ -238,18 +288,43 @@ private:
   }
 
   void ClearPending() {
+    const bool had = pending_ != nil;
     [pending_ release];
     pending_ = nil;
+    pending_answered_ = false;
     ++pending_generation_;
+    if (had) {
+      NotifyPendingChanged();
+    }
   }
 
-  /** The push's call goes (failed) if its ring has not shown by then. */
-  void ArmPendingTimer(const int64_t delay_ns) {
+  void NotifyPendingChanged() {
+    if (pending_changed_) {
+      pending_changed_();
+    }
+  }
+
+  /**
+   * (Re)starts the push's call's countdown from now; it goes (failed) if its ring has not shown by then.
+   * Called when the push arrives, on an answer and when the app comes up: each moves the deadline.
+   */
+  void RearmPending() {
+    const double age = UptimeSec() - pending_since_;
+    double wait = kPendingMaxSec - age;
+    if (app_ready_) {
+      wait = std::min(wait, pending_answered_ ? kPendingAnsweredSec : kPendingRingSec);
+    } else if (!pending_answered_) {
+      wait = std::min(wait, kPendingLockedRingSec - age);
+    }
+    wait = std::max(wait, 0.0);
+    Note("timer_armed", wait);
     const uint64_t generation = ++pending_generation_;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, delay_ns), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(wait * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
       if (generation != pending_generation_ || pending_ == nil) {
         return;
       }
+      Note("timer_fired");
       NSLog(@"CallKit: the push's call found no ring");
       [provider_ reportCallWithUUID:pending_ endedAtDate:nil reason:CXCallEndedReasonFailed];
       ClearPending();
@@ -262,6 +337,12 @@ private:
   std::unordered_map<std::string, NSUUID*> calls_;
   /** The push's call, its ring not found yet (retained); nil: none. */
   NSUUID* pending_ = nil;
+  bool pending_answered_ = false;
+  /** UptimeSec() of the push. */
+  double pending_since_ = 0;
+  /** Messaging is up: rings can be found (never reset; the vault stays unlocked). */
+  bool app_ready_ = false;
+  std::function<void()> pending_changed_;
   uint64_t pending_generation_ = 0;
 };
 
@@ -307,12 +388,14 @@ IosCallSystemUi& Ui() {
   (void)provider;
   (void)audioSession;
   NSLog(@"CallKit: audio session activated");
+  pbr::Ui().OnAudioSession(true);
 }
 
 - (void)provider:(CXProvider*)provider didDeactivateAudioSession:(AVAudioSession*)audioSession {
   (void)provider;
   (void)audioSession;
   NSLog(@"CallKit: audio session deactivated");
+  pbr::Ui().OnAudioSession(false);
 }
 
 - (void)pushRegistry:(PKPushRegistry*)registry
