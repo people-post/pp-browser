@@ -289,6 +289,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("dialog_cancel", DataEvent<>([this]() { DialogCancel(); }));
     ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
+    ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
     ctor.BindEventCallback("pin_gate_cancel", DataEvent<>([this]() { PinGateCancel(); }));
     ctor.BindEventCallback("pin_gate_set_pin", DataEvent<>([this]() { PinGateSetPin(); }));
     ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
@@ -2416,6 +2417,22 @@ void ShellHost::PinGateSubmit() {
   if (pin_gate_actions_.on_submit) {
     pin_gate_actions_.on_submit();
   }
+}
+
+// A Paste button next to the transfer-code / recovery-phrase box: iOS does not offer a paste menu in this field, so a
+// long code could not be entered and the user was forced into a new account (B163). Reads the clipboard directly.
+void ShellHost::PinGatePaste() {
+  ui::SystemInterface* system = ui::GetSystemInterface();
+  if (!system) {
+    return;
+  }
+  ui::String text;
+  system->GetClipboardText(text);
+  if (text.empty()) {
+    return;
+  }
+  state_.pin_gate.link_payload = text;
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
 }
 
 void ShellHost::PinGateCancel() {
