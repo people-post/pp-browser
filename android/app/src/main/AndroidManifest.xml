@@ -25,6 +25,8 @@
     <!-- P011: "Stay connected in the background" (opt-in) runs PpConnectionService. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- The call this device is in keeps its microphone in the background (PpCallService). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -89,7 +91,12 @@
                 android:value="Opt-in: keeps the connection to the user's message relay and peers open so incoming calls and messages arrive on phones without a push service." />
         </service>
 
-        <!-- Decline on an incoming-call notification. -->
+        <service
+            android:name="dev.pp_browser.app.PpCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Decline on an incoming-call notification, Hang up on the ongoing one. -->
         <receiver
             android:name="dev.pp_browser.app.PpCallActionReceiver"
             android:exported="false" />
