@@ -166,6 +166,8 @@
   <!-- data-model=shell drives the minimal/centered switch; the chips keep the chat model (home-landing-inner below). -->
   <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic"
        data-class-home-landing--has-ai="!home_show_dynamic && ai_sessions.size &gt; 0">
+    <!-- Page header title, like the Chats page (Kenneth 2026-11-05); no search box (the assistant keeps context). -->
+    <p class="home-ai-header" data-if="!home_show_dynamic">{{i18n:nav.home}}</p>
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
     <!-- AI 助手页的对话列表（每段 Ai 线程一条；空时不显示，保持极简）。点开即进该对话。

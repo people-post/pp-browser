@@ -11512,8 +11512,30 @@ textarea:composing ~ .prompt-composer-label,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 44dp 0 48dp 0;
+  justify-content: flex-start;
+  padding: 8dp 0 12dp 0;
+}
+
+/* The "PP 助手" page header, like the Chats page's large title; no search box. */
+.home-ai-header {
+  display: none;
+}
+.shell-layer-compact .home-ai-header {
+  display: block;
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: LatoLatin;
+  font-size: 30dp;
+  line-height: 36dp;
+  font-weight: bold;
+  text-align: left;
+  padding: 4dp 16dp 10dp 16dp;
+}
+
+/* Empty AI Home: the composer + chips dock at the bottom (the middle is left open under the header). */
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
+  margin-top: auto;
 }
 
 /* No widgets above, so the fade into the dock has nothing to fade from. */
