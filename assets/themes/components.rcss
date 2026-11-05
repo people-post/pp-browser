@@ -3307,15 +3307,26 @@ select selectbox option {
 }
 
 /* The whole page scrolls (large title, search, rows), not just its list. It runs under the nav bar and the 49dp tab
-   bar (ShellHost pads the nav page by the home-indicator strip only): its padding keeps the first and last rows
-   clear of them at rest. */
+   bar (ShellHost pads the nav page by the home-indicator strip only): its top padding keeps the first row clear of
+   the bar; the engine leaves a scroller's own bottom padding out of its scroll height, so the last row is kept clear
+   of the tab bar by a spacer at the end of the page (.tab-bar-clear: 49dp + 16dp; Kenneth 2026-11-05 原话 94). */
 .shell-layer-compact .sidebar-sessions,
 .shell-layer-compact .contacts-list-view,
 .shell-layer-compact .settings-list-view {
   overflow-y: auto;
   padding-top: 44dp;
-  padding-bottom: 57dp;
+  padding-bottom: 0;
   box-sizing: border-box;
+}
+
+.tab-bar-clear {
+  display: none;
+}
+
+.shell-layer-compact .tab-bar-clear {
+  display: block;
+  flex: none;
+  height: 65dp;
 }
 
 .shell-layer-compact .contacts-list-view,

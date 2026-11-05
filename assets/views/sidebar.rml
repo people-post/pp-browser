@@ -119,5 +119,6 @@
     </div>
     <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
     <p class="text muted sidebar-sessions-more" data-if="sessions_more" data-event-click="sessions_load_more()">{{i18n:sidebar.loading_more}}</p>
+    <div class="tab-bar-clear"></div>
   </div>
 </div>

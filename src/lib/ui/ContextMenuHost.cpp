@@ -210,15 +210,15 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
 // label colour, a very faint hairline inset 16dp on both sides between rows, red text and icon for a destructive row.
 // Quick actions (reactions) are a row of their own above the card. A plain Cancel row is left out: the close disc
 // stands for it.
-// `expanders`: of the quick actions, only those that grow the sheet (the reactions row's "+", kept at its right end
-// outside the row's sideways scroll) or only the others.
+// `expanders`: of the quick actions, only the pinned ones or those that grow the sheet (the reactions row's "+", kept
+// at its right end outside the row's sideways scroll), or only the others.
 void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuAction>& actions, const bool quick,
                      const bool expanders = false) {
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
     const bool enabled = !action.enabled || action.enabled();
     if (!enabled || action.quick != quick || (!quick && action.cancel) ||
-        (quick && static_cast<bool>(action.expand) != expanders)) {
+        (quick && (action.pinned || static_cast<bool>(action.expand)) != expanders)) {
       continue;
     }
     out << "<button class=\"context-menu-item";

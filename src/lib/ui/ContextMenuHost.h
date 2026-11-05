@@ -33,6 +33,9 @@ struct ContextMenuAction {
   /// When true and the menu is anchored to an item, the action goes into the row above the item
   /// (reaction emoji over a chat message) instead of the list below it.
   bool quick = false;
+  /// A quick action kept at the right end of the phone sheet's quick row, outside its sideways scroll (the reactions
+  /// row's "+", like WhatsApp; Kenneth 2026-11-05 原话 93). An `expand` action is kept there too.
+  bool pinned = false;
   /// A plain "Cancel" row: the phone sheet leaves it out (its close disc, the scrim and a drag down cancel there).
   bool cancel = false;
   /// Phone sheet only: a tap on this action does not run it; the sheet grows to its large stop and hands its body

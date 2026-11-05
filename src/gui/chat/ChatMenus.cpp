@@ -109,6 +109,7 @@ std::vector<ContextMenuAction> ChatMenus::ForRequest(const ContextMenuRequest& r
   }
   ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { OpenReactionMore(message_id); }};
   more.quick = true;
+  more.pinned = true; // stays put while the recent emoji scroll (Kenneth 2026-11-05 原话 93)
   // Every emoji in a sheet of its own, about a third of the screen (Kenneth 2026-11-05 原话 81; EmojiPickerController).
   actions.push_back(std::move(more));
 

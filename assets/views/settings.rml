@@ -163,6 +163,7 @@
         <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
       </button>
     </div>
+    <div class="tab-bar-clear"></div>
   </div>
 
   <!-- Phones: the page opens with a large title in its body; its bar hides while the page is scrolled away from the

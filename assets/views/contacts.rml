@@ -77,6 +77,7 @@
       </div>
       <p class="text muted" data-if="contacts.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
+    <div class="tab-bar-clear"></div>
   </div>
   <div class="contacts-index" data-if="contacts.size > 0 && search_query == ''"
        data-event-mousedown="contacts_index_at()" data-event-drag="contacts_index_at()"
