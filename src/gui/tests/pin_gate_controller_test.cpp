@@ -22,6 +22,8 @@ protected:
     shell.pin_gate_snapshot = [this]() {
       PinGateState typed = shown_;
       typed.link_payload = typed_payload_.c_str();
+      typed.payload_hidden = payload_hidden_;
+      typed.link_payload_full = hidden_full_.c_str();
       return typed;
     };
     controller_.BindShellPinGate(std::move(shell));
@@ -43,6 +45,8 @@ protected:
   PinGateController controller_;
   PinGateState shown_;
   std::string typed_payload_;
+  bool payload_hidden_ = false;
+  std::string hidden_full_;
   std::optional<std::tuple<std::string, std::string, bool>> phrase_restore_;
   std::optional<std::tuple<std::string, std::string, bool>> link_;
   std::vector<std::string> saved_copies_;
@@ -104,6 +108,22 @@ TEST_F(PinGateControllerTest, TheLinkPathStillTakesATransferCode) {
   controller_.OnSubmit();
   ASSERT_TRUE(link_);
   EXPECT_FALSE(phrase_restore_);
+}
+
+TEST_F(PinGateControllerTest, AnOverLongTransferCodeSubmitsFromTheHiddenFullValue) {
+  // B166/B167: a transfer code is a multi-KB blob kept out of the rendered link_payload (it froze the app). Submit
+  // must still send the real value, which lives in link_payload_full while payload_hidden.
+  controller_.ShowIdentityFork();
+  controller_.OnIdentityLink();
+  controller_.OnUseDefaultPin();
+  ASSERT_TRUE(shown_.link_paste_mode);
+  // The box renders nothing (the big code was hidden), but the full value is carried alongside.
+  typed_payload_ = "";
+  payload_hidden_ = true;
+  hidden_full_ = "{\"format\":\"pp-browser-link-device-v1\",\"big\":\"" + std::string(20000, 'A') + "\"}";
+  controller_.OnSubmit();
+  ASSERT_TRUE(link_) << "the hidden full value is what gets sent";
+  EXPECT_EQ(std::get<1>(*link_), hidden_full_);
 }
 
 } // namespace

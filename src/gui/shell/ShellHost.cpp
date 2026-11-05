@@ -2434,17 +2434,21 @@ void ShellHost::PinGatePaste() {
   if (text.empty()) {
     return;
   }
-  state_.pin_gate.link_payload = text;
-  // B166/B167: rendering a multi-KB blob in the textarea freezes the app, so an over-long paste is kept in the model
-  // but hidden behind a confirmation + Clear instead of being shown.
-  state_.pin_gate.payload_hidden =
-      ShellLayout::PinGatePayloadTooBigToRender(state_.pin_gate.phrase_flow, text.size());
+  // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a
+  // multi-KB string freezes the app. An over-long paste (a transfer code) is therefore kept OUT of the bound
+  // link_payload (which the textarea renders) and stored in link_payload_full; submit reads that. A typed or
+  // short-pasted 24-word phrase is small and stays in link_payload so it shows and can be corrected.
+  const bool too_big = ShellLayout::PinGatePayloadTooBigToRender(state_.pin_gate.phrase_flow, text.size());
+  state_.pin_gate.payload_hidden = too_big;
+  state_.pin_gate.link_payload_full = too_big ? text : ui::String();
+  state_.pin_gate.link_payload = too_big ? ui::String() : text;
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");
 }
 
 void ShellHost::PinGateClearPayload() {
   state_.pin_gate.link_payload = "";
+  state_.pin_gate.link_payload_full = "";
   state_.pin_gate.payload_hidden = false;
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
   DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");

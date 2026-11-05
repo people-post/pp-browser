@@ -213,9 +213,13 @@ struct PinGateState {
   ui::String error;
   ui::String pin;
   ui::String pin_confirm;
+  /** Bound to the paste textarea's data-value. MUST stay small: data-if only sets display:none, so a hidden textarea
+   *  still receives this value and shaping a multi-KB string freezes the app (B166/B167). An over-long paste is kept
+   *  out of here (empty) and in `link_payload_full` instead. */
   ui::String link_payload;
-  /** B166/B167: a pasted blob too big to render (a transfer code) is kept here but hidden -- a textarea that
-   *  renders a multi-KB value freezes the app. A typed or short-pasted recovery phrase stays visible. */
+  /** B166/B167: the real pasted value when it is too big to render; never bound to a textarea. Submit reads this when
+   *  `payload_hidden`. A typed or short-pasted recovery phrase uses `link_payload` and leaves this empty. */
+  ui::String link_payload_full;
   bool payload_hidden = false;
   std::function<void(bool unlocked)> on_result;
 };
