@@ -22,6 +22,8 @@ public:
     log.push_back("ended " + call_id + (reason == EndReason::AnsweredElsewhere ? " answered-elsewhere" : ""));
   }
 
+  void NotifyMessagingReady() override { log.push_back("ready"); }
+
   bool pending_push = false;
   std::vector<std::string> log;
   Callbacks callbacks_;
@@ -159,6 +161,64 @@ TEST_F(CallSystemUiBridgeTest, AChoiceOnThePushsCallExpires) {
   bridge_.Sync(Ring("c2"), "", false);
   EXPECT_TRUE(did.empty());
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, AnsweredWhileLockedTheWindowCountsFromTheUnlock) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("");  // CallKit answered; the PIN gate is still up
+  now += 100'000;            // longer than kPendingChoiceMs: typing the PIN
+  bridge_.OnMessagingReady();
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ready"}));
+  now += 30'000;
+  bridge_.Sync(Ring("c1", true), "", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"accept"}));  // video ring: not voice-only
+  EXPECT_FALSE(bridge_.SystemRings("c1"));
+}
+
+TEST_F(CallSystemUiBridgeTest, AnsweredWhileLockedTheRingMustShowWithinTheWindowAfterTheUnlock) {
+  ui_.callbacks_.answer("");
+  now += 100'000;
+  bridge_.OnMessagingReady();
+  now += CallSystemUiBridge::kPendingChoiceMs + 1;
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
+  EXPECT_EQ(ui_.log.back(), "incoming c1 name-of-alice");
+}
+
+TEST_F(CallSystemUiBridgeTest, AChoiceMadeAfterTheUnlockCountsFromTheChoice) {
+  bridge_.OnMessagingReady();
+  now += 500'000;
+  ui_.callbacks_.answer("");
+  now += CallSystemUiBridge::kPendingChoiceMs - 1;
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, AnAnswerWhileLockedNeverOutlivesTheAbsoluteCap) {
+  ui_.callbacks_.answer("");
+  now += CallSystemUiBridge::kPendingMaxMs - 1'000;
+  bridge_.OnMessagingReady();
+  now += 2'000;  // inside the window after the unlock, past the cap since the answer
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, DeclinedWhileLockedDeclinesTheRingOnceFound) {
+  ui_.pending_push = true;
+  ui_.callbacks_.end("");
+  ui_.pending_push = false;
+  now += 100'000;
+  bridge_.OnMessagingReady();
+  now += 5'000;
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ready"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, TheSystemsAudioSessionCallbacksAreAccepted) {
+  ui_.callbacks_.audio_session(true);
+  ui_.callbacks_.audio_session(false);
+  EXPECT_TRUE(did.empty());
 }
 
 TEST_F(CallSystemUiBridgeTest, NothingWithoutASystemScreen) {

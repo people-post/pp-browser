@@ -22,6 +22,15 @@ void ActivateForVoip();
  */
 void Deactivate();
 /**
+ * A call answered on the phone's call screen (CallKit): the system activates the session itself and tells
+ * us (NotifySystemActivation). While managed, ActivateForVoip configures the session but waits for that
+ * activation (bounded) instead of activating, and Deactivate leaves the release to the system. No-ops
+ * where there is no such call screen.
+ */
+void SetSystemManaged(bool managed);
+void NotifySystemActivation(bool active);
+
+/**
  * An audio user is about to start I/O without ActivateForVoip (ringtone / ringback open their
  * speaker first): drop a pending delayed Deactivate retry so it cannot stop that I/O. No-op where
  * Deactivate does not retry.

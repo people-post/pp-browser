@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "foundation/platform/CallSystemUi.h"
 
 namespace pbr {
 
@@ -58,6 +59,20 @@ void PinGateController::ShowError(const std::string& message) {
   }
   PullBoundPinFields();
   pin_state_.error = message.c_str();
+  ApplyPinGate();
+  DirtyPinFields();
+}
+
+std::string PinGateController::UnlockMessage() const {
+  return ICallSystemUi::Instance().HasPendingPushCall() ? Tr("pin.unlock_call_message") : Tr("pin.unlock_message");
+}
+
+void PinGateController::RefreshCallHint() {
+  if (!pin_state_.active || !pin_state_.unlock_mode || !shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  PullBoundPinFields();
+  pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
   DirtyPinFields();
 }
@@ -137,7 +152,7 @@ void PinGateController::ShowUnlock() {
   pin_state_.create_mode = false;
   pin_state_.unlock_mode = true;
   pin_state_.title = Tr("pin.unlock_title").c_str();
-  pin_state_.message = Tr("pin.unlock_message").c_str();
+  pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();

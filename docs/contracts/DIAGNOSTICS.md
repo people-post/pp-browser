@@ -52,9 +52,11 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `relay.poll_too_large` | `n` | `MeshDeliveryOrchestrator` |
 | `chat.send_failed` | `failure` (`SendFailureWord`), `thread` (ref) | `MeshDeliveryOrchestrator` |
 | `chat.receive_failed` | `reason` (`ReceiveFailureWord`), `sender` (ref) | `MeshDeliveryOrchestrator` |
+| `unlock.start` | — (a PIN or silent unlock began) | `ProfileUnlockGate` |
 | `unlock.done` | `unlocked` | `ProfileUnlockGate` |
 | `unlock.failed` | `wrong_pin`, `silent` (no PIN was typed) | `ProfileUnlockGate` |
 | `unlock.error` | `error` | `ProfileUnlockGate` |
+| `call.system` | `what` (`push` / `push_locked` / `answer_pending` / `answer_ring` / `decline_pending` / `timer_armed` / `timer_fired` / `messaging_ready` / `ring_found` / `accept_applied` / `decline_applied` / `audio_on` / `audio_off`), `ms` (timer events: the wait) — the iOS CallKit screen and its push call | `CallSystemUi_Ios.mm`, `CallSystemUiBridge` |
 | `call.net` | `call`, `role` (`caller` / `callee`), `known`, `online`, `cellular`, `expensive` (the device's attachment as the calls last heard it), `v4_private`, `v4_public`, `v6_global`, `v6_other` (counts of this device's advertised addresses), `relays`, `relays_up`, `relays_down` (rendezvous relays the app offers / with a link up / the reach record holds down), `peer_state`, `peer_fail`, `peer_fails` (the reach record for the peer) | `CallMediaConnectCoordinator::Start` |
 | `call.signal` | `call`, `phase` (`invite_in` / `accept_out` / `accept_in`), `age_ms` (since the call row was created on this device), `implicit` (accept inferred from the media hello), `v4_private`, `v4_public`, `v6_global`, `v6_other` (counts of the addresses the message carries) | `CallSessionWorkflow` |
 | `call.reach` | `call`, `role`, `attempt`, `ok`; ok: `kind` (`direct` / `punched` / `relayed`), `family` (4 / 6 / 0: the dial book's preferred endpoint, best effort), `reused`; failed: `err` (`ReachErrWord`), `why` (`ReachWhyWord`: a fixed list classified from the failure chain); `ms` since the connect started | `CallMediaConnectCoordinator::OnLinkReady` |

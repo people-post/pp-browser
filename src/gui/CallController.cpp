@@ -453,6 +453,10 @@ void CallController::OnCallWake() {
   presenter_.OnCallWake();
 }
 
+void CallController::OnMessagingReady() {
+  system_call_screen_.OnMessagingReady();
+}
+
 void CallController::ClearRing() {
   ring_ = {};
   ringtone_.Stop();

@@ -109,6 +109,9 @@ void Deactivate() {
 
 void CancelPendingDeactivate() {}
 
+void SetSystemManaged(bool /*managed*/) {}
+void NotifySystemActivation(bool /*active*/) {}
+
 // Voice messages: SDL opens playback with the media role (speaker, media volume) and capture needs no switch.
 void ActivateForVoicePlayback() {}
 void ActivateForVoiceRecording() {}

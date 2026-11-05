@@ -413,6 +413,7 @@
     "pin.confirm_placeholder": "Confirm PIN",
     "pin.unlock_title": "Unlock profile",
     "pin.unlock_message": "Enter your PIN to open PP.",
+    "pin.unlock_call_message": "Enter your PIN to connect your call.",
     "pin.create_title": "Set a PIN",
     "pin.create_message":
         "You'll enter it to open PP. It stays on this device only; if you forget it, no one can recover it.",

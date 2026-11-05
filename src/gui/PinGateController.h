@@ -28,6 +28,8 @@ public:
   void Dismiss();
   void SetUnlockInProgressUi(bool in_progress);
   void ShowError(const std::string& message);
+  /** A CallKit call is waiting for the unlock (or no longer is): the unlock screen's words follow. */
+  void RefreshCallHint();
 
   void OnSubmit();
   /** Create / chooser / identity-fork / link-paste may cancel. Unlock ignores cancel. */
@@ -49,6 +51,7 @@ private:
   void ShowLinkPaste();
   void PullBoundPinFields();
   void ApplyPinGate();
+  std::string UnlockMessage() const;
 
   UnlockGateCompletePorts gate_complete_;
   ShellPinGatePorts shell_pin_gate_;

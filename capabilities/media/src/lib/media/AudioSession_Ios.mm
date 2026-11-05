@@ -7,6 +7,7 @@
 #import <AVFoundation/AVFoundation.h>
 
 #include <atomic>
+#include <condition_variable>
 #include <mutex>
 
 // Enum cases are not preprocessor macros — do not use #if !defined(...).
@@ -26,6 +27,12 @@ std::atomic<bool> g_session_active{false};
 std::atomic<uint64_t> g_session_gen{0};
 /** Makes "still ours?" + setActive:NO atomic against a new activation / CancelPendingDeactivate. */
 std::mutex g_session_mu;
+/** CallKit owns the session (see SetSystemManaged); `g_system_active` follows its didActivate / didDeactivate. */
+bool g_system_managed = false;
+bool g_system_active = false;
+std::condition_variable g_system_cv;
+/** How long ActivateForVoip waits for CallKit's activation before taking the session itself. */
+constexpr std::chrono::milliseconds kSystemActivationWait{3000};
 constexpr int kDeactivateRetries = 5;
 constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
 
@@ -68,8 +75,8 @@ void DeactivateAttempt(uint64_t gen, int attempts_left) {
   NSError* error = nil;
   {
     std::lock_guard<std::mutex> lock(g_session_mu);
-    if (g_session_gen.load() != gen || g_session_active.load()) {
-      return;
+    if (g_session_gen.load() != gen || g_session_active.load() || g_system_managed) {
+      return;  // CallKit deactivates the session of a call it owns
     }
     if ([[AVAudioSession sharedInstance] setActive:NO
                                        withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
@@ -104,9 +111,18 @@ void ActivateForVoip() {
   [session setPreferredSampleRate:48000 error:&error];
   [session setPreferredIOBufferDuration:0.02 error:&error];
   {
-    std::lock_guard<std::mutex> lock(g_session_mu);
+    std::unique_lock<std::mutex> lock(g_session_mu);
     g_session_gen.fetch_add(1);
-    [session setActive:YES error:&error];
+    if (g_system_managed) {
+      // Activating before CallKit's didActivateAudioSession fights its own activation: wait for it.
+      g_system_cv.wait_for(lock, kSystemActivationWait, [] { return g_system_active || !g_system_managed; });
+      if (!g_system_active) {
+        NSLog(@"AudioSession ActivateForVoip: CallKit activation not seen, activating");
+        [session setActive:YES error:&error];
+      }
+    } else {
+      [session setActive:YES error:&error];
+    }
     g_session_active.store(true);
   }
   ApplyRoute(g_speakerphone.load());
@@ -126,6 +142,22 @@ void Deactivate() {
 void CancelPendingDeactivate() {
   std::lock_guard<std::mutex> lock(g_session_mu);
   g_session_gen.fetch_add(1);
+}
+
+void SetSystemManaged(bool managed) {
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    g_system_managed = managed;
+  }
+  g_system_cv.notify_all();
+}
+
+void NotifySystemActivation(bool active) {
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    g_system_active = active;
+  }
+  g_system_cv.notify_all();
 }
 
 namespace {
