@@ -214,6 +214,9 @@ struct PinGateState {
   ui::String pin;
   ui::String pin_confirm;
   ui::String link_payload;
+  /** B166/B167: a pasted blob too big to render (a transfer code) is kept here but hidden -- a textarea that
+   *  renders a multi-KB value freezes the app. A typed or short-pasted recovery phrase stays visible. */
+  bool payload_hidden = false;
   std::function<void(bool unlocked)> on_result;
 };
 
