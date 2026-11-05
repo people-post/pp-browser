@@ -5,8 +5,10 @@
     <p class="pane-nav-title">{{i18n:home.title}}</p>
     <div class="pane-nav-actions row">
       <div class="pane-nav-btn-wrap" data-model="shell">
-        <button class="pane-nav-btn pane-nav-btn--text" type="button"
-                data-event-click="home_edit_open()">{{i18n:home.edit}}</button>
+        <button class="pane-nav-btn" type="button"
+                data-event-click="home_edit_open()" title="{{i18n:home.edit}}">
+          <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
+        </button>
       </div>
     </div>
   </div>

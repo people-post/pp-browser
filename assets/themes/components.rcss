@@ -3285,16 +3285,6 @@ select selectbox option {
   height: 24dp;
 }
 
-/* A word in place of the icon (Home's "Edit"): as tall as the icon buttons, as wide as its word. */
-.pane-nav-btn.pane-nav-btn--text {
-  display: block;
-  width: auto;
-  min-width: 44dp;
-  padding: 0 16dp;
-  font-size: 17dp;
-  line-height: 44dp;
-}
-
 .shell-layer-compact .large-title {
   display: block;
   flex-shrink: 0;
