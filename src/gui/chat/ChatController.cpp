@@ -747,8 +747,11 @@ void ChatController::FinalizeThreadDisplay() {
   RestoreWorkingSetsFromActiveThread();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
   scroller_.RequestScrollToLatest();
+  // The phone's chat overlay opens over the Chats tab, and over the AI 助手 page (Home) for an AI conversation —
+  // so an AI chat opened/started there stays on that page and Back returns to it (not to the Chats list).
   if (ChromeSnapshot().layout_mode == LayoutMode::Compact &&
-      ChromeSnapshot().nav_tab == NavTab::Sessions) {
+      (ChromeSnapshot().nav_tab == NavTab::Sessions ||
+       (ChromeSnapshot().nav_tab == NavTab::Home && InAiComposerContext()))) {
     ShellOpenCompactChat();
   }
 }
@@ -778,9 +781,14 @@ void ChatController::OnSelectThread(std::string thread_id) {  // by value: Shell
   if (thread_id != search_thread_) {
     CloseSearch(); // another chat: the search and its index belong to the one left
   }
-  // A row of Home's "New messages" widget: go to Chats first, as a tap in the Chats list would, so the chat opens
-  // (the phone's chat overlay only opens over Chats) instead of the row just being read and vanishing.
-  if (ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
+  // A row of Home's "New messages" widget (a human chat) goes to Chats first, as a tap in the Chats list would, so
+  // the chat overlay opens there. An AI conversation tapped on the AI 助手 page stays on that page (the overlay
+  // opens over Home in FinalizeThreadDisplay), so Back returns to the AI list.
+  const bool selecting_ai = facade_ && [&] {
+    auto thread = facade_->GetThread(thread_id);
+    return thread && *thread && (*thread)->kind == ThreadKind::Ai;
+  }();
+  if (!selecting_ai && ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
     ShellSelectNavTab(NavTab::Sessions);
   }
   if (presenter_.SelectThread(thread_id)) {
@@ -3296,7 +3304,11 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
-  ShellSelectNavTab(NavTab::Sessions);
+  // The phone keeps the new AI conversation on the AI 助手 page (Home): the chat overlay opens over it and Back
+  // returns to the AI list. The desktop shows the chat in its panes, so it still moves to the Chats surface.
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact) {
+    ShellSelectNavTab(NavTab::Sessions);
+  }
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
   NotifySurfaceChanged();
