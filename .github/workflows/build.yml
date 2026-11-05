@@ -384,7 +384,8 @@ jobs:
   # Self-hosted Mac (Xcode 27 / iOS 26+ SDK) — hosted macos-* cannot satisfy ASC SDK rules.
   ios:
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.apple == 'true'
+    # Fork PRs never reach the self-hosted Mac: their code would run on it.
+    if: github.event_name != 'pull_request' || (needs.changes.outputs.apple == 'true' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 90
     env:
