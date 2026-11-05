@@ -172,7 +172,7 @@
       <p class="home-ai-subtitle muted">{{i18n:home.ai.subtitle}}</p>
     </div>
     <div class="home-landing-inner stack" data-model="chat">
-      <!-- The desktop's ask-AI field; phones have only the chips below (Kenneth 2026-11-04). -->
+      <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"

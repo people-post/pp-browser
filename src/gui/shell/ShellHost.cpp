@@ -1622,7 +1622,7 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  // The desktop's Home landing mounts the composer inside the home view (centered with chips); phones have none.
+  // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
   if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
     if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
@@ -1803,8 +1803,9 @@ void ShellHost::MountPaneBodies() {
     mount_key("chat");
     MountComposer();
   } else if (state_.nav_tab == NavTab::Home) {
-    // Phones: Home has no ask-AI field, only the chips (Kenneth 2026-11-04); the AI dot opens the panel.
+    // Phones: the minimal Home shows the ask-AI field above the chips (Kenneth 2026-11-05).
     mount_key("home");
+    MountComposer();
   }
 
   if (state_.auxiliary_open) {

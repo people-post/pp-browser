@@ -11590,9 +11590,10 @@ textarea:composing ~ .prompt-composer-label,
   gap: 8dp;
 }
 
-/* Phones have no ask-AI field on Home, only the chips (Kenneth 2026-11-04); the AI dot opens the panel. */
+/* Phones show the ask-AI field above the chips on the minimal Home (Kenneth 2026-11-05). */
 .shell-layer-compact .home-composer-mount {
-  display: none;
+  display: block;
+  padding: 0 16dp;
 }
 
 .shell-layer-compact .home-suggestions {
