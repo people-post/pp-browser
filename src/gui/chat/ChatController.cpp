@@ -771,7 +771,7 @@ void ChatController::OnSessionsTabActivated() {
   working_set_.ClearAll();
 }
 
-void ChatController::OnSelectThread(const std::string& thread_id) {
+void ChatController::OnSelectThread(std::string thread_id) {  // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;
   }

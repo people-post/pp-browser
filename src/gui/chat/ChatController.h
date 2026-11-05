@@ -170,7 +170,10 @@ public:
   }
   /** The panel's sheet is a modal layer: the coordinator says when the shell closed it. */
   void BindFlowCoordinator(FlowCoordinatorPorts ports) { flow_coordinator_ = std::move(ports); }
-  void OnSelectThread(const std::string& thread_id);
+  // By value, not by reference: Home callers pass a reference into home_favorites_ / home_summary_, and selecting
+  // from Home first switches to the Chats tab, which rebuilds those containers -- the reference would dangle before
+  // SelectThread hashes it (B161: SIGSEGV in PrefsOf's hash lookup, phones only).
+  void OnSelectThread(std::string thread_id);
   /** Rebind messaging ports after a full profile data wipe/reinit. */
   void OnProfileDataReset();
   /** Called when messaging becomes ready (app-wired). */
