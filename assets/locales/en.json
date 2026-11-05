@@ -1486,6 +1486,7 @@
     "home.security.todo_line": "You need it to get your account back on a new phone.",
     "home.favorites.empty": "Tap the star on a contact's page to keep them here.",
     "home.calls.missed": "Missed today",
+    "home.calls.none": "No calls yet",
     "home.mentions.recent": "Recent mention",
     "home.mentions.none": "No one has mentioned you",
     "home.calls.voice": "Voice",

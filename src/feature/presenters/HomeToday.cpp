@@ -279,8 +279,8 @@ std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const 
   for (const std::string& id : layout.OnHome()) {
     // Mentions and New people stay with a 0 (Kenneth 2026-11-05).
     const bool has = id == kHomeWidgetFavorites || id == kHomeWidgetMentions || id == kHomeWidgetNewPeople ||
-                     id == kHomeWidgetSecurity ||
-                     (id == kHomeWidgetRecentChats && data.any_chat) || (id == kHomeWidgetCalls && data.calls) ||
+                     id == kHomeWidgetSecurity || id == kHomeWidgetCalls ||
+                     (id == kHomeWidgetRecentChats && data.any_chat) ||
                      (id == kHomeWidgetBrief && data.brief_items > 0);
     if (has) {
       shown.push_back(id);

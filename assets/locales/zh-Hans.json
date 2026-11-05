@@ -1442,6 +1442,7 @@
     "home.security.todo_line": "换手机或丢了手机时，靠它找回账号",
     "home.favorites.empty": "在联系人资料里点「设为关注」，关注的人就会出现在这里。",
     "home.calls.missed": "今天未接来电",
+    "home.calls.none": "还没有通话",
     "home.mentions.recent": "最近提到我",
     "home.mentions.none": "还没有人提到你",
     "home.calls.voice": "语音",

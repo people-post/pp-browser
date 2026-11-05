@@ -170,8 +170,7 @@ HomeWidgetData HomeWidgetDataOf(const HomeTodaySummary& summary, const HomeCalls
 
 /**
  * The widgets drawn, in Home's order: the kept ones with something to show. Favorites always shows (with a hint when
- * empty), Mentions, New people and Security always show (an empty state when none); Recent chats once there is a chat; Calls and Today's
- * briefs only with data.
+ * empty), Calls, Mentions, New people and Security always show (an empty state when none); Recent chats once there is a chat; Today's briefs only with data.
  */
 std::vector<std::string> ShownHomeWidgets(const HomeWidgetLayout& layout, const HomeWidgetData& data);
 

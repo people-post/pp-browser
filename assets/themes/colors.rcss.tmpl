@@ -2851,6 +2851,15 @@ input.checkbox:checked {
   color: {{warn}};
 }
 
+/* Calls with nothing to show: a faint green phone, like the other empty widgets (Kenneth 2026-11-05). */
+.shell-layer-compact .home-empty-icon--calls {
+  background-color: {{x-home-empty-calls}};
+}
+
+.shell-layer-compact .home-empty-icon--calls svg {
+  image-color: {{success}};
+}
+
 /* Mentions / New people with nothing to show: a faint tinted icon over one grey line (mockup 12, option C). */
 .shell-layer-compact .home-empty-icon--mentions {
   background-color: {{x-home-empty-mentions}};
