@@ -163,8 +163,9 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   std::string key;
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
-           (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") +
-           AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
+           (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
+           (p.video_paused ? "p" : "-") + AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) +
+           ";";
   }
   return key;
 }
@@ -1058,6 +1059,8 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     entry.stream_id = std::to_string(PublisherStreamIdForIdentity(member.identity)).c_str();
     entry.audio_muted = member.audio_muted;
     entry.video_enabled = member.video_enabled;
+    entry.on_hold = member.on_hold;
+    entry.video_paused = member.video_paused;
     in_call.roster.push_back(std::move(entry));
   }
 
@@ -1381,6 +1384,7 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
       backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting;
   // On hold (here or there) the audio is silence by design: only a lost path is a reconnect.
   const bool on_hold = local_on_hold_ || peer_on_hold_;
+  in_call.on_hold = on_hold;
   const bool media_reconnect =
       !mesh_messaging_failed &&
       (path_lost || (!on_hold && (stalling || missing_after_video ||

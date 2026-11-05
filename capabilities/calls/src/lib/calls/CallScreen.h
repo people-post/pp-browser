@@ -41,6 +41,9 @@ struct CallScreen {
     bool is_local = false;
     bool audio_muted = false;
     bool video_enabled = false;
+    /** V060: the roster row's (the OS has their audio / their camera paused in the background). */
+    bool on_hold = false;
+    bool video_paused = false;
   };
 
   Kind kind = Kind::None;

@@ -146,9 +146,11 @@ TEST(ShellCallChromeRmlTest, PhoneGroupGridTapsToSpotlightAndRingsWhoSpeaks) {
   const ShellState state = PhoneGroupCall();
   const std::string rml = CallInProgressRml(state);
   ASSERT_TRUE(Has(rml, "id=\"call-phone-page\""));
-  EXPECT_TRUE(Has(rml, "data-for=\"p : call_in_progress_roster\" class=\"call-phone-tile\" "
-                       "data-class-call-phone-tile--speaking=\"p.speaking\" "
-                       "data-event-click=\"call_spotlight(p.stream_id)\""));
+  EXPECT_TRUE(Has(rml,
+                  "data-for=\"p : call_in_progress_roster\" class=\"call-phone-tile\" "
+                  "data-class-call-phone-tile--on-hold=\"p.on_hold\" "
+                  "data-class-call-phone-tile--speaking=\"p.speaking\" "
+                  "data-event-click=\"call_spotlight(p.stream_id)\""));
   EXPECT_FALSE(Has(rml, "call_in_progress_spotlight_rows"));
   EXPECT_FALSE(Has(rml, "call_in_progress_strip_rows"));
   EXPECT_FALSE(Has(rml, "call_spotlight_grid()")) << "no grid button on the grid";
@@ -196,6 +198,33 @@ TEST(ShellCallChromeRmlTest, PhoneGroupBeforeConnectKeepsTheDimmedGrid) {
   EXPECT_FALSE(Has(rml, "p.speaking"));
 }
 
+// V060: a person on hold has "On hold" on their tile (dimmed), and a paused camera says so — per row, bound.
+TEST(ShellCallChromeRmlTest, PhoneGroupTilesShowWhoIsOnHoldAndWhoseCameraIsPaused) {
+  const std::string rml = CallInProgressRml(PhoneGroupCall());
+  EXPECT_TRUE(Has(rml, "<div class=\"call-hold-pill call-hold-pill--tile\" data-if=\"p.on_hold\">"));
+  EXPECT_TRUE(Has(rml, "data-class-call-phone-tile--on-hold=\"p.on_hold\""));
+  EXPECT_TRUE(Has(rml, "data-if=\"p.video_paused && !p.on_hold\""));
+}
+
+// V060: the 1:1 voice page shows "On hold" under the name while the call is on hold on either side.
+TEST(ShellCallChromeRmlTest, PhoneVoiceCallShowsOnHoldUnderTheName) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "<div class=\"call-hold-pill call-hold-pill--hero\" data-if=\"call_in_progress_on_hold\">"));
+}
+
+// V060: desktop cards and the roster chips show hold too.
+TEST(ShellCallChromeRmlTest, DesktopCardsAndChipsShowWhoIsOnHold) {
+  ShellState state = PhoneGroupCall();
+  state.layout_mode = LayoutMode::Expanded;
+  const std::string immersive = CallInProgressRml(state);
+  EXPECT_TRUE(Has(immersive, "data-class-shell-call-peer-card--on-hold=\"p.on_hold\""));
+  EXPECT_TRUE(Has(immersive, "<div class=\"call-hold-pill\" data-if=\"p.on_hold\">"));
+  state.call_in_progress.mode = CallChromeMode::Expanded;
+  EXPECT_TRUE(Has(CallInProgressRml(state), "data-if=\"p.on_hold\" src=\"../icons/pause.svg\""));
+}
+
 // 1:1 video: their camera big, ours small; a tap on the small one swaps them (spotlights the one it shows).
 TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
   ShellState state = PhoneGroupCall();
@@ -206,6 +235,8 @@ TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
   EXPECT_TRUE(Has(normal, "class=\"call-phone-pip\" id=\"call-local-tile\" tile=\"local\" "
                           "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('11')\""));
   EXPECT_TRUE(Has(normal, "class=\"call-phone-remote\" id=\"call-remote-tile\" tile=\"remote\">"));
+  EXPECT_TRUE(Has(normal, "<div class=\"call-hold-pill call-hold-pill--who\" data-if=\"call_in_progress_on_hold\">"))
+      << "V060: their picture may still run while they are on hold";
 
   state.call_in_progress.spotlight_stream = "11";
   const std::string swapped = CallInProgressRml(state);

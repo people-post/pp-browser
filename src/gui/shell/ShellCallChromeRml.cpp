@@ -8,13 +8,21 @@ namespace pbr {
 
 namespace {
 
+/** V060: "On hold" with a pause icon, while `when` (a data expression) holds. */
+void AppendHoldPill(std::ostringstream& out, const char* when, const char* extra_class) {
+  out << "<div class=\"call-hold-pill" << extra_class << "\" data-if=\"" << when << "\">"
+      << "<svg src=\"../icons/pause.svg\" width=\"14\" height=\"14\" crop-to-content=\"true\"></svg>"
+      << "<span class=\"call-hold-pill-text\">" << Tr("call.placeholder.on_hold") << "</span></div>";
+}
+
 /**
  * One card per row of the bound array `rows` (data-for), with `events` on the card and its tile drawn `tile_fit`
  * ("fit": the whole frame; "fill": cover the tile, cropped).
  */
 void AppendRosterCards(std::ostringstream& out, const char* rows, const char* card_class, const char* events,
                        const char* tile_fit) {
-  out << "<div data-for=\"p : " << rows << "\" class=\"shell-call-peer-card " << card_class << "\" " << events << ">";
+  out << "<div data-for=\"p : " << rows << "\" class=\"shell-call-peer-card " << card_class
+      << "\" data-class-shell-call-peer-card--on-hold=\"p.on_hold\" " << events << ">";
   out << "<call-video-tile class=\"shell-call-peer-tile\" tile=\"local\" fit=\"" << tile_fit
       << "\" "
          "data-if=\"p.is_local && call_in_progress_local_preview\"></call-video-tile>";
@@ -39,6 +47,9 @@ void AppendRosterCards(std::ostringstream& out, const char* rows, const char* ca
   out << "<p class=\"text-xs shell-call-peer-stall\" "
          "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
          ">{{call_in_progress_remote_placeholder}}</p>";
+  AppendHoldPill(out, "p.on_hold", "");
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.video_paused && !p.on_hold\">"
+      << Tr("call.placeholder.camera_paused") << "</p>";
   out << "<div class=\"shell-call-peer-badges row\">";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"14\" height=\"14\" "
          "crop-to-content=\"true\"></svg>";
@@ -287,7 +298,8 @@ void AppendStorySheet(std::ostringstream& out, const CallInProgressState& call) 
  */
 void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* extra_class, const char* events,
                       const char* fit, const bool rings) {
-  out << "<div data-for=\"p : " << rows << "\" class=\"call-phone-tile" << extra_class << "\"";
+  out << "<div data-for=\"p : " << rows << "\" class=\"call-phone-tile" << extra_class << "\""
+      << " data-class-call-phone-tile--on-hold=\"p.on_hold\"";
   if (rings) {
     out << " data-class-call-phone-tile--speaking=\"p.speaking\"";
   }
@@ -306,6 +318,9 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
       << "\" data-attr-src=\"p.avatar_src\"/>";
   out << "<p class=\"call-phone-tile-note\" data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\">"
          "{{call_in_progress_remote_placeholder}}</p>";
+  AppendHoldPill(out, "p.on_hold", " call-hold-pill--tile");
+  out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold\">"
+      << Tr("call.placeholder.camera_paused") << "</p>";
   out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
          "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span></div>";
   out << "</div>";
@@ -488,6 +503,7 @@ std::string CallPhoneRml(const ShellState& state) {
   } else if (video_layout && !call.story_active) {
     out << "<div class=\"call-phone-video-body\"><div class=\"call-phone-who\">";
     out << "<p class=\"call-phone-who-name\">{{call_in_progress_phone_title}}</p>";
+    AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--who");
     out << "<p class=\"call-phone-who-status\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "call-phone-signal--compact");
@@ -513,6 +529,7 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendAvatar(out, "call-phone-avatar--big", false, call.peer_has_avatar, call.peer_avatar_src.c_str(),
                  call.peer_avatar_letter.c_str(), call.peer_avatar_tone);
     out << "<p class=\"call-phone-name\">{{call_in_progress_phone_title}}</p>";
+    AppendHoldPill(out, "call_in_progress_on_hold", " call-hold-pill--hero");
     out << "<p class=\"call-phone-status\">{{call_in_progress_subtitle}}</p>";
     AppendResult(out);
     AppendSignalSlot(out, "");
@@ -793,6 +810,8 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
   out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
+         "crop-to-content=\"true\"></svg>";
+  out << "<svg data-if=\"p.on_hold\" src=\"../icons/pause.svg\" width=\"12\" height=\"12\" "
          "crop-to-content=\"true\"></svg>";
   out << "<svg data-if=\"p.video_enabled\" src=\"../icons/video.svg\" width=\"12\" height=\"12\" "
          "crop-to-content=\"true\"></svg>";

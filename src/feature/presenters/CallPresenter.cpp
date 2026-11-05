@@ -288,6 +288,8 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
       member.is_local = !local_identity.empty() && row.identity == local_identity;
       member.audio_muted = row.media.audio_muted;
       member.video_enabled = row.media.video_enabled;
+      member.on_hold = row.media.on_hold;
+      member.video_paused = row.media.video_paused;
       s.members.push_back(std::move(member));
     }
   }

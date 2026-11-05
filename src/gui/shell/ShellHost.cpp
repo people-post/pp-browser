@@ -169,6 +169,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
+    ctor.Bind("call_in_progress_on_hold", &host.state_.call_in_progress.on_hold);
     ctor.Bind("call_in_progress_status_hint", &host.state_.call_in_progress.status_hint);
     ctor.Bind("call_in_progress_mic_level", &host.state_.call_in_progress.mic_level);
     ctor.Bind("call_in_progress_peer_level", &host.state_.call_in_progress.peer_level);
@@ -231,6 +232,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("avatar_letter", &CallRosterParticipantState::avatar_letter);
       roster_handle.RegisterMember("avatar_tone", &CallRosterParticipantState::avatar_tone);
       roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
+      roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
+      roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
@@ -1047,6 +1050,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_on_hold");
   DataModelHost::Instance().Dirty("window", "call_in_progress_status_hint");
   for (const char* name : kCallLevelVariables) {  // the same list LevelsOnly dirties
     DataModelHost::Instance().Dirty("window", name);
