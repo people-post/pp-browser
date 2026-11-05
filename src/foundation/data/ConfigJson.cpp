@@ -798,6 +798,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
     widget_order.emplace_back(id);
   }
   object.set("home_widgets_order", makeArray(std::move(widget_order)));
+  object.set("home_show_dynamic", prefs.home_show_dynamic);
   std::vector<Value> starred;
   for (const std::string& id : prefs.starred_contacts) {
     starred.emplace_back(id);
@@ -946,6 +947,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
       }
     }
   }
+  prefs.home_show_dynamic = object.getIf<bool>("home_show_dynamic").value_or(false);
   prefs.starred_contacts.clear();
   if (const Array* starred = object.getArray("starred_contacts")) {
     for (const Value& item : starred->elements) {

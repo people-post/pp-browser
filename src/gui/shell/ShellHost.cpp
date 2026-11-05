@@ -137,6 +137,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
     ctor.Bind("pin_gate_phrase_flow", &host.state_.pin_gate.phrase_flow);
+    ctor.Bind("pin_gate_payload_hidden", &host.state_.pin_gate.payload_hidden);
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
@@ -290,6 +291,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("dialog_toggle_checkbox", DataEvent<>([this]() { DialogToggleCheckbox(); }));
     ctor.BindEventCallback("pin_gate_submit", DataEvent<>([this]() { PinGateSubmit(); }));
     ctor.BindEventCallback("pin_gate_paste", DataEvent<>([this]() { PinGatePaste(); }));
+    ctor.BindEventCallback("pin_gate_clear_payload", DataEvent<>([this]() { PinGateClearPayload(); }));
     ctor.BindEventCallback("pin_gate_cancel", DataEvent<>([this]() { PinGateCancel(); }));
     ctor.BindEventCallback("pin_gate_set_pin", DataEvent<>([this]() { PinGateSetPin(); }));
     ctor.BindEventCallback("pin_gate_use_default", DataEvent<>([this]() { PinGateUseDefault(); }));
@@ -1621,7 +1623,7 @@ void ShellHost::MountComposer() {
     return;
   }
 
-  // The desktop's Home landing mounts the composer inside the home view (centered with chips); phones have none.
+  // The Home landing mounts the composer inside the home view, centered above the chips (desktop and phone).
   if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
     if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
@@ -1802,8 +1804,9 @@ void ShellHost::MountPaneBodies() {
     mount_key("chat");
     MountComposer();
   } else if (state_.nav_tab == NavTab::Home) {
-    // Phones: Home has no ask-AI field, only the chips (Kenneth 2026-11-04); the AI dot opens the panel.
+    // Phones: the minimal Home shows the ask-AI field above the chips (Kenneth 2026-11-05).
     mount_key("home");
+    MountComposer();
   }
 
   if (state_.auxiliary_open) {
@@ -2431,8 +2434,24 @@ void ShellHost::PinGatePaste() {
   if (text.empty()) {
     return;
   }
-  state_.pin_gate.link_payload = text;
+  // B166/B167: data-if only sets display:none, so even a hidden textarea still receives its data-value and shaping a
+  // multi-KB string freezes the app. An over-long paste (a transfer code) is therefore kept OUT of the bound
+  // link_payload (which the textarea renders) and stored in link_payload_full; submit reads that. A typed or
+  // short-pasted 24-word phrase is small and stays in link_payload so it shows and can be corrected.
+  const bool too_big = ShellLayout::PinGatePayloadTooBigToRender(state_.pin_gate.phrase_flow, text.size());
+  state_.pin_gate.payload_hidden = too_big;
+  state_.pin_gate.link_payload_full = too_big ? text : ui::String();
+  state_.pin_gate.link_payload = too_big ? ui::String() : text;
   DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
+  DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");
+}
+
+void ShellHost::PinGateClearPayload() {
+  state_.pin_gate.link_payload = "";
+  state_.pin_gate.link_payload_full = "";
+  state_.pin_gate.payload_hidden = false;
+  DataModelHost::Instance().Dirty("window", "pin_gate_link_payload");
+  DataModelHost::Instance().Dirty("window", "pin_gate_payload_hidden");
 }
 
 void ShellHost::PinGateCancel() {

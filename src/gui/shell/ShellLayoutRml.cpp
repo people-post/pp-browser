@@ -382,19 +382,28 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
       << "</button>";
   out << "</div>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && !pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.link_paste_placeholder") << "\"></textarea>";
-  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
+  out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-value=\"pin_gate_link_payload\" maxlength=\"65536\" placeholder=\""
       << Tr("pin.phrase_paste_placeholder") << "\"></textarea>";
-  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_paste_mode\" "
+  out << "<button class=\"btn btn-secondary shell-pin-gate-paste\" data-if=\"pin_gate_link_paste_mode && !pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_paste()\">"
       << Tr("pin.paste_button") << "</button>";
+  // B166/B167: a transfer code is a multi-KB blob; rendering it in the textarea froze the app. Once a paste is too big
+  // to render we keep it in the model (submit uses it) but do NOT show it -- a short confirmation + Clear instead.
+  out << "<p class=\"text shell-pin-gate-note\" "
+         "data-if=\"pin_gate_link_paste_mode && pin_gate_payload_hidden\">"
+      << Tr("pin.link_pasted") << "</p>";
+  out << "<button class=\"btn btn-ghost\" "
+         "data-if=\"pin_gate_link_paste_mode && pin_gate_payload_hidden\" "
+         "data-event-click=\"pin_gate_clear_payload()\">"
+      << Tr("pin.clear_pasted") << "</button>";
   out << "<p class=\"text muted shell-pin-gate-note\" "
-         "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && pin_gate_saved_copy_name != ''\">"
+         "data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden && pin_gate_saved_copy_name != ''\">"
       << Tr("pin.phrase_saved_copy") << " {{pin_gate_saved_copy_name}}</p>";
-  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow\" "
+  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "

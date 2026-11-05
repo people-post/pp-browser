@@ -22,6 +22,8 @@ void PinGateController::PullBoundPinFields() {
   pin_state_.pin = snap.pin;
   pin_state_.pin_confirm = snap.pin_confirm;
   pin_state_.link_payload = snap.link_payload;
+  pin_state_.link_payload_full = snap.link_payload_full;
+  pin_state_.payload_hidden = snap.payload_hidden;
 }
 
 void PinGateController::ApplyPinGate() {
@@ -297,7 +299,10 @@ void PinGateController::OnSubmit() {
   }
 
   if (pin_state_.link_paste_mode) {
-    const std::string payload = pin_state_.link_payload.c_str();
+    // B166/B167: an over-long paste is kept out of the rendered link_payload (see ShellHost::PinGatePaste); read the
+    // full value from link_payload_full when it was hidden.
+    const std::string payload =
+        pin_state_.payload_hidden ? pin_state_.link_payload_full.c_str() : pin_state_.link_payload.c_str();
     if (payload.empty()) {
       pin_state_.error = (phrase_flow_ ? Tr("pin.phrase_paste_empty") : Tr("pin.link_paste_empty")).c_str();
       ApplyPinGate();

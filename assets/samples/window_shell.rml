@@ -66,7 +66,7 @@
        the cheeks, mouth, the plain look's symbols and the particles (arcs, typing dots, star, hearts, z's, lock) show
        only during their action (components.rcss, .ai-dot-*). Stacking order: components.rcss (.shell-ai-dot-mount). -->
   <div id="shell-ai-dot-mount" class="shell-ai-dot-mount">
-    <div id="shell-ai-dot" class="ai-dot" data-class-ai-dot--shown="ai_dot_shown"
+    <div id="shell-ai-dot" class="ai-dot" data-class-ai-dot--shown="ai_dot_shown && nav_tab != 'home'"
          data-class-ai-dot--sway="ai_dot_idle == 'sway'" data-class-ai-dot--blink="ai_dot_idle == 'blink'"
          data-class-ai-dot--look="ai_dot_idle == 'look'" data-class-ai-dot--talk="ai_dot_idle == 'talk'"
          data-class-ai-dot--shy="ai_dot_idle == 'shy'" data-class-ai-dot--wave="ai_dot_idle == 'wave'"

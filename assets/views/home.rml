@@ -4,7 +4,9 @@
     <div class="bar-fade"></div>
     <p class="pane-nav-title">{{i18n:home.title}}</p>
     <div class="pane-nav-actions row">
-      <div class="pane-nav-btn-wrap" data-model="shell">
+      <!-- The Edit-Home (customise 动态 widgets) button only matters when 动态 is shown; the minimal AI Home hides it
+           (Kenneth 2026-11-05). -->
+      <div class="pane-nav-btn-wrap" data-model="shell" data-if="home_show_dynamic">
         <button class="pane-nav-btn" type="button"
                 data-event-click="home_edit_open()" title="{{i18n:home.edit}}">
           <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
@@ -22,7 +24,7 @@
   <!-- Phone only (hidden on the desktop): date line, large title and the widgets (DESIGN-pp-ui 8.16, mockup
        10-home-widgets), iPhone-widget style: a wide card takes a row, two small ones sit side by side, in the order
        the user set in Edit Home. A widget with nothing to show is not drawn (Favorites always is). -->
-  <div class="home-scroll root-scroll" data-model="shell">
+  <div class="home-scroll root-scroll" data-model="shell" data-if="home_show_dynamic">
     <p class="home-date">{{home_date_label}}</p>
     <p class="large-title">{{i18n:home.title}}</p>
     <div class="home-grid">
@@ -161,11 +163,16 @@
       </div>
     </div>
   </div>
-  <div class="home-landing">
+  <!-- data-model=shell drives the minimal/centered switch; the chips keep the chat model (home-landing-inner below). -->
+  <div class="home-landing" data-model="shell" data-class-home-landing--minimal="!home_show_dynamic">
     <!-- Phone: a soft fade from the widgets into the dock, in place of a divider line. -->
     <div class="home-dock-fade"></div>
-    <div class="home-landing-inner stack">
-      <!-- The desktop's ask-AI field; phones have only the chips below (Kenneth 2026-11-04). -->
+    <!-- Minimal AI-first Home (Kenneth 2026-11-05, 太乱): a prominent heading + one line above the chips when the
+         动态 widgets are hidden (the default). Shown only in minimal mode. -->
+    <!-- Empty AI Home: nothing in the centre (Kenneth 2026-11-05, 极简); the AI tab icon carries the brand and the
+         floating assistant is hidden here (this page is its home). Just the composer + chips below. -->
+    <div class="home-landing-inner stack" data-model="chat">
+      <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"

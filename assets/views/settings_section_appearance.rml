@@ -37,6 +37,21 @@
             </span>
           </button>
         </div>
+        <!-- Show Activity on Home (Kenneth 2026-11-05): phones only. Off (default) is the minimal AI-first Home; on
+             brings back the 动态 widgets section (calls, mentions, new people…). -->
+        <div class="group-card settings-phone-only">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.home_dynamic.label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="home_show_dynamic == 'on'"
+                      data-event-click="toggle_home_show_dynamic()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot settings-phone-only">{{i18n:settings.home_dynamic.help}}</p>
         <!-- Transparency (Kenneth 2026-11-04): on, the phone's bars are frosted and the page shows through them; off,
              they are solid (the reduce_transparency pref, which the AI assistant's set_reduce_transparency also sets). -->
         <div class="group-card">

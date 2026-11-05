@@ -117,6 +117,8 @@ struct ProfilePreferences {
   std::vector<std::string> home_widgets_hidden;
   /** Their order on Home (Edit Home's drag handles); empty: the default order. Device-only, never synced. */
   std::vector<std::string> home_widgets_order;
+  /** Phone Home shows the 动态 widgets section; default off = minimal AI-first Home. Device-only, never synced. */
+  bool home_show_dynamic = false;
   /**
    * Contacts starred as favourites ("常用联系人"; contact ids, in the order they were starred): first in Home's
    * Favourites widget and the New chat page's frequent group. Device-only, like thread_local_prefs: never synced.

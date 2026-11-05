@@ -127,4 +127,10 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   return layout;
 }
 
+bool ShellLayout::PinGatePayloadTooBigToRender(bool phrase_flow, size_t payload_len) {
+  // A normal 24-word recovery phrase is well under this; anything larger is a transfer code dropped in the wrong box.
+  constexpr size_t kPinGateRenderMax = 512;
+  return (!phrase_flow && payload_len > 0) || payload_len > kPinGateRenderMax;
+}
+
 } // namespace pbr
