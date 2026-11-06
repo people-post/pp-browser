@@ -1122,6 +1122,89 @@ namespace {
 
 // projects/privacy T3: a Blocked sender's direct messages (chat and call control alike) are dropped
 // on receipt — before the thread, the inbox or a ring sees them.
+// --- G017: the owner makes a member admin, or sets the preset ---------------------------------------------------
+
+class GroupSettingIngestTest : public GroupDissolvedIngestTest {
+protected:
+  /** The owner's roster at epoch 4 with `bob_role` and `preset`. */
+  GroupRosterStatement Roster(test::TestSigner& owner, const MemberRole bob_role,
+                              const GroupPreset preset = GroupPreset::Open) {
+    std::vector<GroupRosterStatementMember> rows{{owner.Id(), MemberRole::Owner, 1000},
+                                                 {"account:bob", bob_role, 1000},
+                                                 {"account:carol", MemberRole::Member, 1000}};
+    return group_roster_statement::Sign(owner, owner.Key(), kGroup, 4, rows, {}, false, preset).value();
+  }
+
+  RelayReceiveOutcome ReceiveSetting(const std::string& control_type, const std::string& detail,
+                                     const GroupRosterStatement& statement) {
+    auto with = group_roster_sync_codec::WithStatement(detail, statement);
+    EXPECT_TRUE(with);
+    return bob_.pipeline.ProcessEnvelope(bob_.MakeSystemEnvelope(control_type, *with, "Group settings", ++seq_),
+                                         "account:bob");
+  }
+
+  MemberRole RoleOf(const std::string& identity) {
+    return bob_.roster.FindMember(kGroup, identity).value().value().role;
+  }
+
+  size_t Lines(const GroupMembershipControlType type) {
+    size_t n = 0;
+    for (const ThreadMessage& m : GroupMessages()) {
+      const auto kind = GroupMembershipCodec::ControlTypeFromMessage(m);
+      n += kind && *kind == type ? 1 : 0;
+    }
+    return n;
+  }
+};
+
+TEST_F(GroupSettingIngestTest, TheOwnerMakingAMemberAdminTakesTheSignedRosterAndLeavesALine) {
+  const auto detail =
+      GroupMembershipCodec::EncodeMemberRoleChanged({kGroup, "account:bob", MemberRole::Admin, 4}).value();
+  const RelayReceiveOutcome outcome = ReceiveSetting("member_role_changed", detail, Roster(alice_, MemberRole::Admin));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_EQ(RoleOf("account:bob"), MemberRole::Admin);
+  EXPECT_EQ(Metadata().roster_epoch, 4u);
+  EXPECT_EQ(Lines(GroupMembershipControlType::MemberRoleChanged), 1u) << "who made whom an admin, in the group";
+}
+
+TEST_F(GroupSettingIngestTest, TheOwnersPresetIsTheGroups) {
+  const auto detail = GroupMembershipCodec::EncodeGroupPresetChanged({kGroup, GroupPreset::Managed, 4}).value();
+  const RelayReceiveOutcome outcome =
+      ReceiveSetting("group_preset_changed", detail, Roster(alice_, MemberRole::Member, GroupPreset::Managed));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_EQ(Metadata().policy.preset, GroupPreset::Managed);
+  EXPECT_EQ(Lines(GroupMembershipControlType::GroupPresetChanged), 1u);
+}
+
+TEST_F(GroupSettingIngestTest, AnEventTheSignedRosterDoesNotBearOutIsRefused) {
+  // The event says Carol was made admin; the roster the owner signed says otherwise.
+  const auto detail =
+      GroupMembershipCodec::EncodeMemberRoleChanged({kGroup, "account:carol", MemberRole::Admin, 4}).value();
+  EXPECT_TRUE(ReceiveSetting("member_role_changed", detail, Roster(alice_, MemberRole::Member)).receive_failure);
+  EXPECT_EQ(RoleOf("account:carol"), MemberRole::Member);
+  EXPECT_EQ(Lines(GroupMembershipControlType::MemberRoleChanged), 0u);
+}
+
+TEST_F(GroupSettingIngestTest, OnlyTheOwnerMakesAdmins) {
+  test::TestSigner carol;
+  const auto detail =
+      GroupMembershipCodec::EncodeMemberRoleChanged({kGroup, "account:bob", MemberRole::Admin, 4}).value();
+  EXPECT_TRUE(ReceiveSetting("member_role_changed", detail, Roster(carol, MemberRole::Admin)).receive_failure)
+      << "signed by someone who is not the owner we know";
+  EXPECT_EQ(RoleOf("account:bob"), MemberRole::Member);
+}
+
+TEST(GroupSettingCodecTest, ARoleChangeNeverMakesAnOwner) {
+  EXPECT_FALSE(GroupMembershipCodec::EncodeMemberRoleChanged({"group:g", "account:bob", MemberRole::Owner, 2}));
+  EXPECT_FALSE(GroupMembershipCodec::DecodeMemberRoleChanged(
+      R"({"group_id":"group:g","member_identity":"account:bob","role":"owner","roster_epoch":2})"));
+  auto back = GroupMembershipCodec::DecodeMemberRoleChanged(
+      GroupMembershipCodec::EncodeMemberRoleChanged({"group:g", "account:bob", MemberRole::Admin, 2}).value());
+  ASSERT_TRUE(back);
+  EXPECT_EQ(back->role, MemberRole::Admin);
+  EXPECT_FALSE(GroupMembershipCodec::DecodeGroupPresetChanged(R"({"group_id":"group:g","preset":"anarchy"})"));
+}
+
 TEST(BlockedSenderIngestTest, DirectEnvelopesFromABlockedSenderAreDropped) {
   PartyHarness invitee("blocked-sender", "account:bob", "account:alice");
   invitee.pipeline.SetContactTrust(&invitee.contacts);

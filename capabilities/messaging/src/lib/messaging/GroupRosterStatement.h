@@ -43,8 +43,10 @@ struct GroupOwnerTransfer {
 struct GroupRosterStatement {
   std::string group_id;
   uint64_t roster_epoch = 0;
-  /** Sorted by identity; exactly one has role owner, the signer. */
+  /** Sorted by identity; exactly one has role owner, the signer; any number admin (G017). */
   std::vector<GroupRosterStatementMember> members;
+  /** G017: who brings people in and renames, as the owner set it. */
+  GroupPreset preset = GroupPreset::Open;
   std::string owner_identity;
   std::string owner_public_key_b64;
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
@@ -61,19 +63,20 @@ struct GroupRosterStatement {
 
 namespace group_roster_statement {
 
-/** The bytes the owner signs: domain tag, group, epoch, owner, members (length-prefixed fields). */
+/** The bytes the owner signs: domain tag, group, epoch, owner, members, preset (length-prefixed fields). */
 ByteVector SignBytes(const GroupRosterStatement& statement);
 /** The bytes a transferring owner signs: domain tag, group, from, to, epoch. */
 ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransfer& transfer);
 
 /**
- * Sign `members` at `roster_epoch` as the group's owner (`signer`'s account, `public_key_b64` its key):
- * sorts the members and fills the owner fields and signature; `owner_chain` is carried as given.
+ * Sign `members` at `roster_epoch` as the group's owner (`signer`'s account, `public_key_b64` its key), under
+ * `preset`: sorts the members and fills the owner fields and signature; `owner_chain` is carried as given.
  */
 Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                const std::string& group_id, uint64_t roster_epoch,
                                std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain, bool dissolved = false);
+                               std::vector<GroupOwnerTransfer> owner_chain, bool dissolved = false,
+                               GroupPreset preset = GroupPreset::Open);
 
 /** Transfer the group to `to_identity` at `roster_epoch`, signed by the owner giving it up. */
 Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::string& public_key_b64,

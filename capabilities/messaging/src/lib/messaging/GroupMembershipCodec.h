@@ -92,6 +92,26 @@ public:
   static Roe<OwnerTransferredPayload> DecodeOwnerTransferred(const std::string& detail_json);
   static Roe<OwnerTransferredPayload> DecodeOwnerTransferredFromMessage(const ThreadMessage& message);
 
+  /** G017: the owner made `member_identity` an admin or a member again (the owner-signed roster rides it too). */
+  struct MemberRoleChangedPayload {
+    std::string group_id;
+    std::string member_identity;
+    MemberRole role = MemberRole::Member;
+    uint64_t roster_epoch = 0;
+  };
+  static Roe<std::string> EncodeMemberRoleChanged(const MemberRoleChangedPayload& payload);
+  static Roe<MemberRoleChangedPayload> DecodeMemberRoleChanged(const std::string& detail_json);
+  static Roe<MemberRoleChangedPayload> DecodeMemberRoleChangedFromMessage(const ThreadMessage& message);
+  /** G017: the owner set the group Open or Managed (the owner-signed roster rides it too). */
+  struct GroupPresetChangedPayload {
+    std::string group_id;
+    GroupPreset preset = GroupPreset::Open;
+    uint64_t roster_epoch = 0;
+  };
+  static Roe<std::string> EncodeGroupPresetChanged(const GroupPresetChangedPayload& payload);
+  static Roe<GroupPresetChangedPayload> DecodeGroupPresetChanged(const std::string& detail_json);
+  static Roe<GroupPresetChangedPayload> DecodeGroupPresetChangedFromMessage(const ThreadMessage& message);
+
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
                                             uint64_t roster_epoch, uint64_t title_version);
   struct GroupRenamedPayload {

@@ -643,6 +643,19 @@ Roe<void> ConversationsFacade::RemoveMemberByIdentity(const std::string& group_i
   return hub_.Groups().RemoveMemberByIdentity(group_id, member_identity);
 }
 
+Roe<void> ConversationsFacade::SetMemberRole(const std::string& group_id, const std::string& member_identity,
+                                             const MemberRole role) {
+  return hub_.Groups().SetMemberRole(group_id, member_identity, role);
+}
+
+Roe<void> ConversationsFacade::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  return hub_.Groups().SetGroupPreset(group_id, preset);
+}
+
+Roe<GroupPreset> ConversationsFacade::GroupPresetOf(const std::string& group_id) {
+  return hub_.Groups().GroupPresetOf(group_id);
+}
+
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
   return hub_.Groups().ListUnreachable(group_id);
 }

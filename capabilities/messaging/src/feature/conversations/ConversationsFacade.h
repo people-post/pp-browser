@@ -242,6 +242,11 @@ public:
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
+  /** G017, owner-only: make a member an admin, or a member again (GroupMembershipWorkflow::SetMemberRole). */
+  Roe<void> SetMemberRole(const std::string& group_id, const std::string& member_identity, MemberRole role);
+  /** G017, owner-only: set the group Open or Managed. */
+  Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);
+  Roe<GroupPreset> GroupPresetOf(const std::string& group_id);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
   /**
    * Owner: send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit

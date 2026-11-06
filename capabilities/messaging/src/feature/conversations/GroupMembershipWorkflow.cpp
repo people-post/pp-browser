@@ -1,4 +1,6 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
+
+#include "lib/messaging/GroupPermissions.h"
 #include "lib/messaging/GroupRosterVersion.h"
 
 #include "lib/delivery/DirectChatTargetFromContact.h"
@@ -220,9 +222,6 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
     return Error(group_roster_sync::kGroupDissolvedError);  // G016: no invites into an ended group
-  }
-  if (auto can = invite_gate_.CanSendInvite(MemberRole::Owner); !can || !*can) {
-    return Error("Actor lacks invite permission");
   }
   // G014: the active roster only — pending invites do not count (an accept that comes when full is refused).
   if (auto members = roster_.ListMembers(group_id); members && members->size() >= kMaxGroupMembers) {
@@ -1140,6 +1139,109 @@ Roe<void> GroupMembershipWorkflow::SendRenameDirectMessage(const std::string& me
                                      "Group renamed to " + title);
 }
 
+Roe<void> GroupMembershipWorkflow::ChangeGroupSetting(
+    const std::string& group_id, const GroupMembershipControlType type, const std::string& display,
+    const std::function<Roe<bool>(GroupMetadata& metadata)>& apply,
+    const std::function<Roe<std::string>(uint64_t roster_epoch)>& detail) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto update = IGroupRosterStore::LockForUpdate(); // the change and its epoch, as one
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (*local != metadata->owner_identity) {
+    return Error("Only the group owner may change who does what in the group");
+  }
+  if (metadata->sync_state == GroupSyncState::Dissolved) {
+    return Error(group_roster_sync::kGroupDissolvedError);
+  }
+  auto changed = apply(*metadata);
+  if (!changed) {
+    return changed.error();
+  }
+  if (!*changed) {
+    return {}; // already so: nothing to sign or send
+  }
+  metadata->roster_epoch += 1;
+  if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
+    return saved.error();
+  }
+  update.unlock(); // not across the sends below
+  auto encoded = detail(metadata->roster_epoch);
+  if (!encoded) {
+    return encoded.error();
+  }
+  auto thread = store_.FindGroupThread(group_id);
+  if (!thread || !*thread) {
+    return Error("Group thread not found");
+  }
+  if (auto event = AppendMembershipSystemEvent((*thread)->id, type, display, *encoded, *local); !event) {
+    return event.error();
+  }
+  return FanOutMembershipEvent(group_id, type, WithSignedRoster(group_id, *encoded), display, *local);
+}
+
+Roe<void> GroupMembershipWorkflow::SetMemberRole(const std::string& group_id, const std::string& member_identity,
+                                                 const MemberRole role) {
+  if (role == MemberRole::Owner) {
+    return Error("Ownership moves by handing the group over, not by a role");
+  }
+  return ChangeGroupSetting(
+      group_id, GroupMembershipControlType::MemberRoleChanged,
+      role == MemberRole::Admin ? "Member made admin" : "Member no longer admin",
+      [&](GroupMetadata& metadata) -> Roe<bool> {
+        auto member = roster_.FindMember(group_id, member_identity);
+        if (!member) {
+          return member.error();
+        }
+        if (!*member) {
+          return Error("Not a member of this group");
+        }
+        if (!GroupAllows(GroupAction::SetRole, MemberRole::Owner, metadata.policy.preset, (*member)->role)) {
+          return Error("The owner's role is not changed this way");
+        }
+        if ((*member)->role == role) {
+          return false;
+        }
+        GroupRosterMember updated = **member;
+        updated.role = role;
+        if (auto upserted = roster_.UpsertMember(group_id, updated); !upserted) {
+          return upserted.error();
+        }
+        return true;
+      },
+      [&](const uint64_t epoch) {
+        return GroupMembershipCodec::EncodeMemberRoleChanged({group_id, member_identity, role, epoch});
+      });
+}
+
+Roe<void> GroupMembershipWorkflow::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  return ChangeGroupSetting(
+      group_id, GroupMembershipControlType::GroupPresetChanged,
+      preset == GroupPreset::Managed ? "Group set to managed" : "Group set to open",
+      [&](GroupMetadata& metadata) -> Roe<bool> {
+        if (metadata.policy.preset == preset) {
+          return false;
+        }
+        metadata.policy.preset = preset;
+        return true;
+      },
+      [&](const uint64_t epoch) {
+        return GroupMembershipCodec::EncodeGroupPresetChanged({group_id, preset, epoch});
+      });
+}
+
+Roe<GroupPreset> GroupMembershipWorkflow::GroupPresetOf(const std::string& group_id) const {
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  return metadata->policy.preset;
+}
+
 Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id, const std::string& title) {
   if (title.empty()) {
     return Error("Group title required");
@@ -1157,9 +1259,6 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
   }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
     return Error(group_roster_sync::kGroupDissolvedError);
-  }
-  if (!RoleHasPermission(MemberRole::Owner, kPermRename)) {
-    return Error("Actor lacks rename permission");
   }
 
   metadata->title = title;
@@ -1411,7 +1510,7 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignDissolved(const GroupMeta
   }
   RosterParts parts = RosterPartsOf(metadata, members);
   return group_roster_statement::Sign(identity_, *key, metadata.group_id, epoch, std::move(parts.rows),
-                                      std::move(parts.chain), /*dissolved=*/true);
+                                      std::move(parts.chain), /*dissolved=*/true, metadata.policy.preset);
 }
 
 Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string& group_id,
@@ -1438,7 +1537,8 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
   }
   RosterParts parts = RosterPartsOf(*metadata, *members, handed);
   auto statement = group_roster_statement::Sign(identity_, *key, group_id, metadata->roster_epoch,
-                                                std::move(parts.rows), std::move(parts.chain));
+                                                std::move(parts.rows), std::move(parts.chain),
+                                                /*dissolved=*/false, metadata->policy.preset);
   if (!statement) {
     return statement.error();
   }

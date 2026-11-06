@@ -38,12 +38,11 @@ TEST(GroupMembershipCodecTest, InviteRoundTrip) {
 
 TEST(GroupMembershipCodecTest, GroupPolicyRoundTrip) {
   GroupPolicy policy;
-  policy.invite_policy = GroupInvitePolicyWire::OwnerOnly;
-  policy.history_visibility = GroupHistoryVisibility::Full;
+  policy.preset = GroupPreset::Managed;
   const std::string json = GroupMembershipCodec::EncodeGroupPolicy(policy);
   auto decoded = GroupMembershipCodec::DecodeGroupPolicy(json);
   ASSERT_TRUE(decoded);
-  EXPECT_EQ(decoded->invite_policy, GroupInvitePolicyWire::OwnerOnly);
+  EXPECT_EQ(decoded->preset, GroupPreset::Managed);
 }
 
 TEST(GroupMembershipCodecTest, BuildInviteChatActions) {
@@ -176,12 +175,6 @@ TEST(GroupMembershipCodecTest, ApplyInviteResolutionClearsActions) {
   auto resolution = GroupMembershipCodec::InviteResolutionFromMessage(message);
   ASSERT_TRUE(resolution);
   EXPECT_EQ(*resolution, InviteStatus::Accepted);
-}
-
-TEST(GroupPermissionsTest, OwnerCanInviteMemberCannot) {
-  EXPECT_TRUE(RoleHasPermission(MemberRole::Owner, GroupPermission::kPermInvite));
-  EXPECT_FALSE(RoleHasPermission(MemberRole::Member, GroupPermission::kPermInvite));
-  EXPECT_TRUE(RoleHasPermission(MemberRole::Member, GroupPermission::kPermFork));
 }
 
 TEST(GroupE2ePayloadCodecTest, DetectsGroupEnvelope) {

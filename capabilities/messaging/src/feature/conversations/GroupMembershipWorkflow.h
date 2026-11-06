@@ -78,6 +78,15 @@ public:
                         const std::vector<std::string>& member_contact_ids);
   /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
+  /**
+   * G017, owner-only: make `member_identity` an admin or a member again (never the owner: that is a transfer).
+   * Re-signs the roster and fans out `member_role_changed` with it; a role it already has changes nothing.
+   */
+  Roe<void> SetMemberRole(const std::string& group_id, const std::string& member_identity, MemberRole role);
+  /** G017, owner-only: set the group Open or Managed; re-signs the roster and fans out `group_preset_changed`. */
+  Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);
+  /** The group's preset as this device holds it (G017). */
+  Roe<GroupPreset> GroupPresetOf(const std::string& group_id) const;
   /** Apply an inbound group_renamed control (from peer DM). */
   Roe<void> ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
                                      const std::string& actor_identity);
@@ -160,6 +169,14 @@ private:
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  /**
+   * The owner's change to the group's settings (a role, the preset): bump the roster epoch, append `display` to the
+   * group's chat and fan the event out with the newly signed roster. `apply` makes the change in the store, under the
+   * roster lock, and returns false when there is nothing to change.
+   */
+  Roe<void> ChangeGroupSetting(const std::string& group_id, GroupMembershipControlType type, const std::string& display,
+                               const std::function<Roe<bool>(GroupMetadata& metadata)>& apply,
+                               const std::function<Roe<std::string>(uint64_t roster_epoch)>& detail);
   struct RosterParts {
     std::vector<GroupRosterStatementMember> rows;
     std::vector<GroupOwnerTransfer> chain;

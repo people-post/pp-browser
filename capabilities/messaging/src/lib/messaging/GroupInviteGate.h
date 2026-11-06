@@ -26,7 +26,6 @@ public:
   GroupInvitePolicy inbound_policy() const { return inbound_policy_; }
 
   Roe<bool> AllowsInboundInvite(const GroupInvitePayload& invite) const;
-  Roe<bool> CanSendInvite(MemberRole actor_role) const;
   Roe<void> RecordPendingInvite(const PendingGroupInvite& invite) const;
 
 private:

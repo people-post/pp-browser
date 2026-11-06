@@ -37,10 +37,6 @@ Roe<bool> GroupInviteGate::AllowsInboundInvite(const GroupInvitePayload& invite)
   return true;
 }
 
-Roe<bool> GroupInviteGate::CanSendInvite(const MemberRole actor_role) const {
-  return RoleHasPermission(actor_role, GroupPermission::kPermInvite);
-}
-
 Roe<void> GroupInviteGate::RecordPendingInvite(const PendingGroupInvite& invite) const {
   return roster_.UpsertPendingInvite(invite);
 }

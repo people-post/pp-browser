@@ -19,6 +19,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupE2ePayloadCodec.cpp
     GroupMembershipApply.cpp
     GroupMembershipCodec.cpp
+    GroupPermissions.cpp
     GroupRosterStatement.cpp
     GroupRosterSync.cpp
     GroupRosterSyncCodec.cpp

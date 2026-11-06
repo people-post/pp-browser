@@ -277,6 +277,12 @@ private:
   /** G012: keep the owner-signed roster a roster event carries, when it verifies and is newer. */
   void KeepCarriedStatement(const ThreadMessage& message) const;
   /**
+   * G017: the owner made a member admin (or member again), or set the preset. The owner-signed roster it carries is
+   * what applies (KeepAndCatchUp); the event, refused unless it agrees with that roster, is the group chat's line.
+   */
+  Roe<void> ApplyGroupSettingChanged(const ThreadMessage& message, GroupMembershipControlType kind,
+                                     const std::string& actor_identity, const std::string& local_account) const;
+  /**
    * G012: a group_roster_statement from the owner. (The member check's request and reply ride the control
    * lane: MakeGroupRosterSyncFamily.)
    */

@@ -1,5 +1,7 @@
 #include "lib/messaging/RelayReceivePipeline.h"
 
+#include <algorithm>
+
 #include "lib/messaging/SentCopy.h"
 
 #include "lib/people/AccountCard.h"
@@ -187,6 +189,74 @@ void RelayReceivePipeline::KeepCarriedStatement(const ThreadMessage& message) co
   if (auto kept = group_roster_sync::KeepStatement(group_roster_, *statement); !kept) {
     log().warning << "Roster statement not kept group_id=" << statement->group_id << ": " << kept.error().message;
   }
+}
+
+Roe<void> RelayReceivePipeline::ApplyGroupSettingChanged(const ThreadMessage& message,
+                                                         const GroupMembershipControlType kind,
+                                                         const std::string& actor_identity,
+                                                         const std::string& local_account) const {
+  std::string group_id;
+  std::string detail_json;
+  std::string display;
+  std::function<bool(const GroupRosterStatement&)> agrees;
+  if (kind == GroupMembershipControlType::MemberRoleChanged) {
+    auto changed = GroupMembershipCodec::DecodeMemberRoleChangedFromMessage(message);
+    if (!changed) {
+      return changed.error();
+    }
+    group_id = changed->group_id;
+    auto encoded = GroupMembershipCodec::EncodeMemberRoleChanged(*changed);
+    if (!encoded) {
+      return encoded.error();
+    }
+    detail_json = *encoded;
+    display = changed->role == MemberRole::Admin ? "Member made admin" : "Member no longer admin";
+    agrees = [changed = *changed](const GroupRosterStatement& statement) {
+      return std::any_of(statement.members.begin(), statement.members.end(), [&](const GroupRosterStatementMember& m) {
+        return m.identity == changed.member_identity && m.role == changed.role;
+      });
+    };
+  } else {
+    auto changed = GroupMembershipCodec::DecodeGroupPresetChangedFromMessage(message);
+    if (!changed) {
+      return changed.error();
+    }
+    group_id = changed->group_id;
+    auto encoded = GroupMembershipCodec::EncodeGroupPresetChanged(*changed);
+    if (!encoded) {
+      return encoded.error();
+    }
+    detail_json = *encoded;
+    display = changed->preset == GroupPreset::Managed ? "Group set to managed" : "Group set to open";
+    agrees = [preset = changed->preset](const GroupRosterStatement& statement) { return statement.preset == preset; };
+  }
+  auto member = group_roster_.IsMember(group_id, local_account);
+  if (!member || !*member) {
+    return {}; // not our group (any more)
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  auto statement = detail ? group_roster_sync_codec::StatementIn(*detail) : std::nullopt;
+  if (!statement || statement->group_id != group_id || statement->owner_identity != actor_identity) {
+    return Error("group setting: not from the owner its roster names");
+  }
+  if (!agrees(*statement)) {
+    return Error("group setting: the event does not match the roster it carries");
+  }
+  auto kept = group_roster_sync::KeepAndCatchUp(group_roster_, *statement);
+  if (!kept) {
+    return kept.error();
+  }
+  if (!*kept) {
+    return {}; // an older roster than ours: nothing changes, no line
+  }
+  auto thread = store_.FindGroupThread(group_id);
+  if (thread && *thread) {
+    if (auto sys =
+            GroupMembershipCodec::BuildSystemMessage((*thread)->id, kind, display, detail_json, actor_identity)) {
+      (void)store_.AppendMessage(*sys);
+    }
+  }
+  return {};
 }
 
 Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& message,
@@ -601,6 +671,10 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
 
   if (kind == GroupMembershipControlType::GroupRosterStatement) {
     return ApplyRosterStatement(message, actor_identity, local_account, outcome);
+  }
+
+  if (kind == GroupMembershipControlType::MemberRoleChanged || kind == GroupMembershipControlType::GroupPresetChanged) {
+    return ApplyGroupSettingChanged(message, *kind, actor_identity, local_account);
   }
 
   if (kind == GroupMembershipControlType::GroupDissolved) {

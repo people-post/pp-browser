@@ -15,9 +15,11 @@ enum class GroupInvitePolicy : uint8_t { Everyone = 0, ContactsOnly = 1, Nobody 
 
 enum class GroupHistoryMode : uint8_t { Fresh = 0, CopyToForkPoint = 1, UserSelected = 2 };
 
-enum class GroupHistoryVisibility : uint8_t { Full = 0, SinceJoin = 1 };
-
-enum class GroupInvitePolicyWire : uint8_t { OwnerOnly = 0, Admins = 1, AnyMember = 2 };
+/**
+ * G017: who brings people in and renames. Open (the default): any member; Managed: the owner and admins. Set by
+ * the owner, carried in its signed statement (G012).
+ */
+enum class GroupPreset : uint8_t { Open = 0, Managed = 1 };
 
 enum class InviteStatus : uint8_t { Pending = 0, Accepted = 1, Declined = 2, Expired = 3, Blocked = 4 };
 
@@ -45,6 +47,10 @@ enum class GroupMembershipControlType {
   GroupDissolved,
   /** Owner's device → the owner's other devices (control lane, M021): the same dissolve, so they end the group too. */
   GroupDissolvedSibling,
+  /** Owner → members (G017): a member made admin or back to member; carries the owner-signed roster. */
+  MemberRoleChanged,
+  /** Owner → members (G017): the group set Open or Managed; carries the owner-signed roster. */
+  GroupPresetChanged,
 };
 
 /** G014: a group has at most this many active members (the owner included; pending invites do not count). */
@@ -62,19 +68,9 @@ inline constexpr const char kInviteRefusedGroupDissolved[] = "group_dissolved";
  */
 enum class GroupSyncState : uint8_t { Active = 0, Checking = 1, Removed = 2, Dissolved = 3 };
 
-enum GroupPermission : uint32_t {
-  kPermSend = 1u << 0,
-  kPermInvite = 1u << 1,
-  kPermRemove = 1u << 2,
-  kPermRename = 1u << 3,
-  kPermTransferOwner = 1u << 4,
-  kPermFork = 1u << 5,
-  kPermLeave = 1u << 6,
-};
-
+/** What the owner sets for the group (G017); who may do what is GroupAllows (GroupPermissions.h). */
 struct GroupPolicy {
-  GroupInvitePolicyWire invite_policy = GroupInvitePolicyWire::OwnerOnly;
-  GroupHistoryVisibility history_visibility = GroupHistoryVisibility::Full;
+  GroupPreset preset = GroupPreset::Open;
 };
 
 struct GroupRosterMember {
@@ -154,7 +150,8 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
 bool IsGroupRosterSyncControl(GroupMembershipControlType type);
 std::string GroupSyncStateToString(GroupSyncState state);
 GroupSyncState GroupSyncStateFromString(const std::string& value);
-uint32_t DefaultPermissionsForRole(MemberRole role);
-bool RoleHasPermission(MemberRole role, GroupPermission permission);
+std::string GroupPresetToString(GroupPreset preset);
+/** Unknown values read as Open. */
+GroupPreset GroupPresetFromString(const std::string& value);
 
 } // namespace pbr

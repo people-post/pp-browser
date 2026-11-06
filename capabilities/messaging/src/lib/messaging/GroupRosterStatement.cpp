@@ -13,8 +13,9 @@ namespace pbr {
 namespace group_roster_statement {
 namespace {
 
-constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v1";
-constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v1";
+// v2 (G017): the preset is signed too. A v1 statement does not verify as v2 (clean cutover, unreleased product).
+constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v2";
+constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v2";
 constexpr const char kTransferTag[] = "pp-browser:group-owner-transfer-v1";
 
 /** u32 big-endian length, then the bytes: no field can run into the next. */
@@ -73,6 +74,7 @@ ByteVector SignBytes(const GroupRosterStatement& statement) {
     Put(out, MemberRoleToString(m.role));
     Put(out, static_cast<uint64_t>(m.joined_at));
   }
+  Put(out, GroupPresetToString(statement.preset));
   return out;
 }
 
@@ -89,7 +91,8 @@ ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransf
 Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                const std::string& group_id, const uint64_t roster_epoch,
                                std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain, const bool dissolved) {
+                               std::vector<GroupOwnerTransfer> owner_chain, const bool dissolved,
+                               const GroupPreset preset) {
   auto account = signer.GetAccountId();
   if (!account) {
     return account.error();
@@ -103,6 +106,7 @@ Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string&
   statement.owner_public_key_b64 = public_key_b64;
   statement.owner_chain = std::move(owner_chain);
   statement.dissolved = dissolved;
+  statement.preset = preset;
   auto signature = signer.SignAccountBytes(SignBytes(statement));
   if (!signature) {
     return signature.error();
@@ -261,6 +265,7 @@ Object ToJson(const GroupRosterStatement& statement) {
     members.push_back(ObjectValue(std::move(row)));
   }
   json.set("members", ArrayValue(std::move(members)));
+  json.set("preset", GroupPresetToString(statement.preset));
   json.set("owner", statement.owner_identity);
   json.set("owner_public_key", statement.owner_public_key_b64);
   if (!statement.owner_chain.empty()) {
@@ -285,6 +290,7 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
   statement.owner_public_key_b64 = json.getString("owner_public_key").value_or("");
   statement.owner_signature_b64 = json.getString("owner_signature").value_or("");
   statement.dissolved = json.getIf<bool>("dissolved").value_or(false);
+  statement.preset = GroupPresetFromString(json.getString("preset").value_or("open"));
   const Array* members = json.getArray("members");
   if (statement.group_id.empty() || statement.owner_identity.empty() || !members) {
     return Error("roster statement: missing field");

@@ -21,36 +21,6 @@ std::string HistoryModeToString(const GroupHistoryMode mode) {
   return "fresh";
 }
 
-std::string InvitePolicyWireToString(const GroupInvitePolicyWire policy) {
-  switch (policy) {
-  case GroupInvitePolicyWire::OwnerOnly:
-    return "owner_only";
-  case GroupInvitePolicyWire::Admins:
-    return "admins";
-  case GroupInvitePolicyWire::AnyMember:
-    return "any_member";
-  }
-  return "owner_only";
-}
-
-GroupInvitePolicyWire InvitePolicyWireFromString(const std::string& value) {
-  if (value == "admins") {
-    return GroupInvitePolicyWire::Admins;
-  }
-  if (value == "any_member") {
-    return GroupInvitePolicyWire::AnyMember;
-  }
-  return GroupInvitePolicyWire::OwnerOnly;
-}
-
-std::string HistoryVisibilityToString(const GroupHistoryVisibility visibility) {
-  return visibility == GroupHistoryVisibility::SinceJoin ? "since_join" : "full";
-}
-
-GroupHistoryVisibility HistoryVisibilityFromString(const std::string& value) {
-  return value == "since_join" ? GroupHistoryVisibility::SinceJoin : GroupHistoryVisibility::Full;
-}
-
 uint64_t ReadRosterEpoch(const Object& json) {
   return json.getNonNegInt("roster_epoch").value_or(0);
 }
@@ -382,6 +352,87 @@ Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemb
   return DecodeMemberRemoved(*detail);
 }
 
+Roe<std::string> GroupMembershipCodec::EncodeMemberRoleChanged(const MemberRoleChangedPayload& payload) {
+  if (payload.role == MemberRole::Owner) {
+    return Error("member_role_changed: ownership moves by transfer only");
+  }
+  Object json;
+  json.set("group_id", payload.group_id);
+  json.set("member_identity", payload.member_identity);
+  json.set("role", MemberRoleToString(payload.role));
+  json.setJsonUInt("roster_epoch", payload.roster_epoch);
+  return DumpJson(json);
+}
+
+Roe<GroupMembershipCodec::MemberRoleChangedPayload> GroupMembershipCodec::DecodeMemberRoleChanged(
+    const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
+    return Error("Invalid member_role_changed detail");
+  }
+  MemberRoleChangedPayload payload;
+  payload.group_id = json->getString("group_id").value_or("");
+  payload.member_identity = json->getString("member_identity").value_or("");
+  const std::string role = json->getString("role").value_or("");
+  if (role != "admin" && role != "member") {
+    return Error("member_role_changed: role must be admin or member");
+  }
+  payload.role = MemberRoleFromString(role);
+  payload.roster_epoch = ReadRosterEpoch(*json);
+  if (payload.group_id.empty() || payload.member_identity.empty()) {
+    return Error("member_role_changed missing group_id or member_identity");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::MemberRoleChangedPayload> GroupMembershipCodec::DecodeMemberRoleChangedFromMessage(
+    const ThreadMessage& message) {
+  auto detail =
+      DetailFromMessage(message, GroupMembershipControlType::MemberRoleChanged, "Message is not a member_role_changed");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeMemberRoleChanged(*detail);
+}
+
+Roe<std::string> GroupMembershipCodec::EncodeGroupPresetChanged(const GroupPresetChangedPayload& payload) {
+  Object json;
+  json.set("group_id", payload.group_id);
+  json.set("preset", GroupPresetToString(payload.preset));
+  json.setJsonUInt("roster_epoch", payload.roster_epoch);
+  return DumpJson(json);
+}
+
+Roe<GroupMembershipCodec::GroupPresetChangedPayload> GroupMembershipCodec::DecodeGroupPresetChanged(
+    const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  if (!json) {
+    return Error("Invalid group_preset_changed detail");
+  }
+  GroupPresetChangedPayload payload;
+  payload.group_id = json->getString("group_id").value_or("");
+  const std::string preset = json->getString("preset").value_or("");
+  if (preset != "open" && preset != "managed") {
+    return Error("group_preset_changed: preset must be open or managed");
+  }
+  payload.preset = GroupPresetFromString(preset);
+  payload.roster_epoch = ReadRosterEpoch(*json);
+  if (payload.group_id.empty()) {
+    return Error("group_preset_changed missing group_id");
+  }
+  return payload;
+}
+
+Roe<GroupMembershipCodec::GroupPresetChangedPayload> GroupMembershipCodec::DecodeGroupPresetChangedFromMessage(
+    const ThreadMessage& message) {
+  auto detail = DetailFromMessage(message, GroupMembershipControlType::GroupPresetChanged,
+                                  "Message is not a group_preset_changed");
+  if (!detail) {
+    return detail.error();
+  }
+  return DecodeGroupPresetChanged(*detail);
+}
+
 Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeOwnerTransferred(
     const std::string& detail_json) {
   auto json = TryParseObject(detail_json);
@@ -679,19 +730,15 @@ Roe<GroupPolicy> GroupMembershipCodec::DecodeGroupPolicy(const std::string& poli
     return Error("Invalid group policy JSON");
   }
   GroupPolicy policy;
-  if (auto invite_policy = json->getString("invite_policy")) {
-    policy.invite_policy = InvitePolicyWireFromString(*invite_policy);
-  }
-  if (auto history = json->getString("history_visibility")) {
-    policy.history_visibility = HistoryVisibilityFromString(*history);
+  if (auto preset = json->getString("preset")) {
+    policy.preset = GroupPresetFromString(*preset);
   }
   return policy;
 }
 
 std::string GroupMembershipCodec::EncodeGroupPolicy(const GroupPolicy& policy) {
   Object json;
-  json.set("invite_policy", InvitePolicyWireToString(policy.invite_policy));
-  json.set("history_visibility", HistoryVisibilityToString(policy.history_visibility));
+  json.set("preset", GroupPresetToString(policy.preset));
   return DumpJson(json);
 }
 

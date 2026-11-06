@@ -1,5 +1,7 @@
 #include "feature/presenters/ChatPresenter.h"
 
+#include "lib/messaging/GroupPermissions.h"
+
 #include "feature/conversations/ConversationsFacade.h"
 #include "common/runtime/AppRuntime.h"
 #include "common/PbrCompat.h"
@@ -765,13 +767,18 @@ std::optional<MentionRoster> RosterOfGroupThread(ConversationsFacade* facade, co
     return std::nullopt;
   }
   MentionRoster roster;
+  const GroupPreset preset = facade->GroupPresetOf(*group_id).valueOr(GroupPreset::Open);
   if (auto members = facade->ListGroupRoster(*group_id)) {
     for (const GroupRosterMember& member : *members) {
       roster.members.insert(member.member_identity);
+      if (GroupAllows(GroupAction::MentionEveryone, member.role, preset)) {
+        roster.everyone_senders.insert(member.member_identity);
+      }
     }
   }
-  if (auto owner = facade->OwnerIdentity(*group_id)) {
-    roster.owner = *owner;
+  // The owner the signed roster names (G012), whatever role a stale row says.
+  if (auto owner = facade->OwnerIdentity(*group_id); owner && !owner->empty()) {
+    roster.everyone_senders.insert(*owner);
   }
   if (auto identity = facade->GetIdentity()) {
     roster.local_account = identity->account_id;
@@ -826,10 +833,9 @@ std::vector<MentionCandidate> ChatPresenter::ReadMentionCandidates(Conversations
     return {};
   }
   const auto public_name = [facade](const std::string& account_id) { return facade->MemberPublicNameOf(account_id); };
-  // `@everyone` is the owner's: the one the roster names (G012), whatever role a stale row says.
-  const bool local_is_owner = roster->owner == roster->local_account;
-  return AllMentionCandidates(*members, roster->local_account, local_is_owner, public_name,
-                              Tr("chat.mention.everyone_word"));
+  // `@everyone` is the owner's and the admins' (G017).
+  return AllMentionCandidates(*members, roster->local_account, roster->MayMentionEveryone(roster->local_account),
+                              public_name, Tr("chat.mention.everyone_word"));
 }
 
 std::optional<std::string> ChatPresenter::MentionedContact(const std::string& message_id, const size_t run_index) {

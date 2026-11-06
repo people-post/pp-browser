@@ -73,6 +73,7 @@ Roe<bool> KeepStatement(IGroupRosterStore& roster, const GroupRosterStatement& s
     return false;
   }
   metadata->roster_statement_json = ToJsonText(statement);
+  metadata->policy.preset = statement.preset; // the owner's latest word, also for a newcomer (G017)
   if (auto saved = roster.UpsertMetadata(*metadata); !saved) {
     return saved.error();
   }
@@ -116,6 +117,7 @@ Roe<void> Adopt(IGroupRosterStore& roster, const GroupRosterStatement& statement
   }
   metadata->owner_identity = statement.owner_identity;
   metadata->roster_epoch = statement.roster_epoch;
+  metadata->policy.preset = statement.preset;
   metadata->roster_statement_json = ToJsonText(statement);
   return roster.UpsertMetadata(*metadata);
 }
