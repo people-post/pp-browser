@@ -29,15 +29,26 @@
 //   push_wake                           a call push arrives (what FCM's wake does)
 //   stay_connected {on}                 the "Stay connected in the background" setting (P011)
 //   create_group {title, accounts}      a group with these contacts (each invited)
-//   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
-//   group_roster {group_id}             the members this user knows of {members, roles, owner, sync_state,
-//                                       roster_epoch, statement_epoch, held_changes, changes_hash} (G018: the
-//                                       changes held unfolded, and the hash its group copies carry)
+//   group_invites                       group invites in this user's chats {nonce, group_id, title, from,
+//                                       member_count} (G019: the invite shows the count, never the members)
+//   group_roster {group_id}             the members this user knows of {members, roles, added_by, owner, title,
+//                                       preset, sync_state, roster_epoch, statement_epoch, held_changes,
+//                                       changes_hash} (G018: the changes held unfolded, and the hash its group copies
+//                                       carry; G019: added_by maps each member to who brought them in, "" for the
+//                                       first members)
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner (anyone) or an admin (members, G020) removes someone from the group
 //   leave_group {thread}                a member leaves the group (G018: its signed leave), the chat kept
 //   set_group_role {thread, account, role} the owner makes a member admin (role admin) or member again (G017)
 //   set_group_preset {thread, preset}   the owner sets the group open or managed (G017)
+//   invite_to_group {thread, account}   the ordinary invite by account (G019: Open any member, Managed the owner and
+//                                       admins; a member may not invite someone removed — the error says which)
+//   rename_group {thread, title}        rename the group for everyone (the owner; a non-owner the preset lets: a
+//                                       signed `rename` change)
+//   remove_everyone_added_by {thread, account}
+//                                       the owner or an admin removes everyone `account` added (G020 6) {removed}
+//   reinvite_everyone_removed_by {thread, account}
+//                                       the owner invites again everyone `account` removed (G020 6) {invited}
 //   make_group_from_call {title?, accounts?}
 //                                       the call screen's "Make a group…" (G022: a call with no group, 3+ in it) and
 //                                       the picker's Create: everyone else in the call (or the picked `accounts`) is
@@ -749,13 +760,16 @@ public:
       } else {
         std::vector<Value> members;
         Object roles;
+        Object added_by;
         for (const GroupRosterMember& member : *roster) {
           members.emplace_back(member.member_identity);
           roles.set(member.member_identity, MemberRoleToString(member.role));
+          added_by.set(member.member_identity, member.added_by);
         }
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
         out.set("roles", std::move(roles)); // G017: owner / admin / member, as the signed roster says
+        out.set("added_by", std::move(added_by)); // G019: who brought each in ("" for the first members)
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
         }
@@ -767,6 +781,7 @@ public:
             out.setJsonUInt("roster_epoch", (*metadata)->roster_epoch);
             out.set("statement", !(*metadata)->roster_statement_json.empty());
             out.set("preset", GroupPresetToString((*metadata)->policy.preset));
+            out.set("title", (*metadata)->title);
           }
           // G018: the changes held on top of the owner's statement, and what this device's copies say of them.
           const std::string group_id = request->getString("group_id").value_or("");
@@ -821,6 +836,10 @@ public:
       } else {
         Emit(Reply(id, true));
       }
+    } else if (cmd == "invite_to_group" || cmd == "rename_group" || cmd == "remove_everyone_added_by" ||
+               cmd == "reinvite_everyone_removed_by") {
+      ChangeGroup(id, cmd, request->getString("thread").value_or(""), request->getString("account").value_or(""),
+                  request->getString("title").value_or(""));
     } else if (cmd == "make_group_from_call") {
       std::vector<std::string> accounts;
       if (const Array* picked = request->getArray("accounts")) {
@@ -1368,6 +1387,64 @@ private:
         });
   }
 
+  /**
+   * G019 / G020 6, a group chat's member-made changes: invite_to_group (the ordinary invite by account), rename_group,
+   * remove_everyone_added_by {removed} and reinvite_everyone_removed_by {invited}. Invites seal and send on a worker
+   * (as InviteMembersAsync does); a refusal comes back as the error, its message key kept.
+   */
+  void ChangeGroup(int64_t id, const std::string& cmd, const std::string& thread_id, const std::string& account,
+                   const std::string& title) {
+    auto thread = facade_->GetThread(thread_id);
+    if (!thread || !*thread || !(*thread)->group_id) {
+      ReplyError(id, "not a group chat");
+      return;
+    }
+    const std::string group_id = *(*thread)->group_id;
+    if (cmd == "rename_group") {
+      auto renamed = facade_->RenameGroupShared(group_id, title);
+      renamed ? Emit(Reply(id, true)) : ReplyError(id, renamed.error().message);
+      return;
+    }
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    if (cmd == "remove_everyone_added_by") {
+      auto removed = facade_->RemoveEveryoneAddedBy(group_id, account);
+      if (!removed) {
+        ReplyError(id, removed.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.setJsonUInt("removed", static_cast<uint64_t>(*removed));
+      Emit(out);
+      return;
+    }
+    const bool reinvite = cmd == "reinvite_everyone_removed_by";
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<size_t>>(
+        WorkerLane::Normal,
+        [this, reinvite, group_id, account]() -> Roe<size_t> {
+          if (reinvite) {
+            return facade_->ReinviteEveryoneRemovedBy(group_id, account);
+          }
+          if (auto invited = facade_->InviteIdentity(group_id, account); !invited) {
+            return invited.error();
+          }
+          return size_t{1};
+        },
+        [id, reinvite](Roe<size_t> invited) {
+          if (!invited) {
+            ReplyError(id, invited.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          if (reinvite) {
+            out.setJsonUInt("invited", static_cast<uint64_t>(*invited));
+          }
+          Emit(out);
+        });
+  }
+
   /** The invite cards in this user's chats. */
   void ListGroupInvites(int64_t id) {
     auto threads = facade_->ListThreads();
@@ -1394,6 +1471,7 @@ private:
         row.set("group_id", invite->group_id);
         row.set("title", invite->group_title);
         row.set("from", invite->inviter_identity);
+        row.setJsonUInt("member_count", invite->member_count); // G019: 0 when the invite does not say
         rows.push_back(ObjectValue(std::move(row)));
       }
     }

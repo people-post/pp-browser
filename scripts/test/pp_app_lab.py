@@ -2146,6 +2146,178 @@ def scenario_admin_removes_while_owner_is_away(lab):
         raise ProbeError("alice: bob is no longer an admin after the fold (%s)" % ra["roles"])
 
 
+def invite_and_join(inviter, inviter_thread, group_id, newcomer, timeout=60):
+    """`inviter` invites `newcomer` to the group by account (invite_to_group, G019) and `newcomer` taps Accept on
+    that invite — a new one, not one the group sent before: the invite card, and `newcomer`'s group thread."""
+    seen = {i["nonce"] for i in newcomer.cmd("group_invites")["invites"]}
+    inviter.cmd("invite_to_group", thread=inviter_thread, account=newcomer.account, timeout=60)
+    invite = wait_for(lambda: next((i for i in newcomer.cmd("group_invites")["invites"]
+                                    if i["group_id"] == group_id and i["nonce"] not in seen), None), timeout,
+                      "%s: %s's group invite" % (newcomer.name, inviter.name))
+    if invite["from"] != inviter.account:
+        raise ProbeError("%s: the invite is from %s, not %s" % (newcomer.name, invite["from"], inviter.name))
+    accepted = newcomer.cmd("accept_group_invite", nonce=invite["nonce"], group_id=group_id, timeout=60)
+    thread = accepted.get("thread") or wait_for(lambda: group_thread_of(newcomer, group_id), timeout,
+                                                "%s: the group's chat after accepting" % newcomer.name)
+    return invite, thread
+
+
+def wait_added(users, group_id, newcomer, adder, timeout=90):
+    """Each of `users` lists `newcomer` in the group, brought in by `adder` (the roster's added_by, G019)."""
+    def listed(u):
+        r = u.cmd("group_roster", group_id=group_id)
+        return r if newcomer.account in r["members"] and r["added_by"].get(newcomer.account) == adder.account else None
+    for u in users:
+        wait_for(lambda u=u: listed(u), timeout, "%s: %s on the roster, added by %s" % (u.name, newcomer.name,
+                                                                                         adder.name))
+
+
+def refused_invite(u, thread, newcomer, why):
+    """`u`'s invite_to_group for `newcomer` is refused, and says `why` (its message key)."""
+    got = u.cmd("invite_to_group", thread=thread, account=newcomer.account, check=False, timeout=60)
+    if got.get("ok") or why not in str(got.get("error")):
+        raise ProbeError("%s: inviting %s gave %s (wanted %s)" % (u.name, newcomer.name, got, why))
+
+
+def scenario_member_invites_while_owner_is_away(lab):
+    """Members invite (group-chat G019, o4): the group is open, so any member may invite. Alice, the owner, goes
+    offline; Bob invites Dave, his friend and nobody else's. The invite shows how many are in the group, not who.
+    Dave accepts: his accept goes back to Bob, whose device signs the add, sends it to the members and hands Dave the
+    group — so Dave joins with the owner away, and everyone lists him as added by Bob. Bob, Carol and Dave talk in
+    the group. Alice comes back, finds the add in her inbox and folds it into her next statement: Dave stays, added
+    by Bob, and no change is left unfolded."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    d = lab.user("dave")
+    d.wait_mesh()
+    add_contacts([b, d], ["bob=dave"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    before = roster(a)["statement_epoch"]
+    a.quit()  # the owner is away from here on
+
+    invite, threads[d.name] = invite_and_join(b, threads[b.name], group_id, d)
+    if invite.get("member_count") != 3:
+        raise ProbeError("dave: the invite says %s are in the group (wanted 3)" % invite.get("member_count"))
+    wait_added([d, b, c], group_id, d, b)
+    everyone = sorted([a.account, b.account, c.account, d.account])
+    for u in (b, c, d):
+        wait_for(lambda u=u: sorted(roster(u)["members"]) == everyone or None, 60, "%s: all four" % u.name)
+
+    for sender, readers in ((d, (b, c)), (b, (c, d)), (c, (b, d))):
+        text = "%s in the group with dave" % sender.name.rsplit("-", 1)[0]
+        sender.cmd("send_mentions", thread=threads[sender.name], text=text, mentions=[])
+        for r in readers:
+            wait_for(lambda r=r, text=text: said_in(r, threads[r.name], text), 60, "%s: %r" % (r.name, text))
+
+    a.start()
+    a.wait_ready()
+    a.wait_mesh()
+
+    def folded(u):
+        r = roster(u)
+        return r if (sorted(r["members"]) == everyone and r["added_by"].get(d.account) == b.account and
+                     r["held_changes"] == 0 and r["statement_epoch"] > before) else None
+
+    ra = wait_for(lambda: folded(a), 120, "alice: bob's add folded into her statement")
+    rb = wait_for(lambda: folded(b), 60, "bob: the folded statement, nothing left unfolded")
+    if (ra["statement_epoch"], ra["changes_hash"]) != (rb["statement_epoch"], rb["changes_hash"]):
+        raise ProbeError("alice and bob hold different rosters: %s / %s" % (ra, rb))
+
+
+def scenario_managed_group_only_admins_invite(lab):
+    """Who invites in a managed group (group-chat G019, o4): Alice sets the group managed and makes Bob an admin.
+    Carol, a plain member, is refused when she invites Dave (her friend, as he is Bob's); Bob, an admin, invites him:
+    Dave accepts, and everyone lists him as added by Bob."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    d = lab.user("dave")
+    d.wait_mesh()
+    add_contacts([b, c, d], ["bob=dave", "carol=dave"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_preset", thread=threads[a.name], preset="managed")
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: (lambda r: r.get("preset") == "managed" and r["roles"].get(b.account) == "admin")(
+            roster(u)) or None, 40, "%s: managed, bob an admin" % u.name)
+
+    refused_invite(c, threads[c.name], d, "chat.group.err.invite_not_allowed")
+    invite_and_join(b, threads[b.name], group_id, d)
+    wait_added([a, b, c, d], group_id, d, b)
+    if any(i["from"] == c.account for i in d.cmd("group_invites")["invites"]):
+        raise ProbeError("dave: holds an invite from carol, whose invite was refused")
+
+
+def scenario_admin_readmits_a_removed_member(lab):
+    """Bringing back someone removed (group-chat G020 5, o4): Alice makes Bob an admin; Bob removes Dave. Carol, a
+    plain member, may not invite Dave back (he is on the group's removed list); Bob, an admin, may: Dave accepts, the
+    add re-admits him, and he is back on everyone's roster and heard in the group."""
+    users, threads = open_group(lab, 4, contacts=("bob=dave", "carol=dave"))
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    b.cmd("remove_member", thread=threads[b.name], account=d.account)
+    for u in (a, c):
+        wait_for(lambda u=u: d.account not in roster(u)["members"] or None, 60, "%s: dave removed by bob" % u.name)
+    wait_for(lambda: roster(d).get("sync_state") == "removed" or None, 60, "dave: his group read-only")
+
+    refused_invite(c, threads[c.name], d, "chat.group.err.invite_removed")
+    _, threads[d.name] = invite_and_join(b, threads[b.name], group_id, d)
+    wait_added([a, b, c, d], group_id, d, b)
+    wait_for(lambda: roster(d).get("sync_state") == "active" or None, 60, "dave: his group active again")
+    d.cmd("send_mentions", thread=threads[d.name], text="back again", mentions=[])
+    for u in (a, b, c):
+        wait_for(lambda u=u: said_in(u, threads[u.name], "back again"), 60, "%s: dave heard again" % u.name)
+
+
+def scenario_remove_everyone_they_added(lab):
+    """Undoing someone's invites (group-chat G020 6, o4): in an open group Bob invites two friends of his, who join
+    as added by Bob. Alice makes Carol an admin; Carol removes everyone Bob added in one go: both are gone from every
+    roster, and Bob, a first member, stays."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    extras = [lab.user(name) for name in ("erin", "frank")]
+    for x in extras:
+        x.wait_mesh()
+    add_contacts([b] + extras, ["bob=erin", "bob=frank"])
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    for x in extras:
+        invite_and_join(b, threads[b.name], group_id, x)
+        wait_added([a, b, c], group_id, x, b)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=c.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(c.account) == "admin" or None, 40,
+                 "%s: carol is an admin" % u.name)
+    removed = c.cmd("remove_everyone_added_by", thread=threads[c.name], account=b.account, timeout=60)
+    if removed.get("removed") != 2:
+        raise ProbeError("carol: removed %s of the two bob added" % removed.get("removed"))
+    left = sorted([a.account, b.account, c.account])
+    for u in users:
+        wait_for(lambda u=u: sorted(roster(u)["members"]) == left or None, 60,
+                 "%s: bob's two gone, bob still in" % u.name)
+    for x in extras:
+        wait_for(lambda x=x: roster(x).get("sync_state") == "removed" or None, 60,
+                 "%s: the group read-only" % x.name)
+
+
 def scenario_call_grows_into_a_group(lab):
     """Make a group during a call (group-chat G022, o3): Alice calls Bob, then adds Carol, whom Bob does not know.
     With three in a call that started 1:1, everyone's call screen offers "Make a group…". Bob makes one: the
@@ -3353,6 +3525,10 @@ SCENARIOS = [
     ("call_grows_into_a_group", scenario_call_grows_into_a_group),
     ("group_call_guest", scenario_group_call_guest),
     ("admin_removes_while_owner_is_away", scenario_admin_removes_while_owner_is_away),
+    ("member_invites_while_owner_is_away", scenario_member_invites_while_owner_is_away),
+    ("managed_group_only_admins_invite", scenario_managed_group_only_admins_invite),
+    ("admin_readmits_a_removed_member", scenario_admin_readmits_a_removed_member),
+    ("remove_everyone_they_added", scenario_remove_everyone_they_added),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
