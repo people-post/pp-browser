@@ -257,13 +257,26 @@ TEST_F(GraceUnlockTest, TouchAfterForgetDoesNotResurrect) {
   EXPECT_EQ(Try(Clock(1200)), GraceUnlock::Status::Missing);
 }
 
-TEST_F(GraceUnlockTest, TouchDoesNotReopenAClosedWindow) {
+// Touch runs only in the foreground: the user is here, so an entry that has run out is renewed from now.
+TEST_F(GraceUnlockTest, TouchRenewsAnExpiredEntry) {
   ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000, 7))));
-  const ByteVector entry = store_.items.at(grace_->EntryName());
-  ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(1900, 7)))); // already past its end
-  ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(10, 8))));   // another boot
-  EXPECT_EQ(store_.items.at(grace_->EntryName()), entry);
-  EXPECT_EQ(Try(Clock(1950, 7)), GraceUnlock::Status::Expired);
+  ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(5000, 7)))); // long past its end 1900
+  EXPECT_EQ(EntryExpiry(store_.items.at(grace_->EntryName())), 5900);
+  EXPECT_EQ(Try(Clock(5899, 7)), GraceUnlock::Status::Found);
+  EXPECT_EQ(Try(Clock(5900, 7)), GraceUnlock::Status::Expired);
+}
+
+TEST_F(GraceUnlockTest, TouchAfterAnotherBootRenewsToo) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000, 7))));
+  ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(10, 8)))); // rebooted, app back in the foreground
+  const ByteVector& entry = store_.items.at(grace_->EntryName());
+  EXPECT_EQ(entry[1 + 32], 8); // boot_id rewritten from the clock
+  EXPECT_EQ(EntryExpiry(entry), 910);
+  auto got = grace_->TryUnlock(Clock(500, 8));
+  ASSERT_TRUE(static_cast<bool>(got));
+  EXPECT_EQ(got->status, GraceUnlock::Status::Found);
+  EXPECT_EQ(got->dek, TestDek());
+  EXPECT_EQ(Try(Clock(500, 7)), GraceUnlock::Status::Expired); // the old boot no longer matches
 }
 
 TEST_F(GraceUnlockTest, TouchRewritesOnlyTheStoreEntry) {

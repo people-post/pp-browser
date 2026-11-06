@@ -223,11 +223,9 @@ Roe<void> GraceUnlock::Touch(const int minutes, const GraceClock& now) {
   if (!entry) {
     return {};
   }
-  // A window that has already closed (or is from another boot) is not reopened: TryUnlock deletes it.
-  if (entry->expires_mono <= now.mono_seconds || entry->boot_id != now.boot_id) {
-    return {};
-  }
-  ByteVector bytes = EncodeEntry(entry->key, entry->boot_id, ExpiryFrom(now, minutes));
+  // Touch runs only while the app is in the foreground, so the user is here now: that is the last use the window
+  // counts from, even when the entry had already run out or comes from an earlier boot (same K_grace, new clock).
+  ByteVector bytes = EncodeEntry(entry->key, now.boot_id, ExpiryFrom(now, minutes));
   auto stored = store_.Write(EntryName(), bytes, SecureBlobAccess::kWhenUnlocked);
   Wipe(bytes);
   if (!stored) {

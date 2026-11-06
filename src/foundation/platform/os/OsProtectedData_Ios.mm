@@ -9,6 +9,7 @@
 #include <uuid/uuid.h>
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -39,35 +40,54 @@ void RunHandlers() {
   }
 }
 
-void InstallObserver() {
+// Last known protectedDataAvailable, for callers off the main thread (UIApplication is main-thread only). Kept up to
+// date by the two UIKit notifications and by every main-thread read; until the first of those it says "available",
+// and the Keychain read that follows is what decides (it answers Unavailable while the device is locked).
+std::atomic<bool> g_available{true};
+
+void InstallObservers() {
   std::call_once(g_observer_once, [] {
-    // Never removed: one observer for the process, the registry above decides who hears about it.
-    // queue nil → the block runs on the posting thread (UIKit posts this on the main thread).
-    [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
-                                                      object:nil
-                                                       queue:nil
-                                                  usingBlock:^(NSNotification* /*note*/) {
-                                                    RunHandlers();
-                                                  }];
+    // Never removed: one pair for the process, the registry above decides who hears about it.
+    // queue nil → the blocks run on the posting thread (UIKit posts these on the main thread).
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    [center addObserverForName:UIApplicationProtectedDataDidBecomeAvailable
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification* /*note*/) {
+                      g_available.store(true);
+                      RunHandlers();
+                    }];
+    [center addObserverForName:UIApplicationProtectedDataWillBecomeUnavailable
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification* /*note*/) {
+                      g_available.store(false);
+                    }];
   });
+}
+
+bool ReadOnMainThread() {
+  const bool available = [UIApplication sharedApplication].protectedDataAvailable;
+  g_available.store(available);
+  return available;
 }
 
 } // namespace
 
 bool ProtectedDataAvailable() {
-  // UIApplication is main-thread only: read it there (synchronously from another thread).
+  InstallObservers();
   if ([NSThread isMainThread]) {
-    return [UIApplication sharedApplication].protectedDataAvailable;
+    return ReadOnMainThread();
   }
-  __block BOOL available = YES;
-  dispatch_sync(dispatch_get_main_queue(), ^{
-    available = [UIApplication sharedApplication].protectedDataAvailable;
+  // Never block on the main thread (it may be waiting for this one): answer from the cache, refresh it there.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    (void)ReadOnMainThread();
   });
-  return available;
+  return g_available.load();
 }
 
 ProtectedDataHandlerId OnProtectedDataAvailable(std::function<void()> fn) {
-  InstallObserver();
+  InstallObservers();
   std::lock_guard<std::mutex> lock(g_mutex);
   const ProtectedDataHandlerId id = g_next_id++;
   g_handlers.emplace(id, std::move(fn));
