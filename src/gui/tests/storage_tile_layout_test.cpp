@@ -21,8 +21,17 @@ namespace {
 
 class TallTextureRender : public ui::RenderInterface {
 public:
+  struct Draw {
+    ui::TextureHandle texture;
+    bool scissor;
+    ui::Rectanglei region;
+  };
+  std::vector<Draw> draws;  // every draw with the scissor in force at that moment
+
   ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
-  void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle) override {}
+  void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle texture) override {
+    draws.push_back({texture, scissor_on, scissor_region});
+  }
   void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
   ui::TextureHandle LoadTexture(ui::Vector2i& dimensions, const ui::String&) override {
     dimensions = {1000, 3000};
@@ -30,8 +39,10 @@ public:
   }
   ui::TextureHandle GenerateTexture(ui::Span<const ui::byte>, ui::Vector2i) override { return 1; }
   void ReleaseTexture(ui::TextureHandle) override {}
-  void EnableScissorRegion(bool) override {}
-  void SetScissorRegion(ui::Rectanglei) override {}
+  void EnableScissorRegion(bool enable) override { scissor_on = enable; }
+  void SetScissorRegion(ui::Rectanglei region) override { scissor_region = region; }
+  bool scissor_on = false;
+  ui::Rectanglei scissor_region;
 };
 
 std::string ReadAll(const std::string& path) {
@@ -177,6 +188,24 @@ TEST_F(StorageTileLayoutTest, EveryTileKeepsOneFixedBoxAndAPortraitPictureIsClip
     }
   }
   EXPECT_TRUE(tall_image_seen);
+}
+
+// The layout boxes above only say where the picture is laid out; what reaches the screen is decided at paint time.
+// A picture draw (the fake renderer's texture 2) must happen with the scissor on and inside its tile's frame.
+TEST_F(StorageTileLayoutTest, ATallPictureIsPaintedUnderAScissorInsideItsTile) {
+  renderer.draws.clear();
+  context->Render();
+  int pictures = 0;
+  for (const auto& draw : renderer.draws) {
+    if (draw.texture != 2) {
+      continue;
+    }
+    ++pictures;
+    ASSERT_TRUE(draw.scissor) << "a picture is drawn with no clip";
+    EXPECT_EQ(draw.region.Height(), 116) << "the clip is the tile frame (118dp less 1dp each side)";
+    EXPECT_LE(draw.region.Width(), static_cast<int>(kWidth / 3));
+  }
+  EXPECT_EQ(pictures, 7);
 }
 
 } // namespace
