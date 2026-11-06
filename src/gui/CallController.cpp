@@ -140,6 +140,20 @@ void CallController::SyncLocalHold() {
   if (in_call) {
     backend->SetLocalOnHold(held);
   }
+  // Privacy: nothing of the other call may reach this one through our mic; a mute the user made before stays.
+  if (const auto mute = hold_mute_.Next(held, in_call && backend->Media().IsMuted()); mute && in_call) {
+    backend->SetLocalAudioMuted(*mute);
+  }
+  // The camera rests meanwhile, as in the background; still in the background at the end, OnAppForeground brings it.
+  if (held && !video_paused_ && backend->Media().IsCameraEnabled()) {
+    video_paused_ = true;
+    backend->SetLocalVideoPaused(true);
+  } else if (!held && video_paused_ && AppLifecycle::IsForeground()) {
+    video_paused_ = false;
+    if (backend && backend->Available()) {
+      backend->SetLocalVideoPaused(false);
+    }
+  }
 }
 
 void CallController::OnAppBackground() {
@@ -154,7 +168,7 @@ void CallController::OnAppBackground() {
 }
 
 void CallController::OnAppForeground() {
-  if (!video_paused_) {
+  if (!video_paused_ || local_on_hold_) {  // on hold: the camera comes back when the hold ends (SyncLocalHold)
     return;
   }
   video_paused_ = false;

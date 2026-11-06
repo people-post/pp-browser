@@ -1161,7 +1161,7 @@
     "call.status.connecting": "Connecting…",
     "call.placeholder.starting_video": "Starting video…",
     "call.status.reconnecting": "Reconnecting…",
-    "call.status.on_hold_local": "Another call is using your microphone. This call comes back when it ends.",
+    "call.status.on_hold_local": "On another call",
     "call.status.on_hold_peer": "They stepped away. Please wait.",
     "call.status.on_hold_peer_named": "They stepped away. Please wait.",
     "call.status.connected": "Connected",
