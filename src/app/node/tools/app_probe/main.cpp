@@ -30,6 +30,8 @@
 //   group_roster {group_id}             the members this user knows of
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner removes a member from the group
+//   set_group_role {thread, account, role} the owner makes a member admin (role admin) or member again (G017)
+//   set_group_preset {thread, preset}   the owner sets the group open or managed (G017)
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
@@ -695,11 +697,14 @@ public:
         ReplyError(id, roster.error().message);
       } else {
         std::vector<Value> members;
+        Object roles;
         for (const GroupRosterMember& member : *roster) {
           members.emplace_back(member.member_identity);
+          roles.set(member.member_identity, MemberRoleToString(member.role));
         }
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
+        out.set("roles", std::move(roles)); // G017: owner / admin / member, as the signed roster says
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
         }
@@ -710,6 +715,7 @@ public:
             out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));
             out.setJsonUInt("roster_epoch", (*metadata)->roster_epoch);
             out.set("statement", !(*metadata)->roster_statement_json.empty());
+            out.set("preset", GroupPresetToString((*metadata)->policy.preset));
           }
         }
         Emit(out);
@@ -722,6 +728,29 @@ public:
                                                                 request->getString("account").value_or(""));
                  !removed) {
         ReplyError(id, removed.error().message);
+      } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "set_group_role" || cmd == "set_group_preset") {
+      auto thread = facade_->GetThread(request->getString("thread").value_or(""));
+      Roe<void> set = Error("not a group chat");
+      if (thread && *thread && (*thread)->group_id) {
+        const std::string group_id = *(*thread)->group_id;
+        if (cmd == "set_group_role") {
+          const std::string role = request->getString("role").value_or("");
+          set = role == "admin" || role == "member"
+                    ? facade_->SetMemberRole(group_id, request->getString("account").value_or(""),
+                                             MemberRoleFromString(role))
+                    : Roe<void>(Error("role must be admin or member"));
+        } else {
+          const std::string preset = request->getString("preset").value_or("");
+          set = preset == "open" || preset == "managed"
+                    ? facade_->SetGroupPreset(group_id, GroupPresetFromString(preset))
+                    : Roe<void>(Error("preset must be open or managed"));
+        }
+      }
+      if (!set) {
+        ReplyError(id, set.error().message);
       } else {
         Emit(Reply(id, true));
       }

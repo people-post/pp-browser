@@ -2054,6 +2054,46 @@ def scenario_muted_group_alerts_on_a_mention(lab):
         raise ProbeError("carol: a mention with mentions muted gave %s" % notice)
 
 
+def scenario_group_owner_appoints_an_admin(lab):
+    """Roles and presets (group-chat G017, o1): Alice, the owner, makes Bob an admin. Every member's roster says so,
+    from the roster Alice signed, and the group's chat says who made whom an admin. As an admin Bob's `@everyone`
+    reaches Carol, muted and away, as the owner's does. Alice sets the group managed: everyone holds the preset.
+    Alice takes Bob's role back: his `@everyone` no longer reaches anyone."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    group_id = plan_group(a, threads[a.name])
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    wait_for(lambda: any(r["text"] == "Member made admin" and r["from"] == a.account
+                         for r in c.cmd("transcript", thread=threads[c.name])["rows"]) or None, 20,
+             "carol: the line saying alice made bob an admin")
+
+    c_thread = threads[c.name]
+    c.cmd("mute", thread=c_thread)
+    c.cmd("show_chat", thread=c.cmd("open_chat", account=a.account)["thread"])  # the group is not the open chat
+    c.cmd("minimize")
+    b.cmd("send_mentions", thread=threads[b.name], text="@everyone meeting at five", mentions=[], everyone=True)
+    notice = next_message_notice(c, c_thread, 0)
+    if not notice.get("mentions_us") or not notice.get("alerts"):
+        raise ProbeError("carol: an admin's @everyone gave %s" % notice)
+
+    a.cmd("set_group_preset", thread=threads[a.name], preset="managed")
+    for u in users:
+        wait_for(lambda: roster(u).get("preset") == "managed" or None, 40, "%s: the group is managed" % u.name)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="member")
+    wait_for(lambda: roster(c)["roles"].get(b.account) == "member" or None, 40, "carol: bob is a member again")
+    b.cmd("send_mentions", thread=threads[b.name], text="@everyone once more", mentions=[], everyone=True)
+    notice = next_message_notice(c, c_thread, 1)
+    if notice.get("mentions_us") or notice.get("alerts"):
+        raise ProbeError("carol: a former admin's @everyone gave %s" % notice)
+
+
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
     """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
@@ -3096,6 +3136,7 @@ SCENARIOS = [
     ("a_call_rings_every_device_and_stops_once_answered", scenario_a_call_rings_every_device_and_stops_once_answered),
     ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
+    ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

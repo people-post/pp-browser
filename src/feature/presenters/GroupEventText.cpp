@@ -81,6 +81,23 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
                ? line("chat.group_event.owner_left", "chat.group_event.you_owner_left", transferred->new_owner_identity)
                : line("chat.group_event.owner", "chat.group_event.you_owner", transferred->new_owner_identity);
   }
+  case GroupMembershipControlType::MemberRoleChanged: {
+    auto changed = GroupMembershipCodec::DecodeMemberRoleChangedFromMessage(message);
+    if (!changed) {
+      return std::nullopt;
+    }
+    return changed->role == MemberRole::Admin
+               ? line("chat.group_event.made_admin", "chat.group_event.you_made_admin", changed->member_identity)
+               : line("chat.group_event.admin_removed", "chat.group_event.you_admin_removed", changed->member_identity);
+  }
+  case GroupMembershipControlType::GroupPresetChanged: {
+    auto changed = GroupMembershipCodec::DecodeGroupPresetChangedFromMessage(message);
+    if (!changed) {
+      return std::nullopt;
+    }
+    return Tr(changed->preset == GroupPreset::Managed ? "chat.group_event.preset_managed"
+                                                      : "chat.group_event.preset_open");
+  }
   case GroupMembershipControlType::GroupInviteDecline:
     return line("chat.group_event.declined", nullptr, message.sender_contact_id);
   case GroupMembershipControlType::GroupDissolved: {
@@ -116,7 +133,11 @@ bool IsStoredGroupEventText(const std::string& preview) {
                                        "Group forked",
                                        "Forked from group",
                                        "Invitation declined",
-                                       "Group dissolved"};
+                                       "Group dissolved",
+                                       "Member made admin",
+                                       "Member no longer admin",
+                                       "Group set to managed",
+                                       "Group set to open"};
   for (const char* text : kExact) {
     if (preview == text) {
       return true;

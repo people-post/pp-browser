@@ -71,10 +71,11 @@ O (open groups, G017–G022, calls V062): o1 ── o2 ── o4 ── o5
 Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus changes instead of a general log; two presets; no bans, approval, invite count or history setting). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status. Not in O: message requests (G023 item 3) — privacy project. The relay's view of groups is in o2 (G018 item 7).
 
 **o1 — Roles and presets (G017)**
-- [ ] `admin` role live; one permission function every check calls (signer, action, latest statement)
-- [ ] Presets Open (default) / Managed in the owner's statement; set by the owner in the group's settings
-- [ ] `@everyone` for the owner and admins (G015 amendment): eligibility, the composer offer, the transcript highlight
-- [ ] Appoint / demote an admin (owner), shown in the member list
+- [x] `admin` role live; one permission function every check calls (`GroupAllows`, `lib/messaging/GroupPermissions.h`); the unused `GroupPermission` flags and `invite_policy` / `history_visibility` fields removed
+- [x] Presets Open (default) / Managed in the owner's statement (sign bytes v2, clean cutover; `group_metadata.policy_json` `{preset}`); receivers take roles and preset on keep and adopt; the owner sets it (`SetGroupPreset`, probe `set_group_preset`) — **its switch in the group's settings comes with o4**: until members' invites and renames carry on the wire, "members add people" would not be true
+- [x] `@everyone` for the owner and admins (G015 amendment): eligibility (`MentionVerdictFor`), the composer offer and the send-time check, the transcript highlight (`MentionRoster::everyone_senders`)
+- [x] Appoint / demote an admin (owner): `member_role_changed` / `group_preset_changed` with the re-signed roster, refused unless the roster bears them out; "Make admin" / "Remove as admin" in the member menu and the person's group-admin card; the Admin badge in the member list and group info; the group chat's line
+- [x] gtests (`group_permissions_test`, the statement's preset and admins, `GroupSettingIngestTest`, mention alert / roster, member tap); lab `group_owner_appoints_an_admin`
 
 **o2 — Changes on top of the owner's statement (G018)**
 - [ ] Changes signed by the device key and checked against the signer's card; the statement stays account-signed (G018 item 9); a change carries the signer's card when the receiver may lack it

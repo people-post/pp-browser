@@ -151,7 +151,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G015 — Mentions in group messages
 
 **Date:** 2026-10-30  
-**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits); **implemented** 2026-10-30 (phases m1–m6, [PHASES](PHASES.md)). The composer also opens the picker after non-ASCII text (a Chinese draft has no space before `@`). — `@everyone` **amended by [G017](#g017--open-groups-roles-and-two-presets)** (accepted 2026-11-05, not built): the owner and admins  
+**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits); **implemented** 2026-10-30 (phases m1–m6, [PHASES](PHASES.md)). The composer also opens the picker after non-ASCII text (a Chinese draft has no space before `@`). — `@everyone` **amended by [G017](#g017--open-groups-roles-and-two-presets)** (implemented 2026-11-05): the owner and admins  
 **Decision:**
 
 | Part | Rule |
@@ -196,7 +196,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G017 — Open groups: roles and two presets
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G001 (owner-only invites) and G015 (`@everyone` owner-only). Until O ships, `docs/` and the code hold the old rules.
+**Status:** Accepted (Hongwei, 2026-11-05) — **o1 implemented 2026-11-05** (roles, the preset in the owner's statement, `@everyone` for admins: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)); the preset takes effect with o4 (members invite and rename). Amends G001 (owner-only invites) and G015 (`@everyone` owner-only). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
 **Decision:** Groups are **open by invite**: members may bring people in, and the owner and admins keep order. There is no group directory or public join (open by invite only, for now).
 
 1. **Roles.** `owner` (one), `admin` (any number, appointed and demoted by the owner), `member`. Roles live in the owner's signed statement (G012, G018).

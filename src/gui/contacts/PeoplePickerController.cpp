@@ -756,6 +756,8 @@ void PeoplePickerController::SyncGroupMemberRows() {
     std::string subtitle;
     if (member.is_owner) {
       subtitle = Tr("people_picker.badge_owner");
+    } else if (member.is_admin) {
+      subtitle = Tr("people_picker.badge_admin");
     }
     if (member.unreachable) {
       subtitle += (subtitle.empty() ? "" : " · ") + Tr("people_picker.badge_unreachable");
@@ -1345,6 +1347,12 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
                          [this, group_id = group_id_, row]() { ReinviteMember(group_id, row); },
                          "../icons/group.svg"});
     }
+    if (!row.invited && !row.is_owner) {
+      actions.push_back({row.is_admin ? "member_remove_admin" : "member_make_admin",
+                         Tr(row.is_admin ? "people_picker.remove_admin" : "people_picker.make_admin"), nullptr,
+                         [this, group_id = group_id_, row]() { SetMemberAdmin(group_id, row, !row.is_admin); },
+                         "../icons/v2/shield.svg"});
+    }
     if (!row.invited) {
       actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
                          [this, group_id = group_id_, row]() { RemoveMember(group_id, row); }, "../icons/trash.svg",
@@ -1454,6 +1462,14 @@ void PeoplePickerController::OfferAdminCard(const GroupMemberTap& tap, const std
       card.can_reinvite = true;
       card.reinvite = [this, group_id, row]() { ReinviteMember(group_id, row); };
       break;
+    case GroupMemberAction::MakeAdmin:
+    case GroupMemberAction::RemoveAdmin: {
+      const bool admin = action == GroupMemberAction::MakeAdmin;
+      card.can_set_admin = true;
+      card.is_admin = !admin;
+      card.set_admin = [this, group_id, row, admin]() { SetMemberAdmin(group_id, row, admin); };
+      break;
+    }
     case GroupMemberAction::Remove:
       card.can_remove = true;
       card.remove = [this, group_id, row](std::function<void()> done) { RemoveMember(group_id, row, std::move(done)); };
@@ -1502,6 +1518,30 @@ void PeoplePickerController::ReinviteMember(const std::string& group_id, const G
       NotifySurfaceChanged();
     }
   });
+}
+
+void PeoplePickerController::SetMemberAdmin(const std::string& group_id, const GroupMemberRow& row, const bool admin) {
+  if (group_id.empty() || !picker_ports_.set_member_role) {
+    return;
+  }
+  if (auto set = picker_ports_.set_member_role(group_id, row.identity, admin ? MemberRole::Admin : MemberRole::Member);
+      !set) {
+    UserFeedback::Fail(set.error().message);
+    return;
+  }
+  ShowToast(Tr(admin ? "people_picker.made_admin" : "people_picker.admin_removed", {{"name", row.title}}));
+  // The person's page keeps its card, now offering the other way round.
+  GroupMemberRow updated = row;
+  updated.is_admin = admin;
+  OfferAdminCard(DecideGroupMemberTap(updated, false, true), group_id, updated);
+  if (contacts_ports_.notify_thread_changed) {
+    contacts_ports_.notify_thread_changed();
+  }
+  if (layer_id_ >= 0 && mode_ == PeoplePickerMode::GroupMembers && group_id_ == group_id) {
+    SyncGroupMemberRows();
+    DirtyAll();
+  }
+  NotifySurfaceChanged();
 }
 
 void PeoplePickerController::RemoveMember(const std::string& group_id, const GroupMemberRow& row,

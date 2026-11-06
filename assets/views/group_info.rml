@@ -72,6 +72,7 @@
             <span class="cd-row-body">
               <span class="cd-row-text">{{member.title}}</span>
               <span class="cd-tag" data-if="member.owner">{{i18n:group_info.owner}}</span>
+              <span class="cd-tag" data-if="member.admin">{{i18n:group_info.admin}}</span>
               <span class="cd-tag cd-tag--muted" data-if="member.unreachable">{{i18n:group_info.unreachable}}</span>
               <svg class="cd-chevron" data-if="!member.self" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </span>

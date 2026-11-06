@@ -22,6 +22,7 @@ struct GroupInfoMemberRow {
   ui::String letter;
   int tone = 0;
   bool owner = false;
+  bool admin = false;
   bool unreachable = false;
   /** This device's own row: shown, not tappable. */
   bool self = false;

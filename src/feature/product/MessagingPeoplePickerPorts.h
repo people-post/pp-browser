@@ -37,6 +37,9 @@ struct MessagingPeoplePickerPorts {
   /** A member who is not a contact: the nickname on their kept account card (empty if none). */
   std::function<std::string(const std::string& account_id)> kept_card_nickname;
   std::function<Roe<void>(const std::string& group_id, const std::string& member_identity)> remove_member_by_identity;
+  /** Owner (G017): make a member an admin, or a member again. */
+  std::function<Roe<void>(const std::string& group_id, const std::string& member_identity, MemberRole role)>
+      set_member_role;
   /** Owner: one invite per contact on a worker; `done` on the UI thread. Application fills it from the facade. */
   std::function<void(const std::string& group_id, std::vector<std::string> contact_ids,
                      std::function<void(GroupInviteBatchResult)> done)>

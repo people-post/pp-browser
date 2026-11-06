@@ -139,6 +139,8 @@ private:
   void ReinviteMember(const std::string& group_id, const GroupMemberRow& row);
   /** Asks first; `removed` runs once the person is out (the owner's profile sheet then closes). */
   void RemoveMember(const std::string& group_id, const GroupMemberRow& row, std::function<void()> removed = {});
+  /** Owner (G017): make `row` an admin, or a member again; a toast says which, the rows refresh. */
+  void SetMemberAdmin(const std::string& group_id, const GroupMemberRow& row, bool admin);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,

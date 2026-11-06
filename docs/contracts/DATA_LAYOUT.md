@@ -68,6 +68,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # with the AI; cleared by the session menu or clearing the chat. Added on open when missing — user_version unchanged)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
+                            # group_metadata.policy_json: {"preset": "open"|"managed"} (group-chat G017; older keys ignored)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed
                             # roster held and a restored group's member check — group-chat G012/G013, plaintext, additive)
                             # group_metadata.sync_state: active | checking | removed | dissolved. dissolved (G016): the owner ended the

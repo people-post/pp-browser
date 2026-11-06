@@ -143,6 +143,8 @@ struct GroupMemberRow {
   /** The saved contact's id; empty for someone who is not a contact yet. */
   std::string contact_id;
   bool is_owner = false;
+  /** G017: an admin the owner appointed (from the owner-signed roster). */
+  bool is_admin = false;
   bool unreachable = false;
   /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
   bool invited = false;
@@ -175,7 +177,7 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
 
 /** One row of the owner's "Group admin" card on a member's profile (phones). */
-enum class GroupMemberAction { Reinvite, Remove };
+enum class GroupMemberAction { Reinvite, MakeAdmin, RemoveAdmin, Remove };
 
 /** The grey note beside Re-invite: why the person is offered one. */
 enum class GroupReinviteNote { None, NotJoined, Unreachable };
@@ -197,8 +199,8 @@ struct GroupMemberTap {
 };
 /**
  * The profile for anyone but ourselves. The owner's card: Re-invite (a contact still waiting, noted "not joined yet",
- * or out of reach, noted "can't be reached"), Remove (anyone on the roster). Handing the group over is not here: it
- * happens when the owner leaves.
+ * or out of reach, noted "can't be reached"), Make admin / Remove as admin (anyone on the roster, G017), Remove (anyone
+ * on the roster). Handing the group over is not here: it happens when the owner leaves.
  */
 GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
 

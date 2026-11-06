@@ -203,6 +203,7 @@ public:
   bool GroupAdminShown() const { return admin_shown_; }
   /** The card's Remove row, as its tap does (tests, and the view). */
   void OnGroupAdminRemove();
+  void OnGroupAdminSetAdmin();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
   /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */
@@ -394,6 +395,8 @@ private:
   bool admin_shown_ = false;
   bool admin_can_reinvite_ = false;
   bool admin_can_remove_ = false;
+  bool admin_can_set_admin_ = false;
+  bool admin_is_admin_ = false;
   ui::String admin_reinvite_note_;
   void ClearGroupAdminCard();
   /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */

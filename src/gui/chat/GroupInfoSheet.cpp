@@ -31,6 +31,7 @@ bool GroupInfoSheet::Register(ui::Context* context) {
       row.RegisterMember("letter", &GroupInfoMemberRow::letter);
       row.RegisterMember("tone", &GroupInfoMemberRow::tone);
       row.RegisterMember("owner", &GroupInfoMemberRow::owner);
+      row.RegisterMember("admin", &GroupInfoMemberRow::admin);
       row.RegisterMember("unreachable", &GroupInfoMemberRow::unreachable);
       row.RegisterMember("self", &GroupInfoMemberRow::self);
     }
@@ -157,6 +158,7 @@ void GroupInfoSheet::Apply(const GroupInfoScreen& screen) {
     row.letter = glyph.letter.c_str();
     row.tone = glyph.tone;
     row.owner = member.is_owner;
+    row.admin = member.is_admin;
     row.unreachable = member.unreachable;
     row.self = !screen.self_identity.empty() && member.identity == screen.self_identity;
     view_.members.push_back(std::move(row));

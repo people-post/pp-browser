@@ -13,8 +13,12 @@ namespace pbr {
 struct GroupAdminCard {
   bool can_reinvite = false;
   std::string reinvite_note;
+  /** G017: Make admin, or Remove as admin when `is_admin`. */
+  bool can_set_admin = false;
+  bool is_admin = false;
   bool can_remove = false;
   std::function<void()> reinvite;
+  std::function<void()> set_admin;
   std::function<void(std::function<void()> done)> remove;
 };
 

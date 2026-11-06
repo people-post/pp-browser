@@ -49,6 +49,7 @@ GroupMemberRow BuildGroupMemberRow(const GroupRosterMember& member, const std::o
   row.identity = member.member_identity;
   row.stable_id = contact ? ContactAvatarStableId(*contact) : member.member_identity;
   row.is_owner = member.role == MemberRole::Owner;
+  row.is_admin = member.role == MemberRole::Admin;
   row.unreachable = unreachable;
   if (contact) {
     row.contact_id = contact->id;
@@ -86,6 +87,9 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
     if (a.is_owner != b.is_owner) {
       return a.is_owner;
     }
+    if (a.is_admin != b.is_admin) {
+      return a.is_admin; // those who keep order next (G017)
+    }
     return a.title < b.title;
   });
 }
@@ -105,6 +109,7 @@ GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_sel
     tap.reinvite_note = row.invited ? GroupReinviteNote::NotJoined : GroupReinviteNote::Unreachable;
   }
   if (!row.invited) {
+    tap.admin_actions.push_back(row.is_admin ? GroupMemberAction::RemoveAdmin : GroupMemberAction::MakeAdmin);
     tap.admin_actions.push_back(GroupMemberAction::Remove);
   }
   return tap;
