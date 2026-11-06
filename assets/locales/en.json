@@ -371,6 +371,7 @@
     "settings.storage.attachment_policy.on_demand": "Nothing (saves data)",
     "settings.storage.manage.used": "used by PP on this device",
     "settings.storage.manage.counting": "Counting…",
+    "settings.storage.manage.kind.all": "All",
     "settings.storage.manage.kind.picture": "Photos",
     "settings.storage.manage.kind.video": "Videos",
     "settings.storage.manage.kind.file": "Files",
