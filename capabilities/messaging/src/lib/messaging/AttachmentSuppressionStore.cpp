@@ -1,4 +1,5 @@
 #include "lib/messaging/AttachmentSuppressionStore.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -89,21 +90,9 @@ Roe<void> AttachmentSuppressionStore::SaveUnlocked() const {
   Object root;
   root.set("threads", ObjectValue(std::move(threads)));
 
-  const auto path = std::filesystem::path(StorePath());
-  const auto temp = path.string() + ".tmp";
-  {
-    std::ofstream output(temp, std::ios::trunc);
-    if (!output) {
-      return Error("Failed to write attachment suppression store");
-    }
-    output << DumpJson(root, 2);
-    if (!output) {
-      return Error("Failed to write attachment suppression store");
-    }
-  }
-  std::filesystem::rename(temp, path, ec);
-  if (ec) {
-    return Error("Failed to write attachment suppression store");
+  // Replaced whole and synced: what the user deleted stays deleted after a crash.
+  if (auto written = AtomicFileWrite::Write(StorePath(), DumpJson(root, 2)); !written) {
+    return Error("Failed to write attachment suppression store: " + written.error().message);
   }
   return Roe<void>{};
 }

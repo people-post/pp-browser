@@ -1,4 +1,5 @@
 #include "lib/messaging/AttachmentCache.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -120,23 +121,11 @@ Roe<void> WriteBytesAtomic(const std::filesystem::path& path, const ByteVector& 
   if (ec) {
     return Error("Failed to create attachment cache directory");
   }
-  const auto tmp = path.string() + ".tmp";
-  {
-    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-    if (!out) {
-      return Error("Failed to write attachment cache file");
-    }
-    if (!bytes.empty()) {
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    }
-    if (!out) {
-      return Error("Failed to write attachment cache file");
-    }
-  }
-  std::filesystem::rename(tmp, path, ec);
-  if (ec) {
-    std::filesystem::remove(tmp);
-    return Error("Failed to finalize attachment cache file");
+  // A view is made again from the attachment's block: replaced whole, not synced. Two makers of one view at once
+  // (a preview and a thumbnail) each have a temp file of their own (AtomicFileWrite).
+  const std::string_view data(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+  if (auto written = AtomicFileWrite::Write(path.string(), data, AtomicFileWrite::Sync::None); !written) {
+    return Error("Failed to write attachment cache file: " + written.error().message);
   }
   return {};
 }

@@ -1,4 +1,5 @@
 #include "lib/net/RelayInboxCursor.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -49,16 +50,9 @@ void SaveRelayInboxCursor(const std::string& profile_data_dir, const std::string
   Object root;
   root.set("relay_user_id", relay_user_id);
   root.set("cursor", cursor);
-  const auto path = CursorPath(profile_data_dir);
-  const auto tmp = path.string() + ".tmp";
-  {
-    std::ofstream out(tmp, std::ios::trunc);
-    if (!out) {
-      return;
-    }
-    out << DumpJson(root);
-  }
-  std::filesystem::rename(tmp, path, ec);
+  // Replaced whole, not synced: written at every sync, and a cursor lost to a crash only fetches again what the
+  // inbox drops as already seen.
+  (void)AtomicFileWrite::Write(CursorPath(profile_data_dir).string(), DumpJson(root), AtomicFileWrite::Sync::None);
 }
 
 } // namespace pbr

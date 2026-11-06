@@ -1,4 +1,5 @@
 #include "lib/content/CasStore.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
 
@@ -8,20 +9,15 @@
 #include "foundation/crypto/FileCipher.h"
 #include "common/PbrCompat.h"
 
-#include <atomic>
-#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <thread>
 
 namespace pbr {
 namespace {
 
 constexpr char kPpbaMagic[4] = {'P', 'P', 'B', 'A'};
-/** A refused final rename is tried again this many times, waiting 2, 4 … 64 ms (about 0.13 s in all). */
-constexpr int kFinalizeRetries = 6;
 
 Roe<void> ValidateContentId(const ByteVector& content_id) {
   if (content_id.size() != kCasContentIdSize) {
@@ -73,44 +69,11 @@ bool CasStore::Exists(const CasRealm realm, const ByteVector& content_id) const 
 
 Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& bytes,
                                    const std::string_view prefix) const {
-  std::error_code ec;
-  std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
-  if (ec) {
-    return Error("Failed to create CAS block directory");
-  }
-  // One temporary file per write: the same bytes can be stored by two at once (a download and a forward of one
-  // file), and a shared name let one move the other's half-written copy into place, or find it gone.
-  static std::atomic<uint64_t> tmp_seq{0};
-  const std::string tmp = path + ".tmp" + std::to_string(tmp_seq.fetch_add(1));
-  {
-    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-    if (!out) {
-      return Error("Failed to write CAS block");
-    }
-    if (!prefix.empty()) {
-      out.write(prefix.data(), static_cast<std::streamsize>(prefix.size()));
-    }
-    if (!bytes.empty()) {
-      out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    }
-    if (!out) {
-      return Error("Failed to write CAS block");
-    }
-  }
-  // Windows does not replace a file another handle has open (a reader of the same block, a virus scanner looking at
-  // a file just written): wait a little for it rather than fail the store.
-  for (int attempt = 0;; ++attempt) {
-    ec.clear();
-    std::filesystem::rename(tmp, path, ec);
-    if (!ec || attempt >= kFinalizeRetries) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(2 << attempt));
-  }
-  if (ec) {
-    std::error_code ignored;
-    std::filesystem::remove(tmp, ignored);
-    return Error("Failed to finalize CAS block: " + ec.message());
+  // AtomicFileWrite: a temp file of its own (the same bytes can be stored by two at once: a download and a forward
+  // of one file), and on Windows a short wait for a handle someone has open on the block. Not synced: a block is
+  // fetched again, and an fsync per attachment costs a phone more than it keeps.
+  if (auto written = AtomicFileWrite::Write(path, prefix, bytes, AtomicFileWrite::Sync::None); !written) {
+    return Error("Failed to write CAS block: " + written.error().message);
   }
   return {};
 }
