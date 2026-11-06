@@ -9921,13 +9921,24 @@ input.checkbox {
 }
 
 /* The transcript runs up under the header bar (the wrap starts 63dp down: the 56dp bar, the header row's 8dp margin
-   less the 1dp it overlaps) and ends at the composer, fading into it; its padding keeps the first and last bubbles
-   clear at rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner
-   between header and transcript covers what runs under it. */
+   less the 1dp it overlaps) and ends at the composer, fading into it; its top padding keeps the first bubble clear at
+   rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner between header
+   and transcript covers what runs under it. The engine leaves a scroller's own bottom padding out of its scroll
+   height, so the last bubble is kept clear of the composer's 16dp fade by a spacer at the end (.composer-clear:
+   16dp + 12dp; #89). */
 .shell-chat-overlay .chat-messages-wrap .messages {
   top: -63dp;
   padding-top: 63dp;
-  padding-bottom: 12dp;
+  padding-bottom: 0;
+}
+
+.composer-clear {
+  display: none;
+}
+
+.shell-chat-overlay .composer-clear {
+  display: block;
+  height: 28dp;
 }
 
 .shell-chat-overlay .chat-gap-banner,
@@ -9936,9 +9947,12 @@ input.checkbox {
   z-index: 1;
 }
 
+/* Edge to edge like the transcript and the composer under it (the panel's 12dp side padding cancelled, #89). */
 .shell-chat-overlay .chat-composer-fade {
   top: auto;
   bottom: 0;
+  left: -12dp;
+  right: -12dp;
   z-index: 1;
 }
 

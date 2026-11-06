@@ -153,5 +153,44 @@ TEST(ChatSendKeepsKeyboardSourceTest, OnSendMessageDoesNotBlurTheDraft) {
   EXPECT_EQ(body.find("close_keyboard"), std::string::npos);
 }
 
+// #89 (Kenneth 2026-11-05): the fade over the composer stopped a bubble tail short of both screen edges (it sat inside
+// the chat panel's 12dp side padding, which the transcript cancels); the composer itself runs edge to edge and down.
+TEST_F(ChatBottomChromeTest, TheComposerAndItsFadeRunEdgeToEdge) {
+  const Edges overlay = BorderEdges(ByClass("shell-chat-overlay"));
+  ui::Element* fade = ByClass("chat-composer-fade");
+  ui::Element* mount = document->GetElementById("shell-composer-mount");
+  ASSERT_NE(fade, nullptr);
+  ASSERT_NE(mount, nullptr);
+  const Edges f = BorderEdges(fade);
+  const Edges m = BorderEdges(mount);
+  EXPECT_FLOAT_EQ(f.left, overlay.left);
+  EXPECT_FLOAT_EQ(f.right, overlay.right);
+  EXPECT_FLOAT_EQ(f.bottom, m.top) << "the fade sits right on the composer";
+  EXPECT_FLOAT_EQ(m.left, overlay.left);
+  EXPECT_FLOAT_EQ(m.right, overlay.right);
+  EXPECT_FLOAT_EQ(m.bottom, overlay.bottom);
+}
+
+// #89: scrolled to the latest, the last message stood under the composer's fade (the transcript's bottom padding is
+// left out of its scroll height by the engine); the spacer at the end keeps it clear.
+TEST_F(ChatBottomChromeTest, TheLatestMessageEndsAboveTheComposerFade) {
+  ui::Element* messages = document->GetElementById("chat-messages");
+  ui::Element* clear = ByClass("composer-clear");
+  ASSERT_NE(messages, nullptr);
+  ASSERT_NE(clear, nullptr) << "the transcript's end spacer shows on the phone";
+  ui::Element* last = nullptr;
+  for (int i = 0; i < 30; ++i) {
+    ui::ElementPtr row = document->CreateElement("div");
+    row->SetProperty("height", "60dp");
+    last = messages->InsertBefore(std::move(row), clear);
+  }
+  context->Update();
+  // What ChatTranscriptScroller does for "scroll to the latest".
+  messages->SetScrollTop(std::max(0.f, messages->GetScrollHeight() - messages->GetClientHeight()));
+  context->Update();
+  const Edges fade = BorderEdges(ByClass("chat-composer-fade"));
+  EXPECT_LE(BorderEdges(last).bottom, fade.top - 8.f) << "the last message ends clear above the fade";
+}
+
 } // namespace
 } // namespace pbr
