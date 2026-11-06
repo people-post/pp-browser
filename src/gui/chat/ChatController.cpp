@@ -2812,16 +2812,8 @@ void ChatController::OnSendMessage() {
     return;
   }
 
-  // On a phone the on-screen keyboard stays up for as long as the composer has focus; sending is what closes it.
-  const auto close_keyboard = [this] {
-    if (!Platform::IsMobile() || !context_ || context_->GetNumDocuments() == 0) {
-      return;
-    }
-    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-      draft->Blur();
-    }
-  };
-
+  // Sending keeps the draft focused, so the keyboard stays up for the next line (#90); a tap on the transcript
+  // takes the focus and closes it (pp-cpp-ui moves the focus off the field on release).
   if (!text.empty()) {
     if (auto valid = ChatPresenter::ValidateDraft(text); !valid) {
       ShowToast(Tr(valid.error().message));
@@ -2835,7 +2827,6 @@ void ChatController::OnSendMessage() {
       chat_.draft = "";
       DirtyChatChrome();
       scroller_.RequestScrollToLatest();
-      close_keyboard();
     }
     return;
   }
@@ -2848,7 +2839,6 @@ void ChatController::OnSendMessage() {
   // Picks of members who left since are dropped here (read at send), as the receiver would not light them anyway.
   if (std::vector<TextSpan> spans = presenter_.SpansOnRoster(thread_id, mentions_.SpansFor(thread_id, text));
       presenter_.SendsWithMentions(thread_id, out, spans)) {
-    close_keyboard();
     SendWithMentions(thread_id, text, out, std::move(spans));
     return;
   }
@@ -2856,7 +2846,6 @@ void ChatController::OnSendMessage() {
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
-  close_keyboard();
   CancelQuoteReply();
   SendUserText(out);
 }
