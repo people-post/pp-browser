@@ -6,9 +6,14 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <string>
+#include <thread>
+#include <vector>
 #include <gtest/gtest.h>
 
 namespace pbr {
@@ -69,6 +74,70 @@ TEST_F(CasStoreTest, PrivatePutGetRoundTripAndPpbaMagic) {
   // generic_string() uses '/' on all platforms (Windows CI returns '\' from native paths).
   const std::string generic = path.generic_string();
   EXPECT_NE(generic.find("/blocks/" + hex.substr(0, 2) + "/" + hex.substr(2, 2) + "/" + hex), std::string::npos);
+}
+
+// The same bytes stored by two at once (a download and a forward of one file, two chats' downloads): every put
+// succeeds and the block reads back whole. They used to share one temporary file, so one could move the other's
+// half-written copy into place, or find it gone.
+TEST_F(CasStoreTest, TwoWritersOfTheSameBlockBothSucceedAndItReadsBackWhole) {
+  ByteVector plain(64 * 1024);
+  for (size_t i = 0; i < plain.size(); ++i) {
+    plain[i] = static_cast<uint8_t>(i * 31 + 7);
+  }
+  auto hash = AttachmentContentHash(plain);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x5a);
+  constexpr int kWriters = 4;
+  constexpr int kPuts = 50;
+  std::atomic<int> failed{0};
+  std::vector<std::thread> writers;
+  for (int w = 0; w < kWriters; ++w) {
+    writers.emplace_back([&] {
+      for (int i = 0; i < kPuts; ++i) {
+        if (!store_->PutPrivate(*hash, plain, dek, "application/octet-stream", "same.bin")) {
+          failed.fetch_add(1);
+        }
+      }
+    });
+  }
+  for (std::thread& writer : writers) {
+    writer.join();
+  }
+  EXPECT_EQ(failed.load(), 0);
+  auto loaded = store_->GetPrivate(*hash, dek);
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain);
+  // No temporary file is left next to the block.
+  int stray = 0;
+  for (const auto& entry :
+       std::filesystem::directory_iterator(std::filesystem::path(store_->BlockPath(CasRealm::Private, *hash)).parent_path())) {
+    stray += entry.path().filename().string().find(".tmp") != std::string::npos ? 1 : 0;
+  }
+  EXPECT_EQ(stray, 0);
+}
+
+// A block someone is reading is rewritten (the bytes stored again while a view or a thumbnail reads them): the put
+// waits for the reader instead of failing. Windows cannot replace a file another handle has open; elsewhere it can.
+TEST_F(CasStoreTest, ABlockBeingReadCanBeStoredAgain) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x33);
+  ASSERT_TRUE(store_->PutPrivate(*hash, plain_, dek, "text/plain", "read.txt"));
+  std::atomic<bool> open{false};
+  std::thread reader([&] {
+    std::ifstream in(store_->BlockPath(CasRealm::Private, *hash), std::ios::binary);
+    open.store(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  });
+  while (!open.load()) {
+    std::this_thread::yield();
+  }
+  auto put = store_->PutPrivate(*hash, plain_, dek, "text/plain", "read.txt");
+  reader.join();
+  ASSERT_TRUE(put) << put.error().message;
+  auto loaded = store_->GetPrivate(*hash, dek);
+  ASSERT_TRUE(loaded) << loaded.error().message;
+  EXPECT_EQ(*loaded, plain_);
 }
 
 TEST_F(CasStoreTest, PrivateWrongDekFails) {

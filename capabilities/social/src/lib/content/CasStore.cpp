@@ -8,14 +8,20 @@
 #include "foundation/crypto/FileCipher.h"
 #include "common/PbrCompat.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <thread>
 
 namespace pbr {
 namespace {
 
 constexpr char kPpbaMagic[4] = {'P', 'P', 'B', 'A'};
+/** A refused final rename is tried again this many times, waiting 2, 4 … 64 ms (about 0.13 s in all). */
+constexpr int kFinalizeRetries = 6;
 
 Roe<void> ValidateContentId(const ByteVector& content_id) {
   if (content_id.size() != kCasContentIdSize) {
@@ -72,7 +78,10 @@ Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& by
   if (ec) {
     return Error("Failed to create CAS block directory");
   }
-  const std::string tmp = path + ".tmp";
+  // One temporary file per write: the same bytes can be stored by two at once (a download and a forward of one
+  // file), and a shared name let one move the other's half-written copy into place, or find it gone.
+  static std::atomic<uint64_t> tmp_seq{0};
+  const std::string tmp = path + ".tmp" + std::to_string(tmp_seq.fetch_add(1));
   {
     std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
     if (!out) {
@@ -88,10 +97,20 @@ Roe<void> CasStore::WriteBlockFile(const std::string& path, const ByteVector& by
       return Error("Failed to write CAS block");
     }
   }
-  std::filesystem::rename(tmp, path, ec);
+  // Windows does not replace a file another handle has open (a reader of the same block, a virus scanner looking at
+  // a file just written): wait a little for it rather than fail the store.
+  for (int attempt = 0;; ++attempt) {
+    ec.clear();
+    std::filesystem::rename(tmp, path, ec);
+    if (!ec || attempt >= kFinalizeRetries) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(2 << attempt));
+  }
   if (ec) {
-    std::filesystem::remove(tmp);
-    return Error("Failed to finalize CAS block");
+    std::error_code ignored;
+    std::filesystem::remove(tmp, ignored);
+    return Error("Failed to finalize CAS block: " + ec.message());
   }
   return {};
 }
@@ -234,7 +253,6 @@ Roe<void> CasStore::Delete(const CasRealm realm, const ByteVector& content_id) {
   }
   return {};
 }
-
 
 Roe<ByteVector> CasStore::PublishFromPrivate(const ByteVector& private_content_id, const ByteVector& dek) {
   auto plaintext = GetPrivate(private_content_id, dek);
