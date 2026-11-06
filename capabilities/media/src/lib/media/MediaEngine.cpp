@@ -1253,6 +1253,7 @@ struct MediaEngine::Impl {
           continue;
         }
         bool paced_silence_frame = false;
+        bool interruption_silence_logged = false;  // once per interruption: a stuck flag shows in the log
         if (capture_available) {
           int16_t chunk[kFrameSamples];
           capture_stage.Set(MediaThreadStage::ReadMic);
@@ -1316,7 +1317,16 @@ struct MediaEngine::Impl {
             if (muted.load(std::memory_order_relaxed) || AudioSession::IsInterrupted()) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
+              if (AudioSession::IsInterrupted()) {
+                if (!interruption_silence_logged) {
+                  EngineLog().info << "outgoing audio is silence: the OS has the audio session";
+                  interruption_silence_logged = true;
+                }
+              } else {
+                interruption_silence_logged = false;
+              }
             } else {
+              interruption_silence_logged = false;
 #ifdef PP_BROWSER_CALL_DENOISE
               if (!vpio_on) {  // voice processing suppresses noise itself
                 denoise.Process(pcm.data(), pcm.size());
