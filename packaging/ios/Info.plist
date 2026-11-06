@@ -116,6 +116,14 @@
         <string>pp-browser-contact-v1</string>
       </array>
     </dict>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>dev.pp-browser.ios.group-join</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>pp</string>
+      </array>
+    </dict>
   </array>
 </dict>
 </plist>

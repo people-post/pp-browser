@@ -1407,10 +1407,14 @@ void Application::WireUnlockPinAndFlow() {
   }
   // Invite links the OS opens the app with (QR codes, tapped links); those from a cold start waited.
   IncomingLink::SetHandler([this](const std::string& link) {
+    if (chat_ && chat_->OfferGroupJoin(link)) {
+      return; // a group's invite link (G021, pp://join/…)
+    }
     if (contacts_) {
       contacts_->OfferInvite(link);
     }
   });
+  contacts_->BindGroupJoinOffer([this](const std::string& text) { return chat_ && chat_->OfferGroupJoin(text); });
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {

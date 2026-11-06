@@ -92,6 +92,30 @@
         </div>
       </div>
 
+      <!-- G021: our invite link (whoever the preset lets make one), and the group's live links for the owner and
+           admins, each with Revoke. -->
+      <div class="cd-card" data-if="show_invite_link">
+        <button class="cd-row" type="button" data-event-click="group_info_invite_link()">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:group_info.invite_link}}</span>
+            <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+      <div data-if="show_links">
+        <p class="cd-header">{{i18n:group_info.links}}</p>
+        <div class="cd-card cd-card--headed">
+          <button class="cd-row" type="button" data-for="link : links" data-class-cd-row--static="!link.can_revoke"
+                  data-event-click="group_info_revoke_link(link.link_id)">
+            <span class="cd-row-body">
+              <span class="cd-row-text">{{link.label}}</span>
+              <span class="cd-row-value">{{link.detail}}</span>
+              <span class="cd-row-text cd-row-text--accent" data-if="link.can_revoke">{{i18n:group_link.revoke}}</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
       <div class="cd-card" data-if="show_leave || show_dissolve">
         <button class="cd-row cd-row--danger" type="button" data-if="show_leave" data-event-click="group_info_leave()">
           <span class="cd-row-body"><span class="cd-row-text">{{i18n:chat.group.leave_title}}</span></span>

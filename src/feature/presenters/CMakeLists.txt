@@ -8,6 +8,7 @@ pp_browser_add_feature_library(pp_feature_presenters
     CallSystemUiBridge.cpp
     ChatPresenter.cpp
     GroupEventText.cpp
+    GroupLinkText.cpp
     HomeBrief.cpp
     HomeToday.cpp
     QuickReactions.cpp

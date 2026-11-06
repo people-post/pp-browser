@@ -76,6 +76,10 @@ public:
   }
   void GroupInfoLeave(const std::string& t) override { calls.push_back("leave:" + t); }
   void GroupInfoDissolve(const std::string& g) override { calls.push_back("dissolve:" + g); }
+  void GroupInfoInviteLink(const std::string& g) override { calls.push_back("invite_link:" + g); }
+  void GroupInfoRevokeLink(const std::string& g, const std::string& link) override {
+    calls.push_back("revoke_link:" + g + ":" + link);
+  }
 
   bool Called(const std::string& call) const { return std::find(calls.begin(), calls.end(), call) != calls.end(); }
 };
@@ -213,6 +217,32 @@ TEST_F(GroupInfoSheetTest, AnOpenGroupsMemberAddsAndRenamesForEveryone) {
   sheet.AddMember();
   EXPECT_TRUE(host.Called("rename_everyone:t1"));
   EXPECT_TRUE(host.Called("add:t1"));
+}
+
+// G021: "Invite link…" opens our link's sheet; the owner's list of live links revokes one, a member sees no list.
+TEST_F(GroupInfoSheetTest, TheInviteLinkRowAndTheOwnersLinksWithRevoke) {
+  GroupInfoFacts facts = Facts(/*owner=*/true);
+  facts.now_ms = 1'000'000;
+  facts.links = {{.link_id = "l1", .maker = "acct:a", .expires_at = 1'000'000 + 3 * 86'400'000LL, .can_revoke = true}};
+  host.screen = BuildGroupInfoScreen(facts);
+  ASSERT_TRUE(sheet.Open("t1"));
+  EXPECT_TRUE(sheet.View().show_invite_link);
+  ASSERT_TRUE(sheet.View().show_links);
+  ASSERT_EQ(sheet.View().links.size(), 1u);
+  EXPECT_EQ(std::string(sheet.View().links[0].label.c_str()), Tr("group_link.someones", {{"name", "Ann"}}));
+  sheet.InviteLink();
+  EXPECT_TRUE(host.Called("invite_link:g1"));
+  sheet.RevokeLink("l1");
+  EXPECT_TRUE(host.Called("revoke_link:g1:l1"));
+  sheet.RevokeLink("not-listed");
+  EXPECT_FALSE(host.Called("revoke_link:g1:not-listed"));
+
+  facts = Facts(/*owner=*/false);
+  facts.links = {{.link_id = "l1", .maker = "acct:a", .expires_at = 2'000'000, .can_revoke = false}};
+  host.screen = BuildGroupInfoScreen(facts);
+  sheet.Refresh();
+  EXPECT_TRUE(sheet.View().show_invite_link) << "an open group's member makes links";
+  EXPECT_FALSE(sheet.View().show_links) << "only the owner and admins see the group's links";
 }
 
 TEST_F(GroupInfoSheetTest, MuteShowsItsStateAndOffersUnmuteWhenOn) {

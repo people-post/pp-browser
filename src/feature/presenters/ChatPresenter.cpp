@@ -204,6 +204,21 @@ GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
   screen.preset = facts.preset;
   screen.show_leave = true;
   screen.show_dissolve = facts.is_owner;
+  screen.show_invite_link = ShowsInviteLink(role, facts.preset);
+  if (ListsGroupLinks(role, facts.preset) && !facts.links.empty()) {
+    std::map<std::string, std::string> names;
+    for (const GroupMemberRow& member : facts.members) {
+      names[member.identity] = member.title;
+    }
+    screen.links = BuildGroupLinkRows(
+        facts.links,
+        [&names](const std::string& account) {
+          auto found = names.find(account);
+          return found != names.end() ? found->second : ShortRelayId(account);
+        },
+        facts.self_identity, facts.now_ms);
+    screen.show_links = true;
+  }
   return screen;
 }
 
@@ -656,7 +671,41 @@ GroupInfoScreen ChatPresenter::GroupInfoOf(const std::string& thread_id) {
           BuildGroupMemberRow(member, contact, unreachable.count(member.member_identity) > 0, nickname));
     }
   }
+  facts.links = facade_->GroupInviteLinks(facts.group_id);
+  facts.now_ms = util::NowUnixMs();
   return BuildGroupInfoScreen(facts);
+}
+
+Roe<GroupLinkRow> ChatPresenter::InviteLinkFor(const std::string& group_id) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (std::optional<GroupLinkRow> ours = facade_->OwnInviteLink(group_id)) {
+    return *ours;
+  }
+  auto made = facade_->MakeInviteLink(group_id);
+  if (!made) {
+    log().warning << "MakeInviteLink failed: " << made.error().message;
+    return Error(GroupActionFailureText(made.error()));
+  }
+  auto local = facade_->GetIdentity();
+  return GroupLinkRow{.link_id = made->link_id,
+                      .maker = local ? local->account_id : std::string(),
+                      .expires_at = made->expires_at,
+                      .max_uses = made->max_uses,
+                      .text = made->text,
+                      .can_revoke = true};
+}
+
+Roe<void> ChatPresenter::RevokeInviteLink(const std::string& group_id, const std::string& link_id) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto revoked = facade_->RevokeInviteLink(group_id, link_id); !revoked) {
+    log().warning << "RevokeInviteLink failed: " << revoked.error().message;
+    return Error(GroupActionFailureText(revoked.error()));
+  }
+  return {};
 }
 
 std::string GroupActionFailureText(const Error& error) {
@@ -670,7 +719,8 @@ std::string GroupActionFailureText(const Error& error) {
     return Tr("chat.group.err.owner_only");
   }
   for (const char* key :
-       {kGroupInviteNotAllowedError, kGroupInviteRemovedError, kGroupAlreadyMemberError, kGroupRenameNotAllowedError}) {
+       {kGroupInviteNotAllowedError, kGroupInviteRemovedError, kGroupAlreadyMemberError, kGroupRenameNotAllowedError,
+        kGroupLinkNotAllowedError, kGroupLinkRevokeNotAllowedError, kGroupLinkGoneError}) {
     if (error.message == key) {
       return Tr(key);
     }

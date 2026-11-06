@@ -1,0 +1,26 @@
+<!-- G021: the "Invite link…" sheet over group info — our link to the group as text to copy and a QR code to scan,
+     when it expires, and Revoke. The link names neither the group nor its members; whoever holds it learns ours. -->
+<div class="qr-page" data-model="group_link">
+  <div class="sheet-header">
+    <p class="sheet-title">{{i18n:group_link.title}}</p>
+  </div>
+  <div class="qr-body">
+    <p class="qr-hint" data-if="loading">{{i18n:group_link.making}}</p>
+    <p class="qr-hint" data-if="error != ''">{{error}}</p>
+    <div class="qr-card" data-if="text != ''">
+      <svg class="me-invite-qr-code qr-code" viewBox="0 0 100 100" width="240" height="240"
+           data-rml="qr_svg_rml"></svg>
+    </div>
+    <p class="qr-hint" data-if="text != ''" selectable="text">{{text}}</p>
+    <p class="qr-hint" data-if="text != ''">{{expiry}}</p>
+    <p class="qr-hint" data-if="text != ''">{{i18n:group_link.hint}}</p>
+    <div class="cd-card" data-if="text != ''">
+      <button class="cd-row" type="button" data-event-click="group_link_copy()">
+        <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{i18n:group_link.copy}}</span></span>
+      </button>
+      <button class="cd-row cd-row--danger" type="button" data-if="can_revoke" data-event-click="group_link_revoke()">
+        <span class="cd-row-body"><span class="cd-row-text">{{i18n:group_link.revoke}}</span></span>
+      </button>
+    </div>
+  </div>
+</div>

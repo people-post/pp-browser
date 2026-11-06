@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/presenters/GroupLinkText.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
@@ -245,6 +246,9 @@ struct GroupInfoFacts {
   /** Everyone on the roster, this device too (its row is `self_identity`'s, already titled "You"). */
   std::vector<GroupMemberRow> members;
   std::string self_identity;
+  /** G021: the group's live invite links (GroupInviteLinkWorkflow::LiveLinks), and now (their expiry). */
+  std::vector<GroupLinkRow> links;
+  int64_t now_ms = 0;
 };
 
 /** The group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1): which rows show, and the first members. */
@@ -275,6 +279,10 @@ struct GroupInfoScreen {
   GroupPreset preset = GroupPreset::Open;
   bool show_leave = false;
   bool show_dissolve = false;
+  /** G021: "Invite link…" for whoever the preset lets make links; the live links listed for the owner and admins. */
+  bool show_invite_link = false;
+  bool show_links = false;
+  std::vector<GroupLinkListRow> links;
 
   bool operator==(const GroupInfoScreen&) const = default;
 };
@@ -395,6 +403,13 @@ public:
    */
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
+  /**
+   * G021, "Invite link…": our newest live link to the group whose text we keep, else a new one (7 days). Blocking:
+   * a new link is signed and fanned out — call it off the UI thread.
+   */
+  Roe<GroupLinkRow> InviteLinkFor(const std::string& group_id);
+  /** G021, "Revoke link": its maker's, or (the owner, admins) anyone's. Blocking. */
+  Roe<void> RevokeInviteLink(const std::string& group_id, const std::string& link_id);
   Roe<void> RemoveGroupMember(const std::string& group_id, const std::string& member_identity);
   /** G017, the owner: who can add people and rename (Open / Managed). */
   Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);

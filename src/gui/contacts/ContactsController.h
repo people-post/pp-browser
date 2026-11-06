@@ -75,6 +75,11 @@ public:
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
   void BindScanPorts(ScanPorts ports);
+  /**
+   * G021: a scanned or pasted invite link (`pp://join/…`) goes to the chats' join prompt, which returns true when the
+   * text is one; anything else stays a contact locator's business here.
+   */
+  void BindGroupJoinOffer(std::function<bool(const std::string& text)> offer) { offer_group_join_ = std::move(offer); }
   void BindAccountPorts(ContactsAccountPorts ports);
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
@@ -447,6 +452,7 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
+  std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
   SessionStore* session_store_ = nullptr;
 

@@ -1691,6 +1691,9 @@ void ContactsController::OnScanQr() {
     return;
   }
   scan_ports_.scan_qr([this](std::string text) {
+    if (offer_group_join_ && offer_group_join_(text)) {
+      return; // an invite link to a group (G021): the join prompt asks its maker
+    }
     const bool valid = static_cast<bool>(FindContactLocator(text));
     MetricsLine("scan.contact").Add("valid_locator", valid).Emit();
     if (!valid) {
@@ -1719,6 +1722,9 @@ void ContactsController::OnAddContact() {
 void ContactsController::AddContactByQuery(const std::string& query) {
   if (query.empty()) {
     return;
+  }
+  if (offer_group_join_ && offer_group_join_(query)) {
+    return; // a pasted group invite link (G021)
   }
   // A pasted invite names the person and their devices: no directory needed (ACCOUNT_CARD.md).
   if (query.find(kContactLocatorPrefix) != std::string::npos && contacts_ports_.add_from_locator) {

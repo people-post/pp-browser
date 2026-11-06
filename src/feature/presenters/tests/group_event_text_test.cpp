@@ -124,5 +124,31 @@ TEST_F(GroupEventTextTest, ARemovalNamesWhoRemovedWhom) {
       << "an event that does not say who";
 }
 
+// G021: a join by link says whose link let them in — "Erin joined by Bob's link", for Erin and for Bob too.
+TEST_F(GroupEventTextTest, AJoinByLinkNamesWhoseLinkItWas) {
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto names = [](const std::string& account) {
+    return account == "acct-erin" ? std::string("Erin") : account == "acct-bob" ? std::string("Bob") : account;
+  };
+  const auto joined = [](const std::string& member, const std::string& by, const bool by_link) {
+    GroupMembershipCodec::MemberJoinedPayload payload;
+    payload.group_id = "g";
+    payload.member_identity = member;
+    payload.roster_epoch = 4;
+    payload.added_by = by;
+    payload.by_link = by_link;
+    return Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(payload),
+                 "Member joined the group", by);
+  };
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-bob", true), names, "acct-me").value_or(""),
+            "Erin joined by Bob's link");
+  EXPECT_EQ(GroupEventText(joined("acct-me", "acct-bob", true), names, "acct-me").value_or(""),
+            "You joined by Bob's link");
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-me", true), names, "acct-me").value_or(""),
+            "Erin joined by your link");
+  EXPECT_EQ(GroupEventText(joined("acct-erin", "acct-bob", false), names, "acct-me").value_or(""), "Bob added Erin")
+      << "an invite's add reads as before";
+}
+
 } // namespace
 } // namespace pbr
