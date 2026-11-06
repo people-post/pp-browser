@@ -111,7 +111,7 @@ private:
    * paths (entering / leaving it, its timer, quit) — a push wake or a background sync never extends it.
    */
   void TouchGrace();
-  /** Every minute while in the foreground (the app may be killed without a background event). */
+  /** While in the foreground (the app may be killed without a background event): every half window, 1–5 minutes. */
   void StartGraceTimer();
   void StopGraceTimer();
   /** Both pieces deleted, the timer stopped (the engine's ForgetGrace cannot stop the app's timer). */
