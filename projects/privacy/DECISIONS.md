@@ -80,6 +80,7 @@
 - iOS: a plain cover over the window while the app is not active, so the app switcher's picture shows none of it. iOS cannot stop a screenshot.
 - The recovery phrase hides when the app goes to the background (as it does by itself after two minutes).
 Other screens (chats) are copied as before.
+**Amended 2026-11-05:** desktop windows are left out of screen sharing and screenshots while a secret is up (Windows `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, black on Windows before 10 2004; macOS `NSWindowSharingNone`, where the capturing app honours it; Linux has no such switch). iOS cannot stop a recording or a mirror, so while the recovery phrase can be read and the screen is captured (`UIScreen.isCaptured`), a cover hides the app: "Hidden while your screen is recorded or shared" (`SecureScreen::SetSecretLegible`). The PIN gate is not covered then: a cover would keep the app locked while mirrored to a TV, and its digits show as dots.
 **Rationale:** The phrase and the PIN are the account: a screenshot, a screen recording left running, a cast to a TV or the app switcher's picture copies them somewhere the owner does not control (the photo library, a cloud backup, the system's task snapshots). The PIN gate is covered too: what is typed there is a secret even when it shows as dots. Chats stay as they were — a whole-app screen block is a setting other messengers offer, not a default.
-**Follow-ups:** desktop windows during screen sharing (Windows `WDA_EXCLUDEFROMCAPTURE`, macOS `sharingType`); hiding the phrase while an iOS screen is being recorded or mirrored; an opt-in "screen security" for every screen.
+**Follow-ups:** an opt-in "screen security" for every screen. (Desktop screen sharing and an iOS recording or mirror: done, amendment above.)
 

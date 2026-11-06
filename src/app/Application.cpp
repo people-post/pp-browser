@@ -1985,6 +1985,8 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   });
   shell_->SetSecretPage(
       [this]() { return shell_->State().nav_tab == NavTab::Me && settings_->ShowsSecuritySection(); });
+  shell_->SetSecretLegible(
+      [this]() { return shell_->State().nav_tab == NavTab::Me && settings_->ShowsRecoveryPhrase(); });
   shell_->SetAuxiliaryWidthPref(bootstrap.profile_prefs.auxiliary_width_dp);
   shell_->SetOnAuxiliaryWidthChanged([this](int width_dp) {
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;

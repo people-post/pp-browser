@@ -92,6 +92,8 @@ public:
   bool SheetMountEmpty() const;
   /** Phones: Account & security is the open section (change PIN, recovery phrase: the AI dot keeps off). */
   bool ShowsSecuritySection() const { return show_detail_ && selected_id_ == "security"; }
+  /** Me → Account & security shows the recovery phrase now (it can be read, not only typed). */
+  bool ShowsRecoveryPhrase() const { return ShowsSecuritySection() && security_actions_.RecoveryPhraseShown(); }
   void OnShellLayoutSynced();
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */

@@ -1024,6 +1024,10 @@ void ShellHost::SetOnAiDotMoved(std::function<void(bool left, int y_permille, bo
   on_ai_dot_moved_ = std::move(callback);
 }
 
+void ShellHost::SetSecretLegible(std::function<bool()> showing) {
+  secret_legible_ = std::move(showing);
+}
+
 void ShellHost::SetSecretPage(std::function<bool()> showing) {
   secret_page_ = std::move(showing);
 }
@@ -2356,6 +2360,11 @@ void ShellHost::SyncSecureScreen() {
   if (secret != secret_on_screen_) {
     secret_on_screen_ = secret;
     SecureScreen::SetSecretOnScreen(secret);
+  }
+  const bool legible = secret && secret_legible_ && secret_legible_();
+  if (legible != secret_legible_on_) {
+    secret_legible_on_ = legible;
+    SecureScreen::SetSecretLegible(legible);
   }
 }
 

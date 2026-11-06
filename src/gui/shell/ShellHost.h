@@ -239,6 +239,8 @@ public:
    * not sit on it, and neither it nor the PIN gate is in the OS's copies of the screen (SecureScreen).
    */
   void SetSecretPage(std::function<bool()> showing);
+  /** True while a secret can be read on screen (the recovery phrase shown): SecureScreen::SetSecretLegible. */
+  void SetSecretLegible(std::function<bool()> showing);
 
   bool RegisterWindowModel(ui::Context* context);
 
@@ -427,8 +429,10 @@ private:
   std::function<void()> on_ai_dot_tap_;
   std::function<void(bool, int, bool)> on_ai_dot_moved_;
   std::function<bool()> secret_page_;
+  std::function<bool()> secret_legible_;
   /** What SecureScreen was last told. */
   bool secret_on_screen_ = false;
+  bool secret_legible_on_ = false;
 };
 
 } // namespace pbr
