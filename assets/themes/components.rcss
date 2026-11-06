@@ -5215,9 +5215,16 @@ call-video-tile {
 }
 
 .call-make-group--phone {
-  height: 40dp;
+  height: 44dp;  /* tappable ≥44dp on phones (Kenneth 2026-11-03) */
   padding: 0 18dp;
-  border-radius: 20dp;
+  border-radius: 22dp;
+}
+
+/* The group offer's "Join / Not now / Add to group / Remove from call" buttons: 44dp tall on phones. */
+.shell-layer-compact .call-group-offer-btn {
+  height: 44dp;
+  line-height: 44dp;
+  border-radius: 22dp;
 }
 
 .call-make-group--phone .call-make-group-label {
