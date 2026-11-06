@@ -11978,6 +11978,7 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  clip: always;
 }
 
 .storage-tile--video .storage-tile-frame {
