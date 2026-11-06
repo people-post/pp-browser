@@ -51,6 +51,12 @@ struct ChatScreenState {
   ui::String attachment_status;
   /** A send did not finish: the chip offers Retry / Discard (the staged ciphertext is kept). */
   bool attachment_failed = false;
+  /** The upload card: the bar's fill ("37%"), a small picture of what is sent (picture / video; empty: the type
+   *  badge instead), the badge's text ("MP3", as on the storage page), and Cancel pressed (bar stops, the ✕ dims). */
+  ui::String attachment_progress_width = "0%";
+  ui::String attachment_thumb;
+  ui::String attachment_type_label;
+  bool attachment_cancelling = false;
   /** The camera icon in the composer pill (phones; see ShowCaptureEntry). */
   bool show_capture = false;
   /** The microphone button: this chat can take a voice message (peer or group chat, voice supported here). */

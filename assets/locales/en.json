@@ -835,6 +835,7 @@
     "chat.attachment.space_warning": "Cloud space is {percent}% used — please clear some space.",
     "chat.attachment.uploading": "Sending…",
     "chat.attachment.cancelling": "Cancelling…",
+    "chat.attachment.cancel_send": "Cancel sending",
     "chat.attachment.sending": "Sending…",
     "chat.attachment.downloading": "Downloading…",
     "chat.attachment.downloading_percent": "Downloading {percent}%",

@@ -2,6 +2,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformOpenFile.h"
+#include "gui/AttachmentTypeLabel.h"
 #include "gui/UserFeedback.h"
 #include "gui/chat/MessageTimeLabel.h"
 #include "gui/shell/DataModelHost.h"
@@ -89,19 +90,7 @@ std::string CountsLine(const StorageKindTotals& totals) {
 
 /** "PDF", "ZIP": the file name's extension, else the mime subtype, at most four letters. */
 std::string FileTypeLabel(const StoredAttachmentItem& item) {
-  std::string ext;
-  if (const size_t dot = item.filename.rfind('.'); dot != std::string::npos && dot + 1 < item.filename.size()) {
-    ext = item.filename.substr(dot + 1);
-  } else if (const size_t slash = item.mime.find('/'); slash != std::string::npos) {
-    ext = item.mime.substr(slash + 1);
-  }
-  if (ext.size() > 4) {
-    ext.resize(4);
-  }
-  for (char& c : ext) {
-    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  }
-  return ext;
+  return AttachmentTypeLabel(item.filename, item.mime);
 }
 
 /** Which icon a file tile shows, from the extension, else the mime. */

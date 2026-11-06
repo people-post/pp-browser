@@ -1085,6 +1085,18 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
   return *view;
 }
 
+std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(const std::string& thread_id,
+                                                                         const std::string& message_id,
+                                                                         bool* made_view) {
+  auto view = AttachmentLocalPathForMessage(thread_id, message_id, made_view);
+  auto fields = view ? AttachmentFieldsOfMessage(hub_, thread_id, message_id) : std::nullopt;
+  if (!fields) {
+    return view;
+  }
+  return AttachmentNamedOpenPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime,
+                                 fields->filename, *view);
+}
+
 Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
                                                                           const std::vector<uint8_t>& bytes,
                                                                           const std::string& mime) {

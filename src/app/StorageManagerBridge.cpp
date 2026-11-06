@@ -62,7 +62,7 @@ StorageManagerPorts MakeStorageManagerPorts(ConversationsFacade& facade,
     AppRuntime::PostWorkerNormal([&facade, item, done = std::move(done)]() mutable {
       std::string path;
       bool needs_confirm = false;
-      if (auto view = facade.AttachmentLocalPathForMessage(item.thread_id, item.message_id)) {
+      if (auto view = facade.AttachmentOpenPathForMessage(item.thread_id, item.message_id)) {
         path = std::move(*view);
         needs_confirm = facade.AttachmentOpenNeedsConfirmForMessage(item.thread_id, item.message_id);
       } else if (auto image = facade.AiImageViewPath(item.thread_id, item.content_hash, item.mime)) {

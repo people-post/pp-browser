@@ -59,6 +59,28 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
 bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
 
 /**
+ * The name a file is handed to the system viewer under: the sender's name without any folder part, control or
+ * reserved characters, leading dots or more than 100 bytes, ending in the safe extension AttachmentExtensionFromMime
+ * gives (appended when the name lacks it); `fallback_stem` when nothing of the name is left. Empty when the type
+ * has no safe extension: the stored file is opened as it is (an executable is never given its name back).
+ */
+std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
+                                   const std::string& fallback_stem);
+
+/**
+ * The view file `view_path` under its AttachmentOpenFilename, as a hard link (else a copy) in
+ * `{blobs_view}/{hash}.open/`, so the viewer shows the real name and knows the type (iOS QuickLook decides by the
+ * extension). It goes with the view cache and with the attachment's local delete. `view_path` itself when there is
+ * no safe name or the link cannot be made.
+ */
+std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
+                                    const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                    const std::string& filename, const std::string& view_path);
+/** `{blobs_view}/{hash}.open` (see AttachmentNamedOpenPath). */
+std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
+                                  const std::vector<uint8_t>& content_hash);
+
+/**
  * True when private attachment plaintext may be materialized for inline UI
  * (`blobs_view` / image src). A video above `max_receive_bytes` (AttachmentLimits) returns false: it is
  * never downloaded, so nothing is materialized. Unknown size (`byte_length == 0`) stays permissive.

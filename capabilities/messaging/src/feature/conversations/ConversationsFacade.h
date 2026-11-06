@@ -368,6 +368,9 @@ public:
   /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                            bool* made_view = nullptr);
+  /** The same file under the sender's name (AttachmentNamedOpenPath): what the system viewer is handed. */
+  std::optional<std::string> AttachmentOpenPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                          bool* made_view = nullptr);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   struct StoredAiImage {
     std::vector<uint8_t> content_hash;
