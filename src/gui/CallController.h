@@ -54,6 +54,8 @@ public:
    * Application wires ChatController — no ChatController::Instance().
    */
   void BindPeerLinkRefresh(std::function<void()> callback);
+  /** Opens a chat; used to land on the ringing call's thread after a call-alert tap. */
+  void BindOpenThread(std::function<void(const std::string& thread_id)> callback);
 
   void BindToMessaging();
   void Tick();
@@ -275,6 +277,7 @@ private:
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
   std::function<void()> peer_link_refresh_;
+  std::function<void(const std::string&)> open_thread_;
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;

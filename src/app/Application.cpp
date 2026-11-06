@@ -1187,6 +1187,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       chat_->UpdatePeerLinkChrome();
     }
   });
+  call_->BindOpenThread([this](const std::string& thread_id) {
+    if (chat_) {
+      chat_->OnSelectThread(thread_id);
+    }
+  });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   ICallSystemUi::Instance().SetPendingChangedHandler([this]() { pin_gate_->RefreshCallHint(); });
   flow_->BindShellNavigation(shell_navigation);

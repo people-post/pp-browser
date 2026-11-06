@@ -26,6 +26,7 @@
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
 #include "lib/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
@@ -443,6 +444,10 @@ void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
 
 void CallController::BindPeerLinkRefresh(std::function<void()> callback) {
   peer_link_refresh_ = std::move(callback);
+}
+
+void CallController::BindOpenThread(std::function<void(const std::string& thread_id)> callback) {
+  open_thread_ = std::move(callback);
 }
 
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
@@ -953,6 +958,11 @@ void CallController::Render() {
     return;
   case CallScreen::Kind::Ringing:
     RenderRing(screen);
+    // The ring of a tapped call alert: land on its chat (once; a stale tap expires unused).
+    if (open_thread_ && !screen.thread_id.empty() &&
+        PendingNotificationTap::Instance().TakeCallRoute(PendingNotificationTap::Clock::now())) {
+      AppRuntime::PostUI([this, thread_id = screen.thread_id]() { open_thread_(thread_id); });
+    }
     return;
   case CallScreen::Kind::InCall:
     if (auto* backend = Backend(); backend && backend->Available()) {

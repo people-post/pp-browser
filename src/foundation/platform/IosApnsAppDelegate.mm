@@ -57,6 +57,7 @@ bool IsCallWake(NSDictionary* userInfo) {
   (void)center;
   NSDictionary* userInfo = response.notification.request.content.userInfo;
   if (IsCallWake(userInfo)) {
+    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true);
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
