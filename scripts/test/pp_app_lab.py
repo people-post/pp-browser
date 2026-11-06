@@ -2094,6 +2094,79 @@ def scenario_group_owner_appoints_an_admin(lab):
         raise ProbeError("carol: a former admin's @everyone gave %s" % notice)
 
 
+def scenario_call_grows_into_a_group(lab):
+    """Make a group during a call (group-chat G022, o3): Alice calls Bob, then adds Carol, whom Bob does not know.
+    With three in a call that started 1:1, everyone's call screen offers "Make a group…". Bob makes one: the
+    group starts with him alone and one line ("Group made during a call"), and Alice and Carol each get the
+    ordinary invite, shown as a banner in the call — Carol's too, though Bob is no contact of hers (the invite
+    names the call both are in). Alice joins from the banner; Carol says Not now: she stays in the call and
+    out of the group, and the invite card stays in her chat with Bob. The call is the same call throughout:
+    it does not become the group's (a group's call would drop Carol)."""
+    a, a_thread, b, _ = open_pair(lab)
+    c = lab.user("carol")
+    c.wait_mesh()
+    a.cmd("open_chat", account=c.account)  # Alice and Carol are contacts; Bob and Carol are not
+    c.cmd("open_chat", account=a.account)
+    call_id, _ = connect(a, a_thread, b)
+    if a.state().get("show_make_group"):
+        raise ProbeError("alice: Make a group offered with two in the call")
+    a.cmd("invite_to_call", account=c.account)
+    c.wait_surface("ringing", 40, call_id=call_id)
+    c.cmd("accept_voice")
+    c.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c], call_id)
+    for u in (a, b, c):
+        wait_state(u, lambda s: s.get("show_make_group"), 20, "%s: Make a group… on the call screen" % u.name)
+
+    made = b.cmd("make_group_from_call")
+    group_id = made["group_id"]
+    if sorted(made["invited"]) != sorted([a.account, c.account]):
+        raise ProbeError("bob: invited %s (wanted everyone else in the call)" % made["invited"])
+    if not made["title"]:
+        raise ProbeError("bob: the group has no default name")
+    rows = b.cmd("transcript", thread=made["thread"])["rows"]
+    if [r["text"] for r in rows if r["type"] == "system"] != ["Group made during a call"]:
+        raise ProbeError("bob: the new group's chat is %s (wanted its one line)" % rows)
+    if sorted(b.cmd("group_roster", group_id=group_id)["members"]) != [b.account]:
+        raise ProbeError("bob: someone was added without Join")
+
+    banners = {}
+    for u in (a, c):
+        banners[u.name] = wait_for(lambda: (lambda g: g if g["shown"] else None)(u.cmd("call_group_invite")), 40,
+                                   "%s: the group banner in the call" % u.name)
+        if banners[u.name]["from"] != b.account or banners[u.name]["title"] != made["title"]:
+            raise ProbeError("%s: the banner says %s" % (u.name, banners[u.name]))
+
+    joined = a.cmd("call_group_invite_join")
+    if not joined.get("thread"):
+        raise ProbeError("alice: no group chat after Join")
+    wait_for(lambda: sorted(b.cmd("group_roster", group_id=group_id)["members"]) == sorted([a.account, b.account])
+             or None, 40, "bob: alice in the group")
+    if not any(r["text"] == "Group made during a call" for r in a.cmd("transcript", thread=joined["thread"])["rows"]):
+        raise ProbeError("alice: her group chat does not say it was made during a call")
+    if a.cmd("call_group_invite")["shown"]:
+        raise ProbeError("alice: the banner stays after Join")
+
+    c.cmd("call_group_invite_not_now")
+    if c.cmd("call_group_invite")["shown"]:
+        raise ProbeError("carol: the banner stays after Not now")
+    if not any(i["group_id"] == group_id for i in c.cmd("group_invites")["invites"]):
+        raise ProbeError("carol: the invite card left her chat with bob")
+    if any(t.get("group_id") == group_id for t in c.cmd("threads")["threads"]):
+        raise ProbeError("carol: in the group after Not now")
+
+    # The live call is left alone: the same call, everyone still in it, and not the group's.
+    time.sleep(3)
+    assert_everyone_in_call([a, b, c], call_id)
+    for u in (a, b):
+        group_thread = next(t["id"] for t in u.cmd("threads")["threads"] if t.get("group_id") == group_id)
+        if u.cmd("joinable", thread=group_thread)["call_id"]:
+            raise ProbeError("%s: the new group has a call (the live one became the group's)" % u.name)
+        if u.state().get("call_id") != call_id:
+            raise ProbeError("%s: no longer in the call it was in" % u.name)
+    leave_all([a, b, c])
+
+
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
     """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
@@ -3137,6 +3210,7 @@ SCENARIOS = [
     ("a_newer_device_list_follows_the_messages", scenario_a_newer_device_list_follows_the_messages),
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
+    ("call_grows_into_a_group", scenario_call_grows_into_a_group),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

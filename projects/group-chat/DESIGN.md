@@ -128,7 +128,9 @@ Delivered as **`ChatPayload` system messages** (`content_type=system`) with `con
   "invite_nonce": "uuid",
   "roster_epoch": 1,
   "expires_at": 1735689600000,
-  "actor_role": "owner"
+  "actor_role": "owner",
+  "context": "call",
+  "call_id": "call:…"
 }
 ```
 
@@ -533,7 +535,8 @@ pp://join/<base64url(link_id[16] || secret[16] || expires_at[8] || maker account
 
 ### Make a group during a call (G022)
 
-- **No new wire.** The create-group path and `group_invite`, with `context: "call"` and the `call_id`, so the invitee's device shows the invite as a banner in that call.
+- **No new message.** The create-group path and `group_invite`, with `context: "call"` and the `call_id` (optional fields, written only on such an invite), so the invitee's device shows the invite as a banner in that call; invitees are named by account (people met in the call need not be contacts). Normative: [WIRE_SCHEMAS § Group made during a call](../../docs/contracts/WIRE_SCHEMAS.md).
+- **Consent (amendment, 2026-11-05).** Such an invite passes the invitee's `contacts_only` policy when the invitee is in that live call right now with the inviter (G022 Amended). Messaging asks through a port (`GroupInviteGate::InLiveCallFn`) the product layer fills from the calls (`CallsParticipant::InLiveCallWith`); messaging never names calls.
 
 ### Guests in a group's call
 

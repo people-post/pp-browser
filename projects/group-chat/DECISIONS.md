@@ -333,7 +333,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G022 — Make a group during a call
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
+**Status:** Accepted (Hongwei, 2026-11-05), **amended 2026-11-05** (the consent rule below) — **o3 implemented 2026-11-05**: "Make a group…" on the call screen, the call's people picked, the invite's `context` / `call_id` and the banner ([WIRE_SCHEMAS § Group made during a call](../../docs/contracts/WIRE_SCHEMAS.md)); phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
 **Decision:**
 
 1. **Where:** a call not tied to a group (one that started 1:1 and grew; `origin_group_id` empty), once three or more people are in it. The call screen offers **"Make a group…"**.
@@ -343,8 +343,10 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 5. **The live call is left alone.** It does not become the group's call: group calls drop people who are not in the group (V053), and someone who chose "Not now" must not lose the call. The next call from the group is a group call.
 6. **The new group starts empty**, with one line in its chat: "Group made during a call". The earlier direct chat between the first two stays between them.
 
-**Rationale:** People often grow a 1:1 call into a small group call and then want to keep talking as a group. Turning the call into an invite with one tap keeps the consent of each person and reuses what exists.
-**Alternatives:** Add everyone automatically (no consent; a group lasts and shares profiles, a call does not); attach the live call to the new group (drops whoever has not joined yet).
+**Amended 2026-11-05 — consent for people met in the call.** The people in a call are often not contacts of the one who makes the group (someone else added them to the call), and the invitee's own `group_invite_policy` (`contacts_only` by default, G007 / G019 2) would refuse their invite. So: an invite with `context: "call"` and a `call_id` passes `contacts_only` when this device is **in that live call right now with the inviter in it** (both joined, the call not ended). A blocked inviter is still refused, and `nobody` still means nobody. It stays the ordinary invite — nobody is added without Join — and the maker invites by account, from the cards the call brought. Messaging never names calls: the gate asks through a port (`GroupInviteGate::InLiveCallFn`) that the product layer fills from the calls (`CallsParticipant::InLiveCallWith`). The banner's invites are held in memory only (a call does not outlive the app; the invite card stays in the direct chat).
+
+**Rationale:** People often grow a 1:1 call into a small group call and then want to keep talking as a group. Turning the call into an invite with one tap keeps the consent of each person and reuses what exists. Being in a call together right now is the invitee's own recent choice to talk with the inviter, which is what `contacts_only` stands for; it is narrow (that call, while it lasts) and the invitee still decides.
+**Alternatives:** Add everyone automatically (no consent; a group lasts and shares profiles, a call does not); attach the live call to the new group (drops whoever has not joined yet); leave the policy alone (a group made from a call would reach only the maker's contacts — most often not the person someone else brought in); let any shared call ever count (stale: a call long over is no consent now).
 
 ---
 
