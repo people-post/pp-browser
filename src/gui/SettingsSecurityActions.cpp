@@ -255,6 +255,9 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
     host_.OpenChangePin();
     return;
   }
+  if (recovery_request_in_flight_ != 0 && recovery_request_in_flight_ == recovery_shown_count_) {
+    return;  // a reveal is being checked: a second tap neither errors nor voids it (code review 2026-11-06)
+  }
   if (!recovery_pin_open_) {
     // First tap: the PIN field comes out under the button; the next tap shows the phrase.
     recovery_pin_open_ = true;
@@ -269,10 +272,12 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
   recovery_phrase_pin_ = "";
   // Cancel, the background or a timeout while the PIN is being checked voids this reveal (the count moves on).
   const uint64_t request = ++recovery_shown_count_;
+  recovery_request_in_flight_ = request;
   AppRuntime::PostWorkerNormal([this, pin, request]() {
     auto phrase = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
                                             : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
     AppRuntime::PostUI([this, request, phrase = std::move(phrase)]() mutable {
+      recovery_request_in_flight_ = 0;
       if (request != recovery_shown_count_) {
         return;
       }

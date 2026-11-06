@@ -77,6 +77,8 @@ private:
   bool recovery_pin_open_ = false;
   /** Bumped on every show and hide: a pending auto-hide only acts on the showing it was set for. */
   uint64_t recovery_shown_count_ = 0;
+  /** The request number of a reveal still being checked on a worker (0: none). */
+  uint64_t recovery_request_in_flight_ = 0;
   /** Hides the recovery phrase when the app goes to the background (UI thread, SDL's event). */
   uint64_t background_listener_ = 0;
   /** How long the phrase stays on screen. */

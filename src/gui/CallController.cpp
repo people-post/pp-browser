@@ -137,13 +137,20 @@ void CallController::SyncLocalHold() {
   auto* backend = Backend();
   const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
   const bool held = in_call && AudioSession::IsInterrupted();
-  if (held && local_on_hold_ && !backend->Media().IsMuted()) {
-    hold_mute_.UserToggled();  // unmuted by any path during the hold: the end of the hold changes nothing
+  if (held && local_on_hold_) {
+    // SetLocalAudioMuted posts to the sessions thread: only once the hold's mute has been seen applied does an open
+    // mic mean the user unmuted (by any path); before that it is just the post in flight (code review 2026-11-06).
+    if (backend->Media().IsMuted()) {
+      hold_mute_seen_applied_ = true;
+    } else if (hold_mute_seen_applied_) {
+      hold_mute_.UserToggled();
+    }
   }
   if (held == local_on_hold_) {
     return;
   }
   local_on_hold_ = held;
+  hold_mute_seen_applied_ = false;
   if (held) {
     // The other call rings as a banner on iPhones, so the user still sees PP: the long pill says what PP did; the
     // status line keeps saying it meanwhile (Kenneth 2026-11-06: the pill is the one style for every notice).

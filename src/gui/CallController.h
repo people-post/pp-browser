@@ -226,6 +226,8 @@ private:
   /** Tells the call when the OS takes this device's call audio or gives it back (each tick); mutes the mic and
    *  pauses the camera meanwhile. */
   void SyncLocalHold();
+  /** The hold's own mute has been seen applied (SetLocalAudioMuted is asynchronous): an open mic after that is the user's. */
+  bool hold_mute_seen_applied_ = false;
   CallHoldMute hold_mute_;
   /** The app went to the background in a call with the camera on: the camera is paused until it is back. */
   bool video_paused_ = false;
