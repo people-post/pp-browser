@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
 
 namespace pbr {
 
@@ -81,7 +80,9 @@ bool IsAudioFileAttachment(const std::string& mime, const std::string& filename)
   if (mime.rfind("audio/", 0) == 0) {
     return true;
   }
-  std::string ext = std::filesystem::path(filename).extension().string();
+  // Not std::filesystem::path: on Windows a UTF-8 name outside the ANSI code page throws there.
+  const size_t dot = filename.rfind('.');
+  std::string ext = dot == std::string::npos ? std::string() : filename.substr(dot);
   std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return ext == ".mp3" || ext == ".m4a" || ext == ".wav" || ext == ".aac" || ext == ".ogg";
 }
