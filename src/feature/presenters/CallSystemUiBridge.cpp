@@ -2,7 +2,6 @@
 
 #include "common/Diag.h"
 #include "common/Utilities.h"
-#include "lib/media/AudioSession.h"
 
 #include <algorithm>
 #include <utility>
@@ -62,7 +61,6 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     if (!ringing && !answering && !in_call) {
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
       shown_.clear();
-      AudioSession::SetSystemManaged(false);
     } else if (!ringing && !shown_answered_) {
       // Answered in the app: its own call screen shows the call.
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::AnsweredElsewhere);
@@ -99,7 +97,6 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     if (answered) {
       shown_answered_ = true;
       Note("accept_applied");
-      AudioSession::SetSystemManaged(true);
       if (actions_.accept) {
         actions_.accept(!screen.ring_video);
       }
@@ -122,12 +119,10 @@ void CallSystemUiBridge::OnMessagingReady() {
 }
 
 void CallSystemUiBridge::OnAudioSession(const bool active) {
-  AudioSession::NotifySystemActivation(active);
   if (active) {
     Note("audio_on");
   } else {
     Note("audio_off");
-    AudioSession::SetSystemManaged(false);
   }
 }
 
@@ -135,7 +130,6 @@ void CallSystemUiBridge::OnPendingGone() {
   Note("pending_gone");
   answer_pending_at_ms_ = 0;
   decline_pending_at_ms_ = 0;
-  AudioSession::SetSystemManaged(false);
 }
 
 void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
@@ -150,7 +144,6 @@ void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
     return;
   }
   Note("answer_ring");
-  AudioSession::SetSystemManaged(true);
   shown_answered_ = true;
   if (actions_.accept) {
     actions_.accept(!screen_.ring_video);

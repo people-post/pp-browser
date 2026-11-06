@@ -19,6 +19,19 @@
 
 namespace pbr {
 
+namespace {
+
+/** The `call_id` of a call control message (`payload_json.detail` is itself a JSON string); empty if absent. */
+std::string CallIdOf(const ThreadMessage& control) {
+  const auto payload = TryParseObject(control.payload_json);
+  const auto detail = payload ? payload->getString("detail") : std::nullopt;
+  const auto detail_json = detail ? TryParseObject(*detail) : std::nullopt;
+  const auto call_id = detail_json ? detail_json->getString("call_id") : std::nullopt;
+  return call_id ? *call_id : std::string{};
+}
+
+} // namespace
+
 ControlLane::ControlLane(IdentityStore& identity, OwnCards& own_keys, ContactsStore& contacts, PeerRouteBook& routes,
                          E2ePublicSessionKeys& keys, std::function<IDirectMessageClient*()> direct_chat, DeliveryOutbox& outbox)
     : identity_(identity), own_keys_(own_keys), contacts_(contacts), routes_(routes), keys_(keys), direct_chat_(std::move(direct_chat)),
@@ -113,6 +126,9 @@ Roe<void> ControlLane::Send(const std::string& peer_identity, const ThreadMessag
   }
   RelayEnvelope envelope = std::move(*built);
   envelope.relay_wake_urgent = urgent;
+  if (urgent) {
+    envelope.relay_wake_hint = SanitizeWakeHint(CallIdOf(control));
+  }
   // Lane messages are useless once no family would take them: the relay drops them then, not after 90 days.
   envelope.relay_ttl_s = kControlLaneRelayTtlMs / 1000;
   const std::string message_id = envelope.message_id;

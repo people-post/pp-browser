@@ -12,9 +12,6 @@
 #import <objc/runtime.h>
 
 #include "foundation/platform/IosLocalNotifier.h"
-#if defined(PP_IOS_CALLKIT)
-#include "foundation/platform/IosCallSystemUi.h"
-#endif
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -56,12 +53,20 @@ bool IsCallWake(NSDictionary* userInfo) {
              withCompletionHandler:(void (^)(void))completionHandler {
   (void)center;
   NSDictionary* userInfo = response.notification.request.content.userInfo;
+  id hint_raw = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationWakeHintKey]];
+  const std::string wake_hint = ([hint_raw isKindOfClass:[NSString class]] && [(NSString*)hint_raw length] > 0)
+                                    ? std::string([(NSString*)hint_raw UTF8String])
+                                    : std::string();
   if (IsCallWake(userInfo)) {
+    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true, wake_hint);
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
     if ([thread isKindOfClass:[NSString class]] && [(NSString*)thread length] > 0) {
       pbr::DispatchIosNotificationActivation(std::string([(NSString*)thread UTF8String]));
+    } else if (!wake_hint.empty()) {
+      pbr::DispatchIosNotificationActivation({}, /*call_wake=*/false, wake_hint);
+      pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
     }
   }
   completionHandler();
@@ -134,10 +139,6 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
                   object:nil
                    queue:nil
               usingBlock:^(NSNotification* /*note*/) {
-#if defined(PP_IOS_CALLKIT)
-                // A VoIP push that launched the app (P013).
-                pbr::InstallIosCallSystemUi();
-#endif
                 UIApplication* application = [UIApplication sharedApplication];
                 [[UNUserNotificationCenter currentNotificationCenter]
                     requestAuthorizationWithOptions:(UNAuthorizationOptionAlert |

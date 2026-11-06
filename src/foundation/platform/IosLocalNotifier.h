@@ -29,8 +29,15 @@ std::string IosNotificationIdForThread(const std::string& thread_id);
 inline constexpr const char* kIosCallNotificationId = "pp-call";
 /** userInfo key carrying a banner's thread id. */
 inline constexpr const char* kIosNotificationThreadKey = "thread_id";
+/** Top-level key of the relay's push carrying the call id / message id (`wake_hint`). */
+inline constexpr const char* kIosNotificationWakeHintKey = "wake_hint";
 
-/** The user tapped a banner of `thread_id` (any thread): runs the activation handler on the UI thread. */
-void DispatchIosNotificationActivation(const std::string& thread_id);
+/**
+ * The user tapped a banner of `thread_id`, or a push alert (a call's with `call_wake`; empty thread; `wake_hint`:
+ * the push's call id / message id). Always recorded in PendingNotificationTap; a thread is also handed to the
+ * activation handler on the UI thread when one is set.
+ */
+void DispatchIosNotificationActivation(const std::string& thread_id, bool call_wake = false,
+                                       const std::string& wake_hint = {});
 
 } // namespace pbr

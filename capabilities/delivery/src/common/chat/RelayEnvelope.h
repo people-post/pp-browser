@@ -114,6 +114,11 @@ struct RelayEnvelope {
    * the relay's full retention window. The control lane sets it — its messages are useless after an hour.
    */
   int64_t relay_ttl_s = 0;
+  /**
+   * A hint to the relay, like `relay_wake_urgent`: an opaque id (<= 64 chars of [A-Za-z0-9-]) the relay copies
+   * into the push so a tap can be matched to this message or call after sync. Empty: none.
+   */
+  std::string relay_wake_hint;
 };
 
 /**
@@ -184,7 +189,23 @@ struct RelayWireSendRecord {
   bool urgent = false;
   /** Keep the record only this many seconds (`ttl_s`; unsigned hint; 0: the relay's retention window). */
   int64_t ttl_s = 0;
+  /** Opaque id the relay copies into the push (`wake_hint`; unsigned hint; empty: none). */
+  std::string wake_hint;
 };
+
+/** `id` if it is a valid wake hint (1..64 chars of [A-Za-z0-9-]), else empty; the relay drops anything else. */
+inline std::string SanitizeWakeHint(const std::string& id) {
+  if (id.empty() || id.size() > 64) {
+    return {};
+  }
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+    if (!ok) {
+      return {};
+    }
+  }
+  return id;
+}
 
 /** Opaque relay HTTP wire record returned on poll/history. */
 struct RelayInboundRecord {

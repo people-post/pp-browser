@@ -26,6 +26,7 @@
 #include "foundation/platform/OngoingCallService.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/PendingNotificationTap.h"
 #include "gui/CallStatusHint.h"
 #include "lib/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
@@ -445,6 +446,10 @@ void CallController::BindPeerLinkRefresh(std::function<void()> callback) {
   peer_link_refresh_ = std::move(callback);
 }
 
+void CallController::BindOpenThread(std::function<void(const std::string& thread_id)> callback) {
+  open_thread_ = std::move(callback);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -802,7 +807,7 @@ void CallController::SyncRingtone() {
   }
   // CallRingtone::Stop is async (never joins on Accept/UI) so mobile is safe — see
   // CallRingtone.cpp Samsung Accept hang notes. Do not skip playback here.
-  // The phone's own call screen rings it (CallKit's ringtone): the app's stays quiet.
+  // The phone's own call screen rings it: the app's stays quiet.
   const bool should_ring = ring_.active && !system_call_screen_.SystemRings(presenter_.Screen().ring_call_id);
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
@@ -924,7 +929,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
   }
   case CallNotice::Kind::IncomingCall: {
     if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
-      return; // the phone's own call screen rings it (CallKit, Android's call notification)
+      return; // the phone's own call screen rings it (Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     const std::string body =
@@ -953,6 +958,12 @@ void CallController::Render() {
     return;
   case CallScreen::Kind::Ringing:
     RenderRing(screen);
+    // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
+    // once; a stale tap expires unused.
+    if (open_thread_ && !screen.thread_id.empty() &&
+        PendingNotificationTap::Instance().TakeCallRoute(screen.ring_call_id, PendingNotificationTap::Clock::now())) {
+      AppRuntime::PostUI([this, thread_id = screen.thread_id]() { open_thread_(thread_id); });
+    }
     return;
   case CallScreen::Kind::InCall:
     if (auto* backend = Backend(); backend && backend->Available()) {

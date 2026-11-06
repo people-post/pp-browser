@@ -236,6 +236,7 @@ TEST(OutboundSendRulesTest, AGroupMembersEnvelopeCarriesACopyPerDevice) {
             e.stream_key)
       << "the relay keeps one row per sender, stream and index: each member's records have their own stream";
   EXPECT_EQ(e.recipient_contact_id, "relay:b") << "the relay delivers to relay ids";
+  EXPECT_EQ(e.relay_wake_hint, "m") << "a tap on the push is matched to this message by its id";
   // Each device reads its own copy, numbered in its own pair.
   auto on_laptop = SelectRelayCopy(e, "QmBLaptop");
   ASSERT_TRUE(on_laptop);

@@ -28,7 +28,7 @@ public:
   void Dismiss();
   void SetUnlockInProgressUi(bool in_progress);
   void ShowError(const std::string& message);
-  /** A CallKit call is waiting for the unlock (or no longer is): the unlock screen's words follow. */
+  /** A call is waiting for the unlock (or no longer is): the unlock screen's words follow. */
   void RefreshCallHint();
   /**
    * PIN grace window: a call waits for the locked phone's unlock (true) — "Unlock your phone to connect the call"

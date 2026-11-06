@@ -48,6 +48,7 @@
 #include "common/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/PendingNotificationTap.h"
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
@@ -3949,12 +3950,23 @@ void ChatController::WireMessagingBindings() {
               ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id);
             });
       });
-  ILocalNotifier::Instance().SetActivationHandler([this](std::string thread_id) {
+  const auto activate = [this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();
     if (!thread_id.empty()) {
       OnSelectThread(thread_id);
     }
+  };
+  ILocalNotifier::Instance().SetActivationHandler(activate);
+  // A message alert's tap waits for the message it announced to sync, then opens its chat.
+  facade_->SetOnInboundMessage([this](std::string message_id, std::string thread_id) {
+    if (PendingNotificationTap::Instance().TakeMessageRoute(message_id, PendingNotificationTap::Clock::now())) {
+      OnSelectThread(thread_id);
+    }
   });
+  // A tap that arrived before unlock found no handler; it is still waiting.
+  if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
+    activate(std::move(*pending));
+  }
   // Relay poll is armed by ConversationsHub::StartCoordinatorTimers (not here). Call-wake UI
   // refresh is wired via ConversationsHub::SetOnCallWake from Application.
   IPushDeviceRegistrar::SetTokenChangedHandler([this](const std::string& /*token*/) {

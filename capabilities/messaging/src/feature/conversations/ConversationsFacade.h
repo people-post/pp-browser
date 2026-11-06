@@ -198,6 +198,8 @@ public:
   void SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback);
   /** title, body, thread id, and whether the message mentions us (G015: alerts even in a muted group). */
   void SetOnBackgroundUnread(std::function<void(std::string, std::string, std::string, bool)> callback);
+  /** (message id, thread id) of each inbound message stored, on the UI thread. */
+  void SetOnInboundMessage(std::function<void(std::string, std::string)> callback);
   void SyncInboxFromWake(bool force);
   void TailSyncActiveE2eThread();
   void WarmPeerForThread(const std::string& thread_id);

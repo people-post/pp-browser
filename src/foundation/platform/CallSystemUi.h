@@ -7,9 +7,8 @@
 namespace pbr {
 
 /**
- * The phone's own call screen: CallKit on iPhone builds that may use it (P013), the incoming-call
- * notification on Android (P014, AndroidCallSystemUi). It rings full screen, on the lock screen too,
- * and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
+ * The phone's own call screen: the incoming-call notification on Android (P014, AndroidCallSystemUi).
+ * It rings full screen, on the lock screen too, and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
  * notifications do it all.
  *
  * Driven by CallSystemUiBridge on the UI thread; the callbacks arrive there too.
