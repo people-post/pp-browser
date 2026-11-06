@@ -886,6 +886,7 @@
     "chat.attachment.cancelling": "正在取消…",
     "chat.attachment.audio_cannot_play": "无法播放这个音频",
     "chat.attachment.cancel_send": "取消发送",
+    "chat.attachment.already_sent": "已经发出，无法取消",
     "chat.attachment.sending": "正在发送…",
     "chat.attachment.downloading": "正在下载…",
     "chat.attachment.downloading_percent": "正在下载 {percent}%",
