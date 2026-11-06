@@ -1235,7 +1235,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
                         << appended.error().message;
         }
       }
-      (void)host_.Facade()->UpdatePreview(active_thread, parsed.rml);
+      (void)host_.Facade()->UpdatePreview(active_thread, parsed.rml, /*assistant_text=*/true);
     }
 
     if (markdown) {
