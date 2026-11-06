@@ -626,8 +626,14 @@ Roe<std::string> ChatPresenter::BlockStranger(const std::string& peer_id) {
   if (!added) {
     return added;
   }
-  if (auto set = facade_->SetContactTrust(*added, TrustLevel::Blocked); !set) {
-    return Error("contacts.err.trust");
+  // The add and the block are two writes to the same store: a failed block is retried once, and if it still fails the
+  // user is told the person was added but not blocked (there is no contact removal on this facade to roll back with).
+  auto set = facade_->SetContactTrust(*added, TrustLevel::Blocked);
+  if (!set) {
+    set = facade_->SetContactTrust(*added, TrustLevel::Blocked);
+  }
+  if (!set) {
+    return Error("block stranger: added but not blocked").WithUser(Tr("chat.block.added_not_blocked"));
   }
   return added;
 }

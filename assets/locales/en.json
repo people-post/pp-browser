@@ -1182,6 +1182,7 @@
     "chat.group_event.forked_from": "This group was started from another group",
     "chat.menu.chat_with_ai": "Chat with AI",
     "chat.menu.message_a_contact": "Message a contact",
+    "chat.block.added_not_blocked": "Added as a contact, but the block didn't take. Try again from Contacts.",
     "chat.menu.find_someone": "Find someone",
     "chat.menu.sync_with_peer": "Sync with contact",
     "chat.menu.clear_history": "Clear chat…",

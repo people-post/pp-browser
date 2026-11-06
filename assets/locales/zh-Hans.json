@@ -1150,6 +1150,7 @@
     "chat.group_event.forked_from": "本群由另一个群聊分出",
     "chat.menu.chat_with_ai": "与 AI 聊天",
     "chat.menu.message_a_contact": "给联系人发消息",
+    "chat.block.added_not_blocked": "已加为联系人，但没能屏蔽。请到联系人页再试一次。",
     "chat.menu.find_someone": "查找联系人",
     "chat.menu.sync_with_peer": "与对方同步",
     "chat.menu.clear_history": "清除历史记录…",
