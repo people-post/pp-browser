@@ -1299,7 +1299,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V053 — Group calls behave like Teams / Signal: join while it lasts, stay when alone, removal ends your part
 
 **Date:** 2026-10-22  
-**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged — **amended by [V062](#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins)** (accepted 2026-11-05, not built): guests in a group's call are labelled, brought by members allowed to invite, and removable by the owner and admins  
+**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged — **amended by [V062](#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins)** (accepted and implemented 2026-11-05): guests in a group's call are labelled, brought by members allowed to invite, and removable by the owner and admins  
 **Decision:**
 
 | Rule | Detail |
@@ -1462,7 +1462,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V062 — Guests in a group's call: labelled, brought by members, removed by owner and admins
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — not built; with the open-groups work ([group-chat G017–G022](../group-chat/DECISIONS.md#g017--open-groups-roles-and-two-presets), PHASES § O there). Amends V053 (who is in a group's call). Until it ships, [CALLS.md](../../docs/architecture/CALLS.md) holds the rule.
+**Status:** Accepted (Hongwei, 2026-11-05) — **implemented 2026-11-05** (`lib/calls/CallGuests`, `call_remove`, the `guest` / `brought_by` fields; the current rule is [CALLS.md § Guests in a group's call](../../docs/architecture/CALLS.md)); with the open-groups work ([group-chat G017–G022](../group-chat/DECISIONS.md#g017--open-groups-roles-and-two-presets), PHASES § O there). Amends V053 (who is in a group's call). "Add {name} to the group" is offered to the owner until members invite (group-chat o4).
 
 **Context:** Guests already exist: any participant can add anyone to any call from the in-call "Add people" picker (`CallPresenter::InviteToActiveCall`, the mid-call invite), and a guest joins without joining the group (DESIGN row 4). What a group's call lacks is a way to see who is a guest, a say for the group in who may bring one, and a way to remove one — today nobody can remove anyone from a call.
 

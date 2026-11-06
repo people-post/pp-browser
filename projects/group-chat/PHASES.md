@@ -106,8 +106,9 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [ ] Lab: join by link; a revoked, an expired, and a removed maker's link refused
 
 **Guests in a group's call ([calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins))** — after o1 and o4
-- [ ] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label
-- [ ] Only members allowed to invite bring guests; each participant's device checks
-- [ ] `call_remove` for guests from the owner / admins; key rotates without them; their device leaves
-- [ ] "Add {name} to the group" for a guest; the guest's "Joining shows you to N people"
-- [ ] CALLS.md updated when it ships
+- [x] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label
+- [x] Only members allowed to invite bring guests; each participant's device checks
+- [x] `call_remove` for guests from the owner / admins; key rotates without them; their device leaves
+- [x] "Add {name} to the group" for a guest (the owner until o4); the guest's "Joining shows you to N people"
+- [x] CALLS.md updated when it ships
+- [ ] Lab `group_call_guest` run (registered; Bob brings Erin, a member's remove refused, the owner's rotates the key, no rejoin by herself)
