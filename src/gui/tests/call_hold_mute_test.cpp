@@ -31,3 +31,12 @@ TEST(CallHoldMuteTest, EachHoldDecidesAfresh) {
 
 } // namespace
 } // namespace pbr
+
+TEST(CallHoldMuteTest, AUserWhoTouchedMuteDuringTheHoldKeepsTheirChoice) {
+  CallHoldMute mute;
+  EXPECT_EQ(mute.Next(true, false), std::optional<bool>(true));
+  mute.UserToggled();  // they unmuted (or muted again) by hand
+  EXPECT_EQ(mute.Next(false, true), std::nullopt) << "the end of the hold does not undo the user's choice";
+  EXPECT_EQ(mute.Next(false, false), std::nullopt);
+}
+

@@ -214,8 +214,6 @@ private:
   /** Tells the call when the OS takes this device's call audio or gives it back (each tick); mutes the mic and
    *  pauses the camera meanwhile. */
   void SyncLocalHold();
-  /** True (and a pill says why) while a local hold keeps the mic / camera buttons from acting. */
-  bool RefuseWhileOnHold();
   CallHoldMute hold_mute_;
   /** The app went to the background in a call with the camera on: the camera is paused until it is back. */
   bool video_paused_ = false;

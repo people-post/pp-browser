@@ -148,6 +148,9 @@ void CallController::SyncLocalHold() {
   // Privacy: nothing of the other call may reach this one through our mic; a mute the user made before stays.
   if (const auto mute = hold_mute_.Next(held, in_call && backend->Media().IsMuted()); mute && in_call) {
     backend->SetLocalAudioMuted(*mute);
+    if (!*mute) {
+      UserFeedback::Note(Tr("call.status.on_hold_ended"));  // the hold opened the mic again: say so
+    }
   }
   // The camera rests meanwhile, as in the background; still in the background at the end, OnAppForeground brings it.
   if (held && !video_paused_ && backend->Media().IsCameraEnabled()) {
@@ -1285,34 +1288,24 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
-// On hold (another call has the audio) the mic and camera are ours to keep shut: a tap on their buttons only says so
-// (second review 2026-11-06: a toggle during the hold would have reopened the mic, or been undone at its end).
-bool CallController::RefuseWhileOnHold() {
-  if (!local_on_hold_) {
-    return false;
-  }
-  UserFeedback::Ok(Tr("call.status.on_hold_local"));
-  return true;
-}
-
+// On hold (another call has the audio) PP muted the mic and paused the camera itself; a tap on those buttons meanwhile
+// hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
+// if the OS never says the hold ended, the user must be able to unmute by hand).
 void CallController::ToggleMute() {
-  if (RefuseWhileOnHold()) {
-    return;
+  if (local_on_hold_) {
+    hold_mute_.UserToggled();
   }
   presenter_.ToggleMute();
 }
 
 void CallController::ToggleCamera() {
-  if (RefuseWhileOnHold()) {
-    return;
+  if (local_on_hold_) {
+    video_paused_ = false;  // the user decides the camera from here; no resume at the end of the hold
   }
   presenter_.ToggleCamera();
 }
 
 void CallController::FlipCamera() {
-  if (RefuseWhileOnHold()) {
-    return;
-  }
   presenter_.FlipCamera();
 }
 

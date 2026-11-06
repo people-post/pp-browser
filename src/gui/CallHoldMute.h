@@ -24,6 +24,9 @@ public:
     return false;
   }
 
+  /** The user touched the mute button during the hold: the choice is theirs now; the end of the hold changes nothing. */
+  void UserToggled() { muted_by_hold_ = false; }
+
 private:
   bool muted_by_hold_ = false;
 };

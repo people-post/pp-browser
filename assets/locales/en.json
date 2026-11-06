@@ -1164,6 +1164,7 @@
     "call.placeholder.starting_video": "Starting video…",
     "call.status.reconnecting": "Reconnecting…",
     "call.status.on_hold_local": "Your call is still on. We've muted you for now.",
+    "call.status.on_hold_ended": "Your call is back on. Your mic is open again.",
     "call.status.on_hold_peer": "They stepped away. Please wait.",
     "call.status.on_hold_peer_named": "They stepped away. Please wait.",
     "call.status.connected": "Connected",
