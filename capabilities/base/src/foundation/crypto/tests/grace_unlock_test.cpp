@@ -232,6 +232,34 @@ TEST_F(GraceUnlockTest, ZeroMinutesWritesNothingAndForgets) {
   EXPECT_TRUE(NothingLeft());
 }
 
+// GraceClock: mono 0 is "no clock". Nothing opens, nothing is written, an existing entry is left alone.
+TEST_F(GraceUnlockTest, NoClockFailsClosedAndTouchesNothing) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
+  const ByteVector entry = store_.items.at(grace_->EntryName());
+  const ByteVector file = ReadFile(grace_->FilePath());
+  const int reads = store_.reads;
+  const int writes = store_.writes;
+  const int deletes = store_.deletes;
+
+  auto got = grace_->TryUnlock(Clock(0));
+  ASSERT_TRUE(static_cast<bool>(got));
+  EXPECT_EQ(got->status, GraceUnlock::Status::Missing);
+  EXPECT_TRUE(got->dek.empty());
+  EXPECT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(0))));
+  EXPECT_EQ(store_.reads, reads);
+  EXPECT_EQ(store_.writes, writes);
+  EXPECT_EQ(store_.deletes, deletes);
+  EXPECT_EQ(store_.items.at(grace_->EntryName()), entry);
+  EXPECT_EQ(ReadFile(grace_->FilePath()), file);
+  EXPECT_EQ(Try(Clock(1100)), GraceUnlock::Status::Found); // still the same window once the clock is back
+}
+
+TEST_F(GraceUnlockTest, RememberWithoutAClockWritesNothing) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(0))));
+  EXPECT_EQ(store_.writes, 0);
+  EXPECT_TRUE(NothingLeft());
+}
+
 TEST_F(GraceUnlockTest, TouchMovesTheEnd) {
   ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
   ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(1600)))); // new end 2500

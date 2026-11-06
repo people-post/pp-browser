@@ -17,6 +17,10 @@ namespace pbr {
  * this boot session (iOS kern.bootsessionuuid, Android BOOT_COUNT; all zero where the platform has none), and
  * `mono_seconds` is a clock that only moves forward within it (iOS mach_continuous_time, Android elapsedRealtime).
  * A grace entry from another boot is expired; changing the system time changes nothing.
+ *
+ * `mono_seconds <= 0` means "no clock" (the platform could not read it): GraceUnlock fails closed. TryUnlock answers
+ * Missing without reading or deleting anything; Remember and Touch succeed and write nothing (0 minutes still
+ * forgets, as always).
  */
 struct GraceClock {
   std::array<uint8_t, 16> boot_id{};
