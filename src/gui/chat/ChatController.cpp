@@ -4736,6 +4736,20 @@ std::string ChatController::AskAiSharedThread(const bool create) {
   return best;
 }
 
+std::string ChatController::AskAiNewThread() {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  // Not opened: the page under the panel stays as it is.
+  auto created = facade_->CreateAiThread();
+  if (!created) {
+    log().warning << "Ask AI: could not create the AI chat: " << created.error().message;
+    return {};
+  }
+  SyncShellSessions();
+  return created->id;
+}
+
 std::vector<AskAiRow> ChatController::AskAiRecentRows(const std::string& thread_id, const size_t limit) {
   std::vector<AskAiRow> out;
   if (!messaging_ready_ || !facade_ || thread_id.empty()) {
