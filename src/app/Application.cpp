@@ -33,6 +33,7 @@
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/OsSecureBlobStore.h"
 #include "foundation/platform/os/OsProtectedData.h"
+#include "foundation/platform/os/OsAppState.h"
 #include "foundation/crypto/GraceUnlock.h"
 #include "common/Diag.h"
 #include "lib/people/RetiredKeychainBackup.h"
@@ -1388,6 +1389,12 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
     pin_gate_->Dismiss();
+    // Any unlock but the default PIN's (grace window, PIN, dev PIN, link, recovery phrase): with the app on screen the
+    // foreground timer starts now; a push cold start is in the background and does not start it.
+    const bool default_pin = store_.IsInitialized() && store_.Snapshot().profile_prefs.pin_is_default;
+    if (secrets_ && secrets_->IsUnlocked() && !default_pin && secrets_->GraceSupported() && os::AppShownNow()) {
+      StartGraceTimer();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();
@@ -1436,12 +1443,10 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.grace_minutes = [this]() { return GraceMinutes(); };
   unlock_ports.try_grace_unlock = [this]() { return secrets_->TryGraceUnlock(); };
   unlock_ports.remember_grace = [this](const int minutes) -> Roe<void> {
-    // The vault was just opened with a PIN on the UI thread's watch: the user is here, the foreground timer runs.
+    // The timer starts with the gate's dismiss, when the app is on screen.
     auto kept = secrets_->RememberGrace(minutes);
     if (minutes <= 0) {
       StopGraceTimer();  // 0 forgets: nothing to extend
-    } else if (kept) {
-      StartGraceTimer();
     }
     return kept;
   };
