@@ -262,6 +262,7 @@ private:
   void PinGateIdentityPhrase();
   void PinGateUseSavedCopy();
   void PinGateForgotToggle();
+  void PinGateUsePinInstead();  // "Enter PIN instead" while waiting for the phone's unlock (PIN grace window)
   void CallAccept();
   void CallAcceptVoice();
   void CallAcceptCharge();

@@ -6,6 +6,8 @@
 #include "common/Localized.h"
 #include "common/StartupTiming.h"
 
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -35,6 +37,14 @@ void ProfileUnlockGate::BindSecrets(ProfileSecretsEngine& secrets) {
 }
 
 void ProfileUnlockGate::BindPorts(ProfileUnlockPorts ports) {
+  // The handler registered through the old ports is removed through them.
+  if (protected_data_handler_ && ports_.remove_protected_data_handler) {
+    ports_.remove_protected_data_handler(*protected_data_handler_);
+  }
+  protected_data_handler_.reset();
+  grace_pending_ = false;
+  waiting_device_unlock_ = false;
+  ++device_unlock_wait_generation_;
   ports_ = std::move(ports);
 }
 
@@ -71,6 +81,7 @@ void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
 }
 
 void ProfileUnlockGate::Finish(const bool unlocked) {
+  StopGrace();
   DiagLine("unlock.done").Add("unlocked", unlocked).Emit();
   SetUnlockInProgress(false);
   if (ports_.ui.dismiss) {
@@ -160,7 +171,7 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
 }
 
 void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin,
-                                               const bool clear_default_pin) {
+                                               const bool clear_default_pin, const bool remember_grace) {
   if (unlock_in_progress_) {
     return;
   }
@@ -168,11 +179,14 @@ void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_de
   StartupMark("unlock_and_ready_begin");
 
   auto work = [this, pin = std::move(pin)]() -> Roe<void> { return UnlockAndReady(pin); };
-  auto on_done = [this, set_default_pin, clear_default_pin](Roe<void> result) {
+  auto on_done = [this, set_default_pin, clear_default_pin, remember_grace](Roe<void> result) {
     if (!result) {
       StartupMark("unlock_and_ready_fail");
       ReportError(result.error());
       return;
+    }
+    if (remember_grace) {
+      RememberGraceAfterPinUnlock();
     }
     if (set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(true);
@@ -300,9 +314,20 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   if (ports_.pin_is_default && ports_.pin_is_default()) {
     StartupMark("deferred_silent_unlock_begin");
     RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/false,
-                           /*clear_default_pin=*/false);
+                           /*clear_default_pin=*/false, /*remember_grace=*/false);
     return;
   }
+  // PIN grace window (#21 phase 1): a PIN typed a short while ago opens the vault again without asking; before the
+  // dev PIN, so a dev build exercises it too.
+  if (ports_.try_grace_unlock && ports_.grace_minutes && ports_.grace_minutes() > 0) {
+    StartupMark("deferred_grace_unlock_begin");
+    RunGraceAttempt(GraceStep::First);
+    return;
+  }
+  UnlockWithoutGrace();
+}
+
+void ProfileUnlockGate::UnlockWithoutGrace() {
 #ifdef PP_BROWSER_DEV_PIN
   // Local dev builds only (-DPP_BROWSER_DEV_PIN=…): same deferred path as a typed PIN, no prompt.
   // Deliberately not the Bootstrap-time unlock (--pin / PP_BROWSER_PIN): unlocking before the
@@ -310,7 +335,7 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
   if (PP_BROWSER_DEV_PIN[0] != '\0') {
     StartupMark("deferred_dev_pin_unlock_begin");
     RunUnlockAndReadyAsync(std::string(PP_BROWSER_DEV_PIN), /*set_default_pin=*/false,
-                           /*clear_default_pin=*/false);
+                           /*clear_default_pin=*/false, /*remember_grace=*/true);
     return;
   }
 #endif
@@ -319,12 +344,12 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
 }
 
 void ProfileUnlockGate::CompleteWithPin(const SecretText& pin, const bool create_mode) {
-  RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode);
+  RunUnlockAndReadyAsync(pin, /*set_default_pin=*/false, /*clear_default_pin=*/create_mode, /*remember_grace=*/true);
 }
 
 void ProfileUnlockGate::CompleteWithDefaultPin() {
   RunUnlockAndReadyAsync(std::string(kDefaultProfilePin), /*set_default_pin=*/true,
-                         /*clear_default_pin=*/false);
+                         /*clear_default_pin=*/false, /*remember_grace=*/false);
 }
 
 void ProfileUnlockGate::CompleteLinkDevice(const SecretText& pin, const std::string& bundle_json,
@@ -379,6 +404,9 @@ void ProfileUnlockGate::CompleteAccountImport(const SecretText& pin, const bool 
     if (!set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(false);
     }
+    if (!set_default_pin) {
+      RememberGraceAfterPinUnlock();
+    }
     StartupMark((mark_name + "_ok").c_str());
     if (set_default_pin && ports_.ui.on_default_provisioned) {
       ports_.ui.on_default_provisioned();
@@ -405,6 +433,172 @@ void ProfileUnlockGate::Cancel() {
     return;
   }
   Finish(false);
+}
+
+// --- PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md) ---
+
+void ProfileUnlockGate::SetGraceAttemptInProgress(const bool in_progress) {
+  // Holds EnsureUnlocked callers and a typed PIN back like any unlock; unlock.start stays for a PIN or the
+  // default PIN (a grace attempt says unlock.grace).
+  unlock_in_progress_ = in_progress;
+  if (ports_.ui.set_unlock_in_progress) {
+    ports_.ui.set_unlock_in_progress(in_progress);
+  }
+}
+
+void ProfileUnlockGate::RunGraceAttempt(const GraceStep step) {
+  SetGraceAttemptInProgress(true);
+  auto status = std::make_shared<std::optional<GraceUnlock::Status>>();
+  auto work = [this, status]() -> Roe<void> {
+    auto got = ports_.try_grace_unlock();
+    if (!got) {
+      return got.error();
+    }
+    *status = got->status;
+    if (got->status != GraceUnlock::Status::Found || !ports_.ensure_messaging_ready) {
+      return {};
+    }
+    return ports_.ensure_messaging_ready();
+  };
+  auto on_done = [this, step, status](Roe<void> result) { OnGraceAttemptDone(step, *status, std::move(result)); };
+  if (ports_.run_heavy) {
+    ports_.run_heavy(std::move(work), std::move(on_done));
+    return;
+  }
+  on_done(work());
+}
+
+void ProfileUnlockGate::OnGraceAttemptDone(const GraceStep step, const std::optional<GraceUnlock::Status> status,
+                                           Roe<void> result) {
+  SetGraceAttemptInProgress(false);
+  if (status == GraceUnlock::Status::Found) {
+    DiagLine("unlock.grace").Add("result", "hit").Emit();
+    if (!result) {
+      // The vault is open but messaging did not start: as after a PIN unlock that got this far.
+      StopGrace();
+      StartupMark("grace_unlock_fail");
+      ReportError(result.error());
+      return;
+    }
+    StartupMark("grace_unlock_ok");
+    Finish(true);
+    return;
+  }
+  if (status == GraceUnlock::Status::Unavailable) {
+    DiagLine("unlock.grace").Add("result", "unavailable").Emit();
+    OnGraceUnavailable(step);
+    return;
+  }
+  if (!result) {
+    log().warning << "Grace entry not read: " << result.error().message;
+    DiagLine("unlock.grace").Add("result", "error").Fail("error", result.error()).Emit();
+  } else if (status == GraceUnlock::Status::Expired) {
+    DiagLine("unlock.grace").Add("result", "expired").Emit();
+  } else {
+    DiagLine("unlock.grace").Add("result", "missing").Emit();
+  }
+  // No window to wait for: the PIN, as without one.
+  StopGrace();
+  if (step != GraceStep::Retry) {
+    UnlockWithoutGrace();
+  }
+  // A retry runs with the unlock screen already up; it stays.
+}
+
+void ProfileUnlockGate::OnGraceUnavailable(const GraceStep step) {
+  switch (step) {
+  case GraceStep::First:
+    // Register first, then read once more: the phone may be unlocked between the two (the handler would not fire).
+    if (ports_.on_protected_data_available && !protected_data_handler_) {
+      protected_data_handler_ = ports_.on_protected_data_available([this]() {
+        if (ports_.run_on_ui) {
+          ports_.run_on_ui([this]() { RetryGrace(); });
+          return;
+        }
+        RetryGrace();
+      });
+    }
+    RunGraceAttempt(GraceStep::Recheck);
+    return;
+  case GraceStep::Recheck:
+    grace_pending_ = true;
+    RequestShowUnlock(nullptr);
+    if (ports_.has_pending_push_call && ports_.has_pending_push_call()) {
+      // A call answered on the locked phone: it connects as soon as the phone is unlocked, no PIN.
+      waiting_device_unlock_ = true;
+      if (ports_.ui.show_waiting_device_unlock) {
+        ports_.ui.show_waiting_device_unlock(true);
+      }
+      if (ports_.run_later) {
+        const uint64_t generation = device_unlock_wait_generation_;
+        ports_.run_later(kDeviceUnlockWait, [this, generation]() {
+          if (generation == device_unlock_wait_generation_) {
+            EndDeviceUnlockWait();
+          }
+        });
+      }
+    }
+    // Without a call: the plain unlock screen; the phone's unlock or the next foreground may still open it.
+    return;
+  case GraceStep::Retry:
+    // Still locked: a call stops waiting (the PIN screen), the handler stays for a later unlock.
+    EndDeviceUnlockWait();
+    return;
+  }
+}
+
+void ProfileUnlockGate::RetryGrace() {
+  if (!grace_pending_ || unlock_in_progress_ || (secrets_ && Secrets().IsUnlocked())) {
+    return;
+  }
+  RunGraceAttempt(GraceStep::Retry);
+}
+
+void ProfileUnlockGate::OnForeground() {
+  if (!grace_pending_) {
+    return;
+  }
+  if (ports_.protected_data_available && !ports_.protected_data_available()) {
+    return;
+  }
+  RetryGrace();
+}
+
+void ProfileUnlockGate::UseDevicePinInstead() {
+  EndDeviceUnlockWait();
+}
+
+void ProfileUnlockGate::EndDeviceUnlockWait() {
+  ++device_unlock_wait_generation_;
+  if (!waiting_device_unlock_) {
+    return;
+  }
+  waiting_device_unlock_ = false;
+  if (ports_.ui.show_waiting_device_unlock) {
+    ports_.ui.show_waiting_device_unlock(false);
+  }
+}
+
+void ProfileUnlockGate::StopGrace() {
+  EndDeviceUnlockWait();
+  grace_pending_ = false;
+  if (protected_data_handler_) {
+    if (ports_.remove_protected_data_handler) {
+      ports_.remove_protected_data_handler(*protected_data_handler_);
+    }
+    protected_data_handler_.reset();
+  }
+}
+
+void ProfileUnlockGate::RememberGraceAfterPinUnlock() {
+  if (!ports_.remember_grace || !ports_.grace_minutes) {
+    return;
+  }
+  // Never fails the unlock: without the entry the next cold start asks for the PIN, as before.
+  if (auto kept = ports_.remember_grace(ports_.grace_minutes()); !kept) {
+    log().warning << "Grace window not kept: " << kept.error().message;
+    DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", kept.error()).Emit();
+  }
 }
 
 } // namespace pbr
