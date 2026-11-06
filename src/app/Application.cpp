@@ -535,8 +535,8 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
 }
 
 int Application::GraceMinutes() const {
-  // TODO settings worker: ProfilePreferences::unlock_grace_minutes (0 / 5 / 15 / 60, default 15).
-  return 15;
+  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60, default 15).
+  return store_.IsInitialized() ? store_.Snapshot().profile_prefs.unlock_grace_minutes : 0;
 }
 
 void Application::AttachGrace() {
@@ -563,8 +563,8 @@ void Application::TouchGrace() {
 }
 
 void Application::StartGraceTimer() {
-  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported() || GraceMinutes() <= 0) {
-    return;
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported()) {
+    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing
   }
   // Half the shortest window (5 minutes) is the most a kill without a background event may cost: 1 minute.
   grace_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::minutes(1), [this]() {
@@ -939,6 +939,24 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
+  settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
+  settings_commands.set_grace_minutes = [this](const int minutes) {
+    if (minutes == 0) {
+      ForgetGrace();  // both pieces and the foreground timer
+      return;
+    }
+    // The new length at once (a 15-minute window becomes 5); never creates an entry.
+    if (secrets_->IsUnlocked()) {
+      if (auto touched = secrets_->TouchGrace(minutes); !touched) {
+        log().warning << "Grace window not changed: " << touched.error().message;
+        DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", touched.error()).Emit();
+      }
+    }
+    if (AppLifecycle::IsForeground()) {
+      StartGraceTimer();  // kept running, or back after "Immediately"
+    }
+  };
   settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
