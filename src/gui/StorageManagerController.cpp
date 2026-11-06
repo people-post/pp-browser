@@ -11,6 +11,7 @@
 #include "lib/ui/DataEvent.h"
 #include "lib/voice/VoiceAudioSession.h"
 #include "gui/chat/VoiceBubble.h"
+#include "common/Logger.h"
 #include "common/runtime/AppRuntime.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -28,6 +29,11 @@
 namespace pbr {
 
 namespace {
+
+logging::Logger& StorageLog() {
+  static logging::Logger log = logging::getLogger("StorageManager");
+  return log;
+}
 
 constexpr const char* kModel = "settings";
 constexpr const char* kStepManage = "storage_manage";
@@ -688,9 +694,11 @@ void StorageManagerController::ToggleAudio(const StoredAttachmentItem& item) {
   if (!commands_.storage.open_item || !opening_.insert(key).second) {
     return;
   }
+  StorageLog().info << "sound file tap: route=in-app player";
   commands_.storage.open_item(item, lifetime_.Bind([this, key](std::string path, bool /*needs_confirm*/) {
     opening_.erase(key);
     if (path.empty()) {
+      StorageLog().warning << "sound file: no file to play (the stored copy could not be opened)";
       UserFeedback::Fail(Tr("chat.attachment.not_ready"));
       return;
     }
@@ -727,6 +735,7 @@ void StorageManagerController::ToggleAudio(const StoredAttachmentItem& item) {
       VoiceAudioSession::ActivateForPlayback(); // loudspeaker, also with the silent switch on
     }
     if (!audio_->Play(path, std::move(callbacks))) {
+      StorageLog().warning << "sound file: the player did not start";
       OnAudioEnded(serial, VoicePlayEnd::Unplayable);
       return;
     }
@@ -786,9 +795,12 @@ void StorageManagerController::OpenItem(const StoredAttachmentItem& item) {
   if (!commands_.storage.open_item) {
     return;
   }
-  if (IsAudioFileAttachment(item.mime, item.filename) && AudioPlayer() != nullptr) {
-    ToggleAudio(item); // played here, not in the system's viewer
-    return;
+  if (IsAudioFileAttachment(item.mime, item.filename)) {
+    if (AudioPlayer() != nullptr) {
+      ToggleAudio(item); // played here, not in the system's viewer
+      return;
+    }
+    StorageLog().info << "sound file tap: route=system-preview reason=no in-app player on this platform";
   }
   const std::string key = item.thread_id + "\n" + HashKey(item.content_hash);
   if (!opening_.insert(key).second) {

@@ -2500,8 +2500,10 @@ void ChatController::OpenAttachment(const std::string& message_id) {
     bool made_view = false;
     auto path = facade_->AttachmentOpenPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
+    // The open path carries the sender's name, so its extension types a sound file sent as octet-stream too.
+    const bool is_sound = info && path && IsAudioFileAttachment(info->mime, *path);
     const int64_t worker_ms = ms_since(tapped);
-    AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, is_sound, made_view, tapped, lookup_ms, worker_ms,
                         path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
       // Result in (ready or not): the preview goes, on the next frame so the viewer is already presenting.
@@ -2533,6 +2535,12 @@ void ChatController::OpenAttachment(const std::string& message_id) {
       log().info << "Attachment tap: lookup " << lookup_ms << " ms, worker " << worker_ms << " ms, to open call "
                  << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tapped).count()
                  << " ms" << (made_view ? " (made view)" : "");
+      if (is_sound) {
+        // A sound file reaches the system preview only when its card was not drawn as the in-app player (#111).
+        log().info << "sound attachment tap: route=system-preview reason="
+                   << (voice_playback_->PlaysFiles() ? "card drawn as a file (not ready when drawn)"
+                                                     : "no in-app player on this platform");
+      }
       if (needs_confirm) {
         dismiss_preview();
         ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
