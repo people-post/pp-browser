@@ -35,7 +35,8 @@
 //                                       preset, sync_state, roster_epoch, statement_epoch, held_changes,
 //                                       changes_hash} (G018: the changes held unfolded, and the hash its group copies
 //                                       carry; G019: added_by maps each member to who brought them in, "" for the
-//                                       first members)
+//                                       first members; G021: links, the live invite links [{link_id, maker,
+//                                       expires_at, max_uses, uses}])
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
 //   remove_member {thread, account}     the owner (anyone) or an admin (members, G020) removes someone from the group
 //   leave_group {thread}                a member leaves the group (G018: its signed leave), the chat kept
@@ -49,6 +50,16 @@
 //                                       the owner or an admin removes everyone `account` added (G020 6) {removed}
 //   reinvite_everyone_removed_by {thread, account}
 //                                       the owner invites again everyone `account` removed (G020 6) {invited}
+//   make_invite_link {thread, max_uses?, expires_in_s?}
+//                                       group info's "Invite link…" (G021: per the preset): a new link {link, link_id,
+//                                       expires_at} — `pp://join/…`, signed into the roster as a link_add
+//   revoke_invite_link {thread, link_id} a link's "Revoke link" (its maker, an admin or the owner)
+//   join_by_link {link}                 open / paste / scan a link: the request to its maker, waiting (up to 20 s) for
+//                                       the answer {request_id, preview: {title, member_count, group_id}} or
+//                                       {request_id, refused: reason} (expired / revoked / used_up / removed /
+//                                       group_full / rate / unknown) or {request_id, no_answer: true}
+//   confirm_join {request_id}           the preview's Join {thread, group_id}; the maker's device signs the add and
+//                                       sends the join bundle
 //   make_group_from_call {title?, accounts?}
 //                                       the call screen's "Make a group…" (G022: a call with no group, 3+ in it) and
 //                                       the picker's Create: everyone else in the call (or the picked `accounts`) is
@@ -791,6 +802,7 @@ public:
           auto held = rosters->ListGroupChanges(group_id);
           out.setJsonUInt("held_changes", held ? static_cast<uint64_t>(held->size()) : 0);
         }
+        out.set("links", LinkRows(request->getString("group_id").value_or("")));
         Emit(out);
       }
     } else if (cmd == "remove_member") {
@@ -840,6 +852,12 @@ public:
                cmd == "reinvite_everyone_removed_by") {
       ChangeGroup(id, cmd, request->getString("thread").value_or(""), request->getString("account").value_or(""),
                   request->getString("title").value_or(""));
+    } else if (cmd == "make_invite_link" || cmd == "revoke_invite_link") {
+      InviteLink(id, cmd, *request);
+    } else if (cmd == "join_by_link") {
+      JoinByLink(id, request->getString("link").value_or(""));
+    } else if (cmd == "confirm_join") {
+      ConfirmJoin(id, request->getString("request_id").value_or(""));
     } else if (cmd == "make_group_from_call") {
       std::vector<std::string> accounts;
       if (const Array* picked = request->getArray("accounts")) {
@@ -1441,6 +1459,118 @@ private:
           if (reinvite) {
             out.setJsonUInt("invited", static_cast<uint64_t>(*invited));
           }
+          Emit(out);
+        });
+  }
+
+  /** G021: the group's live invite links, as group info lists them. */
+  Value LinkRows(const std::string& group_id) {
+    std::vector<Value> links;
+    for (const GroupLinkRow& link : facade_->GroupInviteLinks(group_id)) {
+      Object row;
+      row.set("link_id", link.link_id);
+      row.set("maker", link.maker);
+      row.set("expires_at", link.expires_at);
+      row.setJsonUInt("max_uses", link.max_uses);
+      row.setJsonUInt("uses", link.uses);
+      links.push_back(ObjectValue(std::move(row)));
+    }
+    return ArrayValue(std::move(links));
+  }
+
+  /** G021: group info's "Invite link…" (a new link) and a link's "Revoke link". */
+  void InviteLink(int64_t id, const std::string& cmd, const Object& request) {
+    auto thread = facade_->GetThread(request.getString("thread").value_or(""));
+    if (!thread || !*thread || !(*thread)->group_id) {
+      ReplyError(id, "not a group chat");
+      return;
+    }
+    const std::string group_id = *(*thread)->group_id;
+    const std::string link_id = request.getString("link_id").value_or("");
+    const uint64_t max_uses = request.getNonNegInt("max_uses").value_or(0);
+    const int64_t lifetime_ms = static_cast<int64_t>(request.getNonNegInt("expires_in_s").value_or(0)) * 1000;
+    const bool make = cmd == "make_invite_link";
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupInviteLinkWorkflow::MadeLink>>(
+        WorkerLane::Normal,
+        [this, make, group_id, link_id, max_uses, lifetime_ms]() -> Roe<GroupInviteLinkWorkflow::MadeLink> {
+          if (make) {
+            return facade_->MakeInviteLink(group_id, max_uses, lifetime_ms);
+          }
+          if (auto revoked = facade_->RevokeInviteLink(group_id, link_id); !revoked) {
+            return revoked.error();
+          }
+          return GroupInviteLinkWorkflow::MadeLink{};
+        },
+        [id, make](Roe<GroupInviteLinkWorkflow::MadeLink> done) {
+          if (!done) {
+            ReplyError(id, done.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          if (make) {
+            out.set("link", done->text);
+            out.set("link_id", done->link_id);
+            out.set("expires_at", done->expires_at);
+          }
+          Emit(out);
+        });
+  }
+
+  /** G021: a link opened, pasted or scanned — the request to its maker, then its answer (the preview sheet's). */
+  void JoinByLink(int64_t id, const std::string& link) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupJoinState>>(
+        WorkerLane::Normal,
+        [this, link]() -> Roe<GroupJoinState> {
+          auto request_id = facade_->AskToJoinByLink(link);
+          if (!request_id) {
+            return request_id.error();
+          }
+          // The answer, or none once the joiner stops waiting (group_link_join::kAnswerTimeoutMs).
+          const int64_t until = util::NowUnixMs() + group_link_join::kAnswerTimeoutMs + 5'000;
+          std::optional<GroupJoinState> state = facade_->JoinByLinkState(*request_id);
+          while (state && state->phase == GroupJoinState::Phase::Asking && util::NowUnixMs() < until) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            state = facade_->JoinByLinkState(*request_id);
+          }
+          if (!state) {
+            return Error("the join was forgotten");
+          }
+          return *state;
+        },
+        [id](Roe<GroupJoinState> state) {
+          if (!state) {
+            ReplyError(id, state.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("request_id", state->request_id);
+          if (state->phase == GroupJoinState::Phase::Preview && state->preview) {
+            Object preview;
+            preview.set("title", state->preview->group_title);
+            preview.setJsonUInt("member_count", state->preview->member_count);
+            preview.set("group_id", state->preview->group_id);
+            out.set("preview", std::move(preview));
+          } else if (state->phase == GroupJoinState::Phase::Refused) {
+            out.set("refused", group_link_join::RefusalToString(state->reason));
+          } else {
+            out.set("no_answer", true);
+          }
+          Emit(out);
+        });
+  }
+
+  /** G021: the preview's Join. */
+  void ConfirmJoin(int64_t id, const std::string& request_id) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal, [this, request_id]() { return facade_->ConfirmJoinByLink(request_id); },
+        [id](Roe<Thread> thread) {
+          if (!thread) {
+            ReplyError(id, thread.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("thread", thread->id);
+          out.set("group_id", thread->group_id.value_or(""));
           Emit(out);
         });
   }

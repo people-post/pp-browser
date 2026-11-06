@@ -2318,6 +2318,119 @@ def scenario_remove_everyone_they_added(lab):
                  "%s: the group read-only" % x.name)
 
 
+def joined_by_link_line(u, thread, newcomer, maker):
+    """`u`'s group chat has the line saying `newcomer` joined by `maker`'s link (G021: member_joined.by_link)."""
+    for m in u.cmd("messages", thread=thread)["messages"]:
+        try:
+            detail = json.loads(json.loads(m.get("payload") or "{}").get("detail") or "{}")
+        except ValueError:
+            continue
+        if (detail.get("member_identity") == newcomer.account and detail.get("added_by") == maker.account and
+                detail.get("by_link")):
+            return m
+    return None
+
+
+def join_by_link(u, link, timeout=60):
+    """`u` opens `link`: the answer its maker's device gave (preview / refused / no_answer)."""
+    return u.cmd("join_by_link", link=link, timeout=timeout)
+
+
+def scenario_join_by_link(lab):
+    """Invite links (group-chat G021, o5): in an open group Carol, a plain member, makes a link. Erin, who has no
+    contacts at all, opens it: Carol's device answers with the group's name and how many are in it (never who).
+    Erin joins: Carol's device signs the add with the link's id and hands Erin the group — the full roster, every
+    member checked by Erin herself. Everyone lists Erin as added by Carol, and the others' chats say she joined by
+    Carol's link. The roster counts the link's use; Erin talks in the group."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    made = c.cmd("make_invite_link", thread=threads[c.name], timeout=60)
+    link, link_id = made["link"], made["link_id"]
+    if not link.startswith("pp://join/") or group_id in link:
+        raise ProbeError("carol: the link %r is not a pp://join/ link that names nothing of the group" % link)
+    for u in users:
+        wait_for(lambda u=u: any(l["link_id"] == link_id and l["maker"] == c.account for l in roster(u)["links"])
+                 or None, 60, "%s: carol's link in the roster" % u.name)
+
+    answer = join_by_link(e, link)
+    preview = answer.get("preview")
+    if not preview:
+        raise ProbeError("erin: no preview for carol's link (%s)" % answer)
+    if preview.get("member_count") != 3 or preview.get("title") != "lab group":
+        raise ProbeError("erin: the preview says %s" % preview)
+    joined = e.cmd("confirm_join", request_id=answer["request_id"], timeout=60)
+    if joined.get("group_id") != group_id:
+        raise ProbeError("erin: joined %s, not the group" % joined)
+    threads[e.name] = joined["thread"]
+
+    everyone = sorted([a.account, b.account, c.account, e.account])
+    wait_for(lambda: sorted(roster(e)["members"]) == everyone or None, 90, "erin: the full roster")
+    wait_added([a, b, c, e], group_id, e, c)
+    for u in (a, b):
+        wait_for(lambda u=u: joined_by_link_line(u, threads[u.name], e, c), 60,
+                 "%s: \"erin joined by carol's link\"" % u.name)
+    wait_for(lambda: next((l for l in roster(c)["links"] if l["link_id"] == link_id and l["uses"] == 1), None), 60,
+             "carol: her link used once")
+
+    text = "erin here, by carol's link"
+    e.cmd("send_mentions", thread=threads[e.name], text=text, mentions=[])
+    for r in (a, b, c):
+        wait_for(lambda r=r: said_in(r, threads[r.name], text), 60, "%s: %r" % (r.name, text))
+
+
+def refused_link(u, link, why, timeout=60):
+    answer = join_by_link(u, link, timeout)
+    if answer.get("refused") != why:
+        raise ProbeError("%s: opening the link gave %s (wanted refused %s)" % (u.name, answer, why))
+
+
+def scenario_refused_links(lab):
+    """Links that no longer let anyone in (group-chat G021, o5), each refused with its reason by the maker's device:
+    Bob makes a link and Alice, the owner, revokes it (revoked); Carol makes one that lasts a few seconds (expired —
+    the joiner's device refuses it as soon as it is past its expiry, as the maker's would); Dave makes one and
+    leaves the group (revoked: a link dies with its maker). Erin, a stranger, tries each; she joins nothing."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    def live(u, link_id):
+        return any(l["link_id"] == link_id for l in roster(u)["links"])
+
+    revoked = b.cmd("make_invite_link", thread=threads[b.name], timeout=60)
+    wait_for(lambda: live(a, revoked["link_id"]) or None, 60, "alice: bob's link in the roster")
+    a.cmd("revoke_invite_link", thread=threads[a.name], link_id=revoked["link_id"], timeout=60)
+    wait_for(lambda: not live(b, revoked["link_id"]) or None, 60, "bob: his link revoked by alice")
+    refused_link(e, revoked["link"], "revoked")
+
+    short = c.cmd("make_invite_link", thread=threads[c.name], expires_in_s=5, timeout=60)
+    wait_for(lambda: live(c, short["link_id"]) or None, 30, "carol: her short link in the roster")
+    time.sleep(6)
+    refused_link(e, short["link"], "expired")
+
+    gone = d.cmd("make_invite_link", thread=threads[d.name], timeout=60)
+    wait_for(lambda: live(a, gone["link_id"]) or None, 60, "alice: dave's link in the roster")
+    d.cmd("leave_group", thread=threads[d.name])
+    wait_for(lambda: d.account not in roster(a)["members"] or None, 60, "alice: dave left")
+    if live(a, gone["link_id"]):
+        raise ProbeError("alice: dave's link is still live after he left")
+    refused_link(e, gone["link"], "revoked")
+
+    if group_thread_of(e, group_id):
+        raise ProbeError("erin: holds the group's chat after three refusals")
+
+
 def scenario_call_grows_into_a_group(lab):
     """Make a group during a call (group-chat G022, o3): Alice calls Bob, then adds Carol, whom Bob does not know.
     With three in a call that started 1:1, everyone's call screen offers "Make a group…". Bob makes one: the
@@ -3529,6 +3642,8 @@ SCENARIOS = [
     ("managed_group_only_admins_invite", scenario_managed_group_only_admins_invite),
     ("admin_readmits_a_removed_member", scenario_admin_readmits_a_removed_member),
     ("remove_everyone_they_added", scenario_remove_everyone_they_added),
+    ("join_by_link", scenario_join_by_link),
+    ("refused_links", scenario_refused_links),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),
