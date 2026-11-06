@@ -13,7 +13,7 @@ namespace pbr {
 namespace group_roster_statement {
 namespace {
 
-// v3 (G018): added_by, the title, removed, links and folded are signed too; v2 (G017) signed the preset. An older
+// v3 (G018): added_by, the title, removed, links, folded and the change floor are signed too; v2 (G017) signed the preset. An older
 // statement does not verify as v3 (clean cutover, unreleased product).
 constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v3";
 constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v3";
@@ -44,7 +44,8 @@ void SortLists(GroupRosterStatement& statement) {
             [](const GroupRemovedMember& a, const GroupRemovedMember& b) { return a.identity < b.identity; });
   std::sort(statement.links.begin(), statement.links.end(),
             [](const GroupInviteLink& a, const GroupInviteLink& b) { return a.link_id < b.link_id; });
-  std::sort(statement.folded.begin(), statement.folded.end());
+  std::sort(statement.folded.begin(), statement.folded.end(),
+            [](const GroupFoldedChange& a, const GroupFoldedChange& b) { return a.id < b.id; });
 }
 
 void PutMembers(ByteVector& out, const std::vector<GroupRosterStatementMember>& members) {
@@ -89,7 +90,7 @@ bool AllUnique(const std::vector<T>& items, Key key) {
   return true;
 }
 
-/** The G018 lists: removed accounts unique and not members, link ids unique, folded ids unique. */
+/** The G018 lists: removed accounts unique and not members, link ids unique, folded ids unique and above the floor. */
 Roe<void> CheckLists(const GroupRosterStatement& statement) {
   if (!AllUnique(statement.removed, [](const GroupRemovedMember& r) -> const std::string& { return r.identity; })) {
     return Error("roster statement: empty or repeated removed account");
@@ -102,8 +103,16 @@ Roe<void> CheckLists(const GroupRosterStatement& statement) {
   if (!AllUnique(statement.links, [](const GroupInviteLink& l) -> const std::string& { return l.link_id; })) {
     return Error("roster statement: empty or repeated link id");
   }
-  if (!AllUnique(statement.folded, [](const std::string& id) -> const std::string& { return id; })) {
+  if (!AllUnique(statement.folded, [](const GroupFoldedChange& f) -> const std::string& { return f.id; })) {
     return Error("roster statement: empty or repeated folded change");
+  }
+  if (statement.change_floor_epoch > statement.roster_epoch) {
+    return Error("roster statement: change floor above its epoch");
+  }
+  for (const GroupFoldedChange& f : statement.folded) {
+    if (f.base_epoch < statement.change_floor_epoch) {
+      return Error("roster statement: a folded change below the change floor");
+    }
   }
   return {};
 }
@@ -149,7 +158,7 @@ Object LinkToJson(const GroupInviteLink& link) {
   return row;
 }
 
-/** The G018 fields: title, removed, links, folded (each omitted when empty). */
+/** The G018 fields: title, removed, links, folded, the change floor (each omitted when empty). */
 void PutOpenGroupJson(Object& json, const GroupRosterStatement& statement) {
   if (!statement.title.empty() || statement.title_version > 0) {
     json.set("title", statement.title);
@@ -170,11 +179,17 @@ void PutOpenGroupJson(Object& json, const GroupRosterStatement& statement) {
     json.set("links", ArrayValue(std::move(links)));
   }
   std::vector<Value> folded;
-  for (const std::string& id : statement.folded) {
-    folded.emplace_back(id);
+  for (const GroupFoldedChange& f : statement.folded) {
+    Object row;
+    row.set("id", f.id);
+    row.setJsonUInt("base_epoch", f.base_epoch);
+    folded.push_back(ObjectValue(std::move(row)));
   }
   if (!folded.empty()) {
     json.set("folded", ArrayValue(std::move(folded)));
+  }
+  if (statement.change_floor_epoch > 0) {
+    json.setJsonUInt("change_floor_epoch", statement.change_floor_epoch);
   }
 }
 
@@ -214,15 +229,14 @@ Roe<void> ReadOpenGroupJson(const Object& json, GroupRosterStatement& statement)
                                static_cast<int64_t>(row->getNonNegInt("expires_at").value_or(0)),
                                row->getNonNegInt("max_uses").value_or(0)});
   }
-  if (const Array* folded = json.getArray("folded")) {
-    for (const Value& item : folded->elements) {
-      auto id = asString(item);
-      if (!id) {
-        return Error("roster statement: a folded id is not a string");
-      }
-      statement.folded.push_back(*id);
-    }
+  auto folded = ObjectRows(json, "folded", "folded change");
+  if (!folded) {
+    return folded.error();
   }
+  for (const Object* row : *folded) {
+    statement.folded.push_back({row->getString("id").value_or(""), row->getNonNegInt("base_epoch").value_or(0)});
+  }
+  statement.change_floor_epoch = json.getNonNegInt("change_floor_epoch").value_or(0);
   return {};
 }
 
@@ -243,9 +257,11 @@ ByteVector SignBytes(const GroupRosterStatement& statement) {
   PutRemoved(out, sorted.removed);
   PutLinks(out, sorted.links);
   Put(out, static_cast<uint64_t>(sorted.folded.size()));
-  for (const std::string& id : sorted.folded) {
-    Put(out, id);
+  for (const GroupFoldedChange& f : sorted.folded) {
+    Put(out, f.id);
+    Put(out, f.base_epoch);
   }
+  Put(out, sorted.change_floor_epoch);
   return out;
 }
 
@@ -514,6 +530,10 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
 bool GroupRosterStatement::Lists(const std::string& identity) const {
   return std::any_of(members.begin(), members.end(),
                      [&](const GroupRosterStatementMember& m) { return m.identity == identity; });
+}
+
+bool GroupRosterStatement::Folded(const std::string& id) const {
+  return std::any_of(folded.begin(), folded.end(), [&](const GroupFoldedChange& f) { return f.id == id; });
 }
 
 } // namespace pbr

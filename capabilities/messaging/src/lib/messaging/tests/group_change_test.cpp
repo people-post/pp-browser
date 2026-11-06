@@ -259,7 +259,8 @@ GroupRosterStatement FullStatement(Person& alice) {
   draft.removed = {{.identity = "account:mallory", .removal = "r1", .removed_by = "account:bob"}};
   draft.links = {
       {.link_id = "link-1", .secret_hash = "h", .maker = "account:bob", .expires_at = kNowMs, .max_uses = 5}};
-  draft.folded = {"c2", "c1"};
+  draft.folded = {{.id = "c2", .base_epoch = 5}, {.id = "c1", .base_epoch = 4}};
+  draft.change_floor_epoch = 2;
   return test::SignedStatement(alice, draft);
 }
 
@@ -267,7 +268,8 @@ TEST(GroupRosterStatementV3Test, TheOpenGroupFieldsAreWhatTheOwnerSigned) {
   Person& alice = Named("alice");
   const GroupRosterStatement s = FullStatement(alice);
   ASSERT_TRUE(group_roster_statement::Verify(s, alice.Id()));
-  EXPECT_EQ(s.folded, (std::vector<std::string>{"c1", "c2"})) << "signed sorted";
+  EXPECT_EQ(s.folded, (std::vector<GroupFoldedChange>{{.id = "c1", .base_epoch = 4}, {.id = "c2", .base_epoch = 5}}))
+      << "signed sorted";
 
   const std::vector<std::function<void(GroupRosterStatement&)>> tamper = {
       [](GroupRosterStatement& t) { t.members[2].added_by = "account:alice"; },
@@ -280,8 +282,10 @@ TEST(GroupRosterStatementV3Test, TheOpenGroupFieldsAreWhatTheOwnerSigned) {
       [](GroupRosterStatement& t) { t.links[0].maker = "account:erin"; },
       [](GroupRosterStatement& t) { t.links[0].max_uses = 0; },
       [](GroupRosterStatement& t) { t.links[0].secret_hash = "other"; },
-      [](GroupRosterStatement& t) { t.folded.push_back("c3"); },
+      [](GroupRosterStatement& t) { t.folded.push_back({.id = "c3", .base_epoch = 5}); },
       [](GroupRosterStatement& t) { t.folded.pop_back(); },
+      [](GroupRosterStatement& t) { t.folded[0].base_epoch = 5; },
+      [](GroupRosterStatement& t) { t.change_floor_epoch = 3; },
   };
   for (size_t i = 0; i < tamper.size(); ++i) {
     GroupRosterStatement changed = s;
@@ -304,7 +308,8 @@ TEST(GroupRosterStatementV3Test, JsonRoundTripKeepsTheOpenGroupFields) {
   EXPECT_EQ(back->removed[0].removal, "r1");
   ASSERT_EQ(back->links.size(), 1u);
   EXPECT_EQ(back->links[0].max_uses, 5u);
-  EXPECT_EQ(back->folded.size(), 2u);
+  EXPECT_EQ(back->folded, s.folded);
+  EXPECT_EQ(back->change_floor_epoch, 2u);
   const auto erin = std::find_if(back->members.begin(), back->members.end(),
                                  [](const GroupRosterStatementMember& m) { return m.identity == "account:erin"; });
   ASSERT_NE(erin, back->members.end());
@@ -318,7 +323,9 @@ TEST(GroupRosterStatementV3Test, ListsMustBeConsistent) {
       [](GroupRosterStatement& t) { t.removed.push_back({.identity = "account:bob"}); }, // removed and a member
       [](GroupRosterStatement& t) { t.removed.push_back(t.removed[0]); },
       [](GroupRosterStatement& t) { t.links.push_back(t.links[0]); },
-      [](GroupRosterStatement& t) { t.folded.push_back("c1"); },
+      [](GroupRosterStatement& t) { t.folded.push_back({.id = "c1", .base_epoch = 4}); },
+      [](GroupRosterStatement& t) { t.folded.push_back({.id = "c0", .base_epoch = 1}); }, // below the floor
+      [](GroupRosterStatement& t) { t.change_floor_epoch = 7; },                          // above the epoch
   };
   for (size_t i = 0; i < broken.size(); ++i) {
     GroupRosterStatement draft = base;

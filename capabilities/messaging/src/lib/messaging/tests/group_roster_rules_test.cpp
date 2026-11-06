@@ -429,7 +429,7 @@ TEST_F(GroupRosterRulesTest, AChangeFromADeviceTakenOffTheCardCountsOnlyIfFolded
   // Folded: the owner took it in while the device was hers.
   const GroupRosterStatement folded = Statement([&](GroupRosterStatement& d) {
     d.members.push_back(Row(erin.Id(), MemberRole::Member, carol.Id()));
-    d.folded = {grc::Id(from_two)};
+    d.folded = {{.id = grc::Id(from_two), .base_epoch = from_two.base_epoch}};
   });
   view = Compute(folded, {from_two});
   EXPECT_TRUE(view.Lists(erin.Id()));
@@ -560,7 +560,8 @@ TEST_F(GroupRosterRulesTest, ChangesForAnotherGroupOrAlreadyFoldedAreDropped) {
   other.invite_nonce = "n";
   other = carol.Signed(other);
   const GroupChange folded = carol.Add(frank.Id());
-  const GroupRosterStatement s = Statement([&](GroupRosterStatement& d) { d.folded = {grc::Id(folded)}; });
+  const GroupRosterStatement s = Statement(
+      [&](GroupRosterStatement& d) { d.folded = {{.id = grc::Id(folded), .base_epoch = folded.base_epoch}}; });
   const GroupRosterView view = Compute(s, {other, folded});
   EXPECT_TRUE(Is(view, other, Status::Dropped, Reason::OtherGroup));
   EXPECT_TRUE(Is(view, folded, Status::Dropped, Reason::Folded));
@@ -635,11 +636,14 @@ TEST_F(GroupRosterRulesTest, FoldingThenComputingGivesTheSameRoster) {
 }
 
 TEST_F(GroupRosterRulesTest, AFoldCarriesEarlierFoldsForward) {
-  const GroupRosterStatement s = Statement([](GroupRosterStatement& d) { d.folded = {"earlier"}; });
+  const GroupRosterStatement s =
+      Statement([](GroupRosterStatement& d) { d.folded = {{.id = "earlier", .base_epoch = 3}}; });
   const GroupChange add = carol.Add(erin.Id());
   const GroupRosterStatement next = FoldChanges(s, Compute(s, {add}));
-  std::vector<std::string> expected{grc::Id(add), "earlier"};
-  std::sort(expected.begin(), expected.end());
+  std::vector<GroupFoldedChange> expected{{.id = grc::Id(add), .base_epoch = add.base_epoch},
+                                          {.id = "earlier", .base_epoch = 3}};
+  std::sort(expected.begin(), expected.end(),
+            [](const GroupFoldedChange& a, const GroupFoldedChange& b) { return a.id < b.id; });
   EXPECT_EQ(next.folded, expected);
   ASSERT_EQ(next.members.size(), 5u);
   const auto erin_row = std::find_if(next.members.begin(), next.members.end(),
@@ -670,6 +674,68 @@ TEST_F(GroupRosterRulesTest, FoldingAVoidChangeKeepsItVoidAfterAReappointment) {
 
   const GroupRosterStatement unfolded = Statement([](GroupRosterStatement& d) { d.roster_epoch = 7; });
   EXPECT_FALSE(Compute(unfolded, {backdated}).Lists(carol.Id())) << "unfolded, it would count again";
+}
+
+// ---- The change floor (G018: `folded` bounded) ----
+
+TEST_F(GroupRosterRulesTest, AChangeMadeAgainstAStatementBelowTheFloorIsDroppedAsTooOld) {
+  GroupChange old_draft = carol.Draft(GroupChangeKind::Add);
+  old_draft.member = erin.Id();
+  old_draft.invite_nonce = "invite-1";
+  old_draft.base_epoch = 3;
+  const GroupChange old_add = carol.Signed(old_draft);
+  const GroupChange fresh = dave.Add(frank.Id()); // base epoch 5
+  const GroupRosterStatement s = Statement([](GroupRosterStatement& d) {
+    d.roster_epoch = 40;
+    d.change_floor_epoch = 4;
+  });
+  const GroupRosterView view = Compute(s, {old_add, fresh});
+  EXPECT_TRUE(Is(view, old_add, Status::Dropped, Reason::TooOld)) << "lost: it must be made again";
+  EXPECT_FALSE(view.Lists(erin.Id()));
+  EXPECT_TRUE(view.Lists(frank.Id())) << "at the floor or above, a change still counts";
+  EXPECT_EQ(view.HeldIds(), std::vector<std::string>{grc::Id(fresh)}) << "a device drops what is too old";
+}
+
+TEST_F(GroupRosterRulesTest, FoldingRaisesTheFloorAndTrimsWhatItFolded) {
+  const GroupChange add = carol.Add(erin.Id()); // base epoch 5
+  GroupRosterStatement s = Statement([](GroupRosterStatement& d) {
+    d.roster_epoch = 36;
+    d.change_floor_epoch = 1;
+    d.folded = {{.id = "two", .base_epoch = 2}, {.id = "four", .base_epoch = 4}, {.id = "six", .base_epoch = 6}};
+  });
+  const GroupRosterStatement next = FoldChanges(s, Compute(s, {add}));
+  EXPECT_EQ(next.roster_epoch, 37u);
+  EXPECT_EQ(next.change_floor_epoch, 37u - kChangeFloorLag);
+  std::vector<std::string> ids;
+  for (const GroupFoldedChange& f : next.folded) {
+    ids.push_back(f.id);
+    EXPECT_GE(f.base_epoch, next.change_floor_epoch);
+  }
+  std::vector<std::string> expected{grc::Id(add), "six"};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(ids, expected) << "two and four are below the floor: dropped as too old anyway";
+  const GroupRosterStatement signed_next = test::SignedStatement(alice, next);
+  ASSERT_TRUE(group_roster_statement::Verify(signed_next, alice.Id()));
+  EXPECT_TRUE(Is(Compute(signed_next, {add}), add, Status::Dropped, Reason::Folded));
+
+  // The floor never goes down, and a young group has none.
+  GroupRosterStatement young = Statement();
+  EXPECT_EQ(FoldChanges(young, Compute(young, {})).change_floor_epoch, 0u);
+  s.change_floor_epoch = 30;
+  s.folded.clear();
+  EXPECT_EQ(FoldChanges(s, Compute(s, {})).change_floor_epoch, 30u);
+}
+
+TEST_F(GroupRosterRulesTest, AFoldRecordsAFutureBaseEpochAsTheStatementsOwn) {
+  GroupChange draft = carol.Draft(GroupChangeKind::Add);
+  draft.member = erin.Id();
+  draft.invite_nonce = "invite-1";
+  draft.base_epoch = 1'000'000; // no statement that new exists
+  const GroupChange future = carol.Signed(draft);
+  const GroupRosterStatement s = Statement();
+  const GroupRosterStatement next = FoldChanges(s, Compute(s, {future}));
+  ASSERT_EQ(next.folded.size(), 1u);
+  EXPECT_EQ(next.folded[0].base_epoch, s.roster_epoch) << "so the floor trims it in time";
 }
 
 // ---- The core property: order independence ----

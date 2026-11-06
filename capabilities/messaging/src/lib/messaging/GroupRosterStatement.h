@@ -44,6 +44,17 @@ struct GroupInviteLink {
 };
 
 /**
+ * G018 item 4: a change the owner folded, with the statement epoch it was made against (`base_epoch`, at most the
+ * epoch of the statement that folded it): the change floor trims `folded` by it.
+ */
+struct GroupFoldedChange {
+  std::string id;
+  uint64_t base_epoch = 0;
+
+  bool operator==(const GroupFoldedChange&) const = default;
+};
+
+/**
  * A transfer of ownership, signed by the owner who gave it up (G012 amendment: the owner chain). It
  * lets a device that knows only an earlier owner trust a statement the later owner signed.
  */
@@ -77,10 +88,16 @@ struct GroupRosterStatement {
   /** G021: live invite links, sorted by link id. */
   std::vector<GroupInviteLink> links;
   /**
-   * G018 item 4: the ids of every change the owner has folded into its statements (this one and earlier ones),
-   * sorted. Devices drop a change it names; carried forward so a device that missed a statement still drops it.
+   * G018 item 4: every change the owner has folded into its statements (this one and earlier ones) whose base epoch
+   * is not below `change_floor_epoch`, sorted by id. Devices drop a change it names; carried forward so a device that
+   * missed a statement still drops it.
    */
-  std::vector<std::string> folded;
+  std::vector<GroupFoldedChange> folded;
+  /**
+   * G018: a change made against a statement older than this (`base_epoch` below it) is dropped as too old, so
+   * `folded` need not name it. The owner raises it as it folds (GroupRosterRules.h, kChangeFloorLag).
+   */
+  uint64_t change_floor_epoch = 0;
   std::string owner_identity;
   std::string owner_public_key_b64;
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
@@ -93,13 +110,16 @@ struct GroupRosterStatement {
   bool dissolved = false;
 
   bool Lists(const std::string& identity) const;
+  /** `folded` names the change `id`. */
+  bool Folded(const std::string& id) const;
 };
 
 namespace group_roster_statement {
 
 /**
  * The bytes the owner signs (v3, G018): domain tag, group, epoch, owner, members (with `added_by`), preset, title
- * and its version, removed, links, folded (length-prefixed fields; every list sorted).
+ * and its version, removed, links, folded (each id with its base epoch), the change floor (length-prefixed fields;
+ * every list sorted).
  */
 ByteVector SignBytes(const GroupRosterStatement& statement);
 /** The bytes a transferring owner signs: domain tag, group, from, to, epoch. */
@@ -130,7 +150,8 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
 /**
  * Valid for a device that knows `known_owner` (empty: knows none): the one owner member signed it with
  * the key its account id comes from, members are unique, the removed are unique and not members, link ids and
- * folded ids are unique, every transfer in the chain is signed by the
+ * folded ids are unique, no folded change is below the change floor (nor the floor above the epoch), every transfer
+ * in the chain is signed by the
  * owner it moves from, links to the next, and its epochs rise to at most the statement's; and, when
  * `known_owner` is not the statement's owner, the chain moves ownership away from `known_owner`.
  */

@@ -64,6 +64,8 @@ enum class GroupChangeReason : uint8_t {
   // Dropped.
   OtherGroup,
   Folded,
+  /** Made against a statement older than the latest's change floor (G018: a change that old is lost). */
+  TooOld,
   Dissolved,
   Malformed,
   BadSignature,
@@ -101,6 +103,8 @@ struct GroupChangeVerdict {
   std::string id;
   GroupChangeKind kind = GroupChangeKind::Add;
   std::string signer;
+  /** The change's `base_epoch` (what a fold records, FoldInto). */
+  uint64_t base_epoch = 0;
   GroupChangeStatus status = GroupChangeStatus::Void;
   GroupChangeReason reason = GroupChangeReason::None;
 };
@@ -113,6 +117,14 @@ struct GroupRosterViewMember {
   /** The add that brought them in; empty when the statement lists them. */
   std::string added_in;
 };
+
+/**
+ * How many statements a change may lag behind (G018, the change floor): folding at epoch e raises the floor to
+ * e − kChangeFloorLag. Each statement is one owner act (an add, a removal, a role, a fold), so 32 is weeks of a busy
+ * group's life — far longer than a change spends in flight from a device that was offline — while `folded`, which
+ * rides every statement, names only the changes of the last 32 statements.
+ */
+inline constexpr uint64_t kChangeFloorLag = 32;
 
 /** The roster: the latest statement plus every unfolded change, by R1–R6 (G018). */
 struct GroupRosterView {
@@ -154,9 +166,17 @@ GroupRosterView ComputeRosterChecked(const GroupRosterStatement& latest, const s
 bool FoldsIn(const GroupChangeVerdict& verdict);
 
 /**
+ * The fold's bookkeeping on `next` (its `roster_epoch` already set): `folded` = `current.folded` plus every change of
+ * `view` that FoldsIn (its base epoch at most `current`'s epoch: no change is made against a statement not yet
+ * signed), the change floor raised to `next.roster_epoch` - kChangeFloorLag (never lowered), and `folded` trimmed to
+ * the floor. `view` is ComputeRoster over `current`.
+ */
+void FoldInto(const GroupRosterStatement& current, const GroupRosterView& view, GroupRosterStatement& next);
+
+/**
  * The owner's next statement (unsigned; sign with group_roster_statement::SignStatement): `view`'s members, roles,
  * added_by, removed, live links and title, at `current`'s epoch + 1, with `current`'s preset and owner chain, and
- * `folded` = `current.folded` plus every change FoldsIn. `view` is ComputeRoster over `current`.
+ * the fold's bookkeeping (FoldInto). `view` is ComputeRoster over `current`.
  */
 GroupRosterStatement FoldChanges(const GroupRosterStatement& current, const GroupRosterView& view);
 

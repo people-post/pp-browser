@@ -150,18 +150,27 @@ private:
   // ---- Sorting the changes in ----
 
   void Mark(const CheckedGroupChange& c, const Status status, const Reason reason) {
-    verdicts_[c.id] = {
-        .id = c.id, .kind = c.change.kind, .signer = c.change.signer, .status = status, .reason = reason};
+    verdicts_[c.id] = {.id = c.id,
+                       .kind = c.change.kind,
+                       .signer = c.change.signer,
+                       .base_epoch = c.change.base_epoch,
+                       .status = status,
+                       .reason = reason};
   }
 
   /** Drop what is not this group's live business; hold the rest (unproved ones as void, for later). */
   void Classify(const std::vector<CheckedGroupChange>& changes) {
-    const std::set<std::string> folded(s_.folded.begin(), s_.folded.end());
+    std::set<std::string> folded;
+    for (const GroupFoldedChange& f : s_.folded) {
+      folded.insert(f.id);
+    }
     for (const CheckedGroupChange& c : changes) {
       if (c.change.group_id != s_.group_id) {
         Mark(c, Status::Dropped, Reason::OtherGroup);
       } else if (folded.count(c.id) > 0) {
         Mark(c, Status::Dropped, Reason::Folded);
+      } else if (c.change.base_epoch < s_.change_floor_epoch) {
+        Mark(c, Status::Dropped, Reason::TooOld);
       } else if (s_.dissolved) {
         Mark(c, Status::Dropped, Reason::Dissolved);
       } else if (c.proof == Proof::Malformed) {
@@ -742,14 +751,28 @@ GroupRosterStatement FoldChanges(const GroupRosterStatement& current, const Grou
   next.links = view.links;
   next.title = view.title;
   next.title_version = view.title_version;
-  std::set<std::string> folded(current.folded.begin(), current.folded.end());
+  FoldInto(current, view, next);
+  return next;
+}
+
+void FoldInto(const GroupRosterStatement& current, const GroupRosterView& view, GroupRosterStatement& next) {
+  std::map<std::string, uint64_t> folded;
+  for (const GroupFoldedChange& f : current.folded) {
+    folded[f.id] = f.base_epoch;
+  }
   for (const GroupChangeVerdict& v : view.verdicts) {
     if (FoldsIn(v)) {
-      folded.insert(v.id);
+      folded.emplace(v.id, std::min(v.base_epoch, current.roster_epoch));
     }
   }
-  next.folded.assign(folded.begin(), folded.end());
-  return next;
+  const uint64_t lagged = next.roster_epoch > kChangeFloorLag ? next.roster_epoch - kChangeFloorLag : 0;
+  next.change_floor_epoch = std::max(current.change_floor_epoch, lagged);
+  next.folded.clear();
+  for (const auto& [id, base_epoch] : folded) {
+    if (base_epoch >= next.change_floor_epoch) {
+      next.folded.push_back({.id = id, .base_epoch = base_epoch});
+    }
+  }
 }
 
 bool GroupRosterView::Lists(const std::string& identity) const {
