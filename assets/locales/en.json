@@ -1163,6 +1163,7 @@
     "call.placeholder.starting_video": "Starting video…",
     "call.status.reconnecting": "Reconnecting…",
     "call.status.on_hold_local": "On another call",
+    "call.status.on_hold_began": "Another call is coming in. PP has muted this call and will resume it after.",
     "call.status.on_hold_peer": "They stepped away. Please wait.",
     "call.status.on_hold_peer_named": "They stepped away. Please wait.",
     "call.status.connected": "Connected",

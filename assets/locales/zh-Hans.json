@@ -1125,6 +1125,7 @@
     "call.placeholder.starting_video": "正在开启视频…",
     "call.status.reconnecting": "重新连接中…",
     "call.status.on_hold_local": "正在接另一个电话",
+    "call.status.on_hold_began": "有电话打进来，PP 通话已自动静音，接完会自动恢复",
     "call.status.on_hold_peer": "对方暂时离开，请稍等",
     "call.status.on_hold_peer_named": "对方暂时离开，请稍等",
     "call.status.connected": "已连接",

@@ -136,6 +136,10 @@ void CallController::SyncLocalHold() {
     return;
   }
   local_on_hold_ = held;
+  if (held) {
+    // The other call rings as a banner on iPhones, so the user still sees PP: say what PP did (Kenneth 2026-11-06).
+    UserFeedback::Ok(Tr("call.status.on_hold_began"));
+  }
   log().info << "call on hold=" << (held ? 1 : 0) << " (the OS " << (held ? "took" : "gave back") << " the audio)";
   if (in_call) {
     backend->SetLocalOnHold(held);
