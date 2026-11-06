@@ -10,6 +10,7 @@
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
+#include "feature/conversations/GroupInviteLinkWorkflow.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -242,9 +243,41 @@ public:
   bool IsOwnerUnreachable(const std::string& group_id);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
+  /** G017, owner-only: make a member an admin, or a member again (GroupMembershipWorkflow::SetMemberRole). */
+  Roe<void> SetMemberRole(const std::string& group_id, const std::string& member_identity, MemberRole role);
+  /** G017, owner-only: set the group Open or Managed. */
+  Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);
+  Roe<GroupPreset> GroupPresetOf(const std::string& group_id);
+  /** Our role in the group (Owner by its recorded owner); none when we are not in it. */
+  std::optional<MemberRole> LocalGroupRole(const std::string& group_id);
+  /** G019 5: the members `account` brought in, as the roster holds it now. */
+  std::vector<std::string> GroupMembersAddedBy(const std::string& group_id, const std::string& account);
+  /** G020 6: the accounts `account` removed who are still out. */
+  std::vector<std::string> GroupAccountsRemovedBy(const std::string& group_id, const std::string& account);
+  /** G020 6, owner and admins: remove everyone `account` added who is ours to remove; how many removals went out. */
+  Roe<size_t> RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account);
+  /** G020 6, the owner: invite again everyone `account` removed; how many invites went out. */
+  Roe<size_t> ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account);
+  /** G019: invite by account (someone not a contact, e.g. met in the group), per the preset. */
+  Roe<void> InviteIdentity(const std::string& group_id, const std::string& account);
+  // G021, invite links (GroupInviteLinkWorkflow).
+  /** A new link to the group (per the preset); `lifetime_ms` 0: 7 days; `max_uses` 0: no limit. Blocking. */
+  Roe<GroupInviteLinkWorkflow::MadeLink> MakeInviteLink(const std::string& group_id, uint64_t max_uses = 0,
+                                                        int64_t lifetime_ms = 0);
+  Roe<void> RevokeInviteLink(const std::string& group_id, const std::string& link_id);
+  /** The group's live links (ours with their text). */
+  std::vector<GroupLinkRow> GroupInviteLinks(const std::string& group_id);
+  /** Our newest live link to the group whose text we keep. */
+  std::optional<GroupLinkRow> OwnInviteLink(const std::string& group_id);
+  /** Ask to join by a pasted, scanned or opened `pp://join/…`: the request id (JoinByLinkState follows it). */
+  Roe<std::string> AskToJoinByLink(const std::string& link_text);
+  /** The preview's Join: the group's chat. */
+  Roe<Thread> ConfirmJoinByLink(const std::string& request_id);
+  void CancelJoinByLink(const std::string& request_id);
+  std::optional<GroupJoinState> JoinByLinkState(const std::string& request_id);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
   /**
-   * Owner: send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
+   * Whoever the preset lets invite (G019): send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
    * members. Resolves the invitee, seals and writes on the calling thread: the UI thread uses InviteMembersAsync.
    */
   Roe<void> InviteMember(const std::string& group_id, const std::string& contact_id);

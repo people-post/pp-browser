@@ -37,6 +37,10 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
   hub_->SetBackendDefaults({defaults.relay, defaults.directory, defaults.registration});
   hub_->SetStorage(&OpenSqliteProfileStores);
   hub_->SetContentStorage(&OpenSqliteObjectIndex);
+  // G022: a group invite made during a call reaches us from someone we are in that call with (calls' to say).
+  hub_->SetInLiveCallQuery([this](const std::string& call_id, const std::string& inviter) {
+    return calls_.InLiveCallWith(call_id, inviter);
+  });
   // Order matters: up in this order (calls, then broadcast), down in reverse.
   hub_->AddParticipant(calls_);
   hub_->AddParticipant(broadcast_);

@@ -9,12 +9,14 @@
 namespace pbr {
 
 CallReads::CallReads(const ICallSessionReader& sessions, const ILocalAccount& account, const IThreadCatalog& threads,
-                     GroupMembersFn group_members, const IInitiationBillingBook* billing)
+                     GroupMembersFn group_members, const IInitiationBillingBook* billing,
+                     CallGroupStandingFn group_standing)
     : sessions_(sessions),
       account_(account),
       threads_(threads),
       group_members_(std::move(group_members)),
-      billing_(billing) {}
+      billing_(billing),
+      group_standing_(std::move(group_standing)) {}
 
 Roe<std::string> CallReads::LocalIdentity() const {
   auto account = account_.GetAccountId();
@@ -81,6 +83,17 @@ bool CallReads::InGroup(const std::string& group_id, const std::string& identity
   }
   auto members = group_members_(group_id);
   return members && members->count(identity) > 0;
+}
+
+Roe<std::vector<CallParticipant>> CallReads::Participants(const std::string& call_id) const {
+  return sessions_.ListParticipants(call_id);
+}
+
+std::optional<CallGroupStanding> CallReads::StandingIn(const std::string& group_id, const std::string& account) const {
+  if (!group_standing_ || group_id.empty()) {
+    return std::nullopt;
+  }
+  return group_standing_(group_id, account);
 }
 
 Roe<std::optional<std::string>> CallReads::PeerIdentityForCall(const std::string& call_id) const {

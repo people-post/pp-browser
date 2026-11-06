@@ -5177,6 +5177,94 @@ call-video-tile {
   line-height: 50dp;
 }
 
+/* G022: "Make a group…" in a call with no group and 3+ people, and the banner of a group made there (Join / Not now). */
+.call-make-group-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  padding: 8dp 12dp 0 12dp;
+}
+
+.call-make-group-row--phone {
+  padding: 0 24dp 12dp 24dp;
+}
+
+.call-make-group {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6dp;
+  height: 32dp;
+  padding: 0 14dp;
+  border: 0;
+  border-radius: 16dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.call-make-group svg {
+  flex-shrink: 0;
+  width: 16dp;
+  height: 16dp;
+}
+
+.call-make-group-label {
+  font-size: 14dp;
+  line-height: 32dp;
+}
+
+.call-make-group--phone {
+  height: 40dp;
+  padding: 0 18dp;
+  border-radius: 20dp;
+}
+
+.call-make-group--phone .call-make-group-label {
+  font-size: 15dp;
+  line-height: 40dp;
+  font-weight: bold;
+}
+
+.call-group-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 8dp;
+  margin: 8dp 12dp 0 12dp;
+  padding: 12dp;
+  border-radius: 12dp;
+  box-sizing: border-box;
+}
+
+.call-group-offer--phone {
+  margin: 0 24dp 12dp 24dp;
+  border-radius: 16dp;
+}
+
+.call-group-offer-text {
+  font-size: 14dp;
+  line-height: 20dp;
+}
+
+.call-group-offer-actions {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+  gap: 8dp;
+}
+
+.call-group-offer-btn {
+  height: 32dp;
+  padding: 0 16dp;
+  border: 0;
+  border-radius: 16dp;
+  font-size: 14dp;
+  line-height: 32dp;
+  font-weight: bold;
+  text-align: center;
+  cursor: pointer;
+}
+
 /* ---- Phone call pages (DESIGN-pp-ui 8.12 + its 2026-11-04 connection story; mockups 06-Call*, 08-call-connect-story).
    Full screen and always dark; ShellHost lifts the page under the status bar and pads it by the safe areas
    (ApplySafeAreaLayout). The only animations are the connecting line's spark, the current step's ring and the tips,

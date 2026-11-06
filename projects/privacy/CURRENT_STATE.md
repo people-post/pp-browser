@@ -10,3 +10,5 @@
 **Node uptime (P011):** the pp-node directory heartbeat is opt-in (`PP_NODE_MESH_HEARTBEAT`, org seeds); the listing shows a node's state, not its last-seen time; www does not log the heartbeat's address; nodes without heartbeats never go stale. Next: N031 (signed short-lived node records over the Amp directory).
 
 Exposure map at start (2026-09-30): the punch target answers any initiator; ch0 sends every linked peer our listen addresses (LAN included); client registration publishes addresses to the directory; calls dial direct first and send listen addresses in signalling; chat dials direct to any reachable peer; `TrustLevel::Friendly` has no behavioural use; Blocked is not enforced at the link.
+
+**Follow-up from open groups ([group-chat G023](../group-chat/DECISIONS.md#g023--privacy-in-open-groups-history-from-the-join-the-relays-view-comes-later), 2026-11-05, not started):** message requests — a requests list for first direct messages from people who are not contacts, group members first (the list [P007](DECISIONS.md#p007--who-can-call-me-strangers-messages-stay-open-for-now) waits for). (The relay's view of groups moved into group-chat o2, G018 item 7.)

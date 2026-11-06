@@ -6,6 +6,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
+#include "lib/calls/CallGuests.h"
 
 #include <functional>
 #include <optional>
@@ -49,6 +50,8 @@ struct CallDeliveryPorts {
   std::function<std::optional<std::string>(const std::string& group_id)> resolve_group_thread;
   /** Who is in a group now (identities); none when this device does not know the group. */
   std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
+  /** V062: where an account stands in a group (none: this device holds no roster for it). Unset: not checked. */
+  CallGroupStandingFn group_standing;
   std::function<void(bool force)> sync_inbox_from_wake;
   /**
    * Ensure e2e_public session key for media-key wrap (AutoKey if missing).

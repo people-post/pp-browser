@@ -1345,6 +1345,31 @@ input.checkbox:checked {
   color: {{accent}};
 }
 
+/* G022: "Make a group…" and the group banner in the desktop call bar. */
+.call-make-group {
+  background-color: {{accent-tint}};
+  color: {{accent}};
+}
+
+.call-make-group svg {
+  image-color: {{accent}};
+}
+
+.call-group-offer {
+  background-color: {{fill}};
+  color: {{label}};
+}
+
+.call-group-offer-btn {
+  background-color: {{bg-card}};
+  color: {{label}};
+}
+
+.call-group-offer-btn--primary {
+  background-color: {{accent}};
+  color: {{label-on-accent}};
+}
+
 .shell-call-retry svg {
   image-color: {{accent}};
 }
@@ -2999,6 +3024,15 @@ input.checkbox:checked {
   background-color: {{x-call-notice-warn}};
 }
 
+.call-hold-pill {
+  background-color: {{x-call-notice-warn}};
+  color: {{x-call-ink}};
+}
+
+.call-hold-pill svg {
+  image-color: {{x-call-ink}};
+}
+
 .call-phone-notice-icon {
   background-color: {{x-call-chip}};
 }
@@ -3138,6 +3172,26 @@ input.checkbox:checked {
 }
 
 .call-phone-pill-btn--primary {
+  background-color: {{x-call-accent}};
+}
+
+/* G022: "Make a group…" and the group banner on the phone call page. */
+.call-make-group--phone,
+.call-group-offer--phone .call-group-offer-btn {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-make-group--phone svg {
+  image-color: {{x-call-ink}};
+}
+
+.call-group-offer--phone {
+  background-color: {{x-call-btn-2}};
+  color: {{x-call-ink}};
+}
+
+.call-group-offer--phone .call-group-offer-btn--primary {
   background-color: {{x-call-accent}};
 }
 

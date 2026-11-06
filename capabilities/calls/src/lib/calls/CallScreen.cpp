@@ -188,4 +188,18 @@ InCallStatus DecideInCallStatus(const InCallSignals& s) {
   return out;
 }
 
+bool OffersMakeGroup(const bool tied_to_group, const size_t joined) {
+  return !tied_to_group && joined >= kMakeGroupMinPeople;
+}
+
+std::optional<CallGroupInvite> PickGroupInviteBanner(const std::vector<CallGroupInvite>& waiting,
+                                                     const std::set<std::string>& not_now) {
+  for (const CallGroupInvite& invite : waiting) {
+    if (!invite.invite_id.empty() && not_now.count(invite.invite_id) == 0) {
+      return invite;
+    }
+  }
+  return std::nullopt;
+}
+
 } // namespace pbr

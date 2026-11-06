@@ -1,5 +1,6 @@
 #include "lib/messaging/GroupMembershipApply.h"
 
+#include "lib/messaging/GroupPermissions.h"
 #include "lib/messaging/GroupRosterStatement.h"
 #include "lib/messaging/GroupRosterSync.h"
 
@@ -10,18 +11,12 @@
 
 namespace pbr {
 
-Roe<bool> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
-                                    const std::string& member_identity, const std::string& group_id,
-                                    const std::string& local_identity, const int64_t now_ms) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
-  auto pending = roster.LoadPendingInvite(invite_nonce);
-  if (!pending) {
-    return pending.error();
-  }
-  if (!pending->has_value()) {
-    return Error("Invite not found");
-  }
-  const PendingGroupInvite& invite = **pending;
+namespace {
+
+/** The checks an accept passes whoever invited: our invite, to them, for this group, pending, in time, room left. */
+Roe<std::optional<InviteAccepted>> CheckAcceptedInvite(IGroupRosterStore& roster, const PendingGroupInvite& invite,
+                                                       const std::string& member_identity, const std::string& group_id,
+                                                       const int64_t now_ms) {
   if (!invite.outbound) {
     return Error("Invite accept for an invite this device did not issue");
   }
@@ -31,54 +26,97 @@ Roe<bool> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string
   if (invite.group_id != group_id) {
     return Error("Invite accept names another group");
   }
-  auto metadata = roster.LoadMetadata(invite.group_id);
-  if (!metadata) {
-    return metadata.error();
-  }
-  if (!*metadata || local_identity.empty() || (*metadata)->owner_identity != local_identity) {
-    return Error("Invite accept for a group this device does not own");
-  }
-  if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
-    return Error(group_roster_sync::kGroupDissolvedError);  // G016: the group is over; the caller refuses the accept as it does a full one
-  }
   if (invite.status == InviteStatus::Accepted) {
     // Re-delivered (or re-sent) accept: it was applied once. A member removed since, or one who
     // left, needs a new invite — an old accept does not bring them back.
-    return false;
+    return std::optional<InviteAccepted>(InviteAccepted::Already);
   }
   if (invite.status != InviteStatus::Pending) {
     return Error("Invite is not pending");
   }
   if (invite.expires_at && now_ms > *invite.expires_at + kGroupInviteAcceptGraceMs) {
-    (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    (void)roster.UpdateInviteStatus(invite.invite_nonce, InviteStatus::Expired);
     return Error("Invite expired");
   }
   // G014: sent while not full, accepted when full — refused (the caller tells the invitee).
   if (auto members = roster.ListMembers(invite.group_id); members && members->size() >= kMaxGroupMembers) {
-    (void)roster.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+    (void)roster.UpdateInviteStatus(invite.invite_nonce, InviteStatus::Expired);
     return Error(kGroupFullError);
   }
+  return std::optional<InviteAccepted>{};
+}
 
+/** The owner's own add: the member in, added by us, at the roster's next epoch. */
+Roe<InviteAccepted> AddAsOwner(IGroupRosterStore& roster, const PendingGroupInvite& invite, GroupMetadata metadata,
+                               const std::string& member_identity, const std::string& local_identity,
+                               const int64_t now_ms) {
   GroupRosterMember member;
   member.member_identity = member_identity;
   member.role = MemberRole::Member;
   member.joined_at = now_ms;
+  member.added_by = local_identity; // G019 5: "Alice added Carol"
   if (auto upserted = roster.UpsertMember(invite.group_id, member); !upserted) {
     return upserted.error();
   }
-  GroupMetadata updated = **metadata;
-  updated.roster_epoch += 1;  // our own roster's next epoch — not one the accept names
-  if (auto saved = roster.UpsertMetadata(updated); !saved) {
+  metadata.roster_epoch += 1; // our own roster's next epoch — not one the accept names
+  if (auto saved = roster.UpsertMetadata(metadata); !saved) {
     return saved.error();
   }
   // Last: until the invite reads Accepted, a failure above leaves it Pending and a re-delivered
   // accept applies it again (the member upsert is idempotent) instead of being ignored.
-  if (auto status = roster.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); !status) {
+  if (auto status = roster.UpdateInviteStatus(invite.invite_nonce, InviteStatus::Accepted); !status) {
     return status.error();
   }
   // A re-invite left other cards out: once in, one of them must not bring back someone who later leaves.
   (void)roster.ExpireOutboundInvitesTo(invite.group_id, member_identity);
-  return true;
+  return InviteAccepted::Added;
+}
+
+} // namespace
+
+Roe<InviteAccepted> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
+                                              const std::string& member_identity, const std::string& group_id,
+                                              const std::string& local_identity, const int64_t now_ms) {
+  const auto lock = IGroupRosterStore::LockForUpdate(); // read-then-write of the roster
+  auto pending = roster.LoadPendingInvite(invite_nonce);
+  if (!pending) {
+    return pending.error();
+  }
+  if (!pending->has_value()) {
+    return Error("Invite not found");
+  }
+  const PendingGroupInvite& invite = **pending;
+  auto metadata = roster.LoadMetadata(invite.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (!*metadata || local_identity.empty()) {
+    return Error("Invite accept for a group this device does not hold");
+  }
+  if ((*metadata)->sync_state == GroupSyncState::Dissolved) {
+    // G016: the group is over; the caller refuses the accept as it does a full one.
+    return Error(group_roster_sync::kGroupDissolvedError);
+  }
+  auto checked = CheckAcceptedInvite(roster, invite, member_identity, group_id, now_ms);
+  if (!checked) {
+    return checked.error();
+  }
+  if (*checked) {
+    return **checked;
+  }
+  if ((*metadata)->owner_identity == local_identity) {
+    return AddAsOwner(roster, invite, **metadata, member_identity, local_identity, now_ms);
+  }
+  // G019: a member's or admin's invite — still ours to make under the preset and our role now (G017)?
+  auto self = roster.FindMember(invite.group_id, local_identity);
+  if (!self) {
+    return self.error();
+  }
+  if (!*self || (*metadata)->sync_state != GroupSyncState::Active ||
+      !GroupAllows(GroupAction::Invite, (*self)->role, (*metadata)->policy.preset)) {
+    return Error(kGroupInviteNotAllowedError);
+  }
+  return InviteAccepted::SignAdd;
 }
 
 Roe<void> ApplyInviteDeclineToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
@@ -220,30 +258,6 @@ Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
     (void)roster.UpsertMember(payload.group_id, previous);
   }
   return {};
-}
-
-Roe<void> ApplyMemberLeftToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
-                                  const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
-  if (payload.member_identity != actor_identity) {
-    return Error("member_left actor must match member_identity");
-  }
-  auto metadata = LoadMetadataRequired(roster, payload.group_id);
-  if (!metadata) {
-    return metadata.error();
-  }
-  if (metadata->owner_identity == actor_identity) {
-    return Error("Owner cannot leave without transfer");
-  }
-  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
-    return epoch.error();
-  }
-  if (auto removed = roster.RemoveMember(payload.group_id, payload.member_identity); !removed) {
-    return removed.error();
-  }
-  GroupMetadata updated = *metadata;
-  updated.roster_epoch = payload.roster_epoch;
-  return roster.UpsertMetadata(updated);
 }
 
 Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,

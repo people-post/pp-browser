@@ -129,6 +129,7 @@ bool ControlAlsoGoesDirect(bool peer_connected, bool has_relay_route, bool criti
  * One member's envelope of a group send: `copies` for the member's devices (each a pairwise payload numbered
  * in its device pair, with a key_init while that session is ours and not yet confirmed), or the member's
  * account copy (M022). `route_party`: the member's `relay:` id, or their account when only Amp reaches them.
+ * The route names no group (G018 item 7: the copies carry it inside); `group_id` only makes the pair's stream id.
  */
 RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const EnvelopeSender& sender,
                                        const std::string& group_id, const std::string& recipient,

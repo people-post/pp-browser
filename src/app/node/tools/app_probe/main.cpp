@@ -16,7 +16,10 @@
 //   threads / messages {thread}         what this user sees
 //   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
 //                                       or the picked `accounts`)
-//   invite_to_call {account}            add someone to the call in progress
+//   invite_to_call {account}            add someone to the call in progress (in a group's call someone outside the
+//                                       group comes as this user's guest, V062: refused unless the preset lets them)
+//   call_remove {account}               a guest's "Remove from call…" (V062: the group's owner and admins only)
+//   call_add_guest_to_group {account}   a guest's "Add {name} to the group" (the ordinary invite, made in the call)
 //   joinable {thread}                   the group call the call button would join {call_id} ("" none)
 //   accept / accept_voice / decline     the ring's buttons
 //   leave                               the call panel's End
@@ -26,10 +29,45 @@
 //   push_wake                           a call push arrives (what FCM's wake does)
 //   stay_connected {on}                 the "Stay connected in the background" setting (P011)
 //   create_group {title, accounts}      a group with these contacts (each invited)
-//   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
-//   group_roster {group_id}             the members this user knows of
+//   group_invites                       group invites in this user's chats {nonce, group_id, title, from,
+//                                       member_count} (G019: the invite shows the count, never the members)
+//   group_roster {group_id}             the members this user knows of {members, roles, added_by, owner, title,
+//                                       preset, sync_state, roster_epoch, statement_epoch, held_changes,
+//                                       changes_hash} (G018: the changes held unfolded, and the hash its group copies
+//                                       carry; G019: added_by maps each member to who brought them in, "" for the
+//                                       first members; G021: links, the live invite links [{link_id, maker,
+//                                       expires_at, max_uses, uses}])
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
-//   remove_member {thread, account}     the owner removes a member from the group
+//   remove_member {thread, account}     the owner (anyone) or an admin (members, G020) removes someone from the group
+//   leave_group {thread}                a member leaves the group (G018: its signed leave), the chat kept
+//   set_group_role {thread, account, role} the owner makes a member admin (role admin) or member again (G017)
+//   set_group_preset {thread, preset}   the owner sets the group open or managed (G017)
+//   invite_to_group {thread, account}   the ordinary invite by account (G019: Open any member, Managed the owner and
+//                                       admins; a member may not invite someone removed — the error says which)
+//   rename_group {thread, title}        rename the group for everyone (the owner; a non-owner the preset lets: a
+//                                       signed `rename` change)
+//   remove_everyone_added_by {thread, account}
+//                                       the owner or an admin removes everyone `account` added (G020 6) {removed}
+//   reinvite_everyone_removed_by {thread, account}
+//                                       the owner invites again everyone `account` removed (G020 6) {invited}
+//   make_invite_link {thread, max_uses?, expires_in_s?}
+//                                       group info's "Invite link…" (G021: per the preset): a new link {link, link_id,
+//                                       expires_at} — `pp://join/…`, signed into the roster as a link_add
+//   revoke_invite_link {thread, link_id} a link's "Revoke link" (its maker, an admin or the owner)
+//   join_by_link {link}                 open / paste / scan a link: the request to its maker, waiting (up to 20 s) for
+//                                       the answer {request_id, preview: {title, member_count, group_id}} or
+//                                       {request_id, refused: reason} (expired / revoked / used_up / removed /
+//                                       group_full / rate) or {request_id, no_answer: true} (the maker offline, or
+//                                       a link it does not know / a wrong secret: those get no reply, G021)
+//   confirm_join {request_id}           the preview's Join {thread, group_id}; the maker's device signs the add and
+//                                       sends the join bundle
+//   make_group_from_call {title?, accounts?}
+//                                       the call screen's "Make a group…" (G022: a call with no group, 3+ in it) and
+//                                       the picker's Create: everyone else in the call (or the picked `accounts`) is
+//                                       invited, the title defaults to their names {thread, group_id, title, invited}
+//   call_group_invite                   the call's group banner {shown, nonce, title, from} (G022)
+//   call_group_invite_join              the banner's Join (the ordinary accept) {thread}
+//   call_group_invite_not_now           the banner's Not now (the invite stays waiting)
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
@@ -48,20 +86,25 @@
 //   make_main {peer_id}                 on the main device: hand the main role to another device
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
-//   state                               the call surface + media counters (joined participants,
+//   state                               the call surface + media counters (joined participants; `members` with
+//                                       guest / brought_by / can_remove / can_add_to_group, V062; ring_guest /
+//                                       ring_people: ringing in as a guest and how many it shows them to;
+//                                       media_epoch: the call key's epoch, which moves on each leave;
 //                                       per-stream rx frames, video tx / rx and how each video stream's
 //                                       frames arrived: gaps, stalls, bunched, lost; the call link's
 //                                       round trip and Reliable resends)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
-// Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
+// Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change; notice {kind, key, text,
+// identity[, brought_by]} (kind guest_joined: "{identity} joined as {brought_by}'s guest", V062).
 //
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 // --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
 // --synthetic-video: a camera and an H.264 stand-in with real frame sizes (SyntheticVideo): video calls run in a
 //   container with no camera or GPU, for measuring how video travels.
 
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -89,6 +132,8 @@
 #include "feature/product/ProductStack.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "lib/ai/StructuredTextParser.h"
+#include "lib/people/PeerDisplayLabel.h"
+#include "lib/ui/PeoplePickerLogic.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactClock.h"
@@ -157,6 +202,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
     return "peer_declined";
   case CallNotice::Kind::IncomingCall:
     return "incoming_call";
+  case CallNotice::Kind::GuestJoined:
+    return "guest_joined";
   }
   return "?";
 }
@@ -183,8 +230,13 @@ public:
       event.set("key", notice.key);
       event.set("text", notice.text);
       event.set("identity", notice.identity);
+      if (!notice.brought_by.empty()) {
+        event.set("brought_by", notice.brought_by); // V062: guest_joined
+      }
       Emit(event);
     };
+    // G022: "Make a group…" opens the picker in the app; here the command that pressed it takes the call.
+    callbacks.open_make_group = [this](const std::string& call_id) { make_group_call_id_ = call_id; };
     presenter_.BindCallbacks(std::move(callbacks));
     // The preview line reads an AI reply as prose, as the app's does.
     chats_.BindCallbacks({.prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); }});
@@ -304,6 +356,21 @@ public:
     Emit(event);
   }
 
+  /** V062: the call screen's people — guests, who brought them, and the guest buttons this user has. */
+  static std::vector<Value> MembersOf(const CallScreen& screen) {
+    std::vector<Value> members;
+    for (const CallScreen::Member& member : screen.members) {
+      Object row;
+      row.set("identity", member.identity);
+      row.set("guest", member.guest);
+      row.set("brought_by", member.brought_by);
+      row.set("can_remove", member.can_remove);
+      row.set("can_add_to_group", member.can_add_to_group);
+      members.push_back(ObjectValue(std::move(row)));
+    }
+    return members;
+  }
+
   Object SurfaceObject() {
     Object out;
     out.set("kind", last_kind_);
@@ -316,7 +383,12 @@ public:
     out.set("conflict", screen.conflict);
     out.set("show_retry", screen.show_retry);
     out.set("show_invite", screen.show_invite);
+    out.set("show_make_group", screen.show_make_group); // G022
+    out.set("group_invite", screen.group_invite ? screen.group_invite->invite_id : std::string());
     out.set("group", screen.group);
+    out.set("members", ArrayValue(MembersOf(screen))); // V062: who is a guest, and what this user may do
+    out.set("ring_guest", screen.ring_guest);
+    out.set("ring_people", static_cast<int64_t>(screen.ring_people));
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
       const auto health = media.HealthSnapshot();
@@ -369,6 +441,10 @@ public:
         }
       }
       out.set("participants", ArrayValue(std::move(joined)));
+      // The call's media key epoch: it moves on each leave (V003), a guest's removal too (V062).
+      if (auto active = calls_->ActiveLocalCall(); active && active->has_value()) {
+        out.set("media_epoch", static_cast<int64_t>((*active)->media_epoch));
+      }
       out.set("last_error", last_error_);
     }
     return out;
@@ -695,11 +771,17 @@ public:
         ReplyError(id, roster.error().message);
       } else {
         std::vector<Value> members;
+        Object roles;
+        Object added_by;
         for (const GroupRosterMember& member : *roster) {
           members.emplace_back(member.member_identity);
+          roles.set(member.member_identity, MemberRoleToString(member.role));
+          added_by.set(member.member_identity, member.added_by);
         }
         Object out = Reply(id, true);
         out.set("members", ArrayValue(std::move(members)));
+        out.set("roles", std::move(roles)); // G017: owner / admin / member, as the signed roster says
+        out.set("added_by", std::move(added_by)); // G019: who brought each in ("" for the first members)
         if (auto owner = facade_->OwnerIdentity(request->getString("group_id").value_or(""))) {
           out.set("owner", *owner);
         }
@@ -710,8 +792,18 @@ public:
             out.set("sync_state", GroupSyncStateToString((*metadata)->sync_state));
             out.setJsonUInt("roster_epoch", (*metadata)->roster_epoch);
             out.set("statement", !(*metadata)->roster_statement_json.empty());
+            out.set("preset", GroupPresetToString((*metadata)->policy.preset));
+            out.set("title", (*metadata)->title);
           }
+          // G018: the changes held on top of the owner's statement, and what this device's copies say of them.
+          const std::string group_id = request->getString("group_id").value_or("");
+          const GroupCopyState state = group_roster_sync::CopyState(*rosters, group_id);
+          out.setJsonUInt("statement_epoch", state.statement_epoch);
+          out.set("changes_hash", state.changes_hash);
+          auto held = rosters->ListGroupChanges(group_id);
+          out.setJsonUInt("held_changes", held ? static_cast<uint64_t>(held->size()) : 0);
         }
+        out.set("links", LinkRows(request->getString("group_id").value_or("")));
         Emit(out);
       }
     } else if (cmd == "remove_member") {
@@ -723,6 +815,81 @@ public:
                  !removed) {
         ReplyError(id, removed.error().message);
       } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "leave_group") {
+      auto thread = facade_->GetThread(request->getString("thread").value_or(""));
+      if (!thread || !*thread || !(*thread)->group_id) {
+        ReplyError(id, "not a group chat");
+      } else if (auto left = facade_->LeaveGroup(*(*thread)->group_id); !left) {
+        ReplyError(id, left.error().message);
+      } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "set_group_role" || cmd == "set_group_preset") {
+      auto thread = facade_->GetThread(request->getString("thread").value_or(""));
+      Roe<void> set = Error("not a group chat");
+      if (thread && *thread && (*thread)->group_id) {
+        const std::string group_id = *(*thread)->group_id;
+        if (cmd == "set_group_role") {
+          const std::string role = request->getString("role").value_or("");
+          set = role == "admin" || role == "member"
+                    ? facade_->SetMemberRole(group_id, request->getString("account").value_or(""),
+                                             MemberRoleFromString(role))
+                    : Roe<void>(Error("role must be admin or member"));
+        } else {
+          const std::string preset = request->getString("preset").value_or("");
+          set = preset == "open" || preset == "managed"
+                    ? facade_->SetGroupPreset(group_id, GroupPresetFromString(preset))
+                    : Roe<void>(Error("preset must be open or managed"));
+        }
+      }
+      if (!set) {
+        ReplyError(id, set.error().message);
+      } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "invite_to_group" || cmd == "rename_group" || cmd == "remove_everyone_added_by" ||
+               cmd == "reinvite_everyone_removed_by") {
+      ChangeGroup(id, cmd, request->getString("thread").value_or(""), request->getString("account").value_or(""),
+                  request->getString("title").value_or(""));
+    } else if (cmd == "make_invite_link" || cmd == "revoke_invite_link") {
+      InviteLink(id, cmd, *request);
+    } else if (cmd == "join_by_link") {
+      JoinByLink(id, request->getString("link").value_or(""));
+    } else if (cmd == "confirm_join") {
+      ConfirmJoin(id, request->getString("request_id").value_or(""));
+    } else if (cmd == "make_group_from_call") {
+      std::vector<std::string> accounts;
+      if (const Array* picked = request->getArray("accounts")) {
+        for (const Value& item : picked->elements) {
+          if (auto account = asString(item)) {
+            accounts.push_back(*account);
+          }
+        }
+      }
+      MakeGroupFromCall(id, request->getString("title").value_or(""), accounts);
+    } else if (cmd == "call_remove") {
+      RemoveFromCall(id, request->getString("account").value_or(""));
+    } else if (cmd == "call_add_guest_to_group") {
+      AddGuestToGroup(id, request->getString("account").value_or(""));
+    } else if (cmd == "call_group_invite") {
+      Settle();
+      const CallScreen& screen = presenter_.Screen();
+      Object out = Reply(id, true);
+      out.set("shown", screen.group_invite.has_value());
+      out.set("nonce", screen.group_invite ? screen.group_invite->invite_id : std::string());
+      out.set("title", screen.group_invite ? screen.group_invite->group_title : std::string());
+      out.set("from", screen.group_invite ? screen.group_invite->maker_identity : std::string());
+      Emit(out);
+    } else if (cmd == "call_group_invite_join") {
+      JoinCallGroupInvite(id);
+    } else if (cmd == "call_group_invite_not_now") {
+      Settle();
+      if (!presenter_.Screen().group_invite) {
+        ReplyError(id, "no group banner in this call");
+      } else {
+        presenter_.PutOffGroupInvite();
         Emit(Reply(id, true));
       }
     } else if (cmd == "accept_group_invite") {
@@ -1192,6 +1359,28 @@ private:
     });
   }
 
+  /** V062 3: a guest's "Remove from call…" (confirmed): the presenter's, checked by the stack. */
+  void RemoveFromCall(int64_t id, const std::string& account) {
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    presenter_.RemoveFromCall(account, [id](Roe<void> removed) {
+      removed ? Emit(Reply(id, true)) : ReplyError(id, removed.error().message);
+    });
+  }
+
+  /** V062 4: a guest's "Add {name} to the group": the group's ordinary invite, made in the call. */
+  void AddGuestToGroup(int64_t id, const std::string& account) {
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    presenter_.AddGuestToGroup(account, [id](Roe<void> invited) {
+      invited ? Emit(Reply(id, true)) : ReplyError(id, invited.error().message);
+    });
+  }
+
   /** PeopleController's "New group": the picked contacts are invited to it. */
   void CreateGroup(int64_t id, const std::string& title, const std::vector<std::string>& accounts) {
     std::vector<std::string> contact_ids;
@@ -1205,6 +1394,176 @@ private:
     }
     AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
         WorkerLane::Normal, [this, title, contact_ids]() { return Hub().Groups().CreateGroup(title, contact_ids); },
+        [id](Roe<Thread> thread) {
+          if (!thread) {
+            ReplyError(id, thread.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("thread", thread->id);
+          out.set("group_id", thread->group_id.value_or(""));
+          Emit(out);
+        });
+  }
+
+  /**
+   * G019 / G020 6, a group chat's member-made changes: invite_to_group (the ordinary invite by account), rename_group,
+   * remove_everyone_added_by {removed} and reinvite_everyone_removed_by {invited}. Invites seal and send on a worker
+   * (as InviteMembersAsync does); a refusal comes back as the error, its message key kept.
+   */
+  void ChangeGroup(int64_t id, const std::string& cmd, const std::string& thread_id, const std::string& account,
+                   const std::string& title) {
+    auto thread = facade_->GetThread(thread_id);
+    if (!thread || !*thread || !(*thread)->group_id) {
+      ReplyError(id, "not a group chat");
+      return;
+    }
+    const std::string group_id = *(*thread)->group_id;
+    if (cmd == "rename_group") {
+      auto renamed = facade_->RenameGroupShared(group_id, title);
+      renamed ? Emit(Reply(id, true)) : ReplyError(id, renamed.error().message);
+      return;
+    }
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    if (cmd == "remove_everyone_added_by") {
+      auto removed = facade_->RemoveEveryoneAddedBy(group_id, account);
+      if (!removed) {
+        ReplyError(id, removed.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.setJsonUInt("removed", static_cast<uint64_t>(*removed));
+      Emit(out);
+      return;
+    }
+    const bool reinvite = cmd == "reinvite_everyone_removed_by";
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<size_t>>(
+        WorkerLane::Normal,
+        [this, reinvite, group_id, account]() -> Roe<size_t> {
+          if (reinvite) {
+            return facade_->ReinviteEveryoneRemovedBy(group_id, account);
+          }
+          if (auto invited = facade_->InviteIdentity(group_id, account); !invited) {
+            return invited.error();
+          }
+          return size_t{1};
+        },
+        [id, reinvite](Roe<size_t> invited) {
+          if (!invited) {
+            ReplyError(id, invited.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          if (reinvite) {
+            out.setJsonUInt("invited", static_cast<uint64_t>(*invited));
+          }
+          Emit(out);
+        });
+  }
+
+  /** G021: the group's live invite links, as group info lists them. */
+  Value LinkRows(const std::string& group_id) {
+    std::vector<Value> links;
+    for (const GroupLinkRow& link : facade_->GroupInviteLinks(group_id)) {
+      Object row;
+      row.set("link_id", link.link_id);
+      row.set("maker", link.maker);
+      row.set("expires_at", link.expires_at);
+      row.setJsonUInt("max_uses", link.max_uses);
+      row.setJsonUInt("uses", link.uses);
+      links.push_back(ObjectValue(std::move(row)));
+    }
+    return ArrayValue(std::move(links));
+  }
+
+  /** G021: group info's "Invite link…" (a new link) and a link's "Revoke link". */
+  void InviteLink(int64_t id, const std::string& cmd, const Object& request) {
+    auto thread = facade_->GetThread(request.getString("thread").value_or(""));
+    if (!thread || !*thread || !(*thread)->group_id) {
+      ReplyError(id, "not a group chat");
+      return;
+    }
+    const std::string group_id = *(*thread)->group_id;
+    const std::string link_id = request.getString("link_id").value_or("");
+    const uint64_t max_uses = request.getNonNegInt("max_uses").value_or(0);
+    const int64_t lifetime_ms = static_cast<int64_t>(request.getNonNegInt("expires_in_s").value_or(0)) * 1000;
+    const bool make = cmd == "make_invite_link";
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupInviteLinkWorkflow::MadeLink>>(
+        WorkerLane::Normal,
+        [this, make, group_id, link_id, max_uses, lifetime_ms]() -> Roe<GroupInviteLinkWorkflow::MadeLink> {
+          if (make) {
+            return facade_->MakeInviteLink(group_id, max_uses, lifetime_ms);
+          }
+          if (auto revoked = facade_->RevokeInviteLink(group_id, link_id); !revoked) {
+            return revoked.error();
+          }
+          return GroupInviteLinkWorkflow::MadeLink{};
+        },
+        [id, make](Roe<GroupInviteLinkWorkflow::MadeLink> done) {
+          if (!done) {
+            ReplyError(id, done.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          if (make) {
+            out.set("link", done->text);
+            out.set("link_id", done->link_id);
+            out.set("expires_at", done->expires_at);
+          }
+          Emit(out);
+        });
+  }
+
+  /** G021: a link opened, pasted or scanned — the request to its maker, then its answer (the preview sheet's). */
+  void JoinByLink(int64_t id, const std::string& link) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupJoinState>>(
+        WorkerLane::Normal,
+        [this, link]() -> Roe<GroupJoinState> {
+          auto request_id = facade_->AskToJoinByLink(link);
+          if (!request_id) {
+            return request_id.error();
+          }
+          // The answer, or none once the joiner stops waiting (group_link_join::kAnswerTimeoutMs).
+          const int64_t until = util::NowUnixMs() + group_link_join::kAnswerTimeoutMs + 5'000;
+          std::optional<GroupJoinState> state = facade_->JoinByLinkState(*request_id);
+          while (state && state->phase == GroupJoinState::Phase::Asking && util::NowUnixMs() < until) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            state = facade_->JoinByLinkState(*request_id);
+          }
+          if (!state) {
+            return Error("the join was forgotten");
+          }
+          return *state;
+        },
+        [id](Roe<GroupJoinState> state) {
+          if (!state) {
+            ReplyError(id, state.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("request_id", state->request_id);
+          if (state->phase == GroupJoinState::Phase::Preview && state->preview) {
+            Object preview;
+            preview.set("title", state->preview->group_title);
+            preview.setJsonUInt("member_count", state->preview->member_count);
+            preview.set("group_id", state->preview->group_id);
+            out.set("preview", std::move(preview));
+          } else if (state->phase == GroupJoinState::Phase::Refused) {
+            out.set("refused", group_link_join::RefusalToString(state->reason));
+          } else {
+            out.set("no_answer", true);
+          }
+          Emit(out);
+        });
+  }
+
+  /** G021: the preview's Join. */
+  void ConfirmJoin(int64_t id, const std::string& request_id) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal, [this, request_id]() { return facade_->ConfirmJoinByLink(request_id); },
         [id](Roe<Thread> thread) {
           if (!thread) {
             ReplyError(id, thread.error().message);
@@ -1243,12 +1602,118 @@ private:
         row.set("group_id", invite->group_id);
         row.set("title", invite->group_title);
         row.set("from", invite->inviter_identity);
+        row.setJsonUInt("member_count", invite->member_count); // G019: 0 when the invite does not say
         rows.push_back(ObjectValue(std::move(row)));
       }
     }
     Object out = Reply(id, true);
     out.set("invites", ArrayValue(std::move(rows)));
     Emit(out);
+  }
+
+  /** Someone in a call by their account, as the picker names them: their contact, else their card's nickname. */
+  std::string CallMemberName(const std::string& account) {
+    if (auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account); contact && *contact) {
+      if (std::string name = FormatContactTitle(**contact); !name.empty()) {
+        return name;
+      }
+    }
+    return Hub().KeptCardNickname(account);
+  }
+
+  /**
+   * G022: the call screen's "Make a group…" (CallPresenter::OpenMakeGroup), then the picker's Create: everyone else in
+   * the call picked, or just `accounts` (each must be in it); the title defaults to the names, as the picker's does.
+   */
+  void MakeGroupFromCall(int64_t id, std::string title, const std::vector<std::string>& accounts) {
+    Settle();
+    make_group_call_id_.clear();
+    presenter_.OpenMakeGroup();
+    const std::string call_id = make_group_call_id_;
+    if (call_id.empty()) {
+      ReplyError(id, "this call offers no Make a group");
+      return;
+    }
+    std::vector<std::string> members;
+    if (auto participants = calls_->ListJoinedParticipants(call_id)) {
+      for (const CallParticipant& participant : *participants) {
+        members.push_back(participant.identity);
+      }
+    }
+    const std::string self = facade_->LoadProfileIdentityView().account_id;
+    std::vector<std::string> picked = CallMakeGroupPick(members, self);
+    if (!accounts.empty()) {
+      for (const std::string& account : accounts) {
+        if (std::find(picked.begin(), picked.end(), account) == picked.end()) {
+          ReplyError(id, "not in the call: " + account);
+          return;
+        }
+      }
+      picked = accounts;
+    }
+    if (title.empty()) {
+      std::vector<std::string> names;
+      auto own = Hub().Identity().Get();
+      names.push_back(own ? own->nickname : std::string());
+      for (const std::string& account : picked) {
+        names.push_back(CallMemberName(account));
+      }
+      title = DefaultCallGroupTitle(names, ", ", "Group chat");
+    }
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal,
+        [this, title, call_id, picked]() { return Hub().Groups().CreateGroupFromCall(title, call_id, picked); },
+        [id, title, picked](Roe<Thread> thread) {
+          if (!thread) {
+            ReplyError(id, thread.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("thread", thread->id);
+          out.set("group_id", thread->group_id.value_or(""));
+          out.set("title", title);
+          std::vector<Value> invited;
+          for (const std::string& account : picked) {
+            invited.emplace_back(account);
+          }
+          out.set("invited", ArrayValue(std::move(invited)));
+          Emit(out);
+        });
+  }
+
+  /** G022: the call's group banner Join (CallPresenter::JoinGroupInvite → the ordinary accept). */
+  void JoinCallGroupInvite(int64_t id) {
+    Settle();
+    if (!presenter_.Screen().group_invite) {
+      ReplyError(id, "no group banner in this call");
+      return;
+    }
+    const std::string group_id = [this]() {
+      const std::string nonce = presenter_.Screen().group_invite->invite_id;
+      for (const GroupInviteGate::InviteInCall& invite : Hub().GroupInvitesInCall(presenter_.Screen().call_id)) {
+        if (invite.invite_nonce == nonce) {
+          return invite.group_id;
+        }
+      }
+      return std::string();
+    }();
+    presenter_.JoinGroupInvite([this, id, group_id](Roe<void> joined) {
+      if (!joined) {
+        ReplyError(id, joined.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("group_id", group_id);
+      if (auto threads = facade_->ListThreads()) {
+        for (const Thread& thread : *threads) {
+          if (thread.kind == ThreadKind::Group && thread.group_id == group_id) {
+            out.set("thread", thread.id);
+            break;
+          }
+        }
+      }
+      Emit(out);
+    });
   }
 
   /** The invite card's Accept (ContactActionDispatcher accept_group_invite). */
@@ -1324,6 +1789,8 @@ private:
   std::string last_kind_ = "none";
   std::string last_line_;
   std::string last_error_;
+  /** G022: the call "Make a group…" was pressed in (its callback; the command that pressed it takes it). */
+  std::string make_group_call_id_;
   std::string last_call_id_;
   std::string last_phase_;
   std::string last_status_;

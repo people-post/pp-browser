@@ -75,6 +75,11 @@ public:
   /** Push surface snapshot to composition-root bridge. Clear via BindSurfaceNotify({}). */
   void BindSurfaceNotify(ContactsSurfaceNotifyPorts ports);
   void BindScanPorts(ScanPorts ports);
+  /**
+   * G021: a scanned or pasted invite link (`pp://join/…`) goes to the chats' join prompt, which returns true when the
+   * text is one; anything else stays a contact locator's business here.
+   */
+  void BindGroupJoinOffer(std::function<bool(const std::string& text)> offer) { offer_group_join_ = std::move(offer); }
   void BindAccountPorts(ContactsAccountPorts ports);
   /** Where the stars ("常用联系人") are kept: the profile's preferences (device-only). */
   void BindSessionStore(SessionStore* store);
@@ -203,6 +208,7 @@ public:
   bool GroupAdminShown() const { return admin_shown_; }
   /** The card's Remove row, as its tap does (tests, and the view). */
   void OnGroupAdminRemove();
+  void OnGroupAdminSetAdmin();
   void OnGroupAdminReinvite();
   void OnDetailDismissed();
   /** The page's star button (the view's toggle_star, and tests): stars or unstars the contact shown. */
@@ -394,7 +400,13 @@ private:
   bool admin_shown_ = false;
   bool admin_can_reinvite_ = false;
   bool admin_can_remove_ = false;
+  bool admin_can_set_admin_ = false;
+  bool admin_is_admin_ = false;
   ui::String admin_reinvite_note_;
+  bool admin_can_remove_added_ = false;
+  ui::String admin_remove_added_label_;
+  bool admin_can_reinvite_removed_ = false;
+  ui::String admin_reinvite_removed_label_;
   void ClearGroupAdminCard();
   /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */
   std::string detail_under_sheet_;
@@ -440,6 +452,7 @@ private:
   FlowCoordinatorPorts flow_coordinator_;
   ContactsSurfaceNotifyPorts surface_notify_;
   ScanPorts scan_ports_;
+  std::function<bool(const std::string& text)> offer_group_join_;
   ContactsAccountPorts account_ports_;
   SessionStore* session_store_ = nullptr;
 

@@ -13,8 +13,10 @@ namespace pbr {
 namespace group_roster_statement {
 namespace {
 
-constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v1";
-constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v1";
+// v3 (G018): added_by, the title, removed, links, folded and the change floor are signed too; v2 (G017) signed the preset. An older
+// statement does not verify as v3 (clean cutover, unreleased product).
+constexpr const char kStatementTag[] = "pp-browser:group-roster-statement-v3";
+constexpr const char kDissolvedTag[] = "pp-browser:group-dissolved-v3";
 constexpr const char kTransferTag[] = "pp-browser:group-owner-transfer-v1";
 
 /** u32 big-endian length, then the bytes: no field can run into the next. */
@@ -34,6 +36,86 @@ void Put(ByteVector& out, const uint64_t value) {
 
 bool IdentityLess(const GroupRosterStatementMember& a, const GroupRosterStatementMember& b) {
   return a.identity < b.identity;
+}
+
+void SortLists(GroupRosterStatement& statement) {
+  std::sort(statement.members.begin(), statement.members.end(), IdentityLess);
+  std::sort(statement.removed.begin(), statement.removed.end(),
+            [](const GroupRemovedMember& a, const GroupRemovedMember& b) { return a.identity < b.identity; });
+  std::sort(statement.links.begin(), statement.links.end(),
+            [](const GroupInviteLink& a, const GroupInviteLink& b) { return a.link_id < b.link_id; });
+  std::sort(statement.folded.begin(), statement.folded.end(),
+            [](const GroupFoldedChange& a, const GroupFoldedChange& b) { return a.id < b.id; });
+}
+
+void PutMembers(ByteVector& out, const std::vector<GroupRosterStatementMember>& members) {
+  Put(out, static_cast<uint64_t>(members.size()));
+  for (const GroupRosterStatementMember& m : members) {
+    Put(out, m.identity);
+    Put(out, MemberRoleToString(m.role));
+    Put(out, static_cast<uint64_t>(m.joined_at));
+    Put(out, m.added_by);
+  }
+}
+
+void PutRemoved(ByteVector& out, const std::vector<GroupRemovedMember>& removed) {
+  Put(out, static_cast<uint64_t>(removed.size()));
+  for (const GroupRemovedMember& r : removed) {
+    Put(out, r.identity);
+    Put(out, r.removal);
+    Put(out, r.removed_by);
+  }
+}
+
+void PutLinks(ByteVector& out, const std::vector<GroupInviteLink>& links) {
+  Put(out, static_cast<uint64_t>(links.size()));
+  for (const GroupInviteLink& l : links) {
+    Put(out, l.link_id);
+    Put(out, l.secret_hash);
+    Put(out, l.maker);
+    Put(out, static_cast<uint64_t>(l.expires_at));
+    Put(out, l.max_uses);
+    Put(out, l.uses);
+  }
+}
+
+template <typename T, typename Key>
+bool AllUnique(const std::vector<T>& items, Key key) {
+  std::set<std::string> seen;
+  for (const T& item : items) {
+    const std::string& k = key(item);
+    if (k.empty() || !seen.insert(k).second) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The G018 lists: removed accounts unique and not members, link ids unique, folded ids unique and above the floor. */
+Roe<void> CheckLists(const GroupRosterStatement& statement) {
+  if (!AllUnique(statement.removed, [](const GroupRemovedMember& r) -> const std::string& { return r.identity; })) {
+    return Error("roster statement: empty or repeated removed account");
+  }
+  for (const GroupRemovedMember& r : statement.removed) {
+    if (statement.Lists(r.identity)) {
+      return Error("roster statement: a removed account is also a member");
+    }
+  }
+  if (!AllUnique(statement.links, [](const GroupInviteLink& l) -> const std::string& { return l.link_id; })) {
+    return Error("roster statement: empty or repeated link id");
+  }
+  if (!AllUnique(statement.folded, [](const GroupFoldedChange& f) -> const std::string& { return f.id; })) {
+    return Error("roster statement: empty or repeated folded change");
+  }
+  if (statement.change_floor_epoch > statement.roster_epoch) {
+    return Error("roster statement: change floor above its epoch");
+  }
+  for (const GroupFoldedChange& f : statement.folded) {
+    if (f.base_epoch < statement.change_floor_epoch) {
+      return Error("roster statement: a folded change below the change floor");
+    }
+  }
+  return {};
 }
 
 Roe<void> CheckSignature(const std::string& identity, const std::string& public_key_b64, const ByteVector& bytes,
@@ -57,22 +139,133 @@ Roe<void> CheckSignature(const std::string& identity, const std::string& public_
   return {};
 }
 
+Object RemovedToJson(const GroupRemovedMember& removed) {
+  Object row;
+  row.set("identity", removed.identity);
+  row.set("removal", removed.removal);
+  row.set("by", removed.removed_by);
+  return row;
+}
+
+Object LinkToJson(const GroupInviteLink& link) {
+  Object row;
+  row.set("link_id", link.link_id);
+  row.set("secret_hash", link.secret_hash);
+  row.set("maker", link.maker);
+  row.setJsonUInt("expires_at", static_cast<uint64_t>(std::max<int64_t>(link.expires_at, 0)));
+  if (link.max_uses > 0) {
+    row.setJsonUInt("max_uses", link.max_uses);
+  }
+  if (link.uses > 0) {
+    row.setJsonUInt("uses", link.uses);
+  }
+  return row;
+}
+
+/** The G018 fields: title, removed, links, folded, the change floor (each omitted when empty). */
+void PutOpenGroupJson(Object& json, const GroupRosterStatement& statement) {
+  if (!statement.title.empty() || statement.title_version > 0) {
+    json.set("title", statement.title);
+    json.setJsonUInt("title_version", statement.title_version);
+  }
+  std::vector<Value> removed;
+  for (const GroupRemovedMember& r : statement.removed) {
+    removed.push_back(ObjectValue(RemovedToJson(r)));
+  }
+  if (!removed.empty()) {
+    json.set("removed", ArrayValue(std::move(removed)));
+  }
+  std::vector<Value> links;
+  for (const GroupInviteLink& l : statement.links) {
+    links.push_back(ObjectValue(LinkToJson(l)));
+  }
+  if (!links.empty()) {
+    json.set("links", ArrayValue(std::move(links)));
+  }
+  std::vector<Value> folded;
+  for (const GroupFoldedChange& f : statement.folded) {
+    Object row;
+    row.set("id", f.id);
+    row.setJsonUInt("base_epoch", f.base_epoch);
+    folded.push_back(ObjectValue(std::move(row)));
+  }
+  if (!folded.empty()) {
+    json.set("folded", ArrayValue(std::move(folded)));
+  }
+  if (statement.change_floor_epoch > 0) {
+    json.setJsonUInt("change_floor_epoch", statement.change_floor_epoch);
+  }
+}
+
+/** Every element of `key` as an object, or an error naming `what`. */
+Roe<std::vector<const Object*>> ObjectRows(const Object& json, const std::string& key, const std::string& what) {
+  std::vector<const Object*> rows;
+  if (const Array* items = json.getArray(key)) {
+    for (const Value& item : items->elements) {
+      const Object* row = asObject(item);
+      if (!row) {
+        return Error("roster statement: " + what + " is not an object");
+      }
+      rows.push_back(row);
+    }
+  }
+  return rows;
+}
+
+Roe<void> ReadOpenGroupJson(const Object& json, GroupRosterStatement& statement) {
+  statement.title = json.getString("title").value_or("");
+  statement.title_version = json.getNonNegInt("title_version").value_or(0);
+  auto removed = ObjectRows(json, "removed", "removed entry");
+  auto links = ObjectRows(json, "links", "link");
+  if (!removed) {
+    return removed.error();
+  }
+  if (!links) {
+    return links.error();
+  }
+  for (const Object* row : *removed) {
+    statement.removed.push_back({row->getString("identity").value_or(""), row->getString("removal").value_or(""),
+                                 row->getString("by").value_or("")});
+  }
+  for (const Object* row : *links) {
+    statement.links.push_back({row->getString("link_id").value_or(""), row->getString("secret_hash").value_or(""),
+                               row->getString("maker").value_or(""),
+                               static_cast<int64_t>(row->getNonNegInt("expires_at").value_or(0)),
+                               row->getNonNegInt("max_uses").value_or(0), row->getNonNegInt("uses").value_or(0)});
+  }
+  auto folded = ObjectRows(json, "folded", "folded change");
+  if (!folded) {
+    return folded.error();
+  }
+  for (const Object* row : *folded) {
+    statement.folded.push_back({row->getString("id").value_or(""), row->getNonNegInt("base_epoch").value_or(0)});
+  }
+  statement.change_floor_epoch = json.getNonNegInt("change_floor_epoch").value_or(0);
+  return {};
+}
+
 } // namespace
 
 ByteVector SignBytes(const GroupRosterStatement& statement) {
-  std::vector<GroupRosterStatementMember> members = statement.members;
-  std::sort(members.begin(), members.end(), IdentityLess);
+  GroupRosterStatement sorted = statement;
+  SortLists(sorted);
   ByteVector out;
   Put(out, std::string(statement.dissolved ? kDissolvedTag : kStatementTag));
-  Put(out, statement.group_id);
-  Put(out, statement.roster_epoch);
-  Put(out, statement.owner_identity);
-  Put(out, static_cast<uint64_t>(members.size()));
-  for (const GroupRosterStatementMember& m : members) {
-    Put(out, m.identity);
-    Put(out, MemberRoleToString(m.role));
-    Put(out, static_cast<uint64_t>(m.joined_at));
+  Put(out, sorted.group_id);
+  Put(out, sorted.roster_epoch);
+  Put(out, sorted.owner_identity);
+  PutMembers(out, sorted.members);
+  Put(out, GroupPresetToString(sorted.preset));
+  Put(out, sorted.title);
+  Put(out, sorted.title_version);
+  PutRemoved(out, sorted.removed);
+  PutLinks(out, sorted.links);
+  Put(out, static_cast<uint64_t>(sorted.folded.size()));
+  for (const GroupFoldedChange& f : sorted.folded) {
+    Put(out, f.id);
+    Put(out, f.base_epoch);
   }
+  Put(out, sorted.change_floor_epoch);
   return out;
 }
 
@@ -86,29 +279,36 @@ ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransf
   return out;
 }
 
-Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
-                               const std::string& group_id, const uint64_t roster_epoch,
-                               std::vector<GroupRosterStatementMember> members,
-                               std::vector<GroupOwnerTransfer> owner_chain, const bool dissolved) {
+Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std::string& public_key_b64,
+                                        GroupRosterStatement draft) {
   auto account = signer.GetAccountId();
   if (!account) {
     return account.error();
   }
-  GroupRosterStatement statement;
-  statement.group_id = group_id;
-  statement.roster_epoch = roster_epoch;
-  std::sort(members.begin(), members.end(), IdentityLess);
-  statement.members = std::move(members);
-  statement.owner_identity = *account;
-  statement.owner_public_key_b64 = public_key_b64;
-  statement.owner_chain = std::move(owner_chain);
-  statement.dissolved = dissolved;
-  auto signature = signer.SignAccountBytes(SignBytes(statement));
+  SortLists(draft);
+  draft.owner_identity = *account;
+  draft.owner_public_key_b64 = public_key_b64;
+  auto signature = signer.SignAccountBytes(SignBytes(draft));
   if (!signature) {
     return signature.error();
   }
-  statement.owner_signature_b64 = *signature;
-  return statement;
+  draft.owner_signature_b64 = *signature;
+  return draft;
+}
+
+Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string& public_key_b64,
+                               const std::string& group_id, const uint64_t roster_epoch,
+                               std::vector<GroupRosterStatementMember> members,
+                               std::vector<GroupOwnerTransfer> owner_chain, const bool dissolved,
+                               const GroupPreset preset) {
+  GroupRosterStatement statement;
+  statement.group_id = group_id;
+  statement.roster_epoch = roster_epoch;
+  statement.members = std::move(members);
+  statement.owner_chain = std::move(owner_chain);
+  statement.dissolved = dissolved;
+  statement.preset = preset;
+  return SignStatement(signer, public_key_b64, std::move(statement));
 }
 
 Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::string& public_key_b64,
@@ -149,6 +349,9 @@ Roe<void> Verify(const GroupRosterStatement& statement, const std::string& known
   }
   if (owners != 1 || !owner_listed) {
     return Error("roster statement: its signer must be its one owner");
+  }
+  if (auto lists = CheckLists(statement); !lists) {
+    return lists.error();
   }
   if (auto ok = CheckSignature(statement.owner_identity, statement.owner_public_key_b64, SignBytes(statement),
                                statement.owner_signature_b64);
@@ -258,9 +461,14 @@ Object ToJson(const GroupRosterStatement& statement) {
     row.set("identity", m.identity);
     row.set("role", MemberRoleToString(m.role));
     row.setJsonUInt("joined_at", static_cast<uint64_t>(std::max<int64_t>(m.joined_at, 0)));
+    if (!m.added_by.empty()) {
+      row.set("added_by", m.added_by);
+    }
     members.push_back(ObjectValue(std::move(row)));
   }
   json.set("members", ArrayValue(std::move(members)));
+  json.set("preset", GroupPresetToString(statement.preset));
+  PutOpenGroupJson(json, statement);
   json.set("owner", statement.owner_identity);
   json.set("owner_public_key", statement.owner_public_key_b64);
   if (!statement.owner_chain.empty()) {
@@ -285,6 +493,7 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
   statement.owner_public_key_b64 = json.getString("owner_public_key").value_or("");
   statement.owner_signature_b64 = json.getString("owner_signature").value_or("");
   statement.dissolved = json.getIf<bool>("dissolved").value_or(false);
+  statement.preset = GroupPresetFromString(json.getString("preset").value_or("open"));
   const Array* members = json.getArray("members");
   if (statement.group_id.empty() || statement.owner_identity.empty() || !members) {
     return Error("roster statement: missing field");
@@ -298,7 +507,11 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
     m.identity = row->getString("identity").value_or("");
     m.role = MemberRoleFromString(row->getString("role").value_or("member"));
     m.joined_at = static_cast<int64_t>(row->getNonNegInt("joined_at").value_or(0));
+    m.added_by = row->getString("added_by").value_or("");
     statement.members.push_back(std::move(m));
+  }
+  if (auto open = ReadOpenGroupJson(json, statement); !open) {
+    return open.error();
   }
   if (const Array* chain = json.getArray("owner_chain")) {
     for (const Value& item : chain->elements) {
@@ -321,6 +534,10 @@ Roe<GroupRosterStatement> FromJson(const Object& json) {
 bool GroupRosterStatement::Lists(const std::string& identity) const {
   return std::any_of(members.begin(), members.end(),
                      [&](const GroupRosterStatementMember& m) { return m.identity == identity; });
+}
+
+bool GroupRosterStatement::Folded(const std::string& id) const {
+  return std::any_of(folded.begin(), folded.end(), [&](const GroupFoldedChange& f) { return f.id == id; });
 }
 
 } // namespace pbr

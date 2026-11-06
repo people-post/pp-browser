@@ -51,6 +51,13 @@ bool IsStickyInitiator(const ICallSessionReader& sessions, const std::string& ca
 bool SenderIsInCall(const ICallSessionReader& sessions, const std::string& call_id, const std::string& sender_identity);
 
 /**
+ * G022: this device (`local_identity`) is in the live call `call_id` right now and so is `identity`: the call has not
+ * ended and both are Joined. What lets someone met in the call invite us to the group they made there.
+ */
+bool InLiveCallWith(const ICallSessionReader& sessions, const std::string& local_identity, const std::string& call_id,
+                    const std::string& identity);
+
+/**
  * V053: `sender_identity` may ask to join group call `call_id`: the call was offered to them (they
  * hold a participant row, in any state — declined, missed, left too) or they started it.
  */

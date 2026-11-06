@@ -86,6 +86,14 @@ CallPeerCaps ReadPeerCaps(const Object& json) {
   return caps;
 }
 
+/** V062: `brought_by` when the object says `guest: true` with one (both or neither); empty otherwise. */
+std::string ReadBroughtBy(const Object& json) {
+  if (!json.getIf<bool>("guest").value_or(false)) {
+    return {};
+  }
+  return json.getString("brought_by").value_or("");
+}
+
 Object EncodeRosterEntry(const CallRosterEntry& entry) {
   Object row;
   row.set("identity", entry.identity);
@@ -97,6 +105,10 @@ Object EncodeRosterEntry(const CallRosterEntry& entry) {
   }
   if (entry.video_paused) {
     row.set("video_paused", true);
+  }
+  if (!entry.brought_by.empty()) {
+    row.set("guest", true);
+    row.set("brought_by", entry.brought_by);
   }
   if (entry.joined_at) {
     row.set("joined_at", *entry.joined_at);
@@ -125,6 +137,7 @@ void ReadParticipants(const Object& json, std::vector<CallRosterEntry>& particip
     entry.video_enabled = row->getIf<bool>("video_enabled").value_or(false);
     entry.on_hold = row->getIf<bool>("on_hold").value_or(false);
     entry.video_paused = row->getIf<bool>("video_paused").value_or(false);
+    entry.brought_by = ReadBroughtBy(*row);
     entry.joined_at = row->getIf<int64_t>("joined_at");
     participants.push_back(std::move(entry));
   }
@@ -140,6 +153,10 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   json.set("media_mode", CallMediaModeToString(detail.media_mode));
   if (detail.origin_group_id) {
     json.set("origin_group_id", *detail.origin_group_id);
+  }
+  if (detail.guest && !detail.brought_by.empty()) {
+    json.set("guest", true);
+    json.set("brought_by", detail.brought_by);
   }
   if (detail.sfu_hint) {
     json.set("sfu_hint", *detail.sfu_hint);
@@ -192,6 +209,8 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.invitee_identity = json->getString("invitee_identity").value_or("");
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
   detail.origin_group_id = json->getString("origin_group_id");
+  detail.brought_by = ReadBroughtBy(*json);
+  detail.guest = !detail.brought_by.empty();
   detail.sfu_hint = json->getString("sfu_hint");
   if (auto planned = json->getString("planned_hop"); planned && !planned->empty()) {
     detail.planned_hop = CallPlannedHop{*planned, json->getString("planned_hop_ma").value_or("")};
@@ -304,6 +323,23 @@ Roe<CallLeaveDetail> CallControlCodec::DecodeLeave(const std::string& detail_jso
   detail.call_id = *call_id;
   detail.identity = json->getString("identity").value_or("");
   return detail;
+}
+
+Roe<std::string> CallControlCodec::EncodeRemove(const CallRemoveDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  return DumpJson(json);
+}
+
+Roe<CallRemoveDetail> CallControlCodec::DecodeRemove(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  auto identity = json ? json->getString("identity") : std::nullopt;
+  if (!json || !call_id || call_id->empty() || !identity || identity->empty()) {
+    return Error("Invalid call_remove detail");
+  }
+  return CallRemoveDetail{*call_id, *identity};
 }
 
 Roe<std::string> CallControlCodec::EncodeJoinRequest(const CallJoinRequestDetail& detail) {

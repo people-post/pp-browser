@@ -299,5 +299,29 @@ TEST(RecentCallsTest, NewestFirstAndAnIncomingCallNeverAnsweredIsMissed) {
   EXPECT_EQ(call_queries::RecentCalls(calls, "account:me", 3).size(), 2u) << "`limit` rows read, the broadcast among them";
 }
 
+// G022: what lets someone met in a call invite us to the group they made there — both of us in it, now.
+TEST_F(CallSessionQueriesTest, InLiveCallWithNeedsBothJoinedInACallStillOn) {
+  Participant("account:alice", CallParticipantState::Joined, 10);
+  Participant("account:bob", CallParticipantState::Joined, 20);
+  Participant("account:carol", CallParticipantState::Ringing);
+  Participant("account:dave", CallParticipantState::Left);
+
+  EXPECT_TRUE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:alice"));
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:carol")) << "still ringing";
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:dave")) << "left";
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:eve")) << "never in it";
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:carol", kCall, "account:alice"))
+      << "this device is not in the call yet";
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", "call:other", "account:alice")) << "another call";
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:bob")) << "ourselves";
+
+  auto session = calls_->LoadSession(kCall);
+  ASSERT_TRUE(session && session->has_value());
+  CallSession ended = **session;
+  ended.state = CallSessionState::Ended;
+  ASSERT_TRUE(calls_->UpsertSession(ended));
+  EXPECT_FALSE(call_queries::InLiveCallWith(*calls_, "account:bob", kCall, "account:alice")) << "the call ended";
+}
+
 } // namespace
 } // namespace pbr

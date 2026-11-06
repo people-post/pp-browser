@@ -209,8 +209,19 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
     std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
                        StructuredTextParser::EscapeText(title) + "</h3>";
     // The stored text is English ("Group invitation: <title>") and the title is already the heading.
-    html += "<p class=\"text muted\">" +
-            StructuredTextParser::EscapeText(invite ? Tr("chat.group_invite.body") : message.text) + "</p>";
+    // G022: a group made during a call says so (the people in it may not know the maker otherwise).
+    const std::string body = !invite                ? message.text
+                             : invite->MadeInCall() ? Tr("chat.group_invite.body_call")
+                                                    : Tr("chat.group_invite.body");
+    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
+    if (invite && invite->member_count > 0) {
+      // G019 3 / 4: how many are in it (never who), and what joining shares.
+      const std::string count = std::to_string(invite->member_count);
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(Tr("chat.group_invite.member_count", {{"count", count}}) + " " +
+                                               Tr("chat.group_invite.shares_profile", {{"count", count}})) +
+              "</p>";
+    }
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
     if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {

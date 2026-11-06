@@ -137,9 +137,9 @@ Roe<E2eEncryptResult> E2eRelayPayloadCodec::EncryptChatPayloadWithAutoKey(
 
 namespace {
 
-/** The envelope's payload opened under `master_psk` (session key for its channel and epoch). */
-Roe<ThreadMessage> DecryptUnder(const RelayEnvelope& envelope, const AadFields& expected_aad,
-                                const ByteVector& master_psk) {
+/** The envelope's payload opened under `master_psk` (session key for its channel and epoch): the plaintext. */
+Roe<std::vector<uint8_t>> DecryptUnder(const RelayEnvelope& envelope, const AadFields& expected_aad,
+                                       const ByteVector& master_psk) {
   if (master_psk.size() != kMasterPskSize) {
     return Error("Invalid master PSK size");
   }
@@ -166,7 +166,13 @@ Roe<ThreadMessage> DecryptUnder(const RelayEnvelope& envelope, const AadFields& 
   if (plaintext->size() > kMaxE2ePlaintextBytes) {
     return Error("Decrypted payload exceeds limit");
   }
-  auto message = ChatPayloadValidator::DecodeValidated(*plaintext);
+  return std::vector<uint8_t>(plaintext->begin(), plaintext->end());
+}
+
+} // namespace
+
+Roe<ThreadMessage> E2eRelayPayloadCodec::DecodeChatPayload(const std::vector<uint8_t>& plaintext) {
+  auto message = ChatPayloadValidator::DecodeValidated(plaintext);
   if (!message) {
     return message.error();
   }
@@ -174,13 +180,22 @@ Roe<ThreadMessage> DecryptUnder(const RelayEnvelope& envelope, const AadFields& 
   return *message;
 }
 
-} // namespace
-
 Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& envelope,
                                                          const std::string& local_contact_id,
                                                          const PeerSessionKey& target_key, IPeerSessionStore& psk_store,
                                                          const std::optional<ByteVector>& local_kem_private_key,
                                                          AutoKeyRead* read) {
+  auto plaintext =
+      DecryptEnvelopePlaintext(envelope, local_contact_id, target_key, psk_store, local_kem_private_key, read);
+  if (!plaintext) {
+    return plaintext.error();
+  }
+  return DecodeChatPayload(*plaintext);
+}
+
+Roe<std::vector<uint8_t>> E2eRelayPayloadCodec::DecryptEnvelopePlaintext(
+    const RelayEnvelope& envelope, const std::string& local_contact_id, const PeerSessionKey& target_key,
+    IPeerSessionStore& psk_store, const std::optional<ByteVector>& local_kem_private_key, AutoKeyRead* read) {
   if (envelope.body.e2e.payload_b64.empty()) {
     return Error("Missing E2E payload");
   }
@@ -205,15 +220,15 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   const bool auto_key = envelope.route.channel == ThreadChannel::E2ePublic && local_kem_private_key.has_value();
   Error failure("No PSK for envelope session epoch");
   if (stored) {
-    auto message = DecryptUnder(envelope, *expected_aad, *stored);
-    if (message) {
+    auto plaintext = DecryptUnder(envelope, *expected_aad, *stored);
+    if (plaintext) {
       if (read) {
         read->master_psk = *stored;
         read->via_key_init = false;
       }
-      return message;
+      return plaintext;
     }
-    failure = message.error();
+    failure = plaintext.error();
   }
   if (!auto_key) {
     return failure;
@@ -230,15 +245,15 @@ Roe<ThreadMessage> E2eRelayPayloadCodec::DecryptEnvelope(const RelayEnvelope& en
   if (stored && *derived == *stored) {
     return failure;
   }
-  auto message = DecryptUnder(envelope, *expected_aad, *derived);
-  if (!message) {
-    return message.error();
+  auto plaintext = DecryptUnder(envelope, *expected_aad, *derived);
+  if (!plaintext) {
+    return plaintext.error();
   }
   if (read) {
     read->master_psk = std::move(*derived);
     read->via_key_init = true;
   }
-  return message;
+  return plaintext;
 }
 
 } // namespace pbr

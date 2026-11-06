@@ -12,7 +12,7 @@
 
 namespace pbr {
 
-/** 2: the sender and recipient devices, signed by the sending device (M021; sign v3). */
+/** 2: the sender and recipient devices, signed by the sending device (M021; sign v4: no group id, G018). */
 inline constexpr int kRelayEnvelopeVersion = 2;
 
 /** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
@@ -24,10 +24,13 @@ inline constexpr const char* kRelayRouteGroup = "group";
  */
 inline constexpr const char* kRelayRouteControl = "control";
 
+/**
+ * Where the message goes: its kind, and a direct chat's channel. A group copy names no group (group-chat G018
+ * item 7): its group id is inside the copy's ciphertext, so the relay cannot tell which group it is for.
+ */
 struct RelayRoute {
   std::string kind = "direct";
   ThreadChannel channel = ThreadChannel::E2e;
-  std::optional<std::string> group_id;
 };
 
 /**

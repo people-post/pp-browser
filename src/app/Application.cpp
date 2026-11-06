@@ -1221,6 +1221,12 @@ void Application::WireCalls() {
     call_actions.flip_camera = [this]() { call_->FlipCamera(); };
     call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
     call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
+    call_actions.make_group_from_call = [this]() { call_->OpenMakeGroup(); };
+    call_actions.join_call_group_invite = [this]() { call_->JoinGroupInvite(); };
+    call_actions.put_off_call_group_invite = [this]() { call_->PutOffGroupInvite(); };
+    call_actions.remove_call_guest = [this](const std::string& identity) { call_->RemoveGuestFromCall(identity); };
+    call_actions.add_call_guest_to_group = [this](const std::string& identity) { call_->AddGuestToGroup(identity); };
+    call_actions.may_add_to_call = [this](const std::string& identity) { return call_->MayAddToCall(identity); };
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
     call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
     call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };
@@ -1401,10 +1407,14 @@ void Application::WireUnlockPinAndFlow() {
   }
   // Invite links the OS opens the app with (QR codes, tapped links); those from a cold start waited.
   IncomingLink::SetHandler([this](const std::string& link) {
+    if (chat_ && chat_->OfferGroupJoin(link)) {
+      return; // a group's invite link (G021, pp://join/…)
+    }
     if (contacts_) {
       contacts_->OfferInvite(link);
     }
   });
+  contacts_->BindGroupJoinOffer([this](const std::string& text) { return chat_ && chat_->OfferGroupJoin(text); });
   {
     MessagingShellPorts shell_messaging = MakeMessagingShellPorts(messaging);
     shell_messaging.open_network_settings = [this]() {
@@ -1653,6 +1663,9 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);
+  };
+  call_people_picker_notify.open_for_call_make_group = [this](const std::string& call_id) {
+    people_picker_->OpenForCallMakeGroup(call_id);
   };
   call_->BindPeoplePickerNotify(std::move(call_people_picker_notify));
 

@@ -319,8 +319,7 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
                                        const uint64_t order_key) {
   RelayEnvelope envelope = EnvelopeFrom(message, sender, std::move(copies), order_key);
   envelope.route.kind = "group";
-  envelope.route.group_id = group_id;
-  envelope.stream_key = BuildGroupDeviceRelayStreamKey(group_id, recipient, sender.device);
+  envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender.account_id, recipient, sender.device);
   envelope.recipient_contact_id = route_party;
   return envelope;
 }

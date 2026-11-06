@@ -1,5 +1,6 @@
 #pragma once
 
+#include "feature/presenters/GroupLinkText.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/GroupMentions.h"
@@ -153,6 +154,10 @@ bool HandOverStillPossible(const CloseChatPlan& plan, const std::string& success
 struct ChatGroupSheet {
   /** This device owns the group. */
   bool is_owner = false;
+  /** G017: the preset lets us rename the group for everyone (Open: any member; Managed: admins and the owner). */
+  bool may_rename_for_everyone = false;
+  /** The group's preset; the owner switches it ("Who can add people and rename"). */
+  GroupPreset preset = GroupPreset::Open;
   bool owner_unreachable = false;
   /** Members the owner may remove for being unreachable (never this device): identity, then the name to show. */
   std::vector<std::pair<std::string, std::string>> unreachable_members;
@@ -168,11 +173,19 @@ struct GroupMemberRow {
   /** The saved contact's id; empty for someone who is not a contact yet. */
   std::string contact_id;
   bool is_owner = false;
+  /** G017: an admin the owner appointed (from the owner-signed roster). */
+  bool is_admin = false;
   bool unreachable = false;
   /** Invited by this device, not on the roster yet (not a member; not counted in "N members"). */
   bool invited = false;
   /** Invited more than an hour ago and still not joined. */
   bool invited_stale = false;
+  /** G019 5: who brought them in (an account), and that person's name as shown ("added by {name}"). */
+  std::string added_by;
+  std::string added_by_title;
+  /** G020 6: how many on the roster they added, and how many they removed who are still out. */
+  size_t added_count = 0;
+  size_t removed_count = 0;
 
   bool IsContact() const { return !contact_id.empty(); }
   bool operator==(const GroupMemberRow&) const = default;
@@ -198,9 +211,19 @@ std::optional<GroupMemberRow> BuildInvitedRow(const PendingGroupInvite& invite,
                                               const std::string& card_nickname = {});
 /** Unreachable members first (the owner re-invites them), then the owner, then by name. */
 void SortGroupMemberRows(std::vector<GroupMemberRow>& rows);
+/**
+ * G019 5 / G020 6 on the member rows: whose name "added by" shows (the adder's row title, else a short id; empty when
+ * nobody is said to have added them), how many on `roster` each added, and (`removed_by`, may be empty) how many each
+ * removed who are still out.
+ */
+void FillGroupAccountability(std::vector<GroupMemberRow>& rows, const std::vector<GroupRosterMember>& roster,
+                             const std::function<size_t(const std::string& account)>& removed_by);
 
-/** One row of the owner's "Group admin" card on a member's profile (phones). */
-enum class GroupMemberAction { Reinvite, Remove };
+/**
+ * One row of the "Group admin" card on a member's profile (phones) and the member menu (desktop). G020 6: remove
+ * everyone they added (owner and admins), re-invite everyone they removed (owner).
+ */
+enum class GroupMemberAction { Reinvite, MakeAdmin, RemoveAdmin, Remove, RemoveEveryoneAdded, ReinviteEveryoneRemoved };
 
 /** The grey note beside Re-invite: why the person is offered one. */
 enum class GroupReinviteNote { None, NotJoined, Unreachable };
@@ -222,10 +245,14 @@ struct GroupMemberTap {
 };
 /**
  * The profile for anyone but ourselves. The owner's card: Re-invite (a contact still waiting, noted "not joined yet",
- * or out of reach, noted "can't be reached"), Remove (anyone on the roster). Handing the group over is not here: it
- * happens when the owner leaves.
+ * or out of reach, noted "can't be reached"), Make admin / Remove as admin (anyone on the roster, G017), Remove (anyone
+ * on the roster). An admin's card: Remove, for members (G017, G020). Handing the group over is not here: it happens
+ * when the owner leaves. `viewer_role`: ours (Owner when the group's recorded owner is us).
  */
-GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, MemberRole viewer_role,
+                                    GroupPreset preset = GroupPreset::Open);
+/** Whether we, at `viewer_role`, may remove `row` from the group (GroupAllows: the owner anyone, an admin members). */
+bool MayRemoveGroupMember(const GroupMemberRow& row, MemberRole viewer_role, GroupPreset preset = GroupPreset::Open);
 
 /** What the phone's group info sheet is built from (ChatPresenter::GroupInfoOf reads it; tests give it). */
 struct GroupInfoFacts {
@@ -238,9 +265,15 @@ struct GroupInfoFacts {
   bool dissolved = false;
   bool is_owner = false;
   bool muted = false;
+  /** Our role (Owner when the group's recorded owner is us) and the group's preset (G017). */
+  MemberRole viewer_role = MemberRole::Member;
+  GroupPreset preset = GroupPreset::Open;
   /** Everyone on the roster, this device too (its row is `self_identity`'s, already titled "You"). */
   std::vector<GroupMemberRow> members;
   std::string self_identity;
+  /** G021: the group's live invite links (GroupInviteLinkWorkflow::LiveLinks), and now (their expiry). */
+  std::vector<GroupLinkRow> links;
+  int64_t now_ms = 0;
 };
 
 /** The group info sheet (DEV/PLAN-ui-batch8-group-pages.md 1): which rows show, and the first members. */
@@ -260,12 +293,21 @@ struct GroupInfoScreen {
   bool show_members = false;
   bool show_calls = false;
   bool show_rename = false;
-  /** The owner renames the group for everyone; anyone else names it for themselves. */
+  /** Whoever the preset lets rename (G017) renames the group for everyone; anyone else names it for themselves. */
   bool rename_for_everyone = false;
   bool show_restore_name = false;
+  /** Whoever the preset lets invite (G019). */
   bool show_add_member = false;
+  /** "Who can add people and rename": Everyone (Open) / Admins only (Managed); the owner switches it (G017). */
+  bool show_preset = false;
+  bool preset_editable = false;
+  GroupPreset preset = GroupPreset::Open;
   bool show_leave = false;
   bool show_dissolve = false;
+  /** G021: "Invite link…" for whoever the preset lets make links; the live links listed for the owner and admins. */
+  bool show_invite_link = false;
+  bool show_links = false;
+  std::vector<GroupLinkListRow> links;
 
   bool operator==(const GroupInfoScreen&) const = default;
 };
@@ -394,7 +436,16 @@ public:
    */
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
+  /**
+   * G021, "Invite link…": our newest live link to the group whose text we keep, else a new one (7 days). Blocking:
+   * a new link is signed and fanned out — call it off the UI thread.
+   */
+  Roe<GroupLinkRow> InviteLinkFor(const std::string& group_id);
+  /** G021, "Revoke link": its maker's, or (the owner, admins) anyone's. Blocking. */
+  Roe<void> RevokeInviteLink(const std::string& group_id, const std::string& link_id);
   Roe<void> RemoveGroupMember(const std::string& group_id, const std::string& member_identity);
+  /** G017, the owner: who can add people and rename (Open / Managed). */
+  Roe<void> SetGroupPreset(const std::string& group_id, GroupPreset preset);
 
   // --- a message's buttons (the open chat) ------------------------------------------------------
 

@@ -3,6 +3,7 @@
 #include "lib/storage/SqliteCallMediaKeyStore.h"
 #include "lib/storage/SqliteCallSessionStore.h"
 #include "lib/storage/SqliteControlLaneSeenStore.h"
+#include "lib/storage/SqliteGroupInviteLinkStore.h"
 #include "lib/storage/SqliteGroupRosterStore.h"
 #include "lib/storage/SqliteObjectIndex.h"
 #include "lib/storage/SqlitePeerCardStore.h"
@@ -55,7 +56,9 @@ Roe<ProfileStores> OpenSqliteProfileStores(const std::string& profile_data_dir, 
   ProfileStores stores;
   stores.profile_db_path = threads->ProfileDbPath();
   auto peer_sessions = std::make_unique<SqlitePeerSessionStore>(stores.profile_db_path, profile_id);
-  stores.at_rest = {threads.get(), peer_sessions.get()};
+  auto invite_links = std::make_unique<SqliteGroupInviteLinkStore>(stores.profile_db_path, profile_id);
+  stores.at_rest = {threads.get(), peer_sessions.get(), invite_links.get()};
+  stores.invite_links = std::move(invite_links);
   stores.threads = std::move(threads);
   stores.peer_sessions = std::move(peer_sessions);
   stores.control_lane_seen = std::make_unique<SqliteControlLaneSeenStore>(stores.profile_db_path);

@@ -54,8 +54,13 @@ protected:
     ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   }
 
+  /** True when the owner (alice) added them now; false when accepted before. */
   Roe<bool> Accept(const std::string& nonce, const std::string& sender, const std::string& group = "group:hike") {
-    return ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "relay:alice", util::NowUnixMs());
+    auto accepted = ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "relay:alice", util::NowUnixMs());
+    if (!accepted) {
+      return accepted.error();
+    }
+    return *accepted == InviteAccepted::Added;
   }
 
   bool IsMember(const std::string& identity) {
@@ -325,47 +330,6 @@ TEST_F(GroupRosterInviteApplyTest, TransferLeavePreviousSetsOwnerAndRemovesActor
   EXPECT_EQ(members->front().role, MemberRole::Owner);
 }
 
-TEST_F(GroupRosterInviteApplyTest, MemberLeftRejectsOwnerAndStaleEpoch) {
-  GroupMetadata metadata;
-  metadata.group_id = "group:hike";
-  metadata.owner_identity = "relay:alice";
-  metadata.title = "Weekend hike";
-  metadata.roster_epoch = 3;
-  ASSERT_TRUE(roster_->UpsertMetadata(metadata));
-  GroupRosterMember alice;
-  alice.member_identity = "relay:alice";
-  alice.role = MemberRole::Owner;
-  alice.joined_at = util::NowUnixMs();
-  GroupRosterMember bob;
-  bob.member_identity = "relay:bob";
-  bob.role = MemberRole::Member;
-  bob.joined_at = util::NowUnixMs();
-  ASSERT_TRUE(roster_->UpsertMember("group:hike", alice));
-  ASSERT_TRUE(roster_->UpsertMember("group:hike", bob));
-
-  GroupMembershipCodec::MemberLeftPayload owner_left;
-  owner_left.group_id = "group:hike";
-  owner_left.member_identity = "relay:alice";
-  owner_left.roster_epoch = 4;
-  EXPECT_FALSE(ApplyMemberLeftToRoster(*roster_, owner_left, "relay:alice"));
-
-  GroupMembershipCodec::MemberLeftPayload stale;
-  stale.group_id = "group:hike";
-  stale.member_identity = "relay:bob";
-  stale.roster_epoch = 3;
-  EXPECT_FALSE(ApplyMemberLeftToRoster(*roster_, stale, "relay:bob"));
-
-  GroupMembershipCodec::MemberLeftPayload ok;
-  ok.group_id = "group:hike";
-  ok.member_identity = "relay:bob";
-  ok.roster_epoch = 4;
-  ASSERT_TRUE(ApplyMemberLeftToRoster(*roster_, ok, "relay:bob"));
-  auto members = roster_->ListMembers("group:hike");
-  ASSERT_TRUE(members);
-  ASSERT_EQ(members->size(), 1u);
-  EXPECT_EQ(members->front().member_identity, "relay:alice");
-}
-
 // An accept counts only for an invite this device issued, for the group it names, which we own.
 TEST_F(GroupRosterInviteApplyTest, AcceptNeedsAnInviteWeIssuedForAGroupWeOwn) {
   SeedOwnedGroup();
@@ -536,7 +500,7 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
       // connections to profile.db hold up too is sqlite_group_roster_store_test's).
       auto accepted = ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
                                                 "group:hike", "relay:alice", util::NowUnixMs());
-      if (accepted && *accepted) {
+      if (accepted && *accepted == InviteAccepted::Added) {
         applied.fetch_add(1);
       }
     });

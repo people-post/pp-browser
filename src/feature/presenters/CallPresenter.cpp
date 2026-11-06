@@ -1,5 +1,6 @@
 #include "feature/presenters/CallPresenter.h"
 
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallLifecycleTypes.h"
 #include "lib/calls/CallTypes.h"
 #include "lib/media/AudioSession.h"
@@ -11,6 +12,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <map>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -209,6 +211,8 @@ void CallPresenter::Refresh() {
     // P001: waive / take-all when the inviter offered a positive initiation amount.
     next.offer_minor = backend->InitiationOfferMinorForPeer(top.inviter_identity);
     next.charge_enabled = next.offer_minor > 0 && PaymentRailsAvailable();
+    FillGuestRing(next, *backend, top,
+                  ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{});
     if (!ring_shown_) {
       ring_shown_ = true;
       log().warning << "ring shown call_id=" << top.call_id;
@@ -233,9 +237,14 @@ void CallPresenter::Refresh() {
     const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
                                                           : std::string{};
     next.placed_here = !local.empty() && surface.active->initiator_identity == local;
+    active_group_id_ = surface.active->origin_group_id.value_or(std::string{});
+    FillGuests(next, *backend, active_group_id_, local);
+    AnnounceGuests(next);
+    FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
+    active_group_id_.clear();
     ringing_call_id_.clear();
     ring_shown_ = false;
   }
@@ -321,6 +330,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.was_connected = signals.was_connected;
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
+  s.show_make_group = OffersMakeGroup(group_call, static_cast<size_t>(joined));
   s.hint = decided.hint;
   s.hint_missing_mic = signals.direct_missing_mic;
   s.hint_seed_unreachable = signals.direct_seed_unreachable;
@@ -335,6 +345,27 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
+}
+
+void CallPresenter::FillGroupInvite(CallScreen& s, const int64_t now) {
+  if (group_invites_call_id_ != s.call_id) {
+    // Another call: what was read and put off belonged to the last one.
+    group_invites_call_id_ = s.call_id;
+    group_invites_.clear();
+    group_invites_put_off_.clear();
+    group_invite_joining_.clear();
+    group_invites_read_ms_ = 0;
+  }
+  // Refresh runs every frame in a call; the invites change only when one arrives or is answered.
+  if (ports_.group_invites_in_call && (group_invites_read_ms_ == 0 || now - group_invites_read_ms_ >= 1'000)) {
+    group_invites_read_ms_ = now;
+    group_invites_ = ports_.group_invites_in_call(s.call_id);
+  }
+  std::set<std::string> hidden = group_invites_put_off_;
+  if (!group_invite_joining_.empty()) {
+    hidden.insert(group_invite_joining_);
+  }
+  s.group_invite = PickGroupInviteBanner(group_invites_, hidden);
 }
 
 void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
@@ -546,6 +577,161 @@ void CallPresenter::OpenAddPeople() {
   if (callbacks_.open_add_people) {
     callbacks_.open_add_people(active_call_id_);
   }
+}
+
+void CallPresenter::OpenMakeGroup() {
+  if (screen_.kind != CallScreen::Kind::InCall || !screen_.show_make_group || screen_.call_id.empty()) {
+    return; // a stale tap: the call ended, or is not one a group may be made from
+  }
+  if (callbacks_.open_make_group) {
+    callbacks_.open_make_group(screen_.call_id);
+  }
+}
+
+void CallPresenter::JoinGroupInvite(std::function<void(Roe<void>)> done) {
+  if (!screen_.group_invite || !ports_.join_group_invite) {
+    if (done) {
+      done(Error("No group invite in this call"));
+    }
+    return;
+  }
+  const std::string invite_id = screen_.group_invite->invite_id;
+  group_invite_joining_ = invite_id;
+  Refresh();
+  ports_.join_group_invite(invite_id, WhileAlive([this, invite_id, done](Roe<void> joined) {
+                             if (group_invite_joining_ == invite_id) {
+                               group_invite_joining_.clear();
+                             }
+                             if (!joined) {
+                               FailText(joined.error().message);
+                             }
+                             group_invites_read_ms_ =
+                                 0; // read again: an accepted invite is gone, a failed one back on the banner
+                             Refresh();
+                             if (done) {
+                               done(joined);
+                             }
+                           }));
+}
+
+void CallPresenter::PutOffGroupInvite() {
+  if (!screen_.group_invite) {
+    return;
+  }
+  group_invites_put_off_.insert(screen_.group_invite->invite_id);
+  Refresh();
+}
+
+void CallPresenter::FillGuests(CallScreen& s, CallUiBackend& backend, const std::string& group_id,
+                               const std::string& local) {
+  if (group_id.empty() || !backend.ChecksGuests()) {
+    return; // V062 6: a call with no group has no guests
+  }
+  const std::optional<CallGroupStanding> self = backend.GroupStanding(group_id, local);
+  // V062 2: a guest's device (no roster) adds nobody; members add people (guests only if the preset lets them).
+  s.show_invite = s.show_invite && self && self->member;
+  std::map<std::string, std::string> brought_by_of;
+  for (const CallParticipant& row : backend.ListParticipants(s.call_id).valueOr(std::vector<CallParticipant>{})) {
+    brought_by_of[row.identity] = row.brought_by;
+  }
+  for (CallScreen::Member& member : s.members) {
+    const std::string& brought_by = brought_by_of[member.identity];
+    const std::optional<CallGroupStanding> standing = backend.GroupStanding(group_id, member.identity);
+    member.guest = ShowsAsGuest(true, brought_by, standing);
+    if (!member.guest) {
+      continue;
+    }
+    member.brought_by = brought_by;
+    member.can_remove = !member.is_local && MayRemoveFromCall(true, self, standing);
+    member.can_add_to_group = !member.is_local && OffersGroupInvite(true, self, standing);
+  }
+}
+
+void CallPresenter::FillGuestRing(CallScreen& s, CallUiBackend& backend, const PendingCallInvite& invite,
+                                  const std::string& local) {
+  if (!invite.origin_group_id || local.empty()) {
+    return;
+  }
+  auto rows = backend.ListParticipants(invite.call_id);
+  if (!rows) {
+    return;
+  }
+  for (const CallParticipant& row : *rows) {
+    if (row.identity == local) {
+      s.ring_guest = !row.brought_by.empty();
+    } else if (row.state == CallParticipantState::Joined) {
+      ++s.ring_people;
+    }
+  }
+  if (!s.ring_guest) {
+    s.ring_people = 0;
+  }
+}
+
+void CallPresenter::AnnounceGuests(const CallScreen& s) {
+  if (announced_call_id_ != s.call_id) {
+    announced_call_id_ = s.call_id;
+    announced_guests_.clear();
+  }
+  for (const CallScreen::Member& member : s.members) {
+    if (!member.guest || member.is_local || !announced_guests_.insert(member.identity).second) {
+      continue;
+    }
+    CallNotice notice;
+    notice.kind = CallNotice::Kind::GuestJoined;
+    notice.identity = member.identity;
+    notice.brought_by = member.brought_by;
+    Notify(notice);
+  }
+}
+
+bool CallPresenter::MayAddToActiveCall(const std::string& identity) const {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || active_group_id_.empty() || !backend->ChecksGuests()) {
+    return true;
+  }
+  const std::string local =
+      ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{}) : std::string{};
+  return DecideCallAdd(true, backend->GroupStanding(active_group_id_, local),
+                       backend->GroupStanding(active_group_id_, identity)) != CallAddVerdict::Refused;
+}
+
+void CallPresenter::RemoveFromCall(const std::string& identity, std::function<void(Roe<void>)> done) {
+  auto* backend = Backend();
+  if (!backend || !backend->Available() || active_call_id_.empty() || identity.empty()) {
+    Fail("call.error.no_active");
+    if (done) {
+      done(Error("no call in progress"));
+    }
+    return;
+  }
+  backend->RemoveFromCall(active_call_id_, identity, WhileAlive([this, done](Roe<void> removed) {
+                            if (!removed) {
+                              FailText(removed.error().message);
+                            }
+                            Refresh();
+                            if (done) {
+                              done(removed);
+                            }
+                          }));
+}
+
+void CallPresenter::AddGuestToGroup(const std::string& identity, std::function<void(Roe<void>)> done) {
+  if (active_call_id_.empty() || active_group_id_.empty() || identity.empty() || !ports_.invite_guest_to_group) {
+    Fail("call.error.no_active");
+    if (done) {
+      done(Error("no group call in progress"));
+    }
+    return;
+  }
+  ports_.invite_guest_to_group(active_group_id_, identity, active_call_id_, WhileAlive([this, done](Roe<void> invited) {
+                                 if (!invited) {
+                                   FailText(invited.error().message);
+                                 }
+                                 if (done) {
+                                   done(invited);
+                                 }
+                               }));
 }
 
 void CallPresenter::InviteToActiveCall(const std::vector<std::string>& identities,

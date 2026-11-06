@@ -381,5 +381,25 @@ TEST(CancelCallTest, GoneOnceTheCallMovesOnOrForOtherScreens) {
   EXPECT_FALSE(ShowsCancelCall(CallScreen{})) << "no call";
 }
 
+// G022: "Make a group…" — a call with no group behind it (it started 1:1 and grew), three or more in it.
+TEST(CallScreenTest, MakeAGroupIsOfferedOnAGrownCallOfThreeOrMore) {
+  EXPECT_FALSE(OffersMakeGroup(/*tied_to_group=*/false, 2)) << "a 1:1 call: the direct chat is the place";
+  EXPECT_TRUE(OffersMakeGroup(false, 3));
+  EXPECT_TRUE(OffersMakeGroup(false, 7));
+  EXPECT_FALSE(OffersMakeGroup(/*tied_to_group=*/true, 3)) << "a group's call already has its group";
+  EXPECT_FALSE(OffersMakeGroup(false, 0));
+}
+
+// G022: the banner shows the oldest invite made in this call that was not put off; Not now hides only that one.
+TEST(CallScreenTest, TheGroupBannerShowsTheFirstInviteNotPutOff) {
+  const CallGroupInvite first{.invite_id = "n1", .group_title = "Ann, Bo, Cy", .maker_identity = "account:ann"};
+  const CallGroupInvite second{.invite_id = "n2", .group_title = "Weekend", .maker_identity = "account:bo"};
+  EXPECT_FALSE(PickGroupInviteBanner({}, {})) << "no invite: no banner";
+  EXPECT_EQ(PickGroupInviteBanner({first, second}, {}), first);
+  EXPECT_EQ(PickGroupInviteBanner({first, second}, {"n1"}), second) << "Not now on the first";
+  EXPECT_FALSE(PickGroupInviteBanner({first, second}, {"n1", "n2"}));
+  EXPECT_FALSE(PickGroupInviteBanner({CallGroupInvite{}}, {})) << "an invite with no id is nothing to answer";
+}
+
 } // namespace
 } // namespace pbr

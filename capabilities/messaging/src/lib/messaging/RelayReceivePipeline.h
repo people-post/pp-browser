@@ -13,6 +13,7 @@
 #include "lib/delivery/PublicPskLockCoordinator.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/IGroupRosterStore.h"
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
@@ -83,8 +84,23 @@ struct RelayReceiveOutcome {
   std::string refuse_invite_reason;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
-  /** G012: we own this group and a member left — re-sign its roster and send it to the members. */
-  std::optional<std::string> resign_roster_group_id;
+  /** The invite the accept answered (the join bundle names it, G019). */
+  std::string publish_member_joined_invite_nonce;
+  /**
+   * G019: an accept of the invite `admit_invite_nonce` we sent as a member or admin — sign the `add` of `admit_member`
+   * and send it (GroupMembershipWorkflow::AdmitInvitee).
+   */
+  std::optional<std::string> admit_group_id;
+  std::string admit_invite_nonce;
+  std::string admit_member;
+  /** G018 item 4: we own this group and hold changes on top of its statement — fold them (debounced). */
+  std::optional<std::string> fold_group_id;
+  /**
+   * G018 item 5: a group copy's sender holds a newer roster than ours (a newer statement, or other changes) — ask it
+   * (`catch_up_ask`) for what we lack. At most once per group per CatchUpLimiter::kCatchUpGapMs.
+   */
+  std::optional<std::string> catch_up_group_id;
+  std::string catch_up_ask;
   /** G012: we are this group's new owner; sign its roster with the transfer we were handed. */
   std::optional<std::string> took_ownership_group_id;
   std::optional<GroupOwnerTransfer> took_ownership_transfer;
@@ -227,6 +243,15 @@ private:
                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
+  /** The groups `sender` and we are both on this device's roster of (a group copy names its group only inside). */
+  std::vector<std::string> GroupsSharedWith(const std::string& sender, const std::string& local_account) const;
+  /**
+   * Which of `candidates` a group record's stream id is the pair's stream of (G018 item 7) — a hint only (the
+   * stream id is not signed): which chat to tell of a copy we could not read, which group a missing copy was for.
+   */
+  static std::optional<std::string> GroupOfStream(const RelayEnvelope& envelope,
+                                                  const std::vector<std::string>& candidates,
+                                                  const std::string& local_account);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */
   struct ReplayKey {
     std::string thread_id;
@@ -274,8 +299,59 @@ private:
                                RelayReceiveOutcome& outcome) const;
   /** A quiet control message bumps no unread count, preview or notice. */
   void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
-  /** G012: keep the owner-signed roster a roster event carries, when it verifies and is newer. */
-  void KeepCarriedStatement(const ThreadMessage& message) const;
+  /**
+   * G012: keep the owner-signed roster a roster event carries, when it verifies and is newer, and recompute the
+   * roster over it (G018, group_roster_sync::ApplyView).
+   */
+  void KeepCarriedStatement(const ThreadMessage& message, const std::string& local_account,
+                            RelayReceiveOutcome* outcome) const;
+  /**
+   * After a recompute (G018): the lines for the changes that count now; when a change took us out, the group goes
+   * read-only here (removed, G020 3); when we own the group and hold changes, the owner folds them.
+   */
+  void FinishView(const std::string& group_id, group_roster_sync::GroupViewApplied& applied,
+                  const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /** G020 3: we were removed from the group — read-only here, no send target. */
+  void MarkRemovedHere(const std::string& group_id) const;
+  /**
+   * G018: a member's or admin's signed change (`group_change`), from a member: kept when it proves itself (or no card
+   * lists its device yet: kept, and the card asked for), the roster recomputed, its line written.
+   */
+  Roe<void> ApplyGroupChange(ThreadMessage& message, const std::string& actor_identity,
+                             const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /**
+   * G019: the newcomer an `add` brought in (its card and route ride the `group_change`): kept once the add counts
+   * here; the stored copy keeps no card.
+   */
+  void KeepChangeNewcomer(ThreadMessage& message, const GroupChange& change, const std::string& local_account) const;
+  /**
+   * G019, the newcomer's side: the join bundle (`member_joined` naming us) from the inviter of an invite we accepted —
+   * the owner's statement (verified for the owner the invite named), the changes it carries (each proving itself), the
+   * roster computed from them, which must have us; then the members' cards and routes for those it lists. Nothing in
+   * it is taken on the inviter's word.
+   */
+  Roe<void> ApplyJoinBundle(ThreadMessage& message, const GroupMembershipCodec::MemberJoinedPayload& joined,
+                            const std::string& actor_identity, const std::string& local_account,
+                            RelayReceiveOutcome* outcome) const;
+  /**
+   * A member_joined's cards and routes, kept for the members `listed` says the roster has (never on the sender's word
+   * alone); the stored copy keeps none.
+   */
+  void KeepBundleCards(ThreadMessage& message, const GroupMembershipCodec::MemberJoinedPayload& joined,
+                       const std::string& local_account, const std::function<bool(const std::string&)>& listed) const;
+  /** The accept of an invite this device sent (owner, member or admin, G019). */
+  Roe<void> ApplyInviteAccepted(const GroupMembershipCodec::InviteResponsePayload& response,
+                                const std::string& actor_identity, const std::string& local_account,
+                                RelayReceiveOutcome* outcome) const;
+  /** G018 item 5: a copy whose sender holds a newer roster than ours asks for a catch-up (rate-limited). */
+  void NoteCopyState(const std::string& group_id, const GroupCopyState& theirs, const std::string& sender,
+                     RelayReceiveOutcome& outcome);
+  /**
+   * G017: the owner made a member admin (or member again), or set the preset. The owner-signed roster it carries is
+   * what applies (KeepAndCatchUp); the event, refused unless it agrees with that roster, is the group chat's line.
+   */
+  Roe<void> ApplyGroupSettingChanged(const ThreadMessage& message, GroupMembershipControlType kind,
+                                     const std::string& actor_identity, const std::string& local_account) const;
   /**
    * G012: a group_roster_statement from the owner. (The member check's request and reply ride the control
    * lane: MakeGroupRosterSyncFamily.)
@@ -301,6 +377,7 @@ private:
   IContactTrustAccess* contact_trust_ = nullptr;
   bool SenderBlocked(const std::string& sender) const;
   PublicPskLockCoordinator public_lock_;
+  group_roster_sync::CatchUpLimiter catch_up_limiter_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };
 

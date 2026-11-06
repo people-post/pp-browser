@@ -27,6 +27,7 @@ Roe<CallRosterDetail> RosterDetail(const ICallSessionReader& sessions, const std
     entry.video_enabled = row.media.video_enabled;
     entry.on_hold = row.media.on_hold;
     entry.video_paused = row.media.video_paused;
+    entry.brought_by = row.brought_by;
     entry.joined_at = row.joined_at;
     detail.participants.push_back(std::move(entry));
   }
@@ -118,6 +119,22 @@ bool IsStickyInitiator(const ICallSessionReader& sessions, const std::string& ca
     peers.push_back(std::move(peer));
   }
   return SelectCallInitiator(peers) == local_identity;
+}
+
+bool InLiveCallWith(const ICallSessionReader& sessions, const std::string& local_identity, const std::string& call_id,
+                    const std::string& identity) {
+  if (call_id.empty() || local_identity.empty() || identity.empty() || identity == local_identity) {
+    return false;
+  }
+  auto session = sessions.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return false;
+  }
+  const auto joined = [&](const std::string& who) {
+    auto row = sessions.FindParticipant(call_id, who);
+    return row && row->has_value() && (*row)->state == CallParticipantState::Joined;
+  };
+  return joined(local_identity) && joined(identity);
 }
 
 bool SenderIsInCall(const ICallSessionReader& sessions, const std::string& call_id,
@@ -374,6 +391,7 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
     participant.media.video_enabled = entry.video_enabled;
     participant.media.on_hold = entry.on_hold;
     participant.media.video_paused = entry.video_paused;
+    participant.brought_by = entry.brought_by;
     participant.joined_at = entry.joined_at;
     (void)sessions.UpsertParticipant(participant);
   }
