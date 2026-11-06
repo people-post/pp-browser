@@ -7824,6 +7824,7 @@ input.checkbox {
 }
 
 .chat-attachment-video-play-icon {
+  image-color: #ffffff; /* the theme tints svg icons with the text colour: black on the dark disc */
   /* In flow, not absolute: the engine gives an absolutely placed <svg> no size (the disc showed empty). */
   margin-left: 3dp;
   pointer-events: none;
