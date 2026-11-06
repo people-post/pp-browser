@@ -278,10 +278,22 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   if (auto invitable = CheckCanInvite(**session); !invitable) {
     return invitable.error();
   }
+  // V062 2: in a group's call, someone outside its roster comes as a guest — brought by a member allowed to.
+  const CallAddVerdict add = DecideAdd(**session, *local, invitee_identity);
+  if (add == CallAddVerdict::Refused) {
+    const auto self = StandingIn(**session, *local);
+    log().info << "CallInvite refused (guest rule) call_id=" << call_id << " peer=" << invitee_identity;
+    return Error(self && self->member ? "In this group only the owner and admins can bring guests into its call"
+                                      : "Guests can't add people to this call");
+  }
   const int64_t expires_at = util::NowUnixMs() + kDefaultCallInviteTtlMs;
   auto invite = BuildInvite(**session, *local, invitee_identity, co_invitees, expires_at);
   if (!invite) {
     return invite.error();
+  }
+  if (add == CallAddVerdict::Guest) {
+    invite->guest = true;
+    invite->brought_by = *local;
   }
   auto detail = CallControlCodec::EncodeInvite(*invite);
   if (!detail) {
@@ -381,6 +393,7 @@ Roe<void> CallSessionWorkflow::RecordInviteSent(const CallSession& session, cons
   participant.call_id = session.call_id;
   participant.identity = invite.invitee_identity;
   participant.state = CallParticipantState::Ringing;
+  participant.brought_by = invite.guest ? invite.brought_by : std::string();
   if (auto saved = sessions_.UpsertParticipant(participant); !saved) {
     return saved.error();
   }
@@ -1419,8 +1432,11 @@ Roe<CallSession> CallSessionWorkflow::StoreRingingInvite(const CallInviteDetail&
 
 void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const std::string& inviter,
                                            const CallSession& session, const std::string& local_identity) {
-  // Seed the full roster from the invite when present; the inviter and self in any case.
-  for (const CallRosterEntry& entry : invite.participants) {
+  // Seed the full roster from the invite when present; the inviter and self in any case. V062: a guest only from a
+  // bringer allowed to bring one.
+  std::vector<CallRosterEntry> entries = invite.participants;
+  DropRefusedGuests(session, entries, local_identity);
+  for (const CallRosterEntry& entry : entries) {
     if (entry.identity.empty()) {
       continue;
     }
@@ -1432,6 +1448,7 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
     row.media.video_enabled = entry.video_enabled;
     row.media.on_hold = entry.on_hold;
     row.media.video_paused = entry.video_paused;
+    row.brought_by = entry.brought_by;
     if (entry.identity == local_identity) {
       row.state = CallParticipantState::Ringing;
     } else if (entry.identity == inviter && row.state != CallParticipantState::Joined) {
@@ -1456,6 +1473,10 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
   self.call_id = invite.call_id;
   self.identity = local_identity;
   self.state = CallParticipantState::Ringing;
+  // V062: brought in as a guest (a member's device knows better: a stale view of the group sent it).
+  if (const auto standing = StandingIn(session, local_identity); invite.guest && !(standing && standing->member)) {
+    self.brought_by = invite.brought_by;
+  }
   (void)sessions_.UpsertParticipant(self);
 }
 
@@ -1742,6 +1763,9 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
     return roster.error();
   }
   auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
+  if (auto session = sessions_.LoadSession(roster->call_id); session && session->has_value()) {
+    DropRefusedGuests(**session, roster->participants, local ? *local : std::string());
+  }
   if (auto applied = ApplyCallRosterToStore(sessions_, *roster, local ? *local : std::string()); !applied) {
     return applied.error();
   }
@@ -1903,6 +1927,7 @@ Roe<CallSession> CallSessionWorkflow::JoinCall(const std::string& call_id) {
   if (!session || !session->has_value() || !(*session)->origin_group_id) {
     return Error("Not a group call this device knows");
   }
+  // V062 4: a guest's device holds no roster for the group, so a guest who left does not ask to rejoin either.
   if (!reads_.InGroup(*(*session)->origin_group_id, *local)) {
     return Error("You are no longer in this group");
   }
@@ -1940,6 +1965,8 @@ Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detai
   if (auto call = sessions_.LoadSession(request->call_id);
       call && call->has_value() && (*call)->origin_group_id &&
       !reads_.InGroup(*(*call)->origin_group_id, sender_identity)) {
+    // V062 4: a guest who left asks in vain too (not in the group); a guest's own device holds no roster and lets
+    // nobody in this way.
     log().info << "Join request dropped (not in the group) call_id=" << request->call_id << " from=" << sender_identity;
     return {};
   }
@@ -1961,6 +1988,135 @@ Roe<void> CallSessionWorkflow::HandleInboundJoinRequest(const std::string& detai
   }
   log().info << "Join request call_id=" << request->call_id << " from=" << sender_identity << " — inviting";
   return InviteParticipant(request->call_id, sender_identity, {}, /*reply_to_join=*/true);
+}
+
+bool CallSessionWorkflow::ChecksGuests(const CallSession& session) const {
+  return session.origin_group_id && !session.origin_group_id->empty() && static_cast<bool>(host_.wire.group_standing);
+}
+
+std::optional<CallGroupStanding> CallSessionWorkflow::StandingIn(const CallSession& session,
+                                                                 const std::string& account) const {
+  if (!ChecksGuests(session)) {
+    return std::nullopt;
+  }
+  return host_.wire.group_standing(*session.origin_group_id, account);
+}
+
+CallAddVerdict CallSessionWorkflow::DecideAdd(const CallSession& session, const std::string& local_identity,
+                                              const std::string& invitee) const {
+  if (!ChecksGuests(session)) {
+    return CallAddVerdict::Plain; // no group, or nothing to check by (tools, tests)
+  }
+  return DecideCallAdd(true, StandingIn(session, local_identity), StandingIn(session, invitee));
+}
+
+void CallSessionWorkflow::DropRefusedGuests(const CallSession& session, std::vector<CallRosterEntry>& entries,
+                                            const std::string& local_identity) const {
+  if (!ChecksGuests(session)) {
+    return;
+  }
+  std::erase_if(entries, [&](const CallRosterEntry& entry) {
+    if (entry.identity.empty() || entry.identity == local_identity) {
+      return false;
+    }
+    const std::optional<CallGroupStanding> bringer =
+        entry.brought_by.empty() ? std::nullopt : StandingIn(session, entry.brought_by);
+    if (TakesCallRosterEntry(StandingIn(session, entry.identity), entry.brought_by, bringer)) {
+      return false;
+    }
+    log().info << "Roster entry dropped (guest not brought by a member allowed to) call_id=" << session.call_id
+               << " who=" << entry.identity << " brought_by=" << entry.brought_by;
+    return true;
+  });
+}
+
+Roe<void> CallSessionWorkflow::RemoveFromCall(const std::string& call_id, const std::string& identity) {
+  auto local = host_.wire.local_relay_identity();
+  if (!local) {
+    return local.error();
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return Error("Call has ended");
+  }
+  if (!ChecksGuests(**session) || identity == *local) {
+    return Error("Nobody can be removed from this call"); // V062 6: calls with no group
+  }
+  const auto target = StandingIn(**session, identity);
+  if (!MayRemoveFromCall(true, StandingIn(**session, *local), target)) {
+    return Error(target && target->member ? "Members aren't removed from a call: remove them from the group"
+                                          : "Only the group's owner and admins can remove a guest");
+  }
+  auto row = sessions_.FindParticipant(call_id, identity);
+  if (!row || !row->has_value() || (*row)->state == CallParticipantState::Left ||
+      (*row)->state == CallParticipantState::Declined || (*row)->state == CallParticipantState::Missed) {
+    return Error("They are not in this call");
+  }
+  auto detail = CallControlCodec::EncodeRemove({call_id, identity});
+  if (!detail) {
+    return detail.error();
+  }
+  // Everyone still in it or ringing, the guest too: each checks it, and takes it as the guest's leave.
+  std::vector<std::string> peers;
+  if (auto participants = sessions_.ListParticipants(call_id); participants) {
+    for (const CallParticipant& p : *participants) {
+      if (p.identity != *local &&
+          (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
+           p.state == CallParticipantState::Invited)) {
+        peers.push_back(p.identity);
+      }
+    }
+  }
+  if (host_.wire.send_to_each) {
+    host_.wire.send_to_each(peers, CallControlType::CallRemove, *detail, "Removed from the call");
+  }
+  log().info << "Guest removed from the call call_id=" << call_id << " who=" << identity;
+  return ParticipantGone(call_id, identity, *local);
+}
+
+Roe<void> CallSessionWorkflow::HandleInboundRemove(const std::string& detail_json, const std::string& sender_identity,
+                                                   const std::string& local_identity) {
+  auto remove = CallControlCodec::DecodeRemove(detail_json);
+  if (!remove) {
+    return remove.error();
+  }
+  auto session = sessions_.LoadSession(remove->call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return {};
+  }
+  auto row = sessions_.FindParticipant(remove->call_id, remove->identity);
+  CallRemoveCheck check;
+  check.group_call = (*session)->origin_group_id && !(*session)->origin_group_id->empty();
+  check.names_local = remove->identity == local_identity;
+  check.sender = StandingIn(**session, sender_identity);
+  check.target = StandingIn(**session, remove->identity);
+  check.target_labelled_guest = row && row->has_value() && !(*row)->brought_by.empty();
+  switch (DecideCallRemove(check)) {
+    case CallRemoveVerdict::Refused:
+      log().info << "call_remove refused call_id=" << remove->call_id << " who=" << remove->identity
+                 << " from=" << sender_identity;
+      return {};
+    case CallRemoveVerdict::Leave: {
+      log().info << "Removed from the call by " << sender_identity << " — leaving call_id=" << remove->call_id;
+      const LiveCall* call = live_calls_.Find(remove->call_id);
+      if (call && call->State() == LiveCallState::Ringing) {
+        (void)DeclineInvite(remove->call_id);
+      } else {
+        (void)LeaveCall(remove->call_id, LiveCallEndReason::LocalLeave);
+      }
+      reports_.Emit(workflow_report::Notice{"You were removed from the call"});
+      return {};
+    }
+    case CallRemoveVerdict::Remove:
+      break;
+  }
+  if (!row || !row->has_value() || (*row)->state == CallParticipantState::Left ||
+      (*row)->state == CallParticipantState::Declined || (*row)->state == CallParticipantState::Missed) {
+    return {};
+  }
+  log().info << "Guest removed from the call call_id=" << remove->call_id << " who=" << remove->identity
+             << " by=" << sender_identity;
+  return ParticipantGone(remove->call_id, remove->identity, local_identity);
 }
 
 bool CallSessionWorkflow::KnownOutOfGroup(const std::string& group_id, const std::string& identity) const {

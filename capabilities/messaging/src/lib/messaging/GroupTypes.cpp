@@ -75,6 +75,12 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "group_dissolved";
   case GroupMembershipControlType::GroupDissolvedSibling:
     return "group_dissolved_sibling";
+  case GroupMembershipControlType::MemberRoleChanged:
+    return "member_role_changed";
+  case GroupMembershipControlType::GroupPresetChanged:
+    return "group_preset_changed";
+  case GroupMembershipControlType::GroupChange:
+    return "group_change";
   }
   return "group_invite";
 }
@@ -100,6 +106,12 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "member_removed") {
     return GroupMembershipControlType::MemberRemoved;
+  }
+  if (value == "member_role_changed") {
+    return GroupMembershipControlType::MemberRoleChanged;
+  }
+  if (value == "group_preset_changed") {
+    return GroupMembershipControlType::GroupPresetChanged;
   }
   if (value == "owner_transferred") {
     return GroupMembershipControlType::OwnerTransferred;
@@ -127,6 +139,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "group_dissolved_sibling") {
     return GroupMembershipControlType::GroupDissolvedSibling;
+  }
+  if (value == "group_change") {
+    return GroupMembershipControlType::GroupChange;
   }
   return std::nullopt;
 }
@@ -163,20 +178,12 @@ GroupSyncState GroupSyncStateFromString(const std::string& value) {
   return GroupSyncState::Active;
 }
 
-uint32_t DefaultPermissionsForRole(const MemberRole role) {
-  switch (role) {
-  case MemberRole::Owner:
-    return kPermSend | kPermInvite | kPermRemove | kPermRename | kPermTransferOwner | kPermFork | kPermLeave;
-  case MemberRole::Admin:
-    return kPermSend | kPermInvite | kPermRemove | kPermRename | kPermFork | kPermLeave;
-  case MemberRole::Member:
-    return kPermSend | kPermFork | kPermLeave;
-  }
-  return kPermSend | kPermLeave;
+std::string GroupPresetToString(const GroupPreset preset) {
+  return preset == GroupPreset::Managed ? "managed" : "open";
 }
 
-bool RoleHasPermission(const MemberRole role, const GroupPermission permission) {
-  return (DefaultPermissionsForRole(role) & static_cast<uint32_t>(permission)) != 0;
+GroupPreset GroupPresetFromString(const std::string& value) {
+  return value == "managed" ? GroupPreset::Managed : GroupPreset::Open;
 }
 
 } // namespace pbr

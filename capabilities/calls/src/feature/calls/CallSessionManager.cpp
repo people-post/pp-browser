@@ -296,6 +296,10 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
   return workflow_.InviteParticipant(call_id, invitee_identity);
 }
 
+Roe<void> CallSessionManager::RemoveFromCall(const std::string& call_id, const std::string& identity) {
+  return workflow_.RemoveFromCall(call_id, identity);
+}
+
 void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
   workflow_.SetPendingAcceptChargeDecision(decision);
 }
@@ -570,6 +574,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
       return {}; // the gate dropped them (not signaling here)
     case CallControlType::CallConnectGiveUp:
       return HandleInboundConnectGiveUp(detail_json, sender_identity);
+    case CallControlType::CallRemove:
+      return workflow_.HandleInboundRemove(detail_json, sender_identity, *local);
   }
   return {};
 }

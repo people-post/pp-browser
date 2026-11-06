@@ -1299,7 +1299,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 ## V053 — Group calls behave like Teams / Signal: join while it lasts, stay when alone, removal ends your part
 
 **Date:** 2026-10-22  
-**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged  
+**Status:** Accepted (product owner: "same as Teams or Signal") — supersedes DESIGN.md rows 4 (late join: invite only) and the "no ambient Join" line for **group** calls; 1:1 calls are unchanged — **amended by [V062](#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins)** (accepted and implemented 2026-11-05): guests in a group's call are labelled, brought by members allowed to invite, and removable by the owner and admins  
 **Decision:**
 
 | Rule | Detail |
@@ -1458,3 +1458,22 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Later:** Android Telecom (`ConnectionService`, the `phoneCall` type) — the system's own call routing, Bluetooth answer and hold.
 
+
+## V062 — Guests in a group's call: labelled, brought by members, removed by owner and admins
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — **implemented 2026-11-05** (`lib/calls/CallGuests`, `call_remove`, the `guest` / `brought_by` fields; the current rule is [CALLS.md § Guests in a group's call](../../docs/architecture/CALLS.md)); with the open-groups work ([group-chat G017–G022](../group-chat/DECISIONS.md#g017--open-groups-roles-and-two-presets), PHASES § O there). Amends V053 (who is in a group's call). "Add {name} to the group" is offered to the owner until members invite (group-chat o4).
+
+**Context:** Guests already exist: any participant can add anyone to any call from the in-call "Add people" picker (`CallPresenter::InviteToActiveCall`, the mid-call invite), and a guest joins without joining the group (DESIGN row 4). What a group's call lacks is a way to see who is a guest, a say for the group in who may bring one, and a way to remove one — today nobody can remove anyone from a call.
+
+**Decision:**
+
+1. **Brought by.** In a group's call (`origin_group_id`), the mid-call invite to someone outside the group's roster carries `guest: true` and `brought_by` (the member who sent it). Every participant shows "{name} joined as {brought_by}'s guest", and the guest's tile is labelled "Guest".
+2. **Who may bring a guest:** a group member allowed to invite under the group's preset (G017: any member in an Open group, admins and the owner in a Managed one). Guests do not bring guests: a guest's device has no roster to check against, and chains of strangers would follow. Each participant's device checks the bringer against the group's roster and refuses an invite that breaks the rule.
+3. **Who may remove a guest:** the group's owner and admins (G017). `call_remove {call_id, identity}` from one of them, checked against the group roster, is taken by every participant as that guest's leave: the media key rotates without them (V003), and their device leaves. A device that ignores it is cut off by the rotation. **Members are not removed from a call:** a member could tap Join again at once (V053); to keep a member out, remove them from the group, which drops them from its call (V053, unchanged).
+4. **A guest stays a guest.** No chat history, no member list, no group membership. A guest who leaves cannot ask to rejoin (V053: only members may ask); a member in the call brings them back. A member allowed to invite can turn them into a group invite ("Add {name} to the group"), which the guest still accepts (G019).
+5. **What the guest is told:** "Joining shows you to the N people in this call." Signalling needs their card on every participant's device.
+6. **Calls with no group are unchanged:** anyone may add people, and nobody removes anyone (anyone can leave). Groups bring roles; a call that needs them can become a group ([G022](../group-chat/DECISIONS.md#g022--make-a-group-during-a-call)).
+
+**Rationale:** An open group lets its members bring friends into its call; order is kept the way the group keeps it, by its owner and admins, under the same preset as invites. Labelling guests and who brought them keeps an open call accountable without a gate.
+**Alternatives:** A separate guest setting (a second knob next to the preset); guests bring guests (unchecked chains); removal of members from a call (undone by Join); the bringer may remove its guest (a second rule next to the group's); a host for ad-hoc calls (calls are hostless, DESIGN row 5).

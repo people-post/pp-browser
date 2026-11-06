@@ -36,6 +36,21 @@ struct GroupEnding {
   std::vector<PendingGroupSend> sends;
 };
 
+/**
+ * A roster change (G018) this device holds and the owner has not folded yet, as received: the change's JSON
+ * (GroupChange.h), its signer's card when it carried one. Not in the account locker: a restored device gets the
+ * changes from the member check (G013).
+ */
+struct StoredGroupChange {
+  std::string group_id;
+  /** group_change::Id. */
+  std::string change_id;
+  std::string change_json;
+  int64_t received_at = 0;
+  /** The group's chat has its line for it (written once, when it first counted). */
+  bool line_shown = false;
+};
+
 /** A change to a group's metadata or roster, as the store saw it. */
 struct GroupRosterChange {
   std::string group_id;
@@ -107,6 +122,15 @@ public:
    */
   virtual Roe<std::vector<PendingGroupInvite>> ListOutboundPendingInvites(const std::string& group_id,
                                                                           int64_t now_ms) const = 0;
+
+  /** Keep a change (or replace the copy held under its id: a copy carrying the signer's card proves more). */
+  virtual Roe<void> UpsertGroupChange(const StoredGroupChange& change) const = 0;
+  /** The changes the group holds, by change id. */
+  virtual Roe<std::vector<StoredGroupChange>> ListGroupChanges(const std::string& group_id) const = 0;
+  virtual Roe<void> DeleteGroupChanges(const std::string& group_id,
+                                       const std::vector<std::string>& change_ids) const = 0;
+  /** Every group that holds at least one change. */
+  virtual Roe<std::vector<std::string>> ListGroupsWithChanges() const = 0;
 
   virtual Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                                       uint32_t session_epoch, uint64_t next_outgoing_seq) const = 0;

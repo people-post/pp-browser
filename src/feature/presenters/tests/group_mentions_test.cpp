@@ -218,7 +218,8 @@ std::string NameOf(const std::string& account) {
 }
 
 TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly) {
-  const auto lines = MentionCandidates(Roster(), kMe, /*local_is_owner=*/false, NameOf, "", kEveryoneMentionWord);
+  const auto lines =
+      MentionCandidates(Roster(), kMe, /*local_may_mention_everyone=*/false, NameOf, "", kEveryoneMentionWord);
   ASSERT_EQ(lines.size(), 4u);
   EXPECT_EQ(lines[0].name, "alice");  // ASCII case does not split the order
   EXPECT_EQ(lines[1].name, "Bob");
@@ -230,7 +231,8 @@ TEST(GroupMentionsTest, PickerListsOtherMembersByNameAndEveryoneForTheOwnerOnly)
   }
   EXPECT_EQ(lines[1].Token(), "@Bob");
 
-  const auto owner_lines = MentionCandidates(Roster(), kOwner, /*local_is_owner=*/true, NameOf, "", kEveryoneMentionWord);
+  const auto owner_lines =
+      MentionCandidates(Roster(), kOwner, /*local_may_mention_everyone=*/true, NameOf, "", kEveryoneMentionWord);
   ASSERT_FALSE(owner_lines.empty());
   EXPECT_TRUE(owner_lines[0].kind == TextSpanKind::Everyone);
   EXPECT_EQ(owner_lines[0].Token(), "@everyone");
@@ -532,14 +534,14 @@ TEST(GroupMentionsTest, AFirstAtBeforeTheLoadIsDoneWaitsForItWithoutBlocking) {
 TEST(GroupMentionsTest, APickOfSomeoneWhoLeftIsDroppedAtSend) {
   MentionRoster roster;
   roster.members = {kMe, kAlice};
-  roster.owner = kOwner;
+  roster.everyone_senders = {kOwner};
   roster.local_account = kMe;
   const std::vector<TextSpan> spans = {Span(TextSpanKind::Mention, 0, 6, kAlice), Span(TextSpanKind::Mention, 7, 11, kBob),
                                        Span(TextSpanKind::Everyone, 12, 21)};
   const auto kept = KeepMentionsOnRoster(spans, roster);
   ASSERT_EQ(kept.size(), 1u) << "Bob left; we are not the owner, so no everyone";
   EXPECT_EQ(kept[0].account_id, kAlice);
-  roster.owner = kMe;
+  roster.everyone_senders = {kMe};
   EXPECT_EQ(KeepMentionsOnRoster(spans, roster).size(), 2u) << "the owner keeps its everyone";
 }
 
@@ -592,7 +594,7 @@ TEST(GroupMentionsTest, TheInsertedChineseEveryoneBecomesTheEveryoneSpan) {
 MentionRoster RosterNow() {
   MentionRoster roster;
   roster.members = {kOwner, kMe, kAlice, kBob};
-  roster.owner = kOwner;
+  roster.everyone_senders = {kOwner};
   roster.local_account = kMe;
   return roster;
 }
@@ -619,10 +621,10 @@ TEST(GroupMentionsTest, EveryoneIsHighlightedOnlyFromTheRostersOwner) {
   ASSERT_EQ(EligibleMentionRuns(text, text.size(), spans, RosterNow(), kOwner).size(), 1u);
   EXPECT_TRUE(EligibleMentionRuns(text, text.size(), spans, RosterNow(), kBob).empty()) << "not the owner";
   MentionRoster me_owner = RosterNow();
-  me_owner.owner = kMe;
+  me_owner.everyone_senders = {kMe};
   EXPECT_EQ(EligibleMentionRuns(text, text.size(), spans, me_owner, kMe).size(), 1u) << "our own, as owner";
   MentionRoster unknown = RosterNow();
-  unknown.owner.clear();
+  unknown.everyone_senders.clear();
   EXPECT_TRUE(EligibleMentionRuns(text, text.size(), spans, unknown, kOwner).empty());
 }
 

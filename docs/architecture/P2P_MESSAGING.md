@@ -191,8 +191,10 @@ forwards in a chat.
   ([PEER_REACH](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/PEER_REACH.md)), addresses
   from call invites, and the DHT where the device is a Node. Mesh seeds stay the bootstrap (N029 L0).
 
-A group message goes member by member the same way. Still on the relay: the offline inbox (a message to
-a peer with no device online). A profile with no relay configured messages contacts whose devices it can
+A group message goes member by member the same way, each copy a pairwise message that names its group
+only inside its ciphertext; its relay stream id is a hash of the group and the pair, so the relay cannot
+tell which group a record is for or who shares one (group-chat G018 item 7; [WIRE_SCHEMAS § Group](../contracts/WIRE_SCHEMAS.md)).
+Still on the relay: the offline inbox (a message to a peer with no device online). A profile with no relay configured messages contacts whose devices it can
 reach.
 
 ## Messaging UX

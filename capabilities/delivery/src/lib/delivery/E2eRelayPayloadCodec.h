@@ -57,6 +57,13 @@ public:
                                             const PeerSessionKey& target_key, IPeerSessionStore& psk_store,
                                             const std::optional<ByteVector>& local_kem_private_key = std::nullopt,
                                             AutoKeyRead* read = nullptr);
+  /** The same, up to the AEAD plaintext (a group copy wraps its ChatPayload, G018 item 7). */
+  static Roe<std::vector<uint8_t>> DecryptEnvelopePlaintext(
+      const RelayEnvelope& envelope, const std::string& local_contact_id, const PeerSessionKey& target_key,
+      IPeerSessionStore& psk_store, const std::optional<ByteVector>& local_kem_private_key = std::nullopt,
+      AutoKeyRead* read = nullptr);
+  /** A decrypted ChatPayload, validated and with its inbound fields sanitized, as DecryptEnvelope returns it. */
+  static Roe<ThreadMessage> DecodeChatPayload(const std::vector<uint8_t>& plaintext);
 };
 
 } // namespace pbr

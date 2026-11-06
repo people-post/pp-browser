@@ -68,6 +68,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # with the AI; cleared by the session menu or clearing the chat. Added on open when missing — user_version unchanged)
                             # peer_cards (checked account cards per account — public keys and devices, plaintext, additive; ACCOUNT_CARD.md)
                             # peer_card_floors (account_id, issued_at — restored from the account locker: no older account card is taken)
+                            # group_metadata.policy_json: {"preset": "open"|"managed"} (group-chat G017; older keys ignored)
                             # group_metadata.roster_statement_json / sync_state / sync_request_id / sync_requested_at (the owner-signed
                             # roster held and a restored group's member check — group-chat G012/G013, plaintext, additive)
                             # group_metadata.sync_state: active | checking | removed | dissolved. dissolved (G016): the owner ended the
@@ -80,6 +81,23 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # sync_state dissolved, the signed dissolve held in roster_statement_json) — a crash leaves all or none. A row is
                             # deleted once its copy reached the outbox; the rest are sent again when messaging comes up and after a failure
                             # (30 s, 2 min, 10 min). Additive table (CREATE IF NOT EXISTS)
+                            # group_changes (group_id, change_id, change_json, received_at, line_shown; PRIMARY KEY (group_id,
+                            # change_id); group-chat G018): the members' and admins' signed roster changes this device holds that the
+                            # owner has not folded yet, the change JSON as received (with the signer's card when one rode it). The roster
+                            # (group_rosters) is the held statement plus these; a change the statement folds, or one below its change
+                            # floor, is deleted; an ended group (G016) keeps none. line_shown: the group's chat has the change's line.
+                            # Not in the account locker (a restored device gets them from the member check, G013). Additive table
+                            # group_rosters.added_by TEXT NOT NULL DEFAULT '' (G019: who brought the member in; empty for the group's
+                            # first members. Added on open when missing — user_version unchanged)
+                            # group_invite_links (link_id PRIMARY KEY, group_id, secret_enc, maker, expires_at, max_uses, created_at;
+                            # group-chat G021): the invite links this device made, kept to show again (text, QR) — secret_enc the
+                            # link's 16-byte secret under the profile DEK (FileCipher, AAD purpose "group_link_secret"), the rest
+                            # plaintext. Answering a join needs only the roster (the secret's hash); a row also lets a join for a
+                            # link the roster no longer names be refused as revoked / expired. Not in the account locker (another
+                            # device of the account answers by the roster, and cannot show the link again). Additive table
+                            # pending_group_invites.owner_identity TEXT NOT NULL DEFAULT '' (G019: the group's owner a member's invite
+                            # names, which the join bundle's statement must verify for; empty: the inviter. outbound = 1 for an invite
+                            # this device sent, as owner or member. Added on open when missing — user_version unchanged)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -30,11 +31,14 @@ struct CallNotice {
     PeerDeclined,
     /** A call rings (`identity`: the caller); the platform notifies when the user is not looking. */
     IncomingCall,
+    /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
+    GuestJoined,
   };
   Kind kind = Kind::Error;
   std::string key;
   std::string text;
   std::string identity;
+  std::string brought_by;
 };
 
 /** What pressing a call button led to. */
@@ -81,6 +85,8 @@ public:
     std::function<void(const std::string& thread_id, bool video)> open_group_picker;
     /** The in-call "add people" button. */
     std::function<void(const std::string& call_id)> open_add_people;
+    /** G022: "Make a group…": the people picker, everyone in the call `call_id` picked. */
+    std::function<void(const std::string& call_id)> open_make_group;
     // Moments the call metrics follow.
     std::function<void(const std::string& call_id, bool video)> on_ring_started;
     std::function<void(const std::string& call_id, bool video)> on_outbound_started;
@@ -125,6 +131,21 @@ public:
   void OpenAddPeople();
   /** The add-people picker's choice: each is invited (`done` once per invitee). */
   void InviteToActiveCall(const std::vector<std::string>& identities, std::function<void(Roe<void>)> done = {});
+  /**
+   * V062 2: whether the add-people picker offers `identity` for the active call: in a group's call, someone outside
+   * the group only to a member allowed to bring guests (calls with no group: anyone).
+   */
+  bool MayAddToActiveCall(const std::string& identity) const;
+  /** V062 3: "Remove from call…" on a guest (Screen() member's can_remove), once the user confirmed. */
+  void RemoveFromCall(const std::string& identity, std::function<void(Roe<void>)> done = {});
+  /** V062 4: "Add {name} to the group" on a guest (can_add_to_group): the group's ordinary invite, in this call. */
+  void AddGuestToGroup(const std::string& identity, std::function<void(Roe<void>)> done = {});
+  /** G022: "Make a group…" (shown by Screen().show_make_group). */
+  void OpenMakeGroup();
+  /** G022: the group banner's Join: the invite on it is accepted (the ordinary accept); the call goes on as it is. */
+  void JoinGroupInvite(std::function<void(Roe<void>)> done = {});
+  /** G022: the banner's Not now: it goes away in this call; the invite stays waiting (its card in the chat stays). */
+  void PutOffGroupInvite();
   bool VideoCallAvailable();
   /** The ring's answer buttons. Return the call answered (empty: nothing ringing). */
   std::string Accept(bool voice_only);
@@ -155,6 +176,14 @@ private:
   void MaybeAutoCamera(CallUiBackend& backend, const CallScreen& s);
   /** B97: a live group call where nothing arrives from anyone for 30 s is left (once told). */
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
+  /** G022: the group banner of the call on `s` (the waiting invites read at most once a second). */
+  void FillGroupInvite(CallScreen& s, int64_t now);
+  /** V062: who is a guest in the group's call on `s`, what this device may do about them, and Add people. */
+  void FillGuests(CallScreen& s, CallUiBackend& backend, const std::string& group_id, const std::string& local);
+  /** V062 5: the ring on `s` brings this device in as a guest: how many it shows them to. */
+  void FillGuestRing(CallScreen& s, CallUiBackend& backend, const PendingCallInvite& invite, const std::string& local);
+  /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
+  void AnnounceGuests(const CallScreen& s);
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
@@ -166,6 +195,11 @@ private:
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
   std::string active_call_id_;
+  /** The group of the active call (empty: none). */
+  std::string active_group_id_;
+  /** V062 1: the guests announced in the call `announced_call_id_`. */
+  std::string announced_call_id_;
+  std::set<std::string> announced_guests_;
   bool ring_shown_ = false;
   /**
    * The ring the user just answered / declined: the stack's state reads Ringing for it until the
@@ -180,6 +214,13 @@ private:
    */
   bool auto_camera_pending_ = false;
   std::string auto_camera_call_id_;
+  /** G022: the invites made in the call `group_invites_call_id_`, as last read; and those put off ("Not now"). */
+  std::string group_invites_call_id_;
+  std::vector<CallGroupInvite> group_invites_;
+  int64_t group_invites_read_ms_ = 0;
+  std::set<std::string> group_invites_put_off_;
+  /** A Join in flight: its banner stays hidden meanwhile. */
+  std::string group_invite_joining_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   template <typename Fn>
   auto WhileAlive(Fn fn) {

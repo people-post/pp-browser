@@ -3,5 +3,6 @@ pp_browser_add_feature_folder_tests(
   pp_feature_product
   pp_browser_feature_product_test
   LINK_LIBS pp_foundation_identity pp_foundation_diagnostics pp_mesh_testing pp_lib_content_testing
+    pp_lib_delivery_testing pp_lib_messaging_testing
   PRIVATE_DEFINITIONS
     PP_BROWSER_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

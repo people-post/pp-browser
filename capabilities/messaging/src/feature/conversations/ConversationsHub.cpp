@@ -1,4 +1,6 @@
 #include "feature/conversations/ConversationsHub.h"
+
+#include "lib/messaging/GroupLinkJoinFamily.h"
 #include "lib/people/DevicePeerId.h"
 #include "domain/attachments/AttachmentContent.h"
 #include "domain/attachments/AttachmentFetch.h"
@@ -712,7 +714,9 @@ void ConversationsHub::DiscardMessagingBringUp() {
   system_controls_.Unbind(kGroupRosterSyncFamily);
   system_controls_.Unbind(kCopyAskFamily);
   system_controls_.Unbind(kCardAskFamily);
+  system_controls_.Unbind(kGroupLinkJoinFamily);
   account_locker_.reset();
+  group_links_.reset();
   group_membership_.reset();
   // Unregister DEK consumers before StopMesh DetachAmpTransports destroys peer_blob.
   if (secrets_ != nullptr) {
@@ -910,6 +914,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
   psk_store_ = std::move(opened_stores->peer_sessions);
   control_lane_seen_ = std::move(opened_stores->control_lane_seen);
   group_roster_ = std::move(opened_stores->rosters);
+  invite_links_ = std::move(opened_stores->invite_links);
   thread_prefs_ = std::move(opened_stores->thread_prefs);
   thread_mentions_ = std::move(opened_stores->thread_mentions);
   peer_card_rows_ = std::move(opened_stores->peer_cards);
@@ -960,6 +965,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
   }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
+  group_invite_gate_->SetInLiveCall(in_live_call_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
@@ -1146,6 +1152,9 @@ void ConversationsHub::BuildMessagingObjects() {
   BindGroupRosterSyncFamily();
   BindCopyAskFamily();
   BindCardAskFamily();
+  group_links_ = std::make_unique<GroupInviteLinkWorkflow>(*group_roster_, invite_links_.get(), *group_membership_,
+                                                           *mesh_messaging_, *identity_);
+  BindGroupLinkJoinFamily();
   account_locker_ = std::make_unique<AccountLockerWorkflow>(
       *identity_, *contacts_,
       AccountLockerWorkflow::Sources{
@@ -1394,6 +1403,13 @@ std::unique_ptr<MessageRouter> ConversationsHub::MakeRouter() {
 
 void ConversationsHub::BindSecrets(ProfileSecretsEngine& secrets) {
   secrets_ = &secrets;
+}
+
+std::vector<GroupInviteGate::InviteInCall> ConversationsHub::GroupInvitesInCall(const std::string& call_id) const {
+  if (!group_invite_gate_) {
+    return {};
+  }
+  return group_invite_gate_->InvitesInCall(call_id, util::NowUnixMs());
 }
 
 std::string ConversationsHub::KeptCardNickname(const std::string& account_id) {
@@ -1911,6 +1927,8 @@ void ConversationsHub::ResumeGroupRosterChecks() {
   }
   // G016: a dissolve or a refusal that did not get sent (the app quit, or messaging was down) goes now.
   group_membership_->ResumePendingGroupSends();
+  // G018 item 4: changes held for a group we own (they arrived while we were away, or before a fold went out).
+  group_membership_->FoldHeldChanges();
   std::vector<AccountStateGroup> restored;
   {
     std::lock_guard lock(restored_mutex_);
@@ -2628,6 +2646,51 @@ void ConversationsHub::BindCardAskFamily() {
   }));
 }
 
+void ConversationsHub::BindGroupLinkJoinFamily() {
+  // G021: a stranger asks to join by one of our links, or answers our ask — judged off the ingest.
+  const auto post = [this](auto work) {
+    AppRuntime::PostWorkerNormal([this, work = std::move(work)]() {
+      if (group_links_) {
+        work(*group_links_);
+      }
+    });
+  };
+  system_controls_.Bind(MakeGroupLinkJoinFamily(
+      [identity = identity_.get()]() -> std::optional<std::string> {
+        auto account = identity->GetAccountId();
+        if (!account || account->empty()) {
+          return std::nullopt;
+        }
+        return *account;
+      },
+      GroupLinkJoinHandlers{
+          .on_request =
+              [post](GroupJoinRequest request, std::string joiner) {
+                post([request = std::move(request), joiner = std::move(joiner)](GroupInviteLinkWorkflow& links) {
+                  links.OnRequest(request, joiner);
+                });
+              },
+          .on_preview =
+              [post](GroupJoinPreview preview, std::string answerer) {
+                post([preview = std::move(preview), answerer = std::move(answerer)](GroupInviteLinkWorkflow& links) {
+                  links.OnPreview(preview, answerer);
+                });
+              },
+          .on_refused =
+              [post](GroupJoinRefused refused, std::string answerer) {
+                post([refused = std::move(refused), answerer = std::move(answerer)](GroupInviteLinkWorkflow& links) {
+                  links.OnRefused(refused, answerer);
+                });
+              },
+          .on_confirm =
+              [post](GroupJoinConfirm confirm, std::string joiner) {
+                post([confirm = std::move(confirm), joiner = std::move(joiner)](GroupInviteLinkWorkflow& links) {
+                  links.OnConfirm(confirm, joiner);
+                });
+              },
+      }));
+}
+
 void ConversationsHub::BindCopyAskFamily() {
   // M021 §9: another account's device asks for a copy of what we sent it never got — answered off the ingest.
   system_controls_.Bind(copy_ask::MakeFamily([this](CopyAsk ask, std::string asker) {
@@ -2666,6 +2729,29 @@ void ConversationsHub::BindGroupRosterSyncFamily() {
             group_membership_->OnGroupDissolvedElsewhere(end);
           }
         });
+      },
+      GroupRosterSyncHooks{
+          .cards = [this](const std::string& account) -> std::optional<AccountCard> {
+            return mesh_messaging_ ? mesh_messaging_->GroupChangeCards()(account) : std::nullopt;
+          },
+          // G018 item 5: the changes a reply brought, their lines (and the owner's fold), off the ingest.
+          .on_applied =
+              [this](std::string group_id, std::vector<GroupChange> applied) {
+                AppRuntime::PostWorkerNormal([this, group_id = std::move(group_id), applied = std::move(applied)]() {
+                  if (group_membership_) {
+                    group_membership_->OnChangesApplied(group_id, applied);
+                  }
+                });
+              },
+          .ask_more =
+              [this](std::string group_id, std::string replier, std::string after) {
+                AppRuntime::PostWorkerNormal(
+                    [this, group_id = std::move(group_id), replier = std::move(replier), after = std::move(after)]() {
+                      if (group_membership_) {
+                        (void)group_membership_->StartCatchUp(group_id, replier, after);
+                      }
+                    });
+              },
       }));
 }
 
@@ -3124,10 +3210,13 @@ void ConversationsHub::Shutdown() {
   system_controls_.Unbind(kGroupRosterSyncFamily);
   system_controls_.Unbind(kCopyAskFamily);
   system_controls_.Unbind(kCardAskFamily);
+  system_controls_.Unbind(kGroupLinkJoinFamily);
   account_locker_.reset();
+  group_links_.reset();
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
+  invite_links_.reset();
   thread_prefs_.reset();
   if (inbox_) {
     inbox_->SetThreadMentions(nullptr);

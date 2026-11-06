@@ -31,10 +31,18 @@ bool GroupInfoSheet::Register(ui::Context* context) {
       row.RegisterMember("letter", &GroupInfoMemberRow::letter);
       row.RegisterMember("tone", &GroupInfoMemberRow::tone);
       row.RegisterMember("owner", &GroupInfoMemberRow::owner);
+      row.RegisterMember("admin", &GroupInfoMemberRow::admin);
       row.RegisterMember("unreachable", &GroupInfoMemberRow::unreachable);
       row.RegisterMember("self", &GroupInfoMemberRow::self);
     }
     ctor.RegisterArray<std::vector<GroupInfoMemberRow>>();
+    if (auto link = ctor.RegisterStruct<GroupInfoLinkRow>()) {
+      link.RegisterMember("link_id", &GroupInfoLinkRow::link_id);
+      link.RegisterMember("label", &GroupInfoLinkRow::label);
+      link.RegisterMember("detail", &GroupInfoLinkRow::detail);
+      link.RegisterMember("can_revoke", &GroupInfoLinkRow::can_revoke);
+    }
+    ctor.RegisterArray<std::vector<GroupInfoLinkRow>>();
     ctor.Bind("title", &view_.title);
     ctor.Bind("count_label", &view_.count_label);
     ctor.Bind("dissolved", &view_.dissolved);
@@ -46,9 +54,15 @@ bool GroupInfoSheet::Register(ui::Context* context) {
     ctor.Bind("show_add_member", &view_.show_add_member);
     ctor.Bind("show_leave", &view_.show_leave);
     ctor.Bind("show_dissolve", &view_.show_dissolve);
+    ctor.Bind("show_preset", &view_.show_preset);
+    ctor.Bind("preset_editable", &view_.preset_editable);
+    ctor.Bind("preset_label", &view_.preset_label);
     ctor.Bind("members_label", &view_.members_label);
     ctor.Bind("view_all_label", &view_.view_all_label);
     ctor.Bind("members", &view_.members);
+    ctor.Bind("show_invite_link", &view_.show_invite_link);
+    ctor.Bind("show_links", &view_.show_links);
+    ctor.Bind("links", &view_.links);
     ctor.BindEventCallback("group_info_voice", DataEvent([this] { Call(/*video=*/false); }));
     ctor.BindEventCallback("group_info_video", DataEvent([this] { Call(/*video=*/true); }));
     ctor.BindEventCallback("group_info_mute", DataEvent([this] { Mute(); }));
@@ -56,10 +70,14 @@ bool GroupInfoSheet::Register(ui::Context* context) {
     ctor.BindEventCallback("group_info_restore_name", DataEvent([this] { RestoreName(); }));
     ctor.BindEventCallback("group_info_view_all", DataEvent([this] { ViewAll(); }));
     ctor.BindEventCallback("group_info_add_member", DataEvent([this] { AddMember(); }));
+    ctor.BindEventCallback("group_info_preset", DataEvent([this] { ChoosePreset(); }));
     ctor.BindEventCallback("group_info_member",
                            DataEvent<std::string>([this](const std::string& identity) { TapMember(identity); }));
     ctor.BindEventCallback("group_info_leave", DataEvent([this] { Leave(); }));
     ctor.BindEventCallback("group_info_dissolve", DataEvent([this] { Dissolve(); }));
+    ctor.BindEventCallback("group_info_invite_link", DataEvent([this] { InviteLink(); }));
+    ctor.BindEventCallback("group_info_revoke_link",
+                           DataEvent<std::string>([this](const std::string& link_id) { RevokeLink(link_id); }));
   });
 }
 
@@ -146,6 +164,10 @@ void GroupInfoSheet::Apply(const GroupInfoScreen& screen) {
   view_.show_add_member = screen.show_add_member;
   view_.show_leave = screen.show_leave;
   view_.show_dissolve = screen.show_dissolve;
+  view_.show_preset = screen.show_preset;
+  view_.preset_editable = screen.preset_editable;
+  view_.preset_label =
+      Tr(screen.preset == GroupPreset::Managed ? "group_info.preset_managed" : "group_info.preset_open").c_str();
   view_.members_label = Tr("group_info.members", {{"count", count}}).c_str();
   view_.view_all_label = Tr("group_info.view_all", {{"count", count}}).c_str();
   view_.members.clear();
@@ -157,9 +179,19 @@ void GroupInfoSheet::Apply(const GroupInfoScreen& screen) {
     row.letter = glyph.letter.c_str();
     row.tone = glyph.tone;
     row.owner = member.is_owner;
+    row.admin = member.is_admin;
     row.unreachable = member.unreachable;
     row.self = !screen.self_identity.empty() && member.identity == screen.self_identity;
     view_.members.push_back(std::move(row));
+  }
+  view_.show_invite_link = screen.show_invite_link;
+  view_.show_links = screen.show_links;
+  view_.links.clear();
+  for (const GroupLinkListRow& link : screen.links) {
+    view_.links.push_back({.link_id = link.link_id.c_str(),
+                           .label = link.label.c_str(),
+                           .detail = link.detail.c_str(),
+                           .can_revoke = link.can_revoke});
   }
   DirtyAll();
 }
@@ -201,6 +233,12 @@ void GroupInfoSheet::AddMember() {
   }
 }
 
+void GroupInfoSheet::ChoosePreset() {
+  if (IsOpen() && screen_.show_preset && screen_.preset_editable) {
+    host_.GroupInfoChoosePreset(screen_.group_id, screen_.preset);
+  }
+}
+
 void GroupInfoSheet::TapMember(const std::string& identity) {
   if (!IsOpen() || identity.empty() || identity == screen_.self_identity) {
     return; // our own row does nothing
@@ -217,6 +255,24 @@ void GroupInfoSheet::Leave() {
 void GroupInfoSheet::Dissolve() {
   if (IsOpen() && screen_.show_dissolve) {
     host_.GroupInfoDissolve(screen_.group_id);
+  }
+}
+
+void GroupInfoSheet::InviteLink() {
+  if (IsOpen() && screen_.show_invite_link) {
+    host_.GroupInfoInviteLink(screen_.group_id);
+  }
+}
+
+void GroupInfoSheet::RevokeLink(const std::string& link_id) {
+  if (!IsOpen() || link_id.empty()) {
+    return;
+  }
+  for (const GroupLinkListRow& link : screen_.links) {
+    if (link.link_id == link_id && link.can_revoke) {
+      host_.GroupInfoRevokeLink(screen_.group_id, link_id);
+      return;
+    }
   }
 }
 

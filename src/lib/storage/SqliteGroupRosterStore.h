@@ -48,6 +48,11 @@ public:
   Roe<void> DeletePendingSend(const PendingGroupSend& send) const override;
   Roe<std::vector<PendingGroupInvite>> ListOutboundPendingInvites(const std::string& group_id, int64_t now_ms) const override;
 
+  Roe<void> UpsertGroupChange(const StoredGroupChange& change) const override;
+  Roe<std::vector<StoredGroupChange>> ListGroupChanges(const std::string& group_id) const override;
+  Roe<void> DeleteGroupChanges(const std::string& group_id, const std::vector<std::string>& change_ids) const override;
+  Roe<std::vector<std::string>> ListGroupsWithChanges() const override;
+
   Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id,
                               uint32_t session_epoch, uint64_t next_outgoing_seq) const override;
   Roe<void> ClearGroupTarget(const std::string& group_id) const override;

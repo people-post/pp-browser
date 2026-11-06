@@ -131,9 +131,6 @@ Object BuildRouteObject(const RelayEnvelope& envelope) {
   if (envelope.route.kind == "direct") {
     route.set("channel", ThreadChannelToString(envelope.route.channel));
   }
-  if (envelope.route.group_id) {
-    route.set("group_id", *envelope.route.group_id);
-  }
   return route;
 }
 
@@ -523,18 +520,12 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   } else if (auto channel_value = route->getString("channel")) {
     envelope.route.channel = ThreadChannelFromString(*channel_value);
   }
-  if (auto group_id = route->getString("group_id")) {
-    envelope.route.group_id = *group_id;
+  // No route names a group (G018 item 7: a group copy carries its group id inside its ciphertext); one that
+  // does is from before that cutover. The control lane is one account copy.
+  if (route->contains("group_id")) {
+    return Error("Envelope route with a group_id");
   }
-  if (envelope.route.kind == "group" && !envelope.route.group_id) {
-    return Error("Missing route.group_id for group envelope");
-  }
-  // One shape per route (signed as such): a group envelope names its group; a direct / control one does not;
-  // the control lane is one account copy.
   if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
-    if (envelope.route.group_id) {
-      return Error("Direct / control envelope with a group_id");
-    }
     if (envelope.route.kind == kRelayRouteControl &&
         (envelope.body.e2e.copies.size() != 1 || !envelope.body.e2e.copies.front().recipient_device.empty())) {
       return Error("Control envelope must carry one account copy");
@@ -553,9 +544,6 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (!IsPlainIdentifier(envelope.sender_contact_id) ||
       (!envelope.sender_relay_id.empty() && !IsPlainIdentifier(envelope.sender_relay_id))) {
     return Error("Invalid identity in envelope");
-  }
-  if (envelope.route.group_id && !IsPlainIdentifier(*envelope.route.group_id)) {
-    return Error("Invalid group_id in envelope");
   }
   if (auto stream_key = json.getString("stream_key")) {
     envelope.stream_key = *stream_key;

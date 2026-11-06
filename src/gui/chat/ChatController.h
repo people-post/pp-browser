@@ -25,6 +25,8 @@
 #include "gui/chat/ChatScreenState.h"
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/GroupInfoSheet.h"
+#include "gui/chat/GroupJoinPrompt.h"
+#include "gui/chat/GroupLinkSheet.h"
 #include "gui/chat/GroupLeaveSheet.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -108,6 +110,11 @@ public:
   bool Setup(ui::Context* context);
   /** Non-owning; pass nullptr to clear. Rebinds sub-presenters (scroller/chrome). */
   void BindConversationsFacade(ConversationsFacade* facade);
+  /**
+   * G021: `text` holds an invite link (`pp://join/…`, opened, pasted or scanned): asks to join by it — the preview,
+   * then the group's chat — and returns true. False: not one (the caller tries a contact locator).
+   */
+  bool OfferGroupJoin(const std::string& text);
   /** App-wired hook so messaging tool registration stays in Application (no ui→hub registration edge). */
   void BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook);
   void BindContactsNotify(ContactsNotifyPorts ports);
@@ -500,9 +507,19 @@ private:
   void GroupInfoRestoreName(const std::string& thread_id) override;
   void GroupInfoViewAll(const std::string& thread_id) override;
   void GroupInfoAddMember(const std::string& thread_id) override;
+  void GroupInfoChoosePreset(const std::string& group_id, GroupPreset current) override;
+  /** G017, the owner: Everyone (Open) / Admins only (Managed), as a menu at `position` (an action sheet on phones). */
+  void ChooseGroupPreset(const std::string& group_id, GroupPreset current, ui::Vector2i position) override;
   void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) override;
   void GroupInfoLeave(const std::string& thread_id) override;
   void GroupInfoDissolve(const std::string& group_id) override;
+  void GroupInfoInviteLink(const std::string& group_id) override;
+  void GroupInfoRevokeLink(const std::string& group_id, const std::string& link_id) override;
+  /** G021: the invite link sheet's and the join prompt's ports. */
+  GroupLinkSheetPorts MakeGroupLinkPorts();
+  GroupJoinPromptPorts MakeJoinPromptPorts();
+  /** Ask, then revoke the link (off the UI thread); `done(true)` once revoked. */
+  void RevokeLinkAfterConfirm(const std::string& group_id, const std::string& link_id, std::function<void(bool)> done);
   // The owner's "choose a new owner" sheet (GroupLeaveSheetHost).
   OwnerLeaveSheet GroupLeaveRead(const std::string& thread_id) override { return presenter_.OwnerLeaveSheetOf(thread_id); }
   int GroupLeavePushSheet(const PaneSpec& spec) override { return GroupInfoPushSheet(spec); }
@@ -595,6 +612,9 @@ private:
   GroupInfoSheet group_info_{*this};
   /** The owner leaving a group on a phone: choose a new owner (DEV/PLAN-ui-batch8-group-pages.md 3). */
   GroupLeaveSheet group_leave_{*this};
+  /** G021: the "Invite link…" sheet over group info, and joining by a link that arrives. Made in the constructor. */
+  std::unique_ptr<GroupLinkSheet> group_link_;
+  std::unique_ptr<GroupJoinPrompt> join_prompt_;
   /** The composer's `@` picker in a group chat, and the mentions it recorded per chat (G015). */
   ChatMentionPicker mentions_{*this, presenter_, chat_, context_};
   /** The composer's microphone, and the voice bubbles' player. Made in the constructor (they need `this`). */

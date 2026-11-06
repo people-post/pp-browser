@@ -1,12 +1,14 @@
 #pragma once
 
 #include "common/thread/ThreadTypes.h"
+#include "lib/calls/CallScreen.h"
 #include "lib/people/ContactTypes.h"
 #include "common/Error.h"
 
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
 
@@ -29,6 +31,18 @@ struct CallFunctionalPorts {
   std::function<std::optional<std::string>()> local_relay_identity;
   /** Profile pref OR `--debug` CLI override (V032 call diagnostics). */
   std::function<bool()> call_diagnostics_enabled;
+  /** G022: the invites to a group made in the call `call_id` still waiting here, oldest first (the call's banner). */
+  std::function<std::vector<CallGroupInvite>(const std::string& call_id)> group_invites_in_call;
+  /** G022: the banner's Join — the ordinary accept of the invite; `done` on the UI thread. */
+  std::function<void(const std::string& invite_id, std::function<void(Roe<void>)> done)> join_group_invite;
+  /**
+   * V062 4: "Add {name} to the group" on a guest of the group's call `call_id`: the group's ordinary invite, made in that
+   * call (G022's call context: the guest's device takes it from someone it is in the call with); `done` on the UI
+   * thread.
+   */
+  std::function<void(const std::string& group_id, const std::string& identity, const std::string& call_id,
+                     std::function<void(Roe<void>)> done)>
+      invite_guest_to_group;
 };
 
 } // namespace pbr

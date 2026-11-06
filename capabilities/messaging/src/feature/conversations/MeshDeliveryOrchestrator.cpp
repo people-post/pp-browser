@@ -132,6 +132,15 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
     }
     if (auto kept = account_keys_.AddAccountCard(card, util::NowUnixMs(), "envelope"); !kept) {
       log().warning << "sender's account card not kept: " << kept.error().message;
+      return;
+    }
+    // G018: a change held for want of this card may count now.
+    if (groups_) {
+      AppRuntime::PostWorkerNormal([this, account = card.keys.account_id]() {
+        if (groups_) {
+          groups_->RecheckChangesBy(account);
+        }
+      });
     }
   });
   // M021 d6: a sender whose list is newer than ours (a device taken out): ask its device for the card.
@@ -310,6 +319,20 @@ Roe<void> MeshDeliveryOrchestrator::NotifyOwnDevices(const ThreadMessage& contro
     return {};
   }
   return control_lane_.NotifySiblings(control, SiblingNotice::Signal);
+}
+
+GroupCardLookup MeshDeliveryOrchestrator::GroupChangeCards() {
+  return [this](const std::string& account) -> std::optional<AccountCard> {
+    if (auto kept = account_keys_.Kept(account); kept && kept->has_value() && (*kept)->newest_card) {
+      return (*kept)->newest_card;
+    }
+    if (auto own = identity_.Get(); own && own->account_id == account) {
+      if (auto card = own_cards_.Card(util::NowUnixMs())) {
+        return std::move(*card);
+      }
+    }
+    return std::nullopt;
+  };
 }
 
 void MeshDeliveryOrchestrator::AskForNewerCard(const std::string& account, const std::string& device,
@@ -534,9 +557,9 @@ Roe<void> MeshDeliveryOrchestrator::ResendGroupCopy(const Thread& thread, const 
     rich_plaintext = std::move(*plaintext);
   }
   auto resolve_kem = [this](const PeerSessionKey& key) { return PeerKemPublicKey(key); };
-  auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(message.text, group_id, identity->account_id, message.id,
-                                                           message.timestamp, {target}, psk_store_, resolve_kem,
-                                                           rich_plaintext);
+  auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
+      message.text, group_id, identity->account_id, message.id, message.timestamp, {target}, psk_store_, resolve_kem,
+      rich_plaintext, group_roster_sync::CopyState(group_roster_, group_id));
   if (!encrypted) {
     return encrypted.error();
   }
@@ -732,10 +755,17 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   if (outcome.publish_member_joined_group_id && outcome.publish_member_joined_member_identity) {
     (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
                                       *outcome.publish_member_joined_member_identity,
-                                      outcome.publish_member_joined_epoch);
+                                      outcome.publish_member_joined_epoch, outcome.publish_member_joined_invite_nonce);
   }
-  if (outcome.resign_roster_group_id) {
-    (void)groups->SignAndSendRoster(*outcome.resign_roster_group_id);
+  if (outcome.admit_group_id) {
+    // G019: we invited as a member or admin — our device signs the add and sends it.
+    (void)groups->AdmitInvitee(*outcome.admit_group_id, outcome.admit_invite_nonce, outcome.admit_member);
+  }
+  if (outcome.fold_group_id) {
+    groups->ScheduleFold(*outcome.fold_group_id); // G018 item 4: debounced, a burst of changes folds once
+  }
+  if (outcome.catch_up_group_id) {
+    (void)groups->StartCatchUp(*outcome.catch_up_group_id, outcome.catch_up_ask);
   }
   if (outcome.refuse_invite_group_id) {
     (void)groups->RefuseInvite(*outcome.refuse_invite_group_id, outcome.refuse_invite_nonce,
@@ -1800,9 +1830,10 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   }
 
   const std::string group_id = *(*thread)->group_id;
+  // G018 item 5: every copy says which roster we hold, so a member behind or ahead of us notices.
   auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
       text, group_id, identity->account_id, message.id, message.timestamp, targets, psk_store_, resolve_kem,
-      rich_plaintext);
+      rich_plaintext, group_roster_sync::CopyState(group_roster_, group_id));
   if (!encrypted) {
     if (groups_) {
       for (const GroupMemberTarget& target : targets) {

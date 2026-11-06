@@ -27,4 +27,4 @@ Multi-party E2E group chat with owner-signed membership, invite/block controls, 
 
 ## Phases
 
-Base C0–C5, signed roster R (G010–G013), size limit L (G014), mentions M (G015): [PHASES.md](PHASES.md); status in [CURRENT_STATE.md](CURRENT_STATE.md).
+Base C0–C5, signed roster R (G010–G013), size limit L (G014), mentions M (G015), open groups O (G017–G023, accepted 2026-11-05): [PHASES.md](PHASES.md); status in [CURRENT_STATE.md](CURRENT_STATE.md).

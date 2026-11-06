@@ -164,11 +164,22 @@ TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
     route.set("kind", "other");
     json.set("route", route);
   })) << "unknown route kind";
-  EXPECT_FALSE(with([](Object& json) {
+  EXPECT_TRUE(with([](Object& json) {
     Object route;
     route.set("kind", "group");
     json.set("route", route);
-  })) << "group without group_id";
+  })) << "a group copy's route names no group (G018 item 7)";
+  EXPECT_FALSE(with([](Object& json) {
+    Object route;
+    route.set("kind", "group");
+    route.set("group_id", "group:a");
+    json.set("route", route);
+  })) << "a route naming its group: from before the cutover";
+  EXPECT_FALSE(with([](Object& json) {
+    Object route = *json.getObject("route");
+    route.set("group_id", "group:a");
+    json.set("route", route);
+  })) << "direct with a group_id";
   EXPECT_FALSE(with([](Object& json) {
     Object body = *json.getObject("body");
     Object e2e = *body.getObject("e2e");

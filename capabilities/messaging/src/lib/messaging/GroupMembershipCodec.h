@@ -51,6 +51,20 @@ public:
     uint64_t roster_epoch = 0;
     /** Optional full roster snapshot (G006 late-joiner backfill). Empty = primary member only. */
     std::vector<MemberJoinedEntry> members;
+    /** G019 5: who brought them in (the inviter); the line reads "Alice added Carol". Empty: not said. */
+    std::string added_by;
+    /** G021: `added_by` let them in by their invite link (the line reads "Carol joined by Alice's link"). */
+    bool by_link = false;
+    /**
+     * G019: the invite this join answers, on the copy the inviter sends the newcomer (the join bundle): the newcomer
+     * takes it only for an invite of its own from that sender.
+     */
+    std::string invite_nonce;
+    /**
+     * G022: `call` on a group's first line (local, never sent) when the group was made during a call: the line reads
+     * "Group made during a call". Empty otherwise.
+     */
+    std::string context;
   };
 
   static Roe<std::string> EncodeMemberJoined(const std::string& group_id, const std::string& member_identity,
@@ -61,8 +75,9 @@ public:
   static Roe<std::string> WithoutCards(MemberJoinedPayload payload);
   static Roe<std::string> EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
                                            uint64_t roster_epoch);
+  /** `removed_by`: who removed them (G020: the owner or an admin), shown in the line; empty: not said. */
   static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,
-                                              uint64_t roster_epoch);
+                                              uint64_t roster_epoch, const std::string& removed_by = {});
   static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
                                                  uint64_t roster_epoch, bool leave_previous = false);
 
@@ -75,6 +90,8 @@ public:
     std::string group_id;
     std::string member_identity;
     uint64_t roster_epoch = 0;
+    /** G020: who removed them (`by`); empty when the event does not say. */
+    std::string removed_by;
   };
   struct OwnerTransferredPayload {
     std::string group_id;
@@ -91,6 +108,26 @@ public:
   static Roe<MemberRemovedPayload> DecodeMemberRemovedFromMessage(const ThreadMessage& message);
   static Roe<OwnerTransferredPayload> DecodeOwnerTransferred(const std::string& detail_json);
   static Roe<OwnerTransferredPayload> DecodeOwnerTransferredFromMessage(const ThreadMessage& message);
+
+  /** G017: the owner made `member_identity` an admin or a member again (the owner-signed roster rides it too). */
+  struct MemberRoleChangedPayload {
+    std::string group_id;
+    std::string member_identity;
+    MemberRole role = MemberRole::Member;
+    uint64_t roster_epoch = 0;
+  };
+  static Roe<std::string> EncodeMemberRoleChanged(const MemberRoleChangedPayload& payload);
+  static Roe<MemberRoleChangedPayload> DecodeMemberRoleChanged(const std::string& detail_json);
+  static Roe<MemberRoleChangedPayload> DecodeMemberRoleChangedFromMessage(const ThreadMessage& message);
+  /** G017: the owner set the group Open or Managed (the owner-signed roster rides it too). */
+  struct GroupPresetChangedPayload {
+    std::string group_id;
+    GroupPreset preset = GroupPreset::Open;
+    uint64_t roster_epoch = 0;
+  };
+  static Roe<std::string> EncodeGroupPresetChanged(const GroupPresetChangedPayload& payload);
+  static Roe<GroupPresetChangedPayload> DecodeGroupPresetChanged(const std::string& detail_json);
+  static Roe<GroupPresetChangedPayload> DecodeGroupPresetChangedFromMessage(const ThreadMessage& message);
 
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
                                             uint64_t roster_epoch, uint64_t title_version);

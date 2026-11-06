@@ -51,10 +51,9 @@ struct MentionCandidate {
  * contacts, so the picker reads it once when it opens and filters it with FilterMentionCandidates. Members that
  * share a name (ASCII case ignored) carry a `short_id`.
  */
-std::vector<MentionCandidate> AllMentionCandidates(const std::vector<GroupRosterMember>& roster,
-                                                   const std::string& local_account, bool local_is_owner,
-                                                   const std::function<std::string(const std::string& account_id)>& public_name,
-                                                   const std::string& everyone_word);
+std::vector<MentionCandidate> AllMentionCandidates(
+    const std::vector<GroupRosterMember>& roster, const std::string& local_account, bool local_may_mention_everyone,
+    const std::function<std::string(const std::string& account_id)>& public_name, const std::string& everyone_word);
 
 /** The lines of `all` whose name contains `query` (ASCII case ignored); the everyone line also answers to "everyone". */
 std::vector<MentionCandidate> FilterMentionCandidates(const std::vector<MentionCandidate>& all,
@@ -126,16 +125,16 @@ private:
 };
 
 /**
- * The picker's lines: the everyone line first when this device is the group's owner (`local_is_owner`: the owner
+ * The picker's lines: the everyone line first when this account may use it — the owner, an admin (`local_may_mention_everyone`: the owner
  * the roster names), then the other members (never ourselves) by name. `everyone_word` is what that line
  * inserts after the `@` (the user's language: `@所有人`, `@everyone`). `query` (the text typed after the `@`)
  * keeps the lines whose name contains it, ignoring ASCII case; the everyone line also answers to "everyone"
  * whatever its word. Members that share a name carry a `short_id` (decided over the whole group, not the query).
  */
-std::vector<MentionCandidate> MentionCandidates(const std::vector<GroupRosterMember>& roster,
-                                                const std::string& local_account, bool local_is_owner,
-                                                const std::function<std::string(const std::string& account_id)>& public_name,
-                                                const std::string& query, const std::string& everyone_word);
+std::vector<MentionCandidate> MentionCandidates(
+    const std::vector<GroupRosterMember>& roster, const std::string& local_account, bool local_may_mention_everyone,
+    const std::function<std::string(const std::string& account_id)>& public_name, const std::string& query,
+    const std::string& everyone_word);
 
 /**
  * The `@` the user just typed that opens the picker: `after` is `before` with one `@` added, at the start of the
@@ -189,17 +188,21 @@ void PruneRecordedMentions(const std::string& text, std::vector<ComposerMention>
  */
 std::vector<TextSpan> MentionSpansForDraft(const std::string& text, const std::vector<ComposerMention>& recorded);
 
-/** What deciding a highlight needs: the group's current roster, its owner, and who we are. */
+/** What deciding a highlight needs: the group's current roster, who may use `@everyone`, and who we are. */
 struct MentionRoster {
   std::set<std::string> members;
-  /** The owner the roster names (G012). */
-  std::string owner;
+  /** Who may use `@everyone` (G017): the owner the signed roster names (G012) and its admins. */
+  std::set<std::string> everyone_senders;
   std::string local_account;
+
+  bool MayMentionEveryone(const std::string& account) const {
+    return !account.empty() && everyone_senders.count(account) > 0;
+  }
 };
 
 /**
- * `spans` without the mentions of anyone not on `roster`, and without an everyone span unless this account is the
- * group's owner: a pick made while a member was there can be stale at send (they left, were removed).
+ * `spans` without the mentions of anyone not on `roster`, and without an everyone span unless this account may use
+ * it (the owner, an admin): a pick made while a member was there can be stale at send (they left, were removed).
  */
 std::vector<TextSpan> KeepMentionsOnRoster(std::vector<TextSpan> spans, const MentionRoster& roster);
 

@@ -643,6 +643,111 @@ Roe<void> ConversationsFacade::RemoveMemberByIdentity(const std::string& group_i
   return hub_.Groups().RemoveMemberByIdentity(group_id, member_identity);
 }
 
+Roe<void> ConversationsFacade::SetMemberRole(const std::string& group_id, const std::string& member_identity,
+                                             const MemberRole role) {
+  return hub_.Groups().SetMemberRole(group_id, member_identity, role);
+}
+
+Roe<void> ConversationsFacade::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  return hub_.Groups().SetGroupPreset(group_id, preset);
+}
+
+Roe<GroupPreset> ConversationsFacade::GroupPresetOf(const std::string& group_id) {
+  return hub_.Groups().GroupPresetOf(group_id);
+}
+
+std::optional<MemberRole> ConversationsFacade::LocalGroupRole(const std::string& group_id) {
+  return hub_.Groups().LocalRole(group_id);
+}
+
+std::vector<std::string> ConversationsFacade::GroupMembersAddedBy(const std::string& group_id,
+                                                                  const std::string& account) {
+  return hub_.Groups().MembersAddedBy(group_id, account);
+}
+
+std::vector<std::string> ConversationsFacade::GroupAccountsRemovedBy(const std::string& group_id,
+                                                                     const std::string& account) {
+  return hub_.Groups().AccountsRemovedBy(group_id, account);
+}
+
+Roe<size_t> ConversationsFacade::RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account) {
+  auto removed = hub_.Groups().RemoveEveryoneAddedBy(group_id, account);
+  NotifyThreadChanged();
+  return removed;
+}
+
+Roe<size_t> ConversationsFacade::ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account) {
+  return hub_.Groups().ReinviteEveryoneRemovedBy(group_id, account);
+}
+
+Roe<void> ConversationsFacade::InviteIdentity(const std::string& group_id, const std::string& account) {
+  if (auto contact = FindContactByIdentity(account, mesh::ContactIdKind::Account); contact && *contact) {
+    return InviteMember(group_id, (*contact)->id);
+  }
+  return hub_.Groups().InviteByIdentity(group_id, account);
+}
+
+namespace {
+
+constexpr const char kLinksNotReady[] = "Messaging is not ready";
+
+} // namespace
+
+Roe<GroupInviteLinkWorkflow::MadeLink> ConversationsFacade::MakeInviteLink(const std::string& group_id,
+                                                                           const uint64_t max_uses,
+                                                                           const int64_t lifetime_ms) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->MakeLink(group_id, max_uses, lifetime_ms);
+}
+
+Roe<void> ConversationsFacade::RevokeInviteLink(const std::string& group_id, const std::string& link_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->RevokeLink(group_id, link_id);
+}
+
+std::vector<GroupLinkRow> ConversationsFacade::GroupInviteLinks(const std::string& group_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->LiveLinks(group_id) : std::vector<GroupLinkRow>{};
+}
+
+std::optional<GroupLinkRow> ConversationsFacade::OwnInviteLink(const std::string& group_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->OwnLiveLink(group_id) : std::nullopt;
+}
+
+Roe<std::string> ConversationsFacade::AskToJoinByLink(const std::string& link_text) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->AskToJoin(link_text);
+}
+
+Roe<Thread> ConversationsFacade::ConfirmJoinByLink(const std::string& request_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  if (!links) {
+    return Error(kLinksNotReady);
+  }
+  return links->ConfirmJoin(request_id);
+}
+
+void ConversationsFacade::CancelJoinByLink(const std::string& request_id) {
+  if (GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull()) {
+    links->CancelJoin(request_id);
+  }
+}
+
+std::optional<GroupJoinState> ConversationsFacade::JoinByLinkState(const std::string& request_id) {
+  GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull();
+  return links ? links->JoinState(request_id) : std::nullopt;
+}
+
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
   return hub_.Groups().ListUnreachable(group_id);
 }

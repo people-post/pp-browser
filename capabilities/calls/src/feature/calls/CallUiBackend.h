@@ -2,6 +2,7 @@
 
 #include "lib/pricing/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
 #include "lib/calls/CallLifecycleTypes.h"
@@ -94,6 +95,8 @@ public:
                  const std::vector<std::string>& invitee_identities, std::function<void(Roe<CallSession>)> on_done);
   void InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                          std::function<void(Roe<void>)> on_done);
+  /** V062 3: take the guest `identity` out of the group's call `call_id` (the owner and admins; the stack checks). */
+  void RemoveFromCall(const std::string& call_id, const std::string& identity, std::function<void(Roe<void>)> on_done);
   void SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done = {});
   /** Reads the display rotation here, on UI (L012), and hands it to the owner. */
   void SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done = {});
@@ -121,6 +124,12 @@ public:
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
+  /** Every participant row of `call_id` (any state, this device's own too). */
+  Roe<std::vector<CallParticipant>> ListParticipants(const std::string& call_id) const;
+  /** V062: `account`'s standing in `group_id` (none: no roster for it on this device — a guest's). */
+  std::optional<CallGroupStanding> GroupStanding(const std::string& group_id, const std::string& account) const;
+  /** V062: this device checks guests in a group's call (else every group call shows as before: no guests). */
+  bool ChecksGuests() const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
 

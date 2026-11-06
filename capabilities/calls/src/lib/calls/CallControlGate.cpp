@@ -25,6 +25,7 @@ CallControlSender WhoMaySend(const CallControlType type) {
     case CallControlType::CallPunchAnswer:
     case CallControlType::CallCapsUpdate:
     case CallControlType::CallConnectGiveUp:
+    case CallControlType::CallRemove:
       return CallControlSender::InCall;
     case CallControlType::CallSummary:
     case CallControlType::CallSdp:

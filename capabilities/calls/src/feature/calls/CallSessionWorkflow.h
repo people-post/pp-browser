@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lib/calls/CallControlCodec.h"
+#include "lib/calls/CallGuests.h"
 #include "lib/calls/CallSummaryLogic.h"
 #include "lib/calls/CallTypes.h"
 #include "common/Error.h"
@@ -68,7 +69,11 @@ public:
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
     /** Who is in a group now; none when unknown. Unset: group membership is not checked. */
     std::function<std::optional<std::set<std::string>>(const std::string& group_id)> group_members;
-    /** What the call chrome shows the user went wrong (e.g. "That call has ended"). */
+    /**
+     * V062: where an account stands in a group (member, may bring / remove guests); none when this device holds no
+     * roster for it (a guest's). Unset: guests are not checked (tools, tests).
+     */
+    CallGroupStandingFn group_standing;
 
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
@@ -138,6 +143,11 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
+  /**
+   * V062 3: take the guest `identity` out of the group's call `call_id` (this device's account is the group's owner or
+   * an admin): `call_remove` to everyone else in it, then their leave here (the key rotates without them).
+   */
+  Roe<void> RemoveFromCall(const std::string& call_id, const std::string& identity);
   /**
    * V053: join group call `call_id` this device dropped out of (declined, missed, left): ask everyone
    * it was offered to; one in the call answers with an invite, accepted without ringing. Unanswered
@@ -224,6 +234,9 @@ public:
   /** V053: someone the call was offered to asks to join — invite them if this device is in it. */
   Roe<void> HandleInboundJoinRequest(const std::string& detail_json, const std::string& sender_identity,
                                      const std::string& local_identity);
+  /** V062 3: someone in the call takes a guest out of it — checked against the group's roster (CallGuests.h). */
+  Roe<void> HandleInboundRemove(const std::string& detail_json, const std::string& sender_identity,
+                                const std::string& local_identity);
   /**
    * V053 / V058 3: `identity` is no longer in the group (`nullopt`: the group ended — nobody is), so no longer in
    * its call: taken as gone (the key rotates without them); this device, if it is the one, leaves.
@@ -239,6 +252,16 @@ private:
   void MarkEveryoneLeft(const std::string& call_id, const std::string& local_identity);
   /** Join requests nobody answered (the call ended); a group call left alone for 5 min. */
   void SweepJoinsAndAloneCalls(const std::string& local_identity, int64_t now);
+  /** V062: this device checks guests in `session`: a group's call, with a standing port bound. */
+  bool ChecksGuests(const CallSession& session) const;
+  /** V062: `account`'s standing in the call's group; none: no roster here (or guests not checked). */
+  std::optional<CallGroupStanding> StandingIn(const CallSession& session, const std::string& account) const;
+  /** V062 2: whether this device may add `invitee` to `session`, and as a guest or not. */
+  CallAddVerdict DecideAdd(const CallSession& session, const std::string& local_identity,
+                           const std::string& invitee) const;
+  /** V062 2: drop the entries of a received roster for `session` that this device does not take (refused guests). */
+  void DropRefusedGuests(const CallSession& session, std::vector<CallRosterEntry>& entries,
+                         const std::string& local_identity) const;
   /** G016: a roster this device holds that lacks `identity`; a roster it does not hold (nullopt) is not "out". */
   bool KnownOutOfGroup(const std::string& group_id, const std::string& identity) const;
   /** `identity` is no longer in the call (left, or out of its group). */

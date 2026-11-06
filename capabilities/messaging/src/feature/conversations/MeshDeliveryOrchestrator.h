@@ -175,6 +175,11 @@ public:
   AccountCardService& AccountCards() { return card_service_; }
   /** This account's own key card and device list (M021). */
   OwnCards& OwnAccountCards() { return own_cards_; }
+  /**
+   * The newest card this device holds per account, for checking group changes (G018 item 9): the kept cards, and our
+   * own account's.
+   */
+  GroupCardLookup GroupChangeCards();
   /** Our device list changed (our address goes to our other devices too, M021). */
   void SetOnOwnDevicesChanged(std::function<void()> changed) { on_own_devices_changed_ = std::move(changed); }
   /** A verified notice from another device of our own account arrived (M023: time to sync the locker). */

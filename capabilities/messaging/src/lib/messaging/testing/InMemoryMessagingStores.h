@@ -9,6 +9,7 @@
 // sends, in one step; a member's pair numbering restarts at 1 in a newer pair epoch.
 
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
+#include "lib/messaging/IGroupInviteLinkStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/messaging/IThreadMentionsStore.h"
@@ -58,6 +59,11 @@ public:
   Roe<std::vector<PendingGroupInvite>> ListOutboundPendingInvites(const std::string& group_id,
                                                                   int64_t now_ms) const override;
 
+  Roe<void> UpsertGroupChange(const StoredGroupChange& change) const override;
+  Roe<std::vector<StoredGroupChange>> ListGroupChanges(const std::string& group_id) const override;
+  Roe<void> DeleteGroupChanges(const std::string& group_id, const std::vector<std::string>& change_ids) const override;
+  Roe<std::vector<std::string>> ListGroupsWithChanges() const override;
+
   Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id, uint32_t session_epoch,
                               uint64_t next_outgoing_seq) const override;
   Roe<void> ClearGroupTarget(const std::string& group_id) const override;
@@ -90,6 +96,8 @@ private:
   mutable std::map<std::tuple<std::string, std::string, std::string>, PendingGroupSend> sends_;
   /** By (group, member identity or identity/device). */
   mutable std::map<std::pair<std::string, std::string>, MemberSeq> member_seqs_;
+  /** Per group, by change id. */
+  mutable std::map<std::string, std::map<std::string, StoredGroupChange>> changes_;
 };
 
 class InMemoryThreadLocalPrefsStore : public IThreadLocalPrefsStore {
@@ -121,6 +129,20 @@ private:
   mutable std::map<std::string, std::set<std::pair<int64_t, std::string>>> mentions_;
   /** Per thread: its newest read mention (as SQLite's thread_mentions_read). */
   mutable std::map<std::string, std::pair<int64_t, std::string>> read_;
+};
+
+/** The invite links this device made (G021); the secret kept as given (no data key in tests). */
+class InMemoryGroupInviteLinkStore : public IGroupInviteLinkStore {
+public:
+  Roe<void> Keep(const KeptInviteLink& link) const override;
+  Roe<std::optional<KeptInviteLink>> Find(const std::string& link_id) const override;
+  Roe<std::vector<KeptInviteLink>> ListForGroup(const std::string& group_id) const override;
+  Roe<void> Forget(const std::string& link_id) const override;
+  Roe<void> ForgetExpiredBefore(int64_t before_ms) const override;
+
+private:
+  mutable std::mutex mutex_;
+  mutable std::map<std::string, KeptInviteLink> links_;
 };
 
 } // namespace pbr

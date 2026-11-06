@@ -100,7 +100,7 @@ TEST_F(SqliteGroupRosterStoreTest, ConcurrentAcceptsOverTheirOwnConnectionsAllLa
       SqliteGroupRosterStore own(Db()); // each worker its own connection, as in the app
       auto accepted = ApplyInviteAcceptToRoster(own, "nonce-" + std::to_string(i), "account:member" + std::to_string(i),
                                                 "group:g", "account:me", util::NowUnixMs());
-      if (accepted && *accepted) {
+      if (accepted && *accepted == InviteAccepted::Added) {
         applied.fetch_add(1);
       }
     });

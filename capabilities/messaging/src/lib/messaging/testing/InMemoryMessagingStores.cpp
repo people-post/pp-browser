@@ -179,6 +179,7 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> InMemoryGroupRosterStore::En
     }
     voided = VoidPendingInvitesLocked(group_id);
     rosters_.erase(group_id);
+    changes_.erase(group_id);
     threads_.ClearGroupTarget(group_id);
     GroupMetadata& ended = metadata->second;
     ended.roster_epoch = std::max(ended.roster_epoch, ending.roster_epoch);
@@ -211,6 +212,50 @@ Roe<void> InMemoryGroupRosterStore::DeletePendingSend(const PendingGroupSend& se
   std::lock_guard lock(mutex_);
   sends_.erase({send.group_id, send.recipient, send.control_type});
   return {};
+}
+
+Roe<void> InMemoryGroupRosterStore::UpsertGroupChange(const StoredGroupChange& change) const {
+  std::lock_guard lock(mutex_);
+  changes_[change.group_id][change.change_id] = change;
+  return {};
+}
+
+Roe<std::vector<StoredGroupChange>> InMemoryGroupRosterStore::ListGroupChanges(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  std::vector<StoredGroupChange> out;
+  if (auto group = changes_.find(group_id); group != changes_.end()) {
+    for (const auto& [id, change] : group->second) {
+      out.push_back(change);
+    }
+  }
+  return out;
+}
+
+Roe<void> InMemoryGroupRosterStore::DeleteGroupChanges(const std::string& group_id,
+                                                       const std::vector<std::string>& change_ids) const {
+  std::lock_guard lock(mutex_);
+  auto group = changes_.find(group_id);
+  if (group == changes_.end()) {
+    return {};
+  }
+  for (const std::string& id : change_ids) {
+    group->second.erase(id);
+  }
+  if (group->second.empty()) {
+    changes_.erase(group);
+  }
+  return {};
+}
+
+Roe<std::vector<std::string>> InMemoryGroupRosterStore::ListGroupsWithChanges() const {
+  std::lock_guard lock(mutex_);
+  std::vector<std::string> out;
+  for (const auto& [group_id, changes] : changes_) {
+    if (!changes.empty()) {
+      out.push_back(group_id);
+    }
+  }
+  return out;
 }
 
 Roe<std::vector<PendingGroupInvite>> InMemoryGroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,
@@ -427,6 +472,46 @@ Roe<std::optional<IThreadMentionsStore::Mention>> InMemoryThreadMentionsStore::L
     consider(thread_id, newest);
   }
   return latest;
+}
+
+Roe<void> InMemoryGroupInviteLinkStore::Keep(const KeptInviteLink& link) const {
+  std::lock_guard lock(mutex_);
+  links_[link.link_id] = link;
+  return {};
+}
+
+Roe<std::optional<KeptInviteLink>> InMemoryGroupInviteLinkStore::Find(const std::string& link_id) const {
+  std::lock_guard lock(mutex_);
+  auto found = links_.find(link_id);
+  return found == links_.end() ? std::optional<KeptInviteLink>() : std::optional<KeptInviteLink>(found->second);
+}
+
+Roe<std::vector<KeptInviteLink>> InMemoryGroupInviteLinkStore::ListForGroup(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  std::vector<KeptInviteLink> out;
+  for (const auto& [id, link] : links_) {
+    if (link.group_id == group_id) {
+      out.push_back(link);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const KeptInviteLink& a, const KeptInviteLink& b) {
+    return a.created_at != b.created_at ? a.created_at > b.created_at : a.link_id < b.link_id;
+  });
+  return out;
+}
+
+Roe<void> InMemoryGroupInviteLinkStore::Forget(const std::string& link_id) const {
+  std::lock_guard lock(mutex_);
+  links_.erase(link_id);
+  return {};
+}
+
+Roe<void> InMemoryGroupInviteLinkStore::ForgetExpiredBefore(const int64_t before_ms) const {
+  std::lock_guard lock(mutex_);
+  for (auto it = links_.begin(); it != links_.end();) {
+    it = it->second.expires_at < before_ms ? links_.erase(it) : std::next(it);
+  }
+  return {};
 }
 
 } // namespace pbr

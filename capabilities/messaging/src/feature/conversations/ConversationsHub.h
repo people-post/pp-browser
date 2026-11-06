@@ -24,6 +24,7 @@
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/people/PeerSigningKeyStore.h"
 #include "lib/messaging/GroupInviteGate.h"
+#include "feature/conversations/GroupInviteLinkWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"
@@ -213,6 +214,8 @@ public:
   /** A linked device's first look at its account's device list (the bundle's card): kept, and this device signed in. */
   Roe<void> LearnLinkedAccountCard(const std::string& card_json);
   GroupMembershipWorkflow& Groups();
+  /** G021: invite links (making, answering joins, joining); null until messaging is up. */
+  GroupInviteLinkWorkflow* GroupLinksOrNull() { return group_links_.get(); }
   /**
    * k5: the device's network changed (any thread; the OS monitor calls it, tests may too). The mesh
    * re-validates its links and addresses; calls re-anchor / retry their upgrade.
@@ -440,6 +443,14 @@ public:
   /** Opens the content index the profile's content store is built on (the app's storage, or a test's). */
   using OpenContentIndex = std::function<std::unique_ptr<IObjectIndex>(const std::string& profile_data_dir)>;
   void SetContentStorage(OpenContentIndex open) { open_content_index_ = std::move(open); }
+  /**
+   * G022: whether this device is in the live call `call_id` right now with `inviter` in it (the app's to say: calls
+   * ride the hub, messaging never names them). A stranger's group invite made there may reach us. Set before
+   * Initialize; any thread.
+   */
+  void SetInLiveCallQuery(GroupInviteGate::InLiveCallFn query) { in_live_call_ = std::move(query); }
+  /** G022: the group invites made during the call `call_id` still waiting here, oldest first (none before unlock). */
+  std::vector<GroupInviteGate::InviteInCall> GroupInvitesInCall(const std::string& call_id) const;
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -476,6 +487,8 @@ private:
   void BindCopyAskFamily();
   /** M021 d6: answers another account's ask for our newer card. */
   void BindCardAskFamily();
+  /** G021: join requests, previews, refusals and confirms by invite link, on the control lane. */
+  void BindGroupLinkJoinFamily();
   /** Account signing keys through the directory resolver (promise signatures). */
   AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const HubSettings& settings);
@@ -581,9 +594,13 @@ private:
   /** Unread mentions of this account (G015 marker). */
   std::unique_ptr<IThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
+  GroupInviteGate::InLiveCallFn in_live_call_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
+  /** The invite links this device made (G021); may be null (a test's stores). */
+  std::unique_ptr<IGroupInviteLinkStore> invite_links_;
+  std::unique_ptr<GroupInviteLinkWorkflow> group_links_;
   /** Account cards this device has checked and kept (profile.db). */
   std::unique_ptr<IPeerCardStore> peer_card_rows_;
   std::unique_ptr<PeerCards> peer_cards_;

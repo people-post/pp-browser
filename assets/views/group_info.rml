@@ -49,6 +49,15 @@
         <button class="cd-row" type="button" data-if="show_restore_name" data-event-click="group_info_restore_name()">
           <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{i18n:group_info.restore_name}}</span></span>
         </button>
+        <!-- G017: who can add people and rename; the owner switches it, everyone else reads it. -->
+        <button class="cd-row" type="button" data-if="show_preset" data-class-cd-row--static="!preset_editable"
+                data-event-click="group_info_preset()">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:group_info.preset}}</span>
+            <span class="cd-row-value">{{preset_label}}</span>
+            <svg class="cd-chevron" data-if="preset_editable" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
       </div>
 
       <div data-if="show_members">
@@ -72,12 +81,37 @@
             <span class="cd-row-body">
               <span class="cd-row-text">{{member.title}}</span>
               <span class="cd-tag" data-if="member.owner">{{i18n:group_info.owner}}</span>
+              <span class="cd-tag" data-if="member.admin">{{i18n:group_info.admin}}</span>
               <span class="cd-tag cd-tag--muted" data-if="member.unreachable">{{i18n:group_info.unreachable}}</span>
               <svg class="cd-chevron" data-if="!member.self" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
             </span>
           </button>
           <button class="cd-row" type="button" data-event-click="group_info_view_all()">
             <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{view_all_label}}</span></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- G021: our invite link (whoever the preset lets make one), and the group's live links for the owner and
+           admins, each with Revoke. -->
+      <div class="cd-card" data-if="show_invite_link">
+        <button class="cd-row" type="button" data-event-click="group_info_invite_link()">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:group_info.invite_link}}</span>
+            <svg class="cd-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
+      </div>
+      <div data-if="show_links">
+        <p class="cd-header">{{i18n:group_info.links}}</p>
+        <div class="cd-card cd-card--headed">
+          <button class="cd-row" type="button" data-for="link : links" data-class-cd-row--static="!link.can_revoke"
+                  data-event-click="group_info_revoke_link(link.link_id)">
+            <span class="cd-row-body">
+              <span class="cd-row-text">{{link.label}}</span>
+              <span class="cd-row-value">{{link.detail}}</span>
+              <span class="cd-row-text cd-row-text--accent" data-if="link.can_revoke">{{i18n:group_link.revoke}}</span>
+            </span>
           </button>
         </div>
       </div>

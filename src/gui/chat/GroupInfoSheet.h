@@ -22,9 +22,18 @@ struct GroupInfoMemberRow {
   ui::String letter;
   int tone = 0;
   bool owner = false;
+  bool admin = false;
   bool unreachable = false;
   /** This device's own row: shown, not tappable. */
   bool self = false;
+};
+
+/** A live invite link on the sheet (G021, the owner and admins), as the RML binds it. */
+struct GroupInfoLinkRow {
+  ui::String link_id;
+  ui::String label;
+  ui::String detail;
+  bool can_revoke = false;
 };
 
 /** What the sheet binds ("group_info" data model). */
@@ -41,9 +50,17 @@ struct GroupInfoView {
   bool show_add_member = false;
   bool show_leave = false;
   bool show_dissolve = false;
+  /** G017: "Who can add people and rename" — its value, and whether we (the owner) switch it. */
+  bool show_preset = false;
+  bool preset_editable = false;
+  ui::String preset_label;
   ui::String members_label;
   ui::String view_all_label;
   std::vector<GroupInfoMemberRow> members;
+  /** G021: "Invite link…", and the group's live links (the owner and admins). */
+  bool show_invite_link = false;
+  bool show_links = false;
+  std::vector<GroupInfoLinkRow> links;
 };
 
 /** What the sheet needs from the chat screen (ChatController); every action is an existing one. UI thread. */
@@ -65,10 +82,16 @@ public:
   virtual void GroupInfoRestoreName(const std::string& thread_id) = 0;
   virtual void GroupInfoViewAll(const std::string& thread_id) = 0;
   virtual void GroupInfoAddMember(const std::string& thread_id) = 0;
+  /** G017, the owner: Everyone (Open) / Admins only (Managed), as an action sheet. */
+  virtual void GroupInfoChoosePreset(const std::string& group_id, GroupPreset current) = 0;
   virtual void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) = 0;
   /** Leave: the chat's close flow (an owner hands the group over or dissolves it). */
   virtual void GroupInfoLeave(const std::string& thread_id) = 0;
   virtual void GroupInfoDissolve(const std::string& group_id) = 0;
+  /** G021, "Invite link…": the sheet with our link to the group (made when we have none). */
+  virtual void GroupInfoInviteLink(const std::string& group_id) = 0;
+  /** G021: ask, then revoke a live link of the group. */
+  virtual void GroupInfoRevokeLink(const std::string& group_id, const std::string& link_id) = 0;
 };
 
 /**
@@ -105,9 +128,12 @@ public:
   void RestoreName();
   void ViewAll();
   void AddMember();
+  void ChoosePreset();
   void TapMember(const std::string& identity);
   void Leave();
   void Dissolve();
+  void InviteLink();
+  void RevokeLink(const std::string& link_id);
 
   const GroupInfoView& View() const { return view_; }
   const GroupInfoScreen& Screen() const { return screen_; }

@@ -424,6 +424,8 @@ ChatController::ChatController()
   };
   voice_ports.stop_playback_then = [this](std::function<void()> then) { voice_playback_->StopThen(std::move(then)); };
   voice_ = std::make_unique<VoiceComposer>(chat_, std::move(voice_ports));
+  group_link_ = std::make_unique<GroupLinkSheet>(MakeGroupLinkPorts());
+  join_prompt_ = std::make_unique<GroupJoinPrompt>(MakeJoinPromptPorts());
 
   VoicePlaybackPorts playback_ports;
   playback_ports.max_seconds = [this]() {
@@ -4102,6 +4104,9 @@ bool ChatController::Setup(ui::Context* context) {
   if (!group_leave_.Register(context)) {
     return false;
   }
+  if (!group_link_->Register(context)) {
+    return false;
+  }
   if constexpr (kUiDemoBuild) {
     ask_ai_.SetFakeAnswers(DemoAskAiAnswer); // the demo app has no AI backend
   }
@@ -4300,6 +4305,8 @@ void ChatController::Update() {
   ask_ai_.Tick(); // the panel's streamed answer, a one-off waiting to start, focus and scroll
   group_info_.Tick(messaging_ready_ ? ActiveThreadId() : std::string(), std::chrono::steady_clock::now());
   group_leave_.Tick(std::chrono::steady_clock::now());
+  group_link_->Tick();
+  join_prompt_->Tick(std::chrono::steady_clock::now());
 
   if (search_.view().open) {
     const auto search_now = std::chrono::steady_clock::now();
@@ -4744,6 +4751,31 @@ void ChatController::GroupInfoAddMember(const std::string& thread_id) {
   }
 }
 
+void ChatController::GroupInfoChoosePreset(const std::string& group_id, const GroupPreset current) {
+  ChooseGroupPreset(group_id, current, ui::Vector2i(120, 120)); // an action sheet on the phone
+}
+
+void ChatController::ChooseGroupPreset(const std::string& group_id, const GroupPreset current,
+                                       const ui::Vector2i position) {
+  auto choose = [this, group_id](const GroupPreset preset) {
+    if (auto set = presenter_.SetGroupPreset(group_id, preset); !set) {
+      UserFeedback::Fail(set.error().message);
+    }
+    group_info_.Refresh();
+    NotifySurfaceChanged();
+  };
+  std::vector<ContextMenuAction> actions;
+  for (const GroupPreset preset : {GroupPreset::Open, GroupPreset::Managed}) {
+    ContextMenuAction action;
+    action.id = preset == GroupPreset::Managed ? "group_preset_managed" : "group_preset_open";
+    action.label = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed" : "group_info.preset_open");
+    action.run = [choose, preset]() { choose(preset); };
+    action.selected = preset == current;
+    actions.push_back(std::move(action));
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
 void ChatController::GroupInfoTapMember(const std::string& thread_id, const std::string& identity) {
   if (people_picker_notify_.tap_group_member) {
     people_picker_notify_.tap_group_member(thread_id, identity);
@@ -4756,6 +4788,104 @@ void ChatController::GroupInfoLeave(const std::string& thread_id) {
 
 void ChatController::GroupInfoDissolve(const std::string& group_id) {
   DissolveGroupAfterConfirm(group_id);
+}
+
+void ChatController::GroupInfoInviteLink(const std::string& group_id) {
+  group_link_->Open(group_id);
+}
+
+void ChatController::GroupInfoRevokeLink(const std::string& group_id, const std::string& link_id) {
+  RevokeLinkAfterConfirm(group_id, link_id, [this](bool) { group_info_.Refresh(); });
+}
+
+void ChatController::RevokeLinkAfterConfirm(const std::string& group_id, const std::string& link_id,
+                                            std::function<void(bool)> done) {
+  ShowConfirm(
+      Tr("group_link.revoke_title"), Tr("group_link.revoke_body"),
+      [this, group_id, link_id, done = std::move(done)](const bool ok) {
+        if (!ok) {
+          done(false);
+          return;
+        }
+        AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+            WorkerLane::Normal, [this, group_id, link_id]() { return presenter_.RevokeInviteLink(group_id, link_id); },
+            [done](Roe<void> revoked) {
+              if (!revoked) {
+                UserFeedback::Fail(revoked.error().message);
+              }
+              done(static_cast<bool>(revoked));
+            });
+      },
+      /*destructive=*/true);
+}
+
+GroupLinkSheetPorts ChatController::MakeGroupLinkPorts() {
+  GroupLinkSheetPorts ports;
+  ports.push_sheet = [this](const PaneSpec& spec) { return GroupInfoPushSheet(spec); };
+  ports.close_sheet = [this](const int layer_id) { GroupInfoCloseSheet(layer_id); };
+  ports.sheet_open = [this](const int layer_id) { return GroupInfoSheetOpen(layer_id); };
+  ports.load = [this](const std::string& group_id, std::function<void(Roe<GroupLinkRow>)> done) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<GroupLinkRow>>(
+        WorkerLane::Normal, [this, group_id]() { return presenter_.InviteLinkFor(group_id); }, std::move(done));
+  };
+  ports.revoke = [this](const std::string& group_id, const std::string& link_id, std::function<void(bool)> done) {
+    RevokeLinkAfterConfirm(group_id, link_id, std::move(done));
+  };
+  ports.copied = [this](const std::string& text) {
+    if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+      system->SetClipboardText(text);
+    }
+    ShowToast(Tr("group_link.copied"));
+  };
+  ports.changed = [this]() { group_info_.Refresh(); };
+  return ports;
+}
+
+GroupJoinPromptPorts ChatController::MakeJoinPromptPorts() {
+  GroupJoinPromptPorts ports;
+  ports.ask = [this](const std::string& link, std::function<void(Roe<std::string>)> done) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<std::string>>(
+        WorkerLane::Normal,
+        [this, link]() -> Roe<std::string> {
+          return facade_ ? facade_->AskToJoinByLink(link) : Roe<std::string>(Error("Messaging is not ready"));
+        },
+        std::move(done));
+  };
+  ports.state = [this](const std::string& request_id) {
+    return facade_ ? facade_->JoinByLinkState(request_id) : std::nullopt;
+  };
+  ports.confirm = [this](const std::string& request_id, std::function<void(Roe<Thread>)> done) {
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal,
+        [this, request_id]() -> Roe<Thread> {
+          return facade_ ? facade_->ConfirmJoinByLink(request_id) : Roe<Thread>(Error("Messaging is not ready"));
+        },
+        std::move(done));
+  };
+  ports.cancel = [this](const std::string& request_id) {
+    if (facade_) {
+      facade_->CancelJoinByLink(request_id);
+    }
+  };
+  ports.show_confirm = [this](const std::string& title, const std::string& message, const std::string& ok_label,
+                              std::function<void(bool)> done) {
+    if (shell_feedback_.show_confirm) {
+      shell_feedback_.show_confirm(title, message, std::move(done), ok_label);
+    }
+  };
+  ports.toast = [this](const std::string& text) { ShowToast(text, ToastDuration::Long); };
+  ports.open_thread = [this](const std::string& thread_id) {
+    RefreshFromMessaging();
+    ShowThreadInChat(thread_id);
+  };
+  ports.name_of = [this](const std::string& account) {
+    return facade_ ? facade_->MemberPublicNameOf(account) : account;
+  };
+  return ports;
+}
+
+bool ChatController::OfferGroupJoin(const std::string& text) {
+  return join_prompt_->Offer(text);
 }
 
 void ChatController::GroupLeaveConfirm(const std::string& message, std::function<void(bool ok)> done) {
