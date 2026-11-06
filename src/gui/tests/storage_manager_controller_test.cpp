@@ -297,6 +297,26 @@ TEST_F(StorageManagerControllerTest, ChatPageListsPicturesVideosAndFilesTogether
   EXPECT_EQ(controller_.Files().size(), 2u);
 }
 
+TEST_F(StorageManagerControllerTest, AllTabListsEveryFileOnTheFirstPageOfManyPictures) {
+  for (int i = 0; i < 70; ++i) {
+    items_.push_back(Item("a", i, "image/jpeg", kMiB));
+  }
+  items_.push_back(Item("a", 900, "application/pdf", kMiB));
+  items_.push_back(Item("a", 901, "application/zip", kMiB));
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  EXPECT_EQ(controller_.Cells().size(), pbr::kStoragePageSize);
+  EXPECT_EQ(controller_.Files().size(), 2u);
+  controller_.ToggleSelect();
+  controller_.TapFile(1);
+  EXPECT_TRUE(controller_.Files()[1].picked);
+  EXPECT_EQ(controller_.SelectedCount(), 1u);
+  controller_.LoadMore();
+  EXPECT_EQ(controller_.Cells().size(), 70u);
+  EXPECT_EQ(controller_.Files().size(), 2u);
+}
+
 TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
   items_ = {
       Item("a", 1, "image/jpeg", 3 * kMiB, /*server=*/true),

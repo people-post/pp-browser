@@ -378,6 +378,7 @@ void StorageManagerController::BuildCells() {
   const auto items_of = [this](const StoredKind kind) {
     return items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
   };
+  size_t all_media = 0;  // "all" tab: photos and videos in all, before paging
   if (tab_ == "all") {
     // Photos and videos together (newest first) for the grid, then the files: a cell's index is its place in
     // tab_items_, and a file row's is cells_.size() + its own, whatever the tab.
@@ -388,12 +389,17 @@ void StorageManagerController::BuildCells() {
                      [](const StoredAttachmentItem& a, const StoredAttachmentItem& b) {
                        return a.timestamp_ms > b.timestamp_ms;
                      });
+    // Only the photos and videos are paged; the files (few) are all listed under the grid.
+    all_media = tab_items_.size();
+    if (all_media > shown_) {
+      tab_items_.resize(shown_);
+    }
     const std::vector<StoredAttachmentItem> files = items_of(StoredKind::File);
     tab_items_.insert(tab_items_.end(), files.begin(), files.end());
   } else {
     tab_items_ = items_of(StoredKindFromId(tab_).value_or(StoredKind::Picture));
   }
-  const size_t count = std::min(shown_, tab_items_.size());
+  const size_t count = tab_ == "all" ? tab_items_.size() : std::min(shown_, tab_items_.size());
   cells_.clear();
   files_.clear();
   const int64_t now = WallNowMs();
@@ -424,7 +430,7 @@ void StorageManagerController::BuildCells() {
                       .picked = picked});
   }
   list_empty_ = tab_items_.empty();
-  has_more_ = tab_items_.size() > count;
+  has_more_ = tab_ == "all" ? all_media > shown_ : tab_items_.size() > count;
 }
 
 void StorageManagerController::RefreshThumbnails() {
