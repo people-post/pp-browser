@@ -135,14 +135,15 @@ private:
   std::optional<Contact> ContactForMember(const GroupRosterMember& member) const;
   void OnMemberTapped(const std::string& identity, ui::Vector2i menu_position);
   /** Phones: everyone goes to the profile; the owner's has the "Group admin" card (DecideGroupMemberTap). */
-  void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, bool viewer_is_owner, bool is_self);
+  void ShowMemberTap(const GroupMemberRow& row, const std::string& group_id, MemberRole viewer_role, bool is_self);
   /** The owner's card on the profile just opened for `row` (nothing when `tap` offers no admin action). */
   void OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id, const GroupMemberRow& row);
   /** Someone on the roster of the group chat `thread_id`, found by `matches`, with what we know about them and us. */
   struct MemberInGroup {
     std::string group_id;
     GroupMemberRow row;
-    bool viewer_is_owner = false;
+    /** Ours in the group: Owner when its recorded owner is us, else the roster's (an admin removes members). */
+    MemberRole viewer_role = MemberRole::Member;
     bool is_self = false;
   };
   std::optional<MemberInGroup> FindMemberInGroup(const std::string& thread_id,
@@ -229,6 +230,8 @@ private:
   std::string group_id_;
   std::string group_thread_id_;
   bool group_is_owner_ = false;
+  /** Our role in the group listed (Owner when we are its recorded owner). */
+  MemberRole group_viewer_role_ = MemberRole::Member;
   /** This account, on the member list (its own row is not tappable). */
   std::string local_identity_;
   bool group_sending_ = false;

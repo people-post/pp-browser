@@ -734,6 +734,12 @@ void PeoplePickerController::SyncGroupMemberRows() {
     }
   }
   show_add_members_ = group_is_owner_;
+  group_viewer_role_ = group_is_owner_ ? MemberRole::Owner : MemberRole::Member;
+  for (const GroupRosterMember& member : *roster) {
+    if (!group_is_owner_ && member.member_identity == local_identity && member.role == MemberRole::Admin) {
+      group_viewer_role_ = MemberRole::Admin;
+    }
+  }
   std::unordered_set<std::string> unreachable;
   if (picker_ports_.list_unreachable_members) {
     for (const std::string& identity : picker_ports_.list_unreachable_members(group_id_)) {
@@ -1431,15 +1437,16 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
   }
   const GroupMemberRow row = found->second;
   if (CompactLayout()) {
-    ShowMemberTap(row, group_id_, group_is_owner_,
+    ShowMemberTap(row, group_id_, group_viewer_role_,
                   row.identity == local_identity_ || row.identity == kLocalSelfContactId);
     return;
   }
   if (row.identity == local_identity_) {
     return;
   }
-  // A non-owner who taps a contact goes straight to the chat with them.
-  if (!group_is_owner_ && row.IsContact()) {
+  // A member who taps a contact goes straight to the chat with them; an admin gets the menu (it may remove them).
+  const bool may_remove = MayRemoveGroupMember(row, group_viewer_role_);
+  if (!group_is_owner_ && !may_remove && row.IsContact()) {
     StartDirectMessage(row.contact_id);
     return;
   }
@@ -1465,11 +1472,11 @@ void PeoplePickerController::OnMemberTapped(const std::string& identity, const u
                          [this, group_id = group_id_, row]() { SetMemberAdmin(group_id, row, !row.is_admin); },
                          "../icons/v2/shield.svg"});
     }
-    if (!row.invited) {
-      actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
-                         [this, group_id = group_id_, row]() { RemoveMember(group_id, row); }, "../icons/trash.svg",
-                         true});
-    }
+  }
+  if (may_remove) {
+    actions.push_back({"member_remove", Tr("people_picker.remove_from_group"), nullptr,
+                       [this, group_id = group_id_, row]() { RemoveMember(group_id, row); }, "../icons/trash.svg",
+                       true});
   }
   ContextMenuHost::Instance().ShowActions(menu_position, std::move(actions));
 }
@@ -1505,8 +1512,15 @@ std::optional<PeoplePickerController::MemberInGroup> PeoplePickerController::Fin
     }
   }
   if (picker_ports_.is_local_owner) {
-    if (auto owner = picker_ports_.is_local_owner(found.group_id)) {
-      found.viewer_is_owner = *owner;
+    if (auto owner = picker_ports_.is_local_owner(found.group_id); owner && *owner) {
+      found.viewer_role = MemberRole::Owner;
+    }
+  }
+  if (found.viewer_role != MemberRole::Owner) {
+    const auto self = std::find_if(roster->begin(), roster->end(),
+                                   [&](const GroupRosterMember& m) { return m.member_identity == local_identity; });
+    if (self != roster->end() && self->role == MemberRole::Admin) {
+      found.viewer_role = MemberRole::Admin;
     }
   }
   bool unreachable = false;
@@ -1529,7 +1543,7 @@ void PeoplePickerController::TapGroupMember(const std::string& thread_id, const 
   const auto found = FindMemberInGroup(
       thread_id, [&identity](const GroupRosterMember& m) { return m.member_identity == identity; });
   if (found) {
-    ShowMemberTap(found->row, found->group_id, found->viewer_is_owner, found->is_self);
+    ShowMemberTap(found->row, found->group_id, found->viewer_role, found->is_self);
   }
 }
 
@@ -1548,12 +1562,12 @@ void PeoplePickerController::OfferGroupAdmin(const std::string& thread_id, const
   if (!found) {
     return;
   }
-  OfferAdminCard(DecideGroupMemberTap(found->row, found->is_self, found->viewer_is_owner), found->group_id, found->row);
+  OfferAdminCard(DecideGroupMemberTap(found->row, found->is_self, found->viewer_role), found->group_id, found->row);
 }
 
 void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std::string& group_id,
-                                           const bool viewer_is_owner, const bool is_self) {
-  const GroupMemberTap tap = DecideGroupMemberTap(row, is_self, viewer_is_owner);
+                                           const MemberRole viewer_role, const bool is_self) {
+  const GroupMemberTap tap = DecideGroupMemberTap(row, is_self, viewer_role);
   if (tap.kind == GroupMemberTap::Kind::Nothing) {
     return;
   }
@@ -1645,7 +1659,7 @@ void PeoplePickerController::SetMemberAdmin(const std::string& group_id, const G
   // The person's page keeps its card, now offering the other way round.
   GroupMemberRow updated = row;
   updated.is_admin = admin;
-  OfferAdminCard(DecideGroupMemberTap(updated, false, true), group_id, updated);
+  OfferAdminCard(DecideGroupMemberTap(updated, false, MemberRole::Owner), group_id, updated);
   if (contacts_ports_.notify_thread_changed) {
     contacts_ports_.notify_thread_changed();
   }

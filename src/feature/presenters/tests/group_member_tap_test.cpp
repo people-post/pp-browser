@@ -25,33 +25,36 @@ GroupMemberRow Member(const std::string& contact_id, const bool unreachable = fa
 } // namespace
 
 TEST(GroupMemberTapTest, OurOwnRowDoesNothing) {
-  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), /*is_self=*/true, /*owner=*/true).kind, GroupMemberTap::Kind::Nothing);
-  EXPECT_EQ(DecideGroupMemberTap(Member(""), /*is_self=*/true, /*owner=*/false).kind, GroupMemberTap::Kind::Nothing);
-  EXPECT_TRUE(DecideGroupMemberTap(Member("c1"), true, true).admin_actions.empty());
+  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), /*is_self=*/true, MemberRole::Owner).kind,
+            GroupMemberTap::Kind::Nothing);
+  EXPECT_EQ(DecideGroupMemberTap(Member(""), /*is_self=*/true, MemberRole::Member).kind, GroupMemberTap::Kind::Nothing);
+  EXPECT_TRUE(DecideGroupMemberTap(Member("c1"), true, MemberRole::Owner).admin_actions.empty());
 }
 
 TEST(GroupMemberTapTest, NotTheOwnerGoesStraightToTheProfileWithoutTheAdminCard) {
-  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), false, /*owner=*/false).kind, GroupMemberTap::Kind::OpenProfile);
-  EXPECT_EQ(DecideGroupMemberTap(Member(""), false, /*owner=*/false).kind, GroupMemberTap::Kind::OpenProfile);
-  EXPECT_TRUE(DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, false).admin_actions.empty());
-  EXPECT_TRUE(DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, false).admin_actions.empty());
+  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), false, MemberRole::Member).kind, GroupMemberTap::Kind::OpenProfile);
+  EXPECT_EQ(DecideGroupMemberTap(Member(""), false, MemberRole::Member).kind, GroupMemberTap::Kind::OpenProfile);
+  EXPECT_TRUE(
+      DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, MemberRole::Member).admin_actions.empty());
+  EXPECT_TRUE(
+      DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, MemberRole::Member).admin_actions.empty());
 }
 
 TEST(GroupMemberTapTest, TheOwnerAlsoOpensTheProfileWithRemoveInTheCard) {
-  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1"), false, /*owner=*/true);
+  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1"), false, MemberRole::Owner);
   EXPECT_EQ(tap.kind, GroupMemberTap::Kind::OpenProfile);
   EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::MakeAdmin, Action::Remove}));
   EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::None);
 }
 
 TEST(GroupMemberTapTest, SomeoneWhoIsNotAContactCanBeRemovedNotInvitedAgain) {
-  const GroupMemberTap tap = DecideGroupMemberTap(Member("", /*unreachable=*/true), false, /*owner=*/true);
+  const GroupMemberTap tap = DecideGroupMemberTap(Member("", /*unreachable=*/true), false, MemberRole::Owner);
   EXPECT_EQ(tap.kind, GroupMemberTap::Kind::OpenProfile);
   EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::MakeAdmin, Action::Remove}));
 }
 
 TEST(GroupMemberTapTest, AnUnreachableContactCanBeInvitedAgainNotedCantBeReached) {
-  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, /*owner=*/true);
+  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", /*unreachable=*/true), false, MemberRole::Owner);
   EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Reinvite, Action::MakeAdmin, Action::Remove}));
   EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::Unreachable);
 }
@@ -59,14 +62,34 @@ TEST(GroupMemberTapTest, AnUnreachableContactCanBeInvitedAgainNotedCantBeReached
 TEST(GroupMemberTapTest, TheOwnerTakesAnAdminsRoleBack) {
   GroupMemberRow admin = Member("c1");
   admin.is_admin = true;
-  EXPECT_EQ(DecideGroupMemberTap(admin, false, /*owner=*/true).admin_actions,
+  EXPECT_EQ(DecideGroupMemberTap(admin, false, MemberRole::Owner).admin_actions,
             (std::vector<Action>{Action::RemoveAdmin, Action::Remove}));
-  EXPECT_TRUE(DecideGroupMemberTap(admin, false, /*owner=*/false).admin_actions.empty())
+  EXPECT_TRUE(DecideGroupMemberTap(admin, false, MemberRole::Member).admin_actions.empty())
       << "an admin's own card is the owner's";
 }
 
+// G017 / G020: an admin removes members — from the same card — but neither other admins nor the owner, and makes no
+// admins.
+TEST(GroupMemberTapTest, AnAdminMayRemoveMembersOnly) {
+  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), false, MemberRole::Admin).admin_actions,
+            (std::vector<Action>{Action::Remove}));
+  EXPECT_EQ(DecideGroupMemberTap(Member("c1"), false, MemberRole::Admin, GroupPreset::Managed).admin_actions,
+            (std::vector<Action>{Action::Remove}))
+      << "removal is the same in either preset";
+  GroupMemberRow admin = Member("c1");
+  admin.is_admin = true;
+  EXPECT_TRUE(DecideGroupMemberTap(admin, false, MemberRole::Admin).admin_actions.empty());
+  GroupMemberRow owner = Member("c1");
+  owner.is_owner = true;
+  EXPECT_TRUE(DecideGroupMemberTap(owner, false, MemberRole::Admin).admin_actions.empty());
+  EXPECT_TRUE(
+      DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, MemberRole::Admin).admin_actions.empty())
+      << "someone invited is not in the group yet";
+  EXPECT_FALSE(MayRemoveGroupMember(Member("c1"), MemberRole::Member)) << "a member removes no one";
+}
+
 TEST(GroupMemberTapTest, SomeoneStillInvitedCannotBeRemovedOnlyInvitedAgainNotedNotJoined) {
-  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, /*owner=*/true);
+  const GroupMemberTap tap = DecideGroupMemberTap(Member("c1", false, /*invited=*/true), false, MemberRole::Owner);
   EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Reinvite}));
   EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::NotJoined);
 }

@@ -200,9 +200,13 @@ struct GroupMemberTap {
 /**
  * The profile for anyone but ourselves. The owner's card: Re-invite (a contact still waiting, noted "not joined yet",
  * or out of reach, noted "can't be reached"), Make admin / Remove as admin (anyone on the roster, G017), Remove (anyone
- * on the roster). Handing the group over is not here: it happens when the owner leaves.
+ * on the roster). An admin's card: Remove, for members (G017, G020). Handing the group over is not here: it happens
+ * when the owner leaves. `viewer_role`: ours (Owner when the group's recorded owner is us).
  */
-GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, bool viewer_is_owner);
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, bool is_self, MemberRole viewer_role,
+                                    GroupPreset preset = GroupPreset::Open);
+/** Whether we, at `viewer_role`, may remove `row` from the group (GroupAllows: the owner anyone, an admin members). */
+bool MayRemoveGroupMember(const GroupMemberRow& row, MemberRole viewer_role, GroupPreset preset = GroupPreset::Open);
 
 /** What the phone's group info sheet is built from (ChatPresenter::GroupInfoOf reads it; tests give it). */
 struct GroupInfoFacts {

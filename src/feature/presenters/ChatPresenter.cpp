@@ -94,13 +94,22 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
   });
 }
 
-GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_self, const bool viewer_is_owner) {
+bool MayRemoveGroupMember(const GroupMemberRow& row, const MemberRole viewer_role, const GroupPreset preset) {
+  const MemberRole target = row.is_owner ? MemberRole::Owner : row.is_admin ? MemberRole::Admin : MemberRole::Member;
+  return !row.invited && GroupAllows(GroupAction::Remove, viewer_role, preset, target);
+}
+
+GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_self, const MemberRole viewer_role,
+                                    const GroupPreset preset) {
   GroupMemberTap tap;
   if (is_self) {
     return tap;
   }
   tap.kind = GroupMemberTap::Kind::OpenProfile;
-  if (!viewer_is_owner) {
+  if (viewer_role != MemberRole::Owner) {
+    if (MayRemoveGroupMember(row, viewer_role, preset)) {
+      tap.admin_actions.push_back(GroupMemberAction::Remove); // an admin removes members (G020)
+    }
     return tap;
   }
   // A member already in the group needs no invite; resend only to someone still waiting or out of reach.

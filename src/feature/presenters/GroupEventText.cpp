@@ -6,17 +6,25 @@
 namespace pbr {
 namespace {
 
-/** `{name}` and `{title}` in `templ` replaced in one pass, so a value that holds the other marker stays as it is. */
-std::string FillOnce(const std::string& templ, const std::string& name, const std::string& title) {
+/**
+ * `{name}`, `{title}` and `{by}` in `templ` replaced in one pass, so a value that holds another marker stays as it is.
+ */
+std::string FillOnce(const std::string& templ, const std::string& name, const std::string& title,
+                     const std::string& by = {}) {
+  const std::pair<const char*, const std::string*> markers[] = {{"{name}", &name}, {"{title}", &title}, {"{by}", &by}};
   std::string out;
   for (size_t i = 0; i < templ.size();) {
-    if (templ.compare(i, 6, "{name}") == 0) {
-      out += name;
-      i += 6;
-    } else if (templ.compare(i, 7, "{title}") == 0) {
-      out += title;
-      i += 7;
-    } else {
+    bool filled = false;
+    for (const auto& [marker, value] : markers) {
+      const size_t length = std::char_traits<char>::length(marker);
+      if (templ.compare(i, length, marker) == 0) {
+        out += *value;
+        i += length;
+        filled = true;
+        break;
+      }
+    }
+    if (!filled) {
       out.push_back(templ[i++]);
     }
   }
@@ -62,8 +70,21 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
   }
   case GroupMembershipControlType::MemberRemoved: {
     auto removed = GroupMembershipCodec::DecodeMemberRemovedFromMessage(message);
-    return removed ? line("chat.group_event.removed", "chat.group_event.you_removed", removed->member_identity)
-                   : std::nullopt;
+    if (!removed) {
+      return std::nullopt;
+    }
+    if (removed->removed_by.empty() || removed->removed_by == removed->member_identity) {
+      return line("chat.group_event.removed", "chat.group_event.you_removed", removed->member_identity);
+    }
+    // G020: who removed them (the owner, or an admin).
+    if (is_self(removed->member_identity)) {
+      return FillOnce(Tr("chat.group_event.you_removed_by"), "", "", member_name(removed->removed_by));
+    }
+    if (is_self(removed->removed_by)) {
+      return FillOnce(Tr("chat.group_event.you_removed_member"), member_name(removed->member_identity), "");
+    }
+    return FillOnce(Tr("chat.group_event.removed_by"), member_name(removed->member_identity), "",
+                    member_name(removed->removed_by));
   }
   case GroupMembershipControlType::MemberLeft: {
     auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);

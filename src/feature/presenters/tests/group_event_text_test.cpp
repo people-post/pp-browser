@@ -104,5 +104,25 @@ TEST_F(GroupEventTextTest, AGroupMadeInACallSaysSoOnItsFirstLine) {
   EXPECT_TRUE(IsStoredGroupEventText(kGroupMadeInCallLine)) << "the chat list words the preview too";
 }
 
+// G020: a removal says who removed whom — "Bob removed Ann", "Bob removed you", "You removed Ann".
+TEST_F(GroupEventTextTest, ARemovalNamesWhoRemovedWhom) {
+  LocalizationService::Instance().SetPreferredLanguage("en");
+  const auto names = [](const std::string& account) {
+    return account == "acct-ann" ? std::string("Ann") : account == "acct-bob" ? std::string("Bob") : account;
+  };
+  const auto removal = [](const std::string& member, const std::string& by) {
+    return Event(GroupMembershipControlType::MemberRemoved,
+                 GroupMembershipCodec::EncodeMemberRemoved("g", member, 4, by), "Member removed", by);
+  };
+  EXPECT_EQ(GroupEventText(removal("acct-ann", "acct-bob"), names, "acct-me").value_or(""),
+            "Bob removed Ann from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-me", "acct-bob"), names, "acct-me").value_or(""),
+            "Bob removed you from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-ann", "acct-me"), names, "acct-me").value_or(""),
+            "You removed Ann from the group");
+  EXPECT_EQ(GroupEventText(removal("acct-ann", ""), names, "acct-me").value_or(""), "Ann was removed from the group")
+      << "an event that does not say who";
+}
+
 } // namespace
 } // namespace pbr
