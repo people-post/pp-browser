@@ -56,13 +56,20 @@ bool IsCallWake(NSDictionary* userInfo) {
              withCompletionHandler:(void (^)(void))completionHandler {
   (void)center;
   NSDictionary* userInfo = response.notification.request.content.userInfo;
+  id hint_raw = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationWakeHintKey]];
+  const std::string wake_hint = ([hint_raw isKindOfClass:[NSString class]] && [(NSString*)hint_raw length] > 0)
+                                    ? std::string([(NSString*)hint_raw UTF8String])
+                                    : std::string();
   if (IsCallWake(userInfo)) {
-    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true);
+    pbr::DispatchIosNotificationActivation({}, /*call_wake=*/true, wake_hint);
     pbr::BackgroundSyncScheduler::Instance().RequestUrgentWakeSync();
   } else {
     id thread = userInfo[[NSString stringWithUTF8String:pbr::kIosNotificationThreadKey]];
     if ([thread isKindOfClass:[NSString class]] && [(NSString*)thread length] > 0) {
       pbr::DispatchIosNotificationActivation(std::string([(NSString*)thread UTF8String]));
+    } else if (!wake_hint.empty()) {
+      pbr::DispatchIosNotificationActivation({}, /*call_wake=*/false, wake_hint);
+      pbr::BackgroundSyncScheduler::Instance().RequestWakeSync();
     }
   }
   completionHandler();

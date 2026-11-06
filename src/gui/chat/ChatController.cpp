@@ -3957,6 +3957,12 @@ void ChatController::WireMessagingBindings() {
     }
   };
   ILocalNotifier::Instance().SetActivationHandler(activate);
+  // A message alert's tap waits for the message it announced to sync, then opens its chat.
+  facade_->SetOnInboundMessage([this](std::string message_id, std::string thread_id) {
+    if (PendingNotificationTap::Instance().TakeMessageRoute(message_id, PendingNotificationTap::Clock::now())) {
+      OnSelectThread(thread_id);
+    }
+  });
   // A tap that arrived before unlock found no handler; it is still waiting.
   if (auto pending = PendingNotificationTap::Instance().TakeThread()) {
     activate(std::move(*pending));

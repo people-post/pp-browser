@@ -235,6 +235,8 @@ public:
    */
   void SetOnBackgroundUnread(
       std::function<void(std::string title, std::string body, std::string thread_id, bool mentions_us)> callback);
+  /** Fired on UI thread per inbound message stored in a thread (message id, thread id), as it is synced. */
+  void SetOnInboundMessage(std::function<void(std::string message_id, std::string thread_id)> callback);
   /**
    * The keys a directory entry carries for its account: the signing key (kept when it hashes to the
    * Account ID) and the KEM key (kept when the account bound it to itself). Either store refuses the rest.
@@ -394,6 +396,7 @@ private:
   std::function<void()> on_messages_changed_;
   std::function<void(const DeliveryNotice&)> on_delivery_notice_;
   std::function<void(std::string, std::string, std::string, bool)> on_background_unread_;
+  std::function<void(std::string, std::string)> on_inbound_message_;
   /** Whether a stored inbound message in `thread_id` mentions us (G015). */
   /** A persisted message's notice for a user who is away (not attentive — the open chat too); none otherwise. */
   struct BackgroundNotice {

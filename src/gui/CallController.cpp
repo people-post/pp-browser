@@ -958,9 +958,10 @@ void CallController::Render() {
     return;
   case CallScreen::Kind::Ringing:
     RenderRing(screen);
-    // The ring of a tapped call alert: land on its chat (once; a stale tap expires unused).
+    // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
+    // once; a stale tap expires unused.
     if (open_thread_ && !screen.thread_id.empty() &&
-        PendingNotificationTap::Instance().TakeCallRoute(PendingNotificationTap::Clock::now())) {
+        PendingNotificationTap::Instance().TakeCallRoute(screen.ring_call_id, PendingNotificationTap::Clock::now())) {
       AppRuntime::PostUI([this, thread_id = screen.thread_id]() { open_thread_(thread_id); });
     }
     return;

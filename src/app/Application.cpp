@@ -1,6 +1,7 @@
 #include "app/Application.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/PendingNotificationTap.h"
 #include "common/ValueJson.h"
 #include <map>
 #include "foundation/platform/IncomingLink.h"
@@ -349,6 +350,7 @@ Application::Application() {
 }
 
 Application::~Application() {
+  PendingNotificationTap::Instance().SetRecordedHandler(nullptr);
   EmojiPickerController::ClearInstance();
   PeoplePickerController::ClearInstance();
   ContactsController::ClearInstance();
@@ -1194,6 +1196,9 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   ICallSystemUi::Instance().SetPendingChangedHandler([this]() { pin_gate_->RefreshCallHint(); });
+  // A tap arrives off the UI thread; the PIN screen words itself by it.
+  PendingNotificationTap::Instance().SetRecordedHandler(
+      [this]() { AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); }); });
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
   MessagingPeoplePickerPorts picker_ports = product_->PeoplePickerPorts();

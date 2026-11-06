@@ -3,6 +3,7 @@
 #include "foundation/crypto/PinDefaults.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/CallSystemUi.h"
+#include "foundation/platform/PendingNotificationTap.h"
 
 namespace pbr {
 
@@ -66,7 +67,9 @@ void PinGateController::ShowError(const std::string& message) {
 }
 
 std::string PinGateController::UnlockMessage() const {
-  return ICallSystemUi::Instance().HasPendingPushCall() ? Tr("pin.unlock_call_message") : Tr("pin.unlock_message");
+  const bool call_waiting = ICallSystemUi::Instance().HasPendingPushCall() ||
+                            PendingNotificationTap::Instance().PeekCallRoute(PendingNotificationTap::Clock::now());
+  return call_waiting ? Tr("pin.unlock_call_message") : Tr("pin.unlock_message");
 }
 
 void PinGateController::RefreshCallHint() {

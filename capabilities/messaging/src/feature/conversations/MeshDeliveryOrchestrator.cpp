@@ -912,6 +912,13 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope, const
       }
     } else {
       inbox_.OnInboundMessagePersisted(outcome.thread_id, preview);
+      if (on_inbound_message_) {
+        AppRuntime::PostUI([this, message_id = envelope.message_id, thread_id = outcome.thread_id]() {
+          if (on_inbound_message_) {
+            on_inbound_message_(message_id, thread_id);
+          }
+        });
+      }
       MaybeEnqueueAttachmentDownload(outcome);
       NoteMention(outcome, identity->account_id);
       // Over a link, as from the relay: the user away gets a notice (a mention alerts in a muted group, G015).
@@ -2131,6 +2138,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
         std::vector<BackgroundNotice> background_notices;
+        std::vector<std::pair<std::string, std::string>> inbound_messages;
         for (const RelayEnvelope& envelope : messages) {
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
           routes_.RememberFromEnvelope(envelope, outcome.sender_verified);
@@ -2176,6 +2184,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             preview = outcome.persisted_message->text;
           }
           inbox_.OnInboundMessagePersisted(resolved_thread_id, preview);
+          inbound_messages.emplace_back(envelope.message_id, resolved_thread_id);
           MaybeEnqueueAttachmentDownload(outcome);
           NoteMention(outcome, local_account_id);
           if (auto notice = BackgroundNoticeFor(outcome, local_account_id)) {
@@ -2202,6 +2211,15 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
 
         if (changed && on_messages_changed_) {
           AppRuntime::PostUI([this]() { on_messages_changed_(); });
+        }
+        if (!inbound_messages.empty() && on_inbound_message_) {
+          AppRuntime::PostUI([this, inbound = std::move(inbound_messages)]() {
+            for (const auto& [message_id, thread_id] : inbound) {
+              if (on_inbound_message_) {
+                on_inbound_message_(message_id, thread_id);
+              }
+            }
+          });
         }
         if (!background_notices.empty() && on_background_unread_) {
           AppRuntime::PostUI(
@@ -2282,6 +2300,10 @@ void MeshDeliveryOrchestrator::SetOnMessagesChanged(std::function<void()> callba
 
 void MeshDeliveryOrchestrator::SetOnDeliveryNotice(std::function<void(const DeliveryNotice&)> callback) {
   on_delivery_notice_ = std::move(callback);
+}
+
+void MeshDeliveryOrchestrator::SetOnInboundMessage(std::function<void(std::string, std::string)> callback) {
+  on_inbound_message_ = std::move(callback);
 }
 
 void MeshDeliveryOrchestrator::SetOnBackgroundUnread(
