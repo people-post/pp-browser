@@ -30,6 +30,8 @@ struct CallChromeLayer {
   std::string ring_media_label;
   std::string ring_eyebrow;
   std::string ring_conflict_hint;
+  /** V062 5: written into the ring's markup (a change remounts). */
+  std::string ring_guest_hint;
   std::string ring_accept_label;
   std::string ring_voice_answer_label;
   std::string ring_decline_label;
@@ -51,6 +53,8 @@ struct CallChromeLayer {
   /** G022: "Make a group…" and the group banner's words (written into the markup: a change remounts). */
   bool in_call_show_make_group = false;
   std::string in_call_group_invite;
+  /** V062: the guest rows (written into the markup: a change remounts). */
+  std::string in_call_guests;
   bool in_call_show_retry = false;
   bool in_call_calling = false;
   bool in_call_show_speaker = false;

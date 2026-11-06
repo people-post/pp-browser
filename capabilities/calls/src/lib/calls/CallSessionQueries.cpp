@@ -27,6 +27,7 @@ Roe<CallRosterDetail> RosterDetail(const ICallSessionReader& sessions, const std
     entry.video_enabled = row.media.video_enabled;
     entry.on_hold = row.media.on_hold;
     entry.video_paused = row.media.video_paused;
+    entry.brought_by = row.brought_by;
     entry.joined_at = row.joined_at;
     detail.participants.push_back(std::move(entry));
   }
@@ -390,6 +391,7 @@ Roe<void> ApplyCallRosterToStore(const ICallSessionStore& sessions, const CallRo
     participant.media.video_enabled = entry.video_enabled;
     participant.media.on_hold = entry.on_hold;
     participant.media.video_paused = entry.video_paused;
+    participant.brought_by = entry.brought_by;
     participant.joined_at = entry.joined_at;
     (void)sessions.UpsertParticipant(participant);
   }

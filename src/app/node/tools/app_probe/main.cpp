@@ -16,7 +16,10 @@
 //   threads / messages {thread}         what this user sees
 //   call {thread, video, [accounts]}    the call button: a 1:1 chat, or a group (every other member,
 //                                       or the picked `accounts`)
-//   invite_to_call {account}            add someone to the call in progress
+//   invite_to_call {account}            add someone to the call in progress (in a group's call someone outside the
+//                                       group comes as this user's guest, V062: refused unless the preset lets them)
+//   call_remove {account}               a guest's "Remove from call…" (V062: the group's owner and admins only)
+//   call_add_guest_to_group {account}   a guest's "Add {name} to the group" (the ordinary invite, made in the call)
 //   joinable {thread}                   the group call the call button would join {call_id} ("" none)
 //   accept / accept_voice / decline     the ring's buttons
 //   leave                               the call panel's End
@@ -57,14 +60,18 @@
 //   make_main {peer_id}                 on the main device: hand the main role to another device
 //   link_import {bundle, pin}           a new device takes it (then restart): another device of the
 //                                       account (M021)
-//   state                               the call surface + media counters (joined participants,
+//   state                               the call surface + media counters (joined participants; `members` with
+//                                       guest / brought_by / can_remove / can_add_to_group, V062; ring_guest /
+//                                       ring_people: ringing in as a guest and how many it shows them to;
+//                                       media_epoch: the call key's epoch, which moves on each leave;
 //                                       per-stream rx frames, video tx / rx and how each video stream's
 //                                       frames arrived: gaps, stalls, bunched, lost; the call link's
 //                                       round trip and Reliable resends)
 //   quit                                quit the app (orderly shutdown)
 //   crash                               the process dies now (force-quit, OOM kill)
 //
-// Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change.
+// Events: ready, mesh_ready, surface {kind, call_id, phase, media_status} on every change; notice {kind, key, text,
+// identity[, brought_by]} (kind guest_joined: "{identity} joined as {brought_by}'s guest", V062).
 //
 // --restore-phrase-file FILE: a fresh install restores the account from the recovery phrase in FILE (M023).
 // --restore-saved-copy FILE: with it, an exported locker file to restore from as well as the relay's copy.
@@ -168,6 +175,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
     return "peer_declined";
   case CallNotice::Kind::IncomingCall:
     return "incoming_call";
+  case CallNotice::Kind::GuestJoined:
+    return "guest_joined";
   }
   return "?";
 }
@@ -194,6 +203,9 @@ public:
       event.set("key", notice.key);
       event.set("text", notice.text);
       event.set("identity", notice.identity);
+      if (!notice.brought_by.empty()) {
+        event.set("brought_by", notice.brought_by); // V062: guest_joined
+      }
       Emit(event);
     };
     // G022: "Make a group…" opens the picker in the app; here the command that pressed it takes the call.
@@ -317,6 +329,21 @@ public:
     Emit(event);
   }
 
+  /** V062: the call screen's people — guests, who brought them, and the guest buttons this user has. */
+  static std::vector<Value> MembersOf(const CallScreen& screen) {
+    std::vector<Value> members;
+    for (const CallScreen::Member& member : screen.members) {
+      Object row;
+      row.set("identity", member.identity);
+      row.set("guest", member.guest);
+      row.set("brought_by", member.brought_by);
+      row.set("can_remove", member.can_remove);
+      row.set("can_add_to_group", member.can_add_to_group);
+      members.push_back(ObjectValue(std::move(row)));
+    }
+    return members;
+  }
+
   Object SurfaceObject() {
     Object out;
     out.set("kind", last_kind_);
@@ -332,6 +359,9 @@ public:
     out.set("show_make_group", screen.show_make_group); // G022
     out.set("group_invite", screen.group_invite ? screen.group_invite->invite_id : std::string());
     out.set("group", screen.group);
+    out.set("members", ArrayValue(MembersOf(screen))); // V062: who is a guest, and what this user may do
+    out.set("ring_guest", screen.ring_guest);
+    out.set("ring_people", static_cast<int64_t>(screen.ring_people));
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
       const auto health = media.HealthSnapshot();
@@ -384,6 +414,10 @@ public:
         }
       }
       out.set("participants", ArrayValue(std::move(joined)));
+      // The call's media key epoch: it moves on each leave (V003), a guest's removal too (V062).
+      if (auto active = calls_->ActiveLocalCall(); active && active->has_value()) {
+        out.set("media_epoch", static_cast<int64_t>((*active)->media_epoch));
+      }
       out.set("last_error", last_error_);
     }
     return out;
@@ -777,6 +811,10 @@ public:
         }
       }
       MakeGroupFromCall(id, request->getString("title").value_or(""), accounts);
+    } else if (cmd == "call_remove") {
+      RemoveFromCall(id, request->getString("account").value_or(""));
+    } else if (cmd == "call_add_guest_to_group") {
+      AddGuestToGroup(id, request->getString("account").value_or(""));
     } else if (cmd == "call_group_invite") {
       Settle();
       const CallScreen& screen = presenter_.Screen();
@@ -1259,6 +1297,28 @@ private:
       return;
     }
     presenter_.InviteToActiveCall({account}, [id](Roe<void> invited) {
+      invited ? Emit(Reply(id, true)) : ReplyError(id, invited.error().message);
+    });
+  }
+
+  /** V062 3: a guest's "Remove from call…" (confirmed): the presenter's, checked by the stack. */
+  void RemoveFromCall(int64_t id, const std::string& account) {
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    presenter_.RemoveFromCall(account, [id](Roe<void> removed) {
+      removed ? Emit(Reply(id, true)) : ReplyError(id, removed.error().message);
+    });
+  }
+
+  /** V062 4: a guest's "Add {name} to the group": the group's ordinary invite, made in the call. */
+  void AddGuestToGroup(int64_t id, const std::string& account) {
+    if (account.empty()) {
+      ReplyError(id, "account required");
+      return;
+    }
+    presenter_.AddGuestToGroup(account, [id](Roe<void> invited) {
       invited ? Emit(Reply(id, true)) : ReplyError(id, invited.error().message);
     });
   }

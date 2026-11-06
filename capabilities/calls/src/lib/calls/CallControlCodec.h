@@ -25,6 +25,9 @@ public:
 
   static Roe<std::string> EncodeLeave(const CallLeaveDetail& detail);
   static Roe<CallLeaveDetail> DecodeLeave(const std::string& detail_json);
+  /** V062: `{ call_id, identity }` — both required. */
+  static Roe<std::string> EncodeRemove(const CallRemoveDetail& detail);
+  static Roe<CallRemoveDetail> DecodeRemove(const std::string& detail_json);
   static Roe<std::string> EncodeJoinRequest(const CallJoinRequestDetail& detail);
   static Roe<CallJoinRequestDetail> DecodeJoinRequest(const std::string& detail_json);
 

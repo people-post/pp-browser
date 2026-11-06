@@ -35,6 +35,14 @@ struct CallFunctionalPorts {
   std::function<std::vector<CallGroupInvite>(const std::string& call_id)> group_invites_in_call;
   /** G022: the banner's Join — the ordinary accept of the invite; `done` on the UI thread. */
   std::function<void(const std::string& invite_id, std::function<void(Roe<void>)> done)> join_group_invite;
+  /**
+   * V062 4: "Add {name} to the group" on a guest of the group's call `call_id`: the group's ordinary invite, made in that
+   * call (G022's call context: the guest's device takes it from someone it is in the call with); `done` on the UI
+   * thread.
+   */
+  std::function<void(const std::string& group_id, const std::string& identity, const std::string& call_id,
+                     std::function<void(Roe<void>)> done)>
+      invite_guest_to_group;
 };
 
 } // namespace pbr

@@ -31,11 +31,14 @@ struct CallNotice {
     PeerDeclined,
     /** A call rings (`identity`: the caller); the platform notifies when the user is not looking. */
     IncomingCall,
+    /** V062 1: `identity` joined the group's call as `brought_by`'s guest (once per guest and call). */
+    GuestJoined,
   };
   Kind kind = Kind::Error;
   std::string key;
   std::string text;
   std::string identity;
+  std::string brought_by;
 };
 
 /** What pressing a call button led to. */
@@ -128,6 +131,15 @@ public:
   void OpenAddPeople();
   /** The add-people picker's choice: each is invited (`done` once per invitee). */
   void InviteToActiveCall(const std::vector<std::string>& identities, std::function<void(Roe<void>)> done = {});
+  /**
+   * V062 2: whether the add-people picker offers `identity` for the active call: in a group's call, someone outside
+   * the group only to a member allowed to bring guests (calls with no group: anyone).
+   */
+  bool MayAddToActiveCall(const std::string& identity) const;
+  /** V062 3: "Remove from call…" on a guest (Screen() member's can_remove), once the user confirmed. */
+  void RemoveFromCall(const std::string& identity, std::function<void(Roe<void>)> done = {});
+  /** V062 4: "Add {name} to the group" on a guest (can_add_to_group): the group's ordinary invite, in this call. */
+  void AddGuestToGroup(const std::string& identity, std::function<void(Roe<void>)> done = {});
   /** G022: "Make a group…" (shown by Screen().show_make_group). */
   void OpenMakeGroup();
   /** G022: the group banner's Join: the invite on it is accepted (the ordinary accept); the call goes on as it is. */
@@ -166,6 +178,12 @@ private:
   void WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, int64_t now);
   /** G022: the group banner of the call on `s` (the waiting invites read at most once a second). */
   void FillGroupInvite(CallScreen& s, int64_t now);
+  /** V062: who is a guest in the group's call on `s`, what this device may do about them, and Add people. */
+  void FillGuests(CallScreen& s, CallUiBackend& backend, const std::string& group_id, const std::string& local);
+  /** V062 5: the ring on `s` brings this device in as a guest: how many it shows them to. */
+  void FillGuestRing(CallScreen& s, CallUiBackend& backend, const PendingCallInvite& invite, const std::string& local);
+  /** V062 1: "{name} joined as {bringer}'s guest", once per guest of the call on `s`. */
+  void AnnounceGuests(const CallScreen& s);
   bool MessagingInitialized() const;
 
   CallFunctionalPorts ports_;
@@ -177,6 +195,11 @@ private:
   const void* bound_calls_ = nullptr;
   std::string ringing_call_id_;
   std::string active_call_id_;
+  /** The group of the active call (empty: none). */
+  std::string active_group_id_;
+  /** V062 1: the guests announced in the call `announced_call_id_`. */
+  std::string announced_call_id_;
+  std::set<std::string> announced_guests_;
   bool ring_shown_ = false;
   /**
    * The ring the user just answered / declined: the stack's state reads Ringing for it until the

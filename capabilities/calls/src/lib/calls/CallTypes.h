@@ -102,6 +102,12 @@ enum class CallControlType {
    * ignore it and keep waiting until their own limit.
    */
   CallConnectGiveUp,
+  /**
+   * V062: the group's owner or an admin takes a guest out of the group's call; every participant checks it against
+   * the group's roster and takes it as the guest's leave (the key rotates without them). Additive — old peers ignore
+   * it, and the rotation cuts the guest off anyway.
+   */
+  CallRemove,
 };
 
 /** H013: at most this many parked relays in a CallAccept (the caller's StartBridge attempts). */
@@ -153,6 +159,11 @@ struct CallParticipant {
   std::string identity;
   CallParticipantState state = CallParticipantState::Invited;
   CallParticipantMedia media;
+  /**
+   * V062: a guest in a group's call (not in the group's roster) — the member who brought them; empty for everyone
+   * else. Kept once known: a later write of the row without it leaves it.
+   */
+  std::string brought_by;
   std::optional<int64_t> joined_at;
   std::optional<int64_t> left_at;
 };
@@ -184,6 +195,8 @@ struct CallRosterEntry {
   /** CallParticipantMedia's; on the wire only when set (older peers ignore them: off). */
   bool on_hold = false;
   bool video_paused = false;
+  /** V062: a guest in a group's call — who brought them (on the wire as `guest: true` + `brought_by`, only when set). */
+  std::string brought_by;
   /** Sticky SoftMigrate initiator (earliest wins). Optional for wire compat with older peers. */
   std::optional<int64_t> joined_at;
 };
@@ -213,6 +226,12 @@ struct CallInviteDetail {
   bool video_allowed = false;
   /** The group the call is in (each side finds its own thread for it); none: a 1:1 call. */
   std::optional<std::string> origin_group_id;
+  /**
+   * V062: a mid-call invite into a group's call for someone outside the group's roster (`guest: true`), and the
+   * member who sent it (`brought_by`, the inviter). Additive; both or neither.
+   */
+  bool guest = false;
+  std::string brought_by;
   std::optional<std::string> sfu_hint;
   /** V050: planned hop (additive; old peers ignore). Distinct from `sfu_hint` = the hop in use. */
   std::optional<CallPlannedHop> planned_hop;
@@ -290,6 +309,12 @@ struct CallDeclineDetail {
 };
 
 struct CallLeaveDetail {
+  std::string call_id;
+  std::string identity;
+};
+
+/** V062: take `identity` (a guest) out of the group's call `call_id`. */
+struct CallRemoveDetail {
   std::string call_id;
   std::string identity;
 };

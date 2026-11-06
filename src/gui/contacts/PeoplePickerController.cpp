@@ -947,6 +947,10 @@ void PeoplePickerController::SyncCallAddGuestRows() {
     if (joined_identities.count(target.peer_identity_value) > 0) {
       continue;
     }
+    // V062 2: in a group's call, someone outside the group only for a member the preset lets bring guests.
+    if (call_actions_.may_add_to_call && !call_actions_.may_add_to_call(target.peer_identity_value)) {
+      continue;
+    }
     if (!MatchesQuery(contact, query)) {
       continue;
     }

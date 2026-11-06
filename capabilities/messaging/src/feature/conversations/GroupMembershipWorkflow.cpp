@@ -281,6 +281,14 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   return InviteIdentity(group_id, *invitee_identity, invitee_contact_id, {});
 }
 
+Roe<void> GroupMembershipWorkflow::InviteFromCall(const std::string& group_id, const std::string& invitee_identity,
+                                                  const std::string& call_id) {
+  if (invitee_identity.empty() || call_id.empty()) {
+    return Error("An invite made in a call names the person and the call");
+  }
+  return InviteIdentity(group_id, invitee_identity, {}, call_id);
+}
+
 Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, const std::string& invitee_identity,
                                                   const std::string& invitee_contact_id, const std::string& call_id) {
   auto metadata = LoadMetadataOrError(group_id);

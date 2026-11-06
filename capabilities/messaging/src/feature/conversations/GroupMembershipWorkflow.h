@@ -46,6 +46,13 @@ public:
   Roe<Thread> CreateGroupFromCall(const std::string& title, const std::string& call_id,
                                   const std::vector<std::string>& member_identities);
   Roe<void> InviteMember(const std::string& group_id, const std::string& invitee_contact_id);
+  /**
+   * The ordinary invite to `invitee_identity` (an account: someone met in a call need not be a contact), made during
+   * the call `call_id` (G022's call context, so their device takes it from someone it is in that call with). A guest's
+   * "Add {name} to the group" in the group's call (calls V062 4).
+   */
+  Roe<void> InviteFromCall(const std::string& group_id, const std::string& invitee_identity,
+                           const std::string& call_id);
   Roe<Thread> AcceptInvite(const std::string& invite_nonce);
   Roe<void> DeclineInvite(const std::string& invite_nonce);
   /** Local leave used by session close — stops inbound group recreate without peer notify. */

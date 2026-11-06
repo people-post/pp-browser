@@ -78,6 +78,12 @@ public:
   void OpenMakeGroup();
   void JoinGroupInvite();
   void PutOffGroupInvite();
+  /** V062 3: "Remove from call…" on a guest: asks, then takes them out of the call. */
+  void RemoveGuestFromCall(const std::string& identity);
+  /** V062 4: "Add {name} to the group" on a guest. */
+  void AddGuestToGroup(const std::string& identity);
+  /** V062 2: the add-people picker offers `identity` for the active call. */
+  bool MayAddToCall(const std::string& identity) const { return presenter_.MayAddToActiveCall(identity); }
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */
   bool VideoCallAvailable();
@@ -118,6 +124,8 @@ private:
   /** Accept in flight: the ring is gone, a Connecting page / bar shows. */
   void RenderAnswering(const CallScreen& screen);
   void RenderInCall(const CallScreen& screen, CallUiBackend& backend);
+  /** V062: the guests this device may remove or invite to the group, worded for the call chrome. */
+  void FillGuestActions(CallInProgressState& in_call, const CallScreen& screen);
   /** The in-call state from the presenter's screen (names, roster, status line, phone page fields). */
   void FillInCallFromScreen(const CallScreen& screen);
   /** UI demo app only (kUiDemoBuild): draws the scripted call PP_DEMO_CALL names; false when none is set. */

@@ -241,6 +241,8 @@ struct CallRingState {
   bool video_allowed = false;
   ui::String eyebrow;
   ui::String conflict_hint;
+  /** V062 5: ringing in as a guest of a group's call: "Joining shows you to the N people in this call." ("": not). */
+  ui::String guest_hint;
   ui::String accept_label;
   /** I2/M3: label for the video-ring "voice answer" button (free / end-and-accept wording). */
   ui::String voice_answer_label;
@@ -295,6 +297,23 @@ struct CallRosterParticipantState {
   bool on_hold = false;
   /** V060: their camera is off because their app is in the background: the tile reads "Camera paused". */
   bool video_paused = false;
+  /** V062: a guest in the group's call: the tile reads "Guest". */
+  bool guest = false;
+};
+
+/**
+ * V062: a guest of the group's call this device may do something about, as the call chrome lists them (written into
+ * the markup: a change remounts). `identity` is an account id (markup-safe).
+ */
+struct CallGuestActionState {
+  ui::String identity;
+  /** "Erin · Bob's guest". */
+  ui::String line;
+  /** "Add Erin to the group" (empty: not offered). */
+  ui::String add_to_group_label;
+  bool can_remove = false;
+
+  bool operator==(const CallGuestActionState&) const = default;
 };
 
 /** In-call chrome presentation mode (V031). */
@@ -336,6 +355,8 @@ struct CallInProgressState {
   bool show_make_group = false;
   /** G022: the banner of a group someone here made with everyone ("" = none); Join / Not now under it. */
   ui::String group_invite_text;
+  /** V062: the guests this device may remove or invite to the group (owner / admins; whoever may invite). */
+  std::vector<CallGuestActionState> guest_actions;
   /** Show Retry after 1:1 P2P connect fail/timeout. */
   bool show_retry = false;
   /** An outgoing call still ringing: the phone shows a labelled Cancel (ShowsCancelCall). */

@@ -157,6 +157,14 @@ void CallUiBackend::InviteParticipant(const std::string& call_id, const std::str
   });
 }
 
+void CallUiBackend::RemoveFromCall(const std::string& call_id, const std::string& identity,
+                                   std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  stack_.PostToSessions([call_id, identity, reply](CallSessionManager* calls) {
+    reply(calls ? calls->RemoveFromCall(call_id, identity) : Roe<void>(UnavailableError()));
+  });
+}
+
 void CallUiBackend::SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
   stack_.PostToSessions([muted, reply](CallSessionManager* calls) {
@@ -307,6 +315,24 @@ Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const st
     return reads->JoinedParticipants(call_id);
   }
   return UnavailableError();
+}
+
+Roe<std::vector<CallParticipant>> CallUiBackend::ListParticipants(const std::string& call_id) const {
+  if (const CallReads* reads = stack_.Reads()) {
+    return reads->Participants(call_id);
+  }
+  return UnavailableError();
+}
+
+std::optional<CallGroupStanding> CallUiBackend::GroupStanding(const std::string& group_id,
+                                                              const std::string& account) const {
+  const CallReads* reads = stack_.Reads();
+  return reads ? reads->StandingIn(group_id, account) : std::nullopt;
+}
+
+bool CallUiBackend::ChecksGuests() const {
+  const CallReads* reads = stack_.Reads();
+  return reads && reads->ChecksGuests();
 }
 
 int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {

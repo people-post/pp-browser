@@ -1224,6 +1224,9 @@ void Application::WireCalls() {
     call_actions.make_group_from_call = [this]() { call_->OpenMakeGroup(); };
     call_actions.join_call_group_invite = [this]() { call_->JoinGroupInvite(); };
     call_actions.put_off_call_group_invite = [this]() { call_->PutOffGroupInvite(); };
+    call_actions.remove_call_guest = [this](const std::string& identity) { call_->RemoveGuestFromCall(identity); };
+    call_actions.add_call_guest_to_group = [this](const std::string& identity) { call_->AddGuestToGroup(identity); };
+    call_actions.may_add_to_call = [this](const std::string& identity) { return call_->MayAddToCall(identity); };
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
     call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
     call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };

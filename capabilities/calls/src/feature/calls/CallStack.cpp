@@ -392,8 +392,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     return;
   }
   deps_ = deps;
-  reads_ = std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads,
-                                       deps_.delivery.group_members, deps_.initiation_billing);
+  reads_ =
+      std::make_unique<CallReads>(*call_session_store_, *deps_.account, *deps_.threads, deps_.delivery.group_members,
+                                  deps_.initiation_billing, deps_.delivery.group_standing);
   call_device_ = std::make_unique<CallDevice>(*deps_.threads, *deps_.transcript, *deps_.contacts, *deps_.account,
                                               *call_session_store_, *reads_, *call_media_keys_, deps_.delivery,
                                               *call_media_engine_);

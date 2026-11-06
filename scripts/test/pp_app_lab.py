@@ -2167,6 +2167,94 @@ def scenario_call_grows_into_a_group(lab):
     leave_all([a, b, c])
 
 
+def saw_notice(u, kind, **fields):
+    """`u` was told once (a `notice` event of `kind` with these fields), at any time so far."""
+    with u.lock:
+        return any(m.get("event") == "notice" and m.get("kind") == kind and
+                   all(m.get(k) == v for k, v in fields.items()) for _, m in u.history)
+
+
+def member_row(u, account):
+    """`account`'s row on `u`'s call screen (`members`), or None."""
+    return next((m for m in u.state().get("members", []) if m["identity"] == account), None)
+
+
+def scenario_group_call_guest(lab):
+    """Guests in a group's call (calls V062): Alice owns a group with Bob and Carol; the three are in its call. Bob
+    brings Erin, his friend and no member: her ring says joining shows her to the three people in the call, and once
+    in, everyone sees her as Bob's guest ("Erin joined as Bob's guest", "Guest" on her tile). Carol, a plain member,
+    cannot remove her; Alice, the owner, can: Erin's device leaves, the others take it as her leave and the call key
+    moves on without her. Erin cannot come back by herself (she is in no group chat, so has no Join); Bob, a member
+    in the call, brings her back."""
+    users, threads = open_group(lab, 3)
+    a, b, c = users
+    e = lab.user("erin")
+    e.wait_mesh()
+    b.cmd("open_chat", account=e.account)  # Bob and Erin are friends; nobody else knows her
+    e.cmd("open_chat", account=b.account)
+    group_id = plan_group(a, threads[a.name])
+    call_id = group_call(a, threads[a.name], [b, c])
+    assert_everyone_in_call([a, b, c], call_id)
+
+    b.cmd("invite_to_call", account=e.account)
+    e.wait_surface("ringing", 40, call_id=call_id)
+    ring = e.state()
+    if not ring.get("ring_guest") or ring.get("ring_people") != 3:
+        raise ProbeError("erin: the ring says %s (wanted a guest's ring showing her to 3 people)" %
+                         {k: ring.get(k) for k in ("ring_guest", "ring_people")})
+    e.cmd("accept_voice")
+    e.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c, e], call_id)
+
+    for u in (a, b, c, e):
+        wait_state(u, lambda s: any(m["identity"] == e.account and m["guest"] and m["brought_by"] == b.account
+                                    for m in s.get("members", [])), 20, "%s: erin shown as bob's guest" % u.name)
+        if any(m["guest"] for m in u.state().get("members", []) if m["identity"] != e.account):
+            raise ProbeError("%s: a member shown as a guest" % u.name)
+    for u in (a, c):
+        wait_for(lambda: saw_notice(u, "guest_joined", identity=e.account, brought_by=b.account), 10,
+                 "%s: told erin joined as bob's guest" % u.name)
+    if not member_row(a, e.account)["can_remove"] or not member_row(a, e.account)["can_add_to_group"]:
+        raise ProbeError("alice (owner): no Remove from call… / Add to the group on erin: %s" % member_row(a, e.account))
+    if member_row(c, e.account)["can_remove"]:
+        raise ProbeError("carol (a member): offered Remove from call… on erin")
+    if e.state().get("show_invite"):
+        raise ProbeError("erin: a guest offered Add people")
+
+    refused = c.cmd("call_remove", account=e.account, check=False)
+    if refused.get("ok"):
+        raise ProbeError("carol: a plain member removed a guest")
+    time.sleep(2)
+    if e.state().get("call_id") != call_id:
+        raise ProbeError("erin: out of the call after a member's refused remove")
+
+    epochs = {u.name: u.state().get("media_epoch", 0) for u in (a, b, c)}
+    a.cmd("call_remove", account=e.account)
+    e.wait_surface("none", 30)
+    for u in (a, b, c):
+        wait_state(u, lambda s: e.account not in s.get("participants", []), 20, "%s: erin out of the call" % u.name)
+        wait_state(u, lambda s: s.get("media_epoch", 0) > epochs[u.name], 20,
+                   "%s: the call key moved on without erin" % u.name)
+    if len({u.state().get("media_epoch") for u in (a, b, c)}) != 1:
+        raise ProbeError("the members hold different key epochs: %s" % {u.name: u.state().get("media_epoch")
+                                                                         for u in (a, b, c)})
+    assert_everyone_in_call([a, b, c], call_id)
+
+    # A guest stays a guest: no group chat, so no Join; she does not ring back in by herself.
+    if any(t.get("group_id") == group_id for t in e.cmd("threads")["threads"]):
+        raise ProbeError("erin: holds the group's chat")
+    time.sleep(3)
+    if e.state().get("kind") != "none":
+        raise ProbeError("erin: back in the call by herself (%s)" % e.state().get("kind"))
+
+    b.cmd("invite_to_call", account=e.account)  # a member in the call brings her back
+    e.wait_surface("ringing", 40, call_id=call_id)
+    e.cmd("accept_voice")
+    e.wait_surface("in_call", 40, call_id=call_id)
+    assert_everyone_in_call([a, b, c, e], call_id)
+    leave_all([a, b, c, e])
+
+
 def scenario_a_device_asks_for_a_copy_it_missed(lab):
     """A copy missing for a device is asked for (M021 §9): Alice exports a transfer code and her phone goes off
     before her new laptop starts, so nobody tells Bob of the laptop. Bob writes to Alice — a copy for the phone
@@ -3211,6 +3299,7 @@ SCENARIOS = [
     ("muted_group_alerts_on_a_mention", scenario_muted_group_alerts_on_a_mention),
     ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
     ("call_grows_into_a_group", scenario_call_grows_into_a_group),
+    ("group_call_guest", scenario_group_call_guest),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

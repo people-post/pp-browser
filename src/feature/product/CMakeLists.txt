@@ -5,6 +5,7 @@
 pp_browser_add_feature_library(pp_feature_product
   SOURCES
     BroadcastParticipant.cpp
+    CallGroupStandings.cpp
     CallsParticipant.cpp
     DemoDataSeeder.cpp
     MakeCallFunctionalPorts.cpp

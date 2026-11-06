@@ -6,6 +6,7 @@ pp_browser_add_lib_library(pp_lib_calls
     CallControlCodec.cpp
     CallControlGate.cpp
     CallControlFamily.cpp
+    CallGuests.cpp
     CallMediaErrorText.cpp
     CallDirectPathLogic.cpp
     CallHopAttachLogic.cpp

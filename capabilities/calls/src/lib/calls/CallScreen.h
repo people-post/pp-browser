@@ -60,6 +60,13 @@ struct CallScreen {
     /** V060: the roster row's (the OS has their audio / their camera paused in the background). */
     bool on_hold = false;
     bool video_paused = false;
+    /** V062: a guest in the group's call (the tile reads "Guest"), and the member who brought them. */
+    bool guest = false;
+    std::string brought_by;
+    /** V062: this device may take them out of the call ("Remove from call…": the owner and admins, a guest). */
+    bool can_remove = false;
+    /** V062 4: this device may invite them to the group ("Add {name} to the group"). */
+    bool can_add_to_group = false;
   };
 
   Kind kind = Kind::None;
@@ -79,6 +86,12 @@ struct CallScreen {
   bool answered_video = false;
   /** Ringing / Answering: a group's call (the phone ring shows the group, and who started it). */
   bool ring_group = false;
+  /**
+   * V062 5: the ring brings this device in as a guest of a group's call: "Joining shows you to the N people in this
+   * call" (`ring_people`: the others joined in it).
+   */
+  bool ring_guest = false;
+  int ring_people = 0;
 
   // InCall
   std::string call_id;

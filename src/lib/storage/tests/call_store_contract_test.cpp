@@ -119,6 +119,19 @@ TEST_P(CallStoreContractTest, AMembersHoldAndPausedCameraAreKeptAndCleared) {
   EXPECT_FALSE(kept.video_paused);
 }
 
+// V062: who brought a guest is kept once known — a later write of the row without it (an accept, a leave) leaves it.
+TEST_P(CallStoreContractTest, WhoBroughtAGuestIsKeptOnceKnown) {
+  CallParticipant erin = Participant(CallParticipantState::Ringing, std::nullopt);
+  erin.brought_by = "account:alice";
+  ASSERT_TRUE(sessions_->UpsertParticipant(erin));
+  ASSERT_TRUE(sessions_->UpsertParticipant(Participant(CallParticipantState::Joined, 100)));
+  EXPECT_EQ(sessions_->FindParticipant("call:a", "account:bob").value()->brought_by, "account:alice");
+  erin.brought_by = "account:carol";
+  ASSERT_TRUE(sessions_->UpsertParticipant(erin));
+  EXPECT_EQ(sessions_->FindParticipant("call:a", "account:bob").value()->brought_by, "account:carol")
+      << "brought back by someone else";
+}
+
 TEST_P(CallStoreContractTest, TheInvitesToAnswerAreThePendingOnesNewestFirst) {
   PendingCallInvite first;
   first.call_id = "call:1";

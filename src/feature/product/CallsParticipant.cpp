@@ -1,5 +1,7 @@
 #include "feature/product/CallsParticipant.h"
 
+#include "feature/product/CallGroupStandings.h"
+
 #include "lib/storage/ProfileStorage.h"
 #include "lib/calls/CallSessionLogic.h"
 #include "lib/calls/CallSessionQueries.h"
@@ -117,6 +119,12 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub, ProductMesh& mesh) {
         members.insert(member.member_identity);
       }
       return members;
+    };
+    // V062: who may bring and remove guests in a group's call — messaging's roster and preset, in the calls' words.
+    deps.delivery.group_standing = [&hub](const std::string& group_id,
+                                          const std::string& account) -> std::optional<CallGroupStanding> {
+      IGroupRosterStore* rosters = hub.GroupRosterOrNull();
+      return rosters ? CallStandingFromRoster(*rosters, group_id, account) : std::nullopt;
     };
     deps.delivery.sync_inbox_from_wake = [&hub](bool force) {
       if (auto* messaging = hub.MeshMessagingOrNull()) {

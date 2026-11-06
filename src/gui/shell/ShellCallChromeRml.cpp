@@ -44,6 +44,7 @@ void AppendRosterCards(std::ostringstream& out, const char* rows, const char* ca
          "((p.is_local && !call_in_progress_local_preview) || (!p.is_local && !p.has_remote_video))\" "
          "data-attr-src=\"p.avatar_src\"/>";
   out << "<p class=\"text-sm shell-call-peer-name\">{{p.name}}</p>";
+  out << "<p class=\"text-xs shell-call-peer-stall\" data-if=\"p.guest\">" << Tr("call.guest.label") << "</p>";
   out << "<p class=\"text-xs shell-call-peer-stall\" "
          "data-if=\"!p.is_local && p.video_enabled && !p.has_remote_video\" "
          ">{{call_in_progress_remote_placeholder}}</p>";
@@ -95,6 +96,29 @@ void AppendGroupOffer(std::ostringstream& out, const CallInProgressState& call, 
            "data-event-click=\"call_make_group()\">"
         << "<svg src=\"../icons/group.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>"
         << "<span class=\"call-make-group-label\">" << Tr("call.make_group") << "</span></button></div>";
+  }
+}
+
+/**
+ * V062: the guests this device may do something about — "Erin · Bob's guest" with "Add Erin to the group" and
+ * "Remove from call…" (it asks first). `phone`: the phone call page's look. Text is written into the markup.
+ */
+void AppendGuestActions(std::ostringstream& out, const CallInProgressState& call, const bool phone) {
+  for (const CallGuestActionState& guest : call.guest_actions) {
+    std::string identity = Plain(guest.identity.c_str());
+    std::erase(identity, '\''); // inside a quoted event argument
+    out << "<div class=\"call-group-offer" << (phone ? " call-group-offer--phone" : "") << "\">";
+    out << "<p class=\"call-group-offer-text\">" << Plain(guest.line.c_str()) << "</p>";
+    out << "<div class=\"call-group-offer-actions\">";
+    if (!guest.add_to_group_label.empty()) {
+      out << "<button class=\"call-group-offer-btn\" type=\"button\" data-event-click=\"call_guest_add_to_group('"
+          << identity << "')\">" << Plain(guest.add_to_group_label.c_str()) << "</button>";
+    }
+    if (guest.can_remove) {
+      out << "<button class=\"call-group-offer-btn\" type=\"button\" data-event-click=\"call_guest_remove('" << identity
+          << "')\">" << Tr("call.guest.remove") << "</button>";
+    }
+    out << "</div></div>";
   }
 }
 
@@ -350,7 +374,8 @@ void AppendPhoneTiles(std::ostringstream& out, const char* rows, const char* ext
   out << "<p class=\"call-phone-tile-note\" data-if=\"p.video_paused && !p.on_hold\">"
       << Tr("call.placeholder.camera_paused") << "</p>";
   out << "<div class=\"call-phone-tile-label\"><svg data-if=\"p.audio_muted\" src=\"../icons/v2/mic-off.svg\" "
-         "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span></div>";
+         "width=\"14\" height=\"14\"></svg><span class=\"call-phone-tile-name\">{{p.name}}</span>"
+      << "<span class=\"call-phone-tile-name\" data-if=\"p.guest\">· " << Tr("call.guest.label") << "</span></div>";
   out << "</div>";
 }
 
@@ -365,6 +390,9 @@ std::string CallRingPhoneRml(const ShellState& state) {
   out << "<p class=\"call-phone-name\">{{call_ring_phone_title}}</p>";
   out << "<p class=\"call-phone-status\">{{call_ring_phone_subtitle}}</p>";
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
+  if (!ring.guest_hint.empty()) {
+    out << "<p class=\"call-phone-hint\">" << Plain(ring.guest_hint.c_str()) << "</p>"; // V062 5
+  }
   out << "<p class=\"call-phone-hint\" data-if=\"call_ring_show_pricing\">{{call_ring_pricing_label}}</p>";
   out << "</div>";
   out << "<div class=\"call-phone-answer\">";
@@ -570,6 +598,7 @@ std::string CallPhoneRml(const ShellState& state) {
   }
 
   AppendGroupOffer(out, call, true);
+  AppendGuestActions(out, call, true);
   AppendControls(out, call, video_layout);
   out << "</div>";
   if (call.story_sheet_open) {
@@ -598,6 +627,10 @@ std::string CallRingRml(const ShellState& state) {
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{call_ring_media}}</h2>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"!call_ring_conflict\">{{call_ring_caller}}</p>";
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\">{{call_ring_conflict_hint}}</p>";
+  if (!state.call_ring.guest_hint.empty()) {
+    out << "<p class=\"text-sm shell-dialog-message\">" << Plain(state.call_ring.guest_hint.c_str())
+        << "</p>"; // V062 5
+  }
   out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
          ">{{call_ring_pricing_label}}</p>";
   // WeChat-style round icon buttons with a short label underneath; long labels above
@@ -801,6 +834,7 @@ std::string CallInProgressRml(const ShellState& state) {
     }
     out << "<div class=\"shell-call-immersive-controls\">";
     AppendGroupOffer(out, call, false);
+    AppendGuestActions(out, call, false);
     out << "<div class=\"shell-call-bar-actions row\">";
     append_core_actions(out);
     out << "</div>";
@@ -836,10 +870,12 @@ std::string CallInProgressRml(const ShellState& state) {
   append_core_actions(out);
   out << "</div></div>";
   AppendGroupOffer(out, call, false);
+  AppendGuestActions(out, call, false);
   append_cancel(out);
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";
   out << "<span class=\"text-xs shell-call-roster-name\">{{p.name}}</span>";
+  out << "<span class=\"text-xs shell-call-roster-name\" data-if=\"p.guest\">· " << Tr("call.guest.label") << "</span>";
   out << "<svg data-if=\"p.audio_muted\" src=\"../icons/mic-off.svg\" width=\"12\" height=\"12\" "
          "crop-to-content=\"true\"></svg>";
   out << "<svg data-if=\"p.on_hold\" src=\"../icons/pause.svg\" width=\"12\" height=\"12\" "

@@ -234,6 +234,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
       roster_handle.RegisterMember("speaking", &CallRosterParticipantState::speaking);
       roster_handle.RegisterMember("on_hold", &CallRosterParticipantState::on_hold);
       roster_handle.RegisterMember("video_paused", &CallRosterParticipantState::video_paused);
+      roster_handle.RegisterMember("guest", &CallRosterParticipantState::guest);
     }
     ctor.RegisterArray<std::vector<CallRosterParticipantState>>();
     ctor.Bind("call_in_progress_roster", &host.state_.call_in_progress.roster);
@@ -329,6 +330,17 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_group_not_now", DataEvent<>([this]() {
                              if (call_actions_.put_off_call_group_invite) {
                                call_actions_.put_off_call_group_invite();
+                             }
+                           }));
+    // V062: a guest's "Remove from call…" (it asks first) and "Add {name} to the group".
+    ctor.BindEventCallback("call_guest_remove", DataEvent<std::string>([this](const std::string& identity) {
+                             if (call_actions_.remove_call_guest) {
+                               call_actions_.remove_call_guest(identity);
+                             }
+                           }));
+    ctor.BindEventCallback("call_guest_add_to_group", DataEvent<std::string>([this](const std::string& identity) {
+                             if (call_actions_.add_call_guest_to_group) {
+                               call_actions_.add_call_guest_to_group(identity);
                              }
                            }));
     ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));

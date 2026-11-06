@@ -188,8 +188,8 @@ std::string RosterKey(const std::vector<CallRosterParticipantState>& roster) {
   for (const CallRosterParticipantState& p : roster) {
     key += std::string(p.name.c_str()) + "|" + p.stream_id.c_str() + "|" + (p.audio_muted ? "m" : "-") +
            (p.video_enabled ? "v" : "-") + (p.has_remote_video ? "r" : "-") + (p.on_hold ? "h" : "-") +
-           (p.video_paused ? "p" : "-") + AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) +
-           ";";
+           (p.video_paused ? "p" : "-") + (p.guest ? "g" : "-") +
+           AvatarKey(false, p.has_avatar, p.avatar_src, p.avatar_letter, p.avatar_tone) + ";";
   }
   return key;
 }
@@ -201,6 +201,16 @@ std::string SpeakingKey(const std::vector<CallRosterParticipantState>& roster) {
     if (p.speaking) {
       key += std::string(p.stream_id.c_str()) + ";";
     }
+  }
+  return key;
+}
+
+/** V062: the guest rows' words and buttons in one key (they are written into the markup: a change remounts). */
+std::string GuestActionsKey(const std::vector<CallGuestActionState>& rows) {
+  std::string key;
+  for (const CallGuestActionState& row : rows) {
+    key += std::string(row.identity.c_str()) + "|" + row.line.c_str() + "|" + row.add_to_group_label.c_str() + "|" +
+           (row.can_remove ? "r" : "-") + ";";
   }
   return key;
 }
@@ -226,6 +236,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_media_label = ring.media_label.c_str(),
       .ring_eyebrow = ring.eyebrow.c_str(),
       .ring_conflict_hint = ring.conflict_hint.c_str(),
+      .ring_guest_hint = ring.guest_hint.c_str(),
       .ring_accept_label = ring.accept_label.c_str(),
       .ring_voice_answer_label = ring.voice_answer_label.c_str(),
       .ring_decline_label = ring.decline_label.c_str(),
@@ -246,6 +257,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_invite = in_call.show_invite,
       .in_call_show_make_group = in_call.show_make_group,
       .in_call_group_invite = in_call.group_invite_text.c_str(),
+      .in_call_guests = GuestActionsKey(in_call.guest_actions),
       .in_call_show_retry = in_call.show_retry,
       .in_call_calling = in_call.calling,
       .in_call_show_speaker = in_call.show_speaker,
@@ -860,6 +872,23 @@ void CallController::ShowNotice(const CallNotice& notice) {
     UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
     return;
   }
+  case CallNotice::Kind::GuestJoined: {
+    std::string name = DisplayNameForIdentity(notice.identity);
+    if (name.empty()) {
+      name = notice.identity;
+    }
+    const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
+    if (!local.empty() && notice.brought_by == local) {
+      UserFeedback::Ok(Tr("call.guest.joined_yours", {{"name", name}}));
+      return;
+    }
+    std::string bringer = DisplayNameForIdentity(notice.brought_by);
+    if (bringer.empty()) {
+      bringer = notice.brought_by;
+    }
+    UserFeedback::Ok(Tr("call.guest.joined", {{"name", name}, {"bringer", bringer}}));
+    return;
+  }
   case CallNotice::Kind::IncomingCall: {
     if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
       return; // the phone's own call screen rings it (CallKit, Android's call notification)
@@ -976,6 +1005,9 @@ void CallController::RenderRing(const CallScreen& screen) {
                                         : Tr("call.ring.incoming_voice").c_str();
   ring_.eyebrow = copy.eyebrow;
   ring_.conflict_hint = copy.hint;
+  // V062 5: brought in as a guest — joining shows them to everyone in the call.
+  ring_.guest_hint =
+      screen.ring_guest ? Tr("call.ring.guest_notice", {{"count", std::to_string(screen.ring_people)}}).c_str() : "";
   ring_.accept_label = copy.accept_label;
   ring_.decline_label = copy.decline_label;
   // V035: video ring offers a voice-answer alternative; the primary button reads
@@ -1069,6 +1101,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
                                             {"group", screen.group_invite->group_title}})
                 .c_str()
           : "";
+  FillGuestActions(in_call, screen);
   in_call.roster.clear();
   in_call.roster.reserve(screen.members.size());
   for (const CallScreen::Member& member : screen.members) {
@@ -1095,6 +1128,7 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
     entry.video_enabled = member.video_enabled;
     entry.on_hold = member.on_hold;
     entry.video_paused = member.video_paused;
+    entry.guest = member.guest;
     in_call.roster.push_back(std::move(entry));
   }
 
@@ -1233,6 +1267,61 @@ void CallController::JoinGroupInvite() {
 
 void CallController::PutOffGroupInvite() {
   presenter_.PutOffGroupInvite();
+}
+
+void CallController::FillGuestActions(CallInProgressState& in_call, const CallScreen& screen) {
+  in_call.guest_actions.clear();
+  const std::string local = call_ports_.local_relay_identity ? call_ports_.local_relay_identity().value_or("") : "";
+  for (const CallScreen::Member& member : screen.members) {
+    if (!member.guest || (!member.can_remove && !member.can_add_to_group)) {
+      continue;
+    }
+    std::string name = DisplayNameForIdentity(member.identity);
+    if (name.empty()) {
+      name = member.identity;
+    }
+    CallGuestActionState row;
+    row.identity = member.identity.c_str();
+    if (!local.empty() && member.brought_by == local) {
+      row.line = Tr("call.guest.line_yours", {{"name", name}}).c_str();
+    } else {
+      std::string bringer = DisplayNameForIdentity(member.brought_by);
+      row.line =
+          Tr("call.guest.line", {{"name", name}, {"bringer", bringer.empty() ? member.brought_by : bringer}}).c_str();
+    }
+    if (member.can_add_to_group) {
+      row.add_to_group_label = Tr("call.guest.add_to_group", {{"name", name}}).c_str();
+    }
+    row.can_remove = member.can_remove;
+    in_call.guest_actions.push_back(std::move(row));
+  }
+}
+
+void CallController::RemoveGuestFromCall(const std::string& identity) {
+  std::string name = DisplayNameForIdentity(identity);
+  if (name.empty()) {
+    name = identity;
+  }
+  UserFeedback::Confirm(
+      Tr("call.guest.remove_title", {{"name", name}}), Tr("call.guest.remove_message"),
+      [this, identity](const bool ok) {
+        if (ok) {
+          presenter_.RemoveFromCall(identity);
+        }
+      },
+      Tr("call.guest.remove_ok"));
+}
+
+void CallController::AddGuestToGroup(const std::string& identity) {
+  std::string name = DisplayNameForIdentity(identity);
+  if (name.empty()) {
+    name = identity;
+  }
+  presenter_.AddGuestToGroup(identity, [name](Roe<void> invited) {
+    if (invited) {
+      UserFeedback::Ok(Tr("call.guest.invited_to_group", {{"name", name}}));
+    }
+  });
 }
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {

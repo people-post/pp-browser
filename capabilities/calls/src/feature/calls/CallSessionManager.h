@@ -42,6 +42,8 @@ public:
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
+  /** V062 3: the group's owner or an admin takes the guest `identity` out of the call (the workflow checks). */
+  Roe<void> RemoveFromCall(const std::string& call_id, const std::string& identity);
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
   /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */

@@ -4,6 +4,7 @@
 #include "common/media/CallMediaHealth.h"
 #include "feature/calls/CallUiBackend.h"
 #include "common/ValueJson.h"
+#include "common/runtime/AppRuntime.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
@@ -45,6 +46,23 @@ CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, Conversation
         done(accepted ? Roe<void>() : Roe<void>(accepted.error()));
       }
     });
+  };
+  ports.invite_guest_to_group = [&hub](const std::string& group_id, const std::string& identity,
+                                       const std::string& call_id, std::function<void(Roe<void>)> done) {
+    // V062 4: the ordinary group invite, made in the call (it sends a DM: off the UI thread).
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
+        WorkerLane::Normal,
+        [&hub, group_id, identity, call_id]() -> Roe<void> {
+          if (AppRuntime::IsShuttingDown() || !hub.IsInitialized()) {
+            return Error("Messaging not ready");
+          }
+          return hub.Groups().InviteFromCall(group_id, identity, call_id);
+        },
+        [done = std::move(done)](Roe<void> invited) {
+          if (done) {
+            done(std::move(invited));
+          }
+        });
   };
   ports.call_diagnostics_enabled = [session_store]() {
     const bool pref =
