@@ -9,9 +9,8 @@ CallGroupStanding CallStandingOfMember(const MemberRole role, const GroupPreset 
   standing.member = true;
   standing.may_bring_guest = GroupAllows(GroupAction::BringCallGuest, role, preset);
   standing.may_remove_guest = GroupAllows(GroupAction::RemoveCallGuest, role, preset);
-  // The membership workflow sends group invites from the owner only until members invite (group-chat o4); then
-  // this is GroupAllows(Invite, …) alone.
-  standing.may_invite_to_group = role == MemberRole::Owner && GroupAllows(GroupAction::Invite, role, preset);
+  // Members invite per the preset (group-chat G019): whoever may invite may add a guest to the group.
+  standing.may_invite_to_group = GroupAllows(GroupAction::Invite, role, preset);
   return standing;
 }
 

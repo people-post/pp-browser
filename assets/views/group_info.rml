@@ -49,6 +49,15 @@
         <button class="cd-row" type="button" data-if="show_restore_name" data-event-click="group_info_restore_name()">
           <span class="cd-row-body"><span class="cd-row-text cd-row-text--accent">{{i18n:group_info.restore_name}}</span></span>
         </button>
+        <!-- G017: who can add people and rename; the owner switches it, everyone else reads it. -->
+        <button class="cd-row" type="button" data-if="show_preset" data-class-cd-row--static="!preset_editable"
+                data-event-click="group_info_preset()">
+          <span class="cd-row-body">
+            <span class="cd-row-text">{{i18n:group_info.preset}}</span>
+            <span class="cd-row-value">{{preset_label}}</span>
+            <svg class="cd-chevron" data-if="preset_editable" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+          </span>
+        </button>
       </div>
 
       <div data-if="show_members">

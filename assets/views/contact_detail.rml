@@ -203,6 +203,15 @@
           <svg class="cd-admin-icon" src="../icons/v2/user-minus.svg" width="22" height="22"></svg>
           <span class="cd-row-body"><span class="cd-row-text">{{i18n:people_picker.remove_from_group}}</span></span>
         </button>
+        <!-- G020 6: the bulk remedies (each asks first). -->
+        <button class="cd-row cd-row--admin" type="button" data-if="admin_can_reinvite_removed" data-event-click="admin_reinvite_removed()">
+          <svg class="cd-admin-icon" src="../icons/v2/send.svg" width="22" height="22"></svg>
+          <span class="cd-row-body"><span class="cd-row-text">{{admin_reinvite_removed_label}}</span></span>
+        </button>
+        <button class="cd-row cd-row--admin cd-row--danger" type="button" data-if="admin_can_remove_added" data-event-click="admin_remove_added()">
+          <svg class="cd-admin-icon" src="../icons/v2/user-minus.svg" width="22" height="22"></svg>
+          <span class="cd-row-body"><span class="cd-row-text">{{admin_remove_added_label}}</span></span>
+        </button>
       </div>
     </div>
   </div>

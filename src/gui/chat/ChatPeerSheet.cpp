@@ -224,13 +224,25 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
   }
 
   const ChatGroupSheet sheet = presenter_.GroupSheetOf(group_id);
-  if (sheet.is_owner) {
+  if (sheet.may_rename_for_everyone) {
+    // G017: whoever the preset lets rename (Open: any member; Managed: the owner and admins).
     actions.push_back({
         "rename_for_everyone",
         Tr("chat.group.rename_for_everyone"),
         nullptr,
         [this, thread_id]() { RenameForEveryone(thread_id); },
         "../icons/group.svg",
+    });
+  }
+  if (sheet.is_owner) {
+    actions.push_back({
+        "group_preset",
+        Tr("chat.group.choose_preset"),
+        nullptr,
+        [this, group_id, preset = sheet.preset]() {
+          host_.ChooseGroupPreset(group_id, preset, ui::Vector2i(120, 120));
+        },
+        "../icons/v2/shield.svg",
     });
     for (const auto& [identity, name] : sheet.unreachable_members) {
       actions.push_back({
@@ -254,7 +266,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::GroupActions(const Thread& thread)
           true,
       });
     }
-  } else if (sheet.owner_unreachable) {
+  } else if (sheet.owner_unreachable && !sheet.may_rename_for_everyone) {
     actions.push_back({
         "rename_for_everyone",
         Tr("chat.group.rename_for_everyone"),

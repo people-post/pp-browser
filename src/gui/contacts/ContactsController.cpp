@@ -660,6 +660,20 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("admin_can_set_admin", &admin_can_set_admin_);
     ctor.Bind("admin_is_admin", &admin_is_admin_);
     ctor.Bind("admin_reinvite_note", &admin_reinvite_note_);
+    ctor.Bind("admin_can_remove_added", &admin_can_remove_added_);
+    ctor.Bind("admin_remove_added_label", &admin_remove_added_label_);
+    ctor.Bind("admin_can_reinvite_removed", &admin_can_reinvite_removed_);
+    ctor.Bind("admin_reinvite_removed_label", &admin_reinvite_removed_label_);
+    ctor.BindEventCallback("admin_remove_added", DataEvent<>([this]() {
+                             if (admin_can_remove_added_ && group_admin_.remove_added) {
+                               group_admin_.remove_added();
+                             }
+                           }));
+    ctor.BindEventCallback("admin_reinvite_removed", DataEvent<>([this]() {
+                             if (admin_can_reinvite_removed_ && group_admin_.reinvite_removed) {
+                               group_admin_.reinvite_removed();
+                             }
+                           }));
     ctor.BindEventCallback("admin_reinvite", DataEvent<>([this]() { OnGroupAdminReinvite(); }));
     ctor.BindEventCallback("admin_remove", DataEvent<>([this]() { OnGroupAdminRemove(); }));
     ctor.BindEventCallback("admin_set_admin", DataEvent<>([this]() { OnGroupAdminSetAdmin(); }));
@@ -707,6 +721,10 @@ void ContactsController::DirtyAll() {
   host.Dirty("contacts", "admin_can_set_admin");
   host.Dirty("contacts", "admin_is_admin");
   host.Dirty("contacts", "admin_reinvite_note");
+  host.Dirty("contacts", "admin_can_remove_added");
+  host.Dirty("contacts", "admin_remove_added_label");
+  host.Dirty("contacts", "admin_can_reinvite_removed");
+  host.Dirty("contacts", "admin_reinvite_removed_label");
 }
 
 void ContactsController::SyncLayoutMode() {
@@ -1182,12 +1200,18 @@ void ContactsController::SetGroupAdminCard(GroupAdminCard card) {
   admin_can_set_admin_ = group_admin_.can_set_admin && group_admin_.set_admin;
   admin_is_admin_ = group_admin_.is_admin;
   admin_reinvite_note_ = group_admin_.reinvite_note.c_str();
-  admin_shown_ = admin_can_reinvite_ || admin_can_set_admin_ || admin_can_remove_;
+  admin_can_remove_added_ = static_cast<bool>(group_admin_.remove_added);
+  admin_remove_added_label_ = group_admin_.remove_added_label.c_str();
+  admin_can_reinvite_removed_ = static_cast<bool>(group_admin_.reinvite_removed);
+  admin_reinvite_removed_label_ = group_admin_.reinvite_removed_label.c_str();
+  admin_shown_ = admin_can_reinvite_ || admin_can_set_admin_ || admin_can_remove_ || admin_can_remove_added_ ||
+                 admin_can_reinvite_removed_;
   DirtyAll();
 }
 
 void ContactsController::ClearGroupAdminCard() {
-  if (!admin_shown_ && !group_admin_.reinvite && !group_admin_.set_admin && !group_admin_.remove) {
+  if (!admin_shown_ && !group_admin_.reinvite && !group_admin_.set_admin && !group_admin_.remove &&
+      !group_admin_.remove_added && !group_admin_.reinvite_removed) {
     return;
   }
   group_admin_ = {};
@@ -1197,6 +1221,10 @@ void ContactsController::ClearGroupAdminCard() {
   admin_is_admin_ = false;
   admin_can_remove_ = false;
   admin_reinvite_note_ = "";
+  admin_can_remove_added_ = false;
+  admin_remove_added_label_ = "";
+  admin_can_reinvite_removed_ = false;
+  admin_reinvite_removed_label_ = "";
   DirtyAll();
 }
 

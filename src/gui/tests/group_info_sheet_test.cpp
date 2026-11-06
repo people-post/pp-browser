@@ -68,6 +68,9 @@ public:
   void GroupInfoRestoreName(const std::string& t) override { calls.push_back("restore:" + t); }
   void GroupInfoViewAll(const std::string& t) override { calls.push_back("view_all:" + t); }
   void GroupInfoAddMember(const std::string& t) override { calls.push_back("add:" + t); }
+  void GroupInfoChoosePreset(const std::string& g, const GroupPreset current) override {
+    calls.push_back(std::string("preset:") + g + (current == GroupPreset::Managed ? ":managed" : ":open"));
+  }
   void GroupInfoTapMember(const std::string& t, const std::string& id) override {
     calls.push_back("member:" + t + ":" + id);
   }
@@ -140,7 +143,7 @@ TEST_F(GroupInfoSheetTest, TheViewCountsAndTagsMembers) {
                                [](const GroupInfoMemberRow& row) { return row.identity == "acct:me"; });
   ASSERT_NE(me, view.members.end());
   EXPECT_TRUE(me->self);
-  EXPECT_FALSE(view.show_add_member);
+  EXPECT_TRUE(view.show_add_member) << "Open: a member adds people (G019)";
   EXPECT_FALSE(view.show_dissolve);
 }
 
@@ -169,8 +172,9 @@ TEST_F(GroupInfoSheetTest, OurOwnRowDoesNothing) {
   EXPECT_FALSE(host.Called("member:t1:acct:me"));
 }
 
-TEST_F(GroupInfoSheetTest, AMemberRenamesForThemselvesAndHasNoOwnerButtons) {
+TEST_F(GroupInfoSheetTest, AManagedGroupsMemberRenamesForThemselvesAndHasNoOwnerButtons) {
   GroupInfoFacts facts = Facts(/*owner=*/false);
+  facts.preset = GroupPreset::Managed; // G017: Open would let a member add people and rename for everyone
   facts.has_local_title = true;
   host.screen = BuildGroupInfoScreen(facts);
   ASSERT_TRUE(sheet.Open("t1"));
@@ -183,6 +187,32 @@ TEST_F(GroupInfoSheetTest, AMemberRenamesForThemselvesAndHasNoOwnerButtons) {
   EXPECT_TRUE(host.Called("restore:t1"));
   EXPECT_FALSE(host.Called("add:t1"));
   EXPECT_FALSE(host.Called("dissolve:g1"));
+  EXPECT_TRUE(sheet.View().show_preset) << "everyone reads who can add people";
+  EXPECT_FALSE(sheet.View().preset_editable);
+  sheet.ChoosePreset();
+  EXPECT_FALSE(host.Called("preset:g1:managed")) << "only the owner switches it";
+}
+
+// G017: the owner's preset row opens the choice, with the current value.
+TEST_F(GroupInfoSheetTest, TheOwnerSwitchesWhoCanAddPeople) {
+  GroupInfoFacts facts = Facts(/*owner=*/true);
+  facts.preset = GroupPreset::Managed;
+  host.screen = BuildGroupInfoScreen(facts);
+  ASSERT_TRUE(sheet.Open("t1"));
+  EXPECT_TRUE(sheet.View().preset_editable);
+  EXPECT_EQ(std::string(sheet.View().preset_label.c_str()), Tr("group_info.preset_managed"));
+  sheet.ChoosePreset();
+  EXPECT_TRUE(host.Called("preset:g1:managed"));
+}
+
+// G019: an Open group's member adds people and renames for everyone from the sheet.
+TEST_F(GroupInfoSheetTest, AnOpenGroupsMemberAddsAndRenamesForEveryone) {
+  host.screen = BuildGroupInfoScreen(Facts(/*owner=*/false));
+  ASSERT_TRUE(sheet.Open("t1"));
+  sheet.Rename();
+  sheet.AddMember();
+  EXPECT_TRUE(host.Called("rename_everyone:t1"));
+  EXPECT_TRUE(host.Called("add:t1"));
 }
 
 TEST_F(GroupInfoSheetTest, MuteShowsItsStateAndOffersUnmuteWhenOn) {

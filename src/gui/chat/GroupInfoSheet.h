@@ -42,6 +42,10 @@ struct GroupInfoView {
   bool show_add_member = false;
   bool show_leave = false;
   bool show_dissolve = false;
+  /** G017: "Who can add people and rename" — its value, and whether we (the owner) switch it. */
+  bool show_preset = false;
+  bool preset_editable = false;
+  ui::String preset_label;
   ui::String members_label;
   ui::String view_all_label;
   std::vector<GroupInfoMemberRow> members;
@@ -66,6 +70,8 @@ public:
   virtual void GroupInfoRestoreName(const std::string& thread_id) = 0;
   virtual void GroupInfoViewAll(const std::string& thread_id) = 0;
   virtual void GroupInfoAddMember(const std::string& thread_id) = 0;
+  /** G017, the owner: Everyone (Open) / Admins only (Managed), as an action sheet. */
+  virtual void GroupInfoChoosePreset(const std::string& group_id, GroupPreset current) = 0;
   virtual void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) = 0;
   /** Leave: the chat's close flow (an owner hands the group over or dissolves it). */
   virtual void GroupInfoLeave(const std::string& thread_id) = 0;
@@ -106,6 +112,7 @@ public:
   void RestoreName();
   void ViewAll();
   void AddMember();
+  void ChoosePreset();
   void TapMember(const std::string& identity);
   void Leave();
   void Dissolve();

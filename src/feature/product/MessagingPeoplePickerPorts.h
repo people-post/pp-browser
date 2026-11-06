@@ -46,10 +46,20 @@ struct MessagingPeoplePickerPorts {
   /** A member who is not a contact: the nickname on their kept account card (empty if none). */
   std::function<std::string(const std::string& account_id)> kept_card_nickname;
   std::function<Roe<void>(const std::string& group_id, const std::string& member_identity)> remove_member_by_identity;
+  /** Our role in the group (Owner by its recorded owner); none when we are not in it. */
+  std::function<std::optional<MemberRole>(const std::string& group_id)> local_group_role;
+  /** The group's preset (G017): who may invite and rename. */
+  std::function<GroupPreset(const std::string& group_id)> group_preset;
+  /** G020 6: the accounts `account` removed who are still out. */
+  std::function<std::vector<std::string>(const std::string& group_id, const std::string& account)> accounts_removed_by;
+  /** G020 6 (owner, admins): remove everyone `account` added; how many removals went out. */
+  std::function<Roe<size_t>(const std::string& group_id, const std::string& account)> remove_everyone_added_by;
+  /** G020 6 (owner): invite again everyone `account` removed; how many invites went out. */
+  std::function<Roe<size_t>(const std::string& group_id, const std::string& account)> reinvite_everyone_removed_by;
   /** Owner (G017): make a member an admin, or a member again. */
   std::function<Roe<void>(const std::string& group_id, const std::string& member_identity, MemberRole role)>
       set_member_role;
-  /** Owner: one invite per contact on a worker; `done` on the UI thread. Application fills it from the facade. */
+  /** Whoever may invite (G019): one invite per contact on a worker; `done` on the UI thread. Application fills it from the facade. */
   std::function<void(const std::string& group_id, std::vector<std::string> contact_ids,
                      std::function<void(GroupInviteBatchResult)> done)>
       invite_members_async;

@@ -214,6 +214,14 @@ std::string SystemRml(const TranscriptRow& entry, const TranscriptFacts& facts,
                              : invite->MadeInCall() ? Tr("chat.group_invite.body_call")
                                                     : Tr("chat.group_invite.body");
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
+    if (invite && invite->member_count > 0) {
+      // G019 3 / 4: how many are in it (never who), and what joining shares.
+      const std::string count = std::to_string(invite->member_count);
+      html += "<p class=\"text muted\">" +
+              StructuredTextParser::EscapeText(Tr("chat.group_invite.member_count", {{"count", count}}) + " " +
+                                               Tr("chat.group_invite.shares_profile", {{"count", count}})) +
+              "</p>";
+    }
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
     if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {

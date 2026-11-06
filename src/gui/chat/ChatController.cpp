@@ -4744,6 +4744,31 @@ void ChatController::GroupInfoAddMember(const std::string& thread_id) {
   }
 }
 
+void ChatController::GroupInfoChoosePreset(const std::string& group_id, const GroupPreset current) {
+  ChooseGroupPreset(group_id, current, ui::Vector2i(120, 120)); // an action sheet on the phone
+}
+
+void ChatController::ChooseGroupPreset(const std::string& group_id, const GroupPreset current,
+                                       const ui::Vector2i position) {
+  auto choose = [this, group_id](const GroupPreset preset) {
+    if (auto set = presenter_.SetGroupPreset(group_id, preset); !set) {
+      UserFeedback::Fail(set.error().message);
+    }
+    group_info_.Refresh();
+    NotifySurfaceChanged();
+  };
+  std::vector<ContextMenuAction> actions;
+  for (const GroupPreset preset : {GroupPreset::Open, GroupPreset::Managed}) {
+    ContextMenuAction action;
+    action.id = preset == GroupPreset::Managed ? "group_preset_managed" : "group_preset_open";
+    action.label = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed" : "group_info.preset_open");
+    action.run = [choose, preset]() { choose(preset); };
+    action.selected = preset == current;
+    actions.push_back(std::move(action));
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
 void ChatController::GroupInfoTapMember(const std::string& thread_id, const std::string& identity) {
   if (people_picker_notify_.tap_group_member) {
     people_picker_notify_.tap_group_member(thread_id, identity);

@@ -93,3 +93,53 @@ TEST(GroupMemberTapTest, SomeoneStillInvitedCannotBeRemovedOnlyInvitedAgainNoted
   EXPECT_EQ(tap.admin_actions, (std::vector<Action>{Action::Reinvite}));
   EXPECT_EQ(tap.reinvite_note, GroupReinviteNote::NotJoined);
 }
+
+// G020 6: the bulk remedies on the person's page — "Remove everyone {name} added…" for the owner and admins when they
+// added someone still in, "Re-invite everyone {name} removed…" for the owner when they removed someone still out.
+TEST(GroupMemberTapTest, TheBulkRemediesShowByRoleAndWhenThereIsSomeoneToActOn) {
+  GroupMemberRow bob = Member("c1");
+  bob.added_count = 2;
+  bob.removed_count = 1;
+  EXPECT_EQ(DecideGroupMemberTap(bob, false, MemberRole::Owner).admin_actions,
+            (std::vector<Action>{Action::MakeAdmin, Action::Remove, Action::RemoveEveryoneAdded,
+                                 Action::ReinviteEveryoneRemoved}));
+  EXPECT_EQ(DecideGroupMemberTap(bob, false, MemberRole::Admin).admin_actions,
+            (std::vector<Action>{Action::Remove, Action::RemoveEveryoneAdded}))
+      << "an admin removes; re-inviting whom someone removed is the owner's";
+  EXPECT_TRUE(DecideGroupMemberTap(bob, false, MemberRole::Member).admin_actions.empty()) << "a member removes no one";
+
+  GroupMemberRow quiet = Member("c1");
+  EXPECT_EQ(DecideGroupMemberTap(quiet, false, MemberRole::Owner).admin_actions,
+            (std::vector<Action>{Action::MakeAdmin, Action::Remove}))
+      << "nobody they added or removed: no bulk rows";
+  GroupMemberRow invited = bob;
+  invited.invited = true;
+  for (const Action a : DecideGroupMemberTap(invited, false, MemberRole::Owner).admin_actions) {
+    EXPECT_NE(a, Action::RemoveEveryoneAdded) << "someone not in yet added no one";
+  }
+}
+
+// G019 5 / G020 6: who added each member, by name, and how many each added and removed.
+TEST(GroupMemberTapTest, TheMemberRowsSayWhoAddedThemAndHowManyEachBroughtIn) {
+  std::vector<GroupRosterMember> roster{{.member_identity = "acct:alice", .role = MemberRole::Owner},
+                                        {.member_identity = "acct:bob", .added_by = "acct:alice"},
+                                        {.member_identity = "acct:erin", .added_by = "acct:bob"},
+                                        {.member_identity = "acct:frank", .added_by = "acct:bob"},
+                                        {.member_identity = "acct:gus", .added_by = "acct:gone"}};
+  std::vector<GroupMemberRow> rows;
+  for (const GroupRosterMember& m : roster) {
+    GroupMemberRow row;
+    row.identity = m.member_identity;
+    row.title = m.member_identity.substr(5);
+    rows.push_back(row);
+  }
+  FillGroupAccountability(rows, roster, [](const std::string& account) { return account == "acct:bob" ? 3u : 0u; });
+  EXPECT_TRUE(rows[0].added_by.empty()) << "the group's first members were added by no one";
+  EXPECT_EQ(rows[1].added_by_title, "alice");
+  EXPECT_EQ(rows[1].added_count, 2u);
+  EXPECT_EQ(rows[1].removed_count, 3u);
+  EXPECT_EQ(rows[2].added_by, "acct:bob");
+  EXPECT_EQ(rows[2].added_by_title, "bob");
+  EXPECT_EQ(rows[0].added_count, 1u);
+  EXPECT_FALSE(rows[4].added_by_title.empty()) << "someone who left still shows, by a short id";
+}

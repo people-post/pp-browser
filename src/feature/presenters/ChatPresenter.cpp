@@ -94,10 +94,55 @@ void SortGroupMemberRows(std::vector<GroupMemberRow>& rows) {
   });
 }
 
+void FillGroupAccountability(std::vector<GroupMemberRow>& rows, const std::vector<GroupRosterMember>& roster,
+                             const std::function<size_t(const std::string& account)>& removed_by) {
+  std::unordered_map<std::string, size_t> added;
+  std::unordered_map<std::string, std::string> adder_of;
+  for (const GroupRosterMember& m : roster) {
+    if (!m.added_by.empty() && m.added_by != m.member_identity) {
+      ++added[m.added_by];
+      adder_of[m.member_identity] = m.added_by;
+    }
+  }
+  std::unordered_map<std::string, std::string> titles;
+  for (const GroupMemberRow& row : rows) {
+    titles[row.identity] = row.title;
+  }
+  for (GroupMemberRow& row : rows) {
+    if (auto adder = adder_of.find(row.identity); adder != adder_of.end()) {
+      row.added_by = adder->second;
+      auto title = titles.find(adder->second);
+      row.added_by_title = title != titles.end() ? title->second : ShortRelayId(adder->second);
+    }
+    if (auto count = added.find(row.identity); count != added.end()) {
+      row.added_count = count->second;
+    }
+    row.removed_count = removed_by && !row.invited ? removed_by(row.identity) : 0;
+  }
+}
+
 bool MayRemoveGroupMember(const GroupMemberRow& row, const MemberRole viewer_role, const GroupPreset preset) {
   const MemberRole target = row.is_owner ? MemberRole::Owner : row.is_admin ? MemberRole::Admin : MemberRole::Member;
   return !row.invited && GroupAllows(GroupAction::Remove, viewer_role, preset, target);
 }
+
+namespace {
+
+/** G020 6: the bulk remedies for the person `row` is — remove whom they added, re-invite whom they removed. */
+void AddBulkActions(GroupMemberTap& tap, const GroupMemberRow& row, const MemberRole viewer_role,
+                    const GroupPreset preset) {
+  if (row.invited) {
+    return;
+  }
+  if (row.added_count > 0 && GroupAllows(GroupAction::Remove, viewer_role, preset, MemberRole::Member)) {
+    tap.admin_actions.push_back(GroupMemberAction::RemoveEveryoneAdded);
+  }
+  if (row.removed_count > 0 && viewer_role == MemberRole::Owner) {
+    tap.admin_actions.push_back(GroupMemberAction::ReinviteEveryoneRemoved);
+  }
+}
+
+} // namespace
 
 GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_self, const MemberRole viewer_role,
                                     const GroupPreset preset) {
@@ -110,6 +155,7 @@ GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_sel
     if (MayRemoveGroupMember(row, viewer_role, preset)) {
       tap.admin_actions.push_back(GroupMemberAction::Remove); // an admin removes members (G020)
     }
+    AddBulkActions(tap, row, viewer_role, preset);
     return tap;
   }
   // A member already in the group needs no invite; resend only to someone still waiting or out of reach.
@@ -121,6 +167,7 @@ GroupMemberTap DecideGroupMemberTap(const GroupMemberRow& row, const bool is_sel
     tap.admin_actions.push_back(row.is_admin ? GroupMemberAction::RemoveAdmin : GroupMemberAction::MakeAdmin);
     tap.admin_actions.push_back(GroupMemberAction::Remove);
   }
+  AddBulkActions(tap, row, viewer_role, preset);
   return tap;
 }
 
@@ -148,9 +195,13 @@ GroupInfoScreen BuildGroupInfoScreen(const GroupInfoFacts& facts) {
   screen.show_members = true;
   screen.show_calls = true;
   screen.show_rename = true;
-  screen.rename_for_everyone = facts.is_owner;
+  const MemberRole role = facts.is_owner ? MemberRole::Owner : facts.viewer_role;
+  screen.rename_for_everyone = GroupAllows(GroupAction::Rename, role, facts.preset);
   screen.show_restore_name = facts.has_local_title;
-  screen.show_add_member = facts.is_owner;
+  screen.show_add_member = GroupAllows(GroupAction::Invite, role, facts.preset);
+  screen.show_preset = true;
+  screen.preset_editable = GroupAllows(GroupAction::SetPreset, role, facts.preset);
+  screen.preset = facts.preset;
   screen.show_leave = true;
   screen.show_dissolve = facts.is_owner;
   return screen;
@@ -521,6 +572,12 @@ ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
     sheet.is_owner = *owner;
   }
   sheet.owner_unreachable = facade_->IsOwnerUnreachable(group_id);
+  if (auto preset = facade_->GroupPresetOf(group_id)) {
+    sheet.preset = *preset;
+  }
+  const MemberRole role =
+      sheet.is_owner ? MemberRole::Owner : facade_->LocalGroupRole(group_id).value_or(MemberRole::Member);
+  sheet.may_rename_for_everyone = GroupAllows(GroupAction::Rename, role, sheet.preset);
   if (!sheet.is_owner) {
     return sheet;
   }
@@ -559,6 +616,10 @@ GroupInfoScreen ChatPresenter::GroupInfoOf(const std::string& thread_id) {
   }
   if (auto owner = facade_->IsLocalOwner(facts.group_id)) {
     facts.is_owner = *owner; // the engine decides by the group's recorded owner, as everywhere else
+  }
+  facts.viewer_role = facade_->LocalGroupRole(facts.group_id).value_or(MemberRole::Member);
+  if (auto preset = facade_->GroupPresetOf(facts.group_id)) {
+    facts.preset = *preset;
   }
   if (auto identity = facade_->GetIdentity()) {
     facts.self_identity = identity->account_id;
@@ -608,6 +669,12 @@ std::string GroupActionFailureText(const Error& error) {
   if (error.message.rfind("Only the group owner", 0) == 0) {
     return Tr("chat.group.err.owner_only");
   }
+  for (const char* key :
+       {kGroupInviteNotAllowedError, kGroupInviteRemovedError, kGroupAlreadyMemberError, kGroupRenameNotAllowedError}) {
+    if (error.message == key) {
+      return Tr(key);
+    }
+  }
   return Tr("chat.group.err.generic");
 }
 
@@ -629,6 +696,18 @@ Roe<void> ChatPresenter::RenameGroupShared(const std::string& group_id, const st
   if (auto renamed = facade_->RenameGroupShared(group_id, title); !renamed) {
     log().warning << "RenameGroupShared failed: " << renamed.error().message;
     return Error(GroupActionFailureText(renamed.error()));
+  }
+  facade_->NotifyThreadChanged();
+  return {};
+}
+
+Roe<void> ChatPresenter::SetGroupPreset(const std::string& group_id, const GroupPreset preset) {
+  if (!facade_) {
+    return Error(Tr("chat.group.err.generic"));
+  }
+  if (auto set = facade_->SetGroupPreset(group_id, preset); !set) {
+    log().warning << "SetGroupPreset failed: " << set.error().message;
+    return Error(GroupActionFailureText(set.error()));
   }
   facade_->NotifyThreadChanged();
   return {};

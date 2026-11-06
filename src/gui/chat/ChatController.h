@@ -500,6 +500,9 @@ private:
   void GroupInfoRestoreName(const std::string& thread_id) override;
   void GroupInfoViewAll(const std::string& thread_id) override;
   void GroupInfoAddMember(const std::string& thread_id) override;
+  void GroupInfoChoosePreset(const std::string& group_id, GroupPreset current) override;
+  /** G017, the owner: Everyone (Open) / Admins only (Managed), as a menu at `position` (an action sheet on phones). */
+  void ChooseGroupPreset(const std::string& group_id, GroupPreset current, ui::Vector2i position) override;
   void GroupInfoTapMember(const std::string& thread_id, const std::string& identity) override;
   void GroupInfoLeave(const std::string& thread_id) override;
   void GroupInfoDissolve(const std::string& group_id) override;

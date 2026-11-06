@@ -144,6 +144,7 @@ private:
     GroupMemberRow row;
     /** Ours in the group: Owner when its recorded owner is us, else the roster's (an admin removes members). */
     MemberRole viewer_role = MemberRole::Member;
+    GroupPreset preset = GroupPreset::Open;
     bool is_self = false;
   };
   std::optional<MemberInGroup> FindMemberInGroup(const std::string& thread_id,
@@ -156,6 +157,17 @@ private:
   void RemoveMember(const std::string& group_id, const GroupMemberRow& row, std::function<void()> removed = {});
   /** Owner (G017): make `row` an admin, or a member again; a toast says which, the rows refresh. */
   void SetMemberAdmin(const std::string& group_id, const GroupMemberRow& row, bool admin);
+  /** G020 6: asks, then removes everyone `row` added who is ours to remove (owner, admins). */
+  void RemoveEveryoneAddedBy(const std::string& group_id, const GroupMemberRow& row);
+  /** G020 6: asks, then invites again everyone `row` removed (the owner). */
+  void ReinviteEveryoneRemovedBy(const std::string& group_id, const GroupMemberRow& row);
+  /** Our role and the preset in `group_id`, from the ports (Owner when we are its recorded owner). */
+  MemberRole ViewerRoleIn(const std::string& group_id) const;
+  GroupPreset PresetOf(const std::string& group_id) const;
+  /** How many `account` removed who are still out (G020 6). */
+  size_t RemovedByCount(const std::string& group_id, const std::string& account) const;
+  /** After a change to `group_id`'s roster here: the chat list, and the member list when it shows that group. */
+  void AfterGroupChange(const std::string& group_id);
   void AddMemberAsContact(const GroupMemberRow& row);
   void OnInviteMembers();
   void OnInviteFinished(uint64_t batch, const std::string& group_id, const std::unordered_map<std::string, std::string>& names,
@@ -232,6 +244,8 @@ private:
   bool group_is_owner_ = false;
   /** Our role in the group listed (Owner when we are its recorded owner). */
   MemberRole group_viewer_role_ = MemberRole::Member;
+  /** The listed group's preset (G017): who may invite. */
+  GroupPreset group_preset_ = GroupPreset::Open;
   /** This account, on the member list (its own row is not tappable). */
   std::string local_identity_;
   bool group_sending_ = false;

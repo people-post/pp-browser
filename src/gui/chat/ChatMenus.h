@@ -51,6 +51,8 @@ public:
   virtual void OnForgetMemory() = 0;
   /** "Search": search inside the open chat. */
   virtual void OnOpenSearch() = 0;
+  /** G017, the owner: "Who can add people and rename" — Everyone / Admins only, as a menu at `position`. */
+  virtual void ChooseGroupPreset(const std::string& group_id, GroupPreset current, ui::Vector2i position) = 0;
   virtual void ToggleReaction(const std::string& message_id, const std::string& emoji) = 0;
   /** The emoji the user used last, most recent first (the profile's list; reactions and the emoji picker share it). */
   virtual std::vector<std::string> RecentEmojis() const = 0;

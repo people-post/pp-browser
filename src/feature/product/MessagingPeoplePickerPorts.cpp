@@ -43,6 +43,19 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
   ports.remove_member_by_identity = [&hub](const std::string& group_id, const std::string& member_identity) {
     return hub.Groups().RemoveMemberByIdentity(group_id, member_identity);
   };
+  ports.local_group_role = [&hub](const std::string& group_id) { return hub.Groups().LocalRole(group_id); };
+  ports.group_preset = [&hub](const std::string& group_id) {
+    return hub.Groups().GroupPresetOf(group_id).valueOr(GroupPreset::Open);
+  };
+  ports.accounts_removed_by = [&hub](const std::string& group_id, const std::string& account) {
+    return hub.Groups().AccountsRemovedBy(group_id, account);
+  };
+  ports.remove_everyone_added_by = [&hub](const std::string& group_id, const std::string& account) {
+    return hub.Groups().RemoveEveryoneAddedBy(group_id, account);
+  };
+  ports.reinvite_everyone_removed_by = [&hub](const std::string& group_id, const std::string& account) {
+    return hub.Groups().ReinviteEveryoneRemovedBy(group_id, account);
+  };
   ports.set_member_role = [&hub](const std::string& group_id, const std::string& member_identity,
                                  const MemberRole role) {
     return hub.Groups().SetMemberRole(group_id, member_identity, role);

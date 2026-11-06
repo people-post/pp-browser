@@ -398,6 +398,10 @@ private:
   bool admin_can_set_admin_ = false;
   bool admin_is_admin_ = false;
   ui::String admin_reinvite_note_;
+  bool admin_can_remove_added_ = false;
+  ui::String admin_remove_added_label_;
+  bool admin_can_reinvite_removed_ = false;
+  ui::String admin_reinvite_removed_label_;
   void ClearGroupAdminCard();
   /** The contact the Contacts tab's own page showed when the sheet took the shared detail over (it comes back). */
   std::string detail_under_sheet_;

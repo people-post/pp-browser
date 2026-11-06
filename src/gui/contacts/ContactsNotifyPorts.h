@@ -20,6 +20,11 @@ struct GroupAdminCard {
   std::function<void()> reinvite;
   std::function<void()> set_admin;
   std::function<void(std::function<void()> done)> remove;
+  /** G020 6: "Remove everyone {name} added…" (owner, admins) and "Re-invite everyone {name} removed…" (owner). */
+  std::string remove_added_label;
+  std::function<void()> remove_added;
+  std::string reinvite_removed_label;
+  std::function<void()> reinvite_removed;
 };
 
 /**

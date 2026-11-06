@@ -66,6 +66,17 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
     if (joined->role == MemberRole::Owner && is_self(joined->member_identity)) {
       return Tr("chat.group_event.created");
     }
+    if (!joined->added_by.empty() && joined->added_by != joined->member_identity) {
+      // G019 5: who brought them in ("Alice added Carol").
+      if (is_self(joined->member_identity)) {
+        return FillOnce(Tr("chat.group_event.added_you"), "", "", member_name(joined->added_by));
+      }
+      if (is_self(joined->added_by)) {
+        return FillOnce(Tr("chat.group_event.you_added"), member_name(joined->member_identity), "");
+      }
+      return FillOnce(Tr("chat.group_event.added"), member_name(joined->member_identity), "",
+                      member_name(joined->added_by));
+    }
     return line("chat.group_event.joined", "chat.group_event.you_joined", joined->member_identity);
   }
   case GroupMembershipControlType::MemberRemoved: {
@@ -132,8 +143,11 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
     const std::string name = message.sender_contact_id.empty() ? std::string() : member_name(message.sender_contact_id);
     return name.empty() ? Tr("chat.group.dissolved_line_unnamed") : Tr("chat.group.dissolved_line", {{"name", name}});
   }
-  case GroupMembershipControlType::GroupInviteRefused:
-    return Tr("chat.group_event.full");
+  case GroupMembershipControlType::GroupInviteRefused: {
+    auto refused = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
+    return Tr(refused && refused->reason == kInviteRefusedNotAllowed ? "chat.group_event.not_added"
+                                                                     : "chat.group_event.full");
+  }
   case GroupMembershipControlType::GroupForked:
     // Both threads hold the event; the stored text says which side this is.
     if (message.text == "Forked from group") {
@@ -155,6 +169,7 @@ bool IsStoredGroupEventText(const std::string& preview) {
                                        "Group ownership transferred",
                                        "Ownership transferred; previous owner left",
                                        "The group is full: you were not added",
+                                       "You were not added to the group",
                                        "Group forked",
                                        "Forked from group",
                                        "Invitation declined",

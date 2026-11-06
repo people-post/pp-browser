@@ -14,14 +14,17 @@ TEST(CallGroupStandingsTest, RolesAndPresetsInTheGroupsCall) {
   EXPECT_TRUE(open_member.member);
   EXPECT_TRUE(open_member.may_bring_guest) << "Open: any member brings a guest";
   EXPECT_FALSE(open_member.may_remove_guest);
+  EXPECT_TRUE(open_member.may_invite_to_group) << "Open: any member adds a guest to the group (G019)";
 
   const CallGroupStanding managed_member = CallStandingOfMember(MemberRole::Member, GroupPreset::Managed);
   EXPECT_FALSE(managed_member.may_bring_guest) << "Managed: the owner and admins only";
   EXPECT_FALSE(managed_member.may_remove_guest);
+  EXPECT_FALSE(managed_member.may_invite_to_group);
 
   const CallGroupStanding managed_admin = CallStandingOfMember(MemberRole::Admin, GroupPreset::Managed);
   EXPECT_TRUE(managed_admin.may_bring_guest);
   EXPECT_TRUE(managed_admin.may_remove_guest);
+  EXPECT_TRUE(managed_admin.may_invite_to_group) << "Managed: admins invite";
 
   const CallGroupStanding owner = CallStandingOfMember(MemberRole::Owner, GroupPreset::Managed);
   EXPECT_TRUE(owner.may_bring_guest);
