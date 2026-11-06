@@ -35,4 +35,6 @@ bool PlatformOpenFile(const std::string& path) {
   return PlatformOpenUrl(FilePathToUrl(path));
 }
 
+void SetPlatformOpenFileSoundHooks(std::function<void()> /*begin*/, std::function<void()> /*end*/) {}
+
 } // namespace pbr

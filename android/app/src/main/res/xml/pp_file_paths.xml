@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="capture" path="capture/" />
+    <!-- Attachments opened in another app (MainActivity.openFile): the profile data under <filesDir>/pp-browser. -->
+    <files-path name="files" path="pp-browser/" />
 </paths>

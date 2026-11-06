@@ -21,6 +21,7 @@ import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -32,10 +33,12 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.MimeTypeMap;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -46,6 +49,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -274,6 +278,34 @@ public class MainActivity extends SDLActivity {
     public static String captureScratchDir() {
         final SDLActivity activity = mSingleton;
         return activity == null ? null : PpCameraCapture.captureDir(activity).getAbsolutePath();
+    }
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp): shows a file of the app's own (a downloaded attachment) in
+     * an app that can open it. A file:// address is refused by Android 7+, so it goes as a FileProvider address with
+     * read permission for that one file. False when nothing can open it (or the file is outside the shared folder).
+     */
+    public static boolean openFile(final String path) {
+        final SDLActivity activity = mSingleton;
+        if (activity == null || path == null) {
+            return false;
+        }
+        try {
+            final File file = new File(path);
+            final Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", file);
+            final String name = file.getName();
+            final int dot = name.lastIndexOf('.');
+            final String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            final String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            final Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, mime != null ? mime : "*/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(intent);
+            return true;
+        } catch (Exception e) {  // no app for it (ActivityNotFoundException), or a path the provider does not share
+            Log.w(TAG, "openFile: " + e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */
