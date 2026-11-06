@@ -302,6 +302,7 @@ RelayEnvelope BuildDirectEnvelope(const ThreadMessage& message, const EnvelopeSe
   envelope.route.channel = channel;
   envelope.stream_key = BuildDeviceRelayStreamKey(sender.relay_user_id, route_party, channel, sender.device);
   envelope.recipient_contact_id = route_party;
+  envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   return envelope;
 }
 
@@ -321,6 +322,7 @@ RelayEnvelope BuildGroupMemberEnvelope(const ThreadMessage& message, const Envel
   envelope.route.kind = "group";
   envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender.account_id, recipient, sender.device);
   envelope.recipient_contact_id = route_party;
+  envelope.relay_wake_hint = SanitizeWakeHint(envelope.message_id);
   return envelope;
 }
 

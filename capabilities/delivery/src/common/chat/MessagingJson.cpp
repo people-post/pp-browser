@@ -575,6 +575,9 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   if (record.ttl_s > 0) {
     json.set("ttl_s", record.ttl_s);
   }
+  if (!record.wake_hint.empty()) {
+    json.set("wake_hint", record.wake_hint);
+  }
   return json;
 }
 
@@ -601,6 +604,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.blob_b64 = ::pp::Base64Encode(bytes);
   record.urgent = envelope.relay_wake_urgent;
   record.ttl_s = envelope.relay_ttl_s;
+  record.wake_hint = SanitizeWakeHint(envelope.relay_wake_hint);
   return record;
 }
 

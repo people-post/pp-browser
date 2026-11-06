@@ -342,6 +342,54 @@ TEST(P2pRelayWireTest, HowLongTheRelayKeepsARecordIsAHintOutsideTheEnvelope) {
   EXPECT_EQ(brief.value().blob_b64, kept.value().blob_b64) << "not part of what the recipient gets";
 }
 
+TEST(P2pRelayWireTest, WakeHintIsARelayHintOutsideTheEnvelope) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440002";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.sender_seq = 7;
+  envelope.order_key = 7;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:e2e:1:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto none = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(none));
+  EXPECT_FALSE(RelayWireSendRecordToJson(none.value()).contains("wake_hint"));
+
+  envelope.relay_wake_hint = "call-7f3a-ID";
+  const auto hinted = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(hinted));
+  EXPECT_EQ(RelayWireSendRecordToJson(hinted.value()).getIf<std::string>("wake_hint"),
+            std::optional<std::string>("call-7f3a-ID"));
+  EXPECT_EQ(hinted.value().blob_b64, none.value().blob_b64) << "not part of what the recipient gets";
+
+  envelope.relay_wake_hint = "has space";
+  const auto bad = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(bad));
+  EXPECT_FALSE(RelayWireSendRecordToJson(bad.value()).contains("wake_hint")) << "an invalid hint is dropped";
+}
+
+TEST(P2pRelayWireTest, WakeHintAcceptsOnlyShortPlainIds) {
+  using namespace pbr;
+
+  EXPECT_EQ(SanitizeWakeHint("550e8400-e29b-41d4-a716-446655440000"), "550e8400-e29b-41d4-a716-446655440000");
+  EXPECT_EQ(SanitizeWakeHint(std::string(64, 'a')), std::string(64, 'a'));
+  EXPECT_EQ(SanitizeWakeHint(std::string(65, 'a')), "");
+  EXPECT_EQ(SanitizeWakeHint(""), "");
+  EXPECT_EQ(SanitizeWakeHint("a_b"), "");
+  EXPECT_EQ(SanitizeWakeHint("a:b"), "");
+}
+
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 

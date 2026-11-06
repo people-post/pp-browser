@@ -65,6 +65,7 @@ public:
   Roe<void> Send(const RelayEnvelope& envelope) override {
     std::lock_guard lock(mu_);
     to_.push_back(envelope.recipient_contact_id.value_or(""));
+    hints_.push_back(envelope.relay_wake_hint);
     return {};
   }
   Roe<RelayPollResult> PollInbox(const std::string&, const std::string&) override { return Error("unused"); }
@@ -75,10 +76,15 @@ public:
     std::lock_guard lock(mu_);
     return to_;
   }
+  std::vector<std::string> Hints() {
+    std::lock_guard lock(mu_);
+    return hints_;
+  }
 
 private:
   std::mutex mu_;
   std::vector<std::string> to_;
+  std::vector<std::string> hints_;
 };
 
 class ControlLaneTest : public ::testing::Test {
@@ -190,6 +196,25 @@ TEST_F(ControlLaneTest, ASendToManyReportsEachPeerOnceInOrder) {
   auto to = relay_.To();
   std::sort(to.begin(), to.end());
   EXPECT_EQ(to, (std::vector<std::string>{"relay:bob", "relay:dave"}));
+}
+
+// An urgent invite carries its call_id as the push's wake hint; a quiet signal carries none.
+TEST_F(ControlLaneTest, AnUrgentInviteCarriesItsCallIdAsTheWakeHint) {
+  routes_->NoteAccountRoute("account:bob", "relay:bob");
+  ControlSend invite = To("account:bob");
+  invite.control.payload_json = R"({"control_type":"call_invite","detail":"{\"call_id\":\"call-123-abc\"}"})";
+  invite.urgent = true;
+  ControlSend quiet = invite;
+  quiet.urgent = false;
+  quiet.control.id = util::GenerateUuid();
+  lane_->SendToMany({invite, quiet}, nullptr);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (relay_.To().size() < 2u && std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  auto hints = relay_.Hints();
+  std::sort(hints.begin(), hints.end());
+  EXPECT_EQ(hints, (std::vector<std::string>{"", "call-123-abc"}));
 }
 
 TEST_F(ControlLaneTest, ASendToNobodyIsDoneAtOnce) {
