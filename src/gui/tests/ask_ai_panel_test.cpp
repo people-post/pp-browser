@@ -518,8 +518,7 @@ TEST_F(AskAiPanelTest, ClosingAndTappingTheDotAgainStartsAnotherEmptyPanel) {
   panel_.Send();
   EndSharedTurn("ai-new-1", "answer");
   EXPECT_FALSE(panel_.View().rows.empty());
-  panel_host_.AskAiCloseSheet(0);
-  panel_host_.on_closed();
+  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
   ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
   EXPECT_TRUE(panel_.View().rows.empty());
   panel_.SetDraftForTest("again");
@@ -530,8 +529,7 @@ TEST_F(AskAiPanelTest, ClosingAndTappingTheDotAgainStartsAnotherEmptyPanel) {
 
 TEST_F(AskAiPanelTest, TheChatMenuStillContinuesTheMostRecentChat) {
   ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
-  panel_host_.AskAiCloseSheet(0);
-  panel_host_.on_closed();
+  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
   panel_host_.messages["ai-used-last"] = {{true, "earlier"}};
   ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
   EXPECT_EQ(panel_.View().rows.size(), 1u);
