@@ -41,6 +41,10 @@ const char* SendKey(const SendFailure failure) {
 } // namespace
 
 std::string ReceiveFailureText(const ReceiveFailure reason, const std::string& peer, const std::string& family) {
+  if (reason == ReceiveFailure::GroupInviteNeedsContact) {
+    return Tr("chat.receive_failure.group_invite_needs_contact",
+              {{"peer", peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortRelayId(peer)}});
+  }
   const std::string who = peer.empty() ? Tr("chat.notice.receive.a_peer") : ShortRelayId(peer);
   const std::string why = reason == ReceiveFailure::ApplyFailed && !family.empty()
                               ? Tr("chat.receive_failure.apply_failed_family", {{"family", family}})

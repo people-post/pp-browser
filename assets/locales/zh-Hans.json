@@ -901,6 +901,7 @@
     "chat.receive_failure.unsupported": "不支持的内容",
     "chat.receive_failure.open_chat_failed": "无法打开会话",
     "chat.receive_failure.key_update_failed": "无法应用密钥更新",
+    "chat.receive_failure.group_invite_needs_contact": "{peer} 邀请你进群，但你还没有加对方为联系人。先添加对方，就能看到群邀请了。",
     "chat.receive_failure.membership_update_failed": "无法应用成员变更",
     "chat.receive_failure.reaction_rejected": "无法接受回应",
     "blob.quota.title": "云端空间已满",

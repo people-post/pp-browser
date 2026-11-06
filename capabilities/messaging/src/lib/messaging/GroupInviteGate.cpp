@@ -37,6 +37,11 @@ Roe<bool> GroupInviteGate::AllowsInboundInvite(const GroupInvitePayload& invite)
   return true;
 }
 
+bool GroupInviteGate::RefusesUnknownInviter(const std::string& inviter_identity) const {
+  return inbound_policy_ == GroupInvitePolicy::ContactsOnly && standing_ &&
+         standing_(inviter_identity) == InviterStanding::Unknown;
+}
+
 Roe<bool> GroupInviteGate::CanSendInvite(const MemberRole actor_role) const {
   return RoleHasPermission(actor_role, GroupPermission::kPermInvite);
 }

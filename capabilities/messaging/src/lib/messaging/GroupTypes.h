@@ -50,6 +50,8 @@ enum class GroupMembershipControlType {
 /** G014: a group has at most this many active members (the owner included; pending invites do not count). */
 inline constexpr size_t kMaxGroupMembers = 50;
 /** The error an accept gets when the group is full (G014): the owner then sends `group_invite_refused`. */
+/** An invite from someone the receiver has not added as a contact, under "contacts only". */
+inline constexpr const char kGroupInviteNeedsContactError[] = "Invite refused: the inviter is not a contact";
 inline constexpr const char kGroupFullError[] = "This group is full (50 members)";
 /** `group_invite_refused` reason. */
 inline constexpr const char kInviteRefusedGroupFull[] = "group_full";

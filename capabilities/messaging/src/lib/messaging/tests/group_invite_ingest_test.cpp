@@ -763,6 +763,31 @@ TEST(GroupInviteIngestTest, GroupEnvelopeAfterLocalRemovalIsDropped) {
 
 // An invite is recorded only when its sender is the inviter and we are the invitee, and only from
 // the owner of a group we already know.
+TEST(GroupInviteIngestTest, AnInviteFromANonContactIsToldApartFromOtherMembershipFailures) {
+  PartyHarness invitee("invite_needs_contact", "account:bob", "account:alice");
+  invitee.contacts.known.erase("account:alice");  // Bob has not added Alice
+
+  GroupInvitePayload invite;
+  invite.group_id = "group:hike";
+  invite.group_title = "Weekend hike";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
+  invite.invite_nonce = "nonce-no-contact";
+  invite.roster_epoch = 1;
+  invite.expires_at = util::NowUnixMs() + 86400000;
+  auto detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+
+  const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(
+      invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation: Weekend hike", 1), "account:bob");
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  ASSERT_TRUE(outcome.receive_failure.has_value());
+  EXPECT_EQ(*outcome.receive_failure, ReceiveFailure::GroupInviteNeedsContact);
+  auto pending = invitee.roster.LoadPendingInvite("nonce-no-contact");
+  ASSERT_TRUE(pending);
+  EXPECT_FALSE(pending->has_value());
+}
+
 TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
   PartyHarness bob("invite_bind", "account:bob", "account:alice");
   const auto send = [&bob](GroupInvitePayload invite, uint64_t seq) {

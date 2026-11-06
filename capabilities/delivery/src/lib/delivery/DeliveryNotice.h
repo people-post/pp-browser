@@ -74,6 +74,8 @@ enum class ReceiveFailure {
   KeyUpdateFailed,
   MembershipUpdateFailed,
   ReactionRejected,
+  /** A group invite from someone this device has not added as a contact (the default receiver setting). */
+  GroupInviteNeedsContact,
 };
 
 /** Stable names (stored in a local receive-failure line's payload). */
