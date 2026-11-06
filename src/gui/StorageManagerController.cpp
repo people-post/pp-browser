@@ -9,6 +9,8 @@
 #include "lib/people/AvatarGlyph.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/DataEvent.h"
+#include "lib/voice/VoiceAudioSession.h"
+#include "gui/chat/VoiceBubble.h"
 #include "common/runtime/AppRuntime.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -182,6 +184,9 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
     file.RegisterMember("kind", &FileRow::kind);
     file.RegisterMember("tile_name", &FileRow::tile_name);
     file.RegisterMember("picked", &FileRow::picked);
+    file.RegisterMember("audio", &FileRow::audio);
+    file.RegisterMember("playing", &FileRow::playing);
+    file.RegisterMember("progress", &FileRow::progress);
   }
   ctor.RegisterArray<std::vector<Segment>>();
   ctor.RegisterArray<std::vector<ChatRow>>();
@@ -357,6 +362,7 @@ void StorageManagerController::EnterItems() {
 }
 
 void StorageManagerController::LeaveItems() {
+  StopAudio(); // a sound file plays only while its page shows
   if (selecting_) {
     ClearBackStep(kStepSelect);
   }
@@ -453,9 +459,10 @@ void StorageManagerController::BuildCells() {
                         .detail = MessageTimeLabel(item.timestamp_ms, now).c_str(),
                         .size = FormatByteSize(item.bytes).c_str(),
                         .ext = FileTypeLabel(item).c_str(),
-                        .kind = FileIconKind(item).c_str(),
-                        .tile_name = TileName(file_name).c_str(),
-                        .picked = picked});
+                         .kind = FileIconKind(item).c_str(),
+                         .tile_name = TileName(file_name).c_str(),
+                         .picked = picked,
+                         .audio = IsAudioFileAttachment(item.mime, item.filename) && AudioPlayer() != nullptr});
       continue;
     }
     std::string thumb = commands_.storage.thumbnail_path
@@ -472,6 +479,7 @@ void StorageManagerController::BuildCells() {
   }
   list_empty_ = tab_items_.empty();
   has_more_ = tab_ == "all" ? all_media > shown_ : tab_items_.size() > count;
+  ApplyAudioToRows();
 }
 
 void StorageManagerController::RefreshThumbnails() {
@@ -659,8 +667,127 @@ void StorageManagerController::Back() {
   DirtyAll();
 }
 
+IAudioFilePlayer* StorageManagerController::AudioPlayer() {
+  if (!audio_made_) {
+    audio_made_ = true;
+    audio_ = commands_.storage.make_audio_player ? commands_.storage.make_audio_player()
+                                                 : CreatePlatformAudioFilePlayer();
+  }
+  return audio_.get();
+}
+
+void StorageManagerController::ToggleAudio(const StoredAttachmentItem& item) {
+  const std::string key = item.thread_id + "\n" + HashKey(item.content_hash);
+  if (key == audio_key_) {
+    audio_paused_ ? audio_->Resume() : audio_->Pause();
+    audio_paused_ = !audio_paused_;
+    ApplyAudioToRows();
+    DataModelHost::Instance().Dirty(kModel, "storage_files");
+    return;
+  }
+  if (!commands_.storage.open_item || !opening_.insert(key).second) {
+    return;
+  }
+  commands_.storage.open_item(item, lifetime_.Bind([this, key](std::string path, bool /*needs_confirm*/) {
+    opening_.erase(key);
+    if (path.empty()) {
+      UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+      return;
+    }
+    StopAudio();
+    const uint64_t serial = ++audio_serial_;
+    const auto post = [](std::function<void()> task) {
+      if (AppRuntime::IsRunning()) {
+        AppRuntime::PostUI(std::move(task));
+      } else {
+        task();
+      }
+    };
+    const auto on_tick = lifetime_.Bind([this, serial](const int64_t position_ms, const int64_t duration_ms) {
+      if (serial == audio_serial_ && !audio_key_.empty()) {
+        audio_position_ms_ = position_ms;
+        audio_duration_ms_ = duration_ms;
+        ApplyAudioToRows();
+        DataModelHost::Instance().Dirty(kModel, "storage_files");
+      }
+    });
+    const auto on_end = lifetime_.Bind([this, serial](const VoicePlayEnd end) { OnAudioEnded(serial, end); });
+    AudioFilePlayerCallbacks callbacks;
+    callbacks.on_progress = [post, on_tick](const int64_t position_ms, const int64_t duration_ms) {
+      post([on_tick, position_ms, duration_ms]() { on_tick(position_ms, duration_ms); });
+    };
+    callbacks.on_ended = [post, on_end](const VoicePlayEnd end) { post([on_end, end]() { on_end(end); }); };
+    audio_key_ = key;
+    audio_paused_ = false;
+    audio_position_ms_ = 0;
+    audio_duration_ms_ = 0;
+    if (commands_.storage.audio_session) {
+      commands_.storage.audio_session(true);
+    } else {
+      VoiceAudioSession::ActivateForPlayback(); // loudspeaker, also with the silent switch on
+    }
+    if (!audio_->Play(path, std::move(callbacks))) {
+      OnAudioEnded(serial, VoicePlayEnd::Unplayable);
+      return;
+    }
+    ApplyAudioToRows();
+    DataModelHost::Instance().Dirty(kModel, "storage_files");
+  }));
+}
+
+void StorageManagerController::StopAudio() {
+  if (audio_key_.empty()) {
+    return;
+  }
+  audio_->Stop();
+  OnAudioEnded(audio_serial_, VoicePlayEnd::Stopped);
+}
+
+void StorageManagerController::OnAudioEnded(const uint64_t serial, const VoicePlayEnd end) {
+  if (serial != audio_serial_ || audio_key_.empty()) {
+    return;
+  }
+  audio_key_.clear();
+  audio_paused_ = false;
+  audio_position_ms_ = 0;
+  audio_duration_ms_ = 0;
+  if (end != VoicePlayEnd::Interrupted) { // taken over by another player: the session is that one's now
+    if (commands_.storage.audio_session) {
+      commands_.storage.audio_session(false);
+    } else {
+      VoiceAudioSession::Release();
+    }
+  }
+  if (end == VoicePlayEnd::Unplayable) {
+    UserFeedback::Fail(Tr("chat.attachment.audio_cannot_play"));
+  }
+  ApplyAudioToRows();
+  DataModelHost::Instance().Dirty(kModel, "storage_files");
+}
+
+void StorageManagerController::ApplyAudioToRows() {
+  for (size_t i = 0; i < files_.size() && cells_.size() + i < tab_items_.size(); ++i) {
+    const StoredAttachmentItem& item = tab_items_[cells_.size() + i];
+    FileRow& row = files_[i];
+    const bool mine = !audio_key_.empty() && item.thread_id + "\n" + HashKey(item.content_hash) == audio_key_;
+    row.playing = mine && !audio_paused_;
+    const VoiceBubbleState state{.playing = mine && !audio_paused_, .paused = mine && audio_paused_,
+                                 .position_ms = audio_position_ms_, .duration_ms = audio_duration_ms_};
+    row.progress = mine ? (std::to_string(VoiceBubbleFillPercent(state)) + "%").c_str() : "";
+    if (mine && audio_duration_ms_ > 0) {
+      row.detail = VoiceBubbleTimeText(state, audio_duration_ms_).c_str();
+    } else if (!mine && row.audio) {
+      row.detail = MessageTimeLabel(item.timestamp_ms, WallNowMs()).c_str(); // back to its date
+    }
+  }
+}
+
 void StorageManagerController::OpenItem(const StoredAttachmentItem& item) {
   if (!commands_.storage.open_item) {
+    return;
+  }
+  if (IsAudioFileAttachment(item.mime, item.filename) && AudioPlayer() != nullptr) {
+    ToggleAudio(item); // played here, not in the system's viewer
     return;
   }
   const std::string key = item.thread_id + "\n" + HashKey(item.content_hash);

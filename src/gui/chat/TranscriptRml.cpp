@@ -5,6 +5,7 @@
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
+#include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -336,6 +337,12 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   if (voice.bubble) {
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
+  if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
+      (!local_path.empty() || view.on_demand)) {
+    return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), label,
+                              fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string(),
+                              facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {
     // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:

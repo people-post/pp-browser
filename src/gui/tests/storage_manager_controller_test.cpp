@@ -3,12 +3,14 @@
 #include "gui/StorageManagerController.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/voice/AudioFilePlayer.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -295,6 +297,83 @@ TEST_F(StorageManagerControllerTest, ChatPageListsPicturesVideosAndFilesTogether
   controller_.SetTab("file");
   EXPECT_TRUE(controller_.Cells().empty());
   EXPECT_EQ(controller_.Files().size(), 2u);
+}
+
+namespace {
+
+/** The system's sound-file player as the storage page test drives it. */
+struct PageAudio {
+  std::vector<std::string> played;
+  std::vector<std::string> calls;
+  pbr::AudioFilePlayerCallbacks callbacks;
+};
+
+class FakePagePlayer final : public pbr::IAudioFilePlayer {
+public:
+  explicit FakePagePlayer(std::shared_ptr<PageAudio> audio) : audio_(std::move(audio)) {}
+  bool Play(const std::string& path, pbr::AudioFilePlayerCallbacks callbacks) override {
+    audio_->played.push_back(path);
+    audio_->callbacks = std::move(callbacks);
+    return true;
+  }
+  void Pause() override { audio_->calls.push_back("pause"); }
+  void Resume() override { audio_->calls.push_back("resume"); }
+  void Stop() override { audio_->calls.push_back("stop"); }
+
+private:
+  std::shared_ptr<PageAudio> audio_;
+};
+
+} // namespace
+
+// #111: a sound file's row plays it on the page (not in the system's viewer): play / pause in the badge, the time
+// under the name and a bar; a tap pauses; leaving the page stops it and hands the session back.
+TEST_F(StorageManagerControllerTest, ASoundFileRowPlaysInPlace) {
+  auto audio = std::make_shared<PageAudio>();
+  std::vector<bool> session;
+  commands_.storage.make_audio_player = [audio]() { return std::make_unique<FakePagePlayer>(audio); };
+  commands_.storage.audio_session = [&session](const bool playing) { session.push_back(playing); };
+  std::vector<std::string> opened;
+  commands_.storage.open_item = [&opened](const pbr::StoredAttachmentItem& item,
+                                          std::function<void(std::string, bool)> done) {
+    opened.push_back(item.filename);
+    done("/views/" + item.filename, true);
+  };
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  items_ = {Item("a", 3, "application/pdf", 3 * kMiB), song};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  const auto song_row = [this]() -> const pbr::StorageManagerController::FileRow& {
+    return std::string(controller_.Files()[0].name.c_str()) == "song.mp3" ? controller_.Files()[0]
+                                                                          : controller_.Files()[1];
+  };
+  const int song_index = std::string(controller_.Files()[0].name.c_str()) == "song.mp3" ? 0 : 1;
+  EXPECT_TRUE(song_row().audio);
+  EXPECT_FALSE(controller_.Files()[1 - song_index].audio) << "a PDF still opens in the system's viewer";
+
+  controller_.TapFile(song_index);
+  ASSERT_EQ(audio->played, std::vector<std::string>{"/views/song.mp3"});
+  EXPECT_TRUE(confirm_ == nullptr) << "a sound plays here: no 'open in another app' question";
+  EXPECT_TRUE(song_row().playing);
+  EXPECT_EQ(session, std::vector<bool>{true});
+
+  audio->callbacks.on_progress(60000, 240000);
+  EXPECT_EQ(std::string(song_row().progress.c_str()), "25%");
+  EXPECT_EQ(std::string(song_row().detail.c_str()), "1:00 / 4:00");
+
+  controller_.TapFile(song_index); // pause
+  EXPECT_FALSE(song_row().playing);
+  EXPECT_EQ(std::string(song_row().progress.c_str()), "25%");
+  controller_.TapFile(song_index); // resume
+  EXPECT_TRUE(song_row().playing);
+  EXPECT_EQ(audio->calls, (std::vector<std::string>{"pause", "resume"}));
+
+  ASSERT_TRUE(SystemBack()); // leave the chat's page
+  EXPECT_EQ(audio->calls.back(), "stop");
+  EXPECT_EQ(session, (std::vector<bool>{true, false}));
 }
 
 TEST_F(StorageManagerControllerTest, AllTabListsEveryFileOnTheFirstPageOfManyPictures) {

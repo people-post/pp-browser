@@ -36,6 +36,23 @@ PPAttachmentPreview* g_preview = nil; // the preview that is up (or being presen
 std::function<void()> g_sound_begin;   // SetPlatformOpenFileSoundHooks
 std::function<void()> g_sound_end;
 
+/**
+ * What the next device log needs to tell why QuickLook shows its info page for a file: the extension and type it
+ * sees, whether it says it can preview it, the name's length (not the name), whether the file is a hard link, and its
+ * data-protection class. No folder, no name, no content.
+ */
+std::string DescribeForLog(NSURL* url) {
+  UTType* type = [UTType typeWithFilenameExtension:url.pathExtension];
+  NSDictionary* attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:nil];
+  std::string line = std::string("ext=") + (url.pathExtension.length > 0 ? url.pathExtension.UTF8String : "-") +
+                     " uti=" + (type != nil ? type.identifier.UTF8String : "-") +
+                     " can_preview=" + ([QLPreviewController canPreviewItem:url] ? "1" : "0") +
+                     " name_len=" + std::to_string(url.lastPathComponent.length) +
+                     " links=" + std::to_string([attributes[NSFileReferenceCount] unsignedLongValue]) +
+                     " protection=" + (attributes[NSFileProtectionKey] != nil ? [attributes[NSFileProtectionKey] UTF8String] : "-");
+  return line;
+}
+
 /** Sound or video: QuickLook plays it through the app's own audio session. */
 bool PlaysSound(NSURL* url) {
   UTType* type = [UTType typeWithFilenameExtension:url.pathExtension];
@@ -93,7 +110,8 @@ bool OpenOnMain(const std::string& path) {
           EndPreview(preview);
         }
       });
-      pbr::logging::getLogger("attachment").info << "attachment preview path=quicklook";
+      pbr::logging::getLogger("attachment").info << "attachment preview path=quicklook " << DescribeForLog(url)
+                                                  << " sound_session=" << (preview->sound ? 1 : 0);
       return true;
     }
 
@@ -108,7 +126,8 @@ bool OpenOnMain(const std::string& path) {
       EndPreview(preview);
       return false;
     }
-    pbr::logging::getLogger("attachment").info << "attachment preview path=document-interaction";
+    pbr::logging::getLogger("attachment").info << "attachment preview path=document-interaction "
+                                                << DescribeForLog(url);
     return true;
   }
 }

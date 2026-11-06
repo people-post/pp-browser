@@ -89,6 +89,41 @@ Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::st
   return fields;
 }
 
+/**
+ * The person's cancel (`options.cancelled`): the upload's progress answers "stop" from then on, and whatever result
+ * comes after it becomes "cancelled": the staged copy (if any) is removed and a server copy deleted, so the caller
+ * sends no message. True when it was cancelled already (`finish` has been called).
+ */
+bool HonourCancel(IBlobClient& blob, const std::string& relay_id, ChatAttachmentUploadOptions& options,
+                  OutgoingAttachmentStore* store, const std::string& record_id,
+                  std::function<void(Roe<ChatAttachmentFields>)>& finish) {
+  const auto cancelled = options.cancelled;
+  if (!cancelled) {
+    return false;
+  }
+  options.progress = [cancelled, progress = std::move(options.progress)](const uint64_t done, const uint64_t total) {
+    return !cancelled->load() && (!progress || progress(done, total));
+  };
+  finish = [&blob, relay_id, store, record_id, cancelled, finish = std::move(finish)](Roe<ChatAttachmentFields> result) {
+    if (!cancelled->load()) {
+      finish(std::move(result));
+      return;
+    }
+    if (store != nullptr && !record_id.empty()) {
+      store->Remove(record_id);
+    }
+    if (result) {
+      (void)DeleteUploadedAttachmentCopy(blob, relay_id, result->url); // uploaded before the cancel landed
+    }
+    finish(Error("Attachment send cancelled"));
+  };
+  if (cancelled->load()) {
+    finish(Error("Attachment send cancelled"));
+    return true;
+  }
+  return false;
+}
+
 /** Direct push of a staged attachment when allowed, else (or on failure) the server, streamed from the file. */
 void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmentRecord record,
                    std::shared_ptr<PreparedChatAttachment> in_memory, ChatAttachmentUploadOptions options,
@@ -101,26 +136,8 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
   const std::string relay_id = *relay_user_id;
   OutgoingAttachmentStore* store = options.outgoing;
   const ByteVector dek = options.dek;
-  if (const auto cancelled = options.cancelled) {
-    options.progress = [cancelled, progress = std::move(options.progress)](const uint64_t done, const uint64_t total) {
-      return !cancelled->load() && (!progress || progress(done, total));
-    };
-    finish = [&blob, relay_id, store, record_id = record.id, cancelled,
-              finish = std::move(finish)](Roe<ChatAttachmentFields> result) {
-      if (!cancelled->load()) {
-        finish(std::move(result));
-        return;
-      }
-      store->Remove(record_id);
-      if (result) {
-        (void)DeleteUploadedAttachmentCopy(blob, relay_id, result->url); // uploaded before the cancel landed
-      }
-      finish(Error("Attachment send cancelled"));
-    };
-    if (cancelled->load()) {
-      finish(Error("Attachment send cancelled"));
-      return;
-    }
+  if (HonourCancel(blob, relay_id, options, store, record.id, finish)) {
+    return;
   }
   if (record.delivered) {
     finish(record.fields);
@@ -221,7 +238,8 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
                                const std::string& filename, const std::string& mime,
                                ChatAttachmentUploadOptions options,
                                std::function<void(Roe<ChatAttachmentFields>)> on_done) {
-  auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
+  std::function<void(Roe<ChatAttachmentFields>)> finish = [on_done = std::move(on_done)](
+                                                               Roe<ChatAttachmentFields> value) {
     if (on_done) {
       on_done(std::move(value));
     }
@@ -266,6 +284,10 @@ void UploadChatAttachmentAsync(IBlobClient& blob, IdentityStore& identity, const
     return;
   }
 
+  // Not staged (no profile key yet): the cancel is honoured here too, between the steps (nothing is sent after it).
+  if (HonourCancel(blob, *relay_user_id, options, nullptr, std::string(), finish)) {
+    return;
+  }
   if (AttachmentTriesPeerDirect(options.thread, plaintext_size)) {
     // Shared, not moved into the callback: the push reads the prepared bytes in the same call that builds
     // the callback (a moved-from copy there once made every direct push fail on "invalid content hash").

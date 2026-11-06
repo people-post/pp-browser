@@ -7617,6 +7617,19 @@ input.checkbox {
   margin-left: auto;
 }
 
+/* A sound file (an MP3) played in place: its name over a voice-message player. */
+.chat-audio-file-name {
+  max-width: 280dp;
+  margin-bottom: 6dp;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.message-row-user .chat-audio-file-player {
+  margin-left: 0;
+}
+
 /* A voice message: play / pause, a progress line, the length. */
 .chat-voice-card {
   display: flex;
@@ -12285,6 +12298,25 @@ textarea:composing ~ .prompt-composer-label,
 .storage-file-type-text {
   font-size: 10dp;
   font-weight: bold;
+}
+
+.storage-audio-icon {
+  width: 14dp;
+  height: 14dp;
+  image-color: #ffffff;
+}
+
+.storage-audio-bar {
+  height: 3dp;
+  margin-top: 4dp;
+  border-radius: 2dp;
+  background-color: rgba(127, 127, 127, 0.28);
+}
+
+.storage-audio-fill {
+  height: 3dp;
+  border-radius: 2dp;
+  background-color: #0a84ff;
 }
 
 .storage-more {

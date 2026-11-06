@@ -261,10 +261,18 @@
             <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
                     data-attr-storage-file="file_index"
                     data-event-click="storage_tap_file(file_index)">
-              <div class="storage-file-type"><span class="storage-file-type-text">{{file.ext}}</span></div>
+              <div class="storage-file-type">
+                <span class="storage-file-type-text" data-if="!file.audio">{{file.ext}}</span>
+                <!-- A sound file plays here: play / pause in the badge, the time under the name, a bar. -->
+                <svg class="storage-audio-icon" data-if="file.audio && !file.playing" src="../icons/play.svg" width="14" height="14"></svg>
+                <svg class="storage-audio-icon" data-if="file.audio && file.playing" src="../icons/pause.svg" width="14" height="14"></svg>
+              </div>
               <div class="storage-row-label stack">
                 <p class="settings-toggle-label storage-row-title">{{file.name}}</p>
                 <p class="settings-choice-value-text storage-row-sub">{{file.detail}}</p>
+                <div class="storage-audio-bar" data-if="file.progress != ''">
+                  <div class="storage-audio-fill" data-style-width="file.progress"></div>
+                </div>
               </div>
               <span class="settings-choice-value-text">{{file.size}}</span>
               <div class="storage-check" data-if="storage_selecting" data-class-storage-check--on="file.picked">

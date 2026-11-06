@@ -212,6 +212,7 @@ public class MainActivity extends SDLActivity {
         InboxSyncWorker.schedule(this, true);
         PpLinkBridge.deliver(getIntent());
         PpCameraCapture.clearScratch(this);
+        clearOpenDir(this);
         PpCallNotifications.init(this);
         if (savedInstanceState == null) {
             PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
@@ -280,10 +281,16 @@ public class MainActivity extends SDLActivity {
         return activity == null ? null : PpCameraCapture.captureDir(activity).getAbsolutePath();
     }
 
+    /** The only folder shared with other apps (pp_file_paths.xml "open"): links to attachments being opened. */
+    private static final String OPEN_DIR = "open";
+    /** A link older than this is gone at the next open (the viewer it was for has read it by then). */
+    private static final long OPEN_KEEP_MS = 10 * 60 * 1000;
+
     /**
-     * Called from native (PlatformOpenFile_Android.cpp): shows a file of the app's own (a downloaded attachment) in
-     * an app that can open it. A file:// address is refused by Android 7+, so it goes as a FileProvider address with
-     * read permission for that one file. False when nothing can open it (or the file is outside the shared folder).
+     * Called from native (PlatformOpenFile_Android.cpp): shows a downloaded attachment in an app that can open it.
+     * Only an attachment view under {@code <filesDir>/pp-browser/.../blobs_view/} is accepted (the profile's
+     * databases and keys never are). It is linked (else copied) into {@code <cacheDir>/open/} under its own name and
+     * that one file goes as a FileProvider address with read permission. A file:// address is refused by Android 7+.
      */
     public static boolean openFile(final String path) {
         final SDLActivity activity = mSingleton;
@@ -291,9 +298,43 @@ public class MainActivity extends SDLActivity {
             return false;
         }
         try {
-            final File file = new File(path);
-            final Uri uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", file);
-            final String name = file.getName();
+            final File source = new File(path).getCanonicalFile();
+            final String root = new File(activity.getFilesDir(), "pp-browser").getCanonicalPath() + File.separator;
+            final String views = File.separator + "blobs_view" + File.separator;
+            if (!source.getPath().startsWith(root) || !source.getPath().contains(views) || !source.isFile()) {
+                Log.w(TAG, "openFile: refused, not an attachment view");
+                return false;
+            }
+            final File dir = new File(activity.getCacheDir(), OPEN_DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
+            }
+            final long now = System.currentTimeMillis();
+            final File[] old = dir.listFiles();
+            if (old != null) {
+                for (File f : old) {
+                    if (now - f.lastModified() > OPEN_KEEP_MS) {
+                        f.delete();
+                    }
+                }
+            }
+            final File shared = new File(dir, source.getName());
+            shared.delete();
+            try {
+                android.system.Os.link(source.getPath(), shared.getPath());
+            } catch (Exception linkFailed) {
+                java.nio.file.Files.copy(source.toPath(), shared.toPath());
+            }
+            shared.setLastModified(now);
+            final Uri uri;
+            try {
+                uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "openFile: the share folder is not in the provider's paths");
+                return false;
+            }
+            final String name = shared.getName();
             final int dot = name.lastIndexOf('.');
             final String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
             final String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
@@ -302,10 +343,37 @@ public class MainActivity extends SDLActivity {
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(intent);
             return true;
-        } catch (Exception e) {  // no app for it (ActivityNotFoundException), or a path the provider does not share
+        } catch (Exception e) {  // no app for it (ActivityNotFoundException), an unreadable file
             Log.w(TAG, "openFile: " + e.getClass().getSimpleName());
             return false;
         }
+    }
+
+    /** At start: the links of the last session go (the views they point at were wiped too). */
+    private static void clearOpenDir(Context context) {
+        final File[] files = new File(context.getCacheDir(), OPEN_DIR).listFiles();
+        if (files != null) {
+            for (File f : files) {
+                f.delete();
+            }
+        }
+    }
+
+    /** Called from native (AudioFilePlayer_Android.cpp): plays a sound file attachment in the app. */
+    public static boolean playAudioFile(final String path, final long token) {
+        return PpAudioFilePlayer.play(path, token);
+    }
+
+    public static void pauseAudioFile() {
+        PpAudioFilePlayer.pause();
+    }
+
+    public static void resumeAudioFile() {
+        PpAudioFilePlayer.resume();
+    }
+
+    public static void stopAudioFile() {
+        PpAudioFilePlayer.stop();
     }
 
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */

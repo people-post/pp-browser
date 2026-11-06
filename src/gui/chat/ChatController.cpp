@@ -2417,6 +2417,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_supported = VoiceMessagesSupported();
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
+  facts.audio_files_play = voice_playback_->PlaysFiles();
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
@@ -4132,6 +4133,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>(
             [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
+        ctor.BindEventCallback("play_audio_file", DataEvent<std::string>(
+            [this](const std::string& message_id) { voice_playback_->ToggleFile(message_id); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));

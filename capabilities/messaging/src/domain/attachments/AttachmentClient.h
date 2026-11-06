@@ -45,7 +45,7 @@ struct ChatAttachmentUploadOptions {
   /** Called once the ciphertext is staged, before any network: the record to resume from. The plaintext passed in
    *  may be freed from here: the upload streams from the staged file and does not read it again. */
   std::function<void(const OutgoingAttachmentRecord&)> on_staged;
-  /** Staged sends: set when the person cancels. The upload stops at its next progress step; whatever comes back
+  /** Set when the person cancels (staged or not). The upload stops at its next progress step; whatever comes back
    *  after, the staged copy and any server copy go and the result is an error, so nothing is sent. */
   std::shared_ptr<const std::atomic<bool>> cancelled;
 };
