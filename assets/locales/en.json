@@ -928,7 +928,7 @@
     "chat.receive_failure.unsupported": "unsupported content",
     "chat.receive_failure.open_chat_failed": "couldn't open the chat",
     "chat.receive_failure.key_update_failed": "couldn't apply a key update",
-    "chat.receive_failure.group_invite_needs_contact": "{peer} invited you to a group, but you haven't added them as a contact. Add them first, and you will see the group invite.",
+    "chat.receive_failure.group_invite_needs_contact": "{peer} invited you to a group, but you haven't added them as a contact. Add them first, then ask them to invite you again.",
     "chat.receive_failure.membership_update_failed": "couldn't apply a membership update",
     "chat.receive_failure.reaction_rejected": "couldn't accept a reaction",
     "blob.quota.title": "Cloud space full",
