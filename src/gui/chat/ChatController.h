@@ -481,6 +481,7 @@ private:
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
   std::string AskAiSharedThread(bool create) override;
+  std::string AskAiNewThread() override;
   std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;
   bool AskAiLastIsQuestion(const std::string& thread_id) override;
   QueuedSendOutcome AskAiSendNow(const QueuedAgentSend& item) override { return RunQueuedAgentSend(item); }
