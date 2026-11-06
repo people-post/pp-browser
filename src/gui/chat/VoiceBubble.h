@@ -24,6 +24,9 @@ int VoiceBubbleFillPercent(const VoiceBubbleState& state);
 std::string VoiceBubbleRml(const std::string& message_id, const std::string& click_arg, int64_t duration_ms,
                            const VoiceBubbleState& state);
 
+/** Where along a bar (left edge `left`, `width`, same unit as `x`) a pointer at `x` is, 0..1; 0 for an empty bar. */
+double SeekFractionAt(float x, float left, float width);
+
 /** What a sound file's music card shows besides its controls. */
 struct AudioCardFace {
   std::string title;      // the file's own title, else its name

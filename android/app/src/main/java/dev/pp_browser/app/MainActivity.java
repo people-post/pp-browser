@@ -425,6 +425,10 @@ public class MainActivity extends SDLActivity {
         PpAudioFilePlayer.resume();
     }
 
+    public static void seekAudioFile(final int positionMs) {
+        PpAudioFilePlayer.seek(positionMs);
+    }
+
     public static void stopAudioFile() {
         PpAudioFilePlayer.stop();
     }

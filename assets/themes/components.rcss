@@ -7686,8 +7686,15 @@ input.checkbox {
   margin-right: 10dp;
 }
 
-.chat-audio-controls .chat-voice-track {
+/* The thin bar sits in a 32dp-tall touch area (4dp bar + 14dp above and below): a tap or a drag there seeks. */
+.chat-audio-seek {
   flex: 1;
+  min-width: 0;
+  padding: 14dp 0;
+  cursor: pointer;
+}
+
+.chat-audio-seek .chat-voice-track {
   min-width: 0;
 }
 

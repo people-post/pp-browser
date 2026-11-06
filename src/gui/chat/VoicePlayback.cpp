@@ -8,6 +8,10 @@
 #include "lib/voice/VoiceFile.h"
 
 #include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
+
+#include <algorithm>
 
 namespace pbr {
 
@@ -64,6 +68,7 @@ VoicePlayback::~VoicePlayback() {
 }
 
 void VoicePlayback::Shutdown() {
+  EndSeek(false, std::nullopt);
   alive_->store(false);
   player_.reset();
   if (file_player_) {
@@ -209,6 +214,7 @@ void VoicePlayback::Start(const std::string& message_id, const std::string& path
 }
 
 void VoicePlayback::Stop() {
+  EndSeek(false, std::nullopt);
   resolving_.clear();
   ++resolve_generation_;
   if (player_ && !current_.empty()) {
@@ -253,6 +259,9 @@ void VoicePlayback::OnProgress(const std::string& message_id, const uint64_t ser
   }
   position_ms_ = position_ms;
   duration_ms_ = duration_ms;
+  if (seek_id_ == message_id) {
+    return; // the person is dragging the bar: it follows the finger, not the player
+  }
   Update(message_id);
 }
 
@@ -260,6 +269,7 @@ void VoicePlayback::OnEnded(const std::string& message_id, const uint64_t serial
   if (message_id != current_ || serial != serial_) {
     return; // a clip that was replaced: its bubble was already reset
   }
+  EndSeek(false, std::nullopt);
   const std::string length = duration_ms_ > 0 ? FormatVoiceDuration(duration_ms_) : std::string();
   const bool by_user = stopped_by_user_;
   const bool was_file = current_is_file_;
@@ -300,6 +310,117 @@ void VoicePlayback::OnEnded(const std::string& message_id, const uint64_t serial
     if (task) {
       task();
     }
+  }
+}
+
+bool VoicePlayback::SeekFile(const std::string& message_id, const double fraction) {
+  if (message_id.empty() || message_id != current_ || !current_is_file_ || !file_player_ || duration_ms_ <= 0) {
+    return false;
+  }
+  const double f = std::clamp(fraction, 0.0, 1.0);
+  const int64_t target_ms = static_cast<int64_t>(f * static_cast<double>(duration_ms_));
+  if (auto sought = file_player_->Seek(static_cast<double>(target_ms) / 1000.0); !sought) {
+    Log().warning << "sound attachment: seek refused";
+    return false;
+  }
+  position_ms_ = target_ms;
+  Update(message_id);
+  return true;
+}
+
+std::optional<double> VoicePlayback::PointerFraction(ui::Event& ev) const {
+  ui::Element* track = ports_.element ? ports_.element("vk-" + VoiceElementKey(seek_id_)) : nullptr;
+  if (track == nullptr) {
+    return std::nullopt;
+  }
+  // The pointer and the element are in the same pixels (the window's), so no density is needed.
+  return SeekFractionAt(static_cast<float>(ev.GetParameter<int>("mouse_x", 0)), track->GetAbsoluteLeft(),
+                        track->GetOffsetWidth());
+}
+
+void VoicePlayback::SeekPress(ui::Event& ev) {
+  if (!seek_id_.empty()) {
+    EndSeek(false, std::nullopt);
+  }
+  // The bar belongs to the card playing (or paused); a tap on any other card's bar does nothing.
+  if (current_.empty() || !current_is_file_ || duration_ms_ <= 0 || file_player_ == nullptr) {
+    return;
+  }
+  ui::Element* target = ev.GetTargetElement();
+  ui::ElementDocument* doc = target ? target->GetOwnerDocument() : nullptr;
+  if (doc == nullptr) {
+    return;
+  }
+  seek_id_ = current_;
+  const std::optional<double> fraction = PointerFraction(ev);
+  if (!fraction) {
+    seek_id_.clear();
+    return;
+  }
+  seek_doc_ = doc;
+  doc->AddEventListener(ui::EventId::Mousemove, this, true);
+  doc->AddEventListener(ui::EventId::Mouseup, this, true);
+  ShowSeekPreview(*fraction);
+}
+
+void VoicePlayback::ProcessEvent(ui::Event& event) {
+  if (seek_id_.empty()) {
+    return;
+  }
+  switch (event.GetId()) {
+  case ui::EventId::Mousemove:
+    if (const std::optional<double> fraction = PointerFraction(event)) {
+      ShowSeekPreview(*fraction);
+    }
+    break;
+  case ui::EventId::Mouseup:
+    EndSeek(true, PointerFraction(event));
+    break;
+  default:
+    break;
+  }
+}
+
+void VoicePlayback::OnDetach(ui::Element* element) {
+  if (!removing_ && element != nullptr && element == seek_doc_) {
+    seek_doc_ = nullptr; // the document is being destroyed: forget it without touching it
+    seek_id_.clear();
+  }
+}
+
+void VoicePlayback::ShowSeekPreview(const double fraction) {
+  seek_fraction_ = fraction;
+  VoiceBubbleState shown = State(seek_id_);
+  shown.position_ms = static_cast<int64_t>(fraction * static_cast<double>(shown.duration_ms));
+  if (!ports_.element) {
+    return;
+  }
+  const std::string key = VoiceElementKey(seek_id_);
+  if (ui::Element* fill = ports_.element("vf-" + key)) {
+    fill->SetProperty("width", std::to_string(VoiceBubbleFillPercent(shown)) + "%");
+  }
+  if (ui::Element* time = ports_.element("vt-" + key)) {
+    time->SetInnerRML(VoiceBubbleTimeText(shown, shown.duration_ms));
+  }
+}
+
+void VoicePlayback::EndSeek(const bool apply, const std::optional<double> fraction) {
+  if (seek_id_.empty()) {
+    return;
+  }
+  const std::string id = std::move(seek_id_);
+  seek_id_.clear();
+  if (seek_doc_ != nullptr) {
+    removing_ = true;
+    seek_doc_->RemoveEventListener(ui::EventId::Mousemove, this, true);
+    seek_doc_->RemoveEventListener(ui::EventId::Mouseup, this, true);
+    removing_ = false;
+    seek_doc_ = nullptr;
+  }
+  if (apply) {
+    SeekFile(id, fraction.value_or(seek_fraction_));
+  } else {
+    Update(id); // back to where the player is
   }
 }
 

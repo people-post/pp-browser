@@ -161,6 +161,12 @@ TEST_F(ChatAudioCardLayoutTest, TheCardAndItsTimeStayInsideTheBubbleWidthOnAPhon
     EXPECT_LE(t.right, c.right) << "the time label is inside the card";
     EXPECT_GE(t.top, c.top);
     EXPECT_LE(t.bottom, c.bottom);
+    ui::Element* hit = track->GetParentNode();
+    ASSERT_NE(hit, nullptr);
+    ASSERT_TRUE(hit->IsClassSet("chat-audio-seek"));
+    const Edges area = BorderEdges(hit);
+    EXPECT_GE(area.bottom - area.top, 32.f * context->GetDensityIndependentPixelRatio() - 0.5f)
+        << "the seek touch area is at least 32dp tall";
     const Edges bar = BorderEdges(track);
     EXPECT_GT(bar.right - bar.left, 20.f) << "the bar keeps room";
     EXPECT_LE(bar.right, t.left) << "the bar ends before the time";

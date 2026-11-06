@@ -17,6 +17,7 @@ using namespace voice_test;
 struct FakeFiles {
   std::vector<std::string> played;
   std::vector<std::string> calls; // "pause", "resume", "stop"
+  std::vector<double> seeks; // seconds
   bool refuse = false;
   AudioFilePlayerCallbacks callbacks;
 };
@@ -34,6 +35,10 @@ public:
   }
   void Pause() override { files_->calls.push_back("pause"); }
   void Resume() override { files_->calls.push_back("resume"); }
+  Roe<void> Seek(double seconds) override {
+    files_->seeks.push_back(seconds);
+    return {};
+  }
   void Stop() override {
     files_->calls.push_back("stop");
     files_->callbacks = {};
@@ -219,6 +224,29 @@ TEST(VoicePlayback, ASoundFileTakenOverByAnotherPlayerLeavesTheSession) {
   env.Pump();
   EXPECT_FALSE(env.playback->Active());
   EXPECT_EQ(env.session, std::vector<bool>{true}) << "the other player has the session now";
+}
+
+// Seeking: the bar's release asks the player to jump to fraction x length; only for the sound file playing or paused.
+TEST(VoicePlayback, SeekingASoundFileJumpsToTheFractionOfItsLength) {
+  Env env;
+  env.playback->ToggleFile("f1");
+  env.pending[0](std::string("/views/a.mp3"));
+  EXPECT_FALSE(env.playback->SeekFile("f1", 0.5)) << "the length is not known before the first progress";
+  env.files->callbacks.on_progress(10000, 120000);
+  env.Pump();
+  EXPECT_TRUE(env.playback->SeekFile("f1", 0.5));
+  ASSERT_EQ(env.files->seeks.size(), 1u);
+  EXPECT_DOUBLE_EQ(env.files->seeks[0], 60.0);
+  EXPECT_EQ(env.playback->State("f1").position_ms, 60000);
+  EXPECT_TRUE(env.playback->SeekFile("f1", 7.0)) << "past the end stays inside the file";
+  EXPECT_DOUBLE_EQ(env.files->seeks[1], 120.0);
+  EXPECT_TRUE(env.playback->SeekFile("f1", -1.0));
+  EXPECT_DOUBLE_EQ(env.files->seeks[2], 0.0);
+  env.playback->ToggleFile("f1"); // paused: it still seeks
+  EXPECT_TRUE(env.playback->SeekFile("f1", 0.25));
+  EXPECT_DOUBLE_EQ(env.files->seeks[3], 30.0);
+  EXPECT_FALSE(env.playback->SeekFile("other", 0.5)) << "not the one playing";
+  EXPECT_EQ(env.files->seeks.size(), 4u);
 }
 
 } // namespace

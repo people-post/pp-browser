@@ -29,6 +29,13 @@ std::string VoiceBubbleTimeText(const VoiceBubbleState& state, const int64_t nam
   return position + " / " + FormatVoiceDuration(total);
 }
 
+double SeekFractionAt(const float x, const float left, const float width) {
+  if (width <= 0.f) {
+    return 0.0;
+  }
+  return std::clamp(static_cast<double>(x - left) / static_cast<double>(width), 0.0, 1.0);
+}
+
 int VoiceBubbleFillPercent(const VoiceBubbleState& state) {
   if ((!state.playing && !state.paused) || state.duration_ms <= 0) {
     return 0;
@@ -82,8 +89,10 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
   html += "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
   html += "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
   html += "</button>";
+  // The bar is 4dp thin: its wrapper is the 32dp hit area of a tap or drag (audio_seek_press follows the drag).
+  html += "<div id=\"vk-" + key + "\" class=\"chat-audio-seek\" data-event-mousedown=\"audio_seek_press()\">";
   html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key + "\" class=\"chat-voice-fill\" style=\"width: " +
-          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
+          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div></div>";
   const std::string time = started ? VoiceBubbleTimeText(state, face.duration_ms)
                                    : (face.duration_ms > 0 ? FormatVoiceDuration(face.duration_ms) : std::string());
   html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time chat-audio-time\">" +

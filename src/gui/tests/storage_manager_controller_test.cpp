@@ -318,6 +318,7 @@ public:
   }
   void Pause() override { audio_->calls.push_back("pause"); }
   void Resume() override { audio_->calls.push_back("resume"); }
+  pbr::Roe<void> Seek(double) override { return {}; }
   void Stop() override { audio_->calls.push_back("stop"); }
 
 private:

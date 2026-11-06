@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Error.h"
 #include "lib/voice/VoicePlayer.h"
 
 #include <cstdint>
@@ -29,6 +30,9 @@ public:
   virtual bool Play(const std::string& path, AudioFilePlayerCallbacks callbacks) = 0;
   virtual void Pause() = 0;
   virtual void Resume() = 0;
+  /** Jumps to `seconds` from the start (clamped to the file), playing or paused; progress carries on from there. An
+   *  error when nothing plays or the system refuses. */
+  virtual Roe<void> Seek(double seconds) = 0;
   /** Ends it at once; no `on_ended` follows. */
   virtual void Stop() = 0;
 };
