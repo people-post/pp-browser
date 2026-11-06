@@ -1461,10 +1461,6 @@ input.checkbox:checked {
   background-color: #ff9500;
 }
 
-.session-swipe-btn--rename {
-  background-color: #34c759;
-}
-
 .session-swipe-btn--read {
   background-color: #007aff;
 }
@@ -3198,6 +3194,14 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
+.storage-seg .storage-seg-tab {
+  color: #000000;
+}
+
+.storage-seg .storage-seg-tab--on {
+  background-color: #ffffff;
+}
+
 .storage-tile-frame {
   background-color: #007aff1f;
 }
@@ -3206,27 +3210,9 @@ input.checkbox:checked {
   background-color: #af52de40;
 }
 
-.storage-tile--file .storage-tile-frame {
-  background-color: #ff95001f;
-}
-
-.storage-file-icon {
-  image-color: #ff9500;
-}
-
-.storage-file-ext,
-.storage-file-name {
-  color: #8e8e93;
-}
-
 .storage-tile-size {
   color: #ffffff;
   font-effect: shadow(1dp 1dp #00000099);
-}
-
-.storage-tile--file .storage-tile-size {
-  color: #8e8e93;
-  font-effect: none;
 }
 
 .storage-tile-play {

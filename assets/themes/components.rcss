@@ -12143,8 +12143,12 @@ textarea:composing ~ .prompt-composer-label,
 
 /* Segmented tabs: Photos / Videos / Files. The chosen one takes the themed row surface. */
 .storage-seg {
+  display: flex;
+  flex-direction: row;
   gap: 2dp;
+  min-height: 44dp;
   padding: 2dp;
+  box-sizing: border-box;
   margin-bottom: 12dp;
   border-radius: 9dp;
 }
@@ -12154,7 +12158,7 @@ textarea:composing ~ .prompt-composer-label,
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 0;
+  min-height: 40dp;
   margin: 0;
   padding: 6dp 0;
   border-width: 0;

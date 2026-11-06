@@ -201,16 +201,16 @@
           </div>
           <div class="storage-seg row">
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'all'" data-class-storage-seg-tab--on="storage_tab == 'all'"
+                    data-class-storage-seg-tab--on="storage_tab == 'all'"
                     data-event-click="storage_set_tab('all')">{{storage_tab_all_label}}</button>
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'picture'" data-class-storage-seg-tab--on="storage_tab == 'picture'"
+                    data-class-storage-seg-tab--on="storage_tab == 'picture'"
                     data-event-click="storage_set_tab('picture')">{{storage_tab_picture_label}}</button>
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'video'" data-class-storage-seg-tab--on="storage_tab == 'video'"
+                    data-class-storage-seg-tab--on="storage_tab == 'video'"
                     data-event-click="storage_set_tab('video')">{{storage_tab_video_label}}</button>
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'file'" data-class-storage-seg-tab--on="storage_tab == 'file'"
+                    data-class-storage-seg-tab--on="storage_tab == 'file'"
                     data-event-click="storage_set_tab('file')">{{storage_tab_file_label}}</button>
           </div>
           <!-- Desktop: the selection bar sits above the list (a phone has it pinned at the bottom). -->

@@ -84,6 +84,7 @@ protected:
     ASSERT_TRUE(initialized);
     context = ui::CreateContext(kContext, {kWidth, kHeight});
     ASSERT_NE(context, nullptr);
+    context->ActivateTheme("light", true);  // the colours live under @media (theme: light)
 
     for (int i = 0; i < 7; ++i) {
       items.push_back(Item(i, "image/png", "p" + std::to_string(i) + ".png"));
@@ -106,7 +107,7 @@ protected:
     }));
 
     const std::string rml =
-        "<rml><head><style>" + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
+        "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") + Asset("themes/colors-light.rcss") +
         "</style></head><body style=\"padding: 0;\"><div style=\"width: " + std::to_string(kWidth) +
         "dp; padding: 0 16dp; box-sizing: border-box;\" data-model=\"settings\">" +
         LocalizationService::Instance().LocalizeText(Asset("views/settings_section_storage.rml")) +
@@ -206,6 +207,36 @@ TEST_F(StorageTileLayoutTest, ATallPictureIsPaintedUnderAScissorInsideItsTile) {
     EXPECT_LE(draw.region.Width(), static_cast<int>(kWidth / 3));
   }
   EXPECT_EQ(pictures, 7);
+}
+
+// The row under the chat title (All / Photos / Videos / Files): Kenneth's phone showed only an empty grey bar.
+// Every tab needs text, a real box, a text colour that differs from the bar it sits on, and the chosen tab a filled pill.
+TEST_F(StorageTileLayoutTest, TheCategoryTabsHaveTextAVisibleBoxAndAFilledSelectedPill) {
+  std::vector<ui::Element*> bars = ByClass(document, "storage-seg");
+  ASSERT_EQ(bars.size(), 1u);
+  EXPECT_GE(BoxOf(bars[0]).height, 44.f) << "the row is a 44dp touch target";
+  const std::vector<ui::Element*> tabs = ByClass(bars[0], "storage-seg-tab");
+  ASSERT_EQ(tabs.size(), 4u);
+  const auto same = [](const ui::Colourb a, const ui::Colourb b) {
+    return a.red == b.red && a.green == b.green && a.blue == b.blue && a.alpha == b.alpha;
+  };
+  const ui::Colourb bar_bg = bars[0]->GetComputedValues().background_color();
+  for (size_t i = 0; i < tabs.size(); ++i) {
+    ui::Element* tab = tabs[i];
+    const ui::Colourb text = tab->GetComputedValues().color();
+    const ui::Colourb bg = tab->GetComputedValues().background_color();
+    EXPECT_FALSE(tab->GetInnerRML().empty()) << "tab " << i << " has no label";
+    EXPECT_GE(BoxOf(tab).height, 36.f) << "tab " << i;
+    EXPECT_GT(BoxOf(tab).width, 30.f) << "tab " << i;
+    EXPECT_GT(text.alpha, 200) << "tab " << i << " text is see-through";
+    EXPECT_FALSE(same(text, bg)) << "tab " << i << " text colour equals its own background";
+    EXPECT_FALSE(same(text, bar_bg)) << "tab " << i << " text colour equals the bar";
+    if (i == 0) {  // "All" is the chosen tab on open
+      EXPECT_GT(bg.alpha, 200) << "the chosen tab is a filled pill";
+    } else {
+      EXPECT_EQ(bg.alpha, 0) << "the others sit flat on the bar";
+    }
+  }
 }
 
 } // namespace
