@@ -12,6 +12,8 @@
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupMembershipCodec.h"
+#include "lib/voice/AudioFilePlayer.h"
+#include "lib/voice/VoiceFile.h"
 #include "common/chat/MessagingLimits.h"
 #include "common/Utilities.h"
 
@@ -745,6 +747,21 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
       AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
     view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+  }
+  if (attachment_downloads_ && !view.local_path.empty() && IsAudioFileAttachment(fields->mime, fields->filename) &&
+      !ParseVoiceFileName(fields->filename)) {
+    // A sound file's card: its title, artist and cover from its own tags, read on a worker once its plaintext view
+    // exists (a large one after its first play); the change notification draws them.
+    if (const auto tags = attachment_downloads_->AudioTags(message.thread_id, fields->content_hash)) {
+      view.audio_title = tags->title;
+      view.audio_artist = tags->artist;
+      view.audio_duration_ms = tags->duration_ms;
+      if (AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+        view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+      }
+    } else {
+      attachment_downloads_->RequestAudioTags(message.thread_id, fields->content_hash, view.local_path);
+    }
   }
   return view;
 }

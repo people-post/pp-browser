@@ -326,6 +326,27 @@ private:
 
 } // namespace
 
+// Kenneth 2026-11-06: a sound file's row and tile show its cover (the chat card made it from the file's tags) when
+// there is one; a PDF never gets a picture.
+TEST_F(StorageManagerControllerTest, ASoundFileRowShowsItsCoverWhenThereIsOne) {
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  pbr::StoredAttachmentItem plain = Item("a", 6, "audio/mpeg", 4 * kMiB);
+  plain.filename = "plain.mp3";
+  items_ = {Item("a", 3, "application/pdf", 3 * kMiB), song, plain};
+  thumbnails_["a|5"] = "/views/song.poster.jpg";
+  thumbnails_["a|3"] = "/views/never.jpg";
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Files().size(), 3u);
+  for (const auto& row : controller_.Files()) {
+    const std::string name = row.name.c_str();
+    const std::string cover = row.cover.c_str();
+    EXPECT_EQ(cover, name == "song.mp3" ? "/views/song.poster.jpg" : "") << name;
+  }
+}
+
 // #111: a sound file's row plays it on the page (not in the system's viewer): play / pause in the badge, the time
 // under the name and a bar; a tap pauses; leaving the page stops it and hands the session back.
 TEST_F(StorageManagerControllerTest, ASoundFileRowPlaysInPlace) {

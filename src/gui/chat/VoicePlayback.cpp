@@ -1,6 +1,7 @@
 #include "gui/chat/VoicePlayback.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "common/Logger.h"
 #include "common/runtime/AppRuntime.h"
 #include "gui/chat/VoiceBubble.h"
 #include "lib/voice/VoiceAudioSession.h"
@@ -9,6 +10,15 @@
 #include <ui/dom/Element.h>
 
 namespace pbr {
+
+namespace {
+
+logging::Logger& Log() {
+  static logging::Logger log = logging::getLogger("VoicePlayback");
+  return log;
+}
+
+} // namespace
 
 VoicePlayback::VoicePlayback(VoicePlaybackPorts ports, MediaDeviceArbiter& devices)
     : ports_(std::move(ports)), devices_(devices) {
@@ -113,11 +123,18 @@ void VoicePlayback::ToggleImpl(const std::string& message_id, const bool file) {
     return;
   }
   if (ports_.call_live && ports_.call_live()) {
+    if (file) {
+      Log().info << "sound attachment tap: route=in-app player, not played: a call is live";
+    }
     Say(Tr("chat.voice.play_in_call")); // not during a call
     return;
   }
   if (!ports_.resolve) {
     return;
+  }
+  if (file) {
+    // The next device log tells a tap that never got here from one the player could not start (#111).
+    Log().info << "sound attachment tap: route=in-app player";
   }
   resolving_ = message_id;
   const uint64_t generation = ++resolve_generation_;
@@ -132,6 +149,9 @@ void VoicePlayback::ToggleImpl(const std::string& message_id, const bool file) {
     }
     resolving_.clear();
     if (!path) {
+      if (file) {
+        Log().warning << "sound attachment: no file to play (the stored copy could not be opened)";
+      }
       Say(Tr(file ? "chat.attachment.audio_cannot_play" : "chat.voice.cannot_play"));
       return;
     }
@@ -183,6 +203,7 @@ void VoicePlayback::Start(const std::string& message_id, const std::string& path
   };
   ports_.file_session(true); // loudspeaker, also with the silent switch on (not the earpiece a call left)
   if (!file_player_->Play(path, std::move(callbacks))) {
+    Log().warning << "sound attachment: the player did not start";
     OnEnded(message_id, serial, VoicePlayEnd::Unplayable);
   }
 }

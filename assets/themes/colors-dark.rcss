@@ -2597,6 +2597,28 @@ input.checkbox:checked {
   background-color: #ffffff;
 }
 
+/* A sound file's music card: the cover's placeholder square and note; on an own (blue) card, white 20%. The
+   storage page's play / pause mark over a cover sits on a scrim. */
+.chat-audio-cover {
+  background-color: #7878803d;
+}
+
+.chat-audio-cover-note {
+  image-color: #ebebf599;
+}
+
+.message-row-user .chat-audio-cover {
+  background-color: #ffffff33;
+}
+
+.message-row-user .chat-audio-cover-note {
+  image-color: #ffffff;
+}
+
+.storage-file-type--cover .storage-audio-icon {
+  background-color: #00000099;
+}
+
 .chat-group-name--0 { color: #007aff; }
 .chat-group-name--1 { color: #34c759; }
 .chat-group-name--2 { color: #ff9500; }

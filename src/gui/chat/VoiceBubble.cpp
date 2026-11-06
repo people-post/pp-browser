@@ -56,14 +56,25 @@ std::string VoiceBubbleRml(const std::string& message_id, const std::string& cli
   return html;
 }
 
-std::string AudioFileBubbleRml(const std::string& message_id, const std::string& click_arg, const std::string& name,
-                               const std::string& size_text, const VoiceBubbleState& state) {
+std::string AudioFileBubbleRml(const std::string& message_id, const std::string& click_arg, const AudioCardFace& face,
+                               const VoiceBubbleState& state) {
   const std::string key = VoiceElementKey(message_id);
   const bool running = state.playing && !state.paused;
   const bool started = state.playing || state.paused;
-  std::string html = "<div class=\"chat-card chat-attachment-card chat-audio-file-card\">";
-  html += "<p class=\"text chat-audio-file-name\">" + StructuredTextParser::EscapeText(name) + "</p>";
-  html += "<div class=\"chat-voice-card chat-audio-file-player\">";
+  std::string html = "<div class=\"chat-card chat-attachment-card chat-audio-card\">";
+  html += "<div class=\"chat-audio-head\"><div class=\"chat-audio-cover\">";
+  if (!face.cover_path.empty()) {
+    html += "<img class=\"chat-audio-cover-image\" src=\"" + StructuredTextParser::EscapeText(face.cover_path) + "\"/>";
+  } else {
+    html += "<svg class=\"chat-audio-cover-note\" src=\"../icons/v2/music.svg\" width=\"24\" height=\"24\"></svg>";
+  }
+  html += "</div><div class=\"chat-audio-meta\">";
+  html += "<p class=\"text chat-audio-title\">" + StructuredTextParser::EscapeText(face.title) + "</p>";
+  if (!face.subtitle.empty()) {
+    html += "<p class=\"muted chat-audio-sub\">" + StructuredTextParser::EscapeText(face.subtitle) + "</p>";
+  }
+  html += "</div></div>";
+  html += "<div class=\"chat-audio-controls\">";
   html += "<button type=\"button\" id=\"vp-" + key + "\" class=\"chat-voice-play" +
           std::string(running ? " chat-voice-play--playing" : "") + "\" title=\"" +
           StructuredTextParser::EscapeText(Tr(running ? "chat.voice.pause" : "chat.voice.play")) +
@@ -73,9 +84,10 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
   html += "</button>";
   html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key + "\" class=\"chat-voice-fill\" style=\"width: " +
           std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
-  html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time\">" +
-          StructuredTextParser::EscapeText(started ? VoiceBubbleTimeText(state, state.duration_ms) : size_text) +
-          "</span>";
+  const std::string time = started ? VoiceBubbleTimeText(state, face.duration_ms)
+                                   : (face.duration_ms > 0 ? FormatVoiceDuration(face.duration_ms) : std::string());
+  html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time chat-audio-time\">" +
+          StructuredTextParser::EscapeText(time) + "</span>";
   html += "</div></div>";
   return html;
 }

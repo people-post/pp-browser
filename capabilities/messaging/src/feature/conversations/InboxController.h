@@ -28,8 +28,12 @@ struct TranscriptAttachmentView {
   AttachmentFetchWorkflow::DownloadState state = AttachmentFetchWorkflow::DownloadState::Pending;
   /** The viewable file (empty: none on disk, or a large private video kept off disk until opened). */
   std::string local_path;
-  /** A video's poster frame (empty: none). */
+  /** A video's poster frame, or a sound file's cover from its own tags (empty: none). */
   std::string poster_path;
+  /** A sound file's own title and artist and its length, read on this device from its tags (empty / 0: none). */
+  std::string audio_title;
+  std::string audio_artist;
+  int64_t audio_duration_ms = 0;
   /**
    * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".

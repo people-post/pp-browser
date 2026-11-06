@@ -3,8 +3,49 @@
 // switch on). Objective-C++ without ARC: retain / release by hand. Called on the main (UI) thread.
 #include "lib/voice/AudioFilePlayer.h"
 
+#include "common/Logger.h"
+
+#include <TargetConditionals.h>
+
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
+
+#include <string>
+
+namespace {
+
+pbr::logging::Logger& Log() {
+  static pbr::logging::Logger log = pbr::logging::getLogger("AudioFile");
+  return log;
+}
+
+/** An NSError for the log: domain, code and the system's text (it names no file). */
+std::string DescribeError(NSError* error) {
+  if (error == nil) {
+    return "none";
+  }
+  return std::string(error.domain.UTF8String) + "/" + std::to_string(static_cast<long>(error.code)) + " " +
+         (error.localizedDescription != nil ? error.localizedDescription.UTF8String : "");
+}
+
+/** Where the sound goes, so a log tells a silent play from a failed one: the file's type by its extension, and on
+ *  iOS the audio session's category, output port, volume and whether another app plays. No name, no folder. */
+std::string DescribeForLog(NSURL* url) {
+  std::string line = std::string("ext=") + (url.pathExtension.length > 0 ? url.pathExtension.UTF8String : "-");
+#if TARGET_OS_IPHONE
+  AVAudioSession* session = [AVAudioSession sharedInstance];
+  NSString* out = @"-";
+  if (session.currentRoute.outputs.count > 0) {
+    out = session.currentRoute.outputs.firstObject.portType;
+  }
+  line += std::string(" category=") + session.category.UTF8String + " output=" + out.UTF8String +
+          " volume=" + std::to_string(static_cast<int>(session.outputVolume * 100)) +
+          " other_audio=" + (session.otherAudioPlaying ? "1" : "0");
+#endif
+  return line;
+}
+
+} // namespace
 
 @interface PPAudioFileDelegate : NSObject <AVAudioPlayerDelegate> {
 @public
@@ -14,6 +55,8 @@
 
 @implementation PPAudioFileDelegate
 - (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)player successfully:(BOOL)flag {
+  Log().info << "sound file ended " << (flag ? "at its end" : "undecodable") << " at_ms="
+             << static_cast<int64_t>(player.currentTime * 1000);
   if (ended) {
     auto call = std::move(ended);
     ended = nullptr;
@@ -21,6 +64,7 @@
   }
 }
 - (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer*)player error:(NSError*)error {
+  Log().warning << "sound file decode error: " << DescribeError(error);
   if (ended) {
     auto call = std::move(ended);
     ended = nullptr;
@@ -43,6 +87,8 @@ public:
       NSError* error = nil;
       AVAudioPlayer* player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&error];
       if (player == nil) {
+        Log().warning << "sound file player did not start: cannot open (" << DescribeError(error) << ") "
+                      << DescribeForLog(url);
         return false;
       }
       PPAudioFileDelegate* delegate = [[PPAudioFileDelegate alloc] init];
@@ -57,11 +103,14 @@ public:
       player.delegate = delegate;
       [player prepareToPlay];
       if (![player play]) {
+        Log().warning << "sound file player did not start: play refused " << DescribeForLog(url);
         player.delegate = nil;
         [player release];
         [delegate release];
         return false;
       }
+      Log().info << "sound file playing duration_ms=" << static_cast<int64_t>(player.duration * 1000) << " "
+                 << DescribeForLog(url);
       player_ = player;
       delegate_ = delegate;
       StartTimer(std::move(callbacks.on_progress));

@@ -67,19 +67,20 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
   EXPECT_NE(row.find("voice-4200.ogg"), std::string::npos); // the file row names the file
 }
 
-// #111: an MP3 sent as a file plays in the chat (iOS QuickLook showed only an info page): its name, a play button,
-// a bar and the time line, with the voice ids VoicePlayback updates; the click is the file player's.
+// #111: an MP3 sent as a file plays in the chat (iOS QuickLook showed only an info page): a music card with its name,
+// a play button, a bar and the time line, with the voice ids VoicePlayback updates; the click is the file player's.
 TEST(VoiceBubbleRender, ASoundFilePlaysInPlaceWhereThePlatformHasAPlayer) {
   TranscriptFacts facts = Facts(true);
   facts.audio_files_play = true;
   const std::string rml = Render(Attachment("m7", "Song.mp3", "audio/mpeg", 10800000), facts);
-  EXPECT_NE(rml.find("chat-audio-file-card"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-audio-card"), std::string::npos) << rml;
   EXPECT_NE(rml.find("play_audio_file('m7')"), std::string::npos);
   EXPECT_NE(rml.find("id=\"vp-m7\""), std::string::npos);
   EXPECT_NE(rml.find("id=\"vf-m7\""), std::string::npos);
   EXPECT_NE(rml.find("id=\"vt-m7\""), std::string::npos);
   EXPECT_NE(rml.find("Song.mp3"), std::string::npos);
-  EXPECT_NE(rml.find("10 MB"), std::string::npos) << "before it plays, the time line gives the size";
+  EXPECT_NE(rml.find("10 MB"), std::string::npos) << "the line under the name gives the size";
+  EXPECT_NE(rml.find("chat-audio-cover-note"), std::string::npos) << "no tags read: the music-note placeholder";
   EXPECT_EQ(rml.find("open_attachment("), std::string::npos) << "not handed to the system's viewer";
   // An m4a named file with a generic type plays too; a PDF stays a file row with Open.
   EXPECT_NE(Render(Attachment("m8", "a.m4a", "application/octet-stream", 5000), facts).find("play_audio_file"),
@@ -97,9 +98,33 @@ TEST(VoiceBubbleRender, WithoutAPlayerASoundFileIsAFileRowToOpen) {
   EXPECT_NE(rml.find("open_attachment('m7')"), std::string::npos);
 }
 
+// Kenneth 2026-11-06 ("播放样式很丑"): the card shows the file's own title, artist and cover when its tags name them,
+// its length before it plays, and the name only when the tags say nothing.
+TEST(VoiceBubbleRender, ASoundFileCardShowsItsOwnTitleArtistCoverAndLength) {
+  TranscriptFacts facts = Facts(true);
+  facts.audio_files_play = true;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/x.mp3";
+    view.audio_title = "Moon River";
+    view.audio_artist = "Audrey <Hepburn>";
+    view.audio_duration_ms = 220000;
+    view.poster_path = "/tmp/x.poster.jpg";
+    return view;
+  };
+  const std::string rml = Render(Attachment("m7", "track01.mp3", "audio/mpeg", 3200000), facts);
+  EXPECT_NE(rml.find(">Moon River</p>"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("track01.mp3"), std::string::npos) << "the tag's title replaces the file name";
+  EXPECT_NE(rml.find("Audrey &lt;Hepburn&gt; · 3 MB"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("class=\"chat-audio-cover-image\" src=\"/tmp/x.poster.jpg\""), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("chat-audio-cover-note"), std::string::npos);
+  EXPECT_NE(rml.find(">3:40</span>"), std::string::npos) << "its length before it plays";
+}
+
 TEST(VoiceBubbleRender, APlayingSoundFileKeepsItsProgressOnARedraw) {
   const VoiceBubbleState state{.playing = true, .paused = false, .position_ms = 65000, .duration_ms = 130000};
-  const std::string rml = AudioFileBubbleRml("m7", "m7", "Song.mp3", "10 MB", state);
+  const std::string rml = AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
   EXPECT_NE(rml.find("chat-voice-play--playing"), std::string::npos);
   EXPECT_NE(rml.find("width: 50%"), std::string::npos);
   EXPECT_NE(rml.find("1:05 / 2:10"), std::string::npos);
