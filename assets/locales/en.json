@@ -1162,7 +1162,7 @@
     "call.status.connecting": "Connecting…",
     "call.placeholder.starting_video": "Starting video…",
     "call.status.reconnecting": "Reconnecting…",
-    "call.status.on_hold_local": "Paused and muted. Resumes after your other call.",
+    "call.status.on_hold_local": "This call is on hold and muted",
     "call.status.on_hold_peer": "They stepped away. Please wait.",
     "call.status.on_hold_peer_named": "They stepped away. Please wait.",
     "call.status.connected": "Connected",
