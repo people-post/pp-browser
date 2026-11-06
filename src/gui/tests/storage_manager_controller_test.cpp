@@ -376,6 +376,31 @@ TEST_F(StorageManagerControllerTest, ASoundFileRowPlaysInPlace) {
   EXPECT_EQ(session, (std::vector<bool>{true, false}));
 }
 
+TEST_F(StorageManagerControllerTest, DeletingThePlayingSoundStopsThePlayer) {
+  auto audio = std::make_shared<PageAudio>();
+  std::vector<bool> session;
+  commands_.storage.make_audio_player = [audio]() { return std::make_unique<FakePagePlayer>(audio); };
+  commands_.storage.audio_session = [&session](const bool playing) { session.push_back(playing); };
+  commands_.storage.open_item = [](const pbr::StoredAttachmentItem& item, std::function<void(std::string, bool)> done) {
+    done("/views/" + item.filename, true);
+  };
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  items_ = {song};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.TapFile(0);
+  ASSERT_EQ(audio->played.size(), 1u);
+  controller_.ToggleSelect();
+  controller_.TapFile(0);
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  confirm_(true);
+  EXPECT_EQ(audio->calls.back(), "stop");
+  EXPECT_EQ(session, (std::vector<bool>{true, false}));
+}
+
 TEST_F(StorageManagerControllerTest, AllTabListsEveryFileOnTheFirstPageOfManyPictures) {
   for (int i = 0; i < 70; ++i) {
     items_.push_back(Item("a", i, "image/jpeg", kMiB));

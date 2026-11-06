@@ -70,6 +70,7 @@ public:
   /** `visible`: the storage section shows now (changes are counted again only then). */
   StorageManagerController(const SettingsCommands& commands, const ShellNavigationPorts& navigation,
                            const ShellFeedbackPorts& feedback, std::function<bool()> visible);
+  ~StorageManagerController(); // stops a sound still playing and hands the audio session back
 
   /** Its fields and events in the settings model; also the long press that starts selecting. */
   void Bind(ui::DataModelConstructor& ctor);

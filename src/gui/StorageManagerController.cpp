@@ -257,6 +257,10 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
   }
 }
 
+StorageManagerController::~StorageManagerController() {
+  StopAudio();
+}
+
 void StorageManagerController::Enter() {
   Reset();
   // Once: the hub reads its callback from a worker, so it is not swapped while it may be read.
@@ -866,6 +870,12 @@ void StorageManagerController::PerformDelete(std::vector<StoredAttachmentRef> re
     return;
   }
   busy_ = true; // the page greys and ignores taps until the delete is done
+  for (const StoredAttachmentRef& ref : refs) {
+    if (ref.first + "\n" + HashKey(ref.second) == audio_key_) {
+      StopAudio(); // the playing file is going
+      break;
+    }
+  }
   DirtyAll();
   commands_.storage.delete_local(std::move(refs), lifetime_.Bind([this](const StoredAttachmentDeleteResult& /*r*/) {
     busy_ = false;
@@ -953,6 +963,12 @@ void StorageManagerController::ApplyCounts(Counts counts) {
   usage_ = ComputeStorageUsage(counts.profile_bytes, overview_.totals, counts.message_store_bytes);
   names_ = commands_.storage.chat_names ? commands_.storage.chat_names() : std::vector<StorageChatName>{};
   ready_ = true;
+  if (!audio_key_.empty() &&
+      std::none_of(all_items_.begin(), all_items_.end(), [this](const StoredAttachmentItem& item) {
+        return item.thread_id + "\n" + HashKey(item.content_hash) == audio_key_;
+      })) {
+    StopAudio(); // the rows were rebuilt without the playing file
+  }
   BuildOverviewRows();
   if (page_ == "items") {
     // Same page, fresh data: what is still here stays selected and the shown count stays (no scroll jump).
