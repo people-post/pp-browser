@@ -834,6 +834,7 @@
     "chat.attachment.space_warning": "Cloud space is {percent}% used — please clear some space.",
     "chat.attachment.uploading": "Sending…",
     "chat.attachment.cancelling": "Cancelling…",
+    "chat.attachment.audio_cannot_play": "Can't play this sound file",
     "chat.attachment.cancel_send": "Cancel sending",
     "chat.attachment.sending": "Sending…",
     "chat.attachment.downloading": "Downloading…",

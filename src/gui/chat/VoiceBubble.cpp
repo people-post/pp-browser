@@ -56,4 +56,28 @@ std::string VoiceBubbleRml(const std::string& message_id, const std::string& cli
   return html;
 }
 
+std::string AudioFileBubbleRml(const std::string& message_id, const std::string& click_arg, const std::string& name,
+                               const std::string& size_text, const VoiceBubbleState& state) {
+  const std::string key = VoiceElementKey(message_id);
+  const bool running = state.playing && !state.paused;
+  const bool started = state.playing || state.paused;
+  std::string html = "<div class=\"chat-card chat-attachment-card chat-audio-file-card\">";
+  html += "<p class=\"text chat-audio-file-name\">" + StructuredTextParser::EscapeText(name) + "</p>";
+  html += "<div class=\"chat-voice-card chat-audio-file-player\">";
+  html += "<button type=\"button\" id=\"vp-" + key + "\" class=\"chat-voice-play" +
+          std::string(running ? " chat-voice-play--playing" : "") + "\" title=\"" +
+          StructuredTextParser::EscapeText(Tr(running ? "chat.voice.pause" : "chat.voice.play")) +
+          "\" data-event-click=\"play_audio_file('" + click_arg + "')\">";
+  html += "<svg class=\"chat-voice-icon-play\" src=\"../icons/play.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+  html += "<svg class=\"chat-voice-icon-pause\" src=\"../icons/pause.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>";
+  html += "</button>";
+  html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key + "\" class=\"chat-voice-fill\" style=\"width: " +
+          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
+  html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time\">" +
+          StructuredTextParser::EscapeText(started ? VoiceBubbleTimeText(state, state.duration_ms) : size_text) +
+          "</span>";
+  html += "</div></div>";
+  return html;
+}
+
 } // namespace pbr

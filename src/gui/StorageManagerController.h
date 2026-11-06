@@ -5,6 +5,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "common/Lifetime.h"
+#include "lib/voice/AudioFilePlayer.h"
 
 #include <ui/base/Types.h>
 
@@ -58,6 +59,10 @@ public:
     ui::String size;
     ui::String ext;
     bool picked = false;
+    /** A sound file: a tap plays it here (play / pause in the badge, the time in `detail`, the bar). */
+    bool audio = false;
+    bool playing = false;
+    ui::String progress; // "37%" while it plays or is paused, "" otherwise
   };
 
   /** `visible`: the storage section shows now (changes are counted again only then). */
@@ -119,6 +124,13 @@ private:
   void EnterSelect();
   void ExitSelect(bool clear_back_step);
   void OpenItem(const StoredAttachmentItem& item);
+  /** A sound file's row was tapped: play, pause or resume it in place (one at a time; it stops when the page goes). */
+  void ToggleAudio(const StoredAttachmentItem& item);
+  void StopAudio();
+  void OnAudioEnded(uint64_t serial, VoicePlayEnd end);
+  /** Puts the playing state into the file rows (after a rebuild, a tick, an end). */
+  void ApplyAudioToRows();
+  IAudioFilePlayer* AudioPlayer();
   void PerformDelete(std::vector<StoredAttachmentRef> refs);
   void PushBackStep(const char* id, std::function<void()> commit);
   void ClearBackStep(const char* id);
@@ -159,6 +171,14 @@ private:
   bool busy_ = false;
   std::optional<uint64_t> releasable_;
   std::set<std::string> opening_;
+  // The sound file playing on the page.
+  std::unique_ptr<IAudioFilePlayer> audio_;
+  bool audio_made_ = false;
+  std::string audio_key_;  // thread + hash of the file playing or paused ("" none)
+  bool audio_paused_ = false;
+  int64_t audio_position_ms_ = 0;
+  int64_t audio_duration_ms_ = 0;
+  uint64_t audio_serial_ = 0;
 
   // Bound fields.
   bool ready_ = false;

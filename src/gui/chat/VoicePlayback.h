@@ -2,6 +2,7 @@
 
 #include "feature/conversations/InboxController.h"
 #include "lib/media/MediaDeviceArbiter.h"
+#include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoicePlayer.h"
 
 #include <atomic>
@@ -31,6 +32,10 @@ struct VoicePlaybackPorts {
   std::function<bool()> call_live;
   /** Default: the app's UI queue. */
   std::function<void(std::function<void()>)> post_ui;
+  /** The system's player for sound files sent as attachments. Default: CreatePlatformAudioFilePlayer (null: none). */
+  std::function<std::unique_ptr<IAudioFilePlayer>()> make_file_player;
+  /** Puts the audio session in playback before a sound file plays / hands it back after. Default: VoiceAudioSession. */
+  std::function<void(bool playing)> file_session;
 };
 
 /**
@@ -45,6 +50,13 @@ public:
 
   /** The play / pause button of `message_id` was tapped. */
   void Toggle(const std::string& message_id);
+  /**
+   * The same for a sound file sent as an attachment (an MP3): played by the system's player in place, one at a time
+   * with the voice messages, on the loudspeaker. Only when PlaysFiles().
+   */
+  void ToggleFile(const std::string& message_id);
+  /** This platform plays sound files in the app (else they open in the system's app). */
+  bool PlaysFiles() const { return file_player_ != nullptr; }
   /** What the bubble of `message_id` shows now (for a redraw of the transcript). */
   VoiceBubbleState State(const std::string& message_id) const;
   /** Stops the clip (a tap that is still waiting for its file is forgotten too). Never waits. */
@@ -58,7 +70,10 @@ public:
   void Shutdown();
 
 private:
-  void Start(const std::string& message_id, const std::string& path);
+  void ToggleImpl(const std::string& message_id, bool file);
+  void Start(const std::string& message_id, const std::string& path, bool file);
+  /** Ends the sound file playing (no report comes from the system's player after a Stop). */
+  void StopFile();
   void OnProgress(const std::string& message_id, uint64_t serial, int64_t position_ms, int64_t duration_ms);
   void OnEnded(const std::string& message_id, uint64_t serial, VoicePlayEnd end);
   /** `idle_text`: what the time line says once the bubble is not playing (its length), when known. */
@@ -69,6 +84,9 @@ private:
   MediaDeviceArbiter& devices_;
   std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
   std::unique_ptr<VoicePlayer> player_;
+  std::unique_ptr<IAudioFilePlayer> file_player_;
+  bool current_is_file_ = false; // `current_` plays through `file_player_`
+  uint64_t file_serial_ = 0;     // serials of file plays: kept apart from the voice player's
   std::string current_;   // the clip started or being started
   std::string resolving_; // a tap is waiting for its file
   uint64_t resolve_generation_ = 0;

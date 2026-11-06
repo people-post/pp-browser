@@ -76,6 +76,8 @@ struct TranscriptFacts {
   bool voice_supported = false;
   int voice_max_seconds = 120;
   std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
+  /** Sound files (an MP3 sent as a file) play in place with the voice controls, not in the system's viewer. */
+  bool audio_files_play = false;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */

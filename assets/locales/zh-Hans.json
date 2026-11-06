@@ -812,6 +812,7 @@
     "chat.attachment.space_warning": "云端空间已用 {percent}%，请注意清理。",
     "chat.attachment.uploading": "正在发送…",
     "chat.attachment.cancelling": "正在取消…",
+    "chat.attachment.audio_cannot_play": "无法播放这个音频",
     "chat.attachment.cancel_send": "取消发送",
     "chat.attachment.sending": "正在发送…",
     "chat.attachment.downloading": "正在下载…",

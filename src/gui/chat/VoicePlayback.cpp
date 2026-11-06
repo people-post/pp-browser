@@ -3,6 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "common/runtime/AppRuntime.h"
 #include "gui/chat/VoiceBubble.h"
+#include "lib/voice/VoiceAudioSession.h"
 #include "lib/voice/VoiceFile.h"
 
 #include <ui/dom/Element.h>
@@ -36,6 +37,16 @@ VoicePlayback::VoicePlayback(VoicePlaybackPorts ports, MediaDeviceArbiter& devic
   };
   player_ = std::make_unique<VoicePlayer>([this]() { return CreateArbiterVoicePlaybackSink(devices_); },
                                           std::move(callbacks));
+  file_player_ = ports_.make_file_player ? ports_.make_file_player() : CreatePlatformAudioFilePlayer();
+  if (!ports_.file_session) {
+    ports_.file_session = [](const bool playing) {
+      if (playing) {
+        VoiceAudioSession::ActivateForPlayback();
+      } else {
+        VoiceAudioSession::Release();
+      }
+    };
+  }
 }
 
 VoicePlayback::~VoicePlayback() {
@@ -45,6 +56,17 @@ VoicePlayback::~VoicePlayback() {
 void VoicePlayback::Shutdown() {
   alive_->store(false);
   player_.reset();
+  if (file_player_) {
+    StopFile();
+    file_player_.reset();
+  }
+}
+
+void VoicePlayback::StopFile() {
+  if (file_player_ && current_is_file_ && !current_.empty()) {
+    file_player_->Stop();
+    ports_.file_session(false);
+  }
 }
 
 void VoicePlayback::Say(const std::string& text) const {
@@ -66,15 +88,25 @@ VoiceBubbleState VoicePlayback::State(const std::string& message_id) const {
 }
 
 void VoicePlayback::Toggle(const std::string& message_id) {
+  ToggleImpl(message_id, /*file=*/false);
+}
+
+void VoicePlayback::ToggleFile(const std::string& message_id) {
+  if (file_player_) {
+    ToggleImpl(message_id, /*file=*/true);
+  }
+}
+
+void VoicePlayback::ToggleImpl(const std::string& message_id, const bool file) {
   if (message_id.empty() || !player_ || message_id == resolving_) {
     return;
   }
   if (message_id == current_) {
     if (paused_) {
-      player_->Resume();
+      current_is_file_ ? file_player_->Resume() : player_->Resume();
       paused_ = false;
     } else {
-      player_->Pause();
+      current_is_file_ ? file_player_->Pause() : player_->Pause();
       paused_ = true;
     }
     Update(message_id);
@@ -90,7 +122,7 @@ void VoicePlayback::Toggle(const std::string& message_id) {
   resolving_ = message_id;
   const uint64_t generation = ++resolve_generation_;
   const auto alive = alive_;
-  ports_.resolve(message_id, [this, alive, message_id, generation](std::optional<std::string> path) {
+  ports_.resolve(message_id, [this, alive, message_id, generation, file](std::optional<std::string> path) {
     if (!alive->load()) {
       return;
     }
@@ -100,16 +132,23 @@ void VoicePlayback::Toggle(const std::string& message_id) {
     }
     resolving_.clear();
     if (!path) {
-      Say(Tr("chat.voice.cannot_play"));
+      Say(Tr(file ? "chat.attachment.audio_cannot_play" : "chat.voice.cannot_play"));
       return;
     }
-    Start(message_id, *path);
+    Start(message_id, *path, file);
   });
 }
 
-void VoicePlayback::Start(const std::string& message_id, const std::string& path) {
+void VoicePlayback::Start(const std::string& message_id, const std::string& path, const bool file) {
   const std::string before = current_;
   const std::string before_length = duration_ms_ > 0 ? FormatVoiceDuration(duration_ms_) : std::string();
+  // One at a time across both players: a file playing goes now; a voice clip is replaced by the voice player itself,
+  // or stopped here when a file takes over (its late end is ignored: another id is current by then).
+  StopFile();
+  if (file && !before.empty() && !current_is_file_) {
+    player_->Stop();
+  }
+  current_is_file_ = file;
   current_ = message_id;
   stopped_by_user_ = false;
   paused_ = false;
@@ -119,7 +158,33 @@ void VoicePlayback::Start(const std::string& message_id, const std::string& path
     Update(before, before_length); // the clip it replaces goes back to idle
   }
   Update(message_id);
-  serial_ = player_->Play(message_id, path, ports_.max_seconds ? ports_.max_seconds() : 120);
+  if (!file) {
+    serial_ = player_->Play(message_id, path, ports_.max_seconds ? ports_.max_seconds() : 120);
+    return;
+  }
+  serial_ = (uint64_t{1} << 63) | ++file_serial_;
+  const uint64_t serial = serial_;
+  const auto alive = alive_;
+  const auto post = ports_.post_ui;
+  AudioFilePlayerCallbacks callbacks;
+  callbacks.on_progress = [this, alive, post, message_id, serial](const int64_t position_ms, const int64_t duration_ms) {
+    post([this, alive, message_id, serial, position_ms, duration_ms]() {
+      if (alive->load()) {
+        OnProgress(message_id, serial, position_ms, duration_ms);
+      }
+    });
+  };
+  callbacks.on_ended = [this, alive, post, message_id, serial](const VoicePlayEnd end) {
+    post([this, alive, message_id, serial, end]() {
+      if (alive->load()) {
+        OnEnded(message_id, serial, end);
+      }
+    });
+  };
+  ports_.file_session(true); // loudspeaker, also with the silent switch on (not the earpiece a call left)
+  if (!file_player_->Play(path, std::move(callbacks))) {
+    OnEnded(message_id, serial, VoicePlayEnd::Unplayable);
+  }
 }
 
 void VoicePlayback::Stop() {
@@ -127,6 +192,18 @@ void VoicePlayback::Stop() {
   ++resolve_generation_;
   if (player_ && !current_.empty()) {
     stopped_by_user_ = true;
+    if (current_is_file_) {
+      // The system's player says nothing after a Stop: its end is reported here, on the next UI turn (after a
+      // StopThen has queued what waits for it).
+      StopFile();
+      const auto alive = alive_;
+      ports_.post_ui([this, alive, id = current_, serial = serial_]() {
+        if (alive->load()) {
+          OnEnded(id, serial, VoicePlayEnd::Stopped);
+        }
+      });
+      return;
+    }
     player_->Stop();
   }
 }
@@ -163,6 +240,13 @@ void VoicePlayback::OnEnded(const std::string& message_id, const uint64_t serial
   }
   const std::string length = duration_ms_ > 0 ? FormatVoiceDuration(duration_ms_) : std::string();
   const bool by_user = stopped_by_user_;
+  const bool was_file = current_is_file_;
+  if (current_is_file_) {
+    if (end != VoicePlayEnd::Interrupted) {
+      ports_.file_session(false); // taken over by another player: the session is that one's now
+    }
+    current_is_file_ = false;
+  }
   current_.clear();
   serial_ = 0;
   stopped_by_user_ = false;
@@ -174,7 +258,7 @@ void VoicePlayback::OnEnded(const std::string& message_id, const uint64_t serial
   if (!by_user) {
     switch (end) {
     case VoicePlayEnd::Unplayable:
-      Say(Tr("chat.voice.cannot_play"));
+      Say(Tr(was_file ? "chat.attachment.audio_cannot_play" : "chat.voice.cannot_play"));
       break;
     case VoicePlayEnd::Busy:
       Say(Tr("chat.voice.play_in_call"));

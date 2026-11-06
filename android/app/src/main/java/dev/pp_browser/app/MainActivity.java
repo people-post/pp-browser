@@ -308,6 +308,23 @@ public class MainActivity extends SDLActivity {
         }
     }
 
+    /** Called from native (AudioFilePlayer_Android.cpp): plays a sound file attachment in the app. */
+    public static boolean playAudioFile(final String path, final long token) {
+        return PpAudioFilePlayer.play(path, token);
+    }
+
+    public static void pauseAudioFile() {
+        PpAudioFilePlayer.pause();
+    }
+
+    public static void resumeAudioFile() {
+        PpAudioFilePlayer.resume();
+    }
+
+    public static void stopAudioFile() {
+        PpAudioFilePlayer.stop();
+    }
+
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {

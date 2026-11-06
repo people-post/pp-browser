@@ -5,11 +5,14 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+class IAudioFilePlayer;
 
 /** A chat's name as the chat list shows it, and the seed of its letter avatar. */
 struct StorageChatName {
@@ -47,6 +50,10 @@ struct StorageManagerPorts {
    */
   std::function<void(const StoredAttachmentItem& item, std::function<void(std::string path, bool needs_confirm)> done)>
       open_item;
+  /** The player a sound file plays through on the page (tests: a fake). Default: the platform's; null: none. */
+  std::function<std::unique_ptr<IAudioFilePlayer>()> make_audio_player;
+  /** Audio session for it (true: playing, false: handed back). Default: VoiceAudioSession. */
+  std::function<void(bool playing)> audio_session;
   /** Calls `on_changed` on the UI thread whenever an attachment arrives or goes. */
   std::function<void(std::function<void()> on_changed)> set_on_changed;
   /** Calls `on_ready` on the UI thread when a thumbnail asked for by request_thumbnail is made. */
