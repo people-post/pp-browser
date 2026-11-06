@@ -181,5 +181,31 @@ TEST_F(ChatAudioCardLayoutTest, TheCardAndItsTimeStayInsideTheBubbleWidthOnAPhon
   EXPECT_LE(BorderEdges(text).right, BorderEdges(time).right + 0.5f) << "\"59:58 / 59:59\" fits its label";
 }
 
+// The drag knob: 14dp round, centred on the end of the fill; white on an own (blue) card, dark on a received one.
+TEST_F(ChatAudioCardLayoutTest, TheKnobIsARoundSpotAtTheEndOfTheFillWhiteWhenOwnDarkWhenReceived) {
+  const VoiceBubbleState half{.playing = true, .paused = false, .position_ms = 50000, .duration_ms = 100000};
+  Show({Row("a", "message-row-peer", AudioFileBubbleRml("a", "a", AudioCardFace{.title = "a.mp3"}, half)),
+        Row("b", "message-row-user", AudioFileBubbleRml("b", "b", AudioCardFace{.title = "b.mp3"}, half))});
+  context->ActivateTheme("light", true);  // the colours live under @media (theme: light)
+  context->Update();
+  ui::Element* received = Nth("chat-audio-knob", 0);
+  ui::Element* own = Nth("chat-audio-knob", 1);
+  ASSERT_NE(received, nullptr);
+  ASSERT_NE(own, nullptr);
+  const float dp = context->GetDensityIndependentPixelRatio();
+  for (size_t i = 0; i < 2; ++i) {
+    ui::Element* knob = Nth("chat-audio-knob", i);
+    const Edges k = BorderEdges(knob);
+    EXPECT_NEAR(k.right - k.left, 14.f * dp, 0.5f);
+    EXPECT_NEAR(k.bottom - k.top, 14.f * dp, 0.5f);
+    const Edges fill = BorderEdges(Nth("chat-voice-fill", i));
+    EXPECT_NEAR((k.left + k.right) / 2.f, fill.right, 0.5f) << "centred on the end of the fill";
+    const Edges track = BorderEdges(Nth("chat-voice-track", i));
+    EXPECT_NEAR((k.top + k.bottom) / 2.f, (track.top + track.bottom) / 2.f, 0.5f) << "centred on the bar";
+  }
+  EXPECT_EQ(own->GetProperty("background-color")->ToString(), "#ffffff");
+  EXPECT_EQ(received->GetProperty("background-color")->ToString(), "#1f2937");
+}
+
 } // namespace
 } // namespace pbr

@@ -87,6 +87,12 @@ TEST(VoiceBubbleRender, ASoundFilePlaysInPlaceWhereThePlatformHasAPlayer) {
   ASSERT_NE(seek, std::string::npos) << rml;
   EXPECT_LT(seek, rml.find("class=\"chat-voice-track\"")) << "the track is inside the touch area";
   EXPECT_LT(rml.find("class=\"chat-voice-track\""), rml.find("id=\"vf-m7\""));
+  // The drag knob sits in the wrapper beside the (clipping) track, at the fill's end; own / received colours are
+  // keyed off the row in the theme.
+  const size_t knob = rml.find("id=\"vn-m7\" class=\"chat-audio-knob\" style=\"left: 0%;\"");
+  ASSERT_NE(knob, std::string::npos) << rml;
+  EXPECT_GT(knob, rml.find("id=\"vf-m7\""));
+  EXPECT_LT(knob, rml.find("class=\"chat-voice-time"));
   // An m4a named file with a generic type plays too; a PDF stays a file row with Open.
   EXPECT_NE(Render(Attachment("m8", "a.m4a", "application/octet-stream", 5000), facts).find("play_audio_file"),
             std::string::npos);
