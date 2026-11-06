@@ -7,9 +7,9 @@ C0 ── C1 ── C2 ── C3 ── C4 ── C5            (base group chat
                  └── R (signed roster + member check, G010–G013 — landed)
                        └── M (mentions, G015: m1 ── m2 ── m3 / m4 ── m5 ── m6)
 L (size limit, G014) — independent
-O (open groups, G017–G023): o1 ── o2 ── o4 ── o5
-                            o3 (any time; needs only today's create-group path)
-                            o6 (privacy; o6c with o2's ops in the plaintext)
+O (open groups, G017–G022, calls V062): o1 ── o2 ── o4 ── o5
+                                         o3 (any time; needs only today's create-group path)
+                                         guests (after o1 and o4)
 ```
 
 ## C0–C5 — Base group chat
@@ -68,45 +68,41 @@ O (open groups, G017–G023): o1 ── o2 ── o4 ── o5
 
 ## O — Open groups (G017–G023)
 
-Accepted 2026-11-05 (Hongwei). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status.
+Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus changes instead of a general log; two presets; no bans, approval, invite count or history setting). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status. Not in O: G023's follow-ups (the relay's view of groups, message requests) — privacy project.
 
-**o1 — Roles and the signed policy (G017)**
-- [ ] `admin` role live; the permission table as one function every check calls (actor, action, roster, policy)
-- [ ] Policy keys and defaults (`invite`, `links`, `call_guests`, `rename`, `history`); owner / admins change it; UI in the group's settings
+**o1 — Roles and presets (G017)**
+- [ ] `admin` role live; one permission function every check calls (signer, action, latest statement)
+- [ ] Presets Open (default) / Managed in the owner's statement; set by the owner in the group's settings
 - [ ] `@everyone` for the owner and admins (G015 amendment): eligibility, the composer offer, the transcript highlight
 - [ ] Appoint / demote an admin (owner), shown in the member list
 
-**o2 — The signed change log (G018)**
-- [ ] Decide which key signs an op from a linked device (G018 Open) — before any wire
-- [ ] Op codec and signature (`roster_op`), op id; the roster computed from heads with R1–R4; checkpoint
-- [ ] Ops replace the owner statement on every roster event (`member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_dissolved`); member check (G013) carries ops
-- [ ] Heads in each group copy's plaintext; catch-up on a mismatch
-- [ ] gtests: every merge rule (concurrent remove vs add, demote vs the demoted admin's removal, concurrent renames, adds past 50); lab: two admins acting while the owner is offline
+**o2 — Changes on top of the owner's statement (G018)**
+- [ ] Decide which key signs a change from a linked device (G018 Open) — before any wire
+- [ ] Change codec and signature; the roster from the latest statement plus changes by R1–R5; the owner folds changes into its next statement
+- [ ] Statement fields: roles, preset, `added_by`, `removed`, `links`, `folded`
+- [ ] `statement_epoch` and `changes_hash` in each group copy's plaintext; the member check (G013) carries the statement and changes; catch-up on a mismatch
+- [ ] gtests: each rule (a removal against a concurrent member's add; a re-admit; a demoted admin's backdated removal void; a removed inviter's adds kept by the remover; concurrent renames; adds past 50; any order of the same changes gives the same roster); lab: a member invites and an admin removes while the owner is offline, the owner folds when back
 
 **o3 — Make a group during a call (G022)**
 - [ ] "Make a group…" on a call with no group and 3+ people; picker prefilled with the participants
 - [ ] The invite with `context: call` shown as a banner in that call (Join / Not now); the live call stays as it is
 - [ ] Lab: a 1:1 call grows to three, one makes a group, two join, one says not now and stays in the call
 
-**o4 — Any member invites; removal and bans (G019, G020)**
-- [ ] Invites by members per policy; `approval`: suggestions to admins; accept goes to the inviter, who signs the `add`
-- [ ] Invite shows name and member count only; Accept states what joining shares; "Alice added Carol" and "added by" in the member list; 10 invites per group per 24 h in the inviter's client
-- [ ] Removal by admins (members only); order (remaining members first); the removed notice; "They keep the messages they already received"; ban / unban
-- [ ] Lab: a member invites with the owner offline; an admin removes and bans, the banned account cannot be re-invited
+**o4 — Members invite; removal (G019, G020)**
+- [ ] Invites by members per preset; accept goes to the inviter, who signs the `add`
+- [ ] Invite shows name and member count only; Accept states what joining shares; "Alice added Carol" and "added by" in the member list
+- [ ] Removal by admins (members only); order (remaining members first); the removed notice; "They keep the messages they already received"; re-admit only by owner / admins
+- [ ] Bulk: "Remove everyone {name} added", "Re-invite everyone {name} removed"
+- [ ] Lab: a member invites with the owner offline; an admin removes, a member's re-invite of that account is void, an admin re-admits
 
 **o5 — Invite links (G021)**
-- [ ] `link_add` / `link_revoke` ops; the link format; QR through the scan flow
+- [ ] `link_add` / `link_revoke`; links die with their maker's membership; the link format; QR through the scan flow
 - [ ] Join request → preview → confirm; refusals; 20 requests an hour per link
-- [ ] Lab: join by link; a revoked and an expired link refused
+- [ ] Lab: join by link; a revoked, an expired, and a removed maker's link refused
 
-**o6 — Privacy (G023)**
-- [ ] o6a newcomers see messages from the join (`history: since_join`); `full` by policy
-- [ ] o6b message requests for direct messages from group members who are not contacts (the requests list P007 left open)
-- [ ] o6c the group id and roster heads move inside the copy's ciphertext; the relay envelope of a group copy looks like a direct one; WIRE_SCHEMAS updated
-
-**Calls — guests in a group's call ([calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-brought-by-the-groups-policy-removal-by-owner-and-admins))**, with o1 (policy) and o4 (roles in use)
+**Guests in a group's call ([calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins))** — after o1 and o4
 - [ ] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label
-- [ ] `call_guests` policy checked by each participant's device
-- [ ] `call_remove` from the owner / admins; key rotates without them; their device leaves
+- [ ] Only members allowed to invite bring guests; each participant's device checks
+- [ ] `call_remove` for guests from the owner / admins; key rotates without them; their device leaves
 - [ ] "Add {name} to the group" for a guest; the guest's "Joining shows you to N people"
 - [ ] CALLS.md updated when it ships
