@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -29,7 +30,11 @@ inline constexpr const char kGroupJoinPreviewType[] = "group_join_preview";
 inline constexpr const char kGroupJoinRefusedType[] = "group_join_refused";
 inline constexpr const char kGroupJoinConfirmType[] = "group_join_confirm";
 
-/** Why a join by link was refused (the wire's `reason`). */
+/**
+ * Why a join by link was refused (the wire's `reason`). Only a request whose secret matched is ever answered: one for
+ * a link this device does not know, or with a wrong secret, gets no reply at all (JudgeJoin's Drop) — a stranger can
+ * neither make our devices write to any account nor learn whether a link exists.
+ */
 enum class GroupJoinRefusal : uint8_t {
   Expired,
   /** Revoked, or its maker is no longer in the group (the link died with them). */
@@ -41,8 +46,6 @@ enum class GroupJoinRefusal : uint8_t {
   GroupFull,
   /** The link's answerer took 20 requests for it this hour. */
   Rate,
-  /** No such link here, or the secret does not match (the two are not told apart). */
-  Unknown,
 };
 
 /** `{link_id, secret, request_id}`: the joiner → the link's maker. `secret` is lowercase hex. */
@@ -68,7 +71,7 @@ struct GroupJoinPreview {
 
 struct GroupJoinRefused {
   std::string request_id;
-  GroupJoinRefusal reason = GroupJoinRefusal::Unknown;
+  GroupJoinRefusal reason = GroupJoinRefusal::Revoked;
 };
 
 /** The joiner says yes to a preview: `device` (the preview's) signs the add. */
@@ -90,7 +93,7 @@ inline constexpr int64_t kAnswerTimeoutMs = 15'000;
 inline constexpr int64_t kPreviewLifetimeMs = 10 * 60 * 1000;
 
 std::string RefusalToString(GroupJoinRefusal reason);
-/** Unknown words read as Unknown. */
+/** A word this app does not know (a newer app's) reads as Revoked: the link does not work for us. */
 GroupJoinRefusal RefusalFromString(const std::string& value);
 
 /** The system message carrying `message` (its `control_type`, a JSON `detail`). */
@@ -106,25 +109,59 @@ struct JoinCase {
   const GroupRosterView* view = nullptr;
   /** This device made the link and keeps it, until when it lives; none: it did not (or forgot it). */
   std::optional<int64_t> made_here_expires_at;
+  /** That kept link's secret (empty while the profile is locked: then only the roster's hash can match). */
+  ByteVector made_here_secret;
   std::string link_id;
   ByteVector secret;
   std::string joiner;
   std::string local_identity;
   int64_t now_ms = 0;
-  /** The rate limiter let this request through. */
-  bool within_rate = true;
+  /** Asked only once the secret matched: whether the rate limiter lets this request through (none: it does). */
+  std::function<bool()> within_rate;
+};
+
+/** What the answerer does with a join request. */
+struct JoinJudgement {
+  enum class Kind : uint8_t {
+    /** Send the preview (the request) or admit (the confirm). */
+    Accept,
+    /** Answer `group_join_refused` with `reason`. */
+    Refuse,
+    /** No such link here, or the secret does not match: send nothing. */
+    Drop,
+  };
+  Kind kind = Kind::Drop;
+  GroupJoinRefusal reason = GroupJoinRefusal::Revoked;
+
+  bool operator==(const JoinJudgement&) const = default;
 };
 
 /**
- * G021 4, the answerer's checks, in order: a link known here (else Unknown), the rate (Rate), the secret (Unknown: a
- * wrong secret and no link look the same), revoked or its maker out (Revoked; a link this device made that the
- * roster no longer names — folded away after its revoke, or the group gone from here — reads Revoked, or Expired past
- * its expiry), expired, our
- * own standing (we must be in the group and still allowed to add: else Revoked), its uses (UsedUp), the removed list
- * (Removed) and the size limit (GroupFull; someone already in is let through, they get the bundle again). None: the
- * preview may go.
+ * G021 4, the answerer's checks, in order. First the secret, against the roster's hash of the link (live or ended) or
+ * the secret of a link this device made: no link here or no match — Drop. Then, answered: the rate (Rate), revoked or
+ * its maker out (Revoked; a link this device made that the roster no longer names — folded away after its revoke, or
+ * the group gone from here — reads Revoked, or Expired past its expiry), expired, our own standing (we must be in the
+ * group and still allowed to add: else Revoked), its uses (UsedUp), the removed list (Removed) and the size limit
+ * (GroupFull; someone already in is let through, they get the bundle again). Else Accept.
  */
-std::optional<GroupJoinRefusal> JudgeJoin(const JoinCase& join);
+JoinJudgement JudgeJoin(const JoinCase& join);
+
+/**
+ * The requests a device drops (G021: no reply) are counted together, whatever their link, and logged at most once a
+ * minute with how many came — so a flood of made-up requests costs the secret check and nothing else (no send, no
+ * log line each). Thread-safe.
+ */
+class DroppedJoinLog {
+public:
+  static constexpr int64_t kLogGapMs = 60'000;
+  /** Count one; the number to log now (those since the last line) when a minute has passed since it, else none. */
+  std::optional<uint64_t> Note(int64_t now_ms);
+
+private:
+  std::mutex mutex_;
+  uint64_t count_ = 0;
+  std::optional<int64_t> last_logged_;
+};
 
 /** The group whose roster knows the link `link_id`, live or ended, and that roster; none when no group here does. */
 struct LinkGroup {

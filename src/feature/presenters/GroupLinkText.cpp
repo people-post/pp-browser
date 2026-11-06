@@ -79,10 +79,8 @@ std::string GroupJoinRefusalText(const GroupJoinRefusal reason) {
       return Tr("group_join.refused.group_full");
     case GroupJoinRefusal::Rate:
       return Tr("group_join.refused.rate");
-    case GroupJoinRefusal::Unknown:
-      break;
   }
-  return Tr("group_join.refused.unknown");
+  return Tr("group_join.refused.revoked");
 }
 
 std::string GroupJoinNoAnswerText(const std::string& maker_name) {

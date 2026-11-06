@@ -99,6 +99,7 @@ TEST_F(GroupLinkTextTest, AJoinEndsInASheetOrInPlainWords) {
   step = NextGroupJoinStep(state, "Ann");
   EXPECT_EQ(step.kind, GroupJoinStep::Kind::Tell);
   EXPECT_EQ(step.text, Tr("group_join.no_answer", {{"name", "Ann"}}));
+  EXPECT_NE(step.text.find("mistyped"), std::string::npos) << "no answer also covers a link the maker does not know";
 
   state.phase = GroupJoinState::Phase::Refused;
   for (const auto& [reason, key] : std::vector<std::pair<GroupJoinRefusal, std::string>>{
@@ -107,8 +108,7 @@ TEST_F(GroupLinkTextTest, AJoinEndsInASheetOrInPlainWords) {
            {GroupJoinRefusal::UsedUp, "group_join.refused.used_up"},
            {GroupJoinRefusal::Removed, "group_join.refused.removed"},
            {GroupJoinRefusal::GroupFull, "group_join.refused.group_full"},
-           {GroupJoinRefusal::Rate, "group_join.refused.rate"},
-           {GroupJoinRefusal::Unknown, "group_join.refused.unknown"}}) {
+           {GroupJoinRefusal::Rate, "group_join.refused.rate"}}) {
     state.reason = reason;
     step = NextGroupJoinStep(state, "Ann");
     EXPECT_EQ(step.kind, GroupJoinStep::Kind::Tell);

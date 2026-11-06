@@ -46,7 +46,10 @@ std::string GroupJoinPreviewText(const std::string& title, uint64_t member_count
 /** A refused join, in plain words. */
 std::string GroupJoinRefusalText(GroupJoinRefusal reason);
 
-/** No answer from the link's maker (offline: the link names nobody else to ask). */
+/**
+ * No answer from the link's maker: offline (the link names nobody else to ask), or a mistyped or unknown link — a
+ * request for a link its maker's devices do not know, or with a wrong secret, gets no reply (G021).
+ */
 std::string GroupJoinNoAnswerText(const std::string& maker_name);
 
 /** What the join prompt does once a join by link of ours moves on (the GUI shows it; the probe reads the state). */

@@ -60,6 +60,8 @@ std::string SecretHash(const std::string& link_id, const ByteVector& secret);
 
 /** `secret` is the one `link`'s hash was made from (compared in constant time). */
 bool SecretMatches(const GroupInviteLink& link, const ByteVector& secret);
+/** Two secrets are the same (constant time); an empty one matches nothing. */
+bool SecretsEqual(const ByteVector& a, const ByteVector& b);
 
 } // namespace group_invite_link
 

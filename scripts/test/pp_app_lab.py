@@ -17,6 +17,7 @@ between them goes through the hop. `pp_local_test.sh run --suite app-nat` brings
 """
 
 import argparse
+import base64
 import contextlib
 import json
 import os
@@ -2391,11 +2392,21 @@ def refused_link(u, link, why, timeout=60):
         raise ProbeError("%s: opening the link gave %s (wanted refused %s)" % (u.name, answer, why))
 
 
+def with_wrong_secret(link):
+    """`link` (pp://join/…) with one byte of its secret changed: the same link id and maker, a secret nobody made."""
+    prefix = "pp://join/"
+    raw = bytearray(base64.urlsafe_b64decode(link[len(prefix):] + "=" * (-len(link[len(prefix):]) % 4)))
+    raw[16] ^= 0xFF  # the secret follows the 16-byte link id
+    return prefix + base64.urlsafe_b64encode(bytes(raw)).decode().rstrip("=")
+
+
 def scenario_refused_links(lab):
     """Links that no longer let anyone in (group-chat G021, o5), each refused with its reason by the maker's device:
     Bob makes a link and Alice, the owner, revokes it (revoked); Carol makes one that lasts a few seconds (expired —
     the joiner's device refuses it as soon as it is past its expiry, as the maker's would); Dave makes one and
-    leaves the group (revoked: a link dies with its maker). Erin, a stranger, tries each; she joins nothing."""
+    leaves the group (revoked: a link dies with its maker). Erin, a stranger, tries each; she joins nothing. A link
+    with a wrong secret gets no reply at all (no answer): a stranger cannot learn from Bob's device whether a link
+    exists."""
     users, threads = open_group(lab, 4)
     a, b, c, d = users
     e = lab.user("erin")
@@ -2426,6 +2437,12 @@ def scenario_refused_links(lab):
     if live(a, gone["link_id"]):
         raise ProbeError("alice: dave's link is still live after he left")
     refused_link(e, gone["link"], "revoked")
+
+    guessed = b.cmd("make_invite_link", thread=threads[b.name], timeout=60)
+    wait_for(lambda: live(b, guessed["link_id"]) or None, 30, "bob: his second link in the roster")
+    answer = join_by_link(e, with_wrong_secret(guessed["link"]))
+    if not answer.get("no_answer"):
+        raise ProbeError("erin: a link with a wrong secret was answered (%s): it must get no reply" % answer)
 
     if group_thread_of(e, group_id):
         raise ProbeError("erin: holds the group's chat after three refusals")

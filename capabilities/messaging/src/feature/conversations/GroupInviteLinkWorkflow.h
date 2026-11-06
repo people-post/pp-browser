@@ -46,7 +46,10 @@ struct GroupJoinState {
     /** The maker's device previewed the group: Join / Cancel. */
     Preview,
     Refused,
-    /** No answer within kAnswerTimeoutMs: the maker's device may be offline (the link names nobody else). */
+    /**
+     * No answer within kAnswerTimeoutMs: the maker's devices may be offline (the link names nobody else), or the link
+     * is mistyped or not one they know — a request for an unknown link, or with a wrong secret, gets no reply.
+     */
     NoAnswer,
     /** Confirmed: we are in the group's chat, waiting for the join bundle. */
     Joined,
@@ -56,7 +59,7 @@ struct GroupJoinState {
   std::string maker;
   Phase phase = Phase::Asking;
   std::optional<GroupJoinPreview> preview;
-  GroupJoinRefusal reason = GroupJoinRefusal::Unknown;
+  GroupJoinRefusal reason = GroupJoinRefusal::Revoked;
   std::string thread_id;
 };
 
@@ -122,12 +125,18 @@ private:
     int64_t at = 0;
   };
   Roe<std::string> LocalAccount() const;
-  /** The join case for `link_id` here: the group that knows it (or the one our kept link names) and its roster. */
-  std::optional<GroupJoinRefusal> Judge(const std::string& link_id, const ByteVector& secret, const std::string& joiner,
-                                        bool count_rate, std::string* group_id, std::optional<GroupRosterView>* view);
+  /**
+   * The join case for `link_id` here — the group that knows it (or the one our kept link names) and its roster — and
+   * what to do: Drop (no link here, a wrong secret: no reply), Refuse, Accept. `count_rate`: a request (the confirm
+   * of a previewed one is not counted again).
+   */
+  group_link_join::JoinJudgement Judge(const std::string& link_id, const ByteVector& secret, const std::string& joiner,
+                                       bool count_rate, std::string* group_id, std::optional<GroupRosterView>* view);
   void Send(const std::string& peer, const GroupJoinMessage& message);
   void Refuse(const std::string& joiner, const std::string& request_id, GroupJoinRefusal reason);
   void ScheduleNoAnswer(const std::string& request_id);
+  /** A request dropped unanswered: counted, logged at most once a minute. */
+  void Dropped();
   void DropStale(int64_t now_ms);
 
   IGroupRosterStore& roster_;
@@ -136,6 +145,7 @@ private:
   MeshDeliveryOrchestrator& mesh_;
   IdentityStore& identity_;
   group_link_join::JoinRequestLimiter limiter_;
+  group_link_join::DroppedJoinLog dropped_;
 
   mutable std::mutex mutex_;
   /** Requests we answered with a preview, by request id (the answerer's side). */

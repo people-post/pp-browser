@@ -19,7 +19,6 @@ constexpr std::pair<GroupJoinRefusal, const char*> kRefusalWords[] = {
     {GroupJoinRefusal::Expired, "expired"},      {GroupJoinRefusal::Revoked, "revoked"},
     {GroupJoinRefusal::UsedUp, "used_up"},       {GroupJoinRefusal::Removed, "removed"},
     {GroupJoinRefusal::GroupFull, "group_full"}, {GroupJoinRefusal::Rate, "rate"},
-    {GroupJoinRefusal::Unknown, "unknown"},
 };
 
 const char* TypeOf(const GroupJoinMessage& message) {
@@ -145,7 +144,7 @@ std::string RefusalToString(const GroupJoinRefusal reason) {
       return word;
     }
   }
-  return "unknown";
+  return "revoked";
 }
 
 GroupJoinRefusal RefusalFromString(const std::string& value) {
@@ -154,7 +153,7 @@ GroupJoinRefusal RefusalFromString(const std::string& value) {
       return r;
     }
   }
-  return GroupJoinRefusal::Unknown;
+  return GroupJoinRefusal::Revoked;
 }
 
 Roe<ThreadMessage> Build(const GroupJoinMessage& message) {
@@ -191,47 +190,75 @@ bool IsJoinMessage(const ThreadMessage& message) {
   return JoinTypeOf(message).has_value();
 }
 
-std::optional<GroupJoinRefusal> JudgeJoin(const JoinCase& join) {
-  const auto ours_gone = [&join]() -> std::optional<GroupJoinRefusal> {
+namespace {
+
+JoinJudgement Refuse(const GroupJoinRefusal reason) {
+  return {.kind = JoinJudgement::Kind::Refuse, .reason = reason};
+}
+
+/** The request's secret is the link's: by the roster's hash when it names the link, else by the secret we kept. */
+bool SecretChecks(const JoinCase& join, const GroupInviteLink* known) {
+  if (known) {
+    return group_invite_link::SecretMatches(*known, join.secret);
+  }
+  return join.made_here_expires_at && group_invite_link::SecretsEqual(join.made_here_secret, join.secret);
+}
+
+/** After the secret matched: why the link no longer lets anyone in, if it does not. */
+std::optional<GroupJoinRefusal> LinkEnded(const JoinCase& join, const GroupEndedLink* ended, const bool known) {
+  if (!known) {
     // A link of ours the roster no longer names (its revoke or its maker's leave folded away, or the group gone).
-    if (!join.made_here_expires_at) {
-      return GroupJoinRefusal::Unknown;
-    }
     return join.now_ms >= *join.made_here_expires_at ? GroupJoinRefusal::Expired : GroupJoinRefusal::Revoked;
-  };
-  if (!join.view) {
-    return ours_gone();
-  }
-  if (!join.within_rate) {
-    return GroupJoinRefusal::Rate;
-  }
-  const GroupRosterView& view = *join.view;
-  const GroupInviteLink* live = view.LiveLink(join.link_id);
-  const GroupEndedLink* ended = view.EndedLink(join.link_id);
-  if (!live && !ended) {
-    return ours_gone();
-  }
-  if (!group_invite_link::SecretMatches(live ? *live : ended->link, join.secret)) {
-    return GroupJoinRefusal::Unknown;
   }
   if (ended) {
     return ended->end == GroupLinkEnd::Expired ? GroupJoinRefusal::Expired : GroupJoinRefusal::Revoked;
   }
+  return std::nullopt;
+}
+
+} // namespace
+
+JoinJudgement JudgeJoin(const JoinCase& join) {
+  const GroupInviteLink* live = join.view ? join.view->LiveLink(join.link_id) : nullptr;
+  const GroupEndedLink* ended = join.view ? join.view->EndedLink(join.link_id) : nullptr;
+  const GroupInviteLink* known = live ? live : ended ? &ended->link : nullptr;
+  if (!SecretChecks(join, known)) {
+    return {}; // Drop: no reply tells a stranger whether the link exists
+  }
+  if (join.within_rate && !join.within_rate()) {
+    return Refuse(GroupJoinRefusal::Rate);
+  }
+  if (const std::optional<GroupJoinRefusal> end = LinkEnded(join, ended, known != nullptr)) {
+    return Refuse(*end);
+  }
+  const GroupRosterView& view = *join.view;
   if (!MayAdmit(view, join.local_identity)) {
-    return GroupJoinRefusal::Revoked;
+    return Refuse(GroupJoinRefusal::Revoked);
   }
   if (live->max_uses > 0 && live->uses >= live->max_uses) {
-    return GroupJoinRefusal::UsedUp;
+    return Refuse(GroupJoinRefusal::UsedUp);
   }
   const bool removed = std::any_of(view.removed.begin(), view.removed.end(),
                                    [&](const GroupRemovedMember& r) { return r.identity == join.joiner; });
   if (removed) {
-    return GroupJoinRefusal::Removed;
+    return Refuse(GroupJoinRefusal::Removed);
   }
   if (!view.Lists(join.joiner) && view.members.size() >= kMaxGroupMembers) {
-    return GroupJoinRefusal::GroupFull;
+    return Refuse(GroupJoinRefusal::GroupFull);
   }
-  return std::nullopt;
+  return {.kind = JoinJudgement::Kind::Accept};
+}
+
+std::optional<uint64_t> DroppedJoinLog::Note(const int64_t now_ms) {
+  std::lock_guard lock(mutex_);
+  ++count_;
+  if (last_logged_ && now_ms - *last_logged_ < kLogGapMs) {
+    return std::nullopt;
+  }
+  last_logged_ = now_ms;
+  const uint64_t count = count_;
+  count_ = 0;
+  return count;
 }
 
 std::optional<LinkGroup> FindLinkGroup(IGroupRosterStore& roster, const std::string& link_id,

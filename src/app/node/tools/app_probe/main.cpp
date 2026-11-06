@@ -57,7 +57,8 @@
 //   join_by_link {link}                 open / paste / scan a link: the request to its maker, waiting (up to 20 s) for
 //                                       the answer {request_id, preview: {title, member_count, group_id}} or
 //                                       {request_id, refused: reason} (expired / revoked / used_up / removed /
-//                                       group_full / rate / unknown) or {request_id, no_answer: true}
+//                                       group_full / rate) or {request_id, no_answer: true} (the maker offline, or
+//                                       a link it does not know / a wrong secret: those get no reply, G021)
 //   confirm_join {request_id}           the preview's Join {thread, group_id}; the maker's device signs the add and
 //                                       sends the join bundle
 //   make_group_from_call {title?, accounts?}

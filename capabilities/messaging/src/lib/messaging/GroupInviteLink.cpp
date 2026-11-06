@@ -117,5 +117,9 @@ bool SecretMatches(const GroupInviteLink& link, const ByteVector& secret) {
          sodium_memcmp(hash.data(), link.secret_hash.data(), hash.size()) == 0;
 }
 
+bool SecretsEqual(const ByteVector& a, const ByteVector& b) {
+  return !a.empty() && a.size() == b.size() && sodium_memcmp(a.data(), b.data(), a.size()) == 0;
+}
+
 } // namespace group_invite_link
 } // namespace pbr

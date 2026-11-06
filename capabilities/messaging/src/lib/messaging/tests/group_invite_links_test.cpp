@@ -29,6 +29,13 @@ namespace glj = group_link_join;
 namespace grc = group_change;
 namespace grs = group_roster_sync;
 using Refusal = GroupJoinRefusal;
+using Judgement = glj::JoinJudgement;
+
+const Judgement kAccept{.kind = Judgement::Kind::Accept};
+const Judgement kDrop{.kind = Judgement::Kind::Drop};
+Judgement Refused(const Refusal reason) {
+  return {.kind = Judgement::Kind::Refuse, .reason = reason};
+}
 
 constexpr char kMaker[] = "account:carol";
 
@@ -140,12 +147,13 @@ TEST(GroupLinkJoinWireTest, EachMessageSurvivesTheLane) {
   EXPECT_EQ(preview.owner_identity, "account:alice");
   EXPECT_EQ(preview.device, "12D3device");
 
-  for (const Refusal reason : {Refusal::Expired, Refusal::Revoked, Refusal::UsedUp, Refusal::Removed,
-                               Refusal::GroupFull, Refusal::Rate, Refusal::Unknown}) {
+  for (const Refusal reason :
+       {Refusal::Expired, Refusal::Revoked, Refusal::UsedUp, Refusal::Removed, Refusal::GroupFull, Refusal::Rate}) {
     EXPECT_EQ(RoundTrip<GroupJoinRefused>(GroupJoinRefused{.request_id = "r1", .reason = reason}).reason, reason);
   }
   EXPECT_EQ(glj::RefusalToString(Refusal::UsedUp), "used_up");
-  EXPECT_EQ(glj::RefusalFromString("something new"), Refusal::Unknown);
+  EXPECT_EQ(glj::RefusalFromString("something new"), Refusal::Revoked) << "a newer app's word: the link does not work";
+  EXPECT_EQ(glj::RefusalFromString("unknown"), Refusal::Revoked) << "no reason says a link is unknown";
 
   EXPECT_EQ(RoundTrip<GroupJoinConfirm>(GroupJoinConfirm{.request_id = "r1", .device = "12D3device"}).device,
             "12D3device");
@@ -209,23 +217,32 @@ protected:
     return carol.Signed(std::move(c));
   }
 
-  /** Carol's device judging `joiner`'s request with `with_secret`, over `changes` on top of `statement`. */
-  std::optional<Refusal> Judge(const GroupRosterStatement& statement, const std::vector<GroupChange>& changes,
-                               const std::string& joiner, const ByteVector& with_secret,
-                               const std::optional<int64_t> made_here = std::nullopt, const bool within_rate = true) {
+  /**
+   * Carol's device judging `joiner`'s request with `with_secret`, over `changes` on top of `statement`; `made_here`:
+   * Carol's device made link-1 (its secret kept), expiring then. `rate_asked` counts the rate limiter's asks.
+   */
+  Judgement Judge(const GroupRosterStatement& statement, const std::vector<GroupChange>& changes,
+                  const std::string& joiner, const ByteVector& with_secret,
+                  const std::optional<int64_t> made_here = std::nullopt, const bool within_rate = true) {
     const GroupRosterView view = ComputeRoster(statement, changes, book.Lookup(), kNowMs);
     return glj::JudgeJoin({.view = &view,
                            .made_here_expires_at = made_here,
+                           .made_here_secret = made_here ? secret : ByteVector{},
                            .link_id = "link-1",
                            .secret = with_secret,
                            .joiner = joiner,
                            .local_identity = carol.Id(),
                            .now_ms = kNowMs,
-                           .within_rate = within_rate});
+                           .within_rate = [this, within_rate]() {
+                             ++rate_asked;
+                             return within_rate;
+                           }});
   }
-  std::optional<Refusal> Judge(const std::vector<GroupChange>& changes, const std::string& joiner) {
+  Judgement Judge(const std::vector<GroupChange>& changes, const std::string& joiner) {
     return Judge(Statement(), changes, joiner, secret);
   }
+
+  int rate_asked = 0;
 
   Person& alice = Named("alice");
   Person& bob = Named("bob");
@@ -238,61 +255,85 @@ protected:
 };
 
 TEST_F(GroupLinkJudgeTest, ALiveLinkWithItsSecretLetsAStrangerSeeThePreview) {
-  EXPECT_EQ(Judge({CarolsLink()}, erin.Id()), std::nullopt);
-  EXPECT_EQ(Judge({CarolsLink()}, dave.Id()), std::nullopt) << "someone already in gets the bundle again";
+  EXPECT_EQ(Judge({CarolsLink()}, erin.Id()), kAccept);
+  EXPECT_EQ(Judge({CarolsLink()}, dave.Id()), kAccept) << "someone already in gets the bundle again";
 }
 
-TEST_F(GroupLinkJudgeTest, AWrongSecretAndNoSuchLinkLookTheSame) {
-  EXPECT_EQ(Judge(Statement(), {CarolsLink()}, erin.Id(), ByteVector(16, 0)), Refusal::Unknown);
-  EXPECT_EQ(Judge({}, erin.Id()), Refusal::Unknown) << "the roster knows no such link";
-  EXPECT_EQ(glj::JudgeJoin({.link_id = "link-1", .secret = secret, .joiner = erin.Id(), .now_ms = kNowMs}),
-            Refusal::Unknown)
+// No reply for a link we do not know or a wrong secret: a stranger can neither make us write to any account nor learn
+// whether a link exists.
+TEST_F(GroupLinkJudgeTest, AWrongSecretOrNoSuchLinkGetsNoReply) {
+  EXPECT_EQ(Judge(Statement(), {CarolsLink()}, erin.Id(), ByteVector(16, 0)), kDrop) << "a wrong secret";
+  EXPECT_EQ(Judge({}, erin.Id()), kDrop) << "the roster knows no such link";
+  EXPECT_EQ(glj::JudgeJoin({.link_id = "link-1", .secret = secret, .joiner = erin.Id(), .now_ms = kNowMs}), kDrop)
       << "no group here knows it";
-  EXPECT_EQ(glj::JudgeJoin({.made_here_expires_at = kNowMs + 1000,
-                            .link_id = "link-1",
-                            .secret = secret,
-                            .joiner = erin.Id(),
-                            .now_ms = kNowMs}),
-            Refusal::Revoked)
-      << "a link of ours whose group is gone from here";
+  EXPECT_EQ(Judge(Statement(), {CarolsLink(), bob.LinkRevoke("link-1")}, erin.Id(), ByteVector(16, 0)), kDrop)
+      << "a revoked link with a wrong secret says nothing either";
+  EXPECT_EQ(rate_asked, 0) << "a guess spends no link's hour";
+
+  // A link of ours whose group is gone from here: our kept secret decides.
+  const glj::JoinCase gone{.made_here_expires_at = kNowMs + 1000,
+                           .made_here_secret = secret,
+                           .link_id = "link-1",
+                           .secret = secret,
+                           .joiner = erin.Id(),
+                           .now_ms = kNowMs};
+  EXPECT_EQ(glj::JudgeJoin(gone), Refused(Refusal::Revoked));
+  glj::JoinCase wrong = gone;
+  wrong.secret = ByteVector(16, 0);
+  EXPECT_EQ(glj::JudgeJoin(wrong), kDrop);
+  glj::JoinCase locked = gone;
+  locked.made_here_secret.clear(); // the profile is locked: nothing to check it against
+  EXPECT_EQ(glj::JudgeJoin(locked), kDrop);
+}
+
+TEST(GroupJoinDropLogTest, DroppedRequestsAreLoggedAtMostOnceAMinuteWithTheirCount) {
+  glj::DroppedJoinLog dropped;
+  EXPECT_EQ(dropped.Note(kNowMs), std::optional<uint64_t>(1)) << "the first one is logged";
+  for (int i = 1; i <= 500; ++i) {
+    EXPECT_EQ(dropped.Note(kNowMs + i), std::nullopt);
+  }
+  EXPECT_EQ(dropped.Note(kNowMs + glj::DroppedJoinLog::kLogGapMs), std::optional<uint64_t>(501))
+      << "a minute on: those since, in one line";
+  EXPECT_EQ(dropped.Note(kNowMs + glj::DroppedJoinLog::kLogGapMs + 1), std::nullopt);
 }
 
 TEST_F(GroupLinkJudgeTest, ARevokedLinkIsRefusedAsRevoked) {
-  EXPECT_EQ(Judge({CarolsLink(), bob.LinkRevoke("link-1")}, erin.Id()), Refusal::Revoked);
-  EXPECT_EQ(Judge({CarolsLink(), carol.LinkRevoke("link-1")}, erin.Id()), Refusal::Revoked);
-  EXPECT_EQ(Judge({CarolsLink(), dave.LinkRevoke("link-1")}, erin.Id()), std::nullopt)
+  EXPECT_EQ(Judge({CarolsLink(), bob.LinkRevoke("link-1")}, erin.Id()), Refused(Refusal::Revoked));
+  EXPECT_EQ(Judge({CarolsLink(), carol.LinkRevoke("link-1")}, erin.Id()), Refused(Refusal::Revoked));
+  EXPECT_EQ(Judge({CarolsLink(), dave.LinkRevoke("link-1")}, erin.Id()), kAccept)
       << "a member may not revoke someone else's link";
 }
 
 TEST_F(GroupLinkJudgeTest, ALinkDiesWithItsMaker) {
-  EXPECT_EQ(Judge({CarolsLink(), carol.Leave()}, erin.Id()), Refusal::Revoked) << "the maker left";
-  EXPECT_EQ(Judge({CarolsLink(), bob.Remove(carol.Id())}, erin.Id()), Refusal::Revoked) << "the maker was removed";
+  EXPECT_EQ(Judge({CarolsLink(), carol.Leave()}, erin.Id()), Refused(Refusal::Revoked)) << "the maker left";
+  EXPECT_EQ(Judge({CarolsLink(), bob.Remove(carol.Id())}, erin.Id()), Refused(Refusal::Revoked))
+      << "the maker was removed";
 }
 
 TEST_F(GroupLinkJudgeTest, AnExpiredLinkIsRefusedAsExpired) {
-  EXPECT_EQ(Judge({CarolsLink(0, kNowMs - 1)}, erin.Id()), Refusal::Expired);
+  EXPECT_EQ(Judge({CarolsLink(0, kNowMs - 1)}, erin.Id()), Refused(Refusal::Expired));
 }
 
 TEST_F(GroupLinkJudgeTest, OurLinkTheRosterNoLongerNamesIsRevokedOrExpired) {
   // Its revoke was folded: the statement no longer lists it, but this device made it and remembers.
-  EXPECT_EQ(Judge(Statement(), {}, erin.Id(), secret, kNowMs + 1000), Refusal::Revoked);
-  EXPECT_EQ(Judge(Statement(), {}, erin.Id(), secret, kNowMs - 1), Refusal::Expired);
+  EXPECT_EQ(Judge(Statement(), {}, erin.Id(), secret, kNowMs + 1000), Refused(Refusal::Revoked));
+  EXPECT_EQ(Judge(Statement(), {}, erin.Id(), secret, kNowMs - 1), Refused(Refusal::Expired));
 }
 
 TEST_F(GroupLinkJudgeTest, ALinkIsUsedUpAtItsLimit) {
   const GroupChange link = CarolsLink(/*max_uses=*/2);
   const GroupChange erins = carol.AddByLink(erin.Id(), "link-1");
-  EXPECT_EQ(Judge({link, erins}, frank.Id()), std::nullopt) << "one of two used";
+  EXPECT_EQ(Judge({link, erins}, frank.Id()), kAccept) << "one of two used";
   const GroupChange franks = carol.AddByLink(frank.Id(), "link-1");
-  EXPECT_EQ(Judge({link, erins, franks}, Named("gina").Id()), Refusal::UsedUp);
+  EXPECT_EQ(Judge({link, erins, franks}, Named("gina").Id()), Refused(Refusal::UsedUp));
 }
 
 TEST_F(GroupLinkJudgeTest, SomeoneRemovedIsRefusedAsRemoved) {
   const GroupRosterStatement s = Statement(GroupPreset::Open, [&](GroupRosterStatement& d) {
     d.removed = {{.identity = erin.Id(), .removal = "removal-1", .removed_by = bob.Id()}};
   });
-  EXPECT_EQ(Judge(s, {CarolsLink()}, erin.Id(), secret), Refusal::Removed);
-  EXPECT_EQ(Judge(s, {CarolsLink()}, frank.Id(), secret), std::nullopt);
+  EXPECT_EQ(Judge(s, {CarolsLink()}, erin.Id(), secret), Refused(Refusal::Removed));
+  EXPECT_EQ(Judge(s, {CarolsLink()}, frank.Id(), secret), kAccept);
 }
 
 TEST_F(GroupLinkJudgeTest, AFullGroupIsRefused) {
@@ -301,20 +342,26 @@ TEST_F(GroupLinkJudgeTest, AFullGroupIsRefused) {
       d.members.push_back(Row("account:filler" + std::to_string(i)));
     }
   });
-  EXPECT_EQ(Judge(s, {CarolsLink()}, erin.Id(), secret), Refusal::GroupFull);
-  EXPECT_EQ(Judge(s, {CarolsLink()}, dave.Id(), secret), std::nullopt) << "someone in already takes no place";
+  EXPECT_EQ(Judge(s, {CarolsLink()}, erin.Id(), secret), Refused(Refusal::GroupFull));
+  EXPECT_EQ(Judge(s, {CarolsLink()}, dave.Id(), secret), kAccept) << "someone in already takes no place";
 }
 
 TEST_F(GroupLinkJudgeTest, AManagedGroupsMemberCannotAnswerForALink) {
   // The preset went Managed: a member's link_add no longer counts, and the roster does not know the link.
-  EXPECT_EQ(Judge(Statement(GroupPreset::Managed), {CarolsLink()}, erin.Id(), secret), Refusal::Unknown);
-  EXPECT_EQ(Judge(Statement(GroupPreset::Managed), {CarolsLink()}, erin.Id(), secret, kNowMs + 1000), Refusal::Revoked)
+  EXPECT_EQ(Judge(Statement(GroupPreset::Managed), {CarolsLink()}, erin.Id(), secret), kDrop);
+  EXPECT_EQ(Judge(Statement(GroupPreset::Managed), {CarolsLink()}, erin.Id(), secret, kNowMs + 1000),
+            Refused(Refusal::Revoked))
       << "one this device made reads as revoked";
 }
 
-TEST_F(GroupLinkJudgeTest, ThePastTheRateRequestIsRefusedBeforeItsSecretIsLookedAt) {
+TEST_F(GroupLinkJudgeTest, TheRateIsCountedOnlyOnceTheSecretMatched) {
   EXPECT_EQ(Judge(Statement(), {CarolsLink()}, erin.Id(), ByteVector(16, 0), std::nullopt, /*within_rate=*/false),
-            Refusal::Rate);
+            kDrop)
+      << "a wrong secret: dropped, the rate not asked";
+  EXPECT_EQ(rate_asked, 0);
+  EXPECT_EQ(Judge(Statement(), {CarolsLink()}, erin.Id(), secret, std::nullopt, /*within_rate=*/false),
+            Refused(Refusal::Rate));
+  EXPECT_EQ(rate_asked, 1);
 }
 
 TEST(GroupJoinLimiterTest, TwentyAnHourPerLink) {
@@ -437,7 +484,7 @@ TEST_F(GroupLinkDraftTest, AConfirmedJoinIsAnAddWithTheLinkThatTheLinkCounts) {
                             .joiner = frank.Id(),
                             .local_identity = carol.Id(),
                             .now_ms = kNowMs}),
-            Refusal::UsedUp)
+            Refused(Refusal::UsedUp))
       << "its one use is taken";
 }
 

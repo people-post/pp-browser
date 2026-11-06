@@ -150,13 +150,13 @@ std::optional<GroupLinkRow> GroupInviteLinkWorkflow::OwnLiveLink(const std::stri
 
 // ---- The answerer ----
 
-std::optional<GroupJoinRefusal> GroupInviteLinkWorkflow::Judge(const std::string& link_id, const ByteVector& secret,
-                                                               const std::string& joiner, const bool count_rate,
-                                                               std::string* group_id,
-                                                               std::optional<GroupRosterView>* view) {
+group_link_join::JoinJudgement GroupInviteLinkWorkflow::Judge(const std::string& link_id, const ByteVector& secret,
+                                                              const std::string& joiner, const bool count_rate,
+                                                              std::string* group_id,
+                                                              std::optional<GroupRosterView>* view) {
   auto local = LocalAccount();
   if (!local) {
-    return GroupJoinRefusal::Unknown;
+    return {}; // Drop
   }
   const int64_t now_ms = util::NowUnixMs();
   const GroupCardLookup cards = mesh_.GroupChangeCards();
@@ -173,16 +173,26 @@ std::optional<GroupJoinRefusal> GroupInviteLinkWorkflow::Judge(const std::string
     *group_id = kept->group_id;
     *view = group_roster_sync::CurrentView(roster_, kept->group_id, cards, now_ms);
   }
-  const bool known = view->has_value() || kept.has_value();
   group_link_join::JoinCase join{.view = *view ? &**view : nullptr,
                                  .made_here_expires_at = kept ? std::optional<int64_t>(kept->expires_at) : std::nullopt,
+                                 .made_here_secret = kept ? kept->secret : ByteVector{},
                                  .link_id = link_id,
                                  .secret = secret,
                                  .joiner = joiner,
                                  .local_identity = *local,
-                                 .now_ms = now_ms,
-                                 .within_rate = !count_rate || !known || limiter_.Allow(link_id, now_ms)};
+                                 .now_ms = now_ms};
+  if (count_rate) {
+    // Counted only once the secret matched: a stranger's guesses spend no link's hour.
+    join.within_rate = [this, &link_id, now_ms]() { return limiter_.Allow(link_id, now_ms); };
+  }
   return group_link_join::JudgeJoin(join);
+}
+
+void GroupInviteLinkWorkflow::Dropped() {
+  // No reply, and no requester or link in the log: one line a minute says how many.
+  if (const std::optional<uint64_t> count = dropped_.Note(util::NowUnixMs())) {
+    log().info << "join by link: dropped " << *count << " request(s) for no link here or a wrong secret";
+  }
 }
 
 void GroupInviteLinkWorkflow::Send(const std::string& peer, const GroupJoinMessage& message) {
@@ -211,14 +221,20 @@ void GroupInviteLinkWorkflow::DropStale(const int64_t now_ms) {
 void GroupInviteLinkWorkflow::OnRequest(const GroupJoinRequest& request, const std::string& joiner) {
   std::string group_id;
   std::optional<GroupRosterView> view;
-  if (const auto refused = Judge(request.link_id, request.secret, joiner, /*count_rate=*/true, &group_id, &view)) {
-    Refuse(joiner, request.request_id, *refused);
+  const group_link_join::JoinJudgement judged =
+      Judge(request.link_id, request.secret, joiner, /*count_rate=*/true, &group_id, &view);
+  if (judged.kind == group_link_join::JoinJudgement::Kind::Drop) {
+    Dropped();
+    return;
+  }
+  if (judged.kind == group_link_join::JoinJudgement::Kind::Refuse) {
+    Refuse(joiner, request.request_id, judged.reason);
     return;
   }
   auto device = mesh_.OwnAccountCards().DevicePeerId();
   auto metadata = roster_.LoadMetadata(group_id);
-  if (!device || !metadata || !*metadata) {
-    Refuse(joiner, request.request_id, GroupJoinRefusal::Unknown);
+  if (!device || !metadata || !*metadata || !view) {
+    Refuse(joiner, request.request_id, GroupJoinRefusal::Revoked); // the secret matched: they may hear it
     return;
   }
   const int64_t now_ms = util::NowUnixMs();
@@ -266,8 +282,12 @@ void GroupInviteLinkWorkflow::OnConfirm(const GroupJoinConfirm& confirm, const s
   // The link may have died, or the group filled, since the preview.
   std::string group_id;
   std::optional<GroupRosterView> view;
-  if (const auto refused = Judge(answering.link_id, answering.secret, joiner, /*count_rate=*/false, &group_id, &view)) {
-    Refuse(joiner, confirm.request_id, *refused);
+  const group_link_join::JoinJudgement judged =
+      Judge(answering.link_id, answering.secret, joiner, /*count_rate=*/false, &group_id, &view);
+  if (judged.kind != group_link_join::JoinJudgement::Kind::Accept) {
+    // Its secret matched at the request: a link gone since (folded away, forgotten) reads revoked.
+    Refuse(joiner, confirm.request_id,
+           judged.kind == group_link_join::JoinJudgement::Kind::Refuse ? judged.reason : GroupJoinRefusal::Revoked);
     return;
   }
   if (auto admitted = groups_.AdmitByLink(group_id, answering.link_id, joiner, confirm.request_id); !admitted) {
