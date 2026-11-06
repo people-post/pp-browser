@@ -63,9 +63,12 @@ bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
  * reserved characters, leading dots or more than 100 bytes, ending in the safe extension AttachmentExtensionFromMime
  * gives (appended when the name lacks it); `fallback_stem` when nothing of the name is left. Empty when the type
  * has no safe extension: the stored file is opened as it is (an executable is never given its name back).
+ * `content_ext` (a sound file's sniffed container: "mp3", "m4a" ...; empty when unknown): when the name's extension
+ * does not say it, it is appended too (song.mp3 that is really MPEG-4 opens as song.mp3.m4a): the system viewers
+ * type by extension. The caller sniffs (lib/voice is a peer, not a dependency).
  */
 std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
-                                   const std::string& fallback_stem);
+                                   const std::string& fallback_stem, const std::string& content_ext = {});
 /**
  * The name's own extension `own` already says what `ext` (the type's safe extension) says: the same, another
  * spelling (jpeg / jpg, mpga / mp3, mp4 / m4a for a sound), or a known format of the same kind (audio, image or
@@ -81,7 +84,8 @@ bool AttachmentExtensionMatchesType(const std::string& own, const std::string& e
  */
 std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
                                     const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                    const std::string& filename, const std::string& view_path);
+                                    const std::string& filename, const std::string& view_path,
+                                    const std::string& content_ext = {});
 /** `{blobs_view}/{hash}.open` (see AttachmentNamedOpenPath). */
 std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
                                   const std::vector<uint8_t>& content_hash);

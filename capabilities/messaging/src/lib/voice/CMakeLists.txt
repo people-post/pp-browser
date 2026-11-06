@@ -2,6 +2,7 @@
 # audio session they share with calls, on the media capability's device leases.
 pp_browser_add_lib_library(pp_lib_voice
   SOURCES
+    AudioContainerSniff.cpp
     AudioFilePlayer.cpp
     OggOpus.cpp
     VoiceAudioSession.cpp

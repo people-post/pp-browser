@@ -4,6 +4,8 @@
 #include "lib/voice/AudioFilePlayer.h"
 
 #include "common/Logger.h"
+#include "common/PathUtf8.h"
+#include "lib/voice/AudioContainerSniff.h"
 
 #include <TargetConditionals.h>
 
@@ -11,6 +13,7 @@
 #import <Foundation/Foundation.h>
 
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -76,6 +79,22 @@ std::string DescribeForLog(NSURL* url) {
 namespace pbr {
 namespace {
 
+// The AVFileTypes to try for a sniffed container, best first (none for Flac / Ogg / Unknown: no hint).
+std::vector<NSString*> TypeHints(AudioContainer container) {
+  switch (container) {
+  case AudioContainer::Mp3: return {AVFileTypeMPEGLayer3};
+  case AudioContainer::Mp4: return {AVFileTypeAppleM4A, AVFileTypeMPEG4};
+  case AudioContainer::Wav: return {AVFileTypeWAVE};
+  case AudioContainer::Aiff: return {AVFileTypeAIFF};
+  default: return {};
+  }
+}
+
+const char* ContainerName(AudioContainer container) {
+  const char* ext = AudioContainerExtension(container);
+  return ext != nullptr ? ext : "unknown";
+}
+
 class DarwinAudioFilePlayer final : public IAudioFilePlayer {
 public:
   ~DarwinAudioFilePlayer() override { Stop(); }
@@ -85,10 +104,25 @@ public:
     @autoreleasepool {
       NSURL* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
       NSError* error = nil;
-      AVAudioPlayer* player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&error];
+      // AudioFile picks its parser from the extension: an M4A named .mp3 fails ('dta?'). The content says what the
+      // file is, so the player is told that first; the un-hinted open stays as the fallback.
+      const AudioContainer container = SniffAudioFile(PathFromUtf8(path));
+      AVAudioPlayer* player = nil;
+      for (NSString* hint : TypeHints(container)) {
+        error = nil;
+        player = [[AVAudioPlayer alloc] initWithContentsOfURL:url fileTypeHint:hint error:&error];
+        if (player != nil) {
+          break;
+        }
+      }
+      if (player == nil) {
+        error = nil;
+        player = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&error];
+      }
       if (player == nil) {
         Log().warning << "sound file player did not start: cannot open (" << DescribeError(error) << ") "
-                      << DescribeForLog(url);
+                      << DescribeForLog(url) << " container=" << ContainerName(container)
+                      << " ext=" << PathFromUtf8(path).extension().string();
         return false;
       }
       PPAudioFileDelegate* delegate = [[PPAudioFileDelegate alloc] init];

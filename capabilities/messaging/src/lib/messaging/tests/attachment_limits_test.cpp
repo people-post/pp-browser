@@ -260,6 +260,30 @@ TEST(AttachmentOpenFilenameTest, TheNamedLinkHoldsTheViewsBytes) {
   std::filesystem::remove_all(dir);
 }
 
+TEST(AttachmentOpenFilenameTest, ASoundInAnotherContainerThanItsNameGetsTheRealExtension) {
+  EXPECT_EQ(AttachmentOpenFilename("song.mp3", "audio/mpeg", "ab12", "m4a"), "song.mp3.m4a") << "mp4 bytes, .mp3 name";
+  EXPECT_EQ(AttachmentOpenFilename("song.mp3", "audio/mpeg", "ab12", "mp3"), "song.mp3");
+  EXPECT_EQ(AttachmentOpenFilename("song.m4a", "audio/mp4", "ab12", "m4a"), "song.m4a");
+  EXPECT_EQ(AttachmentOpenFilename("song.mp4", "audio/mp4", "ab12", "m4a"), "song.mp4") << "one container";
+  EXPECT_EQ(AttachmentOpenFilename("song.mp3", "audio/mpeg", "ab12", ""), "song.mp3") << "not sniffed";
+  EXPECT_EQ(AttachmentOpenFilename("pic.png", "image/png", "ab12", "m4a"), "pic.png") << "sounds only";
+}
+
+TEST(AttachmentNamedOpenPathTest, Mp4BytesUnderAnMp3NameOpenAsM4a) {
+  const auto dir = std::filesystem::temp_directory_path() / "pp_open_path_sniff_test";
+  std::filesystem::remove_all(dir);
+  const std::vector<uint8_t> hash(kAttachmentContentHashSize, 9);
+  const auto view_root = std::filesystem::path(AttachmentViewRoot(dir.string(), "t1"));
+  std::filesystem::create_directories(view_root);
+  const auto view = view_root / (AttachmentHashHex(hash) + ".mp3");
+  std::ofstream(view, std::ios::binary) << "mp4 sound";
+  const std::string opened =
+      AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "六字大明咒.mp3", view.string(), "m4a");
+  EXPECT_EQ(std::filesystem::path(opened).extension().string(), ".m4a");
+  EXPECT_EQ(std::filesystem::path(opened).filename().u8string(), u8"六字大明咒.mp3.m4a");
+  std::filesystem::remove_all(dir);
+}
+
 TEST(ChatAttachmentPrepareTest, BytesAreCheckedAgainstTheCallersLimit) {
   const std::vector<uint8_t> bytes(100, 7);
   auto ok = PrepareChatAttachmentFromBytes(bytes, "note.txt", "", 100);

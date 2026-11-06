@@ -325,8 +325,31 @@ bool AttachmentExtensionMatchesType(const std::string& own, const std::string& e
          TopLevelType(AttachmentMimeFromFilename("x." + own)) == top;
 }
 
+namespace {
+
+// The name's own extension already names the sniffed container (m4a / mp4 / m4b are one container, as are ogg / oga /
+// opus and aif / aiff).
+bool ExtensionNamesContainer(const std::string& own, const std::string& content_ext) {
+  if (own == content_ext) {
+    return true;
+  }
+  const auto in = [&](std::initializer_list<const char*> group) {
+    bool has_own = false;
+    bool has_content = false;
+    for (const char* g : group) {
+      has_own = has_own || own == g;
+      has_content = has_content || content_ext == g;
+    }
+    return has_own && has_content;
+  };
+  return in({"m4a", "mp4", "m4b"}) || in({"ogg", "oga", "opus"}) || in({"aif", "aiff", "aifc"}) ||
+         in({"mp3", "mpga"}) || in({"wav", "wave"});
+}
+
+} // namespace
+
 std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
-                                   const std::string& fallback_stem) {
+                                   const std::string& fallback_stem, const std::string& content_ext) {
   const std::string ext = AttachmentExtensionFromMime(mime, filename);
   if (ext.empty()) {
     return {};
@@ -359,6 +382,10 @@ std::string AttachmentOpenFilename(const std::string& filename, const std::strin
   if (!AttachmentExtensionMatchesType(LowerFilenameExtension(name), ext, mime)) {
     name += "." + ext;
   }
+  if (!content_ext.empty() && TopLevelType(mime) == "audio" &&
+      !ExtensionNamesContainer(LowerFilenameExtension(name), content_ext)) {
+    name += "." + content_ext; // the content is another container than the name says
+  }
   return name;
 }
 
@@ -370,8 +397,9 @@ std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::str
 
 std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
                                     const std::vector<uint8_t>& content_hash, const std::string& mime,
-                                    const std::string& filename, const std::string& view_path) {
-  const std::string name = AttachmentOpenFilename(filename, mime, AttachmentHashHex(content_hash));
+                                    const std::string& filename, const std::string& view_path,
+                                    const std::string& content_ext) {
+  const std::string name = AttachmentOpenFilename(filename, mime, AttachmentHashHex(content_hash), content_ext);
   if (name.empty() || profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return view_path;
   }
