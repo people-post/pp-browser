@@ -38,58 +38,6 @@ Roe<std::vector<uint8_t>> EncodeJpegBytes(SDL_Surface* surface, const int qualit
   return bytes;
 }
 
-void FillPlayTriangle(SDL_Surface* surface) {
-  if (!surface || surface->w <= 0 || surface->h <= 0) {
-    return;
-  }
-  if (!SDL_LockSurface(surface)) {
-    return;
-  }
-  const int w = surface->w;
-  const int h = surface->h;
-  const int cx = w / 2;
-  const int cy = h / 2;
-  const int tri_h = std::max(12, h / 4);
-  const int tri_w = std::max(10, (tri_h * 5) / 6);
-  const int left = cx - tri_w / 3;
-  const int right = left + tri_w;
-  const int top = cy - tri_h / 2;
-  const int bottom = cy + tri_h / 2;
-  const Uint32 color = SDL_MapSurfaceRGB(surface, 220, 220, 220);
-  const int bpp = SDL_BYTESPERPIXEL(surface->format);
-  auto* pixels = static_cast<uint8_t*>(surface->pixels);
-  for (int y = top; y <= bottom; ++y) {
-    if (y < 0 || y >= h) {
-      continue;
-    }
-    const float t = static_cast<float>(y - top) / static_cast<float>(std::max(1, bottom - top));
-    const float edge = t <= 0.5f ? (t * 2.0f) : ((1.0f - t) * 2.0f);
-    const int x0 = left;
-    const int x1 = left + static_cast<int>(std::lround(static_cast<float>(tri_w) * edge));
-    for (int x = x0; x <= x1 && x < right; ++x) {
-      if (x < 0 || x >= w) {
-        continue;
-      }
-      uint8_t* p = pixels + static_cast<size_t>(y) * static_cast<size_t>(surface->pitch) +
-                   static_cast<size_t>(x) * static_cast<size_t>(bpp);
-      if (bpp == 4) {
-        *reinterpret_cast<Uint32*>(p) = color;
-      } else if (bpp == 3) {
-#if SDL_BYTEORDER == SDL_BIG_ENDIAN
-        p[0] = 220;
-        p[1] = 220;
-        p[2] = 220;
-#else
-        p[0] = 220;
-        p[1] = 220;
-        p[2] = 220;
-#endif
-      }
-    }
-  }
-  SDL_UnlockSurface(surface);
-}
-
 } // namespace
 
 Roe<std::vector<uint8_t>> SoftVideoPosterJpeg(const int max_dimension) {
@@ -116,7 +64,6 @@ Roe<std::vector<uint8_t>> SoftVideoPosterJpeg(const int max_dimension) {
     SDL_DestroySurface(surface);
     return Error("Failed to fill soft video poster surface");
   }
-  FillPlayTriangle(surface);
   auto jpeg = EncodeJpegBytes(surface, 80);
   SDL_DestroySurface(surface);
   return jpeg;
