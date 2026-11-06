@@ -298,6 +298,9 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.security_has_recovery_phrase = bindings_.security_has_recovery_phrase;
+  ui_state_.unlock_grace_minutes = bindings_.unlock_grace_minutes;
+  ui_state_.unlock_grace_label = bindings_.unlock_grace_label.c_str();
+  ui_state_.security_grace_shown = bindings_.security_grace_shown;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
@@ -403,6 +406,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
   bindings_.security_has_recovery_phrase = ui_state_.security_has_recovery_phrase;
+  bindings_.unlock_grace_minutes = ui_state_.unlock_grace_minutes;
+  bindings_.unlock_grace_label = ui_state_.unlock_grace_label.c_str();
+  bindings_.security_grace_shown = ui_state_.security_grace_shown;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
@@ -613,6 +619,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
+    ctor.Bind("unlock_grace_label", &controller.bindings_.unlock_grace_label);
+    ctor.Bind("security_grace_shown", &controller.bindings_.security_grace_shown);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
@@ -656,6 +664,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_language", DataEventAt([this](ui::Event& ev) { OnChooseLanguage(ev); }));
     ctor.BindEventCallback("on_choose_group_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseGroupInvitePolicy(ev); }));
     ctor.BindEventCallback("on_choose_call_invite_policy", DataEventAt([this](ui::Event& ev) { OnChooseCallInvitePolicy(ev); }));
+    ctor.BindEventCallback("on_choose_unlock_grace", DataEventAt([this](ui::Event& ev) { OnChooseUnlockGrace(ev); }));
     ctor.BindEventCallback("on_choose_backend", DataEventAt([this](ui::Event& ev) { OnChooseBackend(ev); }));
     ctor.BindEventCallback("on_choose_direct_connections", DataEventAt([this](ui::Event& ev) { OnChooseDirectConnections(ev); }));
     ctor.BindEventCallback("toggle_attachment_auto_wifi", DataEvent<>([this]() { ToggleAttachmentAutoNetwork(false); }));
@@ -804,9 +813,13 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "security_has_recovery_phrase");
+  host.Dirty("settings", "unlock_grace_label");
+  host.Dirty("settings", "security_grace_shown");
   host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "recovery_phrase_pin");
   host.Dirty("settings", "recovery_pin_open");
+  host.Dirty("settings", "export_pin");
+  host.Dirty("settings", "export_pin_open");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -1371,6 +1384,9 @@ void SettingsController::OnCloseSecurityPage() {
 }
 
 void SettingsController::ApplyCloseSecurityPage() {
+  if (security_page_ == "transfer") {
+    security_actions_.CancelExportPin();  // the transfer code's PIN field does not stay out behind the page
+  }
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1393,6 +1409,7 @@ void SettingsController::ResetSecurityPage() {
     shell_navigation_.clear_local_back("settings_subpage");
   }
   security_actions_.HideRecoveryPhrase();  // the phrase and its PIN field do not follow the user off the page
+  security_actions_.CancelExportPin();
   if (security_page_.empty()) {
     return;
   }
@@ -1632,6 +1649,29 @@ void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) 
   PullBindingsToUiState();
   MarkSectionDirty("security");
   FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::OnChooseUnlockGrace(ui::Event& ev) {
+  const int current = bindings_.unlock_grace_minutes;
+  std::vector<SettingsChoicePage::Option> options;
+  for (const int minutes : {0, 5, 15, 60}) {
+    options.push_back({std::to_string(minutes).c_str(), UnlockGraceDisplayLabel(minutes).c_str(), current == minutes});
+  }
+  ShowChoice(ev, "unlock_grace", Tr("settings.security.grace.title"), Tr("settings.security.grace.help"), {},
+             std::move(options), [this](const std::string& id) { ApplyUnlockGraceChoice(id); });
+}
+
+void SettingsController::ApplyUnlockGraceChoice(const std::string& minutes_id) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  const int minutes = minutes_id == "0" ? 0 : minutes_id == "5" ? 5 : minutes_id == "60" ? 60 : 15;
+  bindings_.unlock_grace_minutes = minutes;
+  bindings_.unlock_grace_label = UnlockGraceDisplayLabel(minutes).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("security");
+  FlushPending();  // the section saves it, then tells the app (set_grace_minutes)
   DirtyAll();
 }
 

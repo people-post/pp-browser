@@ -33,6 +33,20 @@
             </span>
           </button>
         </div>
+        <!-- PIN grace window (#21): under the PIN; only with an own PIN on a platform with a secure store. -->
+        <div class="group-card" data-if="security_grace_shown">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_unlock_grace()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.grace.title}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{unlock_grace_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.help}}</p>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>

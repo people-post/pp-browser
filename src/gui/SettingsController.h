@@ -200,6 +200,10 @@ private:
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
     bool security_has_recovery_phrase = false;
+    /** PIN grace window (#21): the minutes (not bound) and the row's label; the row shows when grace_shown. */
+    int unlock_grace_minutes = 15;
+    ui::String unlock_grace_label;
+    bool security_grace_shown = false;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";
@@ -313,6 +317,9 @@ private:
   void OnChooseDirectConnections(ui::Event& ev);
   void OnChooseCallInvitePolicy(ui::Event& ev);
   void ApplyCallInvitePolicyChoice(const std::string& policy);
+  /** Me → Security → "Ask for PIN again after": every time / 5 / 15 / 60 minutes (#21). */
+  void OnChooseUnlockGrace(ui::Event& ev);
+  void ApplyUnlockGraceChoice(const std::string& minutes_id);
   void ApplyBackendChoice(const std::string& env);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);

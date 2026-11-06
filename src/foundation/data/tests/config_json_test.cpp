@@ -242,6 +242,34 @@ TEST(ConfigJsonTest, ProfilePrefsRecoveryPhraseSeenRoundTripsAndDefaultsOff) {
   EXPECT_TRUE(parsed.recovery_phrase_seen);
 }
 
+TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues) {
+  // PIN grace window (#21): absent reads 15; 0/5/15/60 round-trip; anything else reads back as 15.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.unlock_grace_minutes = 60;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_EQ(loaded.unlock_grace_minutes, 15);
+
+  for (int minutes : {0, 5, 15, 60}) {
+    pbr::ProfilePreferences edited;
+    edited.unlock_grace_minutes = minutes;
+    pbr::ProfilePreferences parsed;
+    pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+    EXPECT_EQ(parsed.unlock_grace_minutes, minutes);
+  }
+
+  for (const char* odd_json : {R"({ "unlock_grace_minutes": 7 })", R"({ "unlock_grace_minutes": -1 })",
+                               R"({ "unlock_grace_minutes": 100000 })", R"({ "unlock_grace_minutes": "15" })"}) {
+    auto odd = pbr::TryParseObject(odd_json);
+    ASSERT_TRUE(odd.has_value());
+    pbr::ProfilePreferences parsed;
+    parsed.unlock_grace_minutes = 0;
+    pbr::ProfilePrefsFromObject(*odd, parsed);
+    EXPECT_EQ(parsed.unlock_grace_minutes, 15) << odd_json;
+  }
+}
+
 TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
   // Minimal AI-first Home: absent (a fresh or pre-existing profile) reads off; once set it stays set.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");

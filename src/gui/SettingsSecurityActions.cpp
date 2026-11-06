@@ -33,6 +33,9 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
     if (!recovery_phrase_.empty() || recovery_pin_open_ || !recovery_phrase_pin_.empty()) {
       HideRecoveryPhrase();  // and a reveal still being checked is void (second review 2026-11-06)
     }
+    if (export_pin_open_ || !export_pin_.empty()) {
+      CancelExportPin();
+    }
   });
 }
 
@@ -46,6 +49,9 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("pin_change_confirm", &pin_change_confirm_);
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  ctor.Bind("export_pin", &export_pin_);
+  ctor.Bind("export_pin_open", &export_pin_open_);
+  ctor.BindEventCallback("cancel_export_pin", DataEvent<>([this]() { CancelExportPin(); }));
   ctor.Bind("recovery_phrase", &recovery_phrase_);
   ctor.Bind("recovery_phrase_pin", &recovery_phrase_pin_);
   ctor.Bind("recovery_pin_open", &recovery_pin_open_);
@@ -213,34 +219,95 @@ void SettingsSecurityActions::ExportLinkDevice() {
       host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
       return;
     }
-    if (!feedback_.show_confirm) {
+    // The app's default PIN is public, so asking for it proves nothing: those profiles only confirm, as before.
+    if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+      ConfirmExportLinkDevice();
       return;
     }
-    feedback_.show_confirm(
-        Tr("settings.security.link_device.export_confirm_title"),
-        Tr("settings.security.link_device.export_confirm_message"),
-        [this](const bool ok) {
-          if (!ok) {
-            return;
-          }
-          AppRuntime::PostWorkerNormal([this]() {
-            auto result = commands_.export_link_device ? commands_.export_link_device()
-                                                       : Roe<std::string>{Error("Messaging is not ready")};
-            AppRuntime::PostUI([this, result = std::move(result)]() {
-              if (!result) {
-                host_.ReportFailure(result.error());
-                return;
-              }
-              if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-                system->SetClipboardText(result.value().c_str());
-              }
-              UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
-              host_.ShowStatus("");
-            });
-          });
-        },
-        {});
+    // An own PIN (plan #21 ⑧): holding the unlocked phone is not enough to carry the account away.
+    if (export_pin_in_flight_ != 0 && export_pin_in_flight_ == export_pin_count_) {
+      return;  // a check is running: a second tap neither errors nor voids it
+    }
+    if (!export_pin_open_) {
+      export_pin_open_ = true;
+      host_.PushToView(false);
+      return;
+    }
+    const SecretText pin = SecretText(export_pin_.c_str());
+    if (pin.empty()) {
+      host_.ReportFailure(
+          AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.export_pin_prompt")));
+      return;
+    }
+    if (!commands_.recovery_phrase) {
+      host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
+      return;
+    }
+    export_pin_ = "";
+    const uint64_t request = ++export_pin_count_;
+    export_pin_in_flight_ = request;
+    AppRuntime::PostWorkerNormal([this, pin, request]() {
+      // The same check that guards the recovery phrase: the PIN must open the vault again. The phrase it returns
+      // is dropped here, on the worker; only pass / fail goes back.
+      Roe<void> checked = {};
+      if (auto opened = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
+                                                  : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
+          !opened) {
+        checked = opened.error();
+      }
+      AppRuntime::PostUI([this, request, checked = std::move(checked)]() {
+        export_pin_in_flight_ = 0;
+        if (request != export_pin_count_) {
+          return;  // cancelled, or the app went to the background, while it was checked
+        }
+        if (!checked) {
+          host_.ReportFailure(checked.error());
+          host_.PushToView(false);
+          return;
+        }
+        export_pin_open_ = false;
+        host_.PushToView(false);
+        ConfirmExportLinkDevice();
+      });
+    });
   });
+}
+
+void SettingsSecurityActions::CancelExportPin() {
+  export_pin_ = "";
+  export_pin_open_ = false;
+  ++export_pin_count_;
+  host_.PushToView(false);
+}
+
+void SettingsSecurityActions::ConfirmExportLinkDevice() {
+  if (!feedback_.show_confirm) {
+    return;
+  }
+  feedback_.show_confirm(
+      Tr("settings.security.link_device.export_confirm_title"),
+      Tr("settings.security.link_device.export_confirm_message"),
+      [this](const bool ok) {
+        if (!ok) {
+          return;
+        }
+        AppRuntime::PostWorkerNormal([this]() {
+          auto result = commands_.export_link_device ? commands_.export_link_device()
+                                                     : Roe<std::string>{Error("Messaging is not ready")};
+          AppRuntime::PostUI([this, result = std::move(result)]() {
+            if (!result) {
+              host_.ReportFailure(result.error());
+              return;
+            }
+            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+              system->SetClipboardText(result.value().c_str());
+            }
+            UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
+            host_.ShowStatus("");
+          });
+        });
+      },
+      {});
 }
 
 void SettingsSecurityActions::ShowRecoveryPhrase() {
