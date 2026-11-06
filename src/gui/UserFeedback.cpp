@@ -22,6 +22,12 @@ void UserFeedback::Ok(const std::string& message) {
   }
 }
 
+void UserFeedback::Note(const std::string& message) {
+  if (ports_.show_toast) {
+    ports_.show_toast(message, ToastDuration::Long);
+  }
+}
+
 void UserFeedback::Fail(const std::string& message) {
   if (ports_.show_toast) {
     ports_.show_toast(message, ToastDuration::Long);
