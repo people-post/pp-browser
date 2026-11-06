@@ -104,6 +104,28 @@ DemoCallFrame DemoCallSceneAt(const std::string_view scene, const int64_t t, con
     }
     return f;
   }
+  if (scene == "voice_hold" || scene == "video_hold" || scene == "group_hold") {
+    // V060, connected a minute ago: the other side has the 1:1 call on hold; in the group one member is on hold and
+    // another's camera is paused (their app in the background).
+    const bool group = scene == "group_hold";
+    const bool video = scene != "voice_hold";
+    f.screen = InCall(group ? "demo-group-hold" : video ? "demo-video-hold" : "demo-voice-hold", video, group);
+    Connected(f.screen, start - 60'000);
+    f.path_kind = group ? "media_relay" : "direct";
+    f.video_stage = video && !group;  // as in group_video: the group page draws its own tiles
+    if (group) {
+      f.screen.members[0].on_hold = true;
+      f.screen.members[1].video_paused = true;
+      f.screen.members[1].video_enabled = false;
+    } else {
+      if (!video) {
+        f.screen.members.push_back({.identity = kPeer});
+        f.screen.members.push_back({.identity = kSelf, .is_local = true});
+      }
+      f.screen.members[0].on_hold = true;
+    }
+    return f;
+  }
   if (scene == "failed") {
     f.screen = InCall("demo-failed", false, false);
     f.screen.status = Status::CouldntConnect;
