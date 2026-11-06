@@ -1460,6 +1460,11 @@ input.checkbox:checked {
   background-color: #ff9f0a;
 }
 
+/* The AI chat's rename swipe (home-minimal increment); it had no colour and showed as a white box. */
+.session-swipe-btn--rename {
+  background-color: #5e5ce6;
+}
+
 .session-swipe-btn--read {
   background-color: #0a84ff;
 }
