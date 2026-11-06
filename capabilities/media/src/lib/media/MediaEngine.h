@@ -160,7 +160,7 @@ public:
    */
   Roe<void> FlipCamera() override;
   /** Facing of the camera the engine last opened (false before any open). */
-  bool CameraFrontFacing() const;
+  bool CameraFrontFacing() const override;
   /** The camera is wanted: on, opening, or waiting for the device (CameraWaitingForDevice). */
   bool IsCameraEnabled() const override;
   /**

@@ -193,6 +193,18 @@ TEST(CallChromeSyncTest, MuteSpeakerCameraDirties) {
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
 }
 
+// #83: the flip button's lit state (front camera) only re-binds its class, it does not rebuild the page.
+TEST(CallChromeSyncTest, CameraFacingDirtiesOnly) {
+  pbr::CallChromeLayer synced;
+  synced.in_call_active = true;
+  synced.in_call_id = "c1";
+  synced.in_call_show_flip = true;
+  synced.in_call_camera_front = true;
+  pbr::CallChromeLayer next = synced;
+  next.in_call_camera_front = false;
+  EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);
+}
+
 TEST(CallChromeSyncTest, StagePresenceRemounts) {
   pbr::CallChromeLayer synced;
   synced.in_call_active = true;

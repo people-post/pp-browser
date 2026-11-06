@@ -323,6 +323,8 @@ struct CallInProgressState {
   bool on_hold = false;
   bool muted = false;
   bool camera_on = false;
+  /** The camera on is the front one: the flip button is lit (#83). */
+  bool camera_front = false;
   /** Speakerphone on (true) vs earpiece (false). UI: same icon, contrast encodes status. */
   bool speaker_on = false;
   bool stage_visible = false;

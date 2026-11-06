@@ -205,8 +205,9 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
   out << "<div class=\"call-phone-controls\">";
   const auto flip = [&]() {
     if (call.show_flip) {
-      AppendControl(out, "call_flip_camera()", nullptr, "src=\"../icons/v2/camera-flip.svg\"",
-                    Tr("call.control.flip"));
+      // Lit while the front camera is in use, plain on the rear one (#83).
+      AppendControl(out, "call_flip_camera()", "call_in_progress_camera_front",
+                    "src=\"../icons/v2/camera-flip.svg\"", Tr("call.control.flip"));
     }
   };
   const auto mute = [&]() {

@@ -207,6 +207,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_pulse = ring.pulse,
       .in_call_muted = in_call.muted,
       .in_call_camera_on = in_call.camera_on,
+      .in_call_camera_front = in_call.camera_front,
       .in_call_speaker_on = in_call.speaker_on,
       .in_call_stage_visible = in_call.stage_visible,
       .in_call_remote_video = in_call.remote_video,
@@ -1299,6 +1300,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
   in_call.camera_on = media.IsCameraEnabled();
+  // The facing actually open (it changes when the other camera has opened, not on the tap): the flip button is lit
+  // while the front camera is in use (#83).
+  in_call.camera_front = in_call.camera_on && media.CameraFrontFacing();
   if (in_call.camera_on && CameraRotationFollowsDevice()) {
     // iOS: video follows the phone's physical orientation (read on UI, per tick).
     const int rotation = CameraDisplayRotationDegrees();
@@ -1836,6 +1840,7 @@ bool CallController::RenderDemoScene() {
   in_call_.stage_visible = f.video_stage;
   in_call_.show_camera = true;
   in_call_.camera_on = f.video_stage;
+  in_call_.camera_front = f.video_stage;
   in_call_.show_flip = f.video_stage;
   in_call_.remote_placeholder = "";
   ApplyConnectStory(f.screen, f.path_kind, f.quality, f.quality_bars, now);
