@@ -202,6 +202,8 @@ public:
   void SetSkipDeviceOpenForTest(bool skip);
   /** Test-only: codecs for the local encoder / remote decoders (default: platform HW). Before Start. */
   void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
+  /** Test-only: called on the capture thread with each outgoing audio frame's PCM, just before encode. Before Start. */
+  void SetEncodeInputObserverForTest(std::function<void(const int16_t* pcm, size_t samples)> observe);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
   std::vector<uint32_t> TakePendingVideoRefreshStreamIds() override;
   /** Test-only: the stream ids waiting for an IDR, without draining them. */

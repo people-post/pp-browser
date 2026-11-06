@@ -247,6 +247,8 @@ struct MediaEngine::Shared {
   std::unique_ptr<MediaDeviceArbiter> test_devices;
   /** Test fixtures: skip SDL mic/camera open (silence TX only). */
   std::atomic<bool> skip_device_open_for_test{false};
+  /** Under `mu`; a session takes a copy when it starts. Test-only: sees each outgoing audio frame before encode. */
+  std::function<void(const int16_t*, size_t)> encode_input_for_test;
   /** Under `mu`; a session takes a copy when it starts. */
   HardwareLimits limits;
   std::atomic<int64_t> last_uplink_bps{0};
@@ -291,6 +293,7 @@ struct MediaEngine::Impl {
     devices = shared->devices;
     // Every hardware codec runs behind a guard: a call into it waits at most its budget (L016).
     limits = shared->limits;
+    encode_input_for_test = shared->encode_input_for_test;
     make_video_codec = [make = shared->make_video_codec, budgets = limits.codecs](VideoCodecRole role) {
       return MakeGuardedVideoCodec(make, role, budgets);
     };
@@ -319,6 +322,7 @@ struct MediaEngine::Impl {
 
   bool packet_mode = false;
   std::atomic<bool>& skip_device_open_for_test;
+  std::function<void(const int16_t*, size_t)> encode_input_for_test;
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<PacketSendFn> packet_send;
   /**
@@ -1307,7 +1311,9 @@ struct MediaEngine::Impl {
           } else {
             std::copy_n(pending.begin(), kPacketSamples, pcm.begin());
             pending.erase(pending.begin(), pending.begin() + kPacketSamples);
-            if (muted.load(std::memory_order_relaxed)) {
+            // While the OS has the session (another phone call), the mic may still hear that call: send silence
+            // whatever the mute flag says — the UI's mute follows later and may be late (V060).
+            if (muted.load(std::memory_order_relaxed) || AudioSession::IsInterrupted()) {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
@@ -1353,6 +1359,9 @@ struct MediaEngine::Impl {
           applied_audio_bps = want_bps;
         }
         capture_stage.Set(MediaThreadStage::Encode);
+        if (encode_input_for_test) {
+          encode_input_for_test(pcm.data(), static_cast<size_t>(kPacketSamples));
+        }
         const int encoded =
             opus_encode(enc, pcm.data(), kPacketSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
         if (encoded <= 0) {
@@ -2086,6 +2095,14 @@ void MediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVid
   {
     std::lock_guard lock(shared_->mu);
     shared_->make_video_codec = std::move(make);
+  }
+  RefreshIdleSession();
+}
+
+void MediaEngine::SetEncodeInputObserverForTest(std::function<void(const int16_t* pcm, size_t samples)> observe) {
+  {
+    std::lock_guard lock(shared_->mu);
+    shared_->encode_input_for_test = std::move(observe);
   }
   RefreshIdleSession();
 }
