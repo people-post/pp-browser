@@ -16,6 +16,15 @@ Roe<void> SecureBlobDelete(const std::string& /*name*/) {
   return {};
 }
 
+Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<uint8_t>& bytes,
+                                    SecureBlobAccess /*access*/) {
+  return SecureBlobWrite(name, bytes);
+}
+
+Roe<pbr::SecureBlobLookup> SecureBlobLookup(const std::string& /*name*/) {
+  return pbr::SecureBlobLookup{};
+}
+
 bool SecureBlobSupported() {
   return false;
 }

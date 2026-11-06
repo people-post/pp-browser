@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "common/SecureBlobStore.h"
 
 #include <cstdint>
 #include <optional>
@@ -21,6 +22,14 @@ Roe<void> SecureBlobWrite(const std::string& name, const std::vector<uint8_t>& b
 Roe<std::optional<std::vector<uint8_t>>> SecureBlobRead(const std::string& name);
 /** Succeeds when nothing is stored. */
 Roe<void> SecureBlobDelete(const std::string& name);
+/**
+ * Write under an access level (iOS: kSecAttrAccessible, this device only). An item stored with another level is
+ * replaced: deleted, then added with the new one (the old bytes are put back if the add fails).
+ */
+Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<uint8_t>& bytes,
+                                    SecureBlobAccess access);
+/** Found / Missing / Unavailable (iOS: OSStatus through MapKeychainStatus; the code rides along with Unavailable). */
+Roe<pbr::SecureBlobLookup> SecureBlobLookup(const std::string& name);
 /** False on platforms with no uninstall-surviving store. */
 bool SecureBlobSupported();
 

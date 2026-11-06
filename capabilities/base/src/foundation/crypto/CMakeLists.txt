@@ -4,6 +4,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     DataKeyVault.cpp
     EncryptedPayload.cpp
     FileCipher.cpp
+    GraceUnlock.cpp
     HybridKem.cpp
     IdentitySeedDeriver.cpp
     RecoveryPhrase.cpp
