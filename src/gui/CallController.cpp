@@ -132,6 +132,9 @@ void CallController::SyncLocalHold() {
   auto* backend = Backend();
   const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
   const bool held = in_call && AudioSession::IsInterrupted();
+  if (held && local_on_hold_ && !backend->Media().IsMuted()) {
+    hold_mute_.UserToggled();  // unmuted by any path during the hold: the end of the hold changes nothing
+  }
   if (held == local_on_hold_) {
     return;
   }
@@ -1299,8 +1302,13 @@ void CallController::ToggleMute() {
 }
 
 void CallController::ToggleCamera() {
-  if (local_on_hold_) {
-    video_paused_ = false;  // the user decides the camera from here; no resume at the end of the hold
+  if (local_on_hold_ && video_paused_) {
+    // The hold only paused the camera (it still counts as on): a tap brings it back now, and the user keeps it from here.
+    video_paused_ = false;
+    if (auto* backend = Backend(); backend && backend->Available()) {
+      backend->SetLocalVideoPaused(false);
+    }
+    return;
   }
   presenter_.ToggleCamera();
 }
