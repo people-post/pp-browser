@@ -89,6 +89,9 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # Not in the account locker (a restored device gets them from the member check, G013). Additive table
                             # group_rosters.added_by TEXT NOT NULL DEFAULT '' (G019: who brought the member in; empty for the group's
                             # first members. Added on open when missing — user_version unchanged)
+                            # pending_group_invites.owner_identity TEXT NOT NULL DEFAULT '' (G019: the group's owner a member's invite
+                            # names, which the join bundle's statement must verify for; empty: the inviter. outbound = 1 for an invite
+                            # this device sent, as owner or member. Added on open when missing — user_version unchanged)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

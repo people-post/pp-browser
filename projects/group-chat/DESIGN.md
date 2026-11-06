@@ -525,10 +525,11 @@ then the body by change:
 - **The relay sees no group (G018 item 7, built):** the envelope's `route` carries no `group_id` (sign v4), and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ lower account ‖ higher account)) + `:from:{sender_device}` — [§ Stream id](#stream-id).
 - **A receiver behind the sender** — a lower statement epoch, or the same with another hash; not a sender behind us, which asks when our copy reaches it — sends `group_roster_request {group_id, request_id, roster_epoch, statement_epoch, changes_hash, after?}` (G013's control-lane request) to that sender, at most once per group every 30 s (`CatchUpLimiter`), with the group staying active (a catch-up does not stop sends; a G013 check in progress is not overridden). The reply carries the latest statement and, when the hashes differ, the changes the replier holds after `after` in id order — at most 64 and about 96 KB, each signer's card once (the asker stores it with each of that signer's changes), `more` when cut; the asker applies them through `ApplyView` and asks again after the last id. Without the asker's ids the replier cannot tell which ones it lacks: it sends what it holds, paged. G013's own check carries the same state, so a restored device gets the changes too.
 
-### Invites (G019)
+### Invites (G019, built o4)
 
-- **`group_invite`** as today, sent by a member allowed under the preset. It shows the group's name and member count, not the members.
-- **`group_invite_accept`** goes to the inviter, whose device signs the `add` and sends it to the members with the newcomer's card. The newcomer gets the statement, the unfolded changes and the members' cards, as `member_joined` carries them today.
+- **`group_invite`** as before, sent by whoever the preset lets invite, with `owner_identity` and `member_count` (additive): the group's name and member count, never the members.
+- **`group_invite_accept`** goes to the inviter. The owner adds them itself (`member_joined` + its re-signed statement, `added_by` the owner). A member or admin checks its pending invite and that it may still invite (`ApplyInviteAcceptToRoster` → `SignAdd`), signs the `add` (`DraftAdd`: `readmits` for someone removed, owner / admin only), holds it, and only if it counts (R5) sends `group_change` with `newcomer` (card, route) to the members and the join bundle to the newcomer; else `group_invite_refused` (`group_full` / `not_allowed`).
+- **The join bundle** is `member_joined` to the newcomer, from the owner or a member: `invite_nonce`, `added_by`, the members with routes and cards, `roster_statement`, `changes` (the add first, bounded, `more`). The newcomer checks the statement against the owner the invite named and that the roster it proves lists it (`CheckJoin`) before keeping anything (`ApplyJoinBundle`). Normative: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
 
 ### Invite link (G021)
 
@@ -544,7 +545,7 @@ pp://join/<base64url(link_id[16] || secret[16] || expires_at[8] || maker account
 
 - **The `remove`** goes to the remaining members first. Built (o2) for admins; the owner's removal is `member_removed` with the statement re-signed (its `remove` folded at once).
 - **The removed account** gets the change itself and shows "You were removed by {signer}", the G013 removed state.
-- **Bulk actions** are one `remove` per account (or one re-invite each), sent together.
+- **Bulk actions** are one `remove` per account (or one re-invite each), sent together (built o4: `RemovableAddedBy` — the members the person added whom our role may remove; `RemovedBy` — the accounts they removed still out).
 
 ### Make a group during a call (G022)
 

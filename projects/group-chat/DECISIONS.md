@@ -7,7 +7,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G001 — Invite authority: owner-only (v1), role-extensible schema
 
 **Date:** 2026-07-16  
-**Status:** Amended by [G017](#g017--open-groups-roles-and-two-presets) / [G019](#g019--members-invite-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05, not built): admins exist, and any member may invite in an Open group  
+**Status:** Amended by [G017](#g017--open-groups-roles-and-two-presets) / [G019](#g019--members-invite-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05; built with o1 / o4): admins exist, and any member may invite in an Open group  
 **Decision:** v1 enforces **owner-only** invite, remove, rename, and ownership transfer. Wire and storage include `MemberRole` (`owner` | `admin` | `member`), `PermissionFlags`, and `group_policy.invite_policy` (`owner_only` | `admins` | `any_member`) so v1.1 can enable admins or any-member invites without a wire bump.  
 **Rationale:** Simple spam surface for v1; avoid second migration when roles expand.  
 **Alternatives:** Any-member invites in v1 (rejected — spam); hard-coded owner-only without role fields (rejected — blocks v1.1).
@@ -54,7 +54,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G006 — Membership authority vs message sync
 
 **Date:** 2026-07-16  
-**Status:** Amended by [G018](#g018--members-and-admins-sign-roster-changes-on-top-of-the-owners-statement) / [G019](#g019--members-invite-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05; G018's changes built, a member's `add` with o4): the member who sent the invite commits the add as a signed op; the owner is no longer the only one  
+**Status:** Amended by [G018](#g018--members-and-admins-sign-roster-changes-on-top-of-the-owners-statement) / [G019](#g019--members-invite-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05; G018's changes built, a member's `add` built with o4): the member who sent the invite commits the add as a signed op; the owner is no longer the only one  
 **Decision:** **Owner-signed roster events** are authoritative for membership. **Per-sender `sender_seq`** + relaxed ingest (D046) handles message divergence — not owner arbitration. `session_epoch` bumps on membership/crypto changes.  
 **Rationale:** Aligns with D089 tier design; avoids single-writer bottleneck for messages.  
 **Alternatives:** Owner as message sync authority (rejected).
@@ -196,7 +196,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G017 — Open groups: roles and two presets
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — **o1 implemented 2026-11-05** (roles, the preset in the owner's statement, `@everyone` for admins: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)); the preset takes effect with o4 (members invite and rename). Amends G001 (owner-only invites) and G015 (`@everyone` owner-only). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
+**Status:** Accepted (Hongwei, 2026-11-05) — **o1 implemented 2026-11-05** (roles, the preset in the owner's statement, `@everyone` for admins: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)); the preset **takes effect with o4** (2026-11-05: members invite and rename per the preset, and the owner switches it in the group's settings, "Who can add people and rename"). Amends G001 (owner-only invites) and G015 (`@everyone` owner-only). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
 **Decision:** Groups are **open by invite**: members may bring people in, and the owner and admins keep order. There is no group directory or public join (open by invite only, for now).
 
 1. **Roles.** `owner` (one), `admin` (any number, appointed and demoted by the owner), `member`. Roles live in the owner's signed statement (G012, G018).
@@ -227,7 +227,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G018 — Members and admins sign roster changes on top of the owner's statement
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — item 7 built (2026-11-05, [WIRE_SCHEMAS § Group](../../docs/contracts/WIRE_SCHEMAS.md)): the stream id has no epoch and keeps the sending device (`v1:g:{hash}:from:{device}`: since M022 a record holds copies at several pair epochs). **Items 1–6, 8 and 9 built and wired 2026-11-05 (o2)**: the engine, one apply path, `group_change`, the owner's fold, the change floor, the copy state and the catch-up ([WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md), [DESIGN § Wiring](DESIGN.md#wiring-o2-built)); the producers so far are `leave` and an admin's `remove` — members' `add` (o4) and links (o5) to come. Amended 2026-11-05: the change floor (limit 3 below). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G012 (the owner's statement stays the base) and amends G006 (members and admins commit their own changes).
+**Status:** Accepted (Hongwei, 2026-11-05) — item 7 built (2026-11-05, [WIRE_SCHEMAS § Group](../../docs/contracts/WIRE_SCHEMAS.md)): the stream id has no epoch and keeps the sending device (`v1:g:{hash}:from:{device}`: since M022 a record holds copies at several pair epochs). **Items 1–6, 8 and 9 built and wired 2026-11-05 (o2)**: the engine, one apply path, `group_change`, the owner's fold, the change floor, the copy state and the catch-up ([WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md), [DESIGN § Wiring](DESIGN.md#wiring-o2-built)); the producers are `leave`, an admin's `remove`, and since o4 (2026-11-05) a member's or admin's `add` (its inviter's, G019) and `rename` (G017) — links (o5) to come. Amended 2026-11-05: the change floor (limit 3 below). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G012 (the owner's statement stays the base) and amends G006 (members and admins commit their own changes).
 **Decision:**
 
 1. **The owner's statement stays the authority** (G012 as built: signed, linear by `roster_epoch`, with the owner chain). It holds the members, roles, the preset, the title, the removed list (below), live invite links, and the changes it folded in.
@@ -277,7 +277,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G019 — Members invite; the invitee consents; who brought whom is shown
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G001 and G006 (the invite is accepted by the member who sent it, not only the owner).
+**Status:** Accepted (Hongwei, 2026-11-05) — **implemented 2026-11-05 (o4)**: invites per the preset, the accept to the inviter, whose device signs the `add` and sends the newcomer the join bundle (`member_joined` with the owner's statement, the changes and the members' cards, checked by the newcomer before it keeps anything), the invite's `member_count` and "Joining shares your profile with N people.", "Alice added Carol" and "Added by" in the member list ([WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)). Phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G001 and G006 (the invite is accepted by the member who sent it, not only the owner).
 **Decision:**
 
 1. **Who may invite:** per preset (G017). In a Managed group a member asks an admin in the chat; there is no suggestion protocol.
@@ -289,13 +289,14 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 
 **Rationale:** Openness on the group side and consent on the person's side: anyone can bring a friend, nobody is put in a group they did not accept. Showing who added whom keeps an open group accountable without a gatekeeper. Hiding the member list until a join keeps members from being shown to everyone who is merely invited.
 **Alternatives:** Owner-only invites (G001); an approval step for members' invites (a protocol and a UI for what asking in the chat already does); auto-join without accepting (shares a profile without consent); show the member list on the invite (exposes members to every invitee).
+**As wired (o4, 2026-11-05) — choices the entry left open:** (a) **The join bundle is `member_joined`** sent by the inviter to the newcomer (not a new `group_join_bundle`): it already carried the members' cards and the owner's statement, so the owner's own invites and a member's share one newcomer path — the newcomer checks the statement for the owner the invite named (`owner_identity`, new on the invite) and the roster the statement and the carried changes give, before it keeps anything, whoever sent it. (b) The owner's own accept stays its statement event (`member_joined` to the members with the statement re-signed, `added_by` the owner), as the owner's removal does; only members and admins sign an `add`. (c) An accept the inviter can no longer honour — the preset went Managed, the inviter was demoted, the invitee was removed meanwhile — gets `group_invite_refused` with a new reason `not_allowed` ("You were not added to the group"); a re-invite of someone already in is answered with the bundle again (it resyncs them), with no new add. (d) A member's invite of someone on the removed list is refused on the inviter's device (`chat.group.err.invite_removed`); an owner's or admin's is a re-admit, its `readmits` the statement's removal, else the held removal that counts. (e) A bundle with no statement is taken only from the owner we know (an owner that could not sign), as members take its `member_joined`.
 
 ---
 
 ## G020 — Removing a member: order, notice, re-admit
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — items 1–3 built for admins with o2 (2026-11-05): an admin's removal is its signed `remove` (G018), to the remaining members first, the removed chat read-only with "{admin} removed you"; the owner's removal line says who too. Re-admit, the copy and the bulk actions come with o4; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G009 (2): admins may remove members too.
+**Status:** Accepted (Hongwei, 2026-11-05) — items 1–3 built for admins with o2 (2026-11-05): an admin's removal is its signed `remove` (G018), to the remaining members first, the removed chat read-only with "{admin} removed you"; the owner's removal line says who too. **Items 4–6 implemented 2026-11-05 (o4)**: "They keep the messages they already received." in the removal's confirm; re-admit (an owner's or admin's invite of someone removed signs an `add` naming the removal; a member's is refused here and void elsewhere); "Remove everyone {name} added…" (owner, admins) and "Re-invite everyone {name} removed…" (owner) on the person's page and the member menu ([WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md)); phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G009 (2): admins may remove members too.
 **Decision:**
 
 1. **Who:** the owner removes anyone but itself; an admin removes members, not admins or the owner (G017).

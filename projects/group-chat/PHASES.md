@@ -72,7 +72,7 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 
 **o1 — Roles and presets (G017)**
 - [x] `admin` role live; one permission function every check calls (`GroupAllows`, `lib/messaging/GroupPermissions.h`); the unused `GroupPermission` flags and `invite_policy` / `history_visibility` fields removed
-- [x] Presets Open (default) / Managed in the owner's statement (sign bytes v2, clean cutover; `group_metadata.policy_json` `{preset}`); receivers take roles and preset on keep and adopt; the owner sets it (`SetGroupPreset`, probe `set_group_preset`) — **its switch in the group's settings comes with o4**: until members' invites and renames carry on the wire, "members add people" would not be true
+- [x] Presets Open (default) / Managed in the owner's statement (sign bytes v2, clean cutover; `group_metadata.policy_json` `{preset}`); receivers take roles and preset on keep and adopt; the owner sets it (`SetGroupPreset`, probe `set_group_preset`) — its switch in the group's settings came with o4 ("Who can add people and rename": Everyone / Admins only, the owner's; read-only for everyone else), once members' invites and renames carried on the wire
 - [x] `@everyone` for the owner and admins (G015 amendment): eligibility (`MentionVerdictFor`), the composer offer and the send-time check, the transcript highlight (`MentionRoster::everyone_senders`)
 - [x] Appoint / demote an admin (owner): `member_role_changed` / `group_preset_changed` with the re-signed roster, refused unless the roster bears them out; "Make admin" / "Remove as admin" in the member menu and the person's group-admin card; the Admin badge in the member list and group info; the group chat's line
 - [x] gtests (`group_permissions_test`, the statement's preset and admins, `GroupSettingIngestTest`, mention alert / roster, member tap); lab `group_owner_appoints_an_admin`
@@ -96,11 +96,13 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [ ] Lab `call_grows_into_a_group` (a 1:1 call grows to three, one makes a group, one joins from the banner, one says not now and stays in the call): written, not yet run
 
 **o4 — Members invite; removal (G019, G020)**
-- [ ] Invites by members per preset; accept goes to the inviter, who signs the `add`
-- [ ] Invite shows name and member count only; Accept states what joining shares; "Alice added Carol" and "added by" in the member list
-- [ ] Removal by admins (members only); order (remaining members first); the removed notice; "They keep the messages they already received"; re-admit only by owner / admins
-- [ ] Bulk: "Remove everyone {name} added", "Re-invite everyone {name} removed"
-- [ ] Lab: a member invites with the owner offline; an admin removes, a member's re-invite of that account is void, an admin re-admits
+- [x] Invites by members per preset (`GroupAllows(Invite, …)` in `InviteIdentity`); the accept goes to the inviter, whose device checks its pending invite (`ApplyInviteAcceptToRoster` → `InviteAccepted::SignAdd`) and signs the `add` (`DraftAdd`, `GroupMembershipWorkflow::AdmitInvitee`): `group_change` to the members with the newcomer's card (`newcomer`), the join bundle to the newcomer (`member_joined` with the statement, the held changes and the cards, checked by `CheckJoin` before anything is kept, `RelayReceivePipeline::ApplyJoinBundle`); the owner's own invites keep its statement event, the newcomer's side is one path; `not_allowed` refusal; the size limit (R5) refuses the invitee
+- [x] Invite shows name and member count only (`member_count`, `owner_identity` on the invite); "{count} members. Joining shares your profile with {count} people." on the invite card; "Alice added Carol" (`member_joined.added_by`, the change lines) and "Added by {name}" in the member list
+- [x] Removal by admins (members only); order (remaining members first); the removed notice; "They keep the messages they already received" in the removal's confirm; re-admit only by owner / admins (`readmits` from `RemovedEntry`; a member's invite of someone removed refused, `chat.group.err.invite_removed`)
+- [x] Bulk: "Remove everyone {name} added…" (owner, admins: `RemovableAddedBy`, one removal each), "Re-invite everyone {name} removed…" (owner: `RemovedBy`, an ordinary invite each), on the person's page (admin card) and the desktop member menu, each asking first
+- [x] Members rename under Open (`DraftRename`, `RenameAsMember`: a `rename` change, the chat's title follows, "Carol renamed the group"); "Rename for everyone" per `GroupAllows(Rename, …)`; the preset switch in group info (owner) and the desktop group menu
+- [x] gtests `group_member_invites_test` (a member's add under Open with added_by, refused under Managed, the inviter's accept checks, full, the owner's own accept, re-admit by an admin and a member's refused / void, a folded removal's re-admit, renames by preset, the bundle's changes, the newcomer checking a forged statement / change, bulk targets by role, the invite and change wire), `JoinBundleIngestTest` (a member's bundle, forged add / statement, a bundle for an invite we did not take), `GroupInfoScreenTest` / `GroupInfoSheetTest` (rename / add / preset rows by role and preset), `GroupMemberTapTest` (bulk rows by role, accountability), `CallGroupStandingsTest`; probe `invite_to_group`, `rename_group`, `remove_everyone_added_by`, `reinvite_everyone_removed_by`, `group_roster.added_by` / `title`, `group_invites.member_count`
+- [ ] Lab (written, not yet run): `member_invites_while_owner_is_away`, `managed_group_only_admins_invite`, `admin_readmits_a_removed_member`, `remove_everyone_they_added`
 
 **o5 — Invite links (G021)**
 - [ ] `link_add` / `link_revoke`; links die with their maker's membership; the link format; QR through the scan flow
@@ -111,6 +113,6 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [x] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label
 - [x] Only members allowed to invite bring guests; each participant's device checks
 - [x] `call_remove` for guests from the owner / admins; key rotates without them; their device leaves
-- [x] "Add {name} to the group" for a guest (the owner until o4); the guest's "Joining shows you to N people"
+- [x] "Add {name} to the group" for a guest — whoever may invite under the preset since o4 (`CallStandingOfMember`: `GroupAllows(Invite, …)`); the guest's "Joining shows you to N people"
 - [x] CALLS.md updated when it ships
 - [ ] Lab `group_call_guest` run (registered; Bob brings Erin, a member's remove refused, the owner's rotates the key, no rejoin by herself)
