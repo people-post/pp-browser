@@ -42,6 +42,44 @@ void CopyToClipboard(const std::string& text) {
 
 } // namespace
 
+void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsNotifyPorts& contacts_notify,
+                  const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  const bool block) {
+  const auto apply = [&host, &presenter, &contacts_notify, contact_id, peer_id, name, block]() {
+    ConversationsFacade* facade = host.Facade();
+    if (!facade) {
+      return;
+    }
+    if (!contact_id) {  // a stranger: saved as a blocked contact
+      if (auto blocked = presenter.BlockStranger(peer_id); !blocked) {
+        UserFeedback::Fail(Tr(blocked.error().message));
+        host.NotifySurfaceChanged();
+        return;
+      }
+    } else if (auto set = facade->SetContactTrust(*contact_id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
+               !set) {
+      UserFeedback::Fail(Tr("contacts.err.trust"));
+      host.NotifySurfaceChanged();
+      return;
+    }
+    if (contacts_notify.refresh) {
+      contacts_notify.refresh();
+    }
+    host.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
+    host.AfterThreadPrefsChanged();  // the row shows (or drops) its "Blocked" mark at once
+  };
+  if (!block) {
+    apply();
+    return;
+  }
+  host.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
+                   [apply](const bool ok) {
+                     if (ok) {
+                       apply();
+                     }
+                   }, true);
+}
+
 ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                      WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
                      const EmojiPickerNotifyPorts& emoji_picker_notify, const ShellFeedbackPorts& shell_feedback,
@@ -269,6 +307,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
                : thread.kind == ThreadKind::Direct ? SessionKind::Direct
                                                    : SessionKind::Ai;
   state.has_contact = contact_id.has_value();
+  state.has_peer_identity = !thread.peer_identity_value.empty();
   if (contact_id) {
     if (auto contact = facade->GetContact(*contact_id); contact && *contact) {
       state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
@@ -372,38 +411,9 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       const bool block = item == SessionMenuItem::Block;
       action.id = block ? "session_block" : "session_unblock";
       action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
-      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value, name = facade->ResolveThreadLabel(thread).title, block]() {
-        const auto apply = [this, id, peer_id, name, block]() {
-          ConversationsFacade* facade = host_.Facade();
-          if (!facade) {
-            return;
-          }
-          if (!id) { // a stranger: saved as a blocked contact
-            if (auto blocked = presenter_.BlockStranger(peer_id); !blocked) {
-              UserFeedback::Fail(Tr(blocked.error().message));
-              return;
-            }
-          } else if (auto set = facade->SetContactTrust(*id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
-                     !set) {
-            UserFeedback::Fail(Tr("contacts.err.trust"));
-            return;
-          }
-          if (contacts_notify_.refresh) {
-            contacts_notify_.refresh();
-          }
-          host_.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
-          host_.AfterThreadPrefsChanged(); // the row shows (or drops) its "Blocked" mark at once
-        };
-        if (!block) {
-          apply();
-          return;
-        }
-        host_.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
-                          [apply](const bool ok) {
-                            if (ok) {
-                              apply();
-                            }
-                          }, true);
+      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value,
+                    name = facade->ResolveThreadLabel(thread).title, block]() {
+        RunBlockFlow(host_, presenter_, contacts_notify_, id, peer_id, name, block);
       };
       break;
     }
