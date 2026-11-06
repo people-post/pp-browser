@@ -403,12 +403,13 @@ Roe<void> Application::ResetActiveProfile() {
     }
   }
 
-  // The PIN grace window's keychain entry outlives the profile directory: deleted before the wipe.
-  ForgetGrace();
-
   if (auto stopped = StopMessagingForReset(/*with_secrets=*/true); !stopped) {
     return stopped.error();
   }
+
+  // The PIN grace window's keychain entry outlives the profile directory: deleted right before the wipe, so a reset
+  // that stopped short above keeps the window.
+  ForgetGrace();
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
