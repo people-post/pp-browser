@@ -192,16 +192,18 @@ void AppendResult(std::ostringstream& out) {
   out << "<span class=\"call-phone-result-text\">{{call_in_progress_result_text}}</span></div>";
 }
 
-/** The steps before connect: only those that happen (calling, answered, setting up the encrypted line, connected). */
+/**
+ * The steps before connect, one at a time (#11): the ones passed as short ✓ lines, then the current one with its
+ * moving dot; a step that has not happened yet is not shown.
+ */
 void AppendSteps(std::ostringstream& out, const int stage) {
   out << "<div class=\"call-phone-steps\">";
   const char* vars[] = {"call_in_progress_story_step1", "call_in_progress_story_step2",
                         "call_in_progress_story_step3"};
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i <= stage && i < 3; ++i) {
     // Step 1 is current while the other side is being called, done once answered; step 2 is current after.
     const bool done = i < stage;
-    const bool current = i == stage;
-    out << "<div class=\"call-phone-step" << (done ? " call-phone-step--done" : current ? " call-phone-step--current" : "")
+    out << "<div class=\"call-phone-step" << (done ? " call-phone-step--done" : " call-phone-step--current")
         << "\"><div class=\"call-phone-step-dot\">";
     if (done) {
       out << "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg>";
@@ -257,8 +259,9 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
   out << "<div class=\"call-phone-controls\">";
   const auto flip = [&]() {
     if (call.show_flip) {
-      AppendControl(out, "call_flip_camera()", nullptr, "src=\"../icons/v2/camera-flip.svg\"",
-                    Tr("call.control.flip"));
+      // Lit while the front camera is in use, plain on the rear one (#83).
+      AppendControl(out, "call_flip_camera()", "call_in_progress_camera_front",
+                    "src=\"../icons/v2/camera-flip.svg\"", Tr("call.control.flip"));
     }
   };
   const auto mute = [&]() {
@@ -298,6 +301,9 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
     mute();
     speaker();
     camera();
+    if (call.show_roster) {
+      flip();  // the group page draws its own tiles (never the video layout) but flips the camera all the same
+    }
   }
   // Still ringing the others: the red button cancels (Kenneth 2026-11-04: a group call he started rang everyone and
   // he saw no way to cancel it); in a group it leaves, else it ends.

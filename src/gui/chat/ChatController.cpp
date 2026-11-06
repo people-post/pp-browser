@@ -12,6 +12,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/AttachmentTypeLabel.h"
 #include "gui/chat/VoiceBubble.h"
 #include "gui/chat/VoiceSendPolicy.h"
 #include <SDL3/SDL.h>
@@ -440,8 +441,14 @@ ChatController::ChatController()
     const std::string thread_id = ActiveThreadId();
     // Making the plaintext view of a stored copy is blocking work: off the UI thread.
     AppRuntime::PostWorkerNormal([this, thread_id, message_id, done = std::move(done)]() mutable {
-      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
-      AppRuntime::PostUI([done = std::move(done), path = std::move(path)]() mutable { done(std::move(path)); });
+      bool made_view = false;
+      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
+      AppRuntime::PostUI([this, made_view, done = std::move(done), path = std::move(path)]() mutable {
+        done(std::move(path));
+        if (made_view) {
+          SyncDisplayFromThread(); // a large sound file's card can now read its title and cover from the view
+        }
+      });
     });
   };
   playback_ports.element = [this](const std::string& element_id) -> ui::Element* {
@@ -459,6 +466,18 @@ ChatController::ChatController()
   scroller_.SetDirtyTurns([]() { DirtyChatTurns(); });
   working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {
     return widgets_.Find(entry_id);
+  });
+  working_set_.SetEntryLoader([this](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
+    if (!messaging_ready_ || !facade_ || ActiveThreadId().empty()) {
+      return std::nullopt;
+    }
+    auto found = facade_->GetMessage(ActiveThreadId(), entry_id);
+    if (!found || !found->has_value() || !(*found)->working_set_json || (*found)->working_set_json->empty()) {
+      log().warning << "Working set: entry " << entry_id << " has no stored panel in thread " << ActiveThreadId();
+      return std::nullopt;
+    }
+    return WorkingSetController::StoredEntry{WorkingSetCandidatesFromJson(*(*found)->working_set_json),
+                                             (*found)->chat_actions};
   });
   chrome_.SetAiAttachInfo([this]() {
     ChatThreadChrome::AiAttachInfo info;
@@ -749,8 +768,11 @@ void ChatController::FinalizeThreadDisplay() {
   RestoreWorkingSetsFromActiveThread();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
   scroller_.RequestScrollToLatest();
+  // The phone's chat overlay opens over the Chats tab, and over the AI 助手 page (Home) for an AI conversation —
+  // so an AI chat opened/started there stays on that page and Back returns to it (not to the Chats list).
   if (ChromeSnapshot().layout_mode == LayoutMode::Compact &&
-      ChromeSnapshot().nav_tab == NavTab::Sessions) {
+      (ChromeSnapshot().nav_tab == NavTab::Sessions ||
+       (ChromeSnapshot().nav_tab == NavTab::Home && InAiComposerContext()))) {
     ShellOpenCompactChat();
   }
 }
@@ -780,9 +802,14 @@ void ChatController::OnSelectThread(std::string thread_id) {  // by value: Shell
   if (thread_id != search_thread_) {
     CloseSearch(); // another chat: the search and its index belong to the one left
   }
-  // A row of Home's "New messages" widget: go to Chats first, as a tap in the Chats list would, so the chat opens
-  // (the phone's chat overlay only opens over Chats) instead of the row just being read and vanishing.
-  if (ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
+  // A row of Home's "New messages" widget (a human chat) goes to Chats first, as a tap in the Chats list would, so
+  // the chat overlay opens there. An AI conversation tapped on the AI 助手 page stays on that page (the overlay
+  // opens over Home in FinalizeThreadDisplay), so Back returns to the AI list.
+  const bool selecting_ai = facade_ && [&] {
+    auto thread = facade_->GetThread(thread_id);
+    return thread && *thread && (*thread)->kind == ThreadKind::Ai;
+  }();
+  if (!selecting_ai && ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
     ShellSelectNavTab(NavTab::Sessions);
   }
   if (presenter_.SelectThread(thread_id)) {
@@ -844,7 +871,19 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   case CloseChatPlan::Kind::DeleteAi:
     confirm_then("chat.delete_conversation",
                  plan.kind == CloseChatPlan::Kind::DeleteAi ? "chat.delete_confirm_ai" : "chat.delete_confirm",
-                 [this, thread_id]() { CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); }); });
+                 [this, thread_id, ai = plan.kind == CloseChatPlan::Kind::DeleteAi]() {
+                   CloseChatWith(thread_id, [this, thread_id, ai]() {
+                     if (ai) {
+                       // An AI conversation: stop its turn first (a late answer must not bring the thread back), and
+                       // clear what the AI remembered of it.
+                       agent_.ForgetThread(thread_id);
+                       if (facade_) {
+                         (void)facade_->ForgetThreadMemory(thread_id);
+                       }
+                     }
+                     return presenter_.CloseThread(thread_id);
+                   });
+                 });
     return;
   case CloseChatPlan::Kind::Dismiss:
     confirm_then("chat.group.dismiss_title", "chat.group.dismiss_confirm", [this, thread_id, group_id]() {
@@ -933,6 +972,12 @@ void ChatController::OnSessionsSearchChanged() {
   ApplySessionList();
   DataModelHost::Instance().Dirty("shell", "sessions");
   DataModelHost::Instance().Dirty("shell", "sessions_more");
+}
+
+void ChatController::OnToggleArchivedAi() {
+  presenter_.ToggleArchivedAi();
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnToggleArchived() {
@@ -1054,9 +1099,11 @@ void ChatController::OnProfileDataReset() {
   quotes_.clear();
   mentions_.Reset();
   agent_.ForgetAllPendingImages();
+  agent_.ClearForgottenThreads(); // the old profile's deleted conversations are not the new one's
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
+  shell_.showing_archived_ai = false;
   session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1124,6 +1171,12 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
+  shell_.archived_count_ai = list.archived_count_ai;
+  shell_.showing_archived_ai = list.showing_archived_ai;
+  shell_.archived_entry_label_ai =
+      list.showing_archived_ai
+          ? Tr("sidebar.archived.back_ai").c_str()
+          : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count_ai)}}).c_str();
   // The open chat is always drawn, wherever it sorts (opened from Contacts, or pushed down by newer ones).
   for (size_t i = 0; i < list.rows.size(); ++i) {
     if (list.rows[i].active) {
@@ -1145,6 +1198,12 @@ void ChatController::ApplySessionList() {
       continue;
     }
     shell_.sessions.push_back(std::move(row));
+  }
+  // AI conversations for the AI 助手 page (no search window yet; the whole list, newest/pinned first).
+  shell_.ai_sessions.clear();
+  shell_.ai_sessions.reserve(list.ai_rows.size());
+  for (const ChatSessionRow& from : list.ai_rows) {
+    shell_.ai_sessions.push_back(ToSessionDisplayRow(from));
   }
   ApplyHomeToday(list);
 }
@@ -2039,7 +2098,9 @@ std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgr
           Tr(large ? "chat.attachment.uploading_stay" : "chat.attachment.uploading_percent",
              {{"percent", std::to_string(percent)}})
               .c_str();
+      chat_.attachment_progress_width = (std::to_string(percent) + "%").c_str();
       DataModelHost::Instance().Dirty("chat", "attachment_status");
+      DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
     });
     return true;
   };
@@ -2125,6 +2186,28 @@ void ChatController::OnDiscardAttachmentSend() {
   RefreshPendingAttachmentChip(/*force=*/true);
 }
 
+void ChatController::OnCancelAttachmentSend() {
+  if (!chat_.attachment_uploading || !send_cancel_ || send_cancel_->exchange(true)) {
+    return;
+  }
+  // The card goes when the send stops (the upload at its next step; a direct push when it answers).
+  chat_.attachment_status = Tr("chat.attachment.cancelling").c_str();
+  chat_.attachment_cancelling = true;
+  DataModelHost::Instance().Dirty("chat", "attachment_status");
+  DataModelHost::Instance().Dirty("chat", "attachment_cancelling");
+}
+
+void ChatController::ResetUploadCard(const std::string& name) {
+  if (!chat_.attachment_thumb.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(std::string(chat_.attachment_thumb.c_str()), ec); // a copy in "picked": ours to delete
+  }
+  chat_.attachment_thumb = "";
+  chat_.attachment_progress_width = "0%";
+  chat_.attachment_type_label = AttachmentTypeLabel(name, AttachmentMimeFromFilename(name)).c_str();
+  chat_.attachment_cancelling = false;
+}
+
 void ChatController::OnRetryAttachmentSend() {
   if (!failed_voice_path_.empty()) {
     if (facade_ && !chat_.attachment_uploading) {
@@ -2145,25 +2228,31 @@ void ChatController::OnRetryAttachmentSend() {
   chat_.attachment_failed = false;
   chat_.attachment_uploading = true;
   attachment_thread_ = thread_id;
+  send_cancel_ = std::make_shared<std::atomic<bool>>(false);
+  const auto cancel = send_cancel_;
+  ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
   // Same dialog as a first send when the space is full: free the oldest file, then send the staged ciphertext again.
   BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-      [this, thread_id, record_id](std::function<void(Roe<ThreadMessage>)> done) {
-        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress());
+      [this, thread_id, record_id, cancel](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress(), cancel);
       },
-      [this](Roe<ThreadMessage> sent) {
+      [this, cancel](Roe<ThreadMessage> sent) {
         chat_.attachment_uploading = false;
+        ResetUploadCard(std::string());
         chat_.attachment_status = "";
         chat_.attachment_draft_name = "";
         failed_record_id_.clear();
         SyncComposerInputState();
         const bool stale_chip = !sent && sent.error().category == 0 &&
                                 sent.error().code == OutgoingAttachmentStore::kWrongThread;
-        if (!sent && !stale_chip) {
+        if (!sent && !stale_chip && !cancel->load()) {
           UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+        } else if (sent && cancel->load()) {
+          UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
         }
         RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone or sent: nothing shown
         if (sent) {
@@ -2200,9 +2289,12 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   chat_.attachment_failed = false;
   attachment_thread_ = thread_id;
   failed_record_id_.clear();
+  send_cancel_ = std::make_shared<std::atomic<bool>>(false);
+  const auto cancel = send_cancel_;
   const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
   chat_.attachment_draft_name =
       (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
+  ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
@@ -2211,6 +2303,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
 
   const auto finish_uploading = [this]() {
     chat_.attachment_uploading = false;
+    ResetUploadCard(std::string());
     chat_.attachment_draft_name = "";
     chat_.attachment_status = "";
     chat_.status = "";
@@ -2223,11 +2316,21 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
   const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
-                                staged_before]() {
+                                staged_before, cancel]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
+    std::string thumb = prepared && !voice_file ? WriteUploadThumbnail(path, *prepared, scratch_dir) : std::string();
     release_pick_(path); // read by now (and kept as a CAS copy once sent)
-    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before,
+    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel, thumb,
                         prepared = std::move(prepared)]() mutable {
+      if (chat_.attachment_uploading && send_cancel_ == cancel && prepared) {
+        chat_.attachment_thumb = thumb.c_str(); // the card shows it; ResetUploadCard deletes it
+        chat_.attachment_type_label = AttachmentTypeLabel(prepared->filename, prepared->mime).c_str();
+        DataModelHost::Instance().Dirty("chat", "attachment_thumb");
+        DataModelHost::Instance().Dirty("chat", "attachment_type_label");
+      } else if (!thumb.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(thumb, ec);
+      }
       if (!prepared) {
         finish_uploading();
         UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));
@@ -2242,9 +2345,10 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
       auto attempts = std::make_shared<int>(0);
       BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-          [this, thread_id, attachment, attempts](std::function<void(Roe<ThreadMessage>)> done) {
+          [this, thread_id, attachment, attempts, cancel](std::function<void(Roe<ThreadMessage>)> done) {
             if ((*attempts)++ == 0) {
-              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress());
+              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress(),
+                                           cancel);
               return;
             }
             const auto staged = facade_->PendingOutgoingAttachments(thread_id);
@@ -2252,11 +2356,15 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               done(Error("The attachment is no longer staged").WithUser(Tr("chat.attachment.pick_again")));
               return;
             }
-            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress());
+            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress(), cancel);
           },
-          [this, thread_id, path, finish_uploading, voice_file, staged_before](Roe<ThreadMessage> sent) {
+          [this, thread_id, path, finish_uploading, voice_file, staged_before, cancel](Roe<ThreadMessage> sent) {
             finish_uploading();
-            if (voice_file) {
+            const bool cancelled = !sent && cancel->load(); // nothing was sent and nothing is kept: no message
+            if (voice_file && cancelled) {
+              std::error_code ec;
+              std::filesystem::remove(path, ec);
+            } else if (voice_file) {
               // The recording's file goes once the message is out or its encrypted copy is staged for a retry; a send
               // refused before staging (the rate limit, for one) keeps it, with a Retry / Discard of its own.
               const size_t staged_after = facade_->PendingOutgoingAttachments(thread_id).size();
@@ -2268,9 +2376,14 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               }
             }
             if (!sent) {
-              UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              if (!cancelled) {
+                UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              }
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;
+            }
+            if (cancel->load()) {
+              UserFeedback::Fail(Tr("chat.attachment.already_sent")); // the cancel came after it reached the contact
             }
             SyncDisplayFromThread();
             if (thread_id == ActiveThreadId()) {
@@ -2316,6 +2429,7 @@ std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::strin
   facts.voice_supported = VoiceMessagesSupported();
   facts.voice_max_seconds = facade_->CurrentAttachmentLimits().voice_max_seconds;
   facts.voice_state = [this](const std::string& message_id) { return voice_playback_->State(message_id); };
+  facts.audio_files_play = voice_playback_->PlaysFiles();
   std::vector<MessageDisplayRow> rows =
       RenderTranscript(facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facts,
                        presenter_.MentionRosterOf(thread_id));
@@ -2396,10 +2510,12 @@ void ChatController::OpenAttachment(const std::string& message_id) {
       });
     }
     bool made_view = false;
-    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
+    auto path = facade_->AttachmentOpenPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
+    // The open path carries the sender's name, so its extension types a sound file sent as octet-stream too.
+    const bool is_sound = info && path && IsAudioFileAttachment(info->mime, *path);
     const int64_t worker_ms = ms_since(tapped);
-    AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,
+    AppRuntime::PostUI([this, thread_id, message_id, is_video, is_sound, made_view, tapped, lookup_ms, worker_ms,
                         path = std::move(path), needs_confirm]() {
       opening_message_ids_.erase(message_id);
       // Result in (ready or not): the preview goes, on the next frame so the viewer is already presenting.
@@ -2431,6 +2547,12 @@ void ChatController::OpenAttachment(const std::string& message_id) {
       log().info << "Attachment tap: lookup " << lookup_ms << " ms, worker " << worker_ms << " ms, to open call "
                  << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - tapped).count()
                  << " ms" << (made_view ? " (made view)" : "");
+      if (is_sound) {
+        // A sound file reaches the system preview only when its card was not drawn as the in-app player (#111).
+        log().info << "sound attachment tap: route=system-preview reason="
+                   << (voice_playback_->PlaysFiles() ? "card drawn as a file (not ready when drawn)"
+                                                     : "no in-app player on this platform");
+      }
       if (needs_confirm) {
         dismiss_preview();
         ShowConfirm(Tr("chat.attachment.open_confirm_title"), Tr("chat.attachment.open_confirm_body"),
@@ -2802,16 +2924,8 @@ void ChatController::OnSendMessage() {
     return;
   }
 
-  // On a phone the on-screen keyboard stays up for as long as the composer has focus; sending is what closes it.
-  const auto close_keyboard = [this] {
-    if (!Platform::IsMobile() || !context_ || context_->GetNumDocuments() == 0) {
-      return;
-    }
-    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-      draft->Blur();
-    }
-  };
-
+  // Sending keeps the draft focused, so the keyboard stays up for the next line (#90); a tap on the transcript
+  // takes the focus and closes it (pp-cpp-ui moves the focus off the field on release).
   if (!text.empty()) {
     if (auto valid = ChatPresenter::ValidateDraft(text); !valid) {
       ShowToast(Tr(valid.error().message));
@@ -2825,7 +2939,6 @@ void ChatController::OnSendMessage() {
       chat_.draft = "";
       DirtyChatChrome();
       scroller_.RequestScrollToLatest();
-      close_keyboard();
     }
     return;
   }
@@ -2838,7 +2951,6 @@ void ChatController::OnSendMessage() {
   // Picks of members who left since are dropped here (read at send), as the receiver would not light them anyway.
   if (std::vector<TextSpan> spans = presenter_.SpansOnRoster(thread_id, mentions_.SpansFor(thread_id, text));
       presenter_.SendsWithMentions(thread_id, out, spans)) {
-    close_keyboard();
     SendWithMentions(thread_id, text, out, std::move(spans));
     return;
   }
@@ -2846,7 +2958,6 @@ void ChatController::OnSendMessage() {
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
-  close_keyboard();
   CancelQuoteReply();
   SendUserText(out);
 }
@@ -3292,7 +3403,11 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
-  ShellSelectNavTab(NavTab::Sessions);
+  // The phone keeps the new AI conversation on the AI 助手 page (Home): the chat overlay opens over it and Back
+  // returns to the AI list. The desktop shows the chat in its panes, so it still moves to the Chats surface.
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact) {
+    ShellSelectNavTab(NavTab::Sessions);
+  }
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
   NotifySurfaceChanged();
@@ -3327,7 +3442,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   bool home_thread_was_empty = false;
-  if (ChromeSnapshot().nav_tab == NavTab::Home) {
+  // The composer on the PP 助手 page (the list, no chat overlay) starts a NEW conversation each send. Once a
+  // conversation is open (the overlay), the same Home tab keeps sending into that thread — continue, don't re-create.
+  if (ChromeSnapshot().nav_tab == NavTab::Home && !ChromeSnapshot().compact_chat_open) {
     if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       log().info << "Send ignored: could not open a thread from Home";
       return;
@@ -3386,7 +3503,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
   // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
   // the preview update, which rebuilds the session rows once.
-  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), AiThreadTitleFromMessage(trimmed));
+  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), trimmed);
   UpdateSidebarPreview(trimmed);
   DirtyChatChrome();
 
@@ -3643,7 +3760,7 @@ QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item
     }
     return QueuedSendOutcome::NotStarted;
   }
-  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, AiThreadTitleFromMessage(item.text));
+  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, item.text);
   if (!expects) {
     return QueuedSendOutcome::NotStarted;
   }
@@ -4036,8 +4153,12 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("voice_cancel", DataEvent([this] { voice_->OnCancelButton(); }));
         ctor.BindEventCallback("play_voice", DataEvent<std::string>(
             [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
+        ctor.BindEventCallback("play_audio_file", DataEvent<std::string>(
+            [this](const std::string& message_id) { voice_playback_->ToggleFile(message_id); }));
+        ctor.BindEventCallback("audio_seek_press", DataEventAt([this](ui::Event& ev) { voice_playback_->SeekPress(ev); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
+        ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
         ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>(
@@ -4115,6 +4236,7 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
@@ -4614,6 +4736,20 @@ std::string ChatController::AskAiSharedThread(const bool create) {
   return best;
 }
 
+std::string ChatController::AskAiNewThread() {
+  if (!messaging_ready_ || !facade_) {
+    return {};
+  }
+  // Not opened: the page under the panel stays as it is.
+  auto created = facade_->CreateAiThread();
+  if (!created) {
+    log().warning << "Ask AI: could not create the AI chat: " << created.error().message;
+    return {};
+  }
+  SyncShellSessions();
+  return created->id;
+}
+
 std::vector<AskAiRow> ChatController::AskAiRecentRows(const std::string& thread_id, const size_t limit) {
   std::vector<AskAiRow> out;
   if (!messaging_ready_ || !facade_ || thread_id.empty()) {
@@ -4660,7 +4796,7 @@ std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, con
     log().warning << "Ask AI: could not store the question: " << stored.error().message;
     return {};
   }
-  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(text));
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, text);
   (void)facade_->UpdatePreview(thread_id, text);
   SyncShellSessions();
   return stored->id.empty() ? message.id : stored->id;
@@ -4769,6 +4905,7 @@ void ChatController::ChooseGroupPreset(const std::string& group_id, const GroupP
     ContextMenuAction action;
     action.id = preset == GroupPreset::Managed ? "group_preset_managed" : "group_preset_open";
     action.label = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed" : "group_info.preset_open");
+    action.detail = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed_detail" : "group_info.preset_open_detail");
     action.run = [choose, preset]() { choose(preset); };
     action.selected = preset == current;
     actions.push_back(std::move(action));

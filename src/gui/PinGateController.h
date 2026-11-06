@@ -30,6 +30,11 @@ public:
   void ShowError(const std::string& message);
   /** A CallKit call is waiting for the unlock (or no longer is): the unlock screen's words follow. */
   void RefreshCallHint();
+  /**
+   * PIN grace window: a call waits for the locked phone's unlock (true) — "Unlock your phone to connect the call"
+   * and an "Enter PIN instead" button instead of the PIN box — or no longer does (false): the unlock screen as usual.
+   */
+  void SetWaitingDeviceUnlock(bool waiting);
 
   void OnSubmit();
   /** Create / chooser / identity-fork / link-paste may cancel. Unlock ignores cancel. */
@@ -43,6 +48,8 @@ public:
   /** The phrase page: pick a saved copy of the account (M023) to restore from too. */
   void OnUseSavedCopy();
   void OnForgotToggle();
+  /** "Enter PIN instead" on the waiting screen. */
+  void OnUsePinInstead();
   void DirtyPinFields();
 
 private:

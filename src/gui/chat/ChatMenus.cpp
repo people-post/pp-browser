@@ -42,6 +42,44 @@ void CopyToClipboard(const std::string& text) {
 
 } // namespace
 
+void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsNotifyPorts& contacts_notify,
+                  const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  const bool block) {
+  const auto apply = [&host, &presenter, &contacts_notify, contact_id, peer_id, name, block]() {
+    ConversationsFacade* facade = host.Facade();
+    if (!facade) {
+      return;
+    }
+    if (!contact_id) {  // a stranger: saved as a blocked contact
+      if (auto blocked = presenter.BlockStranger(peer_id); !blocked) {
+        UserFeedback::Fail(Tr(blocked.error().message));
+        host.NotifySurfaceChanged();
+        return;
+      }
+    } else if (auto set = facade->SetContactTrust(*contact_id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
+               !set) {
+      UserFeedback::Fail(Tr("contacts.err.trust"));
+      host.NotifySurfaceChanged();
+      return;
+    }
+    if (contacts_notify.refresh) {
+      contacts_notify.refresh();
+    }
+    host.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
+    host.AfterThreadPrefsChanged();  // the row shows (or drops) its "Blocked" mark at once
+  };
+  if (!block) {
+    apply();
+    return;
+  }
+  host.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
+                   [apply](const bool ok) {
+                     if (ok) {
+                       apply();
+                     }
+                   }, true);
+}
+
 ChatMenus::ChatMenus(ChatMenusHost& host, ChatPresenter& presenter, const ChatScreenState& chat,
                      WorkingSetController& working_set, const ContactsNotifyPorts& contacts_notify,
                      const EmojiPickerNotifyPorts& emoji_picker_notify, const ShellFeedbackPorts& shell_feedback,
@@ -201,13 +239,43 @@ void ChatMenus::RunSessionSwipeAction(const std::string& thread_id, const Sessio
     ids[0] = "session_mark_read";
     ids[1] = "session_mark_unread";
     break;
+  case SessionSwipeAction::Rename:
+    ids[0] = "session_rename"; // offered for AI conversations only
+    break;
   }
   for (ContextMenuAction& item : SessionActions(thread_id, ui::Vector2i(0, 0))) {
-    if ((item.id == ids[0] || item.id == ids[1]) && item.run) {
+    // An action with no second id (e.g. Rename) leaves ids[1] null; comparing a std::string to a null char* would
+    // strlen(nullptr) and crash, so guard each id before the compare.
+    const bool match = (ids[0] && item.id == ids[0]) || (ids[1] && item.id == ids[1]);
+    if (match && item.run) {
       item.run();
       return;
     }
   }
+}
+
+void ChatMenus::RenameAiThread(const std::string& thread_id) {
+  ConversationsFacade* facade = host_.Facade();
+  if (!facade) {
+    return;
+  }
+  auto thread = facade->GetThread(thread_id);
+  if (!thread || !*thread || (*thread)->kind != ThreadKind::Ai) {
+    return;
+  }
+  host_.ShowPrompt(Tr("chat.ai_rename.title"), Tr("chat.ai_rename.prompt"), SessionTitle(thread_id),
+                   [this, thread_id](const bool ok, std::string value) {
+                     if (!ok) {
+                       return;
+                     }
+                     // An empty name goes back to the automatic title.
+                     if (auto saved = presenter_.SetThreadLocalTitle(thread_id, value); !saved) {
+                       UserFeedback::Fail(saved.error().message);
+                     } else {
+                       host_.AfterThreadPrefsChanged();
+                     }
+                     host_.NotifySurfaceChanged();
+                   });
 }
 
 std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thread_id, const ui::Vector2i position) {
@@ -239,6 +307,7 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
                : thread.kind == ThreadKind::Direct ? SessionKind::Direct
                                                    : SessionKind::Ai;
   state.has_contact = contact_id.has_value();
+  state.has_peer_identity = !thread.peer_identity_value.empty();
   if (contact_id) {
     if (auto contact = facade->GetContact(*contact_id); contact && *contact) {
       state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
@@ -282,6 +351,11 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
         presenter_.SetPinned(thread_id, pin);
         host_.AfterThreadPrefsChanged();
       };
+      break;
+    case SessionMenuItem::Rename:
+      action.id = "session_rename";
+      action.label = Tr("sidebar.menu.rename");
+      action.run = [this, thread_id]() { RenameAiThread(thread_id); };
       break;
     case SessionMenuItem::Mute:
       action.id = "session_mute";
@@ -337,32 +411,9 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       const bool block = item == SessionMenuItem::Block;
       action.id = block ? "session_block" : "session_unblock";
       action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
-      action.run = [this, id = *contact_id, block]() {
-        const auto apply = [this, id, block]() {
-          ConversationsFacade* facade = host_.Facade();
-          if (!facade) {
-            return;
-          }
-          if (auto set = facade->SetContactTrust(id, block ? TrustLevel::Blocked : TrustLevel::Unknown); !set) {
-            UserFeedback::Fail(Tr("contacts.err.trust"));
-            return;
-          }
-          if (contacts_notify_.refresh) {
-            contacts_notify_.refresh();
-          }
-          host_.ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
-          host_.AfterThreadPrefsChanged(); // the row shows (or drops) its "Blocked" mark at once
-        };
-        if (!block) {
-          apply();
-          return;
-        }
-        host_.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
-                          [apply](const bool ok) {
-                            if (ok) {
-                              apply();
-                            }
-                          }, true);
+      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value,
+                    name = facade->ResolveThreadLabel(thread).title, block]() {
+        RunBlockFlow(host_, presenter_, contacts_notify_, id, peer_id, name, block);
       };
       break;
     }

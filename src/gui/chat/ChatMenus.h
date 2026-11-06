@@ -16,6 +16,7 @@
 #include <ui/dom/Event.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -100,6 +101,8 @@ public:
   std::vector<ContextMenuAction> SessionActions(const std::string& thread_id, ui::Vector2i position);
   /** A swipe button on a chats-list row: runs that row's matching long-press item (nothing if the menu lacks it). */
   void RunSessionSwipeAction(const std::string& thread_id, SessionSwipeAction action);
+  /** Asks for a new name for an AI conversation and stores it as its local title (empty = the automatic title). */
+  void RenameAiThread(const std::string& thread_id);
 
   /** "+": chat with AI / message a contact / find someone. */
   void OpenNewSession(ui::Event& ev);
@@ -133,5 +136,13 @@ private:
   const ShellFeedbackPorts& shell_feedback_;
   const CallActionsPorts& call_actions_;
 };
+
+/**
+ * Block (asks first) or unblock someone from a chat menu; no contact id means a stranger, who is saved as
+ * a blocked contact. The pill names them. Shared by the session menu and the peer sheet.
+ */
+void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsNotifyPorts& contacts_notify,
+                  const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  bool block);
 
 } // namespace pbr

@@ -5,6 +5,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "common/Lifetime.h"
+#include "lib/voice/AudioFilePlayer.h"
 
 #include <ui/base/Types.h>
 
@@ -57,12 +58,21 @@ public:
     ui::String detail;
     ui::String size;
     ui::String ext;
+    ui::String kind;       // "audio" | "pdf" | "file": which icon the All tab's tile shows
+    ui::String tile_name;  // the name cut to fit one line of a tile
     bool picked = false;
+    /** A sound file: a tap plays it here (play / pause in the badge, the time in `detail`, the bar). */
+    bool audio = false;
+    bool playing = false;
+    ui::String progress; // "37%" while it plays or is paused, "" otherwise
+    /** A sound file's cover from its own tags (the chat card made it this session), "" none: its badge and tile. */
+    ui::String cover;
   };
 
   /** `visible`: the storage section shows now (changes are counted again only then). */
   StorageManagerController(const SettingsCommands& commands, const ShellNavigationPorts& navigation,
                            const ShellFeedbackPorts& feedback, std::function<bool()> visible);
+  ~StorageManagerController(); // stops a sound still playing and hands the audio session back
 
   /** Its fields and events in the settings model; also the long press that starts selecting. */
   void Bind(ui::DataModelConstructor& ctor);
@@ -119,6 +129,13 @@ private:
   void EnterSelect();
   void ExitSelect(bool clear_back_step);
   void OpenItem(const StoredAttachmentItem& item);
+  /** A sound file's row was tapped: play, pause or resume it in place (one at a time; it stops when the page goes). */
+  void ToggleAudio(const StoredAttachmentItem& item);
+  void StopAudio();
+  void OnAudioEnded(uint64_t serial, VoicePlayEnd end);
+  /** Puts the playing state into the file rows (after a rebuild, a tick, an end). */
+  void ApplyAudioToRows();
+  IAudioFilePlayer* AudioPlayer();
   void PerformDelete(std::vector<StoredAttachmentRef> refs);
   void PushBackStep(const char* id, std::function<void()> commit);
   void ClearBackStep(const char* id);
@@ -146,7 +163,7 @@ private:
 
   // Page state.
   std::string page_ = "main";
-  std::string tab_ = "picture";
+  std::string tab_ = "all";
   bool items_large_ = false;
   std::string items_thread_;
   std::vector<StoredAttachmentItem> page_all_;   // the open chat's items (or the large list), every kind
@@ -159,6 +176,14 @@ private:
   bool busy_ = false;
   std::optional<uint64_t> releasable_;
   std::set<std::string> opening_;
+  // The sound file playing on the page.
+  std::unique_ptr<IAudioFilePlayer> audio_;
+  bool audio_made_ = false;
+  std::string audio_key_;  // thread + hash of the file playing or paused ("" none)
+  bool audio_paused_ = false;
+  int64_t audio_position_ms_ = 0;
+  int64_t audio_duration_ms_ = 0;
+  uint64_t audio_serial_ = 0;
 
   // Bound fields.
   bool ready_ = false;
@@ -172,6 +197,7 @@ private:
   std::vector<ChatRow> chats_;
   bool media_empty_ = false;
   ui::String items_title_;
+  ui::String tab_all_label_;
   ui::String tab_picture_label_;
   ui::String tab_video_label_;
   ui::String tab_file_label_;
@@ -182,7 +208,7 @@ private:
   bool has_selection_ = false;
   ui::String selection_label_;
   ui::String page_binding_ = "main";
-  ui::String tab_binding_ = "picture";
+  ui::String tab_binding_ = "all";
 };
 
 } // namespace pbr

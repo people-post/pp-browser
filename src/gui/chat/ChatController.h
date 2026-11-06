@@ -59,8 +59,10 @@
 #include <ui/base/Input.h>
 #include <ui/base/Types.h>
 
+#include <atomic>
 #include <chrono>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -275,6 +277,7 @@ private:
   /** Edit Home's rows from `layout` (the drag's working order while a handle is held). */
   void ApplyHomeEditRows(const HomeWidgetLayout& layout);
   void OnToggleArchived();
+  void OnToggleArchivedAi();
   void OnSessionsSearchChanged();
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
@@ -325,6 +328,10 @@ private:
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
   void OnDiscardAttachmentSend();
+  /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
+  void OnCancelAttachmentSend();
+  /** The upload card for a send starting (`name`: the file's name) or ended (empty): bar, badge, picture, ✕. */
+  void ResetUploadCard(const std::string& name);
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
@@ -387,6 +394,8 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
+  std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
   std::string failed_voice_path_;
   std::string failed_voice_thread_;
@@ -472,6 +481,7 @@ private:
   // The ask-AI panel's side of the screen (AskAiPanelHost).
   bool AskAiCompact() const override;
   std::string AskAiSharedThread(bool create) override;
+  std::string AskAiNewThread() override;
   std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override;
   bool AskAiLastIsQuestion(const std::string& thread_id) override;
   QueuedSendOutcome AskAiSendNow(const QueuedAgentSend& item) override { return RunQueuedAgentSend(item); }

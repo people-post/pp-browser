@@ -176,6 +176,17 @@ void PasteIntoEditor(ui::Element* editor) {
 
 enum class ActionFilter { All, Quick, List };
 
+// The label, with its explanation under it when the action has one. Both are text people may have typed.
+void AppendLabel(std::ostringstream& out, const ContextMenuAction& action) {
+  if (action.detail.empty()) {
+    out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
+    return;
+  }
+  // Block elements: as spans the label and the explanation were drawn over each other (B180).
+  out << "<div class=\"context-menu-item-text\"><div class=\"context-menu-item-label\">" << EscapeRml(action.label)
+      << "</div><div class=\"context-menu-item-detail\">" << EscapeRml(action.detail) << "</div></div>";
+}
+
 void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions,
                          const ActionFilter filter = ActionFilter::All, const int icon_dp = 16) {
   for (size_t i = 0; i < actions.size(); ++i) {
@@ -197,7 +208,7 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
           << "\" width=\"" << icon_dp << "\" height=\"" << icon_dp << "\" crop-to-content=\"true\"></svg></div>";
     }
     // Labels carry names people typed (share targets, group members).
-    out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
+    AppendLabel(out, action);
     if (action.selected) {
       out << "<span class=\"context-menu-item-check\">✓</span>";
     }
@@ -236,8 +247,8 @@ void AppendSheetRows(std::ostringstream& out, const std::vector<ContextMenuActio
       out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span></button>";
       continue;
     }
-    out << "<span class=\"context-menu-item-body\"><span class=\"context-menu-item-label\">" << EscapeRml(action.label)
-        << "</span>";
+    out << "<span class=\"context-menu-item-body\">";
+    AppendLabel(out, action);
     if (action.selected) {
       out << "<span class=\"context-menu-item-check\">✓</span>";
     }

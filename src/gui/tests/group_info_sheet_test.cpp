@@ -209,6 +209,15 @@ TEST_F(GroupInfoSheetTest, TheOwnerSwitchesWhoCanAddPeople) {
   EXPECT_TRUE(host.Called("preset:g1:managed"));
 }
 
+// #120: each choice of the owner's picker says in one line what it allows.
+TEST_F(GroupInfoSheetTest, TheCopyOfEachPresetChoiceExplainsWhatItAllows) {
+  const std::string open = Tr("group_info.preset_open_detail");
+  const std::string managed = Tr("group_info.preset_managed_detail");
+  EXPECT_NE(open, "group_info.preset_open_detail");
+  EXPECT_NE(managed, "group_info.preset_managed_detail");
+  EXPECT_NE(open, managed);
+}
+
 // G019: an Open group's member adds people and renames for everyone from the sheet.
 TEST_F(GroupInfoSheetTest, AnOpenGroupsMemberAddsAndRenamesForEveryone) {
   host.screen = BuildGroupInfoScreen(Facts(/*owner=*/false));

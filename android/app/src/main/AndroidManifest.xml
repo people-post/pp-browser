@@ -78,7 +78,9 @@
             </intent-filter>
         </activity>
 
-        <!-- Camera output files (cache/capture/) handed to the system camera app. -->
+        <!-- Camera output files (cache/capture/) handed to the system camera app, and links to downloaded
+             attachments (cache/open/) handed to the app that opens them (MainActivity.openFile); one file at a
+             time, read only. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.capture"

@@ -54,7 +54,7 @@ protected:
       for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
                                "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
-                               "remove_image", "attach_capture"}) {
+                               "cancel_attachment_send", "remove_image", "attach_capture"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
       }
     }));
@@ -89,6 +89,10 @@ protected:
                             "attachment_here",
                             "attachment_draft_name",
                             "attachment_status",
+                            "attachment_progress_width",
+                            "attachment_thumb",
+                            "attachment_type_label",
+                            "attachment_cancelling",
                             "image_chip",
                             "image_thumb_ready",
                             "image_preparing",
@@ -287,14 +291,53 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
   EXPECT_TRUE(InsideClass("prompt-attachment-chip-action", "prompt-composer-status"));
 }
 
-TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
+// Going up: the card (type badge, name, bar, red ✕), not the chip; no Retry and no "Cancel" text button.
+TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheCardWithBadgeNameBarAndCancel) {
   state.attachment_uploading = true;
   state.attachment_here = true;
-  state.attachment_draft_name = "clip.mp4";
+  state.attachment_draft_name = "song.mp3";
+  state.attachment_type_label = "MP3";
+  state.attachment_progress_width = "40%";
   Apply();
   EXPECT_EQ(Shown("prompt-composer-status"), 1);
-  EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
+  EXPECT_EQ(Shown("prompt-attachment-chip"), 0);
   EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+  EXPECT_EQ(Shown("prompt-upload-card"), 1);
+  EXPECT_TRUE(InsideClass("prompt-upload-card", "prompt-composer-status"));
+  EXPECT_EQ(Shown("prompt-upload-type"), 1) << "no picture: the storage page's type badge";
+  EXPECT_EQ(Shown("prompt-upload-thumb"), 0);
+  EXPECT_EQ(Shown("prompt-upload-name"), 1);
+  EXPECT_EQ(Shown("prompt-upload-bar"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 1);
+  EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 0);
+  ui::ElementList fills;
+  document->GetElementsByClassName(fills, "prompt-upload-fill");
+  ASSERT_EQ(fills.size(), 1u);
+  EXPECT_TRUE(fills[0]->IsClassSet("prompt-upload-fill--moving")) << "it moves while bytes go";
+  ui::ElementList cancels;
+  document->GetElementsByClassName(cancels, "prompt-upload-cancel");
+  ASSERT_EQ(cancels.size(), 1u);
+  EXPECT_FALSE(cancels[0]->GetAttribute<ui::String>("title", "").empty()) << "the ✕ says what it does";
+}
+
+// A picture shows itself instead of the badge; Cancel pressed: the bar stops and the ✕ turns into a spinner.
+TEST_F(ComposerVoiceMarkupTest, APictureShowsItsThumbAndCancellingStopsTheBar) {
+  state.attachment_uploading = true;
+  state.attachment_here = true;
+  state.attachment_draft_name = "photo.jpg";
+  state.attachment_thumb = "thumb.jpg";
+  state.attachment_progress_width = "40%";
+  state.attachment_cancelling = true;
+  Apply();
+  EXPECT_EQ(Shown("prompt-upload-thumb"), 1);
+  EXPECT_EQ(Shown("prompt-upload-type"), 0);
+  EXPECT_EQ(Shown("prompt-upload-cancel-icon"), 0);
+  EXPECT_EQ(Shown("prompt-upload-cancel-spin"), 1);
+  ui::ElementList fills;
+  document->GetElementsByClassName(fills, "prompt-upload-fill");
+  ASSERT_EQ(fills.size(), 1u);
+  EXPECT_FALSE(fills[0]->IsClassSet("prompt-upload-fill--moving"));
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
@@ -327,7 +370,7 @@ TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {
   EXPECT_EQ(timer[0]->GetInnerRML(), "0:07");
 }
 
-// An upload in chat A: its chip shows there only; switching to chat B hides it, back to A shows it again.
+// An upload in chat A: its card shows there only; switching to chat B hides it, back to A shows it again.
 TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
   state.attachment_uploading = true;
   state.attachment_draft_name = "clip.mp4";
@@ -338,7 +381,7 @@ TEST_F(ComposerVoiceMarkupTest, TheUploadChipFollowsTheChatItBelongsTo) {
     Apply();
     DataModelHost::Instance().Dirty("chat", "composer_input_disabled");
     context->Update();
-    EXPECT_EQ(Shown("prompt-attachment-chip"), chip_expected) << "open chat " << open_chat;
+    EXPECT_EQ(Shown("prompt-upload-card"), chip_expected) << "open chat " << open_chat;
     EXPECT_EQ(state.composer_input_disabled, chip_expected == 1) << "input follows the chip in " << open_chat;
   }
 }

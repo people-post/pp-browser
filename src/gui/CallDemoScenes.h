@@ -18,7 +18,9 @@ namespace pbr {
  * the demo app reads PP_DEMO_CALL ("voice", "voice@12" starts 12 s in) and calls it.
  *
  * Scenes: ring, ring_group, voice (calling → answered → relayed → a closer way at 25 s → slower at 35 s), reconnect,
- * video, failed, answer_group (a group ring answered at 3 s), group_voice, group_video. In the group scenes we speak
+ * video, failed, answer_group (a group ring answered at 3 s), group_voice, group_video, and V060's on hold:
+ * voice_hold / video_hold (the other side has the 1:1 call on hold), group_hold (one member on hold, another's camera
+ * paused). In the group scenes we speak
  * from 5 s, the first member from 11 s and the second from 20 s (the speaking rings and the spotlight); the 1:1 video
  * scene has both people in its roster, so its small picture swaps.
  */

@@ -135,6 +135,12 @@ void MarkReceiveFailure(RelayReceiveOutcome& outcome, const std::string& sender,
   }
 }
 
+/** An invite refused for want of a contact is told to the user apart from other membership failures. */
+ReceiveFailure MembershipFailure(const Error& err) {
+  return err.message == kGroupInviteNeedsContactError ? ReceiveFailure::GroupInviteNeedsContact
+                                                       : ReceiveFailure::MembershipUpdateFailed;
+}
+
 /** Membership DMs must apply even when the 1:1 seq stream is SoftCompromised. */
 bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
   return GroupMembershipCodec::ControlTypeFromMessage(message).has_value();
@@ -939,6 +945,9 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return allowed.error();
   }
   if (!*allowed) {
+    if (invite_gate_->RefusesUnknownInviter(invite->inviter_identity)) {
+      return Error(kGroupInviteNeedsContactError);
+    }
     return Error("Invite blocked by policy");
   }
 
@@ -1727,7 +1736,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         persisted.sender_device = RowDevice(numbering);
         if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
             !membership) {
-          MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
+          MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                              membership.error().message, resolved_thread_id);
           return outcome;
         }
@@ -1774,7 +1783,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
@@ -2035,7 +2044,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   if (auto membership = ApplyInboundMembershipMessage(persisted, envelope.sender_contact_id, &outcome);
       !membership) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::MembershipUpdateFailed,
+    MarkReceiveFailure(outcome, envelope.sender_contact_id, MembershipFailure(membership.error()),
                        membership.error().message, resolved_thread_id);
     return outcome;
   }

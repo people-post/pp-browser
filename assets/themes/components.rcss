@@ -727,6 +727,122 @@ select selectbox option {
   opacity: 0.72;
 }
 
+/* The upload card (sending a picture or file): picture or type badge, name over a progress bar, red cancel disc.
+   The bar breathes (opacity only: no layout per frame) while bytes move; it stops when done or cancelled. */
+.prompt-upload-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  padding: 8dp 4dp 8dp 10dp;
+  border-radius: 14dp;
+  background-color: rgba(127, 127, 127, 0.14);
+}
+
+.prompt-upload-thumb {
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 8dp;
+}
+
+.prompt-upload-type {
+  width: 40dp;
+  height: 44dp;
+  border-radius: 8dp;
+}
+
+.prompt-upload-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5dp;
+}
+
+.prompt-upload-name {
+  font-size: 14dp;
+  text-overflow: ellipsis;
+}
+
+.prompt-upload-bar {
+  height: 6dp;
+  border-radius: 3dp;
+  background-color: rgba(127, 127, 127, 0.28);
+}
+
+.prompt-upload-fill {
+  height: 6dp;
+  min-width: 6dp;
+  border-radius: 3dp;
+  background-color: #0a84ff;
+}
+
+@keyframes prompt-upload-breathe {
+  0% { opacity: 1; }
+  50% { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+
+.prompt-upload-fill--moving {
+  animation: 1.4s sine-in-out infinite prompt-upload-breathe;
+}
+
+.prompt-upload-status {
+  font-size: 11dp;
+}
+
+/* 44dp tap target around a 30dp red disc with a white cross; cancelling: dimmed, the cross turns into a spinner. */
+.prompt-upload-cancel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-upload-cancel-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+  background-color: #ff3b30;
+}
+
+.prompt-upload-cancel-icon {
+  width: 12dp;
+  height: 12dp;
+  image-color: #ffffff;
+}
+
+.prompt-upload-cancel--busy .prompt-upload-cancel-disc {
+  opacity: 0.5;
+}
+
+@keyframes prompt-upload-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.prompt-upload-cancel-spin {
+  width: 10dp;
+  height: 10dp;
+  border-width: 2dp;
+  border-color: #ffffff #ffffff #ffffff transparent;
+  border-radius: 7dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
 /* The AI picture in the composer: a small thumbnail with a remove badge overlapping its top-right corner
    (a dark disc with a white ring and a white cross: visible on any picture and on both themes). */
 .prompt-image-thumb-wrap {
@@ -5099,9 +5215,16 @@ call-video-tile {
 }
 
 .call-make-group--phone {
-  height: 40dp;
+  height: 44dp;  /* tappable ≥44dp on phones (Kenneth 2026-11-03) */
   padding: 0 18dp;
-  border-radius: 20dp;
+  border-radius: 22dp;
+}
+
+/* The group offer's "Join / Not now / Add to group / Remove from call" buttons: 44dp tall on phones. */
+.shell-layer-compact .call-group-offer-btn {
+  height: 44dp;
+  line-height: 44dp;
+  border-radius: 22dp;
 }
 
 .call-make-group--phone .call-make-group-label {
@@ -5647,6 +5770,12 @@ call-video-tile {
   font-weight: bold;
 }
 
+/* A passed step stays as a short ✓ line above the current one (#11). */
+.call-phone-step--done .call-phone-step-text {
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
 /* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
 .call-phone-tips {
   position: relative;
@@ -5873,6 +6002,20 @@ call-video-tile {
 
 .call-hold-pill--who {
   margin: 4dp 0 2dp 0;
+}
+
+/* The 1:1 page's status line already says it ("对方暂时离开，请稍等"), and a strip tile is too narrow for the words:
+   the pill there is the pause icon alone. */
+.call-hold-pill--hero,
+.call-hold-pill--who,
+.call-phone-tile--strip .call-hold-pill {
+  padding: 4dp 8dp;
+}
+
+.call-hold-pill--hero .call-hold-pill-text,
+.call-hold-pill--who .call-hold-pill-text,
+.call-phone-tile--strip .call-hold-pill-text {
+  display: none;
 }
 
 .call-phone-tile--on-hold .call-phone-avatar,
@@ -7480,6 +7623,105 @@ input.checkbox {
   margin-left: auto;
 }
 
+/* A sound file (an MP3) played in place: a small music card. The cover on the left, title and artist / size on the
+   right, one line each; under them play / pause, a bar that takes the room left and the time in a fixed width, so a
+   long time ("12:34 / 59:59") never runs past the card (Kenneth 2026-11-06). */
+.chat-audio-card {
+  width: 280dp;
+  box-sizing: border-box;
+}
+
+.chat-audio-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.chat-audio-cover {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  margin-right: 10dp;
+  border-radius: 8dp;
+  overflow: hidden;
+}
+
+.chat-audio-cover-image {
+  display: block;
+  width: 48dp;
+  height: 48dp;
+}
+
+.chat-audio-cover-note {
+  width: 24dp;
+  height: 24dp;
+}
+
+.chat-audio-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-audio-title,
+.chat-audio-sub {
+  display: block;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-audio-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 8dp;
+}
+
+/* The voice message's 36dp play / pause button. */
+.chat-audio-controls .chat-voice-play {
+  margin-right: 10dp;
+}
+
+/* The thin bar sits in a 32dp-tall touch area (4dp bar + 14dp above and below): a tap or a drag there seeks. */
+.chat-audio-seek {
+  flex: 1;
+  min-width: 0;
+  padding: 14dp 0;
+  cursor: pointer;
+  position: relative;
+}
+
+/* The drag knob: 14dp round (12dp + the 1dp ring), centred on the end of the filled part (left is set with the fill width). Dark on a
+   received bubble; the own-bubble white is in the colour files. */
+.chat-audio-knob {
+  position: absolute;
+  top: 9dp;
+  width: 12dp;
+  height: 12dp;
+  margin-left: -7dp;
+  border-radius: 7dp;
+  background-color: #1f2937;
+  border: 1dp rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+
+.chat-audio-seek .chat-voice-track {
+  min-width: 0;
+}
+
+.chat-audio-time {
+  flex-shrink: 0;
+  width: 80dp;
+  margin-left: 8dp;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 /* A voice message: play / pause, a progress line, the length. */
 .chat-voice-card {
   display: flex;
@@ -7557,10 +7799,50 @@ input.checkbox {
 
 .chat-attachment-video-poster {
   display: block;
-  max-width: 100%;
-  max-height: 240dp;
   border-radius: 8dp;
-  margin-bottom: 8dp;
+}
+
+/* The frame holds the poster (explicit dp size from the poster's own proportions) and the play disc; it clips both
+   (clip: always: overflow:hidden alone clips only scrolling content) and is the tap target for the system player. */
+.chat-attachment-video-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  clip: always;
+  border-radius: 8dp;
+  max-width: 200dp;
+  cursor: pointer;
+}
+
+.chat-attachment-video-frame--bare {
+  width: 200dp;
+  height: 112dp;
+  padding: 10dp;
+  background-color: #1a1a1a;
+  color: #ffffff;
+}
+
+.chat-attachment-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48dp;
+  height: 48dp;
+  margin-top: -24dp;
+  margin-left: -24dp;
+  border-radius: 24dp;
+  background-color: rgba(0, 0, 0, 140);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-attachment-video-play-icon {
+  image-color: #ffffff; /* the theme tints svg icons with the text colour: black on the dark disc */
+  /* In flow, not absolute: the engine gives an absolutely placed <svg> no size (the disc showed empty). */
+  margin-left: 3dp;
+  pointer-events: none;
 }
 
 .chat-attachment-video {
@@ -8589,6 +8871,28 @@ input.checkbox {
   min-width: 0;
   font-family: LatoLatin;
   font-size: 14dp;
+}
+
+.context-menu-item-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 8dp 0;
+}
+
+.context-menu-item-text .context-menu-item-label {
+  display: block;
+  flex: none;
+  white-space: normal;
+}
+
+.context-menu-item-detail {
+  display: block;
+  margin-top: 2dp;
+  white-space: normal;
+  font-family: LatoLatin;
+  font-size: 13dp;
+  color: #6b7280;
 }
 
 .context-menu-item-check {
@@ -9888,6 +10192,13 @@ input.checkbox {
   margin-top: 0;
 }
 
+/* Inside the centred qr-body column the card would shrink to its content (one character per line, B179). */
+.shell-layer-compact .qr-page .cd-card {
+  align-self: stretch;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'
    leading column, text at 72dp). */
 .cd-row.cd-row--member {
@@ -9995,13 +10306,24 @@ input.checkbox {
 }
 
 /* The transcript runs up under the header bar (the wrap starts 63dp down: the 56dp bar, the header row's 8dp margin
-   less the 1dp it overlaps) and ends at the composer, fading into it; its padding keeps the first and last bubbles
-   clear at rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner
-   between header and transcript covers what runs under it. */
+   less the 1dp it overlaps) and ends at the composer, fading into it; its top padding keeps the first bubble clear at
+   rest. It does not change when the bar collapses (no jump; the shorter bar just shows more). A banner between header
+   and transcript covers what runs under it. The engine leaves a scroller's own bottom padding out of its scroll
+   height, so the last bubble is kept clear of the composer's 16dp fade by a spacer at the end (.composer-clear:
+   16dp + 12dp; #89). */
 .shell-chat-overlay .chat-messages-wrap .messages {
   top: -63dp;
   padding-top: 63dp;
-  padding-bottom: 12dp;
+  padding-bottom: 0;
+}
+
+.composer-clear {
+  display: none;
+}
+
+.shell-chat-overlay .composer-clear {
+  display: block;
+  height: 28dp;
 }
 
 .shell-chat-overlay .chat-gap-banner,
@@ -10010,9 +10332,12 @@ input.checkbox {
   z-index: 1;
 }
 
+/* Edge to edge like the transcript and the composer under it (the panel's 12dp side padding cancelled, #89). */
 .shell-chat-overlay .chat-composer-fade {
   top: auto;
   bottom: 0;
+  left: -12dp;
+  right: -12dp;
   z-index: 1;
 }
 
@@ -10251,8 +10576,27 @@ input.checkbox {
   margin-bottom: 20dp;
 }
 
-.shell-chat-overlay .chat-attachment-video-poster {
-  max-width: 216dp;
+.shell-chat-overlay .chat-attachment-video-frame {
+  max-width: 200dp;
+  margin-bottom: 6dp;
+}
+
+/* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
+.shell-chat-overlay .chat-audio-card {
+  width: 240dp;
+  min-width: 0;
+  padding-bottom: 10dp;
+}
+
+/* Its subtitle is not a card's status line: no room under it (the card's own padding ends it); reactions hang under
+   the controls instead. */
+.shell-chat-overlay .chat-audio-card .chat-audio-meta .chat-audio-sub,
+.shell-chat-overlay .chat-audio-card.chat-reaction-host .chat-audio-meta .chat-audio-sub {
+  margin-bottom: 0;
+}
+
+.shell-chat-overlay .chat-audio-card.chat-reaction-host {
+  padding-bottom: 20dp;
 }
 
 .shell-chat-overlay .chat-attachment-card .chat-suggestion {
@@ -11639,13 +11983,63 @@ textarea:composing ~ .prompt-composer-label,
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 44dp 0 48dp 0;
+  justify-content: flex-start;
+  padding: 8dp 0 12dp 0;
+}
+
+/* The "PP 助手" page header, like the Chats page's large title; no search box. */
+.home-ai-header {
+  display: none;
+}
+.shell-layer-compact .home-ai-header {
+  display: block;
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: LatoLatin;
+  font-size: 30dp;
+  line-height: 36dp;
+  font-weight: bold;
+  text-align: left;
+  padding: 4dp 16dp 10dp 16dp;
+}
+
+/* Empty AI Home: the composer + chips dock at the bottom (the middle is left open under the header). */
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
+  margin-top: auto;
 }
 
 /* No widgets above, so the fade into the dock has nothing to fade from. */
 .shell-layer-compact .home-landing--minimal .home-dock-fade {
   display: none;
+}
+
+/* The minimal AI home scrolls a conversation list into the dock, so the composer gets the same soft frosted fade at
+   its top edge as the chat composer (Kenneth 2026-11-05). Only on the minimal home; the dock must anchor it. */
+.shell-layer-compact .home-composer-fade {
+  display: none;
+}
+.shell-layer-compact .home-landing--minimal .home-composer-fade {
+  display: block;
+}
+
+/* The AI conversation list fills the page and scrolls (its "PP 助手" title scrolls with it); the ask-AI field + chips
+   sink to the bottom (Kenneth 2026-11-05). */
+.home-ai-list {
+  display: none;
+}
+.shell-layer-compact .home-landing--minimal .home-ai-list {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden; /* the swipe buttons sit outside the row (SessionSwipeGesture) */
+  width: 100%;
+}
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
+  flex: none;
+  /* Anchors the composer frost fade (.home-composer-fade sits just above this dock's top edge). */
+  position: relative;
 }
 
 /* The ask-AI heading above the chips; phone-only, so hidden on the desktop Home. */
@@ -11929,8 +12323,12 @@ textarea:composing ~ .prompt-composer-label,
 
 /* Segmented tabs: Photos / Videos / Files. The chosen one takes the themed row surface. */
 .storage-seg {
+  display: flex;
+  flex-direction: row;
   gap: 2dp;
+  min-height: 44dp;
   padding: 2dp;
+  box-sizing: border-box;
   margin-bottom: 12dp;
   border-radius: 9dp;
 }
@@ -11940,7 +12338,7 @@ textarea:composing ~ .prompt-composer-label,
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 0;
+  min-height: 40dp;
   margin: 0;
   padding: 6dp 0;
   border-width: 0;
@@ -11954,19 +12352,24 @@ textarea:composing ~ .prompt-composer-label,
   font-weight: bold;
 }
 
-/* Photos and videos: three square cells a row (padding-top in % follows the grid's width). */
+/* Photos and videos: three cells a row, each a fixed 118dp tall (a % padding-top is not resolved against the width
+   here, so the cell would collapse and a tall picture would run out of it); the frame clips the picture. */
 .storage-grid {
   display: flex;
   flex-direction: row;
   flex-wrap: wrap;
+  width: 100%;
+  overflow: hidden;
 }
 
 .storage-tile {
   position: relative;
   display: block;
   width: 33.333%;
-  height: 0;
-  padding: 33.333% 0 0 0;
+  min-width: 0;
+  max-width: 33.333%;
+  height: 118dp;
+  padding: 0;
   margin: 0;
   border: 0;
   background-color: transparent;
@@ -11983,6 +12386,7 @@ textarea:composing ~ .prompt-composer-label,
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  clip: always;
 }
 
 .storage-tile--video .storage-tile-frame {
@@ -11995,6 +12399,8 @@ textarea:composing ~ .prompt-composer-label,
 .storage-tile-image {
   display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: auto;
 }
 
@@ -12003,6 +12409,33 @@ textarea:composing ~ .prompt-composer-label,
   left: 6dp;
   bottom: 5dp;
   font-size: 11dp;
+}
+
+/* A file in the All tab: same cell as a picture, icon on top, one-line name under it. */
+.storage-file-frame {
+  flex-direction: column;
+  padding: 0 4dp 14dp 4dp;
+}
+
+.storage-file-icon {
+  flex-shrink: 0;
+}
+
+.storage-file-ext {
+  flex-shrink: 0;
+  font-size: 9dp;
+  font-weight: bold;
+}
+
+.storage-file-name {
+  display: block;
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 4dp;
+  font-size: 11dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .storage-tile-play {
@@ -12049,6 +12482,52 @@ textarea:composing ~ .prompt-composer-label,
 .storage-file-type-text {
   font-size: 10dp;
   font-weight: bold;
+}
+
+.storage-audio-icon {
+  width: 14dp;
+  height: 14dp;
+  image-color: #ffffff;
+}
+
+/* A sound file with a cover: the badge is the cover, play / pause on a dark round mark over it. */
+.storage-file-type--cover {
+  position: relative;
+  width: 40dp;
+  overflow: hidden;
+}
+
+.storage-audio-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40dp;
+  height: 40dp;
+}
+
+.storage-file-type--cover .storage-audio-icon {
+  padding: 4dp;
+  border-radius: 11dp;
+}
+
+.storage-file-cover {
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 6dp;
+}
+
+.storage-audio-bar {
+  height: 3dp;
+  margin-top: 4dp;
+  border-radius: 2dp;
+  background-color: rgba(127, 127, 127, 0.28);
+}
+
+.storage-audio-fill {
+  height: 3dp;
+  border-radius: 2dp;
+  background-color: #0a84ff;
 }
 
 .storage-more {

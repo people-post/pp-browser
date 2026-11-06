@@ -68,7 +68,7 @@ CallController::CallController()
                               .accept = [this](const bool voice_only) { (void)presenter_.Accept(voice_only); },
                               .decline = [this]() { (void)presenter_.Decline(); },
                               .leave = [this]() { (void)presenter_.Leave(); },
-                              .toggle_mute = [this]() { presenter_.ToggleMute(); },
+                              .toggle_mute = [this]() { ToggleMute(); },
                               .display_name = [this](const std::string& identity) {
                                 return DisplayNameForIdentity(identity);
                               },
@@ -137,13 +137,45 @@ void CallController::SyncLocalHold() {
   auto* backend = Backend();
   const bool in_call = backend && backend->Available() && !presenter_.ActiveCallId().empty();
   const bool held = in_call && AudioSession::IsInterrupted();
+  if (held && local_on_hold_) {
+    // SetLocalAudioMuted posts to the sessions thread: only once the hold's mute has been seen applied does an open
+    // mic mean the user unmuted (by any path); before that it is just the post in flight (code review 2026-11-06).
+    if (backend->Media().IsMuted()) {
+      hold_mute_seen_applied_ = true;
+    } else if (hold_mute_seen_applied_) {
+      hold_mute_.UserToggled();
+    }
+  }
   if (held == local_on_hold_) {
     return;
   }
   local_on_hold_ = held;
+  hold_mute_seen_applied_ = false;
+  if (held) {
+    // The other call rings as a banner on iPhones, so the user still sees PP: the long pill says what PP did; the
+    // status line keeps saying it meanwhile (Kenneth 2026-11-06: the pill is the one style for every notice).
+    UserFeedback::Note(Tr("call.status.on_hold_local"));
+  }
   log().info << "call on hold=" << (held ? 1 : 0) << " (the OS " << (held ? "took" : "gave back") << " the audio)";
   if (in_call) {
     backend->SetLocalOnHold(held);
+  }
+  // Privacy: nothing of the other call may reach this one through our mic; a mute the user made before stays.
+  if (const auto mute = hold_mute_.Next(held, in_call && backend->Media().IsMuted()); mute && in_call) {
+    backend->SetLocalAudioMuted(*mute);
+    if (!*mute) {
+      UserFeedback::Note(Tr("call.status.on_hold_ended"));  // the hold opened the mic again: say so
+    }
+  }
+  // The camera rests meanwhile, as in the background; still in the background at the end, OnAppForeground brings it.
+  if (held && !video_paused_ && backend->Media().IsCameraEnabled()) {
+    video_paused_ = true;
+    backend->SetLocalVideoPaused(true);
+  } else if (!held && video_paused_ && AppLifecycle::IsForeground()) {
+    video_paused_ = false;
+    if (backend && backend->Available()) {
+      backend->SetLocalVideoPaused(false);
+    }
   }
 }
 
@@ -159,7 +191,7 @@ void CallController::OnAppBackground() {
 }
 
 void CallController::OnAppForeground() {
-  if (!video_paused_) {
+  if (!video_paused_ || local_on_hold_) {  // on hold: the camera comes back when the hold ends (SyncLocalHold)
     return;
   }
   video_paused_ = false;
@@ -222,6 +254,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_pulse = ring.pulse,
       .in_call_muted = in_call.muted,
       .in_call_camera_on = in_call.camera_on,
+      .in_call_camera_front = in_call.camera_front,
       .in_call_speaker_on = in_call.speaker_on,
       .in_call_stage_visible = in_call.stage_visible,
       .in_call_remote_video = in_call.remote_video,
@@ -1380,11 +1413,25 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
+// On hold (another call has the audio) PP muted the mic and paused the camera itself; a tap on those buttons meanwhile
+// hands the choice to the user (the end of the hold then changes nothing) — never a locked button (Kenneth 2026-11-06:
+// if the OS never says the hold ended, the user must be able to unmute by hand).
 void CallController::ToggleMute() {
+  if (local_on_hold_) {
+    hold_mute_.UserToggled();
+  }
   presenter_.ToggleMute();
 }
 
 void CallController::ToggleCamera() {
+  if (local_on_hold_ && video_paused_) {
+    // The hold only paused the camera (it still counts as on): a tap brings it back now, and the user keeps it from here.
+    video_paused_ = false;
+    if (auto* backend = Backend(); backend && backend->Available()) {
+      backend->SetLocalVideoPaused(false);
+    }
+    return;
+  }
   presenter_.ToggleCamera();
 }
 
@@ -1414,6 +1461,9 @@ void CallController::ApplyAudioLevels(IMediaView& media) {
     }
   }
   in_call.camera_on = media.IsCameraEnabled();
+  // The facing actually open (it changes when the other camera has opened, not on the tap): the flip button is lit
+  // while the front camera is in use (#83).
+  in_call.camera_front = in_call.camera_on && media.CameraFrontFacing();
   if (in_call.camera_on && CameraRotationFollowsDevice()) {
     // iOS: video follows the phone's physical orientation (read on UI, per tick).
     const int rotation = CameraDisplayRotationDegrees();
@@ -1951,9 +2001,21 @@ bool CallController::RenderDemoScene() {
   in_call_.stage_visible = f.video_stage;
   in_call_.show_camera = true;
   in_call_.camera_on = f.video_stage;
+  in_call_.camera_front = f.video_stage;
   in_call_.show_flip = f.video_stage;
   in_call_.remote_placeholder = "";
+  // V060 (the hold scenes): the other side has the 1:1 call on hold.
+  bool peer_on_hold = false;
+  for (const CallScreen::Member& member : f.screen.members) {
+    peer_on_hold = peer_on_hold || (!f.screen.group && !member.is_local && member.on_hold);
+  }
+  in_call_.on_hold = peer_on_hold;
   ApplyConnectStory(f.screen, f.path_kind, f.quality, f.quality_bars, now);
+  if (peer_on_hold) {
+    in_call_.subtitle =
+        Tr("call.status.on_hold_peer_named", {{"name", DisplayNameForIdentity(f.screen.peer_identity)}}).c_str();
+    in_call_.remote_placeholder = Tr("call.placeholder.on_hold").c_str();
+  }
   MediaEngineHealth engine;  // the scene's made-up levels, for the speaking rings and the spotlight
   for (const auto& [identity, level] : f.levels) {
     for (const CallRosterParticipantState& row : in_call_.roster) {
@@ -1967,13 +2029,17 @@ bool CallController::RenderDemoScene() {
   if (f.video_stage) {
     // Stand-in cameras, ours blue and theirs warm, so the 1:1 swap shows on the simulator.
     in_call_.local_preview = true;
-    in_call_.remote_video = f.screen.status == CallScreen::Status::Connected;
+    in_call_.remote_video = f.screen.status == CallScreen::Status::Connected && !peer_on_hold;
     if (now - demo_frames_ms_ >= 1000) {
       const uint64_t seq = static_cast<uint64_t>(now);
       static constexpr uint8_t kSelfTop[3] = {40, 90, 200}, kSelfBottom[3] = {20, 30, 70};
       static constexpr uint8_t kPeerTop[3] = {230, 140, 60}, kPeerBottom[3] = {120, 40, 90};
       CallVideoTileRenderer::Instance().SubmitLocalFrame(DemoCameraFrame(seq, kSelfTop, kSelfBottom));
-      CallVideoTileRenderer::Instance().SubmitRemoteFrame(DemoCameraFrame(seq, kPeerTop, kPeerBottom));
+      if (in_call_.remote_video) {
+        CallVideoTileRenderer::Instance().SubmitRemoteFrame(DemoCameraFrame(seq, kPeerTop, kPeerBottom));
+      } else {
+        CallVideoTileRenderer::Instance().ClearRemote();
+      }
       demo_frames_ms_ = now;
     }
   }

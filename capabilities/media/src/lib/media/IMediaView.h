@@ -72,6 +72,8 @@ public:
   virtual std::optional<CameraFailure> TakeCameraFailure() = 0;
   /** Phones: switch front / rear while the camera is on (error when it is off). */
   virtual Roe<void> FlipCamera() = 0;
+  /** Facing of the camera last opened (false before any open): what the flip button shows. */
+  virtual bool CameraFrontFacing() const = 0;
   /** The display turned while the camera is on: later frames rotate to match. */
   virtual void UpdateCameraDisplayRotation(int display_rotation_deg) = 0;
 

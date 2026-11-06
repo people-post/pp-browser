@@ -147,6 +147,19 @@ TEST_F(AttachmentCacheAtRestTest, MemoryCacheServesAfterCasRemovedAndClearsOnVie
   EXPECT_FALSE(static_cast<bool>(after_wipe));
 }
 
+// Review 2026-11-06: Android hands another app a link in cache/open/ outside blobs_view; a lock (and a chat's wipe)
+// cleared the views but left those links readable. Every wipe now asks the platform to forget them too.
+TEST_F(AttachmentCacheAtRestTest, EveryViewWipeForgetsTheCopiesHandedToOtherApps) {
+  int forgotten = 0;
+  SetAttachmentPlatform({.forget_opened_copies = [&forgotten]() { ++forgotten; }});
+  ASSERT_TRUE(WipeAllAttachmentViewCaches(profile_dir_));
+  EXPECT_EQ(forgotten, 1) << "a lock / start";
+  ASSERT_TRUE(WipeThreadAttachmentBlobs(profile_dir_, thread_id_));
+  EXPECT_EQ(forgotten, 2) << "a chat's local wipe";
+  SetAttachmentPlatform({});
+  EXPECT_TRUE(WipeAllAttachmentViewCaches(profile_dir_)) << "no hook installed: nothing to forget";
+}
+
 TEST_F(AttachmentCacheAtRestTest, InlinePrivateViewGateSkipsLargeVideo) {
   constexpr uint64_t kLimit = 4ull * 1024ull * 1024ull;
   EXPECT_TRUE(AttachmentAllowsInlinePrivateView("image/png", 50ull * 1024ull * 1024ull, kLimit));

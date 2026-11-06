@@ -760,6 +760,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("language", prefs.language);
   object.set("pin_is_default", prefs.pin_is_default);
   object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
+  object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
   object.set("show_notifications", prefs.show_notifications);
   object.set("show_notification_preview", prefs.show_notification_preview);
@@ -826,6 +827,11 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.pin_is_default = *pin_is_default;
   }
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
+  const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
+  prefs.unlock_grace_minutes =
+      (grace_minutes == 0 || grace_minutes == 5 || grace_minutes == 15 || grace_minutes == 60)
+          ? static_cast<int>(grace_minutes)
+          : 15;
   if (auto auto_renew = object.getIf<bool>("auto_renew_registration")) {
     prefs.auto_renew_registration = *auto_renew;
   } else {

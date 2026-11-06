@@ -8,17 +8,41 @@
 <div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="composer_input_disabled">
-  <!-- Status row above the input, only when something needs saying: an attachment uploading / failed (Retry, Cancel),
-       the AI picture, the AI answer's stop key. -->
+  <!-- Status row above the input, only when something needs saying: an attachment uploading (the card below) /
+       preparing / failed (Retry, Cancel), the AI picture, the AI answer's stop key. -->
   <div class="prompt-composer-status"
        data-if="!voice_recording && (attachment_here || image_chip || loading)">
-    <div class="prompt-attachment-chip" data-if="attachment_here">
+    <div class="prompt-attachment-chip" data-if="attachment_here && !attachment_uploading">
       <span class="prompt-attachment-chip-name">{{attachment_draft_name}}</span>
       <span class="prompt-attachment-chip-status">{{attachment_status}}</span>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
               data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
               data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
+    </div>
+    <!-- Sending: what goes (picture, or the type badge of the storage page), its name, a bar with the real progress
+         (it breathes while the bytes move and stops once cancelled), and a red ✕ that cancels the send. -->
+    <div class="prompt-upload-card" data-if="attachment_here && attachment_uploading">
+      <img class="prompt-upload-thumb" data-if="attachment_thumb != ''" data-attr-src="attachment_thumb"/>
+      <div class="storage-file-type prompt-upload-type" data-if="attachment_thumb == ''">
+        <span class="storage-file-type-text">{{attachment_type_label}}</span>
+      </div>
+      <div class="prompt-upload-body">
+        <span class="prompt-attachment-chip-name prompt-upload-name">{{attachment_draft_name}}</span>
+        <div class="prompt-upload-bar">
+          <div class="prompt-upload-fill" data-style-width="attachment_progress_width"
+               data-class-prompt-upload-fill--moving="!attachment_cancelling && attachment_progress_width != '100%'"></div>
+        </div>
+        <span class="prompt-attachment-chip-status prompt-upload-status">{{attachment_status}}</span>
+      </div>
+      <button class="prompt-upload-cancel" type="button" title="{{i18n:chat.attachment.cancel_send}}"
+              data-class-prompt-upload-cancel--busy="attachment_cancelling"
+              data-event-click="cancel_attachment_send()">
+        <div class="prompt-upload-cancel-disc">
+          <svg class="prompt-upload-cancel-icon" data-if="!attachment_cancelling" src="../icons/close.svg" width="12" height="12"></svg>
+          <div class="prompt-upload-cancel-spin" data-if="attachment_cancelling"></div>
+        </div>
+      </button>
     </div>
     <div class="prompt-attachment-chip" data-if="image_chip">
       <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on

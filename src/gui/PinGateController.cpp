@@ -70,13 +70,35 @@ std::string PinGateController::UnlockMessage() const {
 }
 
 void PinGateController::RefreshCallHint() {
-  if (!pin_state_.active || !pin_state_.unlock_mode || !shell_pin_gate_.apply_pin_gate) {
+  if (!pin_state_.active || !pin_state_.unlock_mode || pin_state_.waiting_device_unlock ||
+      !shell_pin_gate_.apply_pin_gate) {
     return;
   }
   PullBoundPinFields();
   pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
   DirtyPinFields();
+}
+
+void PinGateController::SetWaitingDeviceUnlock(const bool waiting) {
+  if (!pin_state_.active || !pin_state_.unlock_mode || !shell_pin_gate_.apply_pin_gate ||
+      pin_state_.waiting_device_unlock == waiting) {
+    return;
+  }
+  PullBoundPinFields();
+  pin_state_.waiting_device_unlock = waiting;
+  pin_state_.forgot_open = false;
+  pin_state_.error = "";
+  pin_state_.message = (waiting ? Tr("pin.unlock_phone_call_message") : UnlockMessage()).c_str();
+  ApplyPinGate();
+  DirtyPinFields();
+}
+
+void PinGateController::OnUsePinInstead() {
+  if (!pin_state_.active || !pin_state_.waiting_device_unlock || !gate_complete_.use_device_pin_instead) {
+    return;
+  }
+  gate_complete_.use_device_pin_instead();
 }
 
 void PinGateController::Dismiss() {
@@ -294,7 +316,8 @@ void PinGateController::OnSubmit() {
     return;
   }
   PullBoundPinFields();
-  if (!pin_state_.active || pin_state_.chooser_mode || pin_state_.identity_fork_mode) {
+  if (!pin_state_.active || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
+      pin_state_.waiting_device_unlock) {
     return;
   }
 

@@ -9,6 +9,7 @@
 #include <ui/dom/Event.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "common/PbrCompat.h"
@@ -43,6 +44,7 @@ private:
   std::vector<ContextMenuAction> DirectActions(const Thread& thread);
   std::vector<ContextMenuAction> GroupActions(const Thread& thread);
   void AddToContacts(const std::string& peer_id);
+
 
   ChatMenusHost& host_;
   ChatPresenter& presenter_;

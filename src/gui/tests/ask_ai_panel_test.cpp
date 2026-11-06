@@ -105,6 +105,11 @@ public:
     }
     return shared_thread;
   }
+  int new_threads = 0;
+  std::string AskAiNewThread() override {
+    shared_thread = "ai-new-" + std::to_string(++new_threads); // the newest chat is the most recent one
+    return shared_thread;
+  }
   std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) override {
     std::vector<AskAiRow> rows;
     for (const auto& [user, text] : messages[thread_id]) {
@@ -474,6 +479,64 @@ TEST_F(AskAiPanelTest, EveryEntryAndOpenInAiChatUseTheOneSharedThread) {
   ASSERT_EQ(panel_host_.opened_in_chat.size(), 1u);
   EXPECT_EQ(panel_host_.opened_in_chat[0], "ai-used-last");
   EXPECT_FALSE(panel_.IsOpen());
+}
+
+TEST_F(AskAiPanelTest, TheDotOpensEmptyAndMakesNoChatUntilAQuestionIsSent) {
+  panel_host_.messages["ai-used-last"] = {{true, "earlier"}, {false, "earlier answer"}};
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
+  EXPECT_TRUE(panel_.View().rows.empty()) << "none of the last chat shows";
+  EXPECT_EQ(panel_host_.new_threads, 0);
+  panel_.Close();
+  panel_host_.AskAiCloseSheet(0);
+  EXPECT_EQ(panel_host_.new_threads, 0) << "no question, no chat";
+}
+
+TEST_F(AskAiPanelTest, TheDotsFirstQuestionStartsANewChatAndFollowUpsStayInIt) {
+  panel_host_.messages["ai-used-last"] = {{true, "earlier"}, {false, "earlier answer"}};
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
+  panel_.SetDraftForTest("first");
+  panel_.Send();
+  ASSERT_EQ(panel_host_.sent.size(), 1u);
+  EXPECT_EQ(panel_host_.new_threads, 1);
+  EXPECT_EQ(panel_host_.sent[0].thread_id, "ai-new-1");
+  EXPECT_EQ(panel_host_.messages["ai-used-last"].size(), 2u) << "the earlier chat is untouched";
+  EXPECT_TRUE(panel_.Shows("ai-new-1"));
+  EndSharedTurn("ai-new-1", "answer");
+  panel_.SetDraftForTest("second");
+  panel_.Send();
+  ASSERT_EQ(panel_host_.sent.size(), 2u);
+  EXPECT_EQ(panel_host_.sent[1].thread_id, "ai-new-1");
+  EXPECT_EQ(panel_host_.new_threads, 1);
+  panel_.OpenInChat();
+  ASSERT_EQ(panel_host_.opened_in_chat.size(), 1u);
+  EXPECT_EQ(panel_host_.opened_in_chat[0], "ai-new-1");
+}
+
+TEST_F(AskAiPanelTest, ClosingAndTappingTheDotAgainStartsAnotherEmptyPanel) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
+  panel_.SetDraftForTest("first");
+  panel_.Send();
+  EndSharedTurn("ai-new-1", "answer");
+  EXPECT_FALSE(panel_.View().rows.empty());
+  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
+  EXPECT_TRUE(panel_.View().rows.empty());
+  panel_.SetDraftForTest("again");
+  panel_.Send();
+  EXPECT_EQ(panel_host_.new_threads, 2);
+  EXPECT_EQ(panel_host_.sent.back().thread_id, "ai-new-2");
+}
+
+TEST_F(AskAiPanelTest, TheChatMenuStillContinuesTheMostRecentChat) {
+  ASSERT_TRUE(panel_.Open(AskAiEntry::Dot));
+  panel_host_.AskAiCloseSheet(0);  // runs on_closed itself (moved out: calling it again throws on MSVC)
+  panel_host_.messages["ai-used-last"] = {{true, "earlier"}};
+  ASSERT_TRUE(panel_.Open(AskAiEntry::ChatMenu));
+  EXPECT_EQ(panel_.View().rows.size(), 1u);
+  panel_.SetDraftForTest("hello");
+  panel_.Send();
+  EXPECT_EQ(panel_host_.sent.back().thread_id, "ai-used-last");
+  EXPECT_EQ(panel_host_.new_threads, 0);
 }
 
 TEST_F(AskAiPanelTest, WithNoAiChatYetTheFirstQuestionMakesOne) {

@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <set>
 #include <optional>
 #include <string>
 #include <vector>
@@ -193,6 +194,13 @@ public:
   /** Stop every turn in flight (the app pauses). */
   void Cancel();
   /**
+   * A conversation is being deleted: stop its turn, drop its queued send and streamed row, and ignore any event of it
+   * that still arrives, so a late answer never stores a message into (and so brings back) the deleted thread.
+   */
+  void ForgetThread(const std::string& thread_id);
+  /** The deleted-conversation list is per profile: emptied on a profile reset / switch (and in `Reset`). */
+  void ClearForgottenThreads();
+  /**
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
    * id so its buttons are gone. `thread_id` empty = the open thread.
    */
@@ -327,6 +335,7 @@ private:
     std::optional<std::chrono::steady_clock::time_point> last_render;
   };
   std::map<std::string, StreamingRow> streaming_; // by thread
+  std::set<std::string> forgotten_threads_;        // deleted conversations: their late events are dropped
 };
 
 } // namespace pbr

@@ -33,6 +33,7 @@ Interactive `crypto_pwhash` ops/mem limits are stored in `vault.bin` so unlock m
 profiles/{id}/
   preferences.json  # profile prefs incl. pin_is_default (schema v4)
   vault.bin       # wrapped DEK + KDF params
+  grace.bin       # PIN grace window: DEK under K_grace (iOS only; absent outside a window)
   identity.enc    # AEAD(identity JSON) under DEK
   contacts.json   # plaintext (atomic write)
   threads/
@@ -54,6 +55,22 @@ profiles/{id}/
 
 AAD for wrap: `vault-dek|{profile_id}|1`.
 
+### PIN grace window (`grace.bin` + a keychain entry)
+
+After a PIN unlock the DEK is kept for the window the user chose (default 15 minutes; 0 = off), so a cold start or a call answered on the phone within it does not ask again ([A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Two pieces, written and deleted together (`GraceUnlock`):
+
+| Piece | Where | Holds |
+|-------|-------|-------|
+| `grace.bin` | the profile directory | `EncryptedPayload` (XChaCha20-Poly1305, as § Payload AEAD) of the DEK under `K_grace`; AAD `grace|{profile_id}` |
+| `{profile_id}/unlock_grace` | the OS secure store (iOS Keychain, `WhenUnlockedThisDeviceOnly`) | version `1` (1 byte), `K_grace` (32), `boot_id` (16), `expires_mono` (i64 LE, seconds) |
+
+- **Never stored:** the PIN, or the DEK in the clear. The keychain alone holds no DEK; `grace.bin` alone (a backup copy) cannot be opened.
+- **Device clocks, not the wall clock:** the window ends at `expires_mono` on the device's monotonic clock of the boot `boot_id` (iOS `kern.bootsessionuuid` + `mach_continuous_time`). Another boot reads as expired (a restart asks for the PIN again); changing the system time changes nothing.
+- **Read** before the dev PIN and the unlock screen, never with `pin_is_default`. Expired, one piece missing, or not decryptable (another profile's): both pieces are deleted and the PIN is asked. The keychain not readable (the phone locked): nothing is deleted; the read is retried when the phone is unlocked or the app comes to the foreground, and a call answered on the locked phone waits up to 3 minutes for that unlock before the PIN screen.
+- **Written** after a PIN unlock (typed, dev PIN, link import, recovery restore; not the default PIN). **Extended** (the keychain entry alone) only from the foreground: entering or leaving it, every minute while in it. A push wake or a background sync unlocks through an open window but never extends it.
+- **Deleted** on Change PIN, a profile reset, the window set to 0, or expiry.
+- Where the store has no such entry (macOS, Windows, Linux; Android until its store lands) nothing is written and the unlock is as before.
+
 ### Payload AEAD
 
 Uses the same blob layout as message payloads (`EncryptedPayload`: version + nonce + ciphertext).  
@@ -70,7 +87,7 @@ AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_ver
 
 1. App starts without requiring a PIN (local AI/chat works).
 2. **If `vault.bin` exists and `pin_is_default` is true:** silent unlock at bootstrap and after UI load (no modal). If silent unlock fails, fall back to the blocking unlock modal.
-3. **If `vault.bin` exists and custom PIN:** blocking unlock modal after UI load (no cancel).
+3. **If `vault.bin` exists and custom PIN:** the PIN grace window first (§ PIN grace window: an open one unlocks without a PIN); otherwise blocking unlock modal after UI load (no cancel).
 4. **If no vault:** defer until first secrets use (Register, Secure message, PSK actions, etc.) via `ProfileUnlockGate::EnsureUnlocked`. Show an **identity fork**, then:
    - **I'm new on this device** — the **three-way PIN chooser:**
      - **Set a PIN** — create flow with confirm.
@@ -78,7 +95,7 @@ AEAD AAD (`identity|{profile_id}|1`) is independent of the plaintext `schema_ver
      - **Not now** — cancel; retry on next secrets action.
    - **I already have an account** — choose a PIN for *this* device (Set a PIN / Just continue / Not now), then paste a `pp-browser-link-device-v1` payload. Wrap the **shared DEK** (`CreateWithDek`); do not mint a new Brief person first. Me → Security only **copies** a payload (export). The payload (`LinkDeviceCodec`, valid 15 minutes) carries the account ML-DSA and KEM key pairs, the DEK, the relay user id, the nickname, the issuing device's account card (required on export: the new device signs itself into it — [ACCOUNT_CARD.md](ACCOUNT_CARD.md)) and the recovery seed when the account has one. It carries **no sessions**: each device opens its own per device pair ([M021](../../projects/multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)); an older build's `public_psks` key is ignored. If this profile is already a person, **Reset this profile** in Storage, then the same fork.
 5. Optional automation: `--pin` or `PP_BROWSER_PIN` unlocks at bootstrap for tests/CI (takes precedence over silent default unlock).
-6. **Change PIN:** Me → Security when unlocked (`DataKeyVault::ChangePin`); clears `pin_is_default`.
+6. **Change PIN:** Me → Security when unlocked (`ProfileSecretsEngine::ChangePin` → `DataKeyVault::ChangePin`, then the grace window is forgotten); clears `pin_is_default`.
 7. Lock on exit clears DEK (`sodium_memzero`) in the vault and all registered `IDekConsumer`s.
 
 Default PIN is intentionally weak — offline disk theft with `pin_is_default` true is trivial. Users who want real protection should set or change their PIN in Me → Security.
@@ -102,6 +119,7 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 |------------|--------------|
 | Offline read of identity / PSK without PIN | AEAD + Argon2id |
 | Offline read when `pin_is_default` | **Weak** — known default PIN in source |
+| Reading the DEK through the PIN grace window | Only within a window, from the unlocked device itself: the keychain entry (`WhenUnlockedThisDeviceOnly`) never leaves the device and `grace.bin` alone is useless. Expiry is judged by the app: until it next runs, someone who can dump the keychain of an unlocked phone (jailbreak, forensics) gets the DEK. |
 | Crash mid JSON write | Atomic rename |
 | Transcript theft from `thread.db` | AEAD under DEK when vault exists (D102); metadata plaintext |
 
@@ -121,7 +139,7 @@ Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_pay
 |---------|-----|
 | Private CAS block | `cas-private\|{profile_id}\|{content_id_hex}\|1` (`BuildCasPrivateAad`) |
 
-Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked; it is wiped on `ClearDek` **and at every start**. A file of at most `kMaxDirectAttachmentBytes` (4 MiB) is materialized when received or sent so it can be shown; a **larger** file never is, in render or right after a receive or send: it is made on an explicit Open, on a worker, once, and lives only for that session (a large video gets its poster at that first Open). The wipe is `WipeAllAttachmentViewCaches`, which also clears `AttachmentPlaintextMemoryCache` (C011). A private video whose declared size is above `AttachmentLimits::max_receive_bytes` (`AttachmentAllowsInlinePrivateView`) is not downloaded at all and so has no `blobs_view` copy; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`. Images the user sends to the AI assistant are not stored durably: their thumbnails are session plaintext under the reserved pseudo thread `threads/ai-images/blobs_view/` and are wiped by the same `WipeAllAttachmentViewCaches` path. A voice recording before it is sent is session plaintext too: `threads/voice/blobs_view/voice-rec/voice-<ms>.ogg`, written when the recording ends, deleted once it has been read for the send (the staged ciphertext, sealed like any attachment, is the retry path), emptied when the next recording starts and wiped by the same path at start and on lock.
+Durable attachment bytes live under `{profile}/cas/private/blocks/{aa}/{bb}/{content_id_hex}` (PPBA + `FileCipher` under profile DEK). Thread `blobs/` is not used. Session plaintext for RmlUi `<img>` / OS open may be materialized under `blobs_view/` while unlocked; it is wiped on `ClearDek` **and at every start**. A file of at most `kMaxDirectAttachmentBytes` (4 MiB) is materialized when received or sent so it can be shown; a **larger** file never is, in render or right after a receive or send: it is made on an explicit Open, on a worker, once, and lives only for that session (a large video gets its poster at that first Open). A sound file's card cover (its embedded picture, read on this device with the system's tag reader once its view exists) is a small JPEG at the same `{hash}.poster.jpg` path, and its title / artist are kept in memory only (`AttachmentFetchWorkflow::AudioTags`, forgotten on `ClearDek`); none of it is sent. The wipe is `WipeAllAttachmentViewCaches`, which also clears `AttachmentPlaintextMemoryCache` (C011). A private video whose declared size is above `AttachmentLimits::max_receive_bytes` (`AttachmentAllowsInlinePrivateView`) is not downloaded at all and so has no `blobs_view` copy; CAS ingest is unchanged. Helpers: `SaveAttachmentPlaintext` / `LoadAttachmentPlaintext` / `EnsureAttachmentViewPath` in `AttachmentCache`. Images the user sends to the AI assistant are not stored durably: their thumbnails are session plaintext under the reserved pseudo thread `threads/ai-images/blobs_view/` and are wiped by the same `WipeAllAttachmentViewCaches` path. A voice recording before it is sent is session plaintext too: `threads/voice/blobs_view/voice-rec/voice-<ms>.ogg`, written when the recording ends, deleted once it has been read for the send (the staged ciphertext, sealed like any attachment, is the retry path), emptied when the next recording starts and wiped by the same path at start and on lock.
 
 
 ### Attachments in transit (outgoing / incoming)

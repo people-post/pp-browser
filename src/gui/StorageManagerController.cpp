@@ -2,12 +2,16 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformOpenFile.h"
+#include "gui/AttachmentTypeLabel.h"
 #include "gui/UserFeedback.h"
 #include "gui/chat/MessageTimeLabel.h"
 #include "gui/shell/DataModelHost.h"
 #include "lib/people/AvatarGlyph.h"
 #include "lib/ui/ContextMenuHost.h"
 #include "lib/ui/DataEvent.h"
+#include "lib/voice/VoiceAudioSession.h"
+#include "gui/chat/VoiceBubble.h"
+#include "common/Logger.h"
 #include "common/runtime/AppRuntime.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -25,6 +29,11 @@
 namespace pbr {
 
 namespace {
+
+logging::Logger& StorageLog() {
+  static logging::Logger log = logging::getLogger("StorageManager");
+  return log;
+}
 
 constexpr const char* kModel = "settings";
 constexpr const char* kStepManage = "storage_manage";
@@ -89,19 +98,55 @@ std::string CountsLine(const StorageKindTotals& totals) {
 
 /** "PDF", "ZIP": the file name's extension, else the mime subtype, at most four letters. */
 std::string FileTypeLabel(const StoredAttachmentItem& item) {
-  std::string ext;
-  if (const size_t dot = item.filename.rfind('.'); dot != std::string::npos && dot + 1 < item.filename.size()) {
-    ext = item.filename.substr(dot + 1);
-  } else if (const size_t slash = item.mime.find('/'); slash != std::string::npos) {
-    ext = item.mime.substr(slash + 1);
-  }
-  if (ext.size() > 4) {
-    ext.resize(4);
-  }
+  return AttachmentTypeLabel(item.filename, item.mime);
+}
+
+/** Which icon a file tile shows, from the extension, else the mime. */
+std::string FileIconKind(const StoredAttachmentItem& item) {
+  std::string ext = FileTypeLabel(item);
   for (char& c : ext) {
-    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
-  return ext;
+  static const char* const kAudio[] = {"mp3", "m4a", "wav", "aac", "ogg", "opus", "flac", "amr", "caf"};
+  if (item.mime.rfind("audio/", 0) == 0 || std::find(std::begin(kAudio), std::end(kAudio), ext) != std::end(kAudio)) {
+    return "audio";
+  }
+  return ext == "pdf" || item.mime == "application/pdf" ? "pdf" : "file";
+}
+
+/** The name cut to one line of a tile (a wide CJK character counts two), "…" at the cut, extension kept. */
+std::string TileName(const std::string& name) {
+  constexpr size_t kBudget = 14;
+  struct Ch {
+    size_t pos;
+    size_t len;
+    size_t width;
+  };
+  std::vector<Ch> chars;
+  size_t total = 0;
+  for (size_t i = 0; i < name.size();) {
+    const unsigned char c = static_cast<unsigned char>(name[i]);
+    const size_t len = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    const size_t width = len >= 3 ? 2 : 1;
+    chars.push_back({i, std::min(len, name.size() - i), width});
+    total += width;
+    i += len;
+  }
+  if (total <= kBudget) {
+    return name;
+  }
+  const size_t dot = name.rfind('.');
+  const std::string tail = dot != std::string::npos && name.size() - dot <= 6 ? name.substr(dot) : std::string();
+  size_t room = kBudget - 1 - tail.size();  // the "…" and the extension take their share
+  std::string head;
+  for (const Ch& ch : chars) {
+    if (ch.pos >= name.size() - tail.size() || ch.width > room) {
+      break;
+    }
+    head += name.substr(ch.pos, ch.len);
+    room -= ch.width;
+  }
+  return head + "\xE2\x80\xA6" + tail;
 }
 
 } // namespace
@@ -142,7 +187,13 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
     file.RegisterMember("detail", &FileRow::detail);
     file.RegisterMember("size", &FileRow::size);
     file.RegisterMember("ext", &FileRow::ext);
+    file.RegisterMember("kind", &FileRow::kind);
+    file.RegisterMember("tile_name", &FileRow::tile_name);
     file.RegisterMember("picked", &FileRow::picked);
+    file.RegisterMember("audio", &FileRow::audio);
+    file.RegisterMember("playing", &FileRow::playing);
+    file.RegisterMember("progress", &FileRow::progress);
+    file.RegisterMember("cover", &FileRow::cover);
   }
   ctor.RegisterArray<std::vector<Segment>>();
   ctor.RegisterArray<std::vector<ChatRow>>();
@@ -162,6 +213,7 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("storage_media_empty", &media_empty_);
   ctor.Bind("storage_items_title", &items_title_);
   ctor.Bind("storage_tab", &tab_binding_);
+  ctor.Bind("storage_tab_all_label", &tab_all_label_);
   ctor.Bind("storage_tab_picture_label", &tab_picture_label_);
   ctor.Bind("storage_tab_video_label", &tab_video_label_);
   ctor.Bind("storage_tab_file_label", &tab_file_label_);
@@ -198,7 +250,10 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
                                     : cur->HasAttribute("storage-file") ? "storage-file"
                                                                         : nullptr;
             if (attribute != nullptr) {
-              const int index = cur->GetAttribute<int>(attribute, -1);
+              int index = cur->GetAttribute<int>(attribute, -1);
+              if (index >= 0 && cur->HasAttribute("storage-file")) {
+                index += static_cast<int>(cells_.size());  // a file row follows the cells in tab_items_
+              }
               // After the press is handled: the rows re-render.
               AppRuntime::PostUI(lifetime_.Bind([this, index]() { PickByLongPress(index); }));
               break;
@@ -207,6 +262,10 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
           return std::vector<ContextMenuAction>{};
         });
   }
+}
+
+StorageManagerController::~StorageManagerController() {
+  StopAudio();
 }
 
 void StorageManagerController::Enter() {
@@ -300,12 +359,8 @@ void StorageManagerController::EnterItems() {
   selected_.clear();
   releasable_.reset();
   BuildPageItems();
-  // The first kind this page has, pictures when it has none.
-  tab_ = "picture";
-  const StorageKindTotals totals = StorageTotalsOf(page_all_);
-  if (totals.pictures == 0) {
-    tab_ = totals.videos > 0 ? "video" : totals.files > 0 ? "file" : "picture";
-  }
+  // Every kind together first; the tabs narrow it down.
+  tab_ = "all";
   shown_ = kStoragePageSize;
   NewGeneration();
   BuildCells();
@@ -318,6 +373,7 @@ void StorageManagerController::EnterItems() {
 }
 
 void StorageManagerController::LeaveItems() {
+  StopAudio(); // a sound file plays only while its page shows
   if (selecting_) {
     ClearBackStep(kStepSelect);
   }
@@ -345,7 +401,7 @@ void StorageManagerController::NewGeneration() {
 }
 
 void StorageManagerController::SetTab(const std::string& kind) {
-  if (page_ != "items" || kind == tab_ || !StoredKindFromId(kind)) {
+  if (page_ != "items" || kind == tab_ || (kind != "all" && !StoredKindFromId(kind))) {
     return;
   }
   tab_ = kind;
@@ -367,15 +423,39 @@ void StorageManagerController::BuildPageItems() {
     }
   }
   const StorageKindTotals totals = StorageTotalsOf(page_all_);
+  tab_all_label_ = (Tr("settings.storage.manage.kind.all") + " " +
+                    std::to_string(totals.pictures + totals.videos + totals.files)).c_str();
   tab_picture_label_ = (KindLabel("picture") + " " + std::to_string(totals.pictures)).c_str();
   tab_video_label_ = (KindLabel("video") + " " + std::to_string(totals.videos)).c_str();
   tab_file_label_ = (KindLabel("file") + " " + std::to_string(totals.files)).c_str();
 }
 
 void StorageManagerController::BuildCells() {
-  const StoredKind kind = StoredKindFromId(tab_).value_or(StoredKind::Picture);
-  tab_items_ = items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
-  const size_t count = std::min(shown_, tab_items_.size());
+  const auto items_of = [this](const StoredKind kind) {
+    return items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
+  };
+  size_t all_media = 0;  // "all" tab: photos and videos in all, before paging
+  if (tab_ == "all") {
+    // Photos and videos together (newest first) for the grid, then the files: a cell's index is its place in
+    // tab_items_, and a file row's is cells_.size() + its own, whatever the tab.
+    tab_items_ = items_of(StoredKind::Picture);
+    const std::vector<StoredAttachmentItem> videos = items_of(StoredKind::Video);
+    tab_items_.insert(tab_items_.end(), videos.begin(), videos.end());
+    std::stable_sort(tab_items_.begin(), tab_items_.end(),
+                     [](const StoredAttachmentItem& a, const StoredAttachmentItem& b) {
+                       return a.timestamp_ms > b.timestamp_ms;
+                     });
+    // Only the photos and videos are paged; the files (few) are all listed under the grid.
+    all_media = tab_items_.size();
+    if (all_media > shown_) {
+      tab_items_.resize(shown_);
+    }
+    const std::vector<StoredAttachmentItem> files = items_of(StoredKind::File);
+    tab_items_.insert(tab_items_.end(), files.begin(), files.end());
+  } else {
+    tab_items_ = items_of(StoredKindFromId(tab_).value_or(StoredKind::Picture));
+  }
+  const size_t count = tab_ == "all" ? tab_items_.size() : std::min(shown_, tab_items_.size());
   cells_.clear();
   files_.clear();
   const int64_t now = WallNowMs();
@@ -383,13 +463,23 @@ void StorageManagerController::BuildCells() {
     const StoredAttachmentItem& item = tab_items_[i];
     const std::string key = HashKey(item.content_hash);
     const bool picked = selected_.count(key) != 0;
+    const StoredKind kind = StoredKindOfMime(item.mime);
     if (kind == StoredKind::File) {
-      files_.push_back({.name = (item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename)
-                                    .c_str(),
+      const std::string file_name = item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename;
+      const bool audio = IsAudioFileAttachment(item.mime, item.filename);
+      // A sound file's cover is the chat card's (made from its tags at the poster path): shown when it is there.
+      const std::string cover = audio && commands_.storage.thumbnail_path
+                                    ? commands_.storage.thumbnail_path(item.thread_id, item.content_hash)
+                                    : std::string();
+      files_.push_back({.name = file_name.c_str(),
                         .detail = MessageTimeLabel(item.timestamp_ms, now).c_str(),
                         .size = FormatByteSize(item.bytes).c_str(),
                         .ext = FileTypeLabel(item).c_str(),
-                        .picked = picked});
+                         .kind = FileIconKind(item).c_str(),
+                         .tile_name = TileName(file_name).c_str(),
+                         .picked = picked,
+                         .audio = audio && AudioPlayer() != nullptr,
+                         .cover = cover.c_str()});
       continue;
     }
     std::string thumb = commands_.storage.thumbnail_path
@@ -405,7 +495,8 @@ void StorageManagerController::BuildCells() {
                       .picked = picked});
   }
   list_empty_ = tab_items_.empty();
-  has_more_ = tab_items_.size() > count;
+  has_more_ = tab_ == "all" ? all_media > shown_ : tab_items_.size() > count;
+  ApplyAudioToRows();
 }
 
 void StorageManagerController::RefreshThumbnails() {
@@ -475,10 +566,10 @@ void StorageManagerController::TapFile(const int index) {
     return;
   }
   if (selecting_) {
-    TogglePicked(index);
+    TogglePicked(static_cast<int>(cells_.size()) + index);
     return;
   }
-  OpenItem(tab_items_[static_cast<size_t>(index)]);
+  OpenItem(tab_items_[cells_.size() + static_cast<size_t>(index)]);
 }
 
 void StorageManagerController::PickByLongPress(const int index) {
@@ -503,8 +594,8 @@ void StorageManagerController::TogglePicked(const int index) {
   if (static_cast<size_t>(index) < cells_.size()) {
     cells_[static_cast<size_t>(index)].picked = picked;
   }
-  if (static_cast<size_t>(index) < files_.size()) {
-    files_[static_cast<size_t>(index)].picked = picked;
+  if (static_cast<size_t>(index) >= cells_.size() && static_cast<size_t>(index) - cells_.size() < files_.size()) {
+    files_[static_cast<size_t>(index) - cells_.size()].picked = picked;
   }
   SelectionChanged();
   DirtyAll();
@@ -593,9 +684,134 @@ void StorageManagerController::Back() {
   DirtyAll();
 }
 
+IAudioFilePlayer* StorageManagerController::AudioPlayer() {
+  if (!audio_made_) {
+    audio_made_ = true;
+    audio_ = commands_.storage.make_audio_player ? commands_.storage.make_audio_player()
+                                                 : CreatePlatformAudioFilePlayer();
+  }
+  return audio_.get();
+}
+
+void StorageManagerController::ToggleAudio(const StoredAttachmentItem& item) {
+  const std::string key = item.thread_id + "\n" + HashKey(item.content_hash);
+  if (key == audio_key_) {
+    audio_paused_ ? audio_->Resume() : audio_->Pause();
+    audio_paused_ = !audio_paused_;
+    ApplyAudioToRows();
+    DataModelHost::Instance().Dirty(kModel, "storage_files");
+    return;
+  }
+  if (!commands_.storage.open_item || !opening_.insert(key).second) {
+    return;
+  }
+  StorageLog().info << "sound file tap: route=in-app player";
+  commands_.storage.open_item(item, lifetime_.Bind([this, key](std::string path, bool /*needs_confirm*/) {
+    opening_.erase(key);
+    if (path.empty()) {
+      StorageLog().warning << "sound file: no file to play (the stored copy could not be opened)";
+      UserFeedback::Fail(Tr("chat.attachment.not_ready"));
+      return;
+    }
+    StopAudio();
+    const uint64_t serial = ++audio_serial_;
+    const auto post = [](std::function<void()> task) {
+      if (AppRuntime::IsRunning()) {
+        AppRuntime::PostUI(std::move(task));
+      } else {
+        task();
+      }
+    };
+    const auto on_tick = lifetime_.Bind([this, serial](const int64_t position_ms, const int64_t duration_ms) {
+      if (serial == audio_serial_ && !audio_key_.empty()) {
+        audio_position_ms_ = position_ms;
+        audio_duration_ms_ = duration_ms;
+        ApplyAudioToRows();
+        DataModelHost::Instance().Dirty(kModel, "storage_files");
+      }
+    });
+    const auto on_end = lifetime_.Bind([this, serial](const VoicePlayEnd end) { OnAudioEnded(serial, end); });
+    AudioFilePlayerCallbacks callbacks;
+    callbacks.on_progress = [post, on_tick](const int64_t position_ms, const int64_t duration_ms) {
+      post([on_tick, position_ms, duration_ms]() { on_tick(position_ms, duration_ms); });
+    };
+    callbacks.on_ended = [post, on_end](const VoicePlayEnd end) { post([on_end, end]() { on_end(end); }); };
+    audio_key_ = key;
+    audio_paused_ = false;
+    audio_position_ms_ = 0;
+    audio_duration_ms_ = 0;
+    if (commands_.storage.audio_session) {
+      commands_.storage.audio_session(true);
+    } else {
+      VoiceAudioSession::ActivateForPlayback(); // loudspeaker, also with the silent switch on
+    }
+    if (!audio_->Play(path, std::move(callbacks))) {
+      StorageLog().warning << "sound file: the player did not start";
+      OnAudioEnded(serial, VoicePlayEnd::Unplayable);
+      return;
+    }
+    ApplyAudioToRows();
+    DataModelHost::Instance().Dirty(kModel, "storage_files");
+  }));
+}
+
+void StorageManagerController::StopAudio() {
+  if (audio_key_.empty()) {
+    return;
+  }
+  audio_->Stop();
+  OnAudioEnded(audio_serial_, VoicePlayEnd::Stopped);
+}
+
+void StorageManagerController::OnAudioEnded(const uint64_t serial, const VoicePlayEnd end) {
+  if (serial != audio_serial_ || audio_key_.empty()) {
+    return;
+  }
+  audio_key_.clear();
+  audio_paused_ = false;
+  audio_position_ms_ = 0;
+  audio_duration_ms_ = 0;
+  if (end != VoicePlayEnd::Interrupted) { // taken over by another player: the session is that one's now
+    if (commands_.storage.audio_session) {
+      commands_.storage.audio_session(false);
+    } else {
+      VoiceAudioSession::Release();
+    }
+  }
+  if (end == VoicePlayEnd::Unplayable) {
+    UserFeedback::Fail(Tr("chat.attachment.audio_cannot_play"));
+  }
+  ApplyAudioToRows();
+  DataModelHost::Instance().Dirty(kModel, "storage_files");
+}
+
+void StorageManagerController::ApplyAudioToRows() {
+  for (size_t i = 0; i < files_.size() && cells_.size() + i < tab_items_.size(); ++i) {
+    const StoredAttachmentItem& item = tab_items_[cells_.size() + i];
+    FileRow& row = files_[i];
+    const bool mine = !audio_key_.empty() && item.thread_id + "\n" + HashKey(item.content_hash) == audio_key_;
+    row.playing = mine && !audio_paused_;
+    const VoiceBubbleState state{.playing = mine && !audio_paused_, .paused = mine && audio_paused_,
+                                 .position_ms = audio_position_ms_, .duration_ms = audio_duration_ms_};
+    row.progress = mine ? (std::to_string(VoiceBubbleFillPercent(state)) + "%").c_str() : "";
+    if (mine && audio_duration_ms_ > 0) {
+      row.detail = VoiceBubbleTimeText(state, audio_duration_ms_).c_str();
+    } else if (!mine && row.audio) {
+      row.detail = MessageTimeLabel(item.timestamp_ms, WallNowMs()).c_str(); // back to its date
+    }
+  }
+}
+
 void StorageManagerController::OpenItem(const StoredAttachmentItem& item) {
   if (!commands_.storage.open_item) {
     return;
+  }
+  if (IsAudioFileAttachment(item.mime, item.filename)) {
+    if (AudioPlayer() != nullptr) {
+      ToggleAudio(item); // played here, not in the system's viewer
+      return;
+    }
+    StorageLog().info << "sound file tap: route=system-preview reason=no in-app player on this platform";
   }
   const std::string key = item.thread_id + "\n" + HashKey(item.content_hash);
   if (!opening_.insert(key).second) {
@@ -673,6 +889,12 @@ void StorageManagerController::PerformDelete(std::vector<StoredAttachmentRef> re
     return;
   }
   busy_ = true; // the page greys and ignores taps until the delete is done
+  for (const StoredAttachmentRef& ref : refs) {
+    if (ref.first + "\n" + HashKey(ref.second) == audio_key_) {
+      StopAudio(); // the playing file is going
+      break;
+    }
+  }
   DirtyAll();
   commands_.storage.delete_local(std::move(refs), lifetime_.Bind([this](const StoredAttachmentDeleteResult& /*r*/) {
     busy_ = false;
@@ -760,6 +982,12 @@ void StorageManagerController::ApplyCounts(Counts counts) {
   usage_ = ComputeStorageUsage(counts.profile_bytes, overview_.totals, counts.message_store_bytes);
   names_ = commands_.storage.chat_names ? commands_.storage.chat_names() : std::vector<StorageChatName>{};
   ready_ = true;
+  if (!audio_key_.empty() &&
+      std::none_of(all_items_.begin(), all_items_.end(), [this](const StoredAttachmentItem& item) {
+        return item.thread_id + "\n" + HashKey(item.content_hash) == audio_key_;
+      })) {
+    StopAudio(); // the rows were rebuilt without the playing file
+  }
   BuildOverviewRows();
   if (page_ == "items") {
     // Same page, fresh data: what is still here stays selected and the shown count stays (no scroll jump).
@@ -847,7 +1075,7 @@ void StorageManagerController::DirtyAll() {
   for (const char* key :
        {"storage_page", "storage_ready", "storage_total_label", "storage_segments", "storage_manage_label",
         "storage_manage_segments", "storage_large_visible", "storage_large_count_label", "storage_large_size_label",
-        "storage_chats", "storage_media_empty", "storage_items_title", "storage_tab", "storage_tab_picture_label",
+        "storage_chats", "storage_media_empty", "storage_items_title", "storage_tab", "storage_tab_all_label", "storage_tab_picture_label",
         "storage_tab_video_label", "storage_tab_file_label", "storage_cells", "storage_files", "storage_list_empty",
         "storage_has_more", "storage_selecting", "storage_busy", "storage_has_selection",
         "storage_selection_label"}) {

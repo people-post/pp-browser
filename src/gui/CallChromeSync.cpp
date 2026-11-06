@@ -106,6 +106,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.in_call_title != next.in_call_title ||
                               synced.in_call_muted != next.in_call_muted ||
                               synced.in_call_camera_on != next.in_call_camera_on ||
+                              synced.in_call_camera_front != next.in_call_camera_front ||
                               synced.in_call_speaker_on != next.in_call_speaker_on ||
                               synced.in_call_remote_video != next.in_call_remote_video ||
                               synced.in_call_local_preview != next.in_call_local_preview ||

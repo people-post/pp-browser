@@ -117,7 +117,7 @@ public:
   Roe<Thread> CreateNewAiThread();
   /** A new AI thread, stored but not opened (the ask-AI panel's conversation when there is none yet). */
   Roe<Thread> CreateAiThread();
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
@@ -131,7 +131,7 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */
-  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
@@ -377,10 +377,12 @@ public:
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                           std::shared_ptr<const std::atomic<bool>> cancelled = {});
   void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                              std::function<void(Roe<ThreadMessage>)> on_done,
-                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                             std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();
@@ -399,6 +401,9 @@ public:
   /** `made_view` (optional) is set when this call had to create the view file (it did not exist yet). */
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id, const std::string& message_id,
                                                            bool* made_view = nullptr);
+  /** The same file under the sender's name (AttachmentNamedOpenPath): what the system viewer is handed. */
+  std::optional<std::string> AttachmentOpenPathForMessage(const std::string& thread_id, const std::string& message_id,
+                                                          bool* made_view = nullptr);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   struct StoredAiImage {
     std::vector<uint8_t> content_hash;

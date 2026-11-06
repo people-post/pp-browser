@@ -5,6 +5,7 @@
 #include "gui/chat/MessageTimeLabel.h"
 #include "feature/presenters/GroupEventText.h"
 #include "gui/chat/VoiceBubble.h"
+#include "lib/voice/AudioFilePlayer.h"
 #include "lib/voice/VoiceFile.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -337,6 +338,18 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     return VoiceBubbleRml(message.id, JsArgInAttribute(message.id), voice.duration_ms,
                           facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
+  if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
+      (!local_path.empty() || view.on_demand)) {
+    // A music card: the file's own title and artist when its tags name them (read on this device), else its name.
+    AudioCardFace face;
+    face.title = view.audio_title.empty() ? label : view.audio_title;
+    const std::string size = fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string();
+    face.subtitle = view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
+    face.cover_path = view.poster_path;
+    face.duration_ms = view.audio_duration_ms;
+    return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), face,
+                              facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
+  }
   if (inline_image) {
     // A tap opens the full picture in the system viewer (zoomable). The bubble shows it fitted inside 200 x 240dp:
     // its size is given, so the frame round it is laid out for that size and never for the file's own.
@@ -353,22 +366,37 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
     html += " data-event-click=\"open_picture('" + JsArgInAttribute(message.id) + "','" + JsArgInAttribute(local_path) +
             "')\"/></div>";
   } else if (ready && IsAttachmentVideoMime(fields->mime)) {
+    // The whole frame is the tap target (the system player opens directly); the play disc is drawn over the poster
+    // and takes no taps. The frame is clipped to the same size picture bubbles use, so nothing can exceed the bubble.
     html += "<div class=\"chat-attachment-video\">";
     const std::string& poster_path = view.poster_path;
+    const std::string open_click = "data-event-click=\"open_attachment('" + JsArgInAttribute(message.id) + "')\"";
+    const char* play_disc =
+        "<div class=\"chat-attachment-video-play\"><svg class=\"chat-attachment-video-play-icon\" "
+        "src=\"../icons/play.svg\" width=\"22\" height=\"22\"></svg></div>";
     if (!poster_path.empty()) {
-      html += "<img class=\"chat-attachment-video-poster\" src=\"" +
-              StructuredTextParser::EscapeText(poster_path) + "\"/>";
+      PictureBubbleSize fit = FitPictureInBubble(view.image_width, view.image_height);
+      if (fit.width_dp <= 0) {
+        fit = {216, 122};
+      }
+      html += "<div class=\"chat-attachment-clip chat-attachment-video-frame\" style=\"width:" +
+              std::to_string(fit.width_dp) + "dp;height:" + std::to_string(fit.height_dp) + "dp\" " + open_click + ">";
+      html += "<img class=\"chat-attachment-video-poster\" src=\"" + StructuredTextParser::EscapeText(poster_path) +
+              "\" width=\"" + std::to_string(fit.width_dp) + "\" height=\"" + std::to_string(fit.height_dp) + "\"/>";
+      html += play_disc;
+      html += "</div>";
     } else {
+      html += "<div class=\"chat-attachment-video-frame chat-attachment-video-frame--bare\" " + open_click + ">";
       html += "<div class=\"chat-attachment-video-badge\">" +
               StructuredTextParser::EscapeText(Tr("chat.card.video_badge")) + "</div>";
       html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
+      html += play_disc;
+      html += "</div>";
     }
     if (fields->byte_length > 0) {
       html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
               "</p>";
     }
-    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-            JsArgInAttribute(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
     html += "</div>";
   } else if (ready && (!local_path.empty() || view.on_demand)) {
     html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";

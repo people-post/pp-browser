@@ -141,13 +141,34 @@ void AskAiPanel::SwitchMode(const bool once) {
   SyncPictureView();
 }
 
-bool AskAiPanel::Show(const AskAiEntry /*entry*/, const bool once) {
+std::string AskAiPanel::ThreadToSend() {
+  if (!fresh_) {
+    return host_.AskAiSharedThread(/*create=*/true);
+  }
+  if (shared_thread_.empty()) {
+    shared_thread_ = host_.AskAiNewThread();
+  }
+  return shared_thread_;
+}
+
+bool AskAiPanel::Show(const AskAiEntry entry, const bool once) {
   if (!host_.AskAiCompact()) {
     return false;
   }
   SwitchMode(once);
   if (!once) {
-    shared_thread_ = host_.AskAiSharedThread(/*create=*/false);
+    if (entry == AskAiEntry::Dot) {
+      // Opened again while open keeps its new chat; a closed panel starts empty.
+      if (!IsOpen()) {
+        fresh_ = true;
+        shared_thread_.clear();
+      }
+    } else {
+      fresh_ = false;
+    }
+    if (!fresh_) {
+      shared_thread_ = host_.AskAiSharedThread(/*create=*/false);
+    }
   }
   view_.show_intro = !host_.AskAiIntroSeen();
   if (!IsOpen()) {
@@ -292,7 +313,7 @@ void AskAiPanel::SendPicture(const std::string& text) {
     return; // still being prepared
   }
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
-  const std::string thread_id = host_.AskAiSharedThread(/*create=*/true);
+  const std::string thread_id = ThreadToSend();
   if (thread_id.empty()) {
     FailShared(question);
     Refresh();
@@ -363,7 +384,7 @@ void AskAiPanel::AskSupport() {
 }
 
 void AskAiPanel::OpenInChat() {
-  const std::string thread_id = shared_thread_.empty() ? host_.AskAiSharedThread(/*create=*/true) : shared_thread_;
+  const std::string thread_id = shared_thread_.empty() && !fresh_ ? host_.AskAiSharedThread(/*create=*/true) : shared_thread_;
   if (thread_id.empty()) {
     return;
   }
@@ -407,7 +428,7 @@ void AskAiPanel::FailShared(const std::string& question) {
 }
 
 void AskAiPanel::SendShared(const std::string& text) {
-  const std::string thread_id = host_.AskAiSharedThread(/*create=*/true);
+  const std::string thread_id = ThreadToSend();
   if (thread_id.empty()) {
     FailShared(text);
     Refresh();

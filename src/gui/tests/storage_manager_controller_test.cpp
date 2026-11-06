@@ -3,12 +3,14 @@
 #include "gui/StorageManagerController.h"
 
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/voice/AudioFilePlayer.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -229,14 +231,14 @@ TEST_F(StorageManagerControllerTest, ThumbnailsOnlyForTheCellsOnThePage) {
   controller_.Enter();
   controller_.OpenManage();
   controller_.OpenChat(0);
-  EXPECT_EQ(controller_.Tab(), "picture");
+  EXPECT_EQ(controller_.Tab(), "all");
   EXPECT_EQ(controller_.Cells().size(), pbr::kStoragePageSize);
   ASSERT_EQ(thumbnail_requests_.size(), pbr::kStoragePageSize);
   const uint64_t generation = thumbnail_requests_.front();
 
   controller_.LoadMore();
-  EXPECT_EQ(controller_.Cells().size(), 70u);
-  EXPECT_EQ(thumbnail_requests_.size(), 70u) << "the next batch only, nothing asked twice";
+  EXPECT_EQ(controller_.Cells().size(), 71u) << "the video sits in the grid with the pictures";
+  EXPECT_EQ(thumbnail_requests_.size(), 71u) << "the next batch only, nothing asked twice";
 
   controller_.SetTab("video");
   EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), generation), cancelled_.end())
@@ -249,6 +251,233 @@ TEST_F(StorageManagerControllerTest, ThumbnailsOnlyForTheCellsOnThePage) {
   controller_.Back();
   EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), video_generation), cancelled_.end())
       << "leaving the page drops its jobs";
+}
+
+TEST_F(StorageManagerControllerTest, ChatPageListsPicturesVideosAndFilesTogether) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB), Item("a", 2, "video/mp4", 8 * kMiB),
+            Item("a", 3, "application/pdf", 3 * kMiB), Item("a", 4, "application/zip", 512 * 1024)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  EXPECT_EQ(controller_.Tab(), "all");
+  ASSERT_EQ(controller_.Cells().size(), 2u);
+  EXPECT_TRUE(controller_.Cells()[0].video) << "newest first: the video";
+  EXPECT_FALSE(controller_.Cells()[1].video);
+  EXPECT_EQ(std::string(controller_.Cells()[0].size.c_str()), "8.0 MB");
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  EXPECT_EQ(std::string(controller_.Files()[0].name.c_str()), "file4.pdf");
+  EXPECT_EQ(std::string(controller_.Files()[0].size.c_str()), "512 KB");
+  EXPECT_EQ(std::string(controller_.Files()[1].size.c_str()), "3.0 MB");
+
+  // Selecting a file row, a video cell and a picture works the same; the delete weighs all three.
+  controller_.ToggleSelect();
+  controller_.TapFile(1);
+  controller_.TapCell(0);
+  EXPECT_TRUE(controller_.Files()[1].picked);
+  EXPECT_FALSE(controller_.Files()[0].picked);
+  EXPECT_TRUE(controller_.Cells()[0].picked);
+  EXPECT_EQ(controller_.SelectedCount(), 2u);
+  controller_.TapFile(1);
+  EXPECT_EQ(controller_.SelectedCount(), 1u);
+  controller_.TapFile(0);
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  confirm_(true);
+  ASSERT_EQ(deleted_refs_.size(), 2u);
+  ASSERT_TRUE(delete_done_);
+  delete_done_({.deleted = 2, .freed_bytes = 0, .kept_shared = 0});
+
+  // A long press on a file row (index after the cells) starts selecting with that row picked.
+  ASSERT_FALSE(controller_.Selecting());
+  controller_.PickByLongPress(2);
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  EXPECT_TRUE(controller_.Selecting());
+  EXPECT_TRUE(controller_.Files()[0].picked);
+
+  controller_.SetTab("file");
+  EXPECT_TRUE(controller_.Cells().empty());
+  EXPECT_EQ(controller_.Files().size(), 2u);
+}
+
+namespace {
+
+/** The system's sound-file player as the storage page test drives it. */
+struct PageAudio {
+  std::vector<std::string> played;
+  std::vector<std::string> calls;
+  pbr::AudioFilePlayerCallbacks callbacks;
+};
+
+class FakePagePlayer final : public pbr::IAudioFilePlayer {
+public:
+  explicit FakePagePlayer(std::shared_ptr<PageAudio> audio) : audio_(std::move(audio)) {}
+  bool Play(const std::string& path, pbr::AudioFilePlayerCallbacks callbacks) override {
+    audio_->played.push_back(path);
+    audio_->callbacks = std::move(callbacks);
+    return true;
+  }
+  void Pause() override { audio_->calls.push_back("pause"); }
+  void Resume() override { audio_->calls.push_back("resume"); }
+  pbr::Roe<void> Seek(double) override { return {}; }
+  void Stop() override { audio_->calls.push_back("stop"); }
+
+private:
+  std::shared_ptr<PageAudio> audio_;
+};
+
+} // namespace
+
+// Kenneth 2026-11-06: a sound file's row and tile show its cover (the chat card made it from the file's tags) when
+// there is one; a PDF never gets a picture.
+TEST_F(StorageManagerControllerTest, ASoundFileRowShowsItsCoverWhenThereIsOne) {
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  pbr::StoredAttachmentItem plain = Item("a", 6, "audio/mpeg", 4 * kMiB);
+  plain.filename = "plain.mp3";
+  items_ = {Item("a", 3, "application/pdf", 3 * kMiB), song, plain};
+  thumbnails_["a|5"] = "/views/song.poster.jpg";
+  thumbnails_["a|3"] = "/views/never.jpg";
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Files().size(), 3u);
+  for (const auto& row : controller_.Files()) {
+    const std::string name = row.name.c_str();
+    const std::string cover = row.cover.c_str();
+    EXPECT_EQ(cover, name == "song.mp3" ? "/views/song.poster.jpg" : "") << name;
+  }
+}
+
+// #111: a sound file's row plays it on the page (not in the system's viewer): play / pause in the badge, the time
+// under the name and a bar; a tap pauses; leaving the page stops it and hands the session back.
+TEST_F(StorageManagerControllerTest, ASoundFileRowPlaysInPlace) {
+  auto audio = std::make_shared<PageAudio>();
+  std::vector<bool> session;
+  commands_.storage.make_audio_player = [audio]() { return std::make_unique<FakePagePlayer>(audio); };
+  commands_.storage.audio_session = [&session](const bool playing) { session.push_back(playing); };
+  std::vector<std::string> opened;
+  commands_.storage.open_item = [&opened](const pbr::StoredAttachmentItem& item,
+                                          std::function<void(std::string, bool)> done) {
+    opened.push_back(item.filename);
+    done("/views/" + item.filename, true);
+  };
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  items_ = {Item("a", 3, "application/pdf", 3 * kMiB), song};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  const auto song_row = [this]() -> const pbr::StorageManagerController::FileRow& {
+    return std::string(controller_.Files()[0].name.c_str()) == "song.mp3" ? controller_.Files()[0]
+                                                                          : controller_.Files()[1];
+  };
+  const int song_index = std::string(controller_.Files()[0].name.c_str()) == "song.mp3" ? 0 : 1;
+  EXPECT_TRUE(song_row().audio);
+  EXPECT_FALSE(controller_.Files()[1 - song_index].audio) << "a PDF still opens in the system's viewer";
+
+  controller_.TapFile(song_index);
+  ASSERT_EQ(audio->played, std::vector<std::string>{"/views/song.mp3"});
+  EXPECT_TRUE(confirm_ == nullptr) << "a sound plays here: no 'open in another app' question";
+  EXPECT_TRUE(song_row().playing);
+  EXPECT_EQ(session, std::vector<bool>{true});
+
+  audio->callbacks.on_progress(60000, 240000);
+  EXPECT_EQ(std::string(song_row().progress.c_str()), "25%");
+  EXPECT_EQ(std::string(song_row().detail.c_str()), "1:00 / 4:00");
+
+  controller_.TapFile(song_index); // pause
+  EXPECT_FALSE(song_row().playing);
+  EXPECT_EQ(std::string(song_row().progress.c_str()), "25%");
+  controller_.TapFile(song_index); // resume
+  EXPECT_TRUE(song_row().playing);
+  EXPECT_EQ(audio->calls, (std::vector<std::string>{"pause", "resume"}));
+
+  ASSERT_TRUE(SystemBack()); // leave the chat's page
+  EXPECT_EQ(audio->calls.back(), "stop");
+  EXPECT_EQ(session, (std::vector<bool>{true, false}));
+}
+
+TEST_F(StorageManagerControllerTest, DeletingThePlayingSoundStopsThePlayer) {
+  auto audio = std::make_shared<PageAudio>();
+  std::vector<bool> session;
+  commands_.storage.make_audio_player = [audio]() { return std::make_unique<FakePagePlayer>(audio); };
+  commands_.storage.audio_session = [&session](const bool playing) { session.push_back(playing); };
+  commands_.storage.open_item = [](const pbr::StoredAttachmentItem& item, std::function<void(std::string, bool)> done) {
+    done("/views/" + item.filename, true);
+  };
+  pbr::StoredAttachmentItem song = Item("a", 5, "audio/mpeg", 4 * kMiB);
+  song.filename = "song.mp3";
+  items_ = {song};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  controller_.TapFile(0);
+  ASSERT_EQ(audio->played.size(), 1u);
+  controller_.ToggleSelect();
+  controller_.TapFile(0);
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  confirm_(true);
+  EXPECT_EQ(audio->calls.back(), "stop");
+  EXPECT_EQ(session, (std::vector<bool>{true, false}));
+}
+
+TEST_F(StorageManagerControllerTest, AllTabListsEveryFileOnTheFirstPageOfManyPictures) {
+  for (int i = 0; i < 70; ++i) {
+    items_.push_back(Item("a", i, "image/jpeg", kMiB));
+  }
+  items_.push_back(Item("a", 900, "application/pdf", kMiB));
+  items_.push_back(Item("a", 901, "application/zip", kMiB));
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  EXPECT_EQ(controller_.Cells().size(), pbr::kStoragePageSize);
+  EXPECT_EQ(controller_.Files().size(), 2u);
+  controller_.ToggleSelect();
+  controller_.TapFile(1);
+  EXPECT_TRUE(controller_.Files()[1].picked);
+  EXPECT_EQ(controller_.SelectedCount(), 1u);
+  controller_.LoadMore();
+  EXPECT_EQ(controller_.Cells().size(), 70u);
+  EXPECT_EQ(controller_.Files().size(), 2u);
+}
+
+TEST_F(StorageManagerControllerTest, AllTabFilesAreTilesWithAnIconByKindAndAOneLineName) {
+  items_.push_back(Item("a", 1, "image/jpeg", kMiB));
+  auto audio = Item("a", 2, "audio/mpeg", kMiB);
+  audio.filename = "a-very-long-recording-name-of-the-meeting.mp3";
+  items_.push_back(audio);
+  auto cjk = Item("a", 3, "application/octet-stream", kMiB);
+  cjk.filename = "这是一个非常非常长的中文文件名称.txt";
+  items_.push_back(cjk);
+  items_.push_back(Item("a", 4, "application/pdf", kMiB));
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Cells().size(), 1u);
+  ASSERT_EQ(controller_.Files().size(), 3u);
+  std::map<std::string, std::string> kind_of;
+  for (const auto& file : controller_.Files()) {
+    kind_of[file.name.c_str()] = file.kind.c_str();
+    EXPECT_LE(std::string(file.tile_name.c_str()).size(), 3u * 14u) << "a tile's name is one short line";
+  }
+  EXPECT_EQ(kind_of["a-very-long-recording-name-of-the-meeting.mp3"], "audio");
+  EXPECT_EQ(kind_of["file4.pdf"], "pdf");
+  EXPECT_EQ(kind_of["这是一个非常非常长的中文文件名称.txt"], "file");
+  for (const auto& file : controller_.Files()) {
+    const std::string tile = file.tile_name.c_str();
+    if (std::string(file.name.c_str()) == "file4.pdf") {
+      EXPECT_EQ(tile, "file4.pdf") << "a short name is kept whole";
+    } else {
+      EXPECT_NE(tile.find("\xE2\x80\xA6"), std::string::npos) << "a long name is cut with an ellipsis";
+      const std::string name = file.name.c_str();
+      EXPECT_EQ(tile.substr(tile.size() - 4), name.substr(name.size() - 4)) << "the extension stays";
+    }
+  }
+  controller_.ToggleSelect();
+  controller_.TapFile(0);
+  EXPECT_EQ(controller_.SelectedCount(), 1u) << "a file tile selects like a file row";
 }
 
 TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
@@ -303,7 +532,7 @@ TEST_F(StorageManagerControllerTest, DeletingFromTheLargeListNamesEveryChat) {
   controller_.OpenManage();
   controller_.OpenLarge();
   ASSERT_EQ(controller_.Page(), "items");
-  EXPECT_EQ(controller_.Tab(), "video");
+  EXPECT_EQ(controller_.Tab(), "all");
   ASSERT_EQ(controller_.Cells().size(), 1u);
   controller_.ToggleSelect();
   controller_.TapCell(0);

@@ -33,6 +33,20 @@
             </span>
           </button>
         </div>
+        <!-- PIN grace window (#21): under the PIN; only with an own PIN on a platform with a secure store. -->
+        <div class="group-card" data-if="security_grace_shown">
+          <button class="settings-toggle-row settings-choice-row row group-row" type="button"
+                  data-event-click="on_choose_unlock_grace()">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{i18n:settings.security.grace.title}}</span>
+              <span class="settings-choice-value row">
+                <span class="settings-choice-value-text">{{unlock_grace_label}}</span>
+                <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+              </span>
+            </span>
+          </button>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="security_grace_shown">{{i18n:settings.security.grace.help}}</p>
         <p class="text muted group-foot" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>
@@ -65,11 +79,15 @@
             {{i18n:settings.security.devices.not_main}}
           </p>
         </div>
+        <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
+          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p></div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
+        </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
           <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
           <div class="stack" data-if="recovery_phrase == ''">
-            <div class="group-card" data-if="!pin_protection_is_default">
+            <div class="group-card" data-if="!pin_protection_is_default && recovery_pin_open">
               <label class="settings-field group-row group-row--field">
                 <span class="group-row-body group-row-body--field">
                   <span class="settings-label group-row-text">{{i18n:settings.security.recovery.pin_label}}</span>
@@ -78,9 +96,17 @@
                 </span>
               </label>
             </div>
-            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
+            <button class="btn" type="button" data-event-click="show_recovery_phrase()" data-if="!recovery_pin_open">
               {{i18n:settings.security.recovery.show}}
             </button>
+            <div class="settings-toggle-row row group-actions" data-if="recovery_pin_open">
+              <button class="btn btn-secondary" type="button" data-event-click="hide_recovery_phrase()">
+                {{i18n:common.cancel}}
+              </button>
+              <button class="btn" type="button" data-event-click="show_recovery_phrase()">
+                {{i18n:settings.security.recovery.confirm}}
+              </button>
+            </div>
           </div>
           <div class="stack" data-if="recovery_phrase != ''">
             <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>

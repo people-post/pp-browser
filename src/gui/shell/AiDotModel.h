@@ -15,7 +15,7 @@ namespace pbr {
 struct AiDotScene {
   bool enabled = true;     ///< Me → AI assistant → Show AI dot.
   bool phone = true;       ///< Compact layout; desktop has no floating dot in this batch.
-  bool call = false;       ///< An incoming ring, a call on screen, or its bar.
+  bool call = false;       ///< An incoming ring or the call screen; a call minimised to its bar is not one.
   bool pin_gate = false;   ///< The PIN gate (unlock, create, the first-run identity fork).
   bool cover = false;      ///< The startup cover or the onboarding wizard.
   bool secret_page = false;///< Me → Account & security: change PIN, transfer, the recovery phrase.

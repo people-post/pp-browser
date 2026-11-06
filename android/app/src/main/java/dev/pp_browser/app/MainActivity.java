@@ -21,6 +21,7 @@ import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -32,10 +33,12 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.MimeTypeMap;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -46,6 +49,7 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -208,6 +212,7 @@ public class MainActivity extends SDLActivity {
         InboxSyncWorker.schedule(this, true);
         PpLinkBridge.deliver(getIntent());
         PpCameraCapture.clearScratch(this);
+        clearOpenDir(this);
         PpCallNotifications.init(this);
         if (savedInstanceState == null) {
             PpCallNotifications.onActivityIntent(getIntent());  // Answer on a call notification started the app
@@ -274,6 +279,158 @@ public class MainActivity extends SDLActivity {
     public static String captureScratchDir() {
         final SDLActivity activity = mSingleton;
         return activity == null ? null : PpCameraCapture.captureDir(activity).getAbsolutePath();
+    }
+
+    /** The only folder shared with other apps (pp_file_paths.xml "open"): links to attachments being opened. */
+    private static final String OPEN_DIR = "open";
+    /** A link folder older than this is gone at the next open (the viewer it was for has read it by then). */
+    private static final long OPEN_KEEP_MS = 10 * 60 * 1000;
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp): shows a downloaded attachment in an app that can open it.
+     * Only an attachment view under {@code <filesDir>/pp-browser/.../blobs_view/} is accepted (the profile's
+     * databases and keys never are). It is linked (else copied) into {@code <cacheDir>/open/<hash prefix>/} under
+     * its own name (a folder per content, so two files with one name never meet) and that one file goes as a
+     * FileProvider address with read permission. A file:// address is refused by Android 7+. The links go with every
+     * view-cache wipe (clearOpenLinks: lock, start, a chat's delete) and after OPEN_KEEP_MS.
+     */
+    public static boolean openFile(final String path) {
+        final SDLActivity activity = mSingleton;
+        if (activity == null || path == null) {
+            return false;
+        }
+        try {
+            final File source = new File(path).getCanonicalFile();
+            final String root = new File(activity.getFilesDir(), "pp-browser").getCanonicalPath() + File.separator;
+            final String views = File.separator + "blobs_view" + File.separator;
+            if (!source.getPath().startsWith(root) || !source.getPath().contains(views) || !source.isFile()) {
+                Log.w(TAG, "openFile: refused, not an attachment view");
+                return false;
+            }
+            final File dir = new File(activity.getCacheDir(), OPEN_DIR);
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
+            }
+            // Old folders go by their own age (set when their link was made; a link's mtime is the source's inode).
+            final long now = System.currentTimeMillis();
+            final File[] old = dir.listFiles();
+            if (old != null) {
+                for (File f : old) {
+                    if (now - f.lastModified() > OPEN_KEEP_MS) {
+                        deleteTree(f);
+                    }
+                }
+            }
+            final File folder = new File(dir, contentFolderName(source));
+            if (!folder.isDirectory() && !folder.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
+            }
+            final File shared = new File(folder, source.getName());
+            if (!shared.isFile()) {  // the same content opened again keeps its link (a viewer may still read it)
+                try {
+                    android.system.Os.link(source.getPath(), shared.getPath());
+                } catch (Exception linkFailed) {
+                    java.nio.file.Files.copy(source.toPath(), shared.toPath());
+                }
+            }
+            folder.setLastModified(now);  // the folder's own age (never the link's: that is the source's inode)
+            final Uri uri;
+            try {
+                uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "openFile: the share folder is not in the provider's paths");
+                return false;
+            }
+            final String name = shared.getName();
+            final int dot = name.lastIndexOf('.');
+            final String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+            final String mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            final Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, mime != null ? mime : "*/*");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(intent);
+            return true;
+        } catch (Exception e) {  // no app for it (ActivityNotFoundException), an unreadable file
+            Log.w(TAG, "openFile: " + e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /**
+     * The open folder for a view: its content hash's first 16 hex digits (from {@code <hash>.open/<name>} or
+     * {@code <hash>.<ext>}), so one content has one folder and two files with the same name never share one.
+     */
+    private static String contentFolderName(File source) {
+        final File parent = source.getParentFile();
+        String stem = parent != null && parent.getName().endsWith(".open")
+                ? parent.getName().substring(0, parent.getName().length() - ".open".length())
+                : source.getName();
+        final int dot = stem.indexOf('.');
+        if (dot >= 0) {
+            stem = stem.substring(0, dot);
+        }
+        final StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < stem.length() && hex.length() < 16; ++i) {
+            final char c = Character.toLowerCase(stem.charAt(i));
+            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+                hex.append(c);
+            }
+        }
+        return hex.length() > 0 ? hex.toString() : "x" + Long.toHexString(System.nanoTime());
+    }
+
+    private static void deleteTree(File file) {
+        final File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteTree(child);
+            }
+        }
+        file.delete();
+    }
+
+    /** At start: the links of the last session go (the views they point at were wiped too). */
+    private static void clearOpenDir(Context context) {
+        final File[] files = new File(context.getCacheDir(), OPEN_DIR).listFiles();
+        if (files != null) {
+            for (File f : files) {
+                deleteTree(f);
+            }
+        }
+    }
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp) with every attachment view-cache wipe (a lock, a start, a
+     * chat's local delete): the links handed to other apps go with the views, so no plaintext outlives them here.
+     */
+    public static void clearOpenLinks() {
+        final SDLActivity activity = mSingleton;
+        if (activity != null) {
+            clearOpenDir(activity);
+        }
+    }
+
+    /** Called from native (AudioFilePlayer_Android.cpp): plays a sound file attachment in the app. */
+    public static boolean playAudioFile(final String path, final long token) {
+        return PpAudioFilePlayer.play(path, token);
+    }
+
+    public static void pauseAudioFile() {
+        PpAudioFilePlayer.pause();
+    }
+
+    public static void resumeAudioFile() {
+        PpAudioFilePlayer.resume();
+    }
+
+    public static void seekAudioFile(final int positionMs) {
+        PpAudioFilePlayer.seek(positionMs);
+    }
+
+    public static void stopAudioFile() {
+        PpAudioFilePlayer.stop();
     }
 
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */

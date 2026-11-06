@@ -13,6 +13,7 @@
 #include "lib/content/PrivateContent.h"
 #include "lib/messaging/AiImageRef.h"
 #include "lib/delivery/ChatPayloadCodec.h"
+#include "lib/voice/AudioFileTags.h"
 #include "domain/attachments/AttachmentFetch.h"
 #include "common/runtime/AppRuntime.h"
 
@@ -265,6 +266,8 @@ void AttachmentFetchWorkflow::ClearDek() {
       dek_.clear();
     }
     ++dek_generation_;
+    audio_tags_.clear(); // read from plaintext: forgotten with the view cache
+    audio_tags_requested_.clear();
   }
   if (!profile_dir_.empty()) {
     (void)WipeAllAttachmentViewCaches(profile_dir_);
@@ -915,6 +918,7 @@ void DeleteLocalBytes(const std::string& profile_dir, CasStore& content, const s
     std::filesystem::remove(view, ec);
   }
   std::filesystem::remove(AttachmentPosterPath(profile_dir, thread_id, content_hash), ec); // video first frame
+  std::filesystem::remove_all(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash), ec); // its named link
 }
 
 /** What a message refers to in the private store: its attachment and / or the image of an AI question. */
@@ -1165,6 +1169,64 @@ void AttachmentFetchWorkflow::RequestImageThumbnail(const std::string& thread_id
   });
 }
 
+std::optional<AttachmentFetchWorkflow::AudioCardTags>
+AttachmentFetchWorkflow::AudioTags(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const {
+  std::lock_guard lock(mutex_);
+  const auto found = audio_tags_.find(JobKey(thread_id, content_hash));
+  if (found == audio_tags_.end()) {
+    return std::nullopt;
+  }
+  return found->second;
+}
+
+void AttachmentFetchWorkflow::RequestAudioTags(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                               const std::string& view_path) {
+  if (profile_dir_.empty() || thread_id.empty() || view_path.empty() ||
+      content_hash.size() != kAttachmentContentHashSize || !AppRuntime::IsRunning()) {
+    return; // never on the caller's (render) thread
+  }
+  const std::string key = JobKey(thread_id, content_hash);
+  const std::string hex = AttachmentHashHex(content_hash);
+  {
+    std::lock_guard lock(mutex_);
+    if (dek_.empty() || deleting_.contains(hex) || !audio_tags_requested_.insert(key).second) {
+      return; // locked, being deleted, or read (or being read) already
+    }
+    ++thumbnails_in_progress_[hex]; // a delete of these bytes waits for the cover
+  }
+  AppRuntime::PostWorkerBackground([this, thread_id, content_hash, key, hex, view_path]() {
+    // No lock held: the system's reader parses the file. What it finds stays on this device.
+    std::optional<AudioFileTags> read = ReadAudioFileTags(view_path);
+    AudioCardTags tags;
+    bool cover = false;
+    if (read) {
+      tags = {.title = std::move(read->title), .artist = std::move(read->artist), .duration_ms = read->duration_ms};
+      if (!read->picture.empty() && HasDek()) {
+        const ByteVector picture(read->picture.begin(), read->picture.end());
+        cover = static_cast<bool>(EnsureAttachmentAudioCover(profile_dir_, thread_id, content_hash, picture));
+      }
+    }
+    {
+      std::lock_guard lock(mutex_);
+      if (dek_.empty() || deleting_.contains(hex)) {
+        // Locked (its view cache wiped) or deleted meanwhile: nothing read from it stays.
+        if (cover) {
+          std::error_code ec;
+          std::filesystem::remove(AttachmentPosterPath(profile_dir_, thread_id, content_hash), ec);
+        }
+        audio_tags_requested_.erase(key);
+      } else {
+        audio_tags_[key] = std::move(tags);
+      }
+      if (--thumbnails_in_progress_[hex] <= 0) {
+        thumbnails_in_progress_.erase(hex);
+      }
+    }
+    delete_cv_.notify_all();
+    NotifyChanged(); // the card re-renders with its title and cover
+  });
+}
+
 void AttachmentFetchWorkflow::RetryDownload(const std::string& thread_id, const std::string& message_id,
                                               IThreadStore& store) {
   RequestDownload(thread_id, message_id, store);
@@ -1406,6 +1468,8 @@ void AttachmentFetchWorkflow::DeleteLocalAttachments(IThreadStore& store, std::v
     });
     std::erase_if(thumbnails_requested_, [&keys](const std::string& key) { return keys.contains(key); });
     std::erase_if(grid_failed_, [&keys](const std::string& key) { return keys.contains(key); });
+    std::erase_if(audio_tags_, [&keys](const auto& entry) { return keys.contains(entry.first); });
+    std::erase_if(audio_tags_requested_, [&keys](const std::string& key) { return keys.contains(key); });
     delete_cv_.wait(lock, [&] {
       return std::none_of(target_hex.begin(), target_hex.end(),
                           [&](const std::string& hex) { return thumbnails_in_progress_.contains(hex); });

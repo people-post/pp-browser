@@ -15,6 +15,7 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
+  os/KeychainStatus.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -63,6 +64,21 @@ if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
 else()
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
+endif()
+
+# Protected-data state + the PIN grace clock (#21 phase 1): iOS UIKit / sysctl / mach; a stub elsewhere
+# (macOS, Windows, Linux, Android until its own file in PR 2).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Default.cpp)
+endif()
+
+# Whether the app is on screen now (PIN grace window: only the foreground extends it): iOS asks UIKit; else true.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsAppState_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
@@ -127,7 +143,6 @@ else()
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
     NativeFileDialog_Default.cpp
-    PlatformOpenFile.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -135,9 +150,10 @@ else()
     list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
   endif()
   if(NOT PP_BROWSER_IS_ANDROID)
-    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp)
+    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp CameraCapture_Default.cpp PlatformOpenFile.cpp)
   else()
-    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp)
+    # A file:// address is refused by Android 7+ (FileUriExposedException): a FileProvider address instead.
+    list(APPEND _pp_platform_gui_sources CameraCapture_Android.cpp PlatformOpenFile_Android.cpp)
   endif()
 endif()
 
@@ -258,7 +274,8 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::Crypto
     "-framework Security"
     "-framework CoreFoundation"
-    "-framework Foundation")
+    "-framework Foundation"
+    "-framework UIKit")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL

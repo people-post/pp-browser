@@ -97,6 +97,24 @@ std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread
         "../icons/contacts.svg",
     });
   }
+  const bool blocked = [&] {
+    if (!contact_id) {
+      return false;
+    }
+    auto contact = facade->GetContact(*contact_id);
+    return contact && *contact && (*contact)->local.trust == TrustLevel::Blocked;
+  }();
+  if (contact_id || !peer_id.empty()) {
+    const std::string name = facade->ResolveThreadLabel(thread).title;
+    actions.push_back({
+        blocked ? "unblock" : "block",
+        Tr(blocked ? "chat.menu.unblock" : "chat.menu.block"),
+        nullptr,
+        [this, contact_id, peer_id, name, blocked]() { RunBlockFlow(host_, presenter_, contacts_notify_, contact_id, peer_id, name, !blocked); },
+        "../icons/v2/block.svg",
+        !blocked,  // danger styling
+    });
+  }
   if (!peer_id.empty()) {
     actions.push_back({
         "copy_id",

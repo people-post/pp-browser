@@ -12,8 +12,10 @@
 #include "common/Module.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/product/ProductStack.h"
+#include "foundation/runtime/AppLifecycle.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -99,7 +101,26 @@ private:
    */
   Roe<void> StopMessagingForReset(bool with_secrets);
 
+  // --- PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md) ---
+  /** The window the user chose, in minutes (0 = off). */
+  int GraceMinutes() const;
+  /** Gives secrets_ its grace entry for the current profile (after every secrets_->Initialize). */
+  void AttachGrace();
+  /**
+   * The window's end moves to now + GraceMinutes(): only while the vault is open and only from the foreground's
+   * paths (entering / leaving it, its timer, quit) — a push wake or a background sync never extends it.
+   */
+  void TouchGrace();
+  /** While in the foreground (the app may be killed without a background event): every half window, 1–5 minutes. */
+  void StartGraceTimer();
+  void StopGraceTimer();
+  /** Both pieces deleted, the timer stopped (the engine's ForgetGrace cannot stop the app's timer). */
+  void ForgetGrace();
+
   bool initialized_ = false;
+  uint64_t grace_timer_ = 0;
+  AppLifecycle::ListenerId grace_foreground_listener_ = 0;
+  AppLifecycle::ListenerId grace_background_listener_ = 0;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */

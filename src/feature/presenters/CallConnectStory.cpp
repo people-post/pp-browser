@@ -115,7 +115,14 @@ const CallStoryView& CallConnectStory::Step(const CallStoryInput& in) {
   }
 
   view_.connecting = !connected_ && StillConnecting(in.status);
-  view_.stage = view_.outgoing && !answered_ ? 0 : 1;
+  // The page shows one stage at a time, moved on by the real change only (#11). "Calling" answered within
+  // kStageQuickMs is still held to kStageMinShowMs so it is seen to pass; connecting or failing ends the hold.
+  const int stage = view_.outgoing && !answered_ ? 0 : 1;
+  const bool hold = view_.outgoing && view_.connecting && stage > view_.stage &&
+                    answered_ms_ - began_ms_ < kStageQuickMs && now - began_ms_ < kStageMinShowMs;
+  if (!hold) {
+    view_.stage = stage;
+  }
 
   if (view_.result_shown) {
     const int64_t shown_for = now - connected_ms_;

@@ -27,11 +27,20 @@ public:
   };
 
   using WidgetLookup = std::function<const TurnWidgetState*(const std::string& entry_id)>;
+  /** A stored assistant message's panels and actions, read back by its entry id (nullopt: not in this thread). */
+  struct StoredEntry {
+    std::vector<WorkingSetCandidate> candidates;
+    std::vector<TranscriptChatAction> chat_actions;
+  };
+  using EntryLoader = std::function<std::optional<StoredEntry>(const std::string& entry_id)>;
 
   explicit WorkingSetController(ShellView shell);
 
   void BindShellNavigation(ShellNavigationPorts ports);
   void SetWidgetLookup(WidgetLookup lookup) { widget_lookup_ = std::move(lookup); }
+  /** Open() reads an entry it does not hold back from the thread (B170: a way back into the chat that cleared the
+   * panels without restoring them left a tapped list "unavailable"). */
+  void SetEntryLoader(EntryLoader loader) { entry_loader_ = std::move(loader); }
 
   void Clear();
   /** Clear panel state and forget all entry candidates (thread switch / shutdown). */
@@ -63,6 +72,7 @@ private:
 
   ShellView shell_;
   WidgetLookup widget_lookup_;
+  EntryLoader entry_loader_;
   ShellNavigationPorts shell_navigation_;
   std::map<std::string, std::vector<WorkingSetCandidate>> by_entry_;
   std::map<std::string, std::vector<TranscriptChatAction>> actions_by_entry_;

@@ -64,13 +64,38 @@ struct ChatSessionRow {
 
 /** The chats list: pinned first, then by activity; archived chats are a separate list. */
 struct ChatListScreen {
+  /** Human chats (Direct/Group) — the 聊天 tab. AI threads are split out into `ai_rows`. */
   std::vector<ChatSessionRow> rows;
+  /** AI conversations (ThreadKind::Ai, listed only) — the AI 助手 page. Same row shape as `rows`. */
+  std::vector<ChatSessionRow> ai_rows;
   int archived_count = 0;
   /** The archived list is showing (back to the main list once nothing is archived). */
   bool showing_archived = false;
+  /** Archived AI conversations (listed only): their own count and view, apart from the human chats' above. */
+  int archived_count_ai = 0;
+  bool showing_archived_ai = false;
 
   bool operator==(const ChatListScreen&) const = default;
 };
+
+/** Which list a thread belongs to for the current archive views: human chats and AI conversations never mix. */
+enum class ChatListBucket { Human, Ai, Hidden };
+ChatListBucket ClassifyForList(bool is_ai, bool listed, bool archived, bool showing_archived, bool showing_archived_ai);
+
+/** One thread as the archive views see it. */
+struct ArchiveItem {
+  bool is_ai = false;
+  bool listed = true;
+  bool archived = false;
+};
+/** The two archive counts (human chats; listed AI conversations) and each view flag, reset once its own count is 0. */
+struct ArchiveViews {
+  int archived_count = 0;
+  int archived_count_ai = 0;
+  bool showing_archived = false;
+  bool showing_archived_ai = false;
+};
+ArchiveViews ResolveArchiveViews(const std::vector<ArchiveItem>& items, bool showing_archived, bool showing_archived_ai);
 
 /** What closing a chat does (the GUI asks before it does it). */
 struct CloseChatPlan {
@@ -351,6 +376,8 @@ public:
   void ShowHome();
   /** The archived list's entry / back button. */
   void ToggleArchived();
+  /** The PP助手 page's own archived view (the Chats archive view is separate). */
+  void ToggleArchivedAi();
   void SetPinned(const std::string& thread_id, bool pinned);
   void Mute(const std::string& thread_id, SessionMuteChoice choice);
   void Unmute(const std::string& thread_id);
@@ -394,6 +421,12 @@ public:
    * i18n key.
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
+  /**
+   * Blocks someone who is not a saved contact. A block is a trust level on a contact record, so the
+   * person is saved first, as a blocked contact (it shows in Security > Blocked, not as a friend).
+   * Returns the contact id.
+   */
+  Roe<std::string> BlockStranger(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
   /** The phone's group info sheet for group chat `thread_id` (an empty screen when it is not one). */
   GroupInfoScreen GroupInfoOf(const std::string& thread_id);
@@ -492,6 +525,7 @@ private:
   Callbacks callbacks_;
   ChatListScreen list_;
   bool showing_archived_ = false;
+  bool showing_archived_ai_ = false;
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> prefs_;
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   std::string quote_source_;

@@ -142,6 +142,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
+    ctor.Bind("pin_gate_waiting_device_unlock", &host.state_.pin_gate.waiting_device_unlock);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -177,6 +178,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_in_progress_peer_hint", &host.state_.call_in_progress.peer_hint);
     ctor.Bind("call_in_progress_muted", &host.state_.call_in_progress.muted);
     ctor.Bind("call_in_progress_camera_on", &host.state_.call_in_progress.camera_on);
+    ctor.Bind("call_in_progress_camera_front", &host.state_.call_in_progress.camera_front);
     ctor.Bind("call_in_progress_speaker_on", &host.state_.call_in_progress.speaker_on);
     ctor.Bind("call_in_progress_stage_visible", &host.state_.call_in_progress.stage_visible);
     ctor.Bind("call_in_progress_remote_video", &host.state_.call_in_progress.remote_video);
@@ -305,6 +307,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_phrase", DataEvent<>([this]() { PinGateIdentityPhrase(); }));
     ctor.BindEventCallback("pin_gate_use_saved_copy", DataEvent<>([this]() { PinGateUseSavedCopy(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
+    ctor.BindEventCallback("pin_gate_use_pin_instead", DataEvent<>([this]() { PinGateUsePinInstead(); }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
     ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
@@ -980,6 +983,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
+  DataModelHost::Instance().Dirty("window", "pin_gate_waiting_device_unlock");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -1011,7 +1015,10 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   AiDotScene scene;
   scene.enabled = state_.ai_dot_enabled;
   scene.phone = state_.layout_mode == LayoutMode::Compact;
-  scene.call = state_.call_ring.active || state_.call_in_progress.active;
+  // A ring or the call screen hides the dot; a call minimised to its bar keeps it (Kenneth 2026-11-06: ask the AI
+  // while on a call).
+  scene.call = state_.call_ring.active ||
+               (state_.call_in_progress.active && state_.call_in_progress.mode != CallChromeMode::Minimized);
   scene.pin_gate = state_.pin_gate.active;
   // The startup cover, the onboarding wizard and a picture preview cover the whole screen.
   scene.cover = state_.startup_cover_visible || !overlay_bodies_.empty();
@@ -1089,6 +1096,7 @@ void ShellHost::DirtyCallChrome() {
   }
   DataModelHost::Instance().Dirty("window", "call_in_progress_muted");
   DataModelHost::Instance().Dirty("window", "call_in_progress_camera_on");
+  DataModelHost::Instance().Dirty("window", "call_in_progress_camera_front");
   DataModelHost::Instance().Dirty("window", "call_in_progress_speaker_on");
   DataModelHost::Instance().Dirty("window", "call_in_progress_stage_visible");
   DataModelHost::Instance().Dirty("window", "call_in_progress_remote_video");
@@ -1448,7 +1456,7 @@ void ShellHost::ApplySafeAreaLayout() {
                                                      : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
-      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface);
+      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
@@ -1467,8 +1475,10 @@ void ShellHost::ApplySafeAreaLayout() {
   const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
   const float bottom_chrome_dp =
       bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
-  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
-  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
+  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root) and, with a keyboard up, above the
+  // keyboard — the body itself stays full-bleed so its background paints behind the keyboard's rounded corners.
+  set_dp(doc->GetElementById("shell-root"), "bottom",
+         statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
@@ -1507,6 +1517,16 @@ void ShellHost::ApplySafeAreaLayout() {
   const float strip_dp = layout.bottom_surface_padding_dp;
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
+  // Keyboard up, or an emoji/attachment panel open, over a tab-bar page: hide the nav tab bar so the keyboard / panel
+  // covers it (the content's own composer stays above it). Only fires for the TabBar surface, so a chat's composer is
+  // untouched.
+  if (ui::Element* bottom_chrome = doc->GetElementById("shell-bottom-chrome")) {
+    if (layout.tab_bar_hidden) {
+      bottom_chrome->SetProperty("display", "none");
+    } else {
+      bottom_chrome->RemoveProperty("display");
+    }
+  }
   set_dp(doc->GetElementById("shell-composer-mount"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
@@ -2550,6 +2570,12 @@ void ShellHost::PinGateUseSavedCopy() {
 void ShellHost::PinGateForgotToggle() {
   if (pin_gate_actions_.on_forgot_toggle) {
     pin_gate_actions_.on_forgot_toggle();
+  }
+}
+
+void ShellHost::PinGateUsePinInstead() {
+  if (pin_gate_actions_.on_use_pin_instead) {
+    pin_gate_actions_.on_use_pin_instead();
   }
 }
 

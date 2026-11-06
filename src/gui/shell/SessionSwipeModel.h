@@ -9,7 +9,7 @@
 namespace pbr {
 
 /** What a swipe button does; ChatMenus maps each onto the long-press menu item it mirrors. */
-enum class SessionSwipeAction { More, Archive, Delete, Pin, Read };
+enum class SessionSwipeAction { More, Archive, Delete, Pin, Read, Rename };
 
 /** Which side of the row the buttons sit on: End = row slid left (buttons on the right), Start = slid right. */
 enum class SwipeSide { None, Start, End };

@@ -232,7 +232,25 @@ void AgentTurnController::Cancel() {
   }
 }
 
+void AgentTurnController::ForgetThread(const std::string& thread_id) {
+  if (thread_id.empty()) {
+    return;
+  }
+  forgotten_threads_.insert(thread_id);
+  if (AgentReady() && agent_ports_.cancel && busy_.BusyIn(thread_id)) {
+    agent_ports_.cancel(home_turn_thread_ == thread_id ? std::string() : thread_id);
+  }
+  (void)queue_.Take(thread_id);
+  ClearStreamingRow(thread_id);
+  MarkAgentIdle(thread_id);
+}
+
+void AgentTurnController::ClearForgottenThreads() {
+  forgotten_threads_.clear();
+}
+
 void AgentTurnController::Reset() {
+  ClearForgottenThreads();
   held_agent_send_.Clear();
   streaming_.clear();
   use_llm_ = false;
@@ -561,7 +579,7 @@ void AgentTurnController::StartPreparedImageSend(const std::string& thread_id, c
   DirtyChatTurns();
   chat_.status = "";
   MarkAgentBusy(thread_id);
-  (void)host_.Facade()->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(question));
+  (void)host_.Facade()->NameAiThreadFromFirstMessage(thread_id, question);
   host_.UpdateSidebarPreview(question);
   DirtyChatChrome();
   DirtyChatHeader();
@@ -1222,7 +1240,7 @@ void AgentTurnController::FinishAssistantReply(const std::string& entry_id, cons
                         << appended.error().message;
         }
       }
-      (void)host_.Facade()->UpdatePreview(active_thread, parsed.rml);
+      (void)host_.Facade()->UpdatePreview(active_thread, parsed.rml, /*assistant_text=*/true);
     }
 
     if (markdown) {
@@ -1264,6 +1282,10 @@ void AgentTurnController::HandleAgentEvent(const AgentEvent& event) {
       return;
     }
     home_turn_ = event.turn; // a Home turn started elsewhere (a card, a button) is newer
+  }
+  if (!forgotten_threads_.empty() && forgotten_threads_.count(EventThread(event)) > 0) {
+    log().info << "Late event of a deleted conversation dropped (type " << static_cast<int>(event.type) << ")";
+    return;
   }
   // An image turn rejected by the server (413 / 400) is worded here, not with the server's text.
   const char* image_error_key = AiImageErrorKindKey(event.error_kind);

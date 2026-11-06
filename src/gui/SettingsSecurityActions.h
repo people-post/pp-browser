@@ -26,6 +26,8 @@ namespace pbr {
  */
 class SettingsSecurityActions {
 public:
+  /** Hides the phrase, folds the PIN field away and drops a typed PIN; also voids a reveal still being checked. */
+  void HideRecoveryPhrase();
   SettingsSecurityActions(SettingsHost& host, const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
                           const UnlockEnsurePorts& unlock);
   ~SettingsSecurityActions();
@@ -38,13 +40,22 @@ public:
   void RefreshDiagnostics();
   /** The recovery phrase is on screen now (shown, not yet hidden). */
   bool RecoveryPhraseShown() const { return !recovery_phrase_.empty(); }
+  /**
+   * Me → Security → Copy transfer code (the button's event). With an own PIN the PIN comes first, in a field under
+   * the button like the recovery phrase's (first tap opens it, the next checks it); the app default PIN only confirms.
+   */
+  void ExportLinkDevice();
+  /** The transfer code's PIN field is out. */
+  bool ExportPinOpen() const { return export_pin_open_; }
+  /** Folds the transfer code's PIN field away and drops a typed PIN; also voids a check still running. */
+  void CancelExportPin();
 
 private:
   void ChangePin();
-  void ExportLinkDevice();
+  /** The "copy transfer code?" confirm, then the code to the clipboard. */
+  void ConfirmExportLinkDevice();
   /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
   void ShowRecoveryPhrase();
-  void HideRecoveryPhrase();
   /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
   void SaveAccountCopy();
   void ClearUndeliveredOlderThan();
@@ -71,8 +82,20 @@ private:
   /** The phrase while it is shown (empty otherwise) and the PIN typed to show it. */
   ui::String recovery_phrase_;
   ui::String recovery_phrase_pin_;
+  /** The PIN field under "Show recovery phrase" is out: a chosen-PIN profile tapped the button once (Kenneth
+   * 2026-11-06: the field is not on the page until then). */
+  bool recovery_pin_open_ = false;
   /** Bumped on every show and hide: a pending auto-hide only acts on the showing it was set for. */
   uint64_t recovery_shown_count_ = 0;
+  /** The request number of a reveal still being checked on a worker (0: none). */
+  uint64_t recovery_request_in_flight_ = 0;
+  /** The PIN typed to copy the transfer code, and whether its field is out (own-PIN profiles, plan #21 ⑧). */
+  ui::String export_pin_;
+  bool export_pin_open_ = false;
+  /** Bumped on every check and cancel: a check finishing late only acts if it is still the current one. */
+  uint64_t export_pin_count_ = 0;
+  /** The request number of a PIN check still running on a worker (0: none). */
+  uint64_t export_pin_in_flight_ = 0;
   /** Hides the recovery phrase when the app goes to the background (UI thread, SDL's event). */
   uint64_t background_listener_ = 0;
   /** How long the phrase stays on screen. */

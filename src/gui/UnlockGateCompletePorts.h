@@ -31,6 +31,8 @@ struct UnlockGateCompletePorts {
    */
   std::function<void(std::function<void(std::string name, std::optional<std::string> text)> picked)> pick_saved_copy;
   std::function<void()> cancel;
+  /** ProfileUnlockGate::UseDevicePinInstead: stop waiting for the phone's unlock, type the PIN. */
+  std::function<void()> use_device_pin_instead;
 };
 
 } // namespace pbr

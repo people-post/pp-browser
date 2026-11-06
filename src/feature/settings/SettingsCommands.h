@@ -82,10 +82,19 @@ struct SettingsCommands {
   std::function<PinProtectionView()> load_pin_protection;
   /** Change the profile PIN via the app-owned vault (caller ensures unlocked first). */
   std::function<Roe<void>(const SecretText& current_pin, const SecretText& new_pin)> change_pin;
+  /** The platform keeps the PIN grace window (#21: a secure store); false hides Security's "Ask for PIN again" row. */
+  std::function<bool()> grace_supported;
+  /**
+   * The grace window's length was changed and saved (0 / 5 / 15 / 60 minutes): 0 forgets the window now, any other
+   * value restarts it at that length (only where one is open; it never opens a new one).
+   */
+  std::function<void(int minutes)> set_grace_minutes;
   /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
   std::function<Roe<std::string>()> export_link_device;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
+  /** Whether `pin` opens the vault again (the transfer code's own PIN); works on accounts without a phrase. */
+  std::function<Roe<void>(const SecretText& pin)> verify_pin;
   /** Whether the account has a recovery phrase (vault unlocked). */
   std::function<bool()> has_recovery_phrase;
   /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */

@@ -6,7 +6,10 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
+#include <chrono>
+#include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -34,6 +37,12 @@ struct ProfileUnlockUiPorts {
   std::function<void()> on_default_provisioned;
   /** After first-run link-device import succeeds (UI thread). */
   std::function<void()> on_link_imported;
+  /**
+   * PIN grace window, the entry not readable while the phone is locked and a call waits for the unlock: true → the
+   * unlock screen says "Unlock your phone to connect the call" with an "Enter PIN instead" button; false → the
+   * plain unlock screen again.
+   */
+  std::function<void(bool waiting)> show_waiting_device_unlock;
 };
 
 /**
@@ -54,6 +63,25 @@ struct ProfileUnlockPorts {
   std::function<Roe<void>(const SecretText& pin, const SecretText& phrase,
                           const std::vector<std::string>& saved_copies)>
       restore_recovery_phrase;
+
+  // --- PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md). Without try_grace_unlock there is no grace step. ---
+  /** The window the user chose, in minutes; 0 = off (the PIN is asked at every cold start). */
+  std::function<int()> grace_minutes;
+  /** ProfileSecretsEngine::TryGraceUnlock: Found means the vault is open with the remembered DEK. */
+  std::function<Roe<GraceUnlock::Result>()> try_grace_unlock;
+  /** ProfileSecretsEngine::RememberGrace after a PIN unlock; a failure is reported, never fatal. */
+  std::function<Roe<void>(int minutes)> remember_grace;
+  /** A call answered on the phone's call screen waits for the unlock (ICallSystemUi::HasPendingPushCall). */
+  std::function<bool()> has_pending_push_call;
+  /** os::ProtectedDataAvailable. */
+  std::function<bool()> protected_data_available;
+  /** os::OnProtectedDataAvailable (the handler runs on any thread) / os::RemoveProtectedDataHandler. */
+  std::function<uint64_t(std::function<void()>)> on_protected_data_available;
+  std::function<void(uint64_t)> remove_protected_data_handler;
+  /** Post to the UI thread (unset: run inline). */
+  std::function<void(std::function<void()>)> run_on_ui;
+  /** Run on the UI thread after `delay` (unset: the call waits without a time limit). */
+  std::function<void(std::chrono::milliseconds delay, std::function<void()>)> run_later;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -83,8 +111,9 @@ public:
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
   /**
-   * After first present: silent default unlock when pin_is_default, else unlock UI when a vault
-   * exists, else (fresh install) the identity fork.
+   * After first present: silent default unlock when pin_is_default, else the PIN grace window (an entry still
+   * open unlocks without a PIN), else the dev PIN (local builds) or the unlock UI when a vault exists, else
+   * (fresh install) the identity fork.
    * Queues EnsureUnlocked callers while unlock_in_progress.
    * Heavy work runs via ports.run_heavy when set (keeps first paint interactive).
    */
@@ -107,13 +136,34 @@ public:
   /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 
+  /** UI: "Enter PIN instead" while waiting for the phone's unlock: the plain unlock screen, at once. */
+  void UseDevicePinInstead();
+  /** The app came to the foreground: a grace entry the locked phone kept unreadable is tried again. */
+  void OnForeground();
+
+  /** How long a call answered on a locked phone waits for its unlock (Leo's pending-call limit). */
+  static constexpr std::chrono::minutes kDeviceUnlockWait{3};
+
 private:
+  /** Which grace attempt: the first, the re-read right after the handler is registered, or a later retry. */
+  enum class GraceStep { First, Recheck, Retry };
+  void RunGraceAttempt(GraceStep step);
+  void OnGraceAttemptDone(GraceStep step, std::optional<GraceUnlock::Status> status, Roe<void> result);
+  void OnGraceUnavailable(GraceStep step);
+  void RetryGrace();
+  void EndDeviceUnlockWait();
+  void StopGrace();
+  void SetGraceAttemptInProgress(bool in_progress);
+  void RememberGraceAfterPinUnlock();
+  /** The dev PIN (local builds) or the unlock screen: the deferred unlock without the grace window. */
+  void UnlockWithoutGrace();
   /** A first secrets use that brings an existing account (link / phrase): `import` under `pin`, then unlock. */
   void CompleteAccountImport(const SecretText& pin, bool set_default_pin, std::function<Roe<void>()> import,
                              const char* mark);
   ProfileSecretsEngine& Secrets();
   Roe<void> UnlockAndReady(const SecretText& pin);
-  void RunUnlockAndReadyAsync(SecretText pin, bool set_default_pin, bool clear_default_pin);
+  /** `remember_grace`: a PIN the user chose opened the vault (not the default PIN) — keep the grace window. */
+  void RunUnlockAndReadyAsync(SecretText pin, bool set_default_pin, bool clear_default_pin, bool remember_grace);
   void RequestShowIdentityFork(std::function<void(bool)> done);
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
@@ -129,6 +179,13 @@ private:
   bool showing_ = false;
   bool unlock_in_progress_ = false;
   bool deferred_unlock_started_ = false;
+  /** The grace entry was Unavailable: retried when protected data comes back or the app comes forward. */
+  bool grace_pending_ = false;
+  /** The unlock screen says "unlock your phone to connect the call". */
+  bool waiting_device_unlock_ = false;
+  /** Bumped when a wait ends, so a stale timeout does nothing. */
+  uint64_t device_unlock_wait_generation_ = 0;
+  std::optional<uint64_t> protected_data_handler_;
 };
 
 /** Shared bootstrap / CLI path: Unlock then ensure_messaging_ready. */

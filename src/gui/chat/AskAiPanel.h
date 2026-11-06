@@ -81,6 +81,8 @@ public:
    * make one, not opened, when there is none. "" when there is none (or messaging is not up).
    */
   virtual std::string AskAiSharedThread(bool create) = 0;
+  /** Makes a brand-new AI chat, not opened (the floating dot's panel starts one). "" when it could not. */
+  virtual std::string AskAiNewThread() = 0;
   /** The thread's last `limit` messages as chat bubbles, oldest first. */
   virtual std::vector<AskAiRow> AskAiRecentRows(const std::string& thread_id, size_t limit) = 0;
   /** The thread's newest message is the user's (the answer to it never came). */
@@ -185,6 +187,8 @@ private:
   };
 
   bool Show(AskAiEntry entry, bool once);
+  /** The thread a question goes to: the shared one, or (a fresh dot panel) the new one, made on the first question. */
+  std::string ThreadToSend();
   void SwitchMode(bool once);
   void SendShared(const std::string& text);
   void SendPicture(const std::string& text);
@@ -214,6 +218,11 @@ private:
   uint64_t picture_generation_ = 0;
 
   std::string shared_thread_;
+  /**
+   * The panel was opened from the floating dot: it starts empty, and its first question makes a new AI chat
+   * (`shared_thread_`), which the panel keeps until it is opened again. Nothing is made if no question is sent.
+   */
+  bool fresh_ = false;
   std::string shared_draft_;
   std::string once_draft_;
   /** A shared question was handed over and its answer is awaited (an end without one is an error). */

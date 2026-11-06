@@ -27,6 +27,7 @@ class SettingsHelpQuestionTest : public ::testing::Test {
 protected:
   static void SetUpTestSuite() {
     ASSERT_TRUE(LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
+    LocalizationService::Instance().SetPreferredLanguage("en");  // not the machine's language
   }
   void TearDown() override { LocalizationService::Instance().SetPreferredLanguage("en"); }
 };

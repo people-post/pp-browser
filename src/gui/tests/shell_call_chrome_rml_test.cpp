@@ -198,6 +198,54 @@ TEST(ShellCallChromeRmlTest, PhoneGroupBeforeConnectKeepsTheDimmedGrid) {
   EXPECT_FALSE(Has(rml, "p.speaking"));
 }
 
+// #11: the connection story shows one step at a time: calling alone, then a short ✓ "answered" line above the
+// current "setting up the encrypted line"; a step that has not happened is not drawn. The sheet keeps the history.
+TEST(ShellCallChromeRmlTest, PhoneStoryShowsOnlyTheStepsThatHappened) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.story_active = true;
+  state.call_in_progress.story_stage = 0;
+  const std::string calling = CallInProgressRml(state);
+  EXPECT_EQ(Count(calling, "<div class=\"call-phone-step call-phone-step--"), 1u);
+  EXPECT_TRUE(Has(calling,
+                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
+                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
+  EXPECT_FALSE(Has(calling, "call_in_progress_story_step2"));
+  EXPECT_FALSE(Has(calling, "call_in_progress_story_step3"));
+
+  state.call_in_progress.story_stage = 1;
+  const std::string answered = CallInProgressRml(state);
+  EXPECT_EQ(Count(answered, "<div class=\"call-phone-step call-phone-step--"), 2u);
+  EXPECT_TRUE(Has(answered,
+                  "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">"
+                  "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div>"
+                  "<p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
+  EXPECT_TRUE(Has(answered,
+                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
+                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step2}}</p></div>"));
+  EXPECT_LT(answered.find("call_in_progress_story_step1"), answered.find("call_in_progress_story_step2"));
+  EXPECT_FALSE(Has(answered, "call_in_progress_story_step3"));
+
+  // The group card follows the same rule.
+  state.call_in_progress.show_roster = true;
+  state.call_in_progress.story_stage = 0;
+  const std::string group = CallInProgressRml(state);
+  EXPECT_TRUE(Has(group, "{{call_in_progress_story_step1}}"));
+  EXPECT_FALSE(Has(group, "call_in_progress_story_step2"));
+
+  // "How this call got through" still lists every line so far.
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.story_sheet_open = true;
+  state.call_in_progress.story_lines = {{.time = "10:02", .text = "You called"},
+                                        {.time = "3.0 s", .text = "They answered"},
+                                        {.time = "4.8 s", .text = "Connected directly", .secure = true}};
+  const std::string sheet = CallInProgressRml(state);
+  EXPECT_EQ(Count(sheet, "<div class=\"call-phone-event-dot\">"), 3u);
+  EXPECT_TRUE(Has(sheet, "You called"));
+  EXPECT_TRUE(Has(sheet, "They answered"));
+  EXPECT_TRUE(Has(sheet, "Connected directly"));
+}
+
 // V060: a person on hold has "On hold" on their tile (dimmed), and a paused camera says so — per row, bound.
 TEST(ShellCallChromeRmlTest, PhoneGroupTilesShowWhoIsOnHoldAndWhoseCameraIsPaused) {
   const std::string rml = CallInProgressRml(PhoneGroupCall());
@@ -246,6 +294,33 @@ TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
   EXPECT_TRUE(Has(swapped, "class=\"call-phone-pip\" tile=\"remote\" "
                            "data-if=\"call_in_progress_local_preview\" data-event-click=\"call_spotlight('22')\""));
   EXPECT_FALSE(Has(swapped, "call_spotlight_grid()"));
+}
+
+// #83: the flip button is lit while the front camera is in use and plain on the rear one (a bound class, no animation).
+TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.stage_visible = true;
+  state.call_in_progress.show_flip = true;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
+                       "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+}
+
+// The group video page has the flip button too, lit the same way, next to the camera; none while the camera is off.
+TEST(ShellCallChromeRmlTest, PhoneGroupVideoHasTheFlipButtonNextToTheCamera) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_camera = true;
+  state.call_in_progress.show_flip = true;
+  const std::string rml = CallInProgressRml(state);
+  const size_t flip = rml.find("data-event-click=\"call_flip_camera()\" "
+                               "data-class-call-phone-control--on=\"call_in_progress_camera_front\"");
+  ASSERT_NE(flip, std::string::npos);
+  EXPECT_LT(rml.find("data-event-click=\"call_camera()\""), flip);
+  EXPECT_LT(flip, rml.find("data-event-click=\"call_leave()\""));
+
+  state.call_in_progress.show_flip = false;
+  EXPECT_FALSE(Has(CallInProgressRml(state), "call_flip_camera()"));
 }
 
 } // namespace

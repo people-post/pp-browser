@@ -201,13 +201,16 @@
           </div>
           <div class="storage-seg row">
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'picture'" data-class-storage-seg-tab--on="storage_tab == 'picture'"
+                    data-class-storage-seg-tab--on="storage_tab == 'all'"
+                    data-event-click="storage_set_tab('all')">{{storage_tab_all_label}}</button>
+            <button class="storage-seg-tab" type="button"
+                    data-class-storage-seg-tab--on="storage_tab == 'picture'"
                     data-event-click="storage_set_tab('picture')">{{storage_tab_picture_label}}</button>
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'video'" data-class-storage-seg-tab--on="storage_tab == 'video'"
+                    data-class-storage-seg-tab--on="storage_tab == 'video'"
                     data-event-click="storage_set_tab('video')">{{storage_tab_video_label}}</button>
             <button class="storage-seg-tab" type="button"
-                    data-class-settings-row="storage_tab == 'file'" data-class-storage-seg-tab--on="storage_tab == 'file'"
+                    data-class-storage-seg-tab--on="storage_tab == 'file'"
                     data-event-click="storage_set_tab('file')">{{storage_tab_file_label}}</button>
           </div>
           <!-- Desktop: the selection bar sits above the list (a phone has it pinned at the bottom). -->
@@ -218,7 +221,7 @@
                     data-event-click="storage_delete()">{{i18n:settings.storage.manage.delete}}</button>
           </div>
           <p class="storage-group-foot settings-choice-value-text" data-if="storage_list_empty">{{i18n:settings.storage.manage.nothing}}</p>
-          <div class="storage-grid" data-if="storage_tab != 'file' && !storage_list_empty"
+          <div class="storage-grid" data-if="storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0)"
                data-class-storage-busy="storage_busy">
             <button data-for="cell, cell_index : storage_cells" class="storage-tile" type="button"
                     data-attr-storage-cell="cell_index"
@@ -235,16 +238,44 @@
                 <svg class="storage-check-icon" data-if="cell.picked" src="../icons/check.svg" width="12" height="12"></svg>
               </div>
             </button>
+            <button data-for="file, file_index : storage_files" class="storage-tile storage-tile--file" type="button"
+                    data-if="storage_tab == 'all'"
+                    data-attr-storage-file="file_index"
+                    data-class-storage-tile--picked="file.picked"
+                    data-event-click="storage_tap_file(file_index)">
+              <div class="storage-tile-frame storage-file-frame">
+                <img class="storage-file-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
+                <svg class="storage-file-icon" data-if="file.kind == 'audio' && file.cover == ''" src="../icons/v2/music.svg" width="30" height="30"></svg>
+                <svg class="storage-file-icon" data-if="file.kind != 'audio'" src="../icons/v2/file.svg" width="30" height="30"></svg>
+                <span class="storage-file-ext" data-if="file.kind == 'pdf'">PDF</span>
+                <span class="storage-file-name">{{file.tile_name}}</span>
+              </div>
+              <span class="storage-tile-size">{{file.size}}</span>
+              <div class="storage-check storage-tile-check" data-if="storage_selecting"
+                   data-class-storage-check--on="file.picked">
+                <svg class="storage-check-icon" data-if="file.picked" src="../icons/check.svg" width="12" height="12"></svg>
+              </div>
+            </button>
           </div>
-          <div class="settings-row storage-group stack" data-if="storage_tab == 'file' && !storage_list_empty"
+          <div class="settings-row storage-group stack" data-if="storage_files.size > 0 && storage_tab != 'all'"
                data-class-storage-busy="storage_busy">
             <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
                     data-attr-storage-file="file_index"
                     data-event-click="storage_tap_file(file_index)">
-              <div class="storage-file-type"><span class="storage-file-type-text">{{file.ext}}</span></div>
+              <div class="storage-file-type" data-class-storage-file-type--cover="file.cover != ''">
+                <!-- A sound file plays here: play / pause in the badge (over its cover when it has one), the time
+                     under the name, a bar. -->
+                <img class="storage-audio-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
+                <span class="storage-file-type-text" data-if="!file.audio">{{file.ext}}</span>
+                <svg class="storage-audio-icon" data-if="file.audio && !file.playing" src="../icons/play.svg" width="14" height="14"></svg>
+                <svg class="storage-audio-icon" data-if="file.audio && file.playing" src="../icons/pause.svg" width="14" height="14"></svg>
+              </div>
               <div class="storage-row-label stack">
                 <p class="settings-toggle-label storage-row-title">{{file.name}}</p>
                 <p class="settings-choice-value-text storage-row-sub">{{file.detail}}</p>
+                <div class="storage-audio-bar" data-if="file.progress != ''">
+                  <div class="storage-audio-fill" data-style-width="file.progress"></div>
+                </div>
               </div>
               <span class="settings-choice-value-text">{{file.size}}</span>
               <div class="storage-check" data-if="storage_selecting" data-class-storage-check--on="file.picked">

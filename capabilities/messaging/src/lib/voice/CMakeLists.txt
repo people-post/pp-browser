@@ -2,6 +2,8 @@
 # audio session they share with calls, on the media capability's device leases.
 pp_browser_add_lib_library(pp_lib_voice
   SOURCES
+    AudioContainerSniff.cpp
+    AudioFilePlayer.cpp
     OggOpus.cpp
     VoiceAudioSession.cpp
     VoiceDeviceBlock.cpp
@@ -10,6 +12,18 @@ pp_browser_add_lib_library(pp_lib_voice
     VoiceRecorder.cpp
   PUBLIC_LIBS
     pp_lib_media)
+
+# Sound-file attachments (MP3 ...) play through the system's player: AVAudioPlayer on Apple, MediaPlayer on Android;
+# elsewhere they open in the system's app. Their card's title, artist and cover come from the system's tag reader
+# (AVAsset / MediaMetadataRetriever); elsewhere the card shows the name and a placeholder.
+if(APPLE)
+  target_sources(pp_lib_voice PRIVATE AudioFilePlayer_Darwin.mm AudioFileTags_Darwin.mm)
+  target_link_libraries(pp_lib_voice PRIVATE "-framework AVFoundation" "-framework CoreMedia" "-framework Foundation")
+elseif(ANDROID)
+  target_sources(pp_lib_voice PRIVATE AudioFilePlayer_Android.cpp AudioFileTags_Android.cpp)
+else()
+  target_sources(pp_lib_voice PRIVATE AudioFilePlayer_Default.cpp AudioFileTags_Default.cpp)
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANDROID)
   target_sources(pp_lib_voice PRIVATE VoiceSupport_Linux.cpp)

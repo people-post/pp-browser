@@ -54,6 +54,8 @@ public:
    * stranger's only when it was made during a call this device is in with them right now (G022 amendment).
    */
   Roe<bool> AllowsInboundInvite(const GroupInvitePayload& invite) const;
+  /** True when an invite from this inviter is refused only because they are not a contact (policy: contacts only). */
+  bool RefusesUnknownInviter(const std::string& inviter_identity) const;
   Roe<void> RecordPendingInvite(const PendingGroupInvite& invite) const;
 
   /** G022: an inbound invite made during a call was kept; the call shows it until answered. No-op for other invites. */

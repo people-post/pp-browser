@@ -42,6 +42,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
+  grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
@@ -150,11 +151,16 @@ Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
 Earlier builds kept a PIN-sealed account backup in one Keychain generic-password item (service `dev.pp-browser.secure-blob`, account `account-backup`). It is retired — nothing reads or writes it ([at-rest A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); account state now lives in the encrypted account locker ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Once messaging is up the app deletes that item if present (`RemoveRetiredKeychainBackup`), until app version 1.1.0 (`kRetiredKeychainBackupRemoveAt`).
 
+### PIN grace window (iOS Keychain, outside the data dir)
+
+One Keychain generic-password item per profile: service `dev.pp-browser.secure-blob`, account `{profile_id}/unlock_grace`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. It holds the key of `grace.bin` and the window's end on the device's own clocks, never the PIN or the DEK ([AT_REST_ENCRYPTION § PIN grace window](AT_REST_ENCRYPTION.md#pin-grace-window-gracebin--a-keychain-entry), [at-rest A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Deleted with `grace.bin` on expiry, Change PIN and a profile reset; one left by a deleted profile opens nothing (its `grace.bin` is gone).
+
 ### PIN-related files (disk only)
 
 | File / field | Role |
 |--------------|------|
 | `vault.bin` | PIN-wrapped DEK |
+| `grace.bin` | DEK under the PIN grace window's key (with the Keychain item above; deleted when the window ends) |
 | `identity.enc` | Identity JSON under DEK AEAD |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
@@ -217,6 +223,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `home_widgets_order` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty (the default order: `favorites`, `calls`, `mentions`, `recent_chats`, `brief`, `new_people`). The phone Home widgets' order, set with Edit Home's drag handles; unknown and repeated ids are dropped, a widget it lacks goes at the end. Device-only, never synced (like `thread_local_prefs`) |
 | `starred_contacts` | `preferences.json` | string array, optional (added after schema v14, no version bump); default empty. Contact ids starred on the contact page ("Add to Favorites"), in the order they were starred; empty ids and repeats are dropped on read, an id with no contact is ignored. They come first in the phone Home Favorites widget and the New chat page's frequent group. Device-only, never synced or sent (like `thread_local_prefs`) |
 | `recovery_phrase_seen` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Set once the user has opened their recovery phrase on Me → Security; the phone Home Security widget shows "Protected" after that, "Save recovery phrase" before. Never cleared by the app. Device-only, never synced or sent (like `thread_local_prefs`) |
+| `unlock_grace_minutes` | `preferences.json` | integer, optional (added after schema v14, no version bump); one of 0 / 5 / 15 / 60, default 15; any other value reads back as 15. The PIN grace window (Me → Security → "Ask for PIN again after"): minutes after the last foreground use during which a cold start skips the PIN; 0 = every time. Only offered with an own PIN on a platform with a secure store. Device-only, never synced or sent |
 | `home_show_dynamic` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Home shows the 动态 widgets section; default off = minimal AI-first Home (Me → Appearance → Show Activity on Home, phones). Device-only, never synced or sent (like `thread_local_prefs`) |
 
 `tool_permissions` shape:

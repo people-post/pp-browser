@@ -191,6 +191,22 @@ public:
    */
   void RequestImageThumbnail(const std::string& thread_id, const ChatAttachmentFields& fields);
 
+  /** What a sound file's card shows from its own tags (empty strings / 0 when the file names none). */
+  struct AudioCardTags {
+    std::string title;
+    std::string artist;
+    int64_t duration_ms = 0;
+  };
+  /** The tags read this session for these bytes; nullopt before RequestAudioTags has finished for them. */
+  std::optional<AudioCardTags> AudioTags(const std::string& thread_id, const std::vector<uint8_t>& content_hash) const;
+  /**
+   * The transcript shows a sound file whose plaintext view `view_path` exists: reads its tags (ReadAudioFileTags)
+   * on a background worker, its cover going to the poster path as a small JPEG (EnsureAttachmentAudioCover), then
+   * notifies the change. Once per bytes a session (a lock forgets them with the view cache). Local only.
+   */
+  void RequestAudioTags(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                        const std::string& view_path);
+
   /** An item deleted from this chat (suppressed) is never Ready here, even while another chat keeps its bytes. */
   DownloadState StateFor(const std::string& thread_id, const ChatAttachmentFields& fields) const;
   /** Percent (0..100) of a download in progress; -1 when none is running or its size is not yet known. */
@@ -323,6 +339,10 @@ private:
   std::unordered_map<std::string, int> bytes_in_use_;
   /** Under mutex_: (chat, hash) sent or stored while that hash was being deleted: the delete keeps them. */
   std::vector<StoredAttachmentRef> sent_during_delete_;
+  /** Under mutex_: job key (chat + bytes) → a sound file's tags read this session; the keys asked for (read or being
+   *  read). */
+  std::unordered_map<std::string, AudioCardTags> audio_tags_;
+  std::unordered_set<std::string> audio_tags_requested_;
   /** Under mutex_: hex → thumbnails being made from those bytes (a delete waits for them). */
   std::unordered_map<std::string, int> thumbnails_in_progress_;
   /** Signalled when a thumbnail is done (a delete waits for those of its hashes). */

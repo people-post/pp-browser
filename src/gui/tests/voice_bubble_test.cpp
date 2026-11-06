@@ -67,6 +67,87 @@ TEST(VoiceBubbleRender, AFileRowForLargeDeclaredSizeOtherNameOtherTypeOrNoPlayer
   EXPECT_NE(row.find("voice-4200.ogg"), std::string::npos); // the file row names the file
 }
 
+// #111: an MP3 sent as a file plays in the chat (iOS QuickLook showed only an info page): a music card with its name,
+// a play button, a bar and the time line, with the voice ids VoicePlayback updates; the click is the file player's.
+TEST(VoiceBubbleRender, ASoundFilePlaysInPlaceWhereThePlatformHasAPlayer) {
+  TranscriptFacts facts = Facts(true);
+  facts.audio_files_play = true;
+  const std::string rml = Render(Attachment("m7", "Song.mp3", "audio/mpeg", 10800000), facts);
+  EXPECT_NE(rml.find("chat-audio-card"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("play_audio_file('m7')"), std::string::npos);
+  EXPECT_NE(rml.find("id=\"vp-m7\""), std::string::npos);
+  EXPECT_NE(rml.find("id=\"vf-m7\""), std::string::npos);
+  EXPECT_NE(rml.find("id=\"vt-m7\""), std::string::npos);
+  EXPECT_NE(rml.find("Song.mp3"), std::string::npos);
+  EXPECT_NE(rml.find("10 MB"), std::string::npos) << "the line under the name gives the size";
+  EXPECT_NE(rml.find("chat-audio-cover-note"), std::string::npos) << "no tags read: the music-note placeholder";
+  EXPECT_EQ(rml.find("open_attachment("), std::string::npos) << "not handed to the system's viewer";
+  // The bar sits in a wrapper that takes the press (seek by tap and drag); the thin bar is inside it.
+  const size_t seek = rml.find("id=\"vk-m7\" class=\"chat-audio-seek\" data-event-mousedown=\"audio_seek_press()\"");
+  ASSERT_NE(seek, std::string::npos) << rml;
+  EXPECT_LT(seek, rml.find("class=\"chat-voice-track\"")) << "the track is inside the touch area";
+  EXPECT_LT(rml.find("class=\"chat-voice-track\""), rml.find("id=\"vf-m7\""));
+  // The drag knob sits in the wrapper beside the (clipping) track, at the fill's end; own / received colours are
+  // keyed off the row in the theme.
+  const size_t knob = rml.find("id=\"vn-m7\" class=\"chat-audio-knob\" style=\"left: 0%;\"");
+  ASSERT_NE(knob, std::string::npos) << rml;
+  EXPECT_GT(knob, rml.find("id=\"vf-m7\""));
+  EXPECT_LT(knob, rml.find("class=\"chat-voice-time"));
+  // An m4a named file with a generic type plays too; a PDF stays a file row with Open.
+  EXPECT_NE(Render(Attachment("m8", "a.m4a", "application/octet-stream", 5000), facts).find("play_audio_file"),
+            std::string::npos);
+  EXPECT_EQ(Render(Attachment("m9", "doc.pdf", "application/pdf", 5000), facts).find("play_audio_file"),
+            std::string::npos);
+  // A voice message keeps its own bubble.
+  EXPECT_NE(Render(Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000), facts).find("play_voice('m1')"),
+            std::string::npos);
+}
+
+TEST(VoiceBubbleRender, ThePointerSpotInTheBarIsAFractionClampedToIt) {
+  EXPECT_DOUBLE_EQ(SeekFractionAt(150.f, 100.f, 200.f), 0.25);
+  EXPECT_DOUBLE_EQ(SeekFractionAt(50.f, 100.f, 200.f), 0.0) << "left of the bar";
+  EXPECT_DOUBLE_EQ(SeekFractionAt(900.f, 100.f, 200.f), 1.0) << "right of the bar";
+  EXPECT_DOUBLE_EQ(SeekFractionAt(150.f, 100.f, 0.f), 0.0) << "an empty bar";
+}
+
+TEST(VoiceBubbleRender, WithoutAPlayerASoundFileIsAFileRowToOpen) {
+  const std::string rml = Render(Attachment("m7", "Song.mp3", "audio/mpeg", 10800000), Facts(true));
+  EXPECT_EQ(rml.find("play_audio_file"), std::string::npos);
+  EXPECT_NE(rml.find("open_attachment('m7')"), std::string::npos);
+}
+
+// Kenneth 2026-11-06 ("播放样式很丑"): the card shows the file's own title, artist and cover when its tags name them,
+// its length before it plays, and the name only when the tags say nothing.
+TEST(VoiceBubbleRender, ASoundFileCardShowsItsOwnTitleArtistCoverAndLength) {
+  TranscriptFacts facts = Facts(true);
+  facts.audio_files_play = true;
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/x.mp3";
+    view.audio_title = "Moon River";
+    view.audio_artist = "Audrey <Hepburn>";
+    view.audio_duration_ms = 220000;
+    view.poster_path = "/tmp/x.poster.jpg";
+    return view;
+  };
+  const std::string rml = Render(Attachment("m7", "track01.mp3", "audio/mpeg", 3200000), facts);
+  EXPECT_NE(rml.find(">Moon River</p>"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("track01.mp3"), std::string::npos) << "the tag's title replaces the file name";
+  EXPECT_NE(rml.find("Audrey &lt;Hepburn&gt; · 3 MB"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("class=\"chat-audio-cover-image\" src=\"/tmp/x.poster.jpg\""), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("chat-audio-cover-note"), std::string::npos);
+  EXPECT_NE(rml.find(">3:40</span>"), std::string::npos) << "its length before it plays";
+}
+
+TEST(VoiceBubbleRender, APlayingSoundFileKeepsItsProgressOnARedraw) {
+  const VoiceBubbleState state{.playing = true, .paused = false, .position_ms = 65000, .duration_ms = 130000};
+  const std::string rml = AudioFileBubbleRml("m7", "m7", AudioCardFace{.title = "Song.mp3", .subtitle = "10 MB"}, state);
+  EXPECT_NE(rml.find("chat-voice-play--playing"), std::string::npos);
+  EXPECT_NE(rml.find("width: 50%"), std::string::npos);
+  EXPECT_NE(rml.find("1:05 / 2:10"), std::string::npos);
+}
+
 // Kenneth 2026-11-03: a blurry picture in the chat could not be enlarged — tapping it did nothing.
 TEST(VoiceBubbleRender, TappingAPictureOpensItFull) {
   const std::string rml = Render(Attachment("p1", "photo.jpg", "image/jpeg", 50000), Facts(true));
@@ -191,6 +272,54 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
   const std::string unknown = Render(Attachment("p4", "x.jpg", "image/jpeg", 50000), Facts(true));
   EXPECT_NE(unknown.find("class=\"chat-attachment-image\" src=\"/tmp/x\" data-event-click="), std::string::npos)
       << unknown;
+}
+
+// Kenneth 2026-11-06 (iPhone): a video was a black box wider than its bubble with an Open button. Now the poster sits
+// in a clipped frame of explicit dp size with a play disc, and a tap on the frame opens the system player.
+TEST(VideoBubbleRender, APosterFrameWithPlayDiscAndNoOpenButton) {
+  TranscriptFacts facts = Facts(true);
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    view.poster_path = "/tmp/v.poster.jpg";
+    view.image_width = 1280;
+    view.image_height = 720;
+    return view;
+  };
+  const std::string rml = Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts);
+  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:200dp;height:113dp\""),
+            std::string::npos) << rml;
+  EXPECT_NE(rml.find("width=\"200\" height=\"113\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('v1')\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no Open button";
+  EXPECT_NE(rml.find("282 KB"), std::string::npos);
+  // Unknown poster size: the 216 x 122dp fallback.
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    view.poster_path = "/tmp/v.poster.jpg";
+    return view;
+  };
+  EXPECT_NE(Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts).find("width:216dp;height:122dp"),
+            std::string::npos);
+}
+
+TEST(VideoBubbleRender, WithoutAPosterTheBadgeLayoutIsStillTappable) {
+  TranscriptFacts facts = Facts(true);
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    return view;
+  };
+  const std::string rml = Render(Attachment("v2", "v.mp4", "video/mp4", 289000), facts);
+  EXPECT_NE(rml.find("chat-attachment-video-badge"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('v2')\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos);
 }
 
 } // namespace

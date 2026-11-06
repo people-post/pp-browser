@@ -60,6 +60,10 @@ void BindChatScreenState(ui::DataModelConstructor& ctor, ChatScreenState& state)
   ctor.Bind("attachment_draft_name", &state.attachment_draft_name);
   ctor.Bind("attachment_status", &state.attachment_status);
   ctor.Bind("attachment_failed", &state.attachment_failed);
+  ctor.Bind("attachment_progress_width", &state.attachment_progress_width);
+  ctor.Bind("attachment_thumb", &state.attachment_thumb);
+  ctor.Bind("attachment_type_label", &state.attachment_type_label);
+  ctor.Bind("attachment_cancelling", &state.attachment_cancelling);
   ctor.Bind("show_voice", &state.show_voice);
   ctor.Bind("voice_blocked", &state.voice_blocked);
   ctor.Bind("voice_recording", &state.voice_recording);
@@ -160,6 +164,7 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   }
   ctor.RegisterArray<std::vector<HomeEditRow>>();
   ctor.Bind("sessions", &state.sessions);
+  ctor.Bind("ai_sessions", &state.ai_sessions);
   ctor.Bind("home_date_label", &state.home_date_label);
   ctor.Bind("home_widgets", &state.home_widgets);
   ctor.Bind("home_favorites", &state.home_favorites);
@@ -179,6 +184,9 @@ void BindChatShellState(ui::DataModelConstructor& ctor, ChatShellState& state) {
   ctor.Bind("home_edit_dragging", &state.home_edit_dragging);
   ctor.Bind("archived_count", &state.archived_count);
   ctor.Bind("showing_archived", &state.showing_archived);
+  ctor.Bind("archived_count_ai", &state.archived_count_ai);
+  ctor.Bind("showing_archived_ai", &state.showing_archived_ai);
+  ctor.Bind("archived_entry_label_ai", &state.archived_entry_label_ai);
   ctor.Bind("archived_entry_label", &state.archived_entry_label);
   ctor.Bind("sessions_more", &state.sessions_more);
   ctor.Bind("sessions_query", &state.sessions_query);
@@ -238,6 +246,10 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "attachment_draft_name");
   DataModelHost::Instance().Dirty("chat", "attachment_status");
   DataModelHost::Instance().Dirty("chat", "attachment_failed");
+  DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
+  DataModelHost::Instance().Dirty("chat", "attachment_thumb");
+  DataModelHost::Instance().Dirty("chat", "attachment_type_label");
+  DataModelHost::Instance().Dirty("chat", "attachment_cancelling");
   DataModelHost::Instance().Dirty("chat", "show_voice");
   DataModelHost::Instance().Dirty("chat", "voice_blocked");
   DataModelHost::Instance().Dirty("chat", "voice_recording");
@@ -287,6 +299,7 @@ void DirtyChat() {
 
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "ai_sessions");
   DataModelHost::Instance().Dirty("shell", "home_date_label");
   for (const char* name : {"home_widgets", "home_favorites", "home_recent", "home_missed_calls", "home_calls_latest",
                            "home_mentions", "home_mentions_where", "home_new_people", "home_security_ok", "home_show_dynamic", "home_brief", "home_edit_on",
@@ -295,6 +308,9 @@ void DirtyShell() {
   }
   DataModelHost::Instance().Dirty("shell", "archived_count");
   DataModelHost::Instance().Dirty("shell", "showing_archived");
+  DataModelHost::Instance().Dirty("shell", "archived_count_ai");
+  DataModelHost::Instance().Dirty("shell", "showing_archived_ai");
+  DataModelHost::Instance().Dirty("shell", "archived_entry_label_ai");
   DataModelHost::Instance().Dirty("shell", "archived_entry_label");
   DataModelHost::Instance().Dirty("shell", "sessions_more");
   DataModelHost::Instance().Dirty("shell", "working_set_active");

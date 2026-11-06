@@ -43,6 +43,8 @@ struct ContextMenuAction {
   /// "全部展现在这个小范围内……可以学下 whatsup"). `done` closes the sheet once something there was chosen.
   /// Elsewhere (the desktop menu) the action runs as usual.
   std::function<void(ui::Element* mount, std::function<void()> done)> expand;
+  /// Optional one-line explanation under the label (pickers whose choices need a sentence).
+  std::string detail;
 };
 
 struct ContextMenuRequest {

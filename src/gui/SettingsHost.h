@@ -32,6 +32,8 @@ public:
   virtual void RequestSyncLayout(const char* reason) = 0;
   /** Saved tool permissions forgotten (Security), and shown so. */
   virtual Roe<void> ForgetToolPermissions() = 0;
+  /** Takes the user to where the PIN is changed (the Change PIN page on phones; inline on desktop). */
+  virtual void OpenChangePin() = 0;
 };
 
 } // namespace pbr

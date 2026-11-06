@@ -50,6 +50,11 @@ Roe<bool> GroupInviteGate::AllowsInboundInvite(const GroupInvitePayload& invite)
   return true;
 }
 
+bool GroupInviteGate::RefusesUnknownInviter(const std::string& inviter_identity) const {
+  return inbound_policy_ == GroupInvitePolicy::ContactsOnly && standing_ &&
+         standing_(inviter_identity) == InviterStanding::Unknown;
+}
+
 Roe<void> GroupInviteGate::RecordPendingInvite(const PendingGroupInvite& invite) const {
   return roster_.UpsertPendingInvite(invite);
 }

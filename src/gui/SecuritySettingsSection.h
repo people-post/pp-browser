@@ -10,6 +10,8 @@ namespace pbr {
 
 std::string GroupInvitePolicyDisplayLabel(const std::string& policy);
 std::string CallInvitePolicyDisplayLabel(const std::string& policy);
+/** "Every time" / "5 minutes" / "15 minutes" / "1 hour" for the PIN grace window (#21). */
+std::string UnlockGraceDisplayLabel(int minutes);
 
 class SecuritySettingsSection final : public SettingsSectionHandler {
 public:

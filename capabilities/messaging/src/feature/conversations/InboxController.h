@@ -28,8 +28,12 @@ struct TranscriptAttachmentView {
   AttachmentFetchWorkflow::DownloadState state = AttachmentFetchWorkflow::DownloadState::Pending;
   /** The viewable file (empty: none on disk, or a large private video kept off disk until opened). */
   std::string local_path;
-  /** A video's poster frame (empty: none). */
+  /** A video's poster frame, or a sound file's cover from its own tags (empty: none). */
   std::string poster_path;
+  /** A sound file's own title and artist and its length, read on this device from its tags (empty / 0: none). */
+  std::string audio_title;
+  std::string audio_artist;
+  int64_t audio_duration_ms = 0;
   /**
    * False for a picture that must not be decoded for display: its header is unreadable or declares more pixels
    * than AttachmentLimits::max_image_pixels. Such a card is a file row with "Open".
@@ -76,6 +80,8 @@ struct TranscriptFacts {
   bool voice_supported = false;
   int voice_max_seconds = 120;
   std::function<VoiceBubbleState(const std::string& message_id)> voice_state;
+  /** Sound files (an MP3 sent as a file) play in place with the voice controls, not in the system's viewer. */
+  bool audio_files_play = false;
 };
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
@@ -108,10 +114,12 @@ public:
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /**
-   * Names an AI thread after its first question. Applies only while the thread still has
-   * kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of the send).
+   * Names an AI thread after its first question (`first_message` is the raw text; the title is cut to
+   * kAiThreadTitleMaxChars display characters, and a sensitive message keeps the default title). Applies only
+   * while the thread still has kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of
+   * the send).
    */
-  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message);
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
@@ -135,7 +143,8 @@ public:
                                  const std::optional<std::string>& preview = std::nullopt);
   int SumUnread() const;
   int SumUnreadForContact(const std::string& contact_id) const;
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  /** `assistant_text`: an AI answer, shown as is (only the user's own text is checked for codes and pasted blobs). */
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
 
   /**
    * The thread's transcript entries (D031), drawn by the GUI with Facts().

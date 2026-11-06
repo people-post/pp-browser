@@ -22,6 +22,7 @@
 #include "foundation/platform/PlatformShare.h"
 #include <atomic>
 #include <condition_variable>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -31,6 +32,10 @@
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/OsSecureBlobStore.h"
+#include "foundation/platform/os/OsProtectedData.h"
+#include "foundation/platform/os/OsAppState.h"
+#include "foundation/crypto/GraceUnlock.h"
+#include "common/Diag.h"
 #include "lib/people/RetiredKeychainBackup.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/error/AppError.h"
@@ -402,6 +407,10 @@ Roe<void> Application::ResetActiveProfile() {
     return stopped.error();
   }
 
+  // The PIN grace window's keychain entry outlives the profile directory: deleted right before the wipe, so a reset
+  // that stopped short above keeps the window.
+  ForgetGrace();
+
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
   if (ec) {
@@ -417,6 +426,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
     return secrets.error();
   }
+  AttachGrace();
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
   if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
@@ -524,6 +534,65 @@ Roe<void> Application::StopMessagingForReset(const bool with_secrets) {
   }
   AppRuntime::ReopenAfterTeardown();
   return {};
+}
+
+int Application::GraceMinutes() const {
+  // merged from kenneth/pin-grace-settings: Me → Security's choice (0 / 5 / 15 / 60, default 15).
+  return store_.IsInitialized() ? store_.Snapshot().profile_prefs.unlock_grace_minutes : 0;
+}
+
+void Application::AttachGrace() {
+  if (!secrets_ || !secrets_->IsInitialized()) {
+    return;
+  }
+  secrets_->AttachGrace(
+      std::make_unique<GraceUnlock>(OsSecureBlobStore(), secrets_->ProfileDataDir(), secrets_->ProfileId()),
+      &os::GraceClockNow);
+}
+
+void Application::TouchGrace() {
+  if (!secrets_ || !secrets_->IsInitialized() || !secrets_->IsUnlocked() || !secrets_->GraceSupported()) {
+    return;  // a locked vault's entry is the gate's to read (an expired one must not be renewed)
+  }
+  const int minutes = GraceMinutes();
+  if (minutes <= 0) {
+    return;
+  }
+  if (auto touched = secrets_->TouchGrace(minutes); !touched) {
+    log().warning << "Grace window not extended: " << touched.error().message;
+    DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", touched.error()).Emit();
+  }
+}
+
+void Application::StartGraceTimer() {
+  if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported()) {
+    return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing
+  }
+  // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
+  // the window chosen (5 → 2 minutes) and at most 5 minutes (15 / 60): no keychain write every minute for nothing.
+  const int every_minutes = std::clamp(GraceMinutes() / 2, 1, 5);
+  grace_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::minutes(every_minutes), [this]() {
+    AppRuntime::PostUI([this]() {
+      if (grace_timer_ != 0 && AppLifecycle::IsForeground()) {
+        TouchGrace();
+      }
+    });
+  });
+}
+
+void Application::StopGraceTimer() {
+  if (grace_timer_ == 0) {
+    return;
+  }
+  AppRuntime::CancelCoordinatorTimer(grace_timer_);
+  grace_timer_ = 0;
+}
+
+void Application::ForgetGrace() {
+  StopGraceTimer();
+  if (secrets_) {
+    secrets_->ForgetGrace();
+  }
 }
 
 std::string Application::AssetsPath(const std::string& relative) {
@@ -863,17 +932,38 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return view;
   };
   settings_commands.change_pin = [this](const SecretText& current_pin, const SecretText& new_pin) -> Roe<void> {
-    DataKeyVault* vault = secrets_->Vault();
-    if (vault == nullptr) {
+    if (secrets_->Vault() == nullptr) {
       return AppError::Pin(Err::Pin::VaultUnavailable, "Vault unavailable");
     }
-    if (auto changed = vault->ChangePin(current_pin.Reveal(), new_pin.Reveal()); !changed) {
+    // The engine's ChangePin forgets the PIN grace window on success: the next cold start asks for the new PIN.
+    if (auto changed = secrets_->ChangePin(current_pin.Reveal(), new_pin.Reveal()); !changed) {
       return changed.error();
     }
+    StopGraceTimer();
     return {};
   };
   settings_commands.export_link_device = [&facade]() -> Roe<std::string> { return facade.ExportLinkDevice(); };
+  // merged from kenneth/pin-grace-settings: Me → Security's "PIN again after" row (PIN grace window, at-rest A013).
+  settings_commands.grace_supported = [this]() { return secrets_->GraceSupported(); };
+  settings_commands.set_grace_minutes = [this](const int minutes) {
+    if (minutes == 0) {
+      ForgetGrace();  // both pieces and the foreground timer
+      return;
+    }
+    // The new length at once (a 15-minute window becomes 5); never creates an entry.
+    if (secrets_->IsUnlocked()) {
+      if (auto touched = secrets_->TouchGrace(minutes); !touched) {
+        log().warning << "Grace window not changed: " << touched.error().message;
+        DiagLine("unlock.grace").Add("result", "write_failed").Fail("error", touched.error()).Emit();
+      }
+    }
+    if (AppLifecycle::IsForeground()) {
+      StopGraceTimer();   // its interval follows the window's length
+      StartGraceTimer();  // kept running, or back after "Immediately"
+    }
+  };
   settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.verify_pin = [this](const SecretText& pin) { return secrets_->VerifyPin(pin.Reveal()); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
   settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {
@@ -1281,6 +1371,7 @@ void Application::WireUnlockPinAndFlow() {
       });
     };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
+    gate_complete.use_device_pin_instead = [this]() { unlock_gate_->UseDevicePinInstead(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
   ProfileUnlockPorts unlock_ports;
@@ -1303,6 +1394,12 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
     pin_gate_->Dismiss();
+    // Any unlock but the default PIN's (grace window, PIN, dev PIN, link, recovery phrase): with the app on screen the
+    // foreground timer starts now; a push cold start is in the background and does not start it.
+    const bool default_pin = store_.IsInitialized() && store_.Snapshot().profile_prefs.pin_is_default;
+    if (secrets_ && secrets_->IsUnlocked() && !default_pin && secrets_->GraceSupported() && os::AppShownNow()) {
+      StartGraceTimer();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();
@@ -1312,6 +1409,9 @@ void Application::WireUnlockPinAndFlow() {
     pin_gate_->SetUnlockInProgressUi(in_progress);
   };
   unlock_ports.ui.show_error = [this](const std::string& message) { pin_gate_->ShowError(message); };
+  unlock_ports.ui.show_waiting_device_unlock = [this](const bool waiting) {
+    pin_gate_->SetWaitingDeviceUnlock(waiting);
+  };
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
@@ -1343,7 +1443,40 @@ void Application::WireUnlockPinAndFlow() {
     AppRuntime::ResumeBackgroundWork();
     AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
   };
+  // PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md).
+  AttachGrace();
+  unlock_ports.grace_minutes = [this]() { return GraceMinutes(); };
+  unlock_ports.try_grace_unlock = [this]() { return secrets_->TryGraceUnlock(); };
+  unlock_ports.remember_grace = [this](const int minutes) -> Roe<void> {
+    // The timer starts with the gate's dismiss, when the app is on screen.
+    auto kept = secrets_->RememberGrace(minutes);
+    if (minutes <= 0) {
+      StopGraceTimer();  // 0 forgets: nothing to extend
+    }
+    return kept;
+  };
+  unlock_ports.has_pending_push_call = []() { return ICallSystemUi::Instance().HasPendingPushCall(); };
+  unlock_ports.protected_data_available = []() { return os::ProtectedDataAvailable(); };
+  unlock_ports.on_protected_data_available = [](std::function<void()> fn) {
+    return os::OnProtectedDataAvailable(std::move(fn));
+  };
+  unlock_ports.remove_protected_data_handler = [](const uint64_t id) { os::RemoveProtectedDataHandler(id); };
+  unlock_ports.run_on_ui = [](std::function<void()> fn) { AppRuntime::PostUI(std::move(fn)); };
+  unlock_ports.run_later = [](const std::chrono::milliseconds delay, std::function<void()> fn) {
+    AppRuntime::ScheduleCoordinatorOneShot(delay,
+                                           [fn = std::move(fn)]() mutable { AppRuntime::PostUI(std::move(fn)); });
+  };
   unlock_gate_->BindPorts(std::move(unlock_ports));
+  // Only the foreground's paths extend the window; a push wake or a background sync starts no lifecycle event here.
+  grace_foreground_listener_ = AppLifecycle::AddForegroundListener([this]() {
+    unlock_gate_->OnForeground();
+    TouchGrace();
+    StartGraceTimer();
+  });
+  grace_background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
+    TouchGrace();  // best effort: a phone already locked keeps the entry unreadable and the touch is skipped
+    StopGraceTimer();
+  });
 
   {
     OnboardingPorts onboarding_ports;
@@ -1435,6 +1568,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_identity_phrase = [this]() { pin_gate_->OnIdentityPhrase(); };
     pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
+    pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
@@ -2202,6 +2336,11 @@ void Application::Run() {
 void Application::Shutdown() {
   StartupMark("shutdown_begin");
   StartupPhase shutdown_total("Application::Shutdown");
+  StopGraceTimer();
+  AppLifecycle::RemoveListener(grace_foreground_listener_);
+  AppLifecycle::RemoveListener(grace_background_listener_);
+  grace_foreground_listener_ = 0;
+  grace_background_listener_ = 0;
   AppRuntime::BeginShutdown();
   // Idempotent with Backend::RequestExit — ensures window is gone before joins even if
   // Shutdown is invoked without going through RequestExit (failed Initialize, tests).

@@ -407,7 +407,8 @@ std::string ShellLayoutRml::PinGate() const {
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode && "
+         "!pin_gate_waiting_device_unlock\" "
          "data-value=\"pin_gate_pin\" placeholder=\""
       << Tr("pin.placeholder") << "\"/>";
   out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
@@ -415,7 +416,7 @@ std::string ShellLayoutRml::PinGate() const {
          "placeholder=\""
       << Tr("pin.confirm_placeholder") << "\"/>";
   out << "<div class=\"shell-dialog-actions row\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_waiting_device_unlock\">";
   out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
@@ -425,7 +426,11 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
   out << "</div>";
-  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_unlock_mode\" "
+  // PIN grace window: a call waits for the locked phone's unlock; the PIN stays one tap away.
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_waiting_device_unlock\" "
+         "data-event-click=\"pin_gate_use_pin_instead()\">"
+      << Tr("pin.unlock_use_pin_instead") << "</button>";
+  out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_unlock_mode && !pin_gate_waiting_device_unlock\" "
          "data-event-click=\"pin_gate_forgot_toggle()\">"
       << Tr("pin.forgot_link") << "</button>";
   out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_unlock_mode && pin_gate_forgot_open\">"

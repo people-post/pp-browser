@@ -413,3 +413,37 @@ TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
 
 }  // namespace
 }  // namespace pbr
+
+namespace pbr {
+namespace {
+
+// G017 / #120: a choice can carry a one-line explanation under its title, and the current one is checked.
+TEST_F(ContextMenuPopoverTest, ARowWithADetailShowsItUnderItsTitleAndTheCurrentOneIsChecked) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  std::vector<ContextMenuAction> actions = OneAction();
+  actions[0].label = "Everyone";
+  actions[0].detail = "Anyone can add people";
+  actions[0].selected = true;
+  ContextMenuAction other;
+  other.id = "other";
+  other.label = "Admins only";
+  other.detail = "Members only chat";
+  other.run = [] {};
+  actions.push_back(std::move(other));
+  ContextMenuHost::Instance().ShowActions({10, 10}, std::move(actions));
+  context_->Update();
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  const std::string rml = layer->GetInnerRML();
+  EXPECT_NE(rml.find("Everyone"), std::string::npos);
+  EXPECT_NE(rml.find("Anyone can add people"), std::string::npos);
+  EXPECT_NE(rml.find("Admins only"), std::string::npos);
+  EXPECT_NE(rml.find("Members only chat"), std::string::npos);
+  EXPECT_EQ(rml.find("✓"), rml.rfind("✓")) << "only the current one is checked";
+  EXPECT_NE(rml.find("✓"), std::string::npos);
+  ContextMenuHost::Instance().Dismiss();
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
+} // namespace
+} // namespace pbr

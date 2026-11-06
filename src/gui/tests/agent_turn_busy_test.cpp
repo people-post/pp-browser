@@ -891,5 +891,69 @@ TEST_F(AgentTurnBusyTest, AnErrorWritesIntoHomeOnlyForHomesOwnTurn) {
   EXPECT_EQ(written[0], "home-question") << "Home's own turn: written into that turn's entry";
 }
 
+// --- deleting an AI conversation ---------------------------------------------------------------
+
+TEST_F(AgentTurnBusyTest, DeletingAnAiConversationStopsItsTurnAndDropsItsQueuedSend) {
+  BindSession();
+  Open("A");
+  controller_.HandleAgentEvent(Loading(true, "A"));
+  controller_.HandleAgentEvent(Loading(true, "B"));
+  ASSERT_TRUE(controller_.QueueSend(Queued("C")));
+
+  controller_.ForgetThread("A");
+  EXPECT_EQ(cancel_calls_, 1);
+  EXPECT_EQ(cancelled_thread_, "A") << "only the deleted conversation's turn is stopped";
+  EXPECT_FALSE(controller_.Busy().BusyIn("A"));
+  EXPECT_TRUE(controller_.Busy().BusyIn("B")) << "the other chats go on answering";
+
+  controller_.ForgetThread("C");
+  EXPECT_FALSE(controller_.HasQueued("C")) << "a question queued for a deleted chat has nowhere to go";
+  EXPECT_EQ(cancel_calls_, 1) << "C had no turn running, nothing to stop";
+}
+
+TEST_F(AgentTurnBusyTest, TheDeletedConversationListIsEmptiedOnResetAndProfileReset) {
+  BindSession();
+  Open("B");
+  for (const bool full_reset : {true, false}) {
+    controller_.ForgetThread("A");
+    controller_.HandleAgentEvent(Loading(true, "A"));
+    EXPECT_FALSE(controller_.Busy().BusyIn("A")) << "dropped while remembered";
+    if (full_reset) {
+      controller_.Reset();
+    } else {
+      controller_.ClearForgottenThreads();
+    }
+    controller_.HandleAgentEvent(Loading(true, "A"));
+    EXPECT_TRUE(controller_.Busy().BusyIn("A")) << "a thread with the same id in a new profile works again";
+    controller_.HandleAgentEvent(Loading(false, "A"));
+  }
+}
+
+TEST_F(AgentTurnBusyTest, ALateEventOfADeletedConversationIsIgnored) {
+  BindSession();
+  Open("B");
+  controller_.HandleAgentEvent(Loading(true, "A"));
+  controller_.ForgetThread("A");
+
+  controller_.HandleAgentEvent(Loading(true, "A")); // the session was still streaming
+  EXPECT_FALSE(controller_.Busy().BusyIn("A")) << "no \"thinking\" comes back for a deleted chat";
+
+  AgentEvent delta;
+  delta.type = AgentEventType::AssistantDelta;
+  delta.thread_id = "A";
+  delta.entry_id = "q1";
+  delta.text = "partial answer";
+  controller_.HandleAgentEvent(delta);
+  EXPECT_TRUE(controller_.StreamingText("A").empty()) << "no streamed row for a deleted chat";
+
+  AgentEvent ready;
+  ready.type = AgentEventType::AssistantReady;
+  ready.thread_id = "A";
+  ready.entry_id = "q1";
+  ready.text = "answer";
+  controller_.HandleAgentEvent(ready); // would store a message into (and so re-create) the thread
+  EXPECT_FALSE(controller_.Busy().Any());
+}
+
 } // namespace
 } // namespace pbr

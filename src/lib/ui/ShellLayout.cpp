@@ -90,7 +90,8 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
                                                             int safe_area_top_dp,
                                                             int safe_area_bottom_dp,
                                                             float titlebar_height_dp,
-                                                            CompactBottomSurface bottom_surface) {
+                                                            CompactBottomSurface bottom_surface,
+                                                            bool bottom_chrome_open) {
   CompactChromeLayout layout{};
   const float safe_top = static_cast<float>(std::max(0, safe_area_top_dp));
   const float safe_bottom = static_cast<float>(std::max(0, safe_area_bottom_dp));
@@ -102,27 +103,36 @@ CompactChromeLayout ShellLayout::ComputeCompactChromeLayout(const ShellConfig& c
   // bottom of that rect and content only needs nav-height padding.
   layout.shell_top_dp = 0.f;
   layout.content_top_dp = safe_top + titlebar;
-  // Without a keyboard, the bottom surface paints down through the home-indicator strip: the document
-  // goes full-bleed and the surface pads itself by the inset. With a keyboard up the body shrinks.
+  // Without a keyboard, the bottom surface paints down through the home-indicator strip: the document goes full-bleed
+  // and the surface pads itself by the inset. With a keyboard up the body still goes full-bleed (so the theme background
+  // paints behind the keyboard, not the window's black clear colour) and the keyboard inset lifts #shell-root instead.
   const bool keyboard = safe_area_bottom_dp >= kImeLatchMinDp;
   const bool covers_strip = bottom_surface != CompactBottomSurface::None && !keyboard;
-  layout.shell_bottom_dp = covers_strip ? 0.f : safe_bottom;
+  layout.shell_bottom_dp = (covers_strip || keyboard) ? 0.f : safe_bottom;
+  layout.content_bottom_inset_dp = keyboard ? safe_bottom : 0.f;
   layout.bottom_surface_padding_dp = covers_strip ? safe_bottom : 0.f;
   const float tab_bar_inset =
       bottom_surface == CompactBottomSurface::TabBar ? layout.bottom_surface_padding_dp : 0.f;
-  layout.content_padding_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
+  // Keyboard up, or an emoji/attachment bottom sheet open, over a tab-bar page: hide the tab bar and stop reserving its
+  // height, so the content (and its docked composer) sits right above the keyboard / panel that covers where the bar
+  // was, instead of being squeezed above a floating bar (Kenneth 2026-11-05). bottom_chrome_open is the emoji/attachment
+  // panel, whose own inset is zeroed at the call site, so it is passed in separately from the keyboard inset.
+  layout.tab_bar_hidden = (keyboard || bottom_chrome_open) && bottom_surface == CompactBottomSurface::TabBar;
+  layout.content_padding_bottom_dp = layout.tab_bar_hidden ? 0.f : config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_bottom_dp = 0.f;
   layout.sheet_bottom_dp = config.compact_nav_height_dp + tab_bar_inset;
   layout.chrome_horizontal_inset_dp = config.compact_nav_horizontal_inset_dp;
   if (bottom_surface != CompactBottomSurface::None) {
     // The bar the toast must clear: tab bar, or the composer's one-line height (DESIGN-pp-ui 8.5); a pushed
-    // page has none. Below it the home-indicator strip (with a keyboard up the body already ends above it).
+    // page has none. A hidden tab bar is not there to clear. The body no longer shrinks for the keyboard, so the
+    // toast (anchored to the body bottom) adds the keyboard inset to stay above it.
     constexpr float kComposerMinHeightDp = 52.f;
     constexpr float kToastGapDp = 12.f;
-    const float bar = bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
+    const float bar = layout.tab_bar_hidden                              ? 0.f
+                      : bottom_surface == CompactBottomSurface::TabBar     ? config.compact_nav_height_dp
                       : bottom_surface == CompactBottomSurface::Composer ? kComposerMinHeightDp
                                                                          : 0.f;
-    layout.toast_bottom_dp = layout.bottom_surface_padding_dp + bar + kToastGapDp;
+    layout.toast_bottom_dp = layout.content_bottom_inset_dp + layout.bottom_surface_padding_dp + bar + kToastGapDp;
   }
   return layout;
 }

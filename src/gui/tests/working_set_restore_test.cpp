@@ -85,3 +85,40 @@ TEST(WorkingSetRestoreTest, ThreadSwitchRestoresSeveralEntriesWithoutOpening) {
   EXPECT_TRUE(f.controller.HasEntry("entry-1"));
   EXPECT_TRUE(f.controller.HasEntry("entry-2"));
 }
+
+// B170: back in the chat by a way that cleared the panels without restoring them, a tapped list read
+// "unavailable". Open() now reads the entry back from the thread.
+TEST(WorkingSetRestoreTest, OpenReadsAClearedEntryBackFromTheThread) {
+  Fixture f;
+  (void)f.controller.RestoreEntry("entry-1", OneCandidate());
+  f.controller.ClearAll();
+  int loads = 0;
+  f.controller.SetEntryLoader([&loads](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
+    ++loads;
+    if (entry_id != "entry-1") {
+      return std::nullopt;
+    }
+    return WorkingSetController::StoredEntry{OneCandidate(), {}};
+  });
+  f.controller.Open("entry-1", 0);
+  EXPECT_EQ(loads, 1);
+  EXPECT_TRUE(f.active);
+  EXPECT_EQ(std::string(f.title.c_str()), "Contacts");
+  EXPECT_EQ(std::string(f.rml.c_str()), "<p>x</p>");
+  EXPECT_TRUE(f.shell.open);
+  // Held again: a second open does not read the thread.
+  f.controller.Open("entry-1", 0);
+  EXPECT_EQ(loads, 1);
+}
+
+TEST(WorkingSetRestoreTest, OpenOfAnEntryNotInTheThreadStillSaysUnavailable) {
+  Fixture f;
+  f.controller.SetEntryLoader([](const std::string&) -> std::optional<WorkingSetController::StoredEntry> {
+    return std::nullopt;
+  });
+  f.controller.Open("gone", 0);
+  EXPECT_TRUE(f.active);
+  EXPECT_FALSE(f.controller.HasEntry("gone"));
+  EXPECT_EQ(std::string(f.rml.c_str()).rfind("<p class=\"muted\">", 0), 0u);  // the unavailable note
+}
+

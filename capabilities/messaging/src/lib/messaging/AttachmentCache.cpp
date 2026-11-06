@@ -2,6 +2,7 @@
 #include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
+#include "common/PathUtf8.h"
 
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
@@ -30,6 +31,8 @@ namespace {
 constexpr int kVideoPosterMaxDimension = 480;
 /** The thumbnail of a large image: same bound as the poster. */
 constexpr int kImageThumbnailMaxDimension = 480;
+/** A sound file's cover: shown 48dp square on its card (three times that for a dense screen). */
+constexpr int kAudioCoverMaxDimension = 144;
 
 Roe<void> MarkDownloaded(const std::string& path) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
@@ -44,12 +47,13 @@ Roe<std::vector<uint8_t>> VideoPoster(const std::string& video_path) {
   return platform.video_poster_jpeg(video_path, kVideoPosterMaxDimension);
 }
 
-Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes) {
+Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes,
+                                         const int max_dimension = kImageThumbnailMaxDimension) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
   if (!platform.image_thumbnail_jpeg) {
     return Error("No image thumbnail on this platform");
   }
-  return platform.image_thumbnail_jpeg(image_bytes, kImageThumbnailMaxDimension);
+  return platform.image_thumbnail_jpeg(image_bytes, max_dimension);
 }
 
 Roe<std::vector<uint8_t>> SoftPoster() {
@@ -167,7 +171,11 @@ bool IsInertAttachmentExtension(const std::string& ext) {
 }
 
 std::string LowerFilenameExtension(const std::string& filename) {
-  std::string ext = std::filesystem::path(filename).extension().string();
+  // By hand, not std::filesystem::path: on Windows a narrow UTF-8 name is read as the ANSI code page and a CJK name throws.
+  const size_t slash = filename.find_last_of("/\\");
+  const size_t base = slash == std::string::npos ? 0 : slash + 1;
+  const size_t dot = filename.rfind('.');
+  std::string ext = dot == std::string::npos || dot <= base ? std::string() : filename.substr(dot);
   if (ext.size() < 2 || ext.size() > 8 || ext[0] != '.') {
     return {};
   }
@@ -266,6 +274,16 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   if (mime == "text/plain") {
     return "txt";
   }
+  // Sound: the system viewer types it by the extension (iOS QuickLook shows no player without one).
+  if (mime == "audio/mpeg") {
+    return "mp3";
+  }
+  if (mime == "audio/mp4") {
+    return "m4a";
+  }
+  if (mime == "audio/wav") {
+    return "wav";
+  }
   if (AttachmentOpenNeedsConfirm(mime)) {
     const std::string ext = LowerFilenameExtension(filename);
     if (IsInertAttachmentExtension(ext)) {
@@ -273,6 +291,141 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
     }
   }
   return {};
+}
+
+namespace {
+
+std::string TopLevelType(const std::string& mime) {
+  return mime.substr(0, mime.find('/'));
+}
+
+} // namespace
+
+bool AttachmentExtensionMatchesType(const std::string& own, const std::string& ext, const std::string& mime) {
+  if (own.empty()) {
+    return false;
+  }
+  if (own == ext) {
+    return true;
+  }
+  // Other spellings of the same format.
+  static const std::unordered_map<std::string, std::string> kAlias = {
+      {"jpeg", "jpg"}, {"jpe", "jpg"}, {"mpga", "mp3"}, {"text", "txt"}, {"qt", "mov"},
+  };
+  if (const auto alias = kAlias.find(own); alias != kAlias.end() && alias->second == ext) {
+    return true;
+  }
+  if (own == "mp4" && ext == "m4a") {
+    return true; // an MPEG-4 sound file
+  }
+  // A sound, picture or video named for another format of the same kind (song.mp3 sent as audio/mp4): the viewer
+  // reads its content; only types the table knows count (never an unknown or active extension).
+  const std::string top = TopLevelType(mime);
+  return (top == "audio" || top == "image" || top == "video") &&
+         TopLevelType(AttachmentMimeFromFilename("x." + own)) == top;
+}
+
+namespace {
+
+// The name's own extension already names the sniffed container (m4a / mp4 / m4b are one container, as are ogg / oga /
+// opus and aif / aiff).
+bool ExtensionNamesContainer(const std::string& own, const std::string& content_ext) {
+  if (own == content_ext) {
+    return true;
+  }
+  const auto in = [&](std::initializer_list<const char*> group) {
+    bool has_own = false;
+    bool has_content = false;
+    for (const char* g : group) {
+      has_own = has_own || own == g;
+      has_content = has_content || content_ext == g;
+    }
+    return has_own && has_content;
+  };
+  return in({"m4a", "mp4", "m4b"}) || in({"ogg", "oga", "opus"}) || in({"aif", "aiff", "aifc"}) ||
+         in({"mp3", "mpga"}) || in({"wav", "wave"});
+}
+
+} // namespace
+
+std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
+                                   const std::string& fallback_stem, const std::string& content_ext) {
+  const std::string ext = AttachmentExtensionFromMime(mime, filename);
+  if (ext.empty()) {
+    return {};
+  }
+  constexpr size_t kMaxNameBytes = 100;
+  const size_t slash = filename.find_last_of("/\\");
+  std::string name;
+  for (const char ch : filename.substr(slash == std::string::npos ? 0 : slash + 1)) {
+    const auto c = static_cast<unsigned char>(ch);
+    if (c >= 0x20 && c != 0x7F && std::strchr("<>:\"|?*", ch) == nullptr) {
+      name.push_back(ch);
+    }
+  }
+  const auto trim = [&name]() {
+    const size_t first = name.find_first_not_of(". ");
+    name = first == std::string::npos ? std::string() : name.substr(first, name.find_last_not_of(". ") - first + 1);
+  };
+  trim();
+  if (name.size() > kMaxNameBytes) {
+    size_t cut = kMaxNameBytes;
+    while (cut > 0 && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80) {
+      --cut; // not inside a UTF-8 character
+    }
+    name.resize(cut);
+    trim();
+  }
+  if (name.empty()) {
+    name = fallback_stem;
+  }
+  if (!AttachmentExtensionMatchesType(LowerFilenameExtension(name), ext, mime)) {
+    name += "." + ext;
+  }
+  if (!content_ext.empty() && TopLevelType(mime) == "audio" &&
+      !ExtensionNamesContainer(LowerFilenameExtension(name), content_ext)) {
+    name += "." + content_ext; // the content is another container than the name says
+  }
+  return name;
+}
+
+std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
+                                  const std::vector<uint8_t>& content_hash) {
+  return (std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id)) / (AttachmentHashHex(content_hash) + ".open"))
+      .string();
+}
+
+std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
+                                    const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                    const std::string& filename, const std::string& view_path,
+                                    const std::string& content_ext) {
+  const std::string name = AttachmentOpenFilename(filename, mime, AttachmentHashHex(content_hash), content_ext);
+  if (name.empty() || profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return view_path;
+  }
+  const std::filesystem::path dir = PathFromUtf8(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash));
+  const std::filesystem::path link = dir / PathFromUtf8(name);  // the sender's name may be CJK
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, PathFromUtf8(view_path), ec)) {
+    return PathToUtf8(link); // made by an earlier open of the same view
+  }
+  // Only this name is replaced: a viewer may still be reading another link here. The folder goes with the view
+  // cache (each start, a lock) and with the attachment's local delete.
+  std::filesystem::remove(link, ec);
+  ec.clear();
+  std::filesystem::create_directories(dir, ec);
+  if (!ec) {
+    std::filesystem::create_hard_link(PathFromUtf8(view_path), link, ec);
+    if (ec) {
+      ec.clear();
+      std::filesystem::copy_file(PathFromUtf8(view_path), link, ec); // a file system without hard links
+    }
+  }
+  if (ec) {
+    std::filesystem::remove(link, ec);
+    return view_path;
+  }
+  return PathToUtf8(link);
 }
 
 bool IsAttachmentImageMime(const std::string& mime) {
@@ -289,7 +442,7 @@ bool AttachmentOpenNeedsConfirm(const std::string& mime) {
 
 bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime) {
   static constexpr size_t kSniffLen = 16;
-  std::ifstream in(path, std::ios::binary);
+  std::ifstream in(PathFromUtf8(path), std::ios::binary);
   if (!in) {
     return true; // Can't read it; nothing to flag here (open will fail on its own).
   }
@@ -363,7 +516,7 @@ bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime) 
   if (expected_ext.empty()) {
     return false; // Not one of the whitelisted mimes (e.g. image/svg+xml, video/quicktime).
   }
-  std::string actual_ext = std::filesystem::path(path).extension().string();
+  std::string actual_ext = PathToUtf8(PathFromUtf8(path).extension());
   if (!actual_ext.empty() && actual_ext[0] == '.') {
     actual_ext = actual_ext.substr(1);
   }
@@ -562,9 +715,36 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
   return thumb_path;
 }
 
+Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,
+                                            const std::vector<uint8_t>& content_hash, const ByteVector& picture) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment cover lookup");
+  }
+  const std::string cover_path = AttachmentPosterPath(profile_dir, thread_id, content_hash);
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(cover_path, ec) && !ec) {
+    return cover_path;
+  }
+  auto jpeg = ImageThumbnail(picture, kAudioCoverMaxDimension); // from memory: only the small JPEG is written
+  if (!jpeg) {
+    return jpeg.error();
+  }
+  if (jpeg->empty()) {
+    return Error("Audio cover JPEG empty");
+  }
+  const ByteVector bytes(jpeg->begin(), jpeg->end());
+  if (auto written = WriteBytesAtomic(std::filesystem::path(cover_path), bytes); !written) {
+    return written.error();
+  }
+  return cover_path;
+}
+
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id) {
   if (profile_dir.empty() || thread_id.empty()) {
     return Error("Attachment cache profile directory and thread_id are required");
+  }
+  if (const AttachmentPlatform platform = CurrentAttachmentPlatform(); platform.forget_opened_copies) {
+    platform.forget_opened_copies(); // the handed-out copies are not kept per chat: all of them go
   }
   const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
   std::error_code ec;
@@ -593,6 +773,9 @@ Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::s
 
 Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir) {
   AttachmentPlaintextMemoryCache::Instance().Clear();
+  if (const AttachmentPlatform platform = CurrentAttachmentPlatform(); platform.forget_opened_copies) {
+    platform.forget_opened_copies(); // the copies handed to other apps go with the views they were made from
+  }
   if (profile_dir.empty()) {
     return Error("Attachment cache profile directory is required");
   }

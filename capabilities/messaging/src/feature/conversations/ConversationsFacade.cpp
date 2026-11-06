@@ -9,6 +9,8 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/voice/AudioContainerSniff.h"
+#include "common/PathUtf8.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
@@ -220,8 +222,9 @@ void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread()
 Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().CreateNewAiThread(); }
 Roe<Thread> ConversationsFacade::CreateAiThread() { return hub_.Inbox().CreateAiThread(); }
 
-Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
-  return hub_.Inbox().UpdatePreview(thread_id, preview);
+Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview,
+                                              const bool assistant_text) {
+  return hub_.Inbox().UpdatePreview(thread_id, preview, assistant_text);
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
@@ -255,8 +258,8 @@ Roe<void> ConversationsFacade::SetThreadLocalTitle(const std::string& thread_id,
   return hub_.Inbox().SetThreadLocalTitle(thread_id, local_title);
 }
 
-Roe<void> ConversationsFacade::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
-  return hub_.Inbox().NameAiThreadFromFirstMessage(thread_id, title);
+Roe<void> ConversationsFacade::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& first_message) {
+  return hub_.Inbox().NameAiThreadFromFirstMessage(thread_id, first_message);
 }
 
 Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& contact_id, const ThreadChannel channel) {
@@ -1098,14 +1101,17 @@ std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,
 
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                                               std::function<void(Roe<ThreadMessage>)> on_done,
-                                              std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress));
+                                              std::function<bool(uint64_t done, uint64_t total)> progress,
+                                              std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress),
+                           std::move(cancelled));
 }
 
 void ConversationsFacade::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                                                 std::function<void(Roe<ThreadMessage>)> on_done,
-                                                std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress));
+                                                std::function<bool(uint64_t done, uint64_t total)> progress,
+                                                std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress), std::move(cancelled));
 }
 
 std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttachments(const std::string& thread_id) {
@@ -1185,6 +1191,25 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
     hub_.Attachments().MaybeBuildPoster(thread_id, *fields, /*after_open=*/true); // a large video's first poster
   }
   return *view;
+}
+
+std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(const std::string& thread_id,
+                                                                         const std::string& message_id,
+                                                                         bool* made_view) {
+  auto view = AttachmentLocalPathForMessage(thread_id, message_id, made_view);
+  auto fields = view ? AttachmentFieldsOfMessage(hub_, thread_id, message_id) : std::nullopt;
+  if (!fields) {
+    return view;
+  }
+  // A sound file's name may not say what it is (an MPEG-4 file named .mp3): the link gets the real extension.
+  std::string content_ext;
+  if (fields->mime.rfind("audio/", 0) == 0) {
+    if (const char* ext = AudioContainerExtension(SniffAudioFile(PathFromUtf8(*view)))) {
+      content_ext = ext;
+    }
+  }
+  return AttachmentNamedOpenPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime,
+                                 fields->filename, *view, content_ext);
 }
 
 Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
