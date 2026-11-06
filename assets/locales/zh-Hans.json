@@ -136,7 +136,6 @@
     "settings.profile.peer_id_label": "对等 ID：",
     "settings.profile.photo_removed": "头像已移除",
     "settings.profile.photo_updated": "头像已更新",
-    "settings.profile.photo_uploading": "正在上传头像…",
     "settings.profile.picker_failed": "无法打开文件选择器",
     "settings.profile.relay_id_label": "账号 ID：",
     "settings.profile.relay_id_none": "账号 ID：开通账号后生成",

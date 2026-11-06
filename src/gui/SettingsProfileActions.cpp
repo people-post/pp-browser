@@ -5,6 +5,7 @@
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "common/runtime/AppRuntime.h"
+#include "common/Logger.h"
 #include "common/PbrCompat.h"
 #include "gui/AccountInvite.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
@@ -158,7 +159,6 @@ void SettingsProfileActions::UploadIcon(const std::string& path) {
   }
   host_.UiState().profile_icon_uploading = true;
   host_.PushToView(/*include_profile_nickname=*/false);
-  host_.ShowStatus(Tr("settings.profile.photo_uploading"));
   BlobQuotaRecoveryFlow::RunVoidUpload(
       [this, path]() { return commands_.upload_profile_icon_file(path); },
       [this, path](Roe<void> result) {
@@ -191,10 +191,11 @@ void SettingsProfileActions::ClearIcon() {
 
 void SettingsProfileActions::AfterIconChange(const Roe<void>& result, const std::string& done_message) {
   host_.UiState().profile_icon_uploading = false;
-  host_.ShowStatus(result ? done_message : std::string());
   host_.Resync(/*include_profile_nickname=*/false);
   if (!result) {
-    host_.ReportFailure(result.error());
+    // The white pill alone reports it; ReportFailure would also write the inline status line.
+    logging::getLogger("SettingsProfile").warning << "Profile icon change failed: " << AppError::Log(result.error());
+    UserFeedback::FailFrom(result.error());
     return;
   }
   UserFeedback::Ok(done_message);
