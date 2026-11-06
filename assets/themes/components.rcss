@@ -5787,6 +5787,20 @@ call-video-tile {
   margin: 4dp 0 2dp 0;
 }
 
+/* The 1:1 page's status line already says it ("对方暂时离开，请稍等"), and a strip tile is too narrow for the words:
+   the pill there is the pause icon alone. */
+.call-hold-pill--hero,
+.call-hold-pill--who,
+.call-phone-tile--strip .call-hold-pill {
+  padding: 4dp 8dp;
+}
+
+.call-hold-pill--hero .call-hold-pill-text,
+.call-hold-pill--who .call-hold-pill-text,
+.call-phone-tile--strip .call-hold-pill-text {
+  display: none;
+}
+
 .call-phone-tile--on-hold .call-phone-avatar,
 .call-phone-tile--on-hold call-video-tile,
 .shell-call-peer-card--on-hold .shell-call-peer-avatar,
