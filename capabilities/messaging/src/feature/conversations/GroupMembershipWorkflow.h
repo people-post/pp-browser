@@ -56,6 +56,14 @@ public:
   /** The ordinary invite to an account (its contact used when there is one), per the preset (G019). */
   Roe<void> InviteByIdentity(const std::string& group_id, const std::string& invitee_identity);
   Roe<Thread> AcceptInvite(const std::string& invite_nonce);
+  /**
+   * G021: join the group a link's preview names (`answerer` the link's maker, who sent it): as AcceptInvite — the
+   * group's chat, its owner `owner_identity` (the join bundle's statement must verify for it) — with the join's own
+   * record (an accepted invite from `answerer`, nonce `request_id`) so the bundle is taken from them for it alone. The
+   * caller sends the confirm. Already in: the chat as it is.
+   */
+  Roe<Thread> JoinByLink(const std::string& request_id, const std::string& group_id, const std::string& title,
+                         const std::string& owner_identity, const std::string& answerer);
   Roe<void> DeclineInvite(const std::string& invite_nonce);
   /** Local leave used by session close — stops inbound group recreate without peer notify. */
   Roe<void> DismissLocalGroup(const std::string& group_id);
@@ -140,6 +148,20 @@ public:
   Roe<void> AdmitInvitee(const std::string& group_id, const std::string& invite_nonce,
                          const std::string& member_identity);
   /**
+   * G021: `member_identity` confirmed a join by our link `link_id` (the caller checked the link): our device signs the
+   * `add` with the link's id (never a re-admit), and it goes as AdmitInvitee's does — the members, then the join
+   * bundle to the newcomer under `request_id` (the joiner's record of the join). Errors `kGroupFullError` when the add
+   * does not count here (R5); someone already in gets the bundle again.
+   */
+  Roe<void> AdmitByLink(const std::string& group_id, const std::string& link_id, const std::string& member_identity,
+                        const std::string& request_id);
+  /**
+   * A change of ours (G018: `draft` unsigned, from a group_roster_sync::Draft*): signed with our card, held, the roster
+   * recomputed, fanned out to the members, its line, a newer title followed, and — as the owner — folded soon. The
+   * signed change.
+   */
+  Roe<GroupChange> CommitOwnChange(GroupChange draft);
+  /**
    * G020 6: remove everyone `account` added who is still in and ours to remove (the owner anyone, an admin members),
    * one removal each. How many went out.
    */
@@ -214,6 +236,25 @@ public:
   Roe<void> RestoreGroup(const AccountStateGroup& group);
 
 private:
+  /** Who an add brings in and why: an invite of ours (`invite_nonce`) or a join by our link (`link_id`). */
+  struct Admission {
+    std::string group_id;
+    std::string member;
+    std::string invite_nonce;
+    std::string link_id;
+    /** The nonce the join bundle names (the invite's, or the joiner's request id). */
+    std::string bundle_nonce;
+  };
+  /**
+   * Sign, hold and send the add `admission` makes (`update` held: released before the sends). An error with `update`
+   * still held: no add went out.
+   */
+  Roe<void> AdmitNewcomer(std::unique_lock<std::recursive_mutex>& update, const Admission& admission);
+  /**
+   * An accepted invite's group here (AcceptInvite, JoinByLink): its metadata with the invite's owner, its chat, the
+   * roster until the join bundle comes, the first line ("You joined", `by_link`: by the inviter's link).
+   */
+  Roe<Thread> EnterAcceptedGroup(const PendingGroupInvite& pending, const std::string& local, bool by_link = false);
   Roe<void> StartRosterCheckAttempt(const std::string& group_id, size_t attempt);
   /** Ask again after kRosterReaskDelaysMs[attempt] unless answered, or a newer check (with its own timer) began. */
   void ScheduleRosterReask(const std::string& group_id, const std::string& request_id, size_t attempt);

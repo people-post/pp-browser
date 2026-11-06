@@ -5,6 +5,7 @@
 
 #include "lib/delivery/DirectChatTargetFromContact.h"
 #include "lib/messaging/GroupChangeLines.h"
+#include "lib/messaging/GroupLinkJoin.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupTypes.h"
@@ -36,6 +37,9 @@ namespace {
  * sends the first ones and its other members are keyed as before (a first message, the directory).
  */
 constexpr size_t kRosterCardsBudgetBytes = 128 * 1024;
+
+/** A group whose invite named no title. */
+constexpr const char kDefaultGroupTitle[] = "Group chat";
 
 /** The line an app that does not know `group_invite_refused` shows for it. */
 std::string RefusedDisplay(const std::string& reason) {
@@ -431,6 +435,102 @@ Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::st
   return {};
 }
 
+Roe<Thread> GroupMembershipWorkflow::EnterAcceptedGroup(const PendingGroupInvite& pending, const std::string& local,
+                                                        const bool by_link) {
+  const std::string title = pending.group_title.empty() ? std::string(kDefaultGroupTitle) : pending.group_title;
+  const uint64_t roster_epoch = pending.roster_epoch == 0 ? 1 : pending.roster_epoch;
+
+  // G019: the owner the invite named (a member's invite), else the inviter; the join bundle's statement must verify
+  // for it.
+  const std::string owner_identity = pending.Owner();
+  GroupMetadata metadata;
+  metadata.group_id = pending.group_id;
+  metadata.owner_identity = owner_identity;
+  metadata.title = title;
+  metadata.roster_epoch = roster_epoch;
+  if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
+    return saved.error();
+  }
+
+  auto thread = store_.FindOrCreateGroupThread(pending.group_id, title, {});
+  if (!thread) {
+    return thread.error();
+  }
+
+  // Seed both sides of the v1 create-invite pair so SendGroupMessage can fan out.
+  // (Owner already has self; invitee must also know the owner.)
+  // Until the join bundle comes: the owner and the inviter (it rewrites the roster from what it proves).
+  GroupRosterMember owner;
+  owner.member_identity = owner_identity;
+  owner.role = MemberRole::Owner;
+  owner.joined_at = util::NowUnixMs();
+  if (auto upsert_owner = roster_.UpsertMember(pending.group_id, owner); !upsert_owner) {
+    return upsert_owner.error();
+  }
+  if (pending.inviter_identity != owner_identity) {
+    GroupRosterMember inviter;
+    inviter.member_identity = pending.inviter_identity;
+    inviter.joined_at = owner.joined_at;
+    (void)roster_.UpsertMember(pending.group_id, inviter);
+  }
+
+  GroupRosterMember member;
+  member.member_identity = local;
+  member.role = MemberRole::Member;
+  member.joined_at = util::NowUnixMs();
+  if (auto upsert = roster_.UpsertMember(pending.group_id, member); !upsert) {
+    return upsert.error();
+  }
+  (void)roster_.UpdateInviteStatus(pending.invite_nonce, InviteStatus::Accepted);
+  (void)roster_.UpsertGroupTarget(pending.group_id, thread->id, 1, 1);
+
+  // G022: a group made during a call this device was in says so on its first line.
+  const bool made_in_call = !invite_gate_.CallOfInvite(pending.invite_nonce).empty();
+  invite_gate_.ForgetInviteInCall(pending.invite_nonce);
+  GroupMembershipCodec::MemberJoinedPayload joined;
+  joined.group_id = pending.group_id;
+  joined.member_identity = local;
+  joined.role = MemberRole::Member;
+  joined.roster_epoch = roster_epoch;
+  joined.context = made_in_call ? kGroupInviteContextCall : "";
+  if (by_link) { // G021: "You joined by Alice's link"
+    joined.added_by = pending.inviter_identity;
+    joined.by_link = true;
+  }
+  auto detail = GroupMembershipCodec::EncodeMemberJoined(joined);
+  if (!detail) {
+    return detail.error();
+  }
+  if (auto event =
+          AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined,
+                                      made_in_call ? kGroupMadeInCallLine : "You joined the group", *detail, local);
+      !event) {
+    return event.error();
+  }
+  return *thread;
+}
+
+Roe<Thread> GroupMembershipWorkflow::JoinByLink(const std::string& request_id, const std::string& group_id,
+                                                const std::string& title, const std::string& owner_identity,
+                                                const std::string& answerer) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  // The join's own record, as an accepted invite from the answerer: the join bundle is taken from them for it alone.
+  const PendingGroupInvite pending =
+      group_link_join::JoinRecord(request_id, group_id, title, owner_identity, answerer, *local, util::NowUnixMs());
+  if (auto kept = roster_.UpsertPendingInvite(pending); !kept) {
+    return kept.error();
+  }
+  if (auto in = roster_.IsMember(group_id, *local); in && *in && !IsDissolved(group_id)) {
+    if (auto thread = store_.FindGroupThread(group_id); thread && *thread) {
+      return **thread; // in already: the answerer sends the bundle again
+    }
+  }
+  return EnterAcceptedGroup(pending, *local, /*by_link=*/true);
+}
+
 Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonce) {
   auto pending = roster_.LoadPendingInvite(invite_nonce);
   if (!pending || !pending->has_value() || (*pending)->outbound) {
@@ -453,78 +553,15 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
   }
 
   if (IsDissolved((*pending)->group_id)) {
-    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);  // G016: an invite to an ended group is void
+    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired); // G016: an invite to an ended group is void
     return Error(group_roster_sync::kGroupDissolvedError);
   }
 
-  const std::string title =
-      (*pending)->group_title.empty() ? std::string("Group chat") : (*pending)->group_title;
-  const uint64_t roster_epoch = (*pending)->roster_epoch == 0 ? 1 : (*pending)->roster_epoch;
-
-  // G019: the owner the invite named (a member's invite), else the inviter; the join bundle's statement must verify
-  // for it.
-  const std::string owner_identity = (*pending)->Owner();
-  GroupMetadata metadata;
-  metadata.group_id = (*pending)->group_id;
-  metadata.owner_identity = owner_identity;
-  metadata.title = title;
-  metadata.roster_epoch = roster_epoch;
-  if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
-    return saved.error();
-  }
-
-  auto thread = store_.FindOrCreateGroupThread((*pending)->group_id, title, {});
+  auto thread = EnterAcceptedGroup(**pending, *local);
   if (!thread) {
     return thread.error();
   }
-
-  // Seed both sides of the v1 create-invite pair so SendGroupMessage can fan out.
-  // (Owner already has self; invitee must also know the owner.)
-  // Until the join bundle comes: the owner and the inviter (it rewrites the roster from what it proves).
-  GroupRosterMember owner;
-  owner.member_identity = owner_identity;
-  owner.role = MemberRole::Owner;
-  owner.joined_at = util::NowUnixMs();
-  if (auto upsert_owner = roster_.UpsertMember((*pending)->group_id, owner); !upsert_owner) {
-    return upsert_owner.error();
-  }
-  if ((*pending)->inviter_identity != owner_identity) {
-    GroupRosterMember inviter;
-    inviter.member_identity = (*pending)->inviter_identity;
-    inviter.joined_at = owner.joined_at;
-    (void)roster_.UpsertMember((*pending)->group_id, inviter);
-  }
-
-  GroupRosterMember member;
-  member.member_identity = *local;
-  member.role = MemberRole::Member;
-  member.joined_at = util::NowUnixMs();
-  if (auto upsert = roster_.UpsertMember((*pending)->group_id, member); !upsert) {
-    return upsert.error();
-  }
-  (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted);
-  (void)roster_.UpsertGroupTarget((*pending)->group_id, thread->id, 1, 1);
-
-  // G022: a group made during a call this device was in says so on its first line.
-  const bool made_in_call = !invite_gate_.CallOfInvite(invite_nonce).empty();
-  invite_gate_.ForgetInviteInCall(invite_nonce);
-  GroupMembershipCodec::MemberJoinedPayload joined;
-  joined.group_id = (*pending)->group_id;
-  joined.member_identity = *local;
-  joined.role = MemberRole::Member;
-  joined.roster_epoch = roster_epoch;
-  joined.context = made_in_call ? kGroupInviteContextCall : "";
-  auto detail = GroupMembershipCodec::EncodeMemberJoined(joined);
-  if (!detail) {
-    return detail.error();
-  }
-  if (auto event =
-          AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined,
-                                      made_in_call ? kGroupMadeInCallLine : "You joined the group", *detail, *local);
-      !event) {
-    return event.error();
-  }
-
+  const std::string title = (*pending)->group_title.empty() ? kDefaultGroupTitle : (*pending)->group_title;
   if (auto sent = SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
                                                   GroupMembershipControlType::GroupInviteAccept);
       !sent) {
@@ -1560,29 +1597,14 @@ Roe<void> GroupMembershipWorkflow::RenameAsMember(const std::string& group_id, c
   if (!local || !device) {
     return !local ? local.error() : device.error();
   }
-  const int64_t now_ms = util::NowUnixMs();
-  auto draft = group_roster_sync::DraftRename(roster_, group_id, *local, *device, title, ChangeCards(), now_ms);
+  auto draft =
+      group_roster_sync::DraftRename(roster_, group_id, *local, *device, title, ChangeCards(), util::NowUnixMs());
   if (!draft) {
     return draft.error();
   }
-  auto rename = SignOwnChange(std::move(*draft));
+  auto rename = CommitOwnChange(std::move(*draft));
   if (!rename) {
     return rename.error();
-  }
-  auto held = group_roster_sync::HoldChange(roster_, *rename, ChangeCards(), now_ms, /*line_shown=*/true);
-  if (!held || *held != group_roster_sync::ChangeHeld::Proved) {
-    return held ? Error("The rename does not prove itself on this device") : held.error();
-  }
-  auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
-  if (!applied) {
-    return applied.error();
-  }
-  FanOutChange(group_id, *rename);
-  if (applied->new_title) {
-    (void)group_change_lines::FollowTitle(store_, group_id, *applied->new_title);
-  }
-  if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
-    (void)group_change_lines::Append(store_, group_id, {*rename}, (*metadata)->roster_epoch, *local);
   }
   log().info << "group renamed by member group=" << group_id << " version=" << rename->title_version;
   return {};
@@ -1885,12 +1907,6 @@ void GroupMembershipWorkflow::RefuseAdmit(const std::string& group_id, const std
 
 Roe<void> GroupMembershipWorkflow::AdmitInvitee(const std::string& group_id, const std::string& invite_nonce,
                                                 const std::string& member_identity) {
-  auto local = LocalRelayIdentity();
-  auto device = OwnDevice();
-  if (!local || !device) {
-    return !local ? local.error() : device.error();
-  }
-  const int64_t now_ms = util::NowUnixMs();
   auto update = IGroupRosterStore::LockForUpdate(); // the invite's check, the add and the invite's close, as one
   auto pending = roster_.LoadPendingInvite(invite_nonce);
   if (!pending || !*pending || !(*pending)->outbound || (*pending)->group_id != group_id ||
@@ -1900,17 +1916,48 @@ Roe<void> GroupMembershipWorkflow::AdmitInvitee(const std::string& group_id, con
   if ((*pending)->status == InviteStatus::Accepted) {
     return {}; // admitted once already
   }
-  if (auto in = roster_.IsMember(group_id, member_identity); in && *in) {
-    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); // a re-invite of someone in: resync them
+  auto admitted = AdmitNewcomer(
+      update,
+      {.group_id = group_id, .member = member_identity, .invite_nonce = invite_nonce, .bundle_nonce = invite_nonce});
+  if (!admitted && update.owns_lock()) { // no add went out (a failed send after it is not a refusal)
     update.unlock();
-    return SendJoinBundle(group_id, member_identity, invite_nonce, {}, {});
+    const bool full = admitted.error().message == kGroupFullError;
+    RefuseAdmit(group_id, invite_nonce, member_identity, full ? kInviteRefusedGroupFull : kInviteRefusedNotAllowed);
   }
-  auto draft = group_roster_sync::DraftAdd(roster_, group_id, *local, *device, member_identity, invite_nonce,
-                                           ChangeCards(), now_ms);
+  return admitted;
+}
+
+Roe<void> GroupMembershipWorkflow::AdmitByLink(const std::string& group_id, const std::string& link_id,
+                                               const std::string& member_identity, const std::string& request_id) {
+  auto update = IGroupRosterStore::LockForUpdate();
+  return AdmitNewcomer(
+      update, {.group_id = group_id, .member = member_identity, .link_id = link_id, .bundle_nonce = request_id});
+}
+
+Roe<void> GroupMembershipWorkflow::AdmitNewcomer(std::unique_lock<std::recursive_mutex>& update,
+                                                 const Admission& admission) {
+  const std::string& group_id = admission.group_id;
+  const std::string& member_identity = admission.member;
+  const bool by_invite = !admission.invite_nonce.empty();
+  auto local = LocalRelayIdentity();
+  auto device = OwnDevice();
+  if (!local || !device) {
+    return !local ? local.error() : device.error();
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (auto in = roster_.IsMember(group_id, member_identity); in && *in) {
+    if (by_invite) {
+      (void)roster_.UpdateInviteStatus(admission.invite_nonce, InviteStatus::Accepted); // a re-invite: resync them
+    }
+    update.unlock();
+    return SendJoinBundle(group_id, member_identity, admission.bundle_nonce, {}, {});
+  }
+  auto draft = by_invite ? group_roster_sync::DraftAdd(roster_, group_id, *local, *device, member_identity,
+                                                       admission.invite_nonce, ChangeCards(), now_ms)
+                         : group_roster_sync::DraftLinkJoin(roster_, group_id, *local, *device, member_identity,
+                                                            admission.link_id, ChangeCards(), now_ms);
   auto add = draft ? SignOwnChange(std::move(*draft)) : Roe<GroupChange>(draft.error());
   if (!add) {
-    update.unlock();
-    RefuseAdmit(group_id, invite_nonce, member_identity, kInviteRefusedNotAllowed);
     return add.error();
   }
   const std::string add_id = group_change::Id(*add);
@@ -1920,16 +1967,16 @@ Roe<void> GroupMembershipWorkflow::AdmitInvitee(const std::string& group_id, con
   }
   auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
   if (!applied || !applied->view || !applied->view->Lists(member_identity)) {
-    // It does not count here (R5: the group filled meanwhile): it goes nowhere, and the invitee is told.
+    // It does not count here (R5: the group filled meanwhile): it goes nowhere, and the caller tells them.
     const GroupChangeVerdict* verdict = applied && applied->view ? applied->view->Verdict(add_id) : nullptr;
+    const bool full = verdict && verdict->reason == GroupChangeReason::GroupFull;
     (void)roster_.DeleteGroupChanges(group_id, {add_id});
     (void)group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
-    update.unlock();
-    const bool full = verdict && verdict->reason == GroupChangeReason::GroupFull;
-    RefuseAdmit(group_id, invite_nonce, member_identity, full ? kInviteRefusedGroupFull : kInviteRefusedNotAllowed);
     return Error(full ? std::string(kGroupFullError) : std::string(kGroupInviteNotAllowedError));
   }
-  (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted);
+  if (by_invite) {
+    (void)roster_.UpdateInviteStatus(admission.invite_nonce, InviteStatus::Accepted);
+  }
   (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
   update.unlock(); // not across the sends below
   group_roster_sync_codec::ChangeNewcomer newcomer{
@@ -1943,9 +1990,41 @@ Roe<void> GroupMembershipWorkflow::AdmitInvitee(const std::string& group_id, con
       ScheduleFold(group_id);
     }
   }
-  log().info << "member added by invite group=" << group_id << " member=" << member_identity
-             << (add->readmits.empty() ? "" : " (re-admitted)");
-  return SendJoinBundle(group_id, member_identity, invite_nonce, *local, add_id);
+  log().info << "member added " << (by_invite ? "by invite" : "by link") << " group=" << group_id
+             << " member=" << member_identity << (add->readmits.empty() ? "" : " (re-admitted)");
+  return SendJoinBundle(group_id, member_identity, admission.bundle_nonce, *local, add_id);
+}
+
+Roe<GroupChange> GroupMembershipWorkflow::CommitOwnChange(GroupChange draft) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  auto change = SignOwnChange(std::move(draft));
+  if (!change) {
+    return change.error();
+  }
+  const std::string& group_id = change->group_id;
+  auto held = group_roster_sync::HoldChange(roster_, *change, ChangeCards(), now_ms, /*line_shown=*/true);
+  if (!held || *held != group_roster_sync::ChangeHeld::Proved) {
+    return held ? Error("The change does not prove itself on this device") : held.error();
+  }
+  auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
+  if (!applied) {
+    return applied.error();
+  }
+  FanOutChange(group_id, *change);
+  if (applied->new_title) {
+    (void)group_change_lines::FollowTitle(store_, group_id, *applied->new_title);
+  }
+  if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
+    (void)group_change_lines::Append(store_, group_id, {*change}, (*metadata)->roster_epoch, *local);
+    if ((*metadata)->owner_identity == *local) {
+      ScheduleFold(group_id);
+    }
+  }
+  return change;
 }
 
 std::string GroupMembershipWorkflow::WithSignedRoster(const std::string& group_id, const std::string& detail_json) {

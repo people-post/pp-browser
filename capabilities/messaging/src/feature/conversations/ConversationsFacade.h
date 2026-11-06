@@ -10,6 +10,7 @@
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/OutgoingAttachment.h"
 #include "lib/messaging/GroupTypes.h"
+#include "feature/conversations/GroupInviteLinkWorkflow.h"
 #include "common/thread/IThreadStore.h"
 #include "lib/delivery/SendRelayOptions.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
@@ -259,6 +260,23 @@ public:
   Roe<size_t> ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account);
   /** G019: invite by account (someone not a contact, e.g. met in the group), per the preset. */
   Roe<void> InviteIdentity(const std::string& group_id, const std::string& account);
+  // G021, invite links (GroupInviteLinkWorkflow).
+  /** A new link to the group (per the preset); `lifetime_ms` 0: 7 days; `max_uses` 0: no limit. Blocking. */
+  Roe<GroupInviteLinkWorkflow::MadeLink> MakeInviteLink(const std::string& group_id, uint64_t max_uses = 0,
+                                                        int64_t lifetime_ms = 0);
+  Roe<void> RevokeInviteLink(const std::string& group_id, const std::string& link_id);
+  /** The group's live links (ours with their text). */
+  std::vector<GroupLinkRow> GroupInviteLinks(const std::string& group_id);
+  /** Our newest live link to the group whose text we keep. */
+  std::optional<GroupLinkRow> OwnInviteLink(const std::string& group_id);
+  /** Ask to join by a pasted, scanned or opened `pp://join/…`: the request id (JoinByLinkState follows it). */
+  Roe<std::string> AskToJoinByLink(const std::string& link_text);
+  /** The preview's Join: the group's chat. */
+  Roe<Thread> ConfirmJoinByLink(const std::string& request_id);
+  void CancelJoinByLink(const std::string& request_id);
+  std::optional<GroupJoinState> JoinByLinkState(const std::string& request_id);
+  /** Each move of a join of ours (on a worker). */
+  void SetOnJoinByLinkChanged(std::function<void(GroupJoinState state)> on_changed);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
   /**
    * Whoever the preset lets invite (G019): send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit

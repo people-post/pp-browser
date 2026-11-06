@@ -66,6 +66,17 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
     if (joined->role == MemberRole::Owner && is_self(joined->member_identity)) {
       return Tr("chat.group_event.created");
     }
+    if (joined->by_link && !joined->added_by.empty() && joined->added_by != joined->member_identity) {
+      // G021: whose link let them in ("Carol joined by Alice's link").
+      if (is_self(joined->member_identity)) {
+        return FillOnce(Tr("chat.group_event.you_joined_by_link"), "", "", member_name(joined->added_by));
+      }
+      if (is_self(joined->added_by)) {
+        return FillOnce(Tr("chat.group_event.joined_by_your_link"), member_name(joined->member_identity), "");
+      }
+      return FillOnce(Tr("chat.group_event.joined_by_link"), member_name(joined->member_identity), "",
+                      member_name(joined->added_by));
+    }
     if (!joined->added_by.empty() && joined->added_by != joined->member_identity) {
       // G019 5: who brought them in ("Alice added Carol").
       if (is_self(joined->member_identity)) {

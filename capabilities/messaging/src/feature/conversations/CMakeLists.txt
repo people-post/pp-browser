@@ -7,6 +7,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ContactProfileRefresh.cpp
     GroupInviteBatch.cpp
     GroupMembershipWorkflow.cpp
+    GroupInviteLinkWorkflow.cpp
     AccountLockerWorkflow.cpp
     InboxController.cpp
     MessageRouter.cpp
