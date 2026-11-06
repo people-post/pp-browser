@@ -49,7 +49,7 @@ TEST(AiDotModelTest, HidesDuringACallTheScannerThePinGateAndSecretPages) {
     scene.*field = true;
     return !AiDotModel::Shown(scene);
   };
-  EXPECT_TRUE(hidden_with(&AiDotScene::call)) << "ring, call screen, call bar";
+  EXPECT_TRUE(hidden_with(&AiDotScene::call)) << "ring, call screen (a minimised call keeps the dot)";
   EXPECT_TRUE(hidden_with(&AiDotScene::scanning));
   EXPECT_TRUE(hidden_with(&AiDotScene::pin_gate));
   EXPECT_TRUE(hidden_with(&AiDotScene::secret_page)) << "change PIN, recovery phrase";

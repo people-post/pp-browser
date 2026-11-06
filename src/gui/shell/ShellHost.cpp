@@ -1012,7 +1012,10 @@ AiDotScene ShellHost::AiDotSceneNow() const {
   AiDotScene scene;
   scene.enabled = state_.ai_dot_enabled;
   scene.phone = state_.layout_mode == LayoutMode::Compact;
-  scene.call = state_.call_ring.active || state_.call_in_progress.active;
+  // A ring or the call screen hides the dot; a call minimised to its bar keeps it (Kenneth 2026-11-06: ask the AI
+  // while on a call).
+  scene.call = state_.call_ring.active ||
+               (state_.call_in_progress.active && state_.call_in_progress.mode != CallChromeMode::Minimized);
   scene.pin_gate = state_.pin_gate.active;
   // The startup cover, the onboarding wizard and a picture preview cover the whole screen.
   scene.cover = state_.startup_cover_visible || !overlay_bodies_.empty();
