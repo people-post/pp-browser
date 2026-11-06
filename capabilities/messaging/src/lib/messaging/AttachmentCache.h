@@ -66,6 +66,12 @@ bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
  */
 std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
                                    const std::string& fallback_stem);
+/**
+ * The name's own extension `own` already says what `ext` (the type's safe extension) says: the same, another
+ * spelling (jpeg / jpg, mpga / mp3, mp4 / m4a for a sound), or a known format of the same kind (audio, image or
+ * video: song.mp3 sent as audio/mp4). Then AttachmentOpenFilename keeps the name as it is.
+ */
+bool AttachmentExtensionMatchesType(const std::string& own, const std::string& ext, const std::string& mime);
 
 /**
  * The view file `view_path` under its AttachmentOpenFilename, as a hard link (else a copy) in

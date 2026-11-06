@@ -296,6 +296,38 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   return {};
 }
 
+namespace {
+
+std::string TopLevelType(const std::string& mime) {
+  return mime.substr(0, mime.find('/'));
+}
+
+} // namespace
+
+bool AttachmentExtensionMatchesType(const std::string& own, const std::string& ext, const std::string& mime) {
+  if (own.empty()) {
+    return false;
+  }
+  if (own == ext) {
+    return true;
+  }
+  // Other spellings of the same format.
+  static const std::unordered_map<std::string, std::string> kAlias = {
+      {"jpeg", "jpg"}, {"jpe", "jpg"}, {"mpga", "mp3"}, {"text", "txt"}, {"qt", "mov"},
+  };
+  if (const auto alias = kAlias.find(own); alias != kAlias.end() && alias->second == ext) {
+    return true;
+  }
+  if (own == "mp4" && ext == "m4a") {
+    return true; // an MPEG-4 sound file
+  }
+  // A sound, picture or video named for another format of the same kind (song.mp3 sent as audio/mp4): the viewer
+  // reads its content; only types the table knows count (never an unknown or active extension).
+  const std::string top = TopLevelType(mime);
+  return (top == "audio" || top == "image" || top == "video") &&
+         TopLevelType(AttachmentMimeFromFilename("x." + own)) == top;
+}
+
 std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
                                    const std::string& fallback_stem) {
   const std::string ext = AttachmentExtensionFromMime(mime, filename);
@@ -327,7 +359,7 @@ std::string AttachmentOpenFilename(const std::string& filename, const std::strin
   if (name.empty()) {
     name = fallback_stem;
   }
-  if (LowerFilenameExtension(name) != ext) {
+  if (!AttachmentExtensionMatchesType(LowerFilenameExtension(name), ext, mime)) {
     name += "." + ext;
   }
   return name;
@@ -352,7 +384,10 @@ std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::s
   if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, view_path, ec)) {
     return link.string(); // made by an earlier open of the same view
   }
-  std::filesystem::remove_all(dir, ec);
+  // Only this name is replaced: a viewer may still be reading another link here. The folder goes with the view
+  // cache (each start, a lock) and with the attachment's local delete.
+  std::filesystem::remove(link, ec);
+  ec.clear();
   std::filesystem::create_directories(dir, ec);
   if (!ec) {
     std::filesystem::create_hard_link(view_path, link, ec);
@@ -362,7 +397,7 @@ std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::s
     }
   }
   if (ec) {
-    std::filesystem::remove_all(dir, ec);
+    std::filesystem::remove(link, ec);
     return view_path;
   }
   return link.string();

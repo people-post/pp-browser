@@ -208,6 +208,19 @@ TEST(AttachmentOpenFilenameTest, TheSendersNameIsKeptWithASafeExtension) {
       << "no safe extension: the stored file is opened as it is";
 }
 
+// Review (c): another spelling or format of the same kind is not doubled up.
+TEST(AttachmentOpenFilenameTest, ASameKindExtensionIsKept) {
+  EXPECT_EQ(AttachmentOpenFilename("photo.jpeg", "image/jpeg", "ab12"), "photo.jpeg");
+  EXPECT_EQ(AttachmentOpenFilename("photo.JPE", "image/jpeg", "ab12"), "photo.JPE");
+  EXPECT_EQ(AttachmentOpenFilename("song.mp3", "audio/mp4", "ab12"), "song.mp3");
+  EXPECT_EQ(AttachmentOpenFilename("talk.mp4", "audio/mp4", "ab12"), "talk.mp4");
+  EXPECT_EQ(AttachmentOpenFilename("clip.mov", "video/mp4", "ab12"), "clip.mov");
+  EXPECT_EQ(AttachmentOpenFilename("pic.png", "image/jpeg", "ab12"), "pic.png");
+  EXPECT_EQ(AttachmentOpenFilename("song.mp3", "video/mp4", "ab12"), "song.mp3.mp4") << "another kind: the type's";
+  EXPECT_EQ(AttachmentOpenFilename("page.html", "image/jpeg", "ab12"), "page.html.jpg") << "an unknown extension";
+  EXPECT_EQ(AttachmentOpenFilename("notes.md", "text/plain", "ab12"), "notes.md.txt");
+}
+
 TEST(AttachmentOpenFilenameTest, FoldersAndUnsafeCharactersAreStripped) {
   EXPECT_EQ(AttachmentOpenFilename("../../etc/passwd.txt", "text/plain", "ab12"), "passwd.txt");
   EXPECT_EQ(AttachmentOpenFilename("..\\..\\boot.pdf", "application/pdf", "ab12"), "boot.pdf");
@@ -237,6 +250,11 @@ TEST(AttachmentOpenFilenameTest, TheNamedLinkHoldsTheViewsBytes) {
   EXPECT_EQ(AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string()), opened);
   EXPECT_EQ(AttachmentLocalPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3"), view.string())
       << "the link folder is not taken for the view";
+  // Another name for the same file (a second message) leaves the first link for a viewer still reading it.
+  const std::string second =
+      AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "Other.mp3", view.string());
+  EXPECT_EQ(std::filesystem::path(second).filename().string(), "Other.mp3");
+  EXPECT_TRUE(std::filesystem::exists(opened)) << "the earlier link is not removed by a later open";
   std::filesystem::remove_all(dir);
 }
 
