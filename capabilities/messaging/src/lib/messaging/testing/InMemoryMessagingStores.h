@@ -9,6 +9,7 @@
 // sends, in one step; a member's pair numbering restarts at 1 in a newer pair epoch.
 
 #include "lib/delivery/testing/InMemoryDeliveryStore.h"
+#include "lib/messaging/IGroupInviteLinkStore.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/IThreadLocalPrefsStore.h"
 #include "lib/messaging/IThreadMentionsStore.h"
@@ -128,6 +129,20 @@ private:
   mutable std::map<std::string, std::set<std::pair<int64_t, std::string>>> mentions_;
   /** Per thread: its newest read mention (as SQLite's thread_mentions_read). */
   mutable std::map<std::string, std::pair<int64_t, std::string>> read_;
+};
+
+/** The invite links this device made (G021); the secret kept as given (no data key in tests). */
+class InMemoryGroupInviteLinkStore : public IGroupInviteLinkStore {
+public:
+  Roe<void> Keep(const KeptInviteLink& link) const override;
+  Roe<std::optional<KeptInviteLink>> Find(const std::string& link_id) const override;
+  Roe<std::vector<KeptInviteLink>> ListForGroup(const std::string& group_id) const override;
+  Roe<void> Forget(const std::string& link_id) const override;
+  Roe<void> ForgetExpiredBefore(int64_t before_ms) const override;
+
+private:
+  mutable std::mutex mutex_;
+  mutable std::map<std::string, KeptInviteLink> links_;
 };
 
 } // namespace pbr

@@ -124,6 +124,29 @@ Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id
                           const std::string& local_device, const std::string& member, const std::string& invite_nonce,
                           const GroupCardLookup& cards, int64_t now_ms);
 /**
+ * G021: our `add` of `member`, who asked to join by our link `link_id`, unsigned — as DraftAdd, but never a re-admit:
+ * someone removed is refused (`kGroupInviteRemovedError`; only an owner's or admin's invite brings them back).
+ */
+Roe<GroupChange> DraftLinkJoin(IGroupRosterStore& roster, const std::string& group_id,
+                               const std::string& local_identity, const std::string& local_device,
+                               const std::string& member, const std::string& link_id, const GroupCardLookup& cards,
+                               int64_t now_ms);
+/**
+ * G021: our `link_add`, unsigned. Errors unless the preset lets our role make links (`kGroupLinkNotAllowedError`), the
+ * expiry is still to come and the roster knows no link of that id.
+ */
+Roe<GroupChange> DraftLinkAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                              const std::string& local_device, const std::string& link_id,
+                              const std::string& secret_hash, int64_t expires_at, uint64_t max_uses,
+                              const GroupCardLookup& cards, int64_t now_ms);
+/**
+ * G021: our `link_revoke` of a live link, unsigned: its maker's, or anyone's for the owner and admins (errors
+ * `kGroupLinkGoneError` for a link that is not live, `kGroupLinkRevokeNotAllowedError` for someone else's).
+ */
+Roe<GroupChange> DraftLinkRevoke(IGroupRosterStore& roster, const std::string& group_id,
+                                 const std::string& local_identity, const std::string& local_device,
+                                 const std::string& link_id, const GroupCardLookup& cards, int64_t now_ms);
+/**
  * G017: our `rename` to `title` (1–256 bytes), unsigned, one past the title version the roster holds. Errors unless the
  * preset lets our role rename (`kGroupRenameNotAllowedError`).
  */

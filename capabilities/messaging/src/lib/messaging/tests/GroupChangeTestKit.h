@@ -76,6 +76,14 @@ public:
     return Signed(std::move(c), device);
   }
 
+  /** G021: this account's add of `member`, who joined by the link `link_id`. */
+  GroupChange AddByLink(const std::string& member, const std::string& link_id, const std::string& device = "1") const {
+    GroupChange c = Draft(GroupChangeKind::Add, device);
+    c.member = member;
+    c.link_id = link_id;
+    return Signed(std::move(c), device);
+  }
+
   GroupChange Leave(std::vector<std::string> adds = {}, std::vector<std::string> keeps = {},
                     const std::string& device = "1") const {
     GroupChange c = Draft(GroupChangeKind::Leave, device);

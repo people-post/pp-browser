@@ -27,6 +27,9 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupRosterSync.cpp
     GroupRosterSyncCodec.cpp
     GroupRosterSyncFamily.cpp
+    GroupInviteLink.cpp
+    GroupLinkJoin.cpp
+    GroupLinkJoinFamily.cpp
     MentionAlert.cpp
     IGroupRosterStore.cpp
     GroupTypes.cpp

@@ -41,6 +41,11 @@ struct GroupInviteLink {
   int64_t expires_at = 0;
   /** 0: no limit. */
   uint64_t max_uses = 0;
+  /**
+   * How many joined by it (G021): the adds carrying its id the owner folded. The roster view adds the unfolded ones
+   * that count; the link's answerer refuses a join once it reaches `max_uses`.
+   */
+  uint64_t uses = 0;
 };
 
 /**

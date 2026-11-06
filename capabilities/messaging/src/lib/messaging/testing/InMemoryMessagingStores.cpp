@@ -474,4 +474,44 @@ Roe<std::optional<IThreadMentionsStore::Mention>> InMemoryThreadMentionsStore::L
   return latest;
 }
 
+Roe<void> InMemoryGroupInviteLinkStore::Keep(const KeptInviteLink& link) const {
+  std::lock_guard lock(mutex_);
+  links_[link.link_id] = link;
+  return {};
+}
+
+Roe<std::optional<KeptInviteLink>> InMemoryGroupInviteLinkStore::Find(const std::string& link_id) const {
+  std::lock_guard lock(mutex_);
+  auto found = links_.find(link_id);
+  return found == links_.end() ? std::optional<KeptInviteLink>() : std::optional<KeptInviteLink>(found->second);
+}
+
+Roe<std::vector<KeptInviteLink>> InMemoryGroupInviteLinkStore::ListForGroup(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  std::vector<KeptInviteLink> out;
+  for (const auto& [id, link] : links_) {
+    if (link.group_id == group_id) {
+      out.push_back(link);
+    }
+  }
+  std::sort(out.begin(), out.end(), [](const KeptInviteLink& a, const KeptInviteLink& b) {
+    return a.created_at != b.created_at ? a.created_at > b.created_at : a.link_id < b.link_id;
+  });
+  return out;
+}
+
+Roe<void> InMemoryGroupInviteLinkStore::Forget(const std::string& link_id) const {
+  std::lock_guard lock(mutex_);
+  links_.erase(link_id);
+  return {};
+}
+
+Roe<void> InMemoryGroupInviteLinkStore::ForgetExpiredBefore(const int64_t before_ms) const {
+  std::lock_guard lock(mutex_);
+  for (auto it = links_.begin(); it != links_.end();) {
+    it = it->second.expires_at < before_ms ? links_.erase(it) : std::next(it);
+  }
+  return {};
+}
+
 } // namespace pbr

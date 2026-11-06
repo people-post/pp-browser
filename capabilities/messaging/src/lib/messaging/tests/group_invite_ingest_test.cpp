@@ -14,6 +14,7 @@
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupInviteGate.h"
+#include "lib/messaging/GroupLinkJoin.h"
 #include "lib/messaging/RelayReceivePipeline.h"
 #include "lib/messaging/tests/GroupChangeTestKit.h"
 #include "lib/messaging/tests/TestAccount.h"
@@ -775,6 +776,73 @@ TEST_F(JoinBundleIngestTest, ABundleForAnInviteWeDidNotTakeFromItsSenderIsRefuse
   const RelayReceiveOutcome outcome = Bundle(OwnersStatement(), BobsAdd(), "someone-elses");
   EXPECT_TRUE(outcome.receive_failure);
   EXPECT_TRUE(handed_.empty());
+  EXPECT_TRUE(erin_.roster.ListGroupChanges(test::kGroupId).value().empty());
+}
+
+// G021: a stranger joined by Carol's link — the bundle is taken from the answerer of a join it confirmed (the record
+// GroupMembershipWorkflow::JoinByLink keeps, group_link_join::JoinRecord), and checked like any other.
+class LinkJoinBundleIngestTest : public ::testing::Test {
+protected:
+  test::Person& alice = test::Named("alice");
+  test::Person& bob = test::Named("bob");
+  test::Person& carol = test::Named("carol");
+  test::Person& erin = test::Named("erin");
+  // The bundle comes from Carol's account.
+  PartyHarness erin_{"link_bundle", erin.Id(), carol.Id()};
+
+  /** What confirming the preview of a join answered by `answerer` left on Erin's device. */
+  void Confirmed(const std::string& answerer) {
+    ASSERT_TRUE(erin_.roster.UpsertPendingInvite(
+        group_link_join::JoinRecord("req-1", test::kGroupId, "Hikers", alice.Id(), answerer, erin.Id(), 1)));
+    GroupMetadata metadata;
+    metadata.group_id = test::kGroupId;
+    metadata.owner_identity = alice.Id();
+    metadata.roster_epoch = 5;
+    ASSERT_TRUE(erin_.roster.UpsertMetadata(metadata));
+    for (const std::string& identity : {alice.Id(), answerer, erin.Id()}) {
+      ASSERT_TRUE(erin_.roster.UpsertMember(test::kGroupId, GroupRosterMember{.member_identity = identity}));
+    }
+  }
+
+  RelayReceiveOutcome Bundle(const std::string& nonce = "req-1") {
+    GroupRosterStatement draft;
+    draft.roster_epoch = 5;
+    draft.members = {test::Row(alice.Id(), MemberRole::Owner), test::Row(bob.Id()), test::Row(carol.Id())};
+    GroupChange add = carol.AddByLink(erin.Id(), "link-1");
+    add.signer_card = carol.Card();
+    GroupMembershipCodec::MemberJoinedPayload joined{.group_id = test::kGroupId, .member_identity = erin.Id()};
+    joined.added_by = carol.Id();
+    joined.invite_nonce = nonce;
+    joined.members = {{.member_identity = alice.Id(), .role = MemberRole::Owner},
+                      {.member_identity = bob.Id()},
+                      {.member_identity = carol.Id()}};
+    std::string detail = GroupMembershipCodec::EncodeMemberJoined(joined).value();
+    detail = group_roster_sync_codec::WithStatement(detail, test::SignedStatement(alice, draft)).value();
+    detail = group_roster_sync_codec::WithChanges(detail, {.changes = {add}}).value();
+    return erin_.pipeline.ProcessEnvelope(erin_.MakeSystemEnvelope("member_joined", detail, "Member joined", 1),
+                                          erin.Id());
+  }
+};
+
+TEST_F(LinkJoinBundleIngestTest, TheBundleOfAJoinWeConfirmedComesFromItsAnswerer) {
+  Confirmed(carol.Id());
+  const RelayReceiveOutcome outcome = Bundle();
+  ASSERT_FALSE(outcome.receive_failure) << outcome.receive_failure_detail;
+  EXPECT_TRUE(erin_.roster.IsMember(test::kGroupId, bob.Id()).value()) << "the full roster, as the statement says";
+  EXPECT_EQ(erin_.roster.FindMember(test::kGroupId, erin.Id()).value()->added_by, carol.Id());
+}
+
+TEST_F(LinkJoinBundleIngestTest, ABundleFromAnyoneButTheAnswererIsRefused) {
+  Confirmed(bob.Id()); // Bob's device answered our join; Carol sends a bundle
+  const RelayReceiveOutcome from_carol = Bundle();
+  EXPECT_TRUE(from_carol.receive_failure);
+  EXPECT_TRUE(erin_.roster.ListGroupChanges(test::kGroupId).value().empty());
+}
+
+TEST_F(LinkJoinBundleIngestTest, ABundleForAJoinWeDidNotConfirmIsRefused) {
+  Confirmed(carol.Id());
+  const RelayReceiveOutcome outcome = Bundle("another-request");
+  EXPECT_TRUE(outcome.receive_failure);
   EXPECT_TRUE(erin_.roster.ListGroupChanges(test::kGroupId).value().empty());
 }
 

@@ -499,17 +499,16 @@ std::optional<MemberRole> OwnRole(IGroupRosterStore& roster, const GroupMetadata
   return (*self)->role;
 }
 
-} // namespace
-
-Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
-                          const std::string& local_device, const std::string& member, const std::string& invite_nonce,
-                          const GroupCardLookup& cards, const int64_t now_ms) {
+/** An add of `member` by us: for the invite `invite_nonce`, or for a join by the link `link_id` (G021). */
+Roe<GroupChange> DraftAddOf(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                            const std::string& local_device, const std::string& member, const std::string& invite_nonce,
+                            const std::string& link_id, const GroupCardLookup& cards, const int64_t now_ms) {
   auto change = DraftOn(roster, group_id, local_identity, local_device, GroupChangeKind::Add, now_ms);
   if (!change) {
     return change.error();
   }
-  if (member.empty() || member == local_identity || invite_nonce.empty()) {
-    return Error("An add names someone else and the invite it answers");
+  if (member.empty() || member == local_identity || invite_nonce.empty() == link_id.empty()) {
+    return Error("An add names someone else and the invite or link it answers");
   }
   auto metadata = MetadataOf(roster, group_id);
   if (!metadata) {
@@ -523,13 +522,102 @@ Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id
     return Error(kGroupAlreadyMemberError);
   }
   if (const auto removed = RemovedEntry(roster, group_id, member, cards, now_ms)) {
-    if (!GroupAllows(GroupAction::Readmit, *role, metadata->policy.preset)) {
-      return Error(kGroupInviteRemovedError); // R2: only the owner or an admin brings them back
+    // R2: only the owner or an admin brings them back, by an invite (a join by link is never a re-admit, G021).
+    if (!link_id.empty() || !GroupAllows(GroupAction::Readmit, *role, metadata->policy.preset)) {
+      return Error(kGroupInviteRemovedError);
     }
     change->readmits = removed->removal;
   }
   change->member = member;
   change->invite_nonce = invite_nonce;
+  change->link_id = link_id;
+  return change;
+}
+
+/** The link `link_id` as the roster holds it now, live or ended; none when it does not know it. */
+std::optional<GroupInviteLink> KnownLink(const GroupRosterView& view, const std::string& link_id) {
+  if (const GroupInviteLink* live = view.LiveLink(link_id)) {
+    return *live;
+  }
+  if (const GroupEndedLink* ended = view.EndedLink(link_id)) {
+    return ended->link;
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                          const std::string& local_device, const std::string& member, const std::string& invite_nonce,
+                          const GroupCardLookup& cards, const int64_t now_ms) {
+  if (invite_nonce.empty()) {
+    return Error("An add names the invite it answers");
+  }
+  return DraftAddOf(roster, group_id, local_identity, local_device, member, invite_nonce, {}, cards, now_ms);
+}
+
+Roe<GroupChange> DraftLinkJoin(IGroupRosterStore& roster, const std::string& group_id,
+                               const std::string& local_identity, const std::string& local_device,
+                               const std::string& member, const std::string& link_id, const GroupCardLookup& cards,
+                               const int64_t now_ms) {
+  if (link_id.empty()) {
+    return Error("A join by link names its link");
+  }
+  return DraftAddOf(roster, group_id, local_identity, local_device, member, {}, link_id, cards, now_ms);
+}
+
+Roe<GroupChange> DraftLinkAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                              const std::string& local_device, const std::string& link_id,
+                              const std::string& secret_hash, const int64_t expires_at, const uint64_t max_uses,
+                              const GroupCardLookup& cards, const int64_t now_ms) {
+  auto change = DraftOn(roster, group_id, local_identity, local_device, GroupChangeKind::LinkAdd, now_ms);
+  if (!change) {
+    return change.error();
+  }
+  if (link_id.empty() || secret_hash.empty() || expires_at <= now_ms) {
+    return Error("A link has its id, its secret's hash and an expiry to come");
+  }
+  auto metadata = MetadataOf(roster, group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  const std::optional<MemberRole> role = OwnRole(roster, *metadata, local_identity);
+  if (!role || !GroupAllows(GroupAction::MakeInviteLink, *role, metadata->policy.preset)) {
+    return Error(kGroupLinkNotAllowedError);
+  }
+  if (const std::optional<GroupRosterView> view = CurrentView(roster, group_id, cards, now_ms);
+      view && KnownLink(*view, link_id)) {
+    return Error("That link id is taken");
+  }
+  change->link_id = link_id;
+  change->secret_hash = secret_hash;
+  change->expires_at = expires_at;
+  change->max_uses = max_uses;
+  return change;
+}
+
+Roe<GroupChange> DraftLinkRevoke(IGroupRosterStore& roster, const std::string& group_id,
+                                 const std::string& local_identity, const std::string& local_device,
+                                 const std::string& link_id, const GroupCardLookup& cards, const int64_t now_ms) {
+  auto change = DraftOn(roster, group_id, local_identity, local_device, GroupChangeKind::LinkRevoke, now_ms);
+  if (!change) {
+    return change.error();
+  }
+  auto metadata = MetadataOf(roster, group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  const std::optional<GroupRosterView> view = CurrentView(roster, group_id, cards, now_ms);
+  const GroupInviteLink* link = view ? view->LiveLink(link_id) : nullptr;
+  if (!link) {
+    return Error(kGroupLinkGoneError);
+  }
+  const std::optional<MemberRole> role = OwnRole(roster, *metadata, local_identity);
+  const bool own = link->maker == local_identity;
+  if (!role || (!own && !GroupAllows(GroupAction::RevokeInviteLink, *role, metadata->policy.preset))) {
+    return Error(kGroupLinkRevokeNotAllowedError);
+  }
+  change->link_id = link_id;
   return change;
 }
 

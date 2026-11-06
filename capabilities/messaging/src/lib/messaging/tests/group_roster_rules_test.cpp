@@ -536,6 +536,52 @@ TEST_F(GroupRosterRulesTest, ItsMakerAdminsAndTheOwnerRevokeALink) {
   EXPECT_FALSE(FoldsIn(*view.Verdict(grc::Id(unknown)))) << "its link_add may still arrive";
 }
 
+TEST_F(GroupRosterRulesTest, AnEndedLinkSaysWhyItNoLongerWorks) {
+  const GroupChange link = carol.LinkAdd("link-1");
+  const auto end_of = [](const GroupRosterView& view) -> std::optional<GroupLinkEnd> {
+    const GroupEndedLink* ended = view.EndedLink("link-1");
+    return ended ? std::optional<GroupLinkEnd>(ended->end) : std::nullopt;
+  };
+  EXPECT_FALSE(end_of(Compute({link}))) << "live";
+  EXPECT_NE(Compute({link}).LiveLink("link-1"), nullptr);
+  EXPECT_EQ(end_of(Compute({link, bob.LinkRevoke("link-1")})), GroupLinkEnd::Revoked);
+  EXPECT_EQ(end_of(Compute({link, carol.Leave()})), GroupLinkEnd::MakerOut) << "it dies with its maker";
+  EXPECT_EQ(end_of(Compute({link, bob.Remove(carol.Id())})), GroupLinkEnd::MakerOut);
+  EXPECT_EQ(Compute({carol.LinkAdd("link-1", kNowMs - 1)}).EndedLink("link-1")->end, GroupLinkEnd::Expired);
+  const GroupChange kept_by_leave = carol.Leave({}, {grc::Id(link)});
+  EXPECT_EQ(end_of(Compute({link, kept_by_leave})), GroupLinkEnd::MakerOut) << "its link_add kept, the link still dies";
+  EXPECT_EQ(end_of(Compute({link, kept_by_leave, bob.LinkRevoke("link-1")})), GroupLinkEnd::Revoked)
+      << "a revoke says so first";
+  const GroupRosterStatement s = Statement([&](GroupRosterStatement& d) {
+    d.links = {{.link_id = "link-1", .secret_hash = "h", .maker = carol.Id(), .expires_at = kNowMs + 1000}};
+  });
+  EXPECT_EQ(Compute(s, {carol.Leave()}).EndedLink("link-1")->end, GroupLinkEnd::MakerOut) << "a folded one too";
+}
+
+TEST_F(GroupRosterRulesTest, ALinksUsesAreTheAddsCarryingItThatTookTheirMemberIn) {
+  const GroupChange link = carol.LinkAdd("link-1");
+  const GroupChange erins = carol.AddByLink(erin.Id(), "link-1");
+  const GroupChange franks = carol.AddByLink(frank.Id(), "link-1");
+  GroupRosterView view = Compute({link, erins, franks});
+  ASSERT_NE(view.LiveLink("link-1"), nullptr);
+  EXPECT_EQ(view.LiveLink("link-1")->uses, 2u);
+  EXPECT_TRUE(view.Lists(erin.Id()));
+  EXPECT_EQ(view.Find(erin.Id())->added_by, carol.Id()) << "who answered the link brought them";
+
+  // One who left still used it; an add a removal undid did not take anyone in for long, and is not counted.
+  view = Compute({link, erins, franks, erin.Leave({grc::Id(erins)}), bob.Remove(frank.Id(), {grc::Id(franks)})});
+  EXPECT_EQ(view.LiveLink("link-1")->uses, 1u);
+
+  // The fold carries the count into the statement, so the adds it drops still count.
+  const GroupRosterStatement s = Statement();
+  const GroupRosterStatement folded = FoldChanges(s, Compute(s, {link, erins}));
+  ASSERT_EQ(folded.links.size(), 1u);
+  EXPECT_EQ(folded.links[0].uses, 1u);
+  const GroupRosterStatement signed_fold = test::SignedStatement(alice, folded);
+  view = Compute(signed_fold, {link, erins, franks});
+  EXPECT_EQ(view.LiveLink("link-1")->uses, 2u) << "the statement's one plus Frank's, not Erin's again";
+}
+
 TEST_F(GroupRosterRulesTest, ALinkIdIsTakenOnce) {
   const GroupChange carols = carol.LinkAdd("link-1");
   const GroupChange daves = dave.LinkAdd("link-1");

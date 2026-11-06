@@ -31,6 +31,7 @@ std::optional<ThreadMessage> LineFor(const std::string& thread_id, const GroupCh
       joined.member_identity = change.member;
       joined.roster_epoch = epoch;
       joined.added_by = change.signer; // G019 5: "Alice added Carol"
+      joined.by_link = !change.link_id.empty(); // G021: "Carol joined by Alice's link"
       detail = GroupMembershipCodec::EncodeMemberJoined(joined);
       text = "Member joined the group";
       break;

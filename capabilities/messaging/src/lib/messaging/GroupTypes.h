@@ -77,6 +77,10 @@ inline constexpr const char kGroupInviteNotAllowedError[] = "chat.group.err.invi
 inline constexpr const char kGroupInviteRemovedError[] = "chat.group.err.invite_removed";
 inline constexpr const char kGroupAlreadyMemberError[] = "chat.group.err.already_member";
 inline constexpr const char kGroupRenameNotAllowedError[] = "chat.group.err.rename_not_allowed";
+/** G021: why making or revoking an invite link is refused here. */
+inline constexpr const char kGroupLinkNotAllowedError[] = "chat.group.err.link_not_allowed";
+inline constexpr const char kGroupLinkRevokeNotAllowedError[] = "chat.group.err.link_revoke_not_allowed";
+inline constexpr const char kGroupLinkGoneError[] = "chat.group.err.link_gone";
 
 /**
  * G013: a restored group checks its members before it sends again. `Dissolved` (G016): the owner ended the

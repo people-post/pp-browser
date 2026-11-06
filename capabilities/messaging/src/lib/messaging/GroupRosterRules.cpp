@@ -558,18 +558,27 @@ private:
                                         [this](const std::string& who) { return FromRoster(who); });
       if (reason != Reason::None) {
         Mark(*c, Status::Void, reason);
+        if (reason == Reason::SignerOut) {
+          gone_makers_links_.emplace(c->change.link_id, LinkOf(c->change)); // it died with its maker
+        }
       } else if (links_.count(c->change.link_id) > 0) {
         Mark(*c, Status::Void, Reason::DuplicateLink);
       } else {
         Mark(*c, Status::Applied, Reason::None);
-        const GroupChange& ch = c->change;
-        links_[ch.link_id] = {.link_id = ch.link_id,
-                              .secret_hash = ch.secret_hash,
-                              .maker = ch.signer,
-                              .expires_at = ch.expires_at,
-                              .max_uses = ch.max_uses};
+        links_[c->change.link_id] = LinkOf(c->change);
       }
     }
+    for (const auto& [id, link] : links_) {
+      gone_makers_links_.erase(id);
+    }
+  }
+
+  static GroupInviteLink LinkOf(const GroupChange& ch) {
+    return {.link_id = ch.link_id,
+            .secret_hash = ch.secret_hash,
+            .maker = ch.signer,
+            .expires_at = ch.expires_at,
+            .max_uses = ch.max_uses};
   }
 
   /** A link's maker revokes it, as do the owner and admins (G021). */
@@ -633,6 +642,38 @@ private:
     return out;
   }
 
+  /** Every link the roster knows, live or ended (and why), each with the joins it brought (G021). */
+  void LinkRows(GroupRosterView& view) {
+    std::map<std::string, uint64_t> uses;
+    for (const CheckedGroupChange* a : adds_) {
+      if (!a->change.link_id.empty() && accepted_.count(a->id) > 0) {
+        ++uses[a->change.link_id];
+      }
+    }
+    for (const auto& [id, known] : links_) {
+      GroupInviteLink link = known;
+      if (auto counted = uses.find(id); counted != uses.end()) {
+        link.uses += counted->second;
+      }
+      if (revoked_.count(id) > 0) {
+        view.ended_links.push_back({.link = std::move(link), .end = GroupLinkEnd::Revoked});
+      } else if (in_.count(link.maker) == 0) {
+        view.ended_links.push_back({.link = std::move(link), .end = GroupLinkEnd::MakerOut});
+      } else if (link.expires_at <= now_) {
+        view.ended_links.push_back({.link = std::move(link), .end = GroupLinkEnd::Expired});
+      } else {
+        view.links.push_back(std::move(link));
+      }
+    }
+    // A link whose maker left or was removed before anyone folded it: its link_add no longer counts (R3), and the
+    // link is as dead as if it had been folded.
+    for (const auto& [id, link] : gone_makers_links_) {
+      view.ended_links.push_back({.link = link, .end = GroupLinkEnd::MakerOut});
+    }
+    std::sort(view.ended_links.begin(), view.ended_links.end(),
+              [](const GroupEndedLink& a, const GroupEndedLink& b) { return a.link.link_id < b.link.link_id; });
+  }
+
   GroupRosterView Build() {
     GroupRosterView view{.group_id = s_.group_id,
                          .statement_epoch = s_.roster_epoch,
@@ -646,11 +687,7 @@ private:
         view.members.push_back(MemberRow(identity));
       }
       view.removed = RemovedRows();
-      for (const auto& [id, link] : links_) {
-        if (revoked_.count(id) == 0 && in_.count(link.maker) > 0 && link.expires_at > now_) {
-          view.links.push_back(link);
-        }
-      }
+      LinkRows(view);
     }
     for (auto& [id, verdict] : verdicts_) {
       view.verdicts.push_back(std::move(verdict));
@@ -679,6 +716,8 @@ private:
   std::string title_;
   uint64_t title_version_ = 0;
   std::map<std::string, GroupInviteLink> links_;
+  /** Links whose link_add is void only because its maker is out (by id, the lowest change id's). */
+  std::map<std::string, GroupInviteLink> gone_makers_links_;
   std::set<std::string> revoked_;
 };
 
@@ -792,6 +831,24 @@ const GroupChangeVerdict* GroupRosterView::Verdict(const std::string& change_id)
   for (const GroupChangeVerdict& v : verdicts) {
     if (v.id == change_id) {
       return &v;
+    }
+  }
+  return nullptr;
+}
+
+const GroupInviteLink* GroupRosterView::LiveLink(const std::string& link_id) const {
+  for (const GroupInviteLink& l : links) {
+    if (l.link_id == link_id) {
+      return &l;
+    }
+  }
+  return nullptr;
+}
+
+const GroupEndedLink* GroupRosterView::EndedLink(const std::string& link_id) const {
+  for (const GroupEndedLink& l : ended_links) {
+    if (l.link.link_id == link_id) {
+      return &l;
     }
   }
   return nullptr;

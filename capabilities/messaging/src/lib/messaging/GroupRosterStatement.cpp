@@ -75,6 +75,7 @@ void PutLinks(ByteVector& out, const std::vector<GroupInviteLink>& links) {
     Put(out, l.maker);
     Put(out, static_cast<uint64_t>(l.expires_at));
     Put(out, l.max_uses);
+    Put(out, l.uses);
   }
 }
 
@@ -155,6 +156,9 @@ Object LinkToJson(const GroupInviteLink& link) {
   if (link.max_uses > 0) {
     row.setJsonUInt("max_uses", link.max_uses);
   }
+  if (link.uses > 0) {
+    row.setJsonUInt("uses", link.uses);
+  }
   return row;
 }
 
@@ -227,7 +231,7 @@ Roe<void> ReadOpenGroupJson(const Object& json, GroupRosterStatement& statement)
     statement.links.push_back({row->getString("link_id").value_or(""), row->getString("secret_hash").value_or(""),
                                row->getString("maker").value_or(""),
                                static_cast<int64_t>(row->getNonNegInt("expires_at").value_or(0)),
-                               row->getNonNegInt("max_uses").value_or(0)});
+                               row->getNonNegInt("max_uses").value_or(0), row->getNonNegInt("uses").value_or(0)});
   }
   auto folded = ObjectRows(json, "folded", "folded change");
   if (!folded) {

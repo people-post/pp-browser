@@ -118,6 +118,21 @@ struct GroupRosterViewMember {
   std::string added_in;
 };
 
+/** Why a link the roster knows no longer lets anyone in (G021). */
+enum class GroupLinkEnd : uint8_t {
+  /** A `link_revoke` by its maker, an admin or the owner counts. */
+  Revoked,
+  /** Its maker left or was removed: its links die with its membership, whatever their expiry. */
+  MakerOut,
+  Expired,
+};
+
+/** A link the statement or a held `link_add` put in the roster that no longer works, and why. */
+struct GroupEndedLink {
+  GroupInviteLink link;
+  GroupLinkEnd end = GroupLinkEnd::Revoked;
+};
+
 /**
  * How many statements a change may lag behind (G018, the change floor): folding at epoch e raises the floor to
  * e − kChangeFloorLag. Each statement is one owner act (an add, a removal, a role, a fold), so 32 is weeks of a busy
@@ -137,8 +152,13 @@ struct GroupRosterView {
   std::vector<GroupRosterViewMember> members;
   /** Sorted by identity: removed and not back. */
   std::vector<GroupRemovedMember> removed;
-  /** Live links: in the roster, not revoked, not expired, their maker in the group. Sorted by link id. */
+  /**
+   * Live links: in the roster, not revoked, not expired, their maker in the group. Sorted by link id. `uses` counts
+   * the statement's and every held add carrying the link's id that took its member in.
+   */
   std::vector<GroupInviteLink> links;
+  /** The links the roster knows that no longer work (a fold drops them), sorted by link id. */
+  std::vector<GroupEndedLink> ended_links;
   std::string title;
   uint64_t title_version = 0;
   /** One per distinct change id given, sorted by id. */
@@ -147,6 +167,10 @@ struct GroupRosterView {
   bool Lists(const std::string& identity) const;
   const GroupRosterViewMember* Find(const std::string& identity) const;
   const GroupChangeVerdict* Verdict(const std::string& change_id) const;
+  /** The live link `link_id`, if it is one. */
+  const GroupInviteLink* LiveLink(const std::string& link_id) const;
+  /** The ended link `link_id`, if it is one. */
+  const GroupEndedLink* EndedLink(const std::string& link_id) const;
   /** The ids a device keeps holding (all but Dropped): what `changes_hash` covers. */
   std::vector<std::string> HeldIds() const;
 };

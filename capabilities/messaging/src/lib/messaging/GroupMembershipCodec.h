@@ -53,6 +53,8 @@ public:
     std::vector<MemberJoinedEntry> members;
     /** G019 5: who brought them in (the inviter); the line reads "Alice added Carol". Empty: not said. */
     std::string added_by;
+    /** G021: `added_by` let them in by their invite link (the line reads "Carol joined by Alice's link"). */
+    bool by_link = false;
     /**
      * G019: the invite this join answers, on the copy the inviter sends the newcomer (the join bundle): the newcomer
      * takes it only for an invite of its own from that sender.

@@ -220,6 +220,9 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayl
   if (!payload.added_by.empty()) {
     json.set("added_by", payload.added_by); // G019 5, additive
   }
+  if (payload.by_link) {
+    json.set("by_link", true); // G021: "Carol joined by Alice's link", additive
+  }
   if (!payload.invite_nonce.empty()) {
     json.set("invite_nonce", payload.invite_nonce);
   }
@@ -309,6 +312,7 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
   }
   payload.context = json->getString("context").value_or("");
   payload.added_by = json->getString("added_by").value_or("");
+  payload.by_link = json->getIf<bool>("by_link").value_or(false);
   payload.invite_nonce = json->getString("invite_nonce").value_or("");
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_joined missing group_id or member_identity");
