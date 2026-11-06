@@ -19,6 +19,28 @@ struct GroupRosterStatementMember {
   std::string identity;
   MemberRole role = MemberRole::Member;
   int64_t joined_at = 0;
+  /** G019: who brought them in (the signer of the `add` the owner folded); empty for the group's first members. */
+  std::string added_by;
+};
+
+/** G018 R2 / G020: an account removed and not re-admitted; a re-admit names `removal`. */
+struct GroupRemovedMember {
+  std::string identity;
+  /** The id of the `remove` change that took them out (GroupChange.h). */
+  std::string removal;
+  std::string removed_by;
+};
+
+/** G021: a live invite link, as its `link_add` put it in the roster. */
+struct GroupInviteLink {
+  std::string link_id;
+  /** Hash of the link's secret (the secret itself never enters the roster). */
+  std::string secret_hash;
+  /** The account that made it; the link dies when they are no longer in the group. */
+  std::string maker;
+  int64_t expires_at = 0;
+  /** 0: no limit. */
+  uint64_t max_uses = 0;
 };
 
 /**
@@ -47,6 +69,18 @@ struct GroupRosterStatement {
   std::vector<GroupRosterStatementMember> members;
   /** G017: who brings people in and renames, as the owner set it. */
   GroupPreset preset = GroupPreset::Open;
+  /** The group's name and its version (G018 R4: a rename wins on the higher version). */
+  std::string title;
+  uint64_t title_version = 0;
+  /** G018 R2: accounts removed and not re-admitted, sorted by identity. */
+  std::vector<GroupRemovedMember> removed;
+  /** G021: live invite links, sorted by link id. */
+  std::vector<GroupInviteLink> links;
+  /**
+   * G018 item 4: the ids of every change the owner has folded into its statements (this one and earlier ones),
+   * sorted. Devices drop a change it names; carried forward so a device that missed a statement still drops it.
+   */
+  std::vector<std::string> folded;
   std::string owner_identity;
   std::string owner_public_key_b64;
   /** Every transfer since the group began, oldest first; empty while its creator owns it. */
@@ -63,7 +97,10 @@ struct GroupRosterStatement {
 
 namespace group_roster_statement {
 
-/** The bytes the owner signs: domain tag, group, epoch, owner, members, preset (length-prefixed fields). */
+/**
+ * The bytes the owner signs (v3, G018): domain tag, group, epoch, owner, members (with `added_by`), preset, title
+ * and its version, removed, links, folded (length-prefixed fields; every list sorted).
+ */
 ByteVector SignBytes(const GroupRosterStatement& statement);
 /** The bytes a transferring owner signs: domain tag, group, from, to, epoch. */
 ByteVector TransferSignBytes(const std::string& group_id, const GroupOwnerTransfer& transfer);
@@ -78,6 +115,13 @@ Roe<GroupRosterStatement> Sign(IAccountSigningAccess& signer, const std::string&
                                std::vector<GroupOwnerTransfer> owner_chain, bool dissolved = false,
                                GroupPreset preset = GroupPreset::Open);
 
+/**
+ * Sign `draft` as the group's owner: everything but the owner fields and signature comes from `draft` (e.g. the next
+ * statement FoldChanges builds, GroupRosterRules.h); sorts its lists, fills the owner's identity and key, signs.
+ */
+Roe<GroupRosterStatement> SignStatement(IAccountSigningAccess& signer, const std::string& public_key_b64,
+                                        GroupRosterStatement draft);
+
 /** Transfer the group to `to_identity` at `roster_epoch`, signed by the owner giving it up. */
 Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::string& public_key_b64,
                                      const std::string& group_id, const std::string& to_identity,
@@ -85,7 +129,8 @@ Roe<GroupOwnerTransfer> SignTransfer(IAccountSigningAccess& signer, const std::s
 
 /**
  * Valid for a device that knows `known_owner` (empty: knows none): the one owner member signed it with
- * the key its account id comes from, members are unique, every transfer in the chain is signed by the
+ * the key its account id comes from, members are unique, the removed are unique and not members, link ids and
+ * folded ids are unique, every transfer in the chain is signed by the
  * owner it moves from, links to the next, and its epochs rise to at most the statement's; and, when
  * `known_owner` is not the statement's owner, the chain moves ownership away from `known_owner`.
  */

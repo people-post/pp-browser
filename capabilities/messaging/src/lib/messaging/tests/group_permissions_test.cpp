@@ -43,7 +43,8 @@ TEST(GroupPermissionsTest, TheOwnerRemovesAnyoneButItselfAnAdminOnlyMembers) {
 }
 
 TEST(GroupPermissionsTest, KeepingOrderIsTheOwnersAndAdminsInEveryGroup) {
-  for (const GroupAction action : {GroupAction::Readmit, GroupAction::RemoveCallGuest, GroupAction::MentionEveryone}) {
+  for (const GroupAction action : {GroupAction::Readmit, GroupAction::RevokeInviteLink, GroupAction::RemoveCallGuest,
+                                   GroupAction::MentionEveryone}) {
     for (const GroupPreset preset : {kOpen, kManaged}) {
       EXPECT_TRUE(GroupAllows(action, kOwner, preset));
       EXPECT_TRUE(GroupAllows(action, kAdmin, preset));
@@ -62,6 +63,14 @@ TEST(GroupPermissionsTest, WhoIsInChargeIsTheOwnersAlone) {
   EXPECT_TRUE(GroupAllows(GroupAction::SetRole, kOwner, kOpen, kAdmin));
   EXPECT_FALSE(GroupAllows(GroupAction::SetRole, kOwner, kOpen, kOwner)) << "ownership moves by transfer only";
   EXPECT_FALSE(GroupAllows(GroupAction::SetRole, kAdmin, kOpen, kMember));
+}
+
+TEST(GroupPermissionsTest, EveryoneButTheOwnerMayLeave) {
+  for (const GroupPreset preset : {kOpen, kManaged}) {
+    EXPECT_FALSE(GroupAllows(GroupAction::Leave, kOwner, preset)) << "the owner transfers or dissolves (G009, G016)";
+    EXPECT_TRUE(GroupAllows(GroupAction::Leave, kAdmin, preset));
+    EXPECT_TRUE(GroupAllows(GroupAction::Leave, kMember, preset));
+  }
 }
 
 TEST(GroupPermissionsTest, EveryoneSends) {

@@ -18,9 +18,12 @@ bool GroupAllows(const GroupAction action, const MemberRole actor, const GroupPr
       // The owner removes anyone but itself; an admin removes members, not admins or the owner.
       return target != MemberRole::Owner && (owner || (actor == MemberRole::Admin && target == MemberRole::Member));
     case GroupAction::Readmit:
+    case GroupAction::RevokeInviteLink:
     case GroupAction::RemoveCallGuest:
     case GroupAction::MentionEveryone:
       return keeps_order;
+    case GroupAction::Leave:
+      return !owner;
     case GroupAction::SetRole:
       return owner && target != MemberRole::Owner;
     case GroupAction::SetPreset:
