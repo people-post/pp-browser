@@ -221,7 +221,7 @@
                     data-event-click="storage_delete()">{{i18n:settings.storage.manage.delete}}</button>
           </div>
           <p class="storage-group-foot settings-choice-value-text" data-if="storage_list_empty">{{i18n:settings.storage.manage.nothing}}</p>
-          <div class="storage-grid" data-if="storage_cells.size > 0"
+          <div class="storage-grid" data-if="storage_cells.size > 0 || (storage_tab == 'all' && storage_files.size > 0)"
                data-class-storage-busy="storage_busy">
             <button data-for="cell, cell_index : storage_cells" class="storage-tile" type="button"
                     data-attr-storage-cell="cell_index"
@@ -238,8 +238,25 @@
                 <svg class="storage-check-icon" data-if="cell.picked" src="../icons/check.svg" width="12" height="12"></svg>
               </div>
             </button>
+            <button data-for="file, file_index : storage_files" class="storage-tile storage-tile--file" type="button"
+                    data-if="storage_tab == 'all'"
+                    data-attr-storage-file="file_index"
+                    data-class-storage-tile--picked="file.picked"
+                    data-event-click="storage_tap_file(file_index)">
+              <div class="storage-tile-frame storage-file-frame">
+                <svg class="storage-file-icon" data-if="file.kind == 'audio'" src="../icons/v2/music.svg" width="30" height="30"></svg>
+                <svg class="storage-file-icon" data-if="file.kind != 'audio'" src="../icons/v2/file.svg" width="30" height="30"></svg>
+                <span class="storage-file-ext" data-if="file.kind == 'pdf'">PDF</span>
+                <span class="storage-file-name">{{file.tile_name}}</span>
+              </div>
+              <span class="storage-tile-size">{{file.size}}</span>
+              <div class="storage-check storage-tile-check" data-if="storage_selecting"
+                   data-class-storage-check--on="file.picked">
+                <svg class="storage-check-icon" data-if="file.picked" src="../icons/check.svg" width="12" height="12"></svg>
+              </div>
+            </button>
           </div>
-          <div class="settings-row storage-group stack" data-if="storage_files.size > 0"
+          <div class="settings-row storage-group stack" data-if="storage_files.size > 0 && storage_tab != 'all'"
                data-class-storage-busy="storage_busy">
             <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
                     data-attr-storage-file="file_index"

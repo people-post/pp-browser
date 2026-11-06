@@ -12001,6 +12001,33 @@ textarea:composing ~ .prompt-composer-label,
   font-size: 11dp;
 }
 
+/* A file in the All tab: same cell as a picture, icon on top, one-line name under it. */
+.storage-file-frame {
+  flex-direction: column;
+  padding: 0 4dp 14dp 4dp;
+}
+
+.storage-file-icon {
+  flex-shrink: 0;
+}
+
+.storage-file-ext {
+  flex-shrink: 0;
+  font-size: 9dp;
+  font-weight: bold;
+}
+
+.storage-file-name {
+  display: block;
+  flex-shrink: 0;
+  width: 100%;
+  margin-top: 4dp;
+  font-size: 11dp;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .storage-tile-play {
   position: absolute;
   right: 6dp;

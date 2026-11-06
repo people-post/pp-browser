@@ -57,6 +57,8 @@ public:
     ui::String detail;
     ui::String size;
     ui::String ext;
+    ui::String kind;       // "audio" | "pdf" | "file": which icon the All tab's tile shows
+    ui::String tile_name;  // the name cut to fit one line of a tile
     bool picked = false;
   };
 

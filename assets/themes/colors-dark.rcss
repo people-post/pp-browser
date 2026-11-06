@@ -3220,9 +3220,27 @@ input.checkbox:checked {
   background-color: #af52de4d;
 }
 
+.storage-tile--file .storage-tile-frame {
+  background-color: #ff9f0a2e;
+}
+
+.storage-file-icon {
+  image-color: #ff9500;
+}
+
+.storage-file-ext,
+.storage-file-name {
+  color: #8e8e93;
+}
+
 .storage-tile-size {
   color: #ffffff;
   font-effect: shadow(1dp 1dp #00000099);
+}
+
+.storage-tile--file .storage-tile-size {
+  color: #8e8e93;
+  font-effect: none;
 }
 
 .storage-tile-play {

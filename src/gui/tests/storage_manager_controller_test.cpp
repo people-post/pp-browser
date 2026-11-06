@@ -317,6 +317,43 @@ TEST_F(StorageManagerControllerTest, AllTabListsEveryFileOnTheFirstPageOfManyPic
   EXPECT_EQ(controller_.Files().size(), 2u);
 }
 
+TEST_F(StorageManagerControllerTest, AllTabFilesAreTilesWithAnIconByKindAndAOneLineName) {
+  items_.push_back(Item("a", 1, "image/jpeg", kMiB));
+  auto audio = Item("a", 2, "audio/mpeg", kMiB);
+  audio.filename = "a-very-long-recording-name-of-the-meeting.mp3";
+  items_.push_back(audio);
+  auto cjk = Item("a", 3, "application/octet-stream", kMiB);
+  cjk.filename = "这是一个非常非常长的中文文件名称.txt";
+  items_.push_back(cjk);
+  items_.push_back(Item("a", 4, "application/pdf", kMiB));
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  ASSERT_EQ(controller_.Cells().size(), 1u);
+  ASSERT_EQ(controller_.Files().size(), 3u);
+  std::map<std::string, std::string> kind_of;
+  for (const auto& file : controller_.Files()) {
+    kind_of[file.name.c_str()] = file.kind.c_str();
+    EXPECT_LE(std::string(file.tile_name.c_str()).size(), 3u * 14u) << "a tile's name is one short line";
+  }
+  EXPECT_EQ(kind_of["a-very-long-recording-name-of-the-meeting.mp3"], "audio");
+  EXPECT_EQ(kind_of["file4.pdf"], "pdf");
+  EXPECT_EQ(kind_of["这是一个非常非常长的中文文件名称.txt"], "file");
+  for (const auto& file : controller_.Files()) {
+    const std::string tile = file.tile_name.c_str();
+    if (std::string(file.name.c_str()) == "file4.pdf") {
+      EXPECT_EQ(tile, "file4.pdf") << "a short name is kept whole";
+    } else {
+      EXPECT_NE(tile.find("\xE2\x80\xA6"), std::string::npos) << "a long name is cut with an ellipsis";
+      const std::string name = file.name.c_str();
+      EXPECT_EQ(tile.substr(tile.size() - 4), name.substr(name.size() - 4)) << "the extension stays";
+    }
+  }
+  controller_.ToggleSelect();
+  controller_.TapFile(0);
+  EXPECT_EQ(controller_.SelectedCount(), 1u) << "a file tile selects like a file row";
+}
+
 TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
   items_ = {
       Item("a", 1, "image/jpeg", 3 * kMiB, /*server=*/true),

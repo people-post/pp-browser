@@ -104,6 +104,54 @@ std::string FileTypeLabel(const StoredAttachmentItem& item) {
   return ext;
 }
 
+/** Which icon a file tile shows, from the extension, else the mime. */
+std::string FileIconKind(const StoredAttachmentItem& item) {
+  std::string ext = FileTypeLabel(item);
+  for (char& c : ext) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  static const char* const kAudio[] = {"mp3", "m4a", "wav", "aac", "ogg", "opus", "flac", "amr", "caf"};
+  if (item.mime.rfind("audio/", 0) == 0 || std::find(std::begin(kAudio), std::end(kAudio), ext) != std::end(kAudio)) {
+    return "audio";
+  }
+  return ext == "pdf" || item.mime == "application/pdf" ? "pdf" : "file";
+}
+
+/** The name cut to one line of a tile (a wide CJK character counts two), "…" at the cut, extension kept. */
+std::string TileName(const std::string& name) {
+  constexpr size_t kBudget = 14;
+  struct Ch {
+    size_t pos;
+    size_t len;
+    size_t width;
+  };
+  std::vector<Ch> chars;
+  size_t total = 0;
+  for (size_t i = 0; i < name.size();) {
+    const unsigned char c = static_cast<unsigned char>(name[i]);
+    const size_t len = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+    const size_t width = len >= 3 ? 2 : 1;
+    chars.push_back({i, std::min(len, name.size() - i), width});
+    total += width;
+    i += len;
+  }
+  if (total <= kBudget) {
+    return name;
+  }
+  const size_t dot = name.rfind('.');
+  const std::string tail = dot != std::string::npos && name.size() - dot <= 6 ? name.substr(dot) : std::string();
+  size_t room = kBudget - 1 - tail.size();  // the "…" and the extension take their share
+  std::string head;
+  for (const Ch& ch : chars) {
+    if (ch.pos >= name.size() - tail.size() || ch.width > room) {
+      break;
+    }
+    head += name.substr(ch.pos, ch.len);
+    room -= ch.width;
+  }
+  return head + "\xE2\x80\xA6" + tail;
+}
+
 } // namespace
 
 struct StorageManagerController::Counts {
@@ -142,6 +190,8 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
     file.RegisterMember("detail", &FileRow::detail);
     file.RegisterMember("size", &FileRow::size);
     file.RegisterMember("ext", &FileRow::ext);
+    file.RegisterMember("kind", &FileRow::kind);
+    file.RegisterMember("tile_name", &FileRow::tile_name);
     file.RegisterMember("picked", &FileRow::picked);
   }
   ctor.RegisterArray<std::vector<Segment>>();
@@ -409,11 +459,13 @@ void StorageManagerController::BuildCells() {
     const bool picked = selected_.count(key) != 0;
     const StoredKind kind = StoredKindOfMime(item.mime);
     if (kind == StoredKind::File) {
-      files_.push_back({.name = (item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename)
-                                    .c_str(),
+      const std::string file_name = item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename;
+      files_.push_back({.name = file_name.c_str(),
                         .detail = MessageTimeLabel(item.timestamp_ms, now).c_str(),
                         .size = FormatByteSize(item.bytes).c_str(),
                         .ext = FileTypeLabel(item).c_str(),
+                        .kind = FileIconKind(item).c_str(),
+                        .tile_name = TileName(file_name).c_str(),
                         .picked = picked});
       continue;
     }
