@@ -198,6 +198,54 @@ TEST(ShellCallChromeRmlTest, PhoneGroupBeforeConnectKeepsTheDimmedGrid) {
   EXPECT_FALSE(Has(rml, "p.speaking"));
 }
 
+// #11: the connection story shows one step at a time: calling alone, then a short ✓ "answered" line above the
+// current "setting up the encrypted line"; a step that has not happened is not drawn. The sheet keeps the history.
+TEST(ShellCallChromeRmlTest, PhoneStoryShowsOnlyTheStepsThatHappened) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.story_active = true;
+  state.call_in_progress.story_stage = 0;
+  const std::string calling = CallInProgressRml(state);
+  EXPECT_EQ(Count(calling, "<div class=\"call-phone-step call-phone-step--"), 1u);
+  EXPECT_TRUE(Has(calling,
+                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
+                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
+  EXPECT_FALSE(Has(calling, "call_in_progress_story_step2"));
+  EXPECT_FALSE(Has(calling, "call_in_progress_story_step3"));
+
+  state.call_in_progress.story_stage = 1;
+  const std::string answered = CallInProgressRml(state);
+  EXPECT_EQ(Count(answered, "<div class=\"call-phone-step call-phone-step--"), 2u);
+  EXPECT_TRUE(Has(answered,
+                  "<div class=\"call-phone-step call-phone-step--done\"><div class=\"call-phone-step-dot\">"
+                  "<svg src=\"../icons/v2/check.svg\" width=\"12\" height=\"12\"></svg></div>"
+                  "<p class=\"call-phone-step-text\">{{call_in_progress_story_step1}}</p></div>"));
+  EXPECT_TRUE(Has(answered,
+                  "<div class=\"call-phone-step call-phone-step--current\"><div class=\"call-phone-step-dot\">"
+                  "</div><p class=\"call-phone-step-text\">{{call_in_progress_story_step2}}</p></div>"));
+  EXPECT_LT(answered.find("call_in_progress_story_step1"), answered.find("call_in_progress_story_step2"));
+  EXPECT_FALSE(Has(answered, "call_in_progress_story_step3"));
+
+  // The group card follows the same rule.
+  state.call_in_progress.show_roster = true;
+  state.call_in_progress.story_stage = 0;
+  const std::string group = CallInProgressRml(state);
+  EXPECT_TRUE(Has(group, "{{call_in_progress_story_step1}}"));
+  EXPECT_FALSE(Has(group, "call_in_progress_story_step2"));
+
+  // "How this call got through" still lists every line so far.
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.story_sheet_open = true;
+  state.call_in_progress.story_lines = {{.time = "10:02", .text = "You called"},
+                                        {.time = "3.0 s", .text = "They answered"},
+                                        {.time = "4.8 s", .text = "Connected directly", .secure = true}};
+  const std::string sheet = CallInProgressRml(state);
+  EXPECT_EQ(Count(sheet, "<div class=\"call-phone-event-dot\">"), 3u);
+  EXPECT_TRUE(Has(sheet, "You called"));
+  EXPECT_TRUE(Has(sheet, "They answered"));
+  EXPECT_TRUE(Has(sheet, "Connected directly"));
+}
+
 // V060: a person on hold has "On hold" on their tile (dimmed), and a paused camera says so — per row, bound.
 TEST(ShellCallChromeRmlTest, PhoneGroupTilesShowWhoIsOnHoldAndWhoseCameraIsPaused) {
   const std::string rml = CallInProgressRml(PhoneGroupCall());

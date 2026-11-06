@@ -59,6 +59,30 @@ TEST(CallConnectStoryTest, AnOutgoingCallShowsCallingThenAnsweredThenTheResultWi
   EXPECT_EQ(v.events[3].kind, CallStoryEvent::Kind::Encrypted);
 }
 
+// #11: a "calling" answered within 300 ms is still shown 600 ms so it is seen to pass; a slower answer moves on at
+// once (no made-up delays); connecting ends the hold.
+TEST(CallConnectStoryTest, AQuickAnswerKeepsCallingOnScreenForAMoment) {
+  CallConnectStory story;
+  EXPECT_EQ(story.Step(At(1'000, Status::Calling)).stage, 0);
+  CallStoryView v = story.Step(At(1'200, Status::Connecting, false, ""));
+  EXPECT_EQ(v.stage, 0) << "answered after 200 ms: calling stays";
+  ASSERT_EQ(v.events.size(), 2u) << "the history has the answer at once";
+  EXPECT_EQ(v.events[1].kind, CallStoryEvent::Kind::PeerAnswered);
+  EXPECT_EQ(story.Step(At(1'599, Status::Connecting, false, "")).stage, 0);
+  EXPECT_EQ(story.Step(At(1'600, Status::Connecting, false, "")).stage, 1);
+
+  CallConnectStory slow;
+  slow.Step(At(1'000, Status::Calling));
+  EXPECT_EQ(slow.Step(At(1'300, Status::Connecting, false, "")).stage, 1) << "300 ms is not quick: no hold";
+
+  CallConnectStory live;
+  live.Step(At(1'000, Status::Calling));
+  live.Step(At(1'100, Status::Connecting, false, ""));
+  v = live.Step(At(1'200, Status::Connected, true, "direct"));
+  EXPECT_FALSE(v.connecting);
+  EXPECT_EQ(v.stage, 1) << "connected: the hold is over";
+}
+
 TEST(CallConnectStoryTest, TheResultLineFadesAfterFourSecondsThenTheSignalBarShows) {
   CallConnectStory story;
   story.Step(At(0, Status::Calling));

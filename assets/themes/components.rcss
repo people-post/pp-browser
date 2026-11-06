@@ -5770,6 +5770,12 @@ call-video-tile {
   font-weight: bold;
 }
 
+/* A passed step stays as a short ✓ line above the current one (#11). */
+.call-phone-step--done .call-phone-step-text {
+  font-size: 14dp;
+  line-height: 18dp;
+}
+
 /* The tips: one every 3 s, a 12 s cycle with the four staggered (RCSS only). */
 .call-phone-tips {
   position: relative;
