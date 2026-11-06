@@ -231,6 +231,29 @@ TEST_F(AttachmentClientTest, OtherServerErrorsAfterAFailedDirectPushKeepTheirTyp
   EXPECT_EQ(fields.error().code, static_cast<int32_t>(Err::Blob::Unavailable));
 }
 
+// Review (a): a send that is not staged (no profile key) honours the cancel too: nothing goes after it.
+TEST_F(AttachmentClientTest, AnUnstagedSendCancelledBeforeItStartsTouchesNoNetwork) {
+  auto options = Options(direct_);
+  options.cancelled = std::make_shared<std::atomic<bool>>(true);
+  auto result = Upload(1000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "Attachment send cancelled");
+  EXPECT_EQ(peer_.push_calls, 0);
+  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
+}
+
+TEST_F(AttachmentClientTest, AnUnstagedSendCancelledDuringItsPushSendsNothing) {
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.push_ok = false; // the push fails: the server would be next
+  peer_.on_push = [cancelled] { cancelled->store(true); };
+  auto options = Options(direct_);
+  options.cancelled = cancelled;
+  auto result = Upload(1000, std::move(options));
+  ASSERT_FALSE(result);
+  EXPECT_EQ(result.error().message, "Attachment send cancelled");
+  EXPECT_EQ(blob_.DeletedFileIds().size(), blob_.UploadedBodies().size()) << "whatever went up is deleted";
+}
+
 // The staged (product) path: the ciphertext is a file, the key is in the sealed record, and a failed send is
 // resumed with that same ciphertext and key.
 class StagedUploadTest : public AttachmentClientTest {
