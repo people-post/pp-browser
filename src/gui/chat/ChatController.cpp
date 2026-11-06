@@ -1093,6 +1093,7 @@ void ChatController::OnProfileDataReset() {
   quotes_.clear();
   mentions_.Reset();
   agent_.ForgetAllPendingImages();
+  agent_.ClearForgottenThreads(); // the old profile's deleted conversations are not the new one's
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;

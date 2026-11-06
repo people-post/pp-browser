@@ -245,7 +245,12 @@ void AgentTurnController::ForgetThread(const std::string& thread_id) {
   MarkAgentIdle(thread_id);
 }
 
+void AgentTurnController::ClearForgottenThreads() {
+  forgotten_threads_.clear();
+}
+
 void AgentTurnController::Reset() {
+  ClearForgottenThreads();
   held_agent_send_.Clear();
   streaming_.clear();
   use_llm_ = false;
