@@ -169,7 +169,7 @@ Ingest verifies ML-DSA against the Account ID’s published pubkey (directory/ca
 ## M013 — Soft inbox ack (shared mailbox; no sibling starve)
 
 **Date:** 2026-08-13  
-**Status:** Accepted (m4a).  
+**Status:** Accepted (m4a). **Amended 2026-11-05** (the relay store filled: ~17k records of ~30 KB in 512 MB): a record may carry its own shorter expiry (`ttl_s`); the control lane's records leave after an hour instead of 90 days, carry the account card only when the peer may lack it, and the mailbox cap counts only records without their own expiry. Current rule: [SERVICE_ENDPOINTS](../../docs/contracts/SERVICE_ENDPOINTS.md), [P2P_MESSAGING § The control lane](../../docs/architecture/P2P_MESSAGING.md#the-control-lane).  
 **Implements:** [M012](#m012--link-device-ritual-deferred-until-m4) §4 (per-device progress) without server `device_id` on poll yet.  
 
 **Decision:**

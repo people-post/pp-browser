@@ -302,6 +302,13 @@ ordered chat stream:
   backoff (1 s, doubling to 16 s — `ControlRetryAfter`) while it is fresh (two minutes), not on the
   next inbox wake. No acks: a family that must know its peer has a message resends it itself (a
   call's media keys).
+- **What it costs the relay:** a lane record asks the relay to keep it an hour (`ttl_s` 3660,
+  `kControlLaneRelayTtlMs`; no family takes one older, and `SystemControlRegistry::Bind` clamps a family's
+  `lane_max_age_ms` to it), not the 90 days chat keeps. Our account card (~13 KB + 4 KB per device) rides a lane
+  message only when the peer may not hold it (`ControlLaneCarriesCard`: the first to that account after the card
+  changed, an opener, a device list, an ask, a member check, a ringing invite); the rest are checked with the card
+  the peer keeps, and a peer that keeps none asks for it ([ACCOUNT_CARD § Where cards travel](../contracts/ACCOUNT_CARD.md#where-cards-travel)).
+  Before both, every lane message carried the card for 90 days: ~30 KB a record filled the relay's store.
 - **To many** (`ControlLane::SendToMany`): each recipient resolved (route, maybe a directory lookup;
   the pair's session, maybe opened) and sealed for its pair on the workers, in parallel, never on the
   caller's thread; one result per recipient. Live signaling (a call's) resolves on the critical lane;

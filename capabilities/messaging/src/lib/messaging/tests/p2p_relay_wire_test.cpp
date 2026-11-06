@@ -313,6 +313,35 @@ TEST(P2pRelayWireTest, UrgentWakeIsARelayHintOutsideTheEnvelope) {
   EXPECT_EQ(urgent.value().blob_b64, plain.value().blob_b64);
 }
 
+TEST(P2pRelayWireTest, HowLongTheRelayKeepsARecordIsAHintOutsideTheEnvelope) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = "550e8400-e29b-41d4-a716-446655440001";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "relay:alice123";
+  envelope.sender_device = "QmAliceDevice";
+  envelope.route.kind = "control";
+  envelope.route.channel = ThreadChannel::E2ePublic;
+  envelope.body.e2e.payload_b64 = "AA==";
+  envelope.order_key = 9;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+  envelope.stream_key = "v1:control:relay:alice123:relay:bob456";
+  envelope.recipient_contact_id = "relay:bob456";
+
+  const auto kept = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(kept));
+  EXPECT_FALSE(RelayWireSendRecordToJson(kept.value()).contains("ttl_s")) << "none: the relay's full window";
+
+  envelope.relay_ttl_s = 3660;
+  const auto brief = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(static_cast<bool>(brief));
+  EXPECT_EQ(RelayWireSendRecordToJson(brief.value()).getIf<int64_t>("ttl_s"), std::optional<int64_t>(3660));
+  EXPECT_EQ(brief.value().blob_b64, kept.value().blob_b64) << "not part of what the recipient gets";
+}
+
 TEST(P2pRelayWireTest, DirectTargetRoutingAndOutboxReconcile) {
   using namespace pbr;
 

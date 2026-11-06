@@ -10,6 +10,11 @@
 
 namespace pbr {
 
+bool ControlLaneCarriesCard(const bool opens_session, const bool asked, const std::optional<int64_t> told_at,
+                            const int64_t card_at) {
+  return opens_session || asked || !told_at || *told_at != card_at;
+}
+
 Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params, const ThreadMessage& control,
                                             const std::function<Roe<std::string>(const std::vector<uint8_t>&)>& sign) {
   if (control.content_type != ChatContentType::System || control.id.empty()) {
@@ -53,9 +58,11 @@ Roe<RelayEnvelope> BuildControlLaneEnvelope(const ControlLaneSendParams& params,
   if (encrypted->key_init_b64 && !encrypted->key_init_b64->empty()) {
     copy.key_init_b64 = std::move(*encrypted->key_init_b64);
   }
-  // An account copy: our card rides it, for a peer that knows none of our devices yet (M021).
+  // An account copy: our card rides it when the peer may not hold it (ControlLaneCarriesCard); the version
+  // rides every envelope, for a peer with an older one to ask (M021 d6).
   envelope.body.e2e.sender_card = params.sender_card;
-  if (params.sender_card) {
+  envelope.body.e2e.sender_card_at = params.sender_card_at;
+  if (params.sender_card && !envelope.body.e2e.sender_card_at) {
     envelope.body.e2e.sender_card_at = params.sender_card->getIf<int64_t>("issued_at");
   }
   envelope = WithSingleRelayCopy(std::move(envelope), std::move(copy));

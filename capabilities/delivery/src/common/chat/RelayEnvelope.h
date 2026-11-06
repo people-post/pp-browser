@@ -106,6 +106,11 @@ struct RelayEnvelope {
    * signature): wake the recipient at once, the platform's most urgent push (an incoming call's).
    */
   bool relay_wake_urgent = false;
+  /**
+   * A hint to the relay, like `relay_wake_urgent`: keep the record only this many seconds (`ttl_s`); 0 keeps it
+   * the relay's full retention window. The control lane sets it — its messages are useless after an hour.
+   */
+  int64_t relay_ttl_s = 0;
 };
 
 /**
@@ -174,6 +179,8 @@ struct RelayWireSendRecord {
   std::string signature;
   /** P012 — wake the recipient at once, the most urgent push (unsigned hint; older relays ignore it). */
   bool urgent = false;
+  /** Keep the record only this many seconds (`ttl_s`; unsigned hint; 0: the relay's retention window). */
+  int64_t ttl_s = 0;
 };
 
 /** Opaque relay HTTP wire record returned on poll/history. */

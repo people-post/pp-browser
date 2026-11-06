@@ -295,10 +295,12 @@ public:
    * Send `control` (an identified system message) to `peer_identity` on the control lane
    * (kRelayRouteControl): E2E under the pair's e2e_public session (opened on first use; a
    * `key_init_b64` the caller holds rides along), not sequenced, never stored. Queued on the
-   * critical lane — relay when a route is known (retried while fresh), else Amp.
+   * critical lane — relay when a route is known (retried while fresh), else Amp. Our card rides it when the peer
+   * may not hold it; `with_card` when the caller knows it may hold none of ours (ControlLane::Send).
    */
   Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
-                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+                        const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
+                        bool with_card = false);
   /** Each of `sends` on the control lane, sealed per pair and in parallel off this thread (ControlLane::SendToMany). */
   void SendControlToMany(std::vector<ControlSend> sends, ControlSendsDone done = {},
                          WorkerLane lane = WorkerLane::Critical);
@@ -426,6 +428,9 @@ private:
   void AskForNewerCard(const std::string& account, const std::string& device, int64_t issued_at);
   std::mutex card_asks_mutex_;
   std::map<std::string, int64_t> card_asks_;  // account → the newest list asked for
+  /** An unverified envelope's ask (SetOnUnknownSenderDevice): anyone can forge one, so once per account per gap. */
+  static constexpr int64_t kUnknownDeviceAskGapMs = 10 * 60 * 1000;
+  std::map<std::string, int64_t> unknown_device_asks_; // account → when last asked (under card_asks_mutex_)
   Roe<void> ResendDirectCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,
                              const AccountCardDevice& device);
   Roe<void> ResendGroupCopy(const Thread& thread, const ThreadMessage& message, const std::string& asker,

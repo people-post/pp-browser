@@ -12,8 +12,10 @@
 #include <atomic>
 #include <functional>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -24,6 +26,16 @@ class DeliveryOutbox;
 class E2ePublicSessionKeys;
 class IdentityStore;
 class PeerRouteBook;
+
+/** What a notice to this account's other devices is: what it carries and how long the relay keeps it. */
+enum class SiblingNotice {
+  /** The device list: our card rides it — the card is the notice. Kept the relay's full window. */
+  DeviceList,
+  /** A sent message's copy (M021 d3): history for a sibling that may be off for days. Kept the full window. */
+  SentCopy,
+  /** A family's lane signaling (a call taken here): fresh only, so kept kControlLaneRelayTtlMs. */
+  Signal,
+};
 
 /**
  * The control lane: identified system messages to a peer (call signaling and the like) — E2E under
@@ -42,10 +54,13 @@ public:
 
   /**
    * Send `control` to `peer_identity`. `key_init_b64`: a session init the caller holds (its media-key
-   * wrap opened the session) rides the first send. `urgent`: wake the peer at once, the platform's most urgent push (an incoming call's).
+   * wrap opened the session) rides the first send. `urgent`: wake the peer at once, the platform's most urgent push
+   * (an incoming call's). Our account card rides it only when the peer may not hold it (ControlLaneCarriesCard):
+   * `with_card` (or `urgent`) when the caller knows it may not. The relay keeps it kControlLaneRelayTtlMs.
    */
   Roe<void> Send(const std::string& peer_identity, const ThreadMessage& control,
-                 const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false);
+                 const std::optional<std::string>& key_init_b64 = std::nullopt, bool urgent = false,
+                 bool with_card = false);
 
   /**
    * Each of `sends` to its peer, as Send — resolved (route, maybe a directory lookup; the pair's session, maybe
@@ -56,13 +71,15 @@ public:
   void SendToMany(std::vector<ControlSend> sends, ControlSendsDone done = {}, WorkerLane lane = WorkerLane::Critical);
 
   /**
-   * Tell this account's other devices (through its own mailbox, M022) our account card — the device list —
-   * riding `notice`, a system message they take nothing else from.
+   * Tell this account's other devices `notice` through its own mailbox (M022). Our card rides a device list, and
+   * any notice after the card changed; the relay keeps a signal kControlLaneRelayTtlMs, the rest its full window.
    */
-  Roe<void> NotifySiblings(const ThreadMessage& notice);
+  Roe<void> NotifySiblings(const ThreadMessage& notice, SiblingNotice kind);
 
 private:
   uint64_t NextOrderKey();
+  /** Whether our card at `card_at` rides this send to `account` (ControlLaneCarriesCard); noted when it does. */
+  bool CarryCard(const std::string& account, bool opens_session, bool asked, int64_t card_at);
 
   IdentityStore& identity_;
   OwnCards& own_keys_;
@@ -73,6 +90,9 @@ private:
   std::function<IDirectMessageClient*()> direct_chat_;
   DeliveryOutbox& outbox_;
   std::atomic<uint64_t> order_key_{0};
+  /** Per account (ours too): the version of our card this device last sent it, while it runs. */
+  std::mutex cards_sent_mutex_;
+  std::unordered_map<std::string, int64_t> cards_sent_;
   pp::Lifetime lifetime_;
 };
 

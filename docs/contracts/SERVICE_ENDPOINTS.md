@@ -66,7 +66,7 @@ All relay API calls require `timestamp` + `signature` over `pp-browser:relay-api
 
 `blob_b64` is **not** included in transport auth (E014 envelope signature covers message integrity inside the blob).
 
-Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **1000** when a mailbox exceeds **~1200**). Chat history remains local + stream/P2P sync — not the inbox.
+Inbox is a **delivery queue**: poll advances a **per-device** local cursor; `ack` is **soft** (M013 — validate only; no shared delete). `clear` deletes recipient rows older than a timestamp (recovery; account-wide). Messenger also applies a **90-day TTL** on `created_at` (startup rewrites the TTL index only if needed) and a **soft per-recipient FIFO cap** (trim toward **2000** when a mailbox exceeds **~2400**, M022). A record sent with `ttl_s` ([WIRE_SCHEMAS § RelayWireRecord](WIRE_SCHEMAS.md#relaywirerecord-http-relay--opaque-store-and-forward)) gets its own expiry instead, and the cap neither counts nor trims it: the control lane's records leave after an hour rather than 90 days, and a burst of them cannot push chat out. Messenger stores the blob as bytes (a third smaller than its base64). Chat history remains local + stream/P2P sync — not the inbox.
 
 Poll response extras (unix ms, relay clock):
 
