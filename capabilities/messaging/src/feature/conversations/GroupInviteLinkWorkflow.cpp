@@ -281,22 +281,6 @@ void GroupInviteLinkWorkflow::OnConfirm(const GroupJoinConfirm& confirm, const s
 
 // ---- The joiner ----
 
-void GroupInviteLinkWorkflow::SetOnJoinChanged(std::function<void(GroupJoinState state)> on_changed) {
-  std::lock_guard lock(mutex_);
-  on_changed_ = std::move(on_changed);
-}
-
-void GroupInviteLinkWorkflow::Moved(const GroupJoinState& state) {
-  std::function<void(GroupJoinState)> hook;
-  {
-    std::lock_guard lock(mutex_);
-    hook = on_changed_;
-  }
-  if (hook) {
-    hook(state);
-  }
-}
-
 Roe<std::string> GroupInviteLinkWorkflow::AskToJoin(const std::string& link_text) {
   auto link = group_invite_link::Find(link_text);
   if (!link) {
@@ -342,57 +326,40 @@ void GroupInviteLinkWorkflow::ScheduleNoAnswer(const std::string& request_id) {
           if (!alive->load() || AppRuntime::IsShuttingDown()) {
             return;
           }
-          std::optional<GroupJoinState> moved;
-          {
-            std::lock_guard lock(mutex_);
-            auto found = joins_.find(request_id);
-            if (found != joins_.end() && found->second.first.phase == GroupJoinState::Phase::Asking) {
-              found->second.first.phase = GroupJoinState::Phase::NoAnswer;
-              moved = found->second.first;
-            }
-          }
-          if (moved) {
-            Moved(*moved);
+          std::lock_guard lock(mutex_);
+          auto found = joins_.find(request_id);
+          if (found != joins_.end() && found->second.first.phase == GroupJoinState::Phase::Asking) {
+            found->second.first.phase = GroupJoinState::Phase::NoAnswer;
           }
         });
       });
 }
 
 void GroupInviteLinkWorkflow::OnPreview(const GroupJoinPreview& preview, const std::string& answerer) {
-  std::optional<GroupJoinState> moved;
-  {
-    std::lock_guard lock(mutex_);
-    auto found = joins_.find(preview.request_id);
-    // The first answer from the link's maker counts (each of its devices may answer); a late one after "no answer" too.
-    if (found == joins_.end() || found->second.first.maker != answerer ||
-        (found->second.first.phase != GroupJoinState::Phase::Asking &&
-         found->second.first.phase != GroupJoinState::Phase::NoAnswer)) {
-      return;
-    }
-    found->second.first.phase = GroupJoinState::Phase::Preview;
-    found->second.first.preview = preview;
-    found->second.second = util::NowUnixMs();
-    moved = found->second.first;
+  std::lock_guard lock(mutex_);
+  auto found = joins_.find(preview.request_id);
+  // The first answer from the link's maker counts (each of its devices may answer); a late one after "no answer" too.
+  if (found == joins_.end() || found->second.first.maker != answerer ||
+      (found->second.first.phase != GroupJoinState::Phase::Asking &&
+       found->second.first.phase != GroupJoinState::Phase::NoAnswer)) {
+    return;
   }
-  Moved(*moved);
+  found->second.first.phase = GroupJoinState::Phase::Preview;
+  found->second.first.preview = preview;
+  found->second.second = util::NowUnixMs();
 }
 
 void GroupInviteLinkWorkflow::OnRefused(const GroupJoinRefused& refused, const std::string& answerer) {
-  std::optional<GroupJoinState> moved;
-  {
-    std::lock_guard lock(mutex_);
-    auto found = joins_.find(refused.request_id);
-    if (found == joins_.end() || found->second.first.maker != answerer ||
-        found->second.first.phase == GroupJoinState::Phase::Refused ||
-        found->second.first.phase == GroupJoinState::Phase::Cancelled) {
-      return;
-    }
-    // A refusal after our confirm (the link died meanwhile): the chat we made stays, the bundle never comes.
-    found->second.first.phase = GroupJoinState::Phase::Refused;
-    found->second.first.reason = refused.reason;
-    moved = found->second.first;
+  std::lock_guard lock(mutex_);
+  auto found = joins_.find(refused.request_id);
+  if (found == joins_.end() || found->second.first.maker != answerer ||
+      found->second.first.phase == GroupJoinState::Phase::Refused ||
+      found->second.first.phase == GroupJoinState::Phase::Cancelled) {
+    return;
   }
-  Moved(*moved);
+  // A refusal after our confirm (the link died meanwhile): the chat we made stays, the bundle never comes.
+  found->second.first.phase = GroupJoinState::Phase::Refused;
+  found->second.first.reason = refused.reason;
 }
 
 Roe<Thread> GroupInviteLinkWorkflow::ConfirmJoin(const std::string& request_id) {
@@ -426,7 +393,6 @@ Roe<Thread> GroupInviteLinkWorkflow::ConfirmJoin(const std::string& request_id) 
     }
   }
   log().info << "join by link confirmed group=" << preview.group_id;
-  Moved(state);
   return thread;
 }
 

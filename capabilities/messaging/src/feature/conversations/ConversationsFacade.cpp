@@ -748,12 +748,6 @@ std::optional<GroupJoinState> ConversationsFacade::JoinByLinkState(const std::st
   return links ? links->JoinState(request_id) : std::nullopt;
 }
 
-void ConversationsFacade::SetOnJoinByLinkChanged(std::function<void(GroupJoinState state)> on_changed) {
-  if (GroupInviteLinkWorkflow* links = hub_.GroupLinksOrNull()) {
-    links->SetOnJoinChanged(std::move(on_changed));
-  }
-}
-
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
   return hub_.Groups().ListUnreachable(group_id);
 }

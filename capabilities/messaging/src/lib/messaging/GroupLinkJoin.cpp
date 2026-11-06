@@ -177,8 +177,15 @@ bool IsJoinMessage(const ThreadMessage& message) {
 }
 
 std::optional<GroupJoinRefusal> JudgeJoin(const JoinCase& join) {
+  const auto ours_gone = [&join]() -> std::optional<GroupJoinRefusal> {
+    // A link of ours the roster no longer names (its revoke or its maker's leave folded away, or the group gone).
+    if (!join.made_here_expires_at) {
+      return GroupJoinRefusal::Unknown;
+    }
+    return join.now_ms >= *join.made_here_expires_at ? GroupJoinRefusal::Expired : GroupJoinRefusal::Revoked;
+  };
   if (!join.view) {
-    return GroupJoinRefusal::Unknown;
+    return ours_gone();
   }
   if (!join.within_rate) {
     return GroupJoinRefusal::Rate;
@@ -187,11 +194,7 @@ std::optional<GroupJoinRefusal> JudgeJoin(const JoinCase& join) {
   const GroupInviteLink* live = view.LiveLink(join.link_id);
   const GroupEndedLink* ended = view.EndedLink(join.link_id);
   if (!live && !ended) {
-    // A link of ours the roster no longer names: its revoke (or its maker's leave) was folded away.
-    if (!join.made_here_expires_at) {
-      return GroupJoinRefusal::Unknown;
-    }
-    return join.now_ms >= *join.made_here_expires_at ? GroupJoinRefusal::Expired : GroupJoinRefusal::Revoked;
+    return ours_gone();
   }
   if (!group_invite_link::SecretMatches(live ? *live : ended->link, join.secret)) {
     return GroupJoinRefusal::Unknown;

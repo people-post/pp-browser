@@ -65,7 +65,7 @@ struct GroupJoinState {
  * `link_revoke`, the secret kept encrypted to show the link again); the maker's device answers join requests on the
  * control lane (GroupLinkJoinFamily) by the roster it holds and admits a confirmed joiner (GroupMembershipWorkflow's
  * add, with the link's id); and the joiner asks, sees the preview and confirms. Join state lives in memory: a join
- * outlives no restart (the joiner asks again).
+ * outlives no restart (the joiner asks again). The joiner's state is read, not pushed (JoinState).
  */
 class GroupInviteLinkWorkflow : public Module {
 public:
@@ -110,9 +110,8 @@ public:
   /** The preview's Join: the group's chat here, and the confirm to the device that previewed it. */
   Roe<Thread> ConfirmJoin(const std::string& request_id);
   void CancelJoin(const std::string& request_id);
+  /** Where a join of ours stands (the join prompt and the probe read it as it moves on). */
   std::optional<GroupJoinState> JoinState(const std::string& request_id) const;
-  /** Called (on a worker) each time a join of ours moves on. */
-  void SetOnJoinChanged(std::function<void(GroupJoinState state)> on_changed);
 
 private:
   struct Answering {
@@ -128,8 +127,6 @@ private:
                                         bool count_rate, std::string* group_id, std::optional<GroupRosterView>* view);
   void Send(const std::string& peer, const GroupJoinMessage& message);
   void Refuse(const std::string& joiner, const std::string& request_id, GroupJoinRefusal reason);
-  /** Set the state of a join of ours (under `mutex_`'s caller) and tell the hook (outside the lock). */
-  void Moved(const GroupJoinState& state);
   void ScheduleNoAnswer(const std::string& request_id);
   void DropStale(int64_t now_ms);
 
@@ -145,7 +142,6 @@ private:
   std::map<std::string, Answering> answering_;
   /** Our joins, by request id, with when they were asked (the joiner's side). */
   std::map<std::string, std::pair<GroupJoinState, int64_t>> joins_;
-  std::function<void(GroupJoinState)> on_changed_;
   std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
 };
 

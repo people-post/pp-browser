@@ -248,6 +248,13 @@ TEST_F(GroupLinkJudgeTest, AWrongSecretAndNoSuchLinkLookTheSame) {
   EXPECT_EQ(glj::JudgeJoin({.link_id = "link-1", .secret = secret, .joiner = erin.Id(), .now_ms = kNowMs}),
             Refusal::Unknown)
       << "no group here knows it";
+  EXPECT_EQ(glj::JudgeJoin({.made_here_expires_at = kNowMs + 1000,
+                            .link_id = "link-1",
+                            .secret = secret,
+                            .joiner = erin.Id(),
+                            .now_ms = kNowMs}),
+            Refusal::Revoked)
+      << "a link of ours whose group is gone from here";
 }
 
 TEST_F(GroupLinkJudgeTest, ARevokedLinkIsRefusedAsRevoked) {

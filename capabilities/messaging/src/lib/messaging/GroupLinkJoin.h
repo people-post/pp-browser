@@ -118,7 +118,8 @@ struct JoinCase {
 /**
  * G021 4, the answerer's checks, in order: a link known here (else Unknown), the rate (Rate), the secret (Unknown: a
  * wrong secret and no link look the same), revoked or its maker out (Revoked; a link this device made that the
- * roster no longer names — folded away after its revoke — reads Revoked, or Expired past its expiry), expired, our
+ * roster no longer names — folded away after its revoke, or the group gone from here — reads Revoked, or Expired past
+ * its expiry), expired, our
  * own standing (we must be in the group and still allowed to add: else Revoked), its uses (UsedUp), the removed list
  * (Removed) and the size limit (GroupFull; someone already in is let through, they get the bundle again). None: the
  * preview may go.

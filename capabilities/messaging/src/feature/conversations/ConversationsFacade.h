@@ -275,8 +275,6 @@ public:
   Roe<Thread> ConfirmJoinByLink(const std::string& request_id);
   void CancelJoinByLink(const std::string& request_id);
   std::optional<GroupJoinState> JoinByLinkState(const std::string& request_id);
-  /** Each move of a join of ours (on a worker). */
-  void SetOnJoinByLinkChanged(std::function<void(GroupJoinState state)> on_changed);
   std::vector<std::string> ListUnreachableMembers(const std::string& group_id);
   /**
    * Whoever the preset lets invite (G019): send `contact_id` a normal group invite. Refuses when the roster already holds kGroupMemberLimit
