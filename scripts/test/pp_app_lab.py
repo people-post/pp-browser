@@ -2094,6 +2094,58 @@ def scenario_group_owner_appoints_an_admin(lab):
         raise ProbeError("carol: a former admin's @everyone gave %s" % notice)
 
 
+def scenario_admin_removes_while_owner_is_away(lab):
+    """Changes on top of the owner's statement (group-chat G018, o2): Alice, the owner, makes Bob an admin and goes
+    offline. Bob removes Dave — his own signed change, to Carol (and Alice's inbox) first, then to Dave: Carol's
+    roster loses Dave, and Dave's chat goes read-only, saying Bob removed him. Carol leaves (her signed leave, no
+    member_left). Alice comes back, finds both changes in her inbox and folds them into her next statement: Alice
+    and Bob hold the same roster and statement, and no change is left unfolded."""
+    users, threads = open_group(lab, 4)
+    a, b, c, d = users
+    group_id = lab_group_id(a, threads)
+
+    def roster(u):
+        return u.cmd("group_roster", group_id=group_id)
+
+    a.cmd("set_group_role", thread=threads[a.name], account=b.account, role="admin")
+    for u in users:
+        wait_for(lambda u=u: roster(u)["roles"].get(b.account) == "admin" or None, 40, "%s: bob is an admin" % u.name)
+    a.quit()  # the owner is away from here on
+
+    b.cmd("remove_member", thread=threads[b.name], account=d.account)
+    wait_for(lambda: d.account not in roster(c)["members"] or None, 60, "carol: dave removed by bob")
+    if roster(c)["held_changes"] < 1:
+        raise ProbeError("carol: bob's removal is not held as a change (%s)" % roster(c))
+    wait_for(lambda: roster(d).get("sync_state") == "removed" or None, 60, "dave: his group read-only")
+    wait_for(lambda: any(r.get("text") == "Member removed" and r.get("from") == b.account
+                         for r in d.cmd("transcript", thread=threads[d.name])["rows"]) or None, 30,
+             "dave: the line saying bob removed him")
+    sent = d.cmd("send", thread=threads[d.name], text="still here?", check=False)
+    if sent.get("ok") or "chat.group.removed" not in str(sent.get("error")):
+        raise ProbeError("dave: a send to a group he was removed from gave %s" % sent)
+
+    c.cmd("leave_group", thread=threads[c.name])
+    wait_for(lambda: c.account not in roster(b)["members"] or None, 60, "bob: carol left")
+    if roster(b)["held_changes"] < 2:
+        raise ProbeError("bob: the removal and the leave are not both held (%s)" % roster(b))
+
+    a.start()
+    a.wait_ready()
+    a.wait_mesh()
+    both = sorted([a.account, b.account])
+
+    def settled(u):
+        r = roster(u)
+        return r if sorted(r["members"]) == both and r["held_changes"] == 0 else None
+
+    ra = wait_for(lambda: settled(a), 120, "alice: the changes folded into her statement")
+    rb = wait_for(lambda: settled(b), 60, "bob: the folded statement, nothing left unfolded")
+    if (ra["statement_epoch"], ra["changes_hash"]) != (rb["statement_epoch"], rb["changes_hash"]):
+        raise ProbeError("alice and bob hold different rosters: %s / %s" % (ra, rb))
+    if ra["roles"].get(b.account) != "admin":
+        raise ProbeError("alice: bob is no longer an admin after the fold (%s)" % ra["roles"])
+
+
 def scenario_call_grows_into_a_group(lab):
     """Make a group during a call (group-chat G022, o3): Alice calls Bob, then adds Carol, whom Bob does not know.
     With three in a call that started 1:1, everyone's call screen offers "Make a group…". Bob makes one: the
@@ -3300,6 +3352,7 @@ SCENARIOS = [
     ("group_owner_appoints_an_admin", scenario_group_owner_appoints_an_admin),
     ("call_grows_into_a_group", scenario_call_grows_into_a_group),
     ("group_call_guest", scenario_group_call_guest),
+    ("admin_removes_while_owner_is_away", scenario_admin_removes_while_owner_is_away),
     ("restore_signs_out_the_other_devices", scenario_restore_signs_out_the_other_devices),
     ("linked_devices_share_contact_edits", scenario_linked_devices_share_contact_edits),
     ("linked_devices_both_send", scenario_linked_devices_both_send),

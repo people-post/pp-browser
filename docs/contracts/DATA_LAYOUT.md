@@ -81,6 +81,14 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
                             # sync_state dissolved, the signed dissolve held in roster_statement_json) — a crash leaves all or none. A row is
                             # deleted once its copy reached the outbox; the rest are sent again when messaging comes up and after a failure
                             # (30 s, 2 min, 10 min). Additive table (CREATE IF NOT EXISTS)
+                            # group_changes (group_id, change_id, change_json, received_at, line_shown; PRIMARY KEY (group_id,
+                            # change_id); group-chat G018): the members' and admins' signed roster changes this device holds that the
+                            # owner has not folded yet, the change JSON as received (with the signer's card when one rode it). The roster
+                            # (group_rosters) is the held statement plus these; a change the statement folds, or one below its change
+                            # floor, is deleted; an ended group (G016) keeps none. line_shown: the group's chat has the change's line.
+                            # Not in the account locker (a restored device gets them from the member check, G013). Additive table
+                            # group_rosters.added_by TEXT NOT NULL DEFAULT '' (G019: who brought the member in; empty for the group's
+                            # first members. Added on open when missing — user_version unchanged)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
                             # messages.content_type 'deleted' = "delete for me" tombstone: id / seq / order kept, body = empty text (D103)

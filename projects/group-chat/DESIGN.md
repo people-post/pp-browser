@@ -422,7 +422,7 @@ Accepted 2026-11-05, not built. Sketches to settle in each phase ([PHASES § O](
 
 ### The owner's statement (G012, extended by G018)
 
-The statement as built, with these fields added inside what the owner signs. **The engine is built** (o2, not wired: `lib/messaging/GroupRosterStatement.*`); until o2 wires it, the workflow signs these fields empty.
+The statement as built, with these fields added inside what the owner signs. **Built and wired** (o2: `lib/messaging/GroupRosterStatement.*`; the owner's device signs them through `group_roster_sync::OwnerDraft`). Normative wire: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
 
 | Field | Meaning |
 |---|---|
@@ -432,9 +432,10 @@ The statement as built, with these fields added inside what the owner signs. **T
 | `title`, `title_version` | the group's name and its version (R4); as `group_renamed` today |
 | `removed[]` | `{identity, removal, by}`: accounts removed and not re-admitted (G018 R2, G020); `removal` is the id of the `remove` change a re-admit names |
 | `links[]` | live links: `{link_id, secret_hash, maker, expires_at, max_uses?}` (G021); `max_uses` omitted (0) means no limit |
-| `folded[]` | ids of **every** change the owner has folded, in this statement and earlier ones (carried forward, so a device that missed a statement still drops what it folded) |
+| `folded[]` | `{id, base_epoch}` of **every** change the owner has folded, in this statement and earlier ones (carried forward, so a device that missed a statement still drops what it folded) — but none whose `base_epoch` is below the floor; `base_epoch` as the change states it, at most the epoch of the statement that folded it |
+| `change_floor_epoch` | a change made against an older statement (`base_epoch` below it) is dropped as too old, so `folded` need not name it. Folding at epoch e raises it to e − `kChangeFloorLag` (32), never lower |
 
-JSON omits `added_by`, `title`/`title_version`, `removed`, `links` and `folded` when empty.
+JSON omits `added_by`, `title`/`title_version`, `removed`, `links`, `folded` and `change_floor_epoch` when empty or 0.
 
 **Sign bytes v3** — the account key (ML-DSA-65) signs, every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by id):
 
@@ -446,10 +447,13 @@ preset
 title, title_version
 removed count, then per entry: identity, removal, by
 link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none)
-folded count, then each id
+folded count, then per entry: id, base_epoch
+change_floor_epoch
 ```
 
-Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id. v2 statements no longer verify (clean cutover).
+Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id, a folded entry below the floor, and a floor above the epoch. v2 statements no longer verify (clean cutover).
+
+**Why 32 (`kChangeFloorLag`).** Every statement is one act of the owner (an add, a removal, a role, a fold), so 32 statements is weeks of a busy group's life — far longer than a change spends in flight from a device that was offline — while `folded`, which rides every statement (every roster event and `member_joined`), names only the changes of the last 32 statements: about 80 bytes each, so a few kilobytes even for a group folding several changes a statement. A larger lag makes `folded` grow with it for no gain a user would notice; a smaller one turns a device offline over a few owner acts into lost changes.
 
 ### Change (G018)
 
@@ -504,13 +508,22 @@ then the body by change:
   - **R5:** the statement's members that stand, then the adds in change-id order, repeated until nothing more comes in: an add counts once its signer is in and takes a place while fewer than 50 are in.
   - **R4:** among valid renames above the statement's `title_version`: the highest version, then the higher role, then the lower change id.
   - **Links:** a `link_add` (per preset) whose id is not taken; a `link_revoke` by the link's maker, an admin or the owner. A link is live while not revoked, not expired, and its maker is in the group.
+- **Floor:** a change whose `base_epoch` is below the latest statement's `change_floor_epoch` is dropped (`TooOld`) before any rule runs.
 - **Fold** (`FoldChanges`, owner side): the next statement (epoch + 1) holds the computed members (with `added_by`), removed, live links and title, and `folded` = the earlier `folded` plus every change the owner held except those that may still come to count (no card, a signer whose add has not arrived, a revoke of an unknown link). Void changes are folded too, so they stay void: a demoted admin's backdated removal must not count again if the owner later reappoints them.
+
+### Wiring (o2, built)
+
+- **Storage:** `group_changes` in profile.db (group_id, change_id, change_json, received_at, line_shown) and `group_rosters.added_by` ([DATA_LAYOUT](../../docs/contracts/DATA_LAYOUT.md)). Changes are not in the account locker.
+- **One apply path** (`group_roster_sync::ApplyView`): whenever the statement or the held changes change, the roster store becomes the held statement plus the held changes (`CheckChanges` against the kept cards and the carried ones, `ComputeRosterChecked`): members with role, joined_at and added_by (the contact ids kept), owner, epoch, preset, a newer title. Dropped changes go. It leaves the roster alone with no statement held or with one older than the roster's epoch (an owner event applied whose statement was not kept). Every path ends here: roster events (`KeepCarriedStatement`), `group_roster_statement`, settings, member check replies, a received change, a card that arrived.
+- **Receive** (`group_change`, `RelayReceivePipeline::ApplyGroupChange`): from the signer or a member handing it on, to a member; kept when it proves itself or when no card lists its device (`NoCard`: the device is asked for its card; when a newer card is kept the groups holding that signer's changes are recomputed); forged: refused. A change that counts gets its line once (`line_shown`): a leave as `member_left`, a removal as `member_removed` with `by`, an add as `member_joined`. A recompute that takes us out marks the group `removed` (read-only, G020 3) and notices it like the owner's removal.
+- **Producers:** `LeaveGroup` signs the leave (`DraftLeave`: `adds` the held adds of us, `keeps` our own held changes), holds it, fans it out, recomputes; the owner cannot. `RemoveMemberByIdentity`: the owner's removal stays `member_removed` + the re-signed statement, its own `remove` held first so the statement folds it (the `removed` entry names its id); an admin's is `RemoveAsAdmin` — `DraftRemove` (refused unless `GroupAllows(Remove, our role, preset, target role)`), held, sent to the remaining members first and then the removed account.
+- **Owner fold:** every statement the owner signs is `OwnerDraft`: its roster rows (its own edits in), the removed the changes leave, the live links of makers still in, `FoldInto` (folded + floor), at one past the held epoch when it says something new. Triggered a few seconds (3 s) after a change reaches the owner's device (`ScheduleFold`), at messaging start (`FoldHeldChanges`), and before answering a member check; sent as `group_roster_statement`.
 
 ### Carrying the state and syncing
 
-- **Each group copy's plaintext** (inside the AEAD) carries `group_id`, the sender's `statement_epoch` and `changes_hash`: lowercase hex of BLAKE2b-256 over `"pp-browser:group-changes-v1"` (u32 BE length then bytes), the count (u64 BE), then each distinct id (u32 BE length then bytes) in sorted order — of the changes the device holds unfolded (`GroupRosterView::HeldIds`, `group_change::ChangesHash`).
+- **Each group copy's plaintext** (inside the AEAD, `group_copy_version` 2) carries `group_id`, the sender's `statement_epoch` and `changes_hash`: lowercase hex of BLAKE2b-256 over `"pp-browser:group-changes-v1"` (u32 BE length then bytes), the count (u64 BE), then each distinct id (u32 BE length then bytes) in sorted order — of the changes the device holds unfolded (`GroupRosterView::HeldIds`, `group_change::ChangesHash`; the store holds exactly those).
 - **The relay sees no group (G018 item 7, built):** the envelope's `route` carries no `group_id` (sign v4), and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ lower account ‖ higher account)) + `:from:{sender_device}` — [§ Stream id](#stream-id).
-- **A receiver that differs** sends `group_roster_request {group_id, request_id, statement_epoch, changes_hash}` (G013's control-lane request). The reply carries the latest statement and the changes the asker lacks (bounded; the asker asks again for more).
+- **A receiver behind the sender** — a lower statement epoch, or the same with another hash; not a sender behind us, which asks when our copy reaches it — sends `group_roster_request {group_id, request_id, roster_epoch, statement_epoch, changes_hash, after?}` (G013's control-lane request) to that sender, at most once per group every 30 s (`CatchUpLimiter`), with the group staying active (a catch-up does not stop sends; a G013 check in progress is not overridden). The reply carries the latest statement and, when the hashes differ, the changes the replier holds after `after` in id order — at most 64 and about 96 KB, each signer's card once (the asker stores it with each of that signer's changes), `more` when cut; the asker applies them through `ApplyView` and asks again after the last id. Without the asker's ids the replier cannot tell which ones it lacks: it sends what it holds, paged. G013's own check carries the same state, so a restored device gets the changes too.
 
 ### Invites (G019)
 
@@ -529,7 +542,7 @@ pp://join/<base64url(link_id[16] || secret[16] || expires_at[8] || maker account
 
 ### Removal (G020)
 
-- **The `remove`** goes to the remaining members first.
+- **The `remove`** goes to the remaining members first. Built (o2) for admins; the owner's removal is `member_removed` with the statement re-signed (its `remove` folded at once).
 - **The removed account** gets the change itself and shows "You were removed by {signer}", the G013 removed state.
 - **Bulk actions** are one `remove` per account (or one re-invite each), sent together.
 
