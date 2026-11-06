@@ -170,7 +170,11 @@ bool IsInertAttachmentExtension(const std::string& ext) {
 }
 
 std::string LowerFilenameExtension(const std::string& filename) {
-  std::string ext = std::filesystem::path(filename).extension().string();
+  // By hand, not std::filesystem::path: on Windows a narrow UTF-8 name is read as the ANSI code page and a CJK name throws.
+  const size_t slash = filename.find_last_of("/\\");
+  const size_t base = slash == std::string::npos ? 0 : slash + 1;
+  const size_t dot = filename.rfind('.');
+  std::string ext = dot == std::string::npos || dot <= base ? std::string() : filename.substr(dot);
   if (ext.size() < 2 || ext.size() > 8 || ext[0] != '.') {
     return {};
   }

@@ -245,8 +245,10 @@ TEST(AttachmentOpenFilenameTest, TheNamedLinkHoldsTheViewsBytes) {
       AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string());
   EXPECT_EQ(std::filesystem::path(opened).filename().string(), "My Song.mp3");
   EXPECT_EQ(std::filesystem::path(opened).parent_path().string(), AttachmentOpenLinkDir(dir.string(), "t1", hash));
-  std::ifstream in(opened, std::ios::binary);
-  EXPECT_EQ(std::string(std::istreambuf_iterator<char>(in), {}), "ID3 sound");
+  {
+    std::ifstream in(opened, std::ios::binary);
+    EXPECT_EQ(std::string(std::istreambuf_iterator<char>(in), {}), "ID3 sound");
+  }  // closed: Windows cannot remove an open file
   EXPECT_EQ(AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string()), opened);
   EXPECT_EQ(AttachmentLocalPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3"), view.string())
       << "the link folder is not taken for the view";
