@@ -12,9 +12,6 @@
 #import <objc/runtime.h>
 
 #include "foundation/platform/IosLocalNotifier.h"
-#if defined(PP_IOS_CALLKIT)
-#include "foundation/platform/IosCallSystemUi.h"
-#endif
 #include "foundation/platform/IosPushDeviceRegistrar.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 
@@ -142,10 +139,6 @@ PpNotificationCenterDelegate* g_center_delegate = nil;
                   object:nil
                    queue:nil
               usingBlock:^(NSNotification* /*note*/) {
-#if defined(PP_IOS_CALLKIT)
-                // A VoIP push that launched the app (P013).
-                pbr::InstallIosCallSystemUi();
-#endif
                 UIApplication* application = [UIApplication sharedApplication];
                 [[UNUserNotificationCenter currentNotificationCenter]
                     requestAuthorizationWithOptions:(UNAuthorizationOptionAlert |

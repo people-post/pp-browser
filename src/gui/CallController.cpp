@@ -807,7 +807,7 @@ void CallController::SyncRingtone() {
   }
   // CallRingtone::Stop is async (never joins on Accept/UI) so mobile is safe — see
   // CallRingtone.cpp Samsung Accept hang notes. Do not skip playback here.
-  // The phone's own call screen rings it (CallKit's ringtone): the app's stays quiet.
+  // The phone's own call screen rings it: the app's stays quiet.
   const bool should_ring = ring_.active && !system_call_screen_.SystemRings(presenter_.Screen().ring_call_id);
   if (should_ring && !ringtone_.IsPlaying()) {
     ringtone_.Start();
@@ -929,7 +929,7 @@ void CallController::ShowNotice(const CallNotice& notice) {
   }
   case CallNotice::Kind::IncomingCall: {
     if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
-      return; // the phone's own call screen rings it (CallKit, Android's call notification)
+      return; // the phone's own call screen rings it (Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     const std::string body =

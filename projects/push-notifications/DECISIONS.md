@@ -89,7 +89,7 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 ## P013 — CallKit + VoIP push on iPhone (where allowed)
 
 **Date:** 2026-10-23  
-**Status:** Accepted (product owner: alert push first, CallKit later — this is the later)  
+**Status:** Superseded by P015 (CallKit and PushKit were removed; the alert push of P012 is the only iOS call path)  
 **Decision:** iPhone builds with `PP_BROWSER_IOS_CALLKIT` (on by default; off for builds sold in China, where App Store review rejects CallKit) ring incoming calls on CallKit's screen — full screen, on the lock screen too, answered or declined there.
 - **Token:** PushKit gives a VoIP token, registered as a second device (`platform: ios_voip`, `device_id: <ios device id>.voip`). The relay sends that phone's urgent wakes (P012) to it as a VoIP push instead of the alert, and sends it nothing else.
 - **Push:** a VoIP push puts "Incoming call" on the CallKit screen at once, since iOS requires a call for every VoIP push, and wakes the app to sync. The app fills that call in with the ring it finds: caller name, video.
@@ -119,3 +119,10 @@ Every ring raises the "Incoming call" notice (`CallPresenter`), however its invi
 **Rationale:** on Android a call to a phone whose app was swiped away, or killed by the system, rang nowhere (the wake reached no native code), and a ring in the background was an ordinary banner. A call should ring like a call, and a stopped app is the common case on phones.  
 **Follow-ups:** an in-call foreground service (microphone in the background — done: p2p-av-calls V061); Android's Telecom (`ConnectionService`) for the system's call routing and Bluetooth answer.  
 **Cross-link:** `PpCallNotifications.java`, `AndroidCallSystemUi.cpp`, `CallSystemUiBridge` (`call_system_ui_bridge_test.cpp`), P013.
+
+## P015 — iOS calls ring by the alert only; a tap is matched by `wake_hint`
+
+**Status:** Accepted (supersedes P013)  
+**Decision:** iOS has no CallKit, PushKit or `ios_voip` binding; the app's own ring takes every call (`ICallSystemUi::Available()` is false there). The sender adds an unsigned `wake_hint` to the send record (an invite's `call_id`, a message's `message_id`), the relay copies it into the push, and a tap records it in `PendingNotificationTap` (newest tap only; 90 s for a call, 180 s for a message). After the PIN unlock and sync, the ring with that `call_id` (a push without a hint: the first ring) or the synced message with that `message_id` opens its chat, once; an expired tap is dropped. While a fresh call tap waits, the PIN screen reads the call text.  
+**Rationale:** CallKit is rejected by some storefronts and would need a second build variant; one alert path for every iOS build is simpler, and an id the relay copies keeps the push free of chat or caller data.  
+**Cross-link:** `docs/contracts/SERVICE_ENDPOINTS.md` (push wake types); `pending_notification_tap_test.cpp`, `P2pRelayWireTest.WakeHintIsARelayHintOutsideTheEnvelope`.

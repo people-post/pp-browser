@@ -11,7 +11,7 @@
 namespace pbr {
 
 /**
- * Keeps the phone's own call screen (ICallSystemUi: CallKit, Android's incoming-call notification) in
+ * Keeps the phone's own call screen (ICallSystemUi: Android's incoming-call notification) in
  * step with CallPresenter's screen, and turns what the user does there into the presenter's buttons
  * (P013, P014).
  *

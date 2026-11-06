@@ -26,7 +26,7 @@ Voice/video capture and playback go through **SDL3 audio/camera** in [`MediaEngi
 | Windows | WASAPI | No | OS microphone privacy (also voice messages) |
 | macOS | CoreAudio | No | Mic (calls and voice messages) / camera + **macOS 15+ Local Network** (`NSLocalNetworkUsageDescription` in [`packaging/macos/Info.plist`](../../packaging/macos/Info.plist)) |
 | Android | AAudio / OpenSL ES | No | Manifest `RECORD_AUDIO` (calls and voice messages) + `CAMERA` + runtime; link `mediandk` + `camera2ndk` |
-| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` (calls **and voice messages**) + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` (+ `voip` on CallKit builds) |
+| iOS | CoreAudio | No | `NSMicrophoneUsageDescription` (calls **and voice messages**) + `NSCameraUsageDescription`; `AVAudioSession` VoIP/play-and-record; `UIBackgroundModes` `audio` |
 
 **Voice messages** (`lib/media`: `VoiceRecorder`, `VoicePlayer`, `OggOpus`): Mac, Windows, iOS and Android record (Opus 24 kbps, Ogg) and play; **Linux has no microphone button and no player** (`VoiceMessagesSupported()` is false, a received voice message is a file row). Both go through `MediaDeviceArbiter` (the microphone is exclusive with calls; playback is refused while a call or ringtone holds the speaker, and a ringing call stops a recording, keeping what was said, and a clip). The first press only asks for the microphone (`MicPermission`: AVCaptureDevice on Apple, `checkSelfPermission` / `SDL_RequestAndroidPermission` on Android; Windows and Linux have no per-app prompt) and then says to press again; a refusal is told as such. iOS uses its own `playback` audio session (`VoiceAudioSession_Ios.mm`, loudspeaker, audible with the silent switch on), separate from `AudioSession`; Android plays at media volume on the speaker (SDL's media role, nothing to switch).
 
@@ -105,7 +105,7 @@ iOS builds use CMake + Xcode toolchains from the repo root (no separate Gradle-s
 | Renderer | OpenGL 3.3 | OpenGL ES 3 (SDL) |
 | libp2p | Built and linked | Built and linked |
 | MCP | stdio + HTTP | HTTP URL only |
-| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler`; call invites arrive as a visible alert (P012), or on CallKit builds as a VoIP push that rings CallKit's screen (P013, `CallSystemUi_Ios.mm`); `IosLocalNotifier` banners |
+| Push | N/A (desktop local notify) | APNs token via `IosPushDeviceRegistrar` + silent wake → `BackgroundSyncScheduler`; call invites arrive as a visible alert (P012) whose tap, after the PIN unlock, routes to the ringing call (P015); `IosLocalNotifier` banners |
 | HTTPS (curl + BoringSSL) | Secure Transport (macOS) | `os::ApplyPlatformCurlSsl` → Security.framework `SecTrust` verify callback (system roots / MDM); no bundled CA file |
 
 ### Mobile HTTPS trust (curl + BoringSSL)
