@@ -1573,7 +1573,8 @@ Roe<void> GroupMembershipWorkflow::StartRosterCheckAttempt(const std::string& gr
     auto control = GroupMembershipCodec::BuildSystemMessage(
         std::string(), GroupMembershipControlType::GroupRosterRequest, "Checking group members", detail, *local);
     if (control) {
-      sends.push_back(ControlSend{.peer_identity = identity, .control = std::move(*control)});
+      // With our card: the asker may be a restored device its members do not know yet (G013).
+      sends.push_back(ControlSend{.peer_identity = identity, .control = std::move(*control), .with_card = true});
     }
   }
   mesh_messaging_.SendControlToMany(
@@ -1605,7 +1606,7 @@ Roe<void> GroupMembershipWorkflow::SendRosterControl(const std::string& peer_ide
   if (!control) {
     return control.error();
   }
-  return mesh_messaging_.SendControl(peer_identity, *control);
+  return mesh_messaging_.SendControl(peer_identity, *control, std::nullopt, false, true);
 }
 
 Roe<std::vector<AccountStateGroup>> GroupMembershipWorkflow::StateGroups() const {

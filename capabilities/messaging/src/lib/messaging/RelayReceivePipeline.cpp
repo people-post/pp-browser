@@ -696,12 +696,14 @@ Roe<bool> RelayReceivePipeline::VerifySignature(const RelayEnvelope& envelope,
     }
   }
   const AccountCard* card = carried ? &*carried : (kept ? &*kept : nullptr);
-  if (!card) {
-    return Error("No account card for the sender");
-  }
-  const AccountCardDevice* device = FindCardDevice(*card, envelope.sender_device);
+  const AccountCardDevice* device = card ? FindCardDevice(*card, envelope.sender_device) : nullptr;
   if (!device) {
-    return Error("The sending device is not on the sender's account card");
+    // Nothing to check it with: ask the sending device for its card, which a later envelope then verifies with.
+    if (on_unknown_sender_device_ && envelope.body.e2e.sender_card_at &&
+        (!card || *envelope.body.e2e.sender_card_at > card->issued_at)) {
+      on_unknown_sender_device_(target.peer_identity_value, envelope.sender_device, *envelope.body.e2e.sender_card_at);
+    }
+    return Error(card ? "The sending device is not on the sender's account card" : "No account card for the sender");
   }
   auto verified = EnvelopeSigner::Verify(envelope, device->signing_public_key_b64);
   if (verified && *verified && carried && on_sender_card_) {

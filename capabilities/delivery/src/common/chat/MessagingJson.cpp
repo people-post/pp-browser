@@ -584,6 +584,9 @@ Object RelayWireSendRecordToJson(const RelayWireSendRecord& record) {
   if (record.urgent) {
     json.set("urgent", true);
   }
+  if (record.ttl_s > 0) {
+    json.set("ttl_s", record.ttl_s);
+  }
   return json;
 }
 
@@ -609,6 +612,7 @@ Roe<RelayWireSendRecord> RelayWireSendRecordFromEnvelope(const RelayEnvelope& en
   record.index_key = index_key;
   record.blob_b64 = ::pp::Base64Encode(bytes);
   record.urgent = envelope.relay_wake_urgent;
+  record.ttl_s = envelope.relay_ttl_s;
   return record;
 }
 

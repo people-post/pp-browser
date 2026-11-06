@@ -164,6 +164,15 @@ public:
     on_sender_card_version_ = std::move(callback);
   }
   /**
+   * An envelope that could not be checked: no card kept for its sender, or the sending device not on it, and no
+   * card riding it (lane messages carry ours only when the peer may lack it). `(account, sending device,
+   * issued_at)` from its `sender_card_at` — the caller asks that device for the card. Unverified: rate-limit it.
+   */
+  void SetOnUnknownSenderDevice(
+      std::function<void(const std::string& account, const std::string& device, int64_t issued_at)> callback) {
+    on_unknown_sender_device_ = std::move(callback);
+  }
+  /**
    * The issue time a carried card of an account must reach to speak for it (PeerCards::Floor): a restored
    * device keeps no cards, only how new the ones it had were. None: 0.
    */
@@ -194,6 +203,7 @@ private:
   std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
   std::function<void(const AccountCard&)> on_sender_card_;
   std::function<void(const std::string&, const std::string&, int64_t)> on_sender_card_version_;
+  std::function<void(const std::string&, const std::string&, int64_t)> on_unknown_sender_device_;
   std::function<int64_t(const std::string&)> account_card_floor_;
   std::function<void(const GroupMembershipCodec::MemberJoinedEntry&)> on_roster_member_;
 

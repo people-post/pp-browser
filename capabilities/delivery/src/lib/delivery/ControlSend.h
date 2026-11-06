@@ -17,8 +17,10 @@ struct ControlSend {
   ThreadMessage control;
   /** A session init the caller holds for this pair (its media-key wrap opened the session); rides the send. */
   std::optional<std::string> key_init_b64;
-  /** Wake the peer at once, the platform's most urgent push (an incoming call's). */
+  /** Wake the peer at once, the platform's most urgent push (an incoming call's). Carries our card too. */
   bool urgent = false;
+  /** Our account card rides it whatever the peer was sent before: the peer may hold none of our cards. */
+  bool with_card = false;
 };
 
 /** How one recipient's send went: queued (the outbox has it), or why not (no route, no session). */
