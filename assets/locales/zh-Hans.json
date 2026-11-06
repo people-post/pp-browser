@@ -1420,8 +1420,6 @@
     "home.suggestion.get_started_prompt": "帮我快速上手：推荐三个我可以问你的问题，每个举一个例子。",
     "home.suggestion.capabilities_prompt": "你能做什么？",
     "home.title": "今天",
-    "home.ai.title": "问我任何事",
-    "home.ai.subtitle": "找人、看新闻、帮你操作 App…",
     "home.date": "{month}{day}日 {weekday}",
     "home.weekday.0": "星期日",
     "home.weekday.1": "星期一",

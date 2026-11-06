@@ -1464,8 +1464,6 @@
         "Help me get started — suggest three useful things I can ask, with an example for each.",
     "home.suggestion.capabilities_prompt": "What can you do?",
     "home.title": "Today",
-    "home.ai.title": "Ask me anything",
-    "home.ai.subtitle": "Find people, catch up on the news, get things done in the app…",
     "home.date": "{weekday}, {month} {day}",
     "home.weekday.0": "Sunday",
     "home.weekday.1": "Monday",
