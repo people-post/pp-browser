@@ -100,19 +100,30 @@ ShareWord OutputPortWord() {
 /**
  * The device the session was using went away while the OS had the session: iOS sends no "ended" for that
  * (route_disconnected), and the app stays in the foreground, so nothing else resumes — retry shortly, and once more.
- * A resume only happens when the session can be had (a phone call keeps it), so not while CallKit owns the session
- * (ResumeIfSessionFree does not test it then). One serial queue: the second try sees the first's resume.
+ * A resume only happens when the session can be had (a phone call keeps it): without CallKit by trying setActive,
+ * under CallKit by its didActivate still standing. One serial queue: the second try sees the first's resume.
  */
 void ResumeSoonIfSessionFree() {
-  {
-    std::lock_guard<std::mutex> lock(g_session_mu);
-    if (g_system_managed) {
-      return;
-    }
-  }
   static dispatch_queue_t queue = dispatch_queue_create("pp.audio.resume", DISPATCH_QUEUE_SERIAL);
   for (const int64_t ms : {300, 1000}) {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), queue, ^{ ResumeIfSessionFree(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), queue, ^{
+      bool managed = false;
+      bool ours = false;
+      {
+        std::lock_guard<std::mutex> lock(g_session_mu);
+        managed = g_system_managed;
+        ours = g_system_managed && g_system_active;
+      }
+      if (!managed) {
+        ResumeIfSessionFree();
+        return;
+      }
+      // CallKit owns the session and never sends an "ended" for a route that went away either. The session is
+      // still ours unless CallKit deactivated it (a phone call took over: then its didActivate resumes us).
+      if (ours && IsInterrupted()) {
+        ResumeAfterInterruption("route disconnected under CallKit");
+      }
+    });
   }
 }
 
