@@ -122,6 +122,21 @@ bool MayAdmit(const GroupRosterView& view, const std::string& local_identity) {
   return self && GroupAllows(GroupAction::Invite, self->role, view.preset);
 }
 
+/**
+ * The group's statement or a held change names `link_id` at all (a text search, no signature checked): a stranger's
+ * request for a link no group here knows costs no roster computation.
+ */
+bool MayName(IGroupRosterStore& roster, const std::string& group_id, const std::string& link_id) {
+  if (auto metadata = roster.LoadMetadata(group_id);
+      metadata && *metadata && (*metadata)->roster_statement_json.find(link_id) != std::string::npos) {
+    return true;
+  }
+  auto held = roster.ListGroupChanges(group_id);
+  return held && std::any_of(held->begin(), held->end(), [&link_id](const StoredGroupChange& change) {
+           return change.change_json.find(link_id) != std::string::npos;
+         });
+}
+
 } // namespace
 
 std::string RefusalToString(const GroupJoinRefusal reason) {
@@ -226,6 +241,9 @@ std::optional<LinkGroup> FindLinkGroup(IGroupRosterStore& roster, const std::str
     return std::nullopt;
   }
   for (const std::string& group_id : *ids) {
+    if (!MayName(roster, group_id, link_id)) {
+      continue; // the roster's checks verify every held change: only for a group whose text names the link
+    }
     std::optional<GroupRosterView> view = group_roster_sync::CurrentView(roster, group_id, cards, now_ms);
     if (view && (view->LiveLink(link_id) || view->EndedLink(link_id))) {
       return LinkGroup{.group_id = group_id, .view = std::move(*view)};
