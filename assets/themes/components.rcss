@@ -11944,7 +11944,8 @@ textarea:composing ~ .prompt-composer-label,
   font-weight: bold;
 }
 
-/* Photos and videos: three square cells a row (padding-top in % follows the grid's width). */
+/* Photos and videos: three cells a row, each a fixed 118dp tall (a % padding-top is not resolved against the width
+   here, so the cell would collapse and a tall picture would run out of it); the frame clips the picture. */
 .storage-grid {
   display: flex;
   flex-direction: row;
@@ -11959,8 +11960,8 @@ textarea:composing ~ .prompt-composer-label,
   width: 33.333%;
   min-width: 0;
   max-width: 33.333%;
-  height: 0;
-  padding: 33.333% 0 0 0;
+  height: 118dp;
+  padding: 0;
   margin: 0;
   border: 0;
   background-color: transparent;
