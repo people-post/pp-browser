@@ -710,6 +710,9 @@ Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::s
   if (profile_dir.empty() || thread_id.empty()) {
     return Error("Attachment cache profile directory and thread_id are required");
   }
+  if (const AttachmentPlatform platform = CurrentAttachmentPlatform(); platform.forget_opened_copies) {
+    platform.forget_opened_copies(); // the handed-out copies are not kept per chat: all of them go
+  }
   const auto root = std::filesystem::path(AttachmentBlobRoot(profile_dir, thread_id));
   std::error_code ec;
   if (std::filesystem::exists(root, ec)) {
@@ -737,6 +740,9 @@ Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::s
 
 Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir) {
   AttachmentPlaintextMemoryCache::Instance().Clear();
+  if (const AttachmentPlatform platform = CurrentAttachmentPlatform(); platform.forget_opened_copies) {
+    platform.forget_opened_copies(); // the copies handed to other apps go with the views they were made from
+  }
   if (profile_dir.empty()) {
     return Error("Attachment cache profile directory is required");
   }

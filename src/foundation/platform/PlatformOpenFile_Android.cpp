@@ -47,4 +47,25 @@ bool PlatformOpenFile(const std::string& path) {
 
 void SetPlatformOpenFileSoundHooks(std::function<void()> /*begin*/, std::function<void()> /*end*/) {}
 
+void PlatformForgetOpenedFiles() {
+  JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv()); // attaches a worker thread when it is not yet
+  jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (env == nullptr || activity == nullptr) {
+    return;
+  }
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID mid = cls != nullptr ? env->GetStaticMethodID(cls, "clearOpenLinks", "()V") : nullptr;
+  if (mid != nullptr) {
+    env->CallStaticVoidMethod(cls, mid);
+  }
+  if (env->ExceptionCheck()) {
+    env->ExceptionClear();
+    logging::getLogger("attachment").warning << "attachment open links: could not clear";
+  }
+  if (cls != nullptr) {
+    env->DeleteLocalRef(cls);
+  }
+  env->DeleteLocalRef(activity);
+}
+
 } // namespace pbr

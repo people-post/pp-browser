@@ -26,6 +26,7 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
       .image_thumbnail_jpeg = [](const std::vector<uint8_t>& image_bytes, int max_dimension) {
         return MakeImageThumbnailJpeg(image_bytes, max_dimension);
       },
+      .forget_opened_copies = [] { PlatformForgetOpenedFiles(); },
   });
   // A sound or video shown in the app plays like a voice message: on the loudspeaker, also with the silent switch on
   // (never while a call holds the session).

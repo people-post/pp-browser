@@ -37,4 +37,6 @@ bool PlatformOpenFile(const std::string& path) {
 
 void SetPlatformOpenFileSoundHooks(std::function<void()> /*begin*/, std::function<void()> /*end*/) {}
 
+void PlatformForgetOpenedFiles() {} // the system app is handed the view itself: nothing else to remove
+
 } // namespace pbr
