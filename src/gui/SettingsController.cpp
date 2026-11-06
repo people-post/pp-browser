@@ -2146,6 +2146,10 @@ void SettingsController::RequestSyncLayout(const char* reason) {
   }
 }
 
+void SettingsController::OpenChangePin() {
+  OpenSecurityPage("change_pin");
+}
+
 Roe<void> SettingsController::ForgetToolPermissions() {
   auto* security = dynamic_cast<SecuritySettingsSection*>(FindHandler("security"));
   if (!security) {

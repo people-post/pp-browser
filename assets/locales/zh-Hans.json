@@ -309,6 +309,7 @@
     "settings.security.recovery.shown_hint": "两分钟后自动隐藏。",
     "settings.security.recovery.none": "这个账号创建于恢复短语之前，没有恢复短语。",
     "settings.security.recovery.not_ready": "先解锁，才能查看恢复短语。",
+    "settings.security.recovery.set_pin_first": "先设置你自己的 PIN，再查看恢复短语",
     "settings.security.recovery.pin_required": "输入 PIN 才能查看恢复短语。",
     "settings.security.copy.help": "加密的账号副本，需恢复短语才能打开。",
     "settings.security.copy.save": "保存账号副本…",

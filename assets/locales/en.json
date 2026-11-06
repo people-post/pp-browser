@@ -313,6 +313,7 @@
     "settings.security.recovery.shown_hint": "It hides by itself in two minutes.",
     "settings.security.recovery.none": "This account was created before recovery phrases and has none.",
     "settings.security.recovery.not_ready": "Unlock first to see your recovery phrase.",
+    "settings.security.recovery.set_pin_first": "Set your own PIN first, then you can see the recovery phrase",
     "settings.security.recovery.pin_required": "Enter your PIN to see your recovery phrase.",
     "settings.security.copy.help": "An encrypted copy of your account. Opens only with your recovery phrase.",
     "settings.security.copy.save": "Save a copy of my account…",
