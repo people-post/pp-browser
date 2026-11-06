@@ -23,12 +23,12 @@ TEST(LocalizationServiceTest, LoadsEnglishAndChineseAndFallsBack) {
 
   loc.SetPreferredLanguage("en");
   EXPECT_EQ(loc.ResolvedLanguage(), "en");
-  EXPECT_EQ(loc.Tr("nav.home"), "PP Assistant");
+  EXPECT_EQ(loc.Tr("nav.home"), "AI");
   EXPECT_EQ(loc.Tr("missing.key.xyz"), "missing.key.xyz");
 
   loc.SetPreferredLanguage("zh-Hans");
   EXPECT_EQ(loc.ResolvedLanguage(), "zh-Hans");
-  EXPECT_EQ(loc.Tr("nav.home"), "PP助手");
+  EXPECT_EQ(loc.Tr("nav.home"), "AI");
   EXPECT_EQ(loc.Tr("common.cancel"), "取消");
 }
 
@@ -50,7 +50,7 @@ TEST(LocalizationServiceTest, SystemResolveAndInterpolation) {
   EXPECT_NE(loc.Tr("nav.me").find("Me"), std::string::npos);
 
   const std::string localized = loc.LocalizeText("Hello {{i18n:nav.home}}!");
-  EXPECT_EQ(localized, "Hello PP Assistant!");
+  EXPECT_EQ(localized, "Hello AI!");
 
   loc.ClearSystemLocalesForTest();
 }
