@@ -7692,6 +7692,21 @@ input.checkbox {
   min-width: 0;
   padding: 14dp 0;
   cursor: pointer;
+  position: relative;
+}
+
+/* The drag knob: 14dp round (12dp + the 1dp ring), centred on the end of the filled part (left is set with the fill width). Dark on a
+   received bubble; the own-bubble white is in the colour files. */
+.chat-audio-knob {
+  position: absolute;
+  top: 9dp;
+  width: 12dp;
+  height: 12dp;
+  margin-left: -7dp;
+  border-radius: 7dp;
+  background-color: #1f2937;
+  border: 1dp rgba(255, 255, 255, 0.55);
+  pointer-events: none;
 }
 
 .chat-audio-seek .chat-voice-track {

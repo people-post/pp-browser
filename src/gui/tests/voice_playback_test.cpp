@@ -2,6 +2,12 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "lib/voice/tests/voice_test_support.h"
 
+#include "gui/chat/VoiceBubble.h"
+
+#include <ui/core/Core.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/paint/RenderInterface.h>
 #include <gtest/gtest.h>
 
 #include <deque>
@@ -53,13 +59,14 @@ struct Env {
     std::mutex mutex;
     std::deque<std::function<void()>> tasks;
   };
+  std::function<ui::Element*(const std::string&)> lookup; // the page's elements; none by default
   Env() {
     VoicePlaybackPorts ports;
     ports.max_seconds = []() { return 120; };
     ports.resolve = [this](const std::string&, std::function<void(std::optional<std::string>)> done) {
       pending.push_back(std::move(done));
     };
-    ports.element = [](const std::string&) -> ui::Element* { return nullptr; };
+    ports.element = [this](const std::string& id) -> ui::Element* { return lookup ? lookup(id) : nullptr; };
     ports.say = [this](const std::string& text) { said.push_back(text); };
     ports.call_live = [this]() { return call_live; };
     ports.post_ui = [q = queue](std::function<void()> task) {
@@ -247,6 +254,52 @@ TEST(VoicePlayback, SeekingASoundFileJumpsToTheFractionOfItsLength) {
   EXPECT_DOUBLE_EQ(env.files->seeks[3], 30.0);
   EXPECT_FALSE(env.playback->SeekFile("other", 0.5)) << "not the one playing";
   EXPECT_EQ(env.files->seeks.size(), 4u);
+}
+
+class NullRender : public ui::RenderInterface {
+public:
+  ui::CompiledGeometryHandle CompileGeometry(ui::Span<const ui::Vertex>, ui::Span<const int>) override { return 1; }
+  void RenderGeometry(ui::CompiledGeometryHandle, ui::Vector2f, ui::TextureHandle) override {}
+  void ReleaseGeometry(ui::CompiledGeometryHandle) override {}
+  ui::TextureHandle LoadTexture(ui::Vector2i&, const ui::String&) override { return 0; }
+  ui::TextureHandle GenerateTexture(ui::Span<const ui::byte>, ui::Vector2i) override { return 1; }
+  void ReleaseTexture(ui::TextureHandle) override {}
+  void EnableScissorRegion(bool) override {}
+  void SetScissorRegion(ui::Rectanglei) override {}
+};
+
+// The drag knob rides the end of the fill: progress sets its left to the same percentage as the fill's width.
+TEST(VoicePlayback, TheKnobMovesWithThePlaybackProgress) {
+  NullRender renderer;
+  ui::SetRenderInterface(&renderer);
+  ASSERT_TRUE(ui::Initialise());
+  ui::Context* context = ui::CreateContext("voice-knob-test", {400, 300});
+  ASSERT_NE(context, nullptr);
+  ui::ElementDocument* doc = context->LoadDocumentFromMemory(
+      "<rml><body>" + AudioFileBubbleRml("f1", "f1", AudioCardFace{.title = "x.mp3"}, {}) + "</body></rml>");
+  ASSERT_NE(doc, nullptr);
+  ui::Element* knob = doc->GetElementById("vn-f1");
+  ui::Element* fill = doc->GetElementById("vf-f1");
+  ASSERT_NE(knob, nullptr);
+  ASSERT_NE(fill, nullptr);
+  EXPECT_EQ(knob->GetProperty("left")->ToString(), "0%");
+  {
+    Env env;
+    env.lookup = [doc](const std::string& id) { return doc->GetElementById(id); };
+    env.playback->ToggleFile("f1");
+    env.pending[0](std::string("/views/a.mp3"));
+    env.files->callbacks.on_progress(30000, 120000);
+    env.Pump();
+    EXPECT_EQ(fill->GetProperty("width")->ToString(), "25%");
+    EXPECT_EQ(knob->GetProperty("left")->ToString(), "25%");
+    EXPECT_TRUE(env.playback->SeekFile("f1", 0.75)); // a drag's release moves both to the new spot
+    EXPECT_EQ(fill->GetProperty("width")->ToString(), "75%");
+    EXPECT_EQ(knob->GetProperty("left")->ToString(), "75%");
+    env.lookup = nullptr; // the page goes away before the player does
+  }
+  ui::RemoveContext("voice-knob-test");
+  ui::Shutdown();
+  ui::SetRenderInterface(nullptr);
 }
 
 } // namespace

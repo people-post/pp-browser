@@ -399,6 +399,9 @@ void VoicePlayback::ShowSeekPreview(const double fraction) {
   if (ui::Element* fill = ports_.element("vf-" + key)) {
     fill->SetProperty("width", std::to_string(VoiceBubbleFillPercent(shown)) + "%");
   }
+  if (ui::Element* knob = ports_.element("vn-" + key)) {
+    knob->SetProperty("left", std::to_string(VoiceBubbleFillPercent(shown)) + "%");
+  }
   if (ui::Element* time = ports_.element("vt-" + key)) {
     time->SetInnerRML(VoiceBubbleTimeText(shown, shown.duration_ms));
   }
@@ -432,6 +435,9 @@ void VoicePlayback::Update(const std::string& message_id, const std::string& idl
   const VoiceBubbleState state = State(message_id);
   if (ui::Element* fill = ports_.element("vf-" + key)) {
     fill->SetProperty("width", std::to_string(VoiceBubbleFillPercent(state)) + "%");
+  }
+  if (ui::Element* knob = ports_.element("vn-" + key)) {
+    knob->SetProperty("left", std::to_string(VoiceBubbleFillPercent(state)) + "%");
   }
   if (ui::Element* time = ports_.element("vt-" + key)) {
     // The length from the name is only known to the bubble's first draw; back to idle, the clip's own length shows.

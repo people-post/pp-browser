@@ -92,7 +92,11 @@ std::string AudioFileBubbleRml(const std::string& message_id, const std::string&
   // The bar is 4dp thin: its wrapper is the 32dp hit area of a tap or drag (audio_seek_press follows the drag).
   html += "<div id=\"vk-" + key + "\" class=\"chat-audio-seek\" data-event-mousedown=\"audio_seek_press()\">";
   html += "<div class=\"chat-voice-track\"><div id=\"vf-" + key + "\" class=\"chat-voice-fill\" style=\"width: " +
-          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div></div>";
+          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
+  // The drag knob rides the end of the filled part (white on an own bubble, dark on a received one: see the theme);
+  // it sits outside the track (which clips) and lets the press through to the wrapper.
+  html += "<div id=\"vn-" + key + "\" class=\"chat-audio-knob\" style=\"left: " +
+          std::to_string(VoiceBubbleFillPercent(state)) + "%;\"></div></div>";
   const std::string time = started ? VoiceBubbleTimeText(state, face.duration_ms)
                                    : (face.duration_ms > 0 ? FormatVoiceDuration(face.duration_ms) : std::string());
   html += "<span id=\"vt-" + key + "\" class=\"chat-voice-time chat-audio-time\">" +
