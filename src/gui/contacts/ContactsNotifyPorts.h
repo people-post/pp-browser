@@ -11,6 +11,8 @@ namespace pbr {
  * first and calls `done` once the person is out, so the sheet can close.
  */
 struct GroupAdminCard {
+  /** "In this group" row: their role and who added them ("Member · Added by Ann"); the card shows whenever it is set. */
+  std::string role_text;
   bool can_reinvite = false;
   std::string reinvite_note;
   /** G017: Make admin, or Remove as admin when `is_admin`. */
