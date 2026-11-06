@@ -458,6 +458,18 @@ ChatController::ChatController()
   working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {
     return widgets_.Find(entry_id);
   });
+  working_set_.SetEntryLoader([this](const std::string& entry_id) -> std::optional<WorkingSetController::StoredEntry> {
+    if (!messaging_ready_ || !facade_ || ActiveThreadId().empty()) {
+      return std::nullopt;
+    }
+    auto found = facade_->GetMessage(ActiveThreadId(), entry_id);
+    if (!found || !found->has_value() || !(*found)->working_set_json || (*found)->working_set_json->empty()) {
+      log().warning << "Working set: entry " << entry_id << " not in thread " << ActiveThreadId();
+      return std::nullopt;
+    }
+    return WorkingSetController::StoredEntry{WorkingSetCandidatesFromJson(*(*found)->working_set_json),
+                                             (*found)->chat_actions};
+  });
   chrome_.SetAiAttachInfo([this]() {
     ChatThreadChrome::AiAttachInfo info;
     info.brief_preset = ResolvePreset(Store().Snapshot().config) == "brief";
