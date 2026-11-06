@@ -205,6 +205,18 @@ bool ShellCallChromeGesture::IsScrollRegion(ui::Element* target) const {
   return false;
 }
 
+bool ShellCallChromeGesture::IsMemberArea(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    if (node == root_) {
+      break;
+    }
+    if (node->IsClassSet("call-phone-group-body") || node->IsClassSet("call-phone-strip")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool ShellCallChromeGesture::ScrollAncestorsAtTop(ui::Element* target) const {
   for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f) {
@@ -325,13 +337,14 @@ void ShellCallChromeGesture::BeginArm(int x_px, int y_px, ui::Element* target) {
   drag_start_y_px_ = y_px;
   drag_last_x_px_ = x_px;
   drag_last_y_px_ = y_px;
-  if (mode_ == CallChromeMode::Immersive) {
+  if (mode_ == CallChromeMode::Immersive && !members_drag_) {
     SetDismissOwnsTopOverscroll(true);
   }
   SetDocumentDragCapture(true);
 }
 
 void ShellCallChromeGesture::AbortArm(bool unlock_axis) {
+  members_drag_ = false;
   if (!tracking_ && !dragging_) {
     SetDocumentDragCapture(false);
     SetDismissOwnsTopOverscroll(false);
@@ -382,7 +395,8 @@ void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/
     return;
   }
 
-  if (mode_ == CallChromeMode::Expanded) {
+  // Expanded, and a drag over the phone group's members: only a drag (no click); never a mode change.
+  if (mode_ == CallChromeMode::Expanded || members_drag_) {
     const float dist_dp = std::sqrt(PixelDeltaToDp(dx_px) * PixelDeltaToDp(dx_px) +
                                     PixelDeltaToDp(dy_px) * PixelDeltaToDp(dy_px));
     if (!dragging_ && dist_dp > kTapSlopDp) {
@@ -433,11 +447,13 @@ void ShellCallChromeGesture::EndDrag() {
     return;
   }
   const bool was_dragging = dragging_;
+  const bool members_drag = members_drag_;
   const int dy_px = drag_last_y_px_ - drag_start_y_px_;
   const float dy_dp = PixelDeltaToDp(dy_px);
 
   tracking_ = false;
   dragging_ = false;
+  members_drag_ = false;
   SetDocumentDragCapture(false);
   SetDismissOwnsTopOverscroll(false);
   arm_target_ = nullptr;
@@ -470,7 +486,7 @@ void ShellCallChromeGesture::EndDrag() {
   if (mode_ == CallChromeMode::Immersive) {
     SetRootOffsetY(0.f, true);
     unlock();
-    if (was_dragging && dy_dp >= kModeThresholdDp && callbacks_.on_expand) {
+    if (was_dragging && !members_drag && dy_dp >= kModeThresholdDp && callbacks_.on_expand) {
       callbacks_.on_expand();
     }
     return;
@@ -489,6 +505,11 @@ void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
     if (tracking_) {
       return;
     }
+    if (suppress_click_) {
+      // The click the last drag held back never came (a touch that scrolled sends none): this press is a new tap.
+      suppress_click_ = false;
+      SetClickSuppress(false);
+    }
     ui::Element* target = event.GetTargetElement();
     if (mode_ == CallChromeMode::Minimized) {
       if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
@@ -498,7 +519,10 @@ void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
       return;
     }
     if (mode_ == CallChromeMode::Immersive) {
-      if (!ShouldArmImmersivePullDown(target)) {
+      // The phone group page's members (the grid, the spotlit one, the strip, the gaps between them): a swipe there
+      // looks through them and must never shrink the call (#94); a tap still spotlights the one tapped.
+      members_drag_ = IsUnderRoot(target) && !ShouldIgnoreTarget(target) && IsMemberArea(target);
+      if (!members_drag_ && !ShouldArmImmersivePullDown(target)) {
         return;
       }
       BeginArm(EventMouseX(event), EventMouseY(event), target);
