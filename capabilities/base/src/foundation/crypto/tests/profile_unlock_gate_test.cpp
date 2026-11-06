@@ -313,6 +313,38 @@ TEST_F(ProfileUnlockGateGraceTest, AWindowNotKeptStillUnlocks) {
   EXPECT_EQ(errors_, 0) << "only a diagnostics line";
 }
 
+// An account brought here (a link, or its recovery phrase) under an own PIN keeps the window like a PIN unlock.
+TEST_F(ProfileUnlockGateGraceTest, ALinkedDeviceKeepsTheWindow) {
+  std::filesystem::remove(DataKeyVault::VaultPathForProfile(dir_.string()));
+  ASSERT_FALSE(engine_.HasVault());
+  ProfileUnlockPorts ports = Ports();
+  ports.import_link_device = [this](const SecretText& pin, const std::string&) -> Roe<void> {
+    return engine_.Vault()->CreateWithDek(pin.Reveal(), ByteVector(kDataEncryptionKeySize, 0x47));
+  };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.CompleteLinkDevice("4321", "{}", /*set_default_pin=*/false);
+
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(remembered_, std::vector<int>{15});
+}
+
+TEST_F(ProfileUnlockGateGraceTest, ARecoveryRestoreKeepsTheWindow) {
+  std::filesystem::remove(DataKeyVault::VaultPathForProfile(dir_.string()));
+  ASSERT_FALSE(engine_.HasVault());
+  ProfileUnlockPorts ports = Ports();
+  ports.restore_recovery_phrase = [this](const SecretText& pin, const SecretText&,
+                                         const std::vector<std::string>&) -> Roe<void> {
+    return engine_.Vault()->CreateWithDek(pin.Reveal(), ByteVector(kDataEncryptionKeySize, 0x47));
+  };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.CompletePhraseRestore("4321", "the right words", /*set_default_pin=*/false);
+
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(remembered_, std::vector<int>{15});
+}
+
 TEST_F(ProfileUnlockGateGraceTest, TheChooserDefaultPinKeepsNoWindow) {
   std::filesystem::remove(DataKeyVault::VaultPathForProfile(dir_.string()));
   ASSERT_FALSE(engine_.HasVault());
