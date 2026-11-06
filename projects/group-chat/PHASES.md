@@ -78,6 +78,7 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [x] gtests (`group_permissions_test`, the statement's preset and admins, `GroupSettingIngestTest`, mention alert / roster, member tap); lab `group_owner_appoints_an_admin`
 
 **o2 — Changes on top of the owner's statement (G018)**
+- [x] **Engine, a pure library (not wired yet):** `GroupChange` (codec, device-key sign / verify against the signer's card, change id, `ChangesHash`), the statement's v3 fields and sign bytes (`added_by`, title, `removed`, `links`, `folded`; `SignStatement`), `CheckChanges` / `ComputeRoster` (R1–R6, any order the same roster) and `FoldChanges`, in `lib/messaging/GroupChange.*`, `GroupRosterRules.*`, `GroupRosterStatement.*`; encodings in [DESIGN § Open groups](DESIGN.md#open-groups-g017g023). gtests `group_change_test` (signature, tampering, cards, golden ids, statement v3) and `group_roster_rules_test` (each rule's G018 scenario, presets, links, fold-then-compute, all 40320 orders of eight changes). Still to do for the items below: wiring into the workflow, the receive pipeline, the member check and the UI
 - [ ] Changes signed by the device key and checked against the signer's card; the statement stays account-signed (G018 item 9); a change carries the signer's card when the receiver may lack it
 - [ ] Change codec and signature; the roster from the latest statement plus changes by R1–R6; the owner folds changes into its next statement
 - [ ] Statement fields: roles, preset, `added_by`, `removed`, `links`, `folded`

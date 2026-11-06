@@ -420,19 +420,38 @@ Accepted 2026-11-05, not built. Sketches to settle in each phase ([PHASES § O](
 
 ### The owner's statement (G012, extended by G018)
 
-The statement as built, with these fields added inside what the owner signs:
+The statement as built, with these fields added inside what the owner signs. **The engine is built** (o2, not wired: `lib/messaging/GroupRosterStatement.*`); until o2 wires it, the workflow signs these fields empty.
 
 | Field | Meaning |
 |---|---|
 | `members[].role` | `owner` / `admin` / `member` |
-| `members[].added_by` | who brought them (G019) |
+| `members[].added_by` | who brought them (G019): the signer of the `add` the owner folded; empty for the group's first members |
 | `preset` | `open` / `managed` (G017) |
-| `title`, `title_version` | as `group_renamed` today |
-| `removed` | accounts removed and not re-admitted (G018 R2, G020) |
-| `links` | live links: `link_id`, `secret_hash`, `maker`, `expires_at`, `max_uses`? (G021) |
-| `folded` | ids of the changes this statement took in |
+| `title`, `title_version` | the group's name and its version (R4); as `group_renamed` today |
+| `removed[]` | `{identity, removal, by}`: accounts removed and not re-admitted (G018 R2, G020); `removal` is the id of the `remove` change a re-admit names |
+| `links[]` | live links: `{link_id, secret_hash, maker, expires_at, max_uses?}` (G021); `max_uses` omitted (0) means no limit |
+| `folded[]` | ids of **every** change the owner has folded, in this statement and earlier ones (carried forward, so a device that missed a statement still drops what it folded) |
+
+JSON omits `added_by`, `title`/`title_version`, `removed`, `links` and `folded` when empty.
+
+**Sign bytes v3** — the account key (ML-DSA-65) signs, every string a u32 BE length then its bytes, every integer u64 BE, every list sorted (members and removed by identity, links by `link_id`, folded by id):
+
+```
+"pp-browser:group-roster-statement-v3"   ("pp-browser:group-dissolved-v3" for a dissolve, G016)
+group_id, roster_epoch, owner,
+member count, then per member: identity, role, joined_at, added_by
+preset
+title, title_version
+removed count, then per entry: identity, removal, by
+link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none)
+folded count, then each id
+```
+
+Verify also refuses a removed account that is also a member, a repeated removed account, link id or folded id. v2 statements no longer verify (clean cutover).
 
 ### Change (G018)
+
+`GroupChange` (`lib/messaging/GroupChange.*`; named apart from the store's `GroupRosterChange` notification):
 
 ```json
 {
@@ -444,28 +463,50 @@ The statement as built, with these fields added inside what the owner signs:
   "at": 1767225600000,
   "change": "add",
   "body": { "member": "account:…", "invite_nonce": "uuid" },
-  "signature": "<by the device key, over the canonical encoding of the fields above>"
+  "signature": "<base64 ML-DSA-65 by the device key over the sign bytes below>"
 }
 ```
 
-- **Keys (G018 item 9):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key.
-- **Change id:** the hash of the signed bytes. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.
-- **`change` / `body`:**
+- **Keys (G018 item 9):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key. **Verify:** the card proves itself (`VerifyAccountCard`; its account id derives from its account key) and is the signer's, lists `signer_device`, and that device's signing key verifies the signature. `signer_card` is not signed: it proves itself.
+- **Sign bytes:** strings u32 BE length then bytes, integers u64 BE, id lists a u64 BE count then each id sorted:
+
+```
+"pp-browser:group-roster-change-v1", group_id, base_epoch, signer, signer_device, at, change,
+then the body by change:
+  add          member, invite_nonce, link_id, readmits          (absent fields as empty strings)
+  leave        adds (list), keeps (list)
+  remove       member, adds (list), keeps (list)
+  rename       title, title_version
+  link_add     link_id, secret_hash, expires_at, max_uses (0: none)
+  link_revoke  link_id
+```
+
+- **Change id:** lowercase hex of BLAKE2b-256(sign bytes). Two copies of one change (re-signed, or carrying a card) share it; a forged copy shares it too, so a copy whose signature fails is dropped, never held or folded, and a proved copy wins. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.
+- **`change` / `body`** (a field its kind does not carry must be absent):
 
 | change | body |
 |---|---|
-| `add` | `member`, `invite_nonce` or `link_id`; a re-admit also `readmits` (the removal it lifts) |
-| `leave` | `keeps`: the signer's own unfolded adds |
-| `remove` | `member`, `adds` (the adds of that member it saw), `keeps` (the removed signer's unfolded changes the remover holds) |
-| `rename` | `title`, `title_version` |
+| `add` | `member` (not the signer), exactly one of `invite_nonce` / `link_id`; a re-admit also `readmits` (the id of the removal it lifts) |
+| `leave` | `adds` (the signer's adds it saw, R1), `keeps` (the signer's own unfolded changes, R3) |
+| `remove` | `member` (not the signer), `adds` (the adds of that member it saw), `keeps` (the removed member's unfolded changes the remover holds) |
+| `rename` | `title` (1–256 bytes), `title_version` (> 0) |
 | `link_add` | `link_id`, `secret_hash`, `expires_at`, `max_uses`? |
 | `link_revoke` | `link_id` |
 
-- **Roster:** the latest statement, then every unfolded valid change by R1–R6. Set operations only: no order between changes is needed.
+`adds` and `keeps` hold at most 256 distinct ids.
+
+- **Roster** (`ComputeRoster`, `lib/messaging/GroupRosterRules.*`): the latest statement, then every unfolded change by R1–R6. A function of the set: every step walks changes in change-id order, so no order between changes is needed. Changes for another group, already in `folded`, malformed or with a failing signature are dropped; a dissolved statement has no roster. How each rule reads:
+  - **R6 / cards:** a change is checked against every card that proves itself for its signer — the one the device holds and any `signer_card` the changes carry; the newest (`issued_at`) is the signer's card. A device on none of them: void, held until a card arrives. A device on an older card but not the newest counts only if folded or kept; a device that keeps only an account's newest card proves such a change only when it carries the older card (`signer_card`), so a relayed change carries the card that lists its device.
+  - **R3:** the signer's role is the latest statement's (`member` for anyone an add brought in); the signer must be in the group (left or removed: out) — unless a valid `remove` of the signer lists the change in `keeps` (counts outright), or the signer's own valid `leave` lists it (counts as if the signer were still in, at the role it had; not for a signer someone removed — the remover decides).
+  - **R1 / R2:** a remove of X takes X off the statement and undoes the adds of X it names; it voids every add of X signed by a *member* (named or not), while an owner's or admin's add it did not name stands. An add of an account on the statement's `removed` list counts only as an owner's or admin's re-admit whose `readmits` is that entry's `removal`; a `readmits` must otherwise name a valid remove of X. A leave takes its signer off the statement and undoes the adds of itself it names (an add it did not see stands). The owner cannot leave or be removed; an admin removes members only.
+  - **R5:** the statement's members that stand, then the adds in change-id order, repeated until nothing more comes in: an add counts once its signer is in and takes a place while fewer than 50 are in.
+  - **R4:** among valid renames above the statement's `title_version`: the highest version, then the higher role, then the lower change id.
+  - **Links:** a `link_add` (per preset) whose id is not taken; a `link_revoke` by the link's maker, an admin or the owner. A link is live while not revoked, not expired, and its maker is in the group.
+- **Fold** (`FoldChanges`, owner side): the next statement (epoch + 1) holds the computed members (with `added_by`), removed, live links and title, and `folded` = the earlier `folded` plus every change the owner held except those that may still come to count (no card, a signer whose add has not arrived, a revoke of an unknown link). Void changes are folded too, so they stay void: a demoted admin's backdated removal must not count again if the owner later reappoints them.
 
 ### Carrying the state and syncing
 
-- **Each group copy's plaintext** (inside the AEAD) carries `group_id`, the sender's `statement_epoch` and `changes_hash` (a hash of the sorted ids of the unfolded changes it holds).
+- **Each group copy's plaintext** (inside the AEAD) carries `group_id`, the sender's `statement_epoch` and `changes_hash`: lowercase hex of BLAKE2b-256 over `"pp-browser:group-changes-v1"` (u32 BE length then bytes), the count (u64 BE), then each distinct id (u32 BE length then bytes) in sorted order — of the changes the device holds unfolded (`GroupRosterView::HeldIds`, `group_change::ChangesHash`).
 - **The relay sees no group (G018 item 7, built):** the envelope's `route` carries no `group_id` (sign v4), and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ lower account ‖ higher account)) + `:from:{sender_device}` — [§ Stream id](#stream-id).
 - **A receiver that differs** sends `group_roster_request {group_id, request_id, statement_epoch, changes_hash}` (G013's control-lane request). The reply carries the latest statement and the changes the asker lacks (bounded; the asker asks again for more).
 
