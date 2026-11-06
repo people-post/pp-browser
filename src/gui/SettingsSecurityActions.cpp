@@ -248,16 +248,20 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
     host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.recovery.not_ready")));
     return;
   }
-  // A profile on the app default PIN gets its phrase as it gets everything else (by design: the unlocked app is
-  // enough there); a chosen PIN is asked for again.
+  // The app's default PIN is public, so it never reveals the phrase: the user sets their own PIN first.
   const bool default_pin = host_.Store().Snapshot().profile_prefs.pin_is_default;
-  if (!default_pin && !recovery_pin_open_) {
+  if (default_pin) {
+    UserFeedback::Ok(Tr("settings.security.recovery.set_pin_first"));
+    host_.OpenChangePin();
+    return;
+  }
+  if (!recovery_pin_open_) {
     // First tap: the PIN field comes out under the button; the next tap shows the phrase.
     recovery_pin_open_ = true;
     host_.PushToView(false);
     return;
   }
-  const SecretText pin = default_pin ? SecretText(kDefaultProfilePin) : SecretText(recovery_phrase_pin_.c_str());
+  const SecretText pin = SecretText(recovery_phrase_pin_.c_str());
   if (pin.empty()) {
     host_.ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.recovery.pin_required")));
     return;

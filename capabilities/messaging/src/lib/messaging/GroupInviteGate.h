@@ -26,6 +26,8 @@ public:
   GroupInvitePolicy inbound_policy() const { return inbound_policy_; }
 
   Roe<bool> AllowsInboundInvite(const GroupInvitePayload& invite) const;
+  /** True when an invite from this inviter is refused only because they are not a contact (policy: contacts only). */
+  bool RefusesUnknownInviter(const std::string& inviter_identity) const;
   Roe<bool> CanSendInvite(MemberRole actor_role) const;
   Roe<void> RecordPendingInvite(const PendingGroupInvite& invite) const;
 
