@@ -48,6 +48,7 @@ void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
   ctor.Bind("recovery_phrase", &recovery_phrase_);
   ctor.Bind("recovery_phrase_pin", &recovery_phrase_pin_);
+  ctor.Bind("recovery_pin_open", &recovery_pin_open_);
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
   ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
   ctor.BindEventCallback("save_account_copy", DataEvent<>([this]() { SaveAccountCopy(); }));
@@ -250,6 +251,12 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
   // A profile on the app default PIN gets its phrase as it gets everything else (by design: the unlocked app is
   // enough there); a chosen PIN is asked for again.
   const bool default_pin = host_.Store().Snapshot().profile_prefs.pin_is_default;
+  if (!default_pin && !recovery_pin_open_) {
+    // First tap: the PIN field comes out under the button; the next tap shows the phrase.
+    recovery_pin_open_ = true;
+    host_.PushToView(false);
+    return;
+  }
   const SecretText pin = default_pin ? SecretText(kDefaultProfilePin) : SecretText(recovery_phrase_pin_.c_str());
   if (pin.empty()) {
     host_.ReportFailure(AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.recovery.pin_required")));
@@ -270,6 +277,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
         return;
       }
       recovery_phrase_ = phrase->value().Reveal().c_str();  // shown to its owner, on their screen
+      recovery_pin_open_ = false;
       host_.PushToView(false);
       // Home's Security widget: the phrase has been in front of its owner once (Kenneth 2026-11-05 原话 98).
       if (!host_.Store().Snapshot().profile_prefs.recovery_phrase_seen) {
@@ -293,6 +301,7 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
 void SettingsSecurityActions::HideRecoveryPhrase() {
   recovery_phrase_ = "";
   recovery_phrase_pin_ = "";
+  recovery_pin_open_ = false;
   ++recovery_shown_count_;
   host_.PushToView(false);
 }

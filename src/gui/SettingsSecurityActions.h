@@ -71,6 +71,9 @@ private:
   /** The phrase while it is shown (empty otherwise) and the PIN typed to show it. */
   ui::String recovery_phrase_;
   ui::String recovery_phrase_pin_;
+  /** The PIN field under "Show recovery phrase" is out: a chosen-PIN profile tapped the button once (Kenneth
+   * 2026-11-06: the field is not on the page until then). */
+  bool recovery_pin_open_ = false;
   /** Bumped on every show and hide: a pending auto-hide only acts on the showing it was set for. */
   uint64_t recovery_shown_count_ = 0;
   /** Hides the recovery phrase when the app goes to the background (UI thread, SDL's event). */

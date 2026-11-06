@@ -806,6 +806,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_has_recovery_phrase");
   host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "recovery_phrase_pin");
+  host.Dirty("settings", "recovery_pin_open");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");

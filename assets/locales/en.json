@@ -310,6 +310,7 @@
     "settings.security.recovery.pin_placeholder": "Your PIN",
     "settings.security.recovery.show": "Show recovery phrase…",
     "settings.security.recovery.hide": "Hide",
+    "settings.security.recovery.confirm": "Show",
     "settings.security.recovery.shown_hint": "It hides by itself in two minutes.",
     "settings.security.recovery.none": "This account was created before recovery phrases and has none.",
     "settings.security.recovery.not_ready": "Unlock first to see your recovery phrase.",
