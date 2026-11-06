@@ -31,12 +31,22 @@ public:
     g_playing = this;
     return true;
   }
-  void Pause() override { inner_->Pause(); }
-  void Resume() override { inner_->Resume(); }
+  // Only the one playing reaches the system's player: on Android that player is one for the whole app, so an idle
+  // player's Stop (the storage page closing, the chat shutting down) must not end another one's file.
+  void Pause() override {
+    if (g_playing == this) {
+      inner_->Pause();
+    }
+  }
+  void Resume() override {
+    if (g_playing == this) {
+      inner_->Resume();
+    }
+  }
   void Stop() override {
-    inner_->Stop();
     on_ended_ = nullptr;
     if (g_playing == this) {
+      inner_->Stop();
       g_playing = nullptr;
     }
   }

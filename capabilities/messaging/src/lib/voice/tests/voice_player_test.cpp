@@ -428,6 +428,29 @@ TEST(AudioFilePlayer, OnePlaysAtATimeAcrossPlayers) {
   EXPECT_EQ(MakeExclusiveAudioFilePlayer(nullptr), nullptr);
 }
 
+// Review 2026-11-06: on Android the system's player is one for the whole app, so a player that is not playing must
+// never stop, pause or resume it: the storage page closing (or the chat shutting down) left another one's file cut
+// off with no end reported.
+TEST(AudioFilePlayer, AnIdlePlayerNeverTouchesTheOnePlaying) {
+  std::vector<std::string> log;
+  auto chat = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "chat"));
+  auto page = MakeExclusiveAudioFilePlayer(std::make_unique<RecordingFilePlayer>(&log, "page"));
+  std::vector<VoicePlayEnd> chat_ends;
+  AudioFilePlayerCallbacks chat_callbacks;
+  chat_callbacks.on_ended = [&chat_ends](const VoicePlayEnd end) { chat_ends.push_back(end); };
+  ASSERT_TRUE(chat->Play("a.mp3", chat_callbacks));
+  page->Pause();
+  page->Resume();
+  page->Stop();
+  page.reset(); // its destructor stops too
+  EXPECT_EQ(log, std::vector<std::string>{"chat play a.mp3"});
+  EXPECT_TRUE(chat_ends.empty());
+  chat->Stop();
+  EXPECT_EQ(log.back(), "chat stop");
+  chat->Stop();
+  EXPECT_EQ(log.size(), 2u) << "stopped once: the second Stop has nothing to stop";
+}
+
 TEST(AudioFilePlayer, SoundFilesAreKnownByTypeOrName) {
   EXPECT_TRUE(IsAudioFileAttachment("audio/mpeg", "x"));
   EXPECT_TRUE(IsAudioFileAttachment("application/octet-stream", "Song.MP3"));

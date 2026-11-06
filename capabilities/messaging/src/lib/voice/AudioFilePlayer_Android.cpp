@@ -6,6 +6,7 @@
 #include <jni.h>
 #include <SDL3/SDL.h>
 
+#include <atomic>
 #include <mutex>
 
 namespace pbr {
@@ -13,6 +14,9 @@ namespace {
 
 std::mutex g_mutex;
 int64_t g_token = 0; // the Play whose reports count; 0: none
+/** Tokens for the whole app (g_token is too): two players never hand out the same one, so neither takes the other's
+ *  late reports for its own. */
+std::atomic<int64_t> g_next_token{0};
 AudioFilePlayerCallbacks g_callbacks;
 
 /** Calls a static method of the running activity's class (MainActivity) with a long argument (or none). */
@@ -51,7 +55,7 @@ public:
     int64_t token = 0;
     {
       std::lock_guard lock(g_mutex);
-      token = ++next_token_;
+      token = ++g_next_token;
       g_token = token;
       g_callbacks = std::move(callbacks);
     }
@@ -86,7 +90,6 @@ private:
     g_token = 0;
     g_callbacks = {};
   }
-  int64_t next_token_ = 0;
 };
 
 } // namespace

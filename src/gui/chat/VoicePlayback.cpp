@@ -215,8 +215,9 @@ void VoicePlayback::Stop() {
     stopped_by_user_ = true;
     if (current_is_file_) {
       // The system's player says nothing after a Stop: its end is reported here, on the next UI turn (after a
-      // StopThen has queued what waits for it).
-      StopFile();
+      // StopThen has queued what waits for it). That end hands the session back, once: not here too (a second
+      // release could end a session a call took in between).
+      file_player_->Stop();
       const auto alive = alive_;
       ports_.post_ui([this, alive, id = current_, serial = serial_]() {
         if (alive->load()) {
