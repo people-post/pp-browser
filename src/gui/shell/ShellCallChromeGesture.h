@@ -21,7 +21,8 @@ namespace pbr {
  * Call chrome gestures (V031).
  *
  * Expanded: tap non-button chrome → Immersive; tap outside chrome → Minimized.
- * Immersive: pull down on non-button chrome, or pull down in roster at scroll top → Expanded.
+ * Immersive: pull down on non-button chrome, or pull down in roster at scroll top → Expanded. Not over the phone
+ * group page's members (grid, spotlight, strip): a drag there never changes the mode (#94).
  * Minimized: tap → restore; drag → move / corner snap. No swipe-to-mode.
  */
 class ShellCallChromeGesture : public ui::EventListener {
@@ -46,6 +47,7 @@ private:
   bool ShouldIgnoreOutsideDismiss(ui::Element* target) const;
   bool IsUnderRoot(ui::Element* target) const;
   bool IsScrollRegion(ui::Element* target) const;
+  bool IsMemberArea(ui::Element* target) const;
   bool ScrollAncestorsAtTop(ui::Element* target) const;
   bool ShouldArmImmersivePullDown(ui::Element* target) const;
   void PinScrollAncestorsAtTop();
@@ -79,6 +81,8 @@ private:
   bool suppress_click_ = false;
   bool tracking_ = false;
   bool dragging_ = false;
+  /** This press began over the phone group's members: tracked only to hold back the click after a drag. */
+  bool members_drag_ = false;
   bool dismiss_owns_top_overscroll_ = false;
   int drag_start_x_px_ = 0;
   int drag_start_y_px_ = 0;

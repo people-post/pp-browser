@@ -22,7 +22,8 @@ TEST(CallDemoScenesTest, TheVoiceSceneCallsThenConnectsRelayedThenFindsACloserWa
 
 TEST(CallDemoScenesTest, EverySceneIsKnownAndAnUnknownOneIsNot) {
   for (const char* scene :
-       {"ring", "ring_group", "voice", "reconnect", "video", "failed", "answer_group", "group_voice", "group_video"}) {
+       {"ring", "ring_group", "voice", "reconnect", "video", "failed", "answer_group", "group_voice", "group_video",
+        "voice_hold", "video_hold", "group_hold"}) {
     EXPECT_TRUE(DemoCallSceneAt(scene, 0, 1'000'000).valid) << scene;
   }
   EXPECT_FALSE(DemoCallSceneAt("nope", 0, 1'000'000).valid);
@@ -31,6 +32,28 @@ TEST(CallDemoScenesTest, EverySceneIsKnownAndAnUnknownOneIsNot) {
   EXPECT_FALSE(DemoCallSceneAt("group_voice", 0, 1).screen.placed_here) << "joined, not placed";
   EXPECT_EQ(DemoCallSceneAt("answer_group", 4'000, 1).screen.kind, CallScreen::Kind::Answering);
   EXPECT_TRUE(DemoCallSceneAt("answer_group", 4'000, 1).screen.ring_group);
+}
+
+// V060: the hold scenes put the peer (1:1) or one member (group) on hold, and pause another member's camera.
+TEST(CallDemoScenesTest, TheHoldScenesPutTheOtherSideOnHold) {
+  for (const char* scene : {"voice_hold", "video_hold"}) {
+    const DemoCallFrame f = DemoCallSceneAt(scene, 0, 1'000'000);
+    EXPECT_EQ(f.screen.status, CallScreen::Status::Connected) << scene;
+    EXPECT_FALSE(f.screen.group) << scene;
+    ASSERT_EQ(f.screen.members.size(), 2u) << scene;
+    EXPECT_FALSE(f.screen.members[0].is_local);
+    EXPECT_TRUE(f.screen.members[0].on_hold) << scene;
+    EXPECT_FALSE(f.screen.members[1].on_hold) << "we are not on hold";
+  }
+  EXPECT_FALSE(DemoCallSceneAt("voice_hold", 0, 1).video_stage);
+  EXPECT_TRUE(DemoCallSceneAt("video_hold", 0, 1).video_stage);
+
+  const DemoCallFrame g = DemoCallSceneAt("group_hold", 0, 1'000'000);
+  EXPECT_TRUE(g.screen.group);
+  EXPECT_TRUE(g.screen.video);
+  EXPECT_TRUE(g.screen.members[0].on_hold);
+  EXPECT_TRUE(g.screen.members[1].video_paused);
+  EXPECT_FALSE(g.screen.members[1].on_hold);
 }
 
 TEST(CallDemoScenesTest, ASceneMayStartPartWayIn) {

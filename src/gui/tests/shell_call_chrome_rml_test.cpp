@@ -248,5 +248,16 @@ TEST(ShellCallChromeRmlTest, PhoneVideoCallSwapsOnATapOnTheSmallPicture) {
   EXPECT_FALSE(Has(swapped, "call_spotlight_grid()"));
 }
 
+// #83: the flip button is lit while the front camera is in use and plain on the rear one (a bound class, no animation).
+TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_roster = false;
+  state.call_in_progress.stage_visible = true;
+  state.call_in_progress.show_flip = true;
+  const std::string rml = CallInProgressRml(state);
+  EXPECT_TRUE(Has(rml, "data-event-click=\"call_flip_camera()\" "
+                       "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
+}
+
 } // namespace
 } // namespace pbr
