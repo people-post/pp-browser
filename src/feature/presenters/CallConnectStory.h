@@ -80,7 +80,9 @@ struct CallStoryEvent {
 struct CallStoryView {
   // --- Before connect: the moving line, the steps and the rotating tips.
   bool connecting = false;
-  /** 0: the other side is being called; 1: answered, the encrypted line is being set up. */
+  /** The stage on screen (only it and the ones before it show): 0: the other side is being called; 1: answered,
+   *  the encrypted line is being set up. Follows the real stage, but a "calling" answered within kStageQuickMs is
+   *  held until kStageMinShowMs. */
   int stage = 0;
   /** This device placed the call (the first step reads "Calling X…" then "X answered"). */
   bool outgoing = false;
@@ -122,6 +124,9 @@ public:
   static constexpr int64_t kSlowNoticeEveryMs = 30'000;
   /** After media connects the bar waits this long at most for audio to settle (or the first good sample). */
   static constexpr int64_t kSettleMs = 2'000;
+  /** A stage over sooner than this after it began is still shown kStageMinShowMs in all (#11). */
+  static constexpr int64_t kStageQuickMs = 300;
+  static constexpr int64_t kStageMinShowMs = 600;
 
   /** Steps the story with this poll's facts and returns what the call page shows now. */
   const CallStoryView& Step(const CallStoryInput& in);
