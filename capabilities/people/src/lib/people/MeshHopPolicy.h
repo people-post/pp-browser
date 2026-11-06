@@ -5,6 +5,7 @@
 #include "mesh/types/MeshHopDial.h"
 #include "mesh/types/MeshHopTypes.h"
 #include "mesh/types/RelayScope.h"
+#include "mesh/types/ServiceLoad.h"
 #include "common/MeshAlias.h"
 
 #include <cstdint>
@@ -64,6 +65,12 @@ std::vector<mesh::MeshHopCandidate> BuildCircuitHopList(const std::vector<Contac
                                                   const std::vector<mesh::MeshDirectoryNode>& dht_nodes,
                                                   const std::vector<std::string>& bootstrap_peers,
                                                   bool prefer_contacts, bool include_seeds = true);
+
+/**
+ * A hop's residual capacity from the level it said for group calls (p2p-mesh N033): open 1, unsaid 0.9 (an older
+ * node, or not asked lately), busy 0.4, full or draining 0 — ranking drops those, they would refuse a new call.
+ */
+double ResidualCapacityForLoad(mesh::ServiceLoad load);
 
 /**
  * Media hop rank (n4 / N020 short-term): filter → score over contacts ∪ seeds only.

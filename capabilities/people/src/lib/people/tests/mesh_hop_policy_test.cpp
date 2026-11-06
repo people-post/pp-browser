@@ -305,5 +305,27 @@ TEST(MeshHopPolicyTest, OnlyCircuitRelaysAreRendezvousCandidates) {
       << "a contact that relays keeps its place first";
 }
 
+// N033: a hop's group-call level is its residual capacity — open ahead of busy, full / draining dropped.
+TEST(MeshHopPolicyTest, AHopsSaidLoadRanksItOrDropsIt) {
+  EXPECT_DOUBLE_EQ(ResidualCapacityForLoad(mesh::ServiceLoad::Open), 1.0);
+  EXPECT_LT(ResidualCapacityForLoad(mesh::ServiceLoad::Unknown), 1.0);
+  EXPECT_GT(ResidualCapacityForLoad(mesh::ServiceLoad::Unknown), ResidualCapacityForLoad(mesh::ServiceLoad::Busy));
+  const auto seed = [](const std::string& id, const mesh::ServiceLoad load) {
+    mesh::MeshHopCandidate c;
+    c.peer_id = id;
+    c.multiaddr = "/ip4/1.2.3.4/tcp/443/p2p/" + id;
+    c.affinity = mesh::MeshHopAffinity::OrgSeed;
+    c.dialable = true;
+    c.residual_capacity = ResidualCapacityForLoad(load);
+    return c;
+  };
+  auto ranked = RankMediaHops({seed("busy", mesh::ServiceLoad::Busy), seed("full", mesh::ServiceLoad::Full),
+                               seed("draining", mesh::ServiceLoad::Draining), seed("open", mesh::ServiceLoad::Open)},
+                              true);
+  ASSERT_EQ(ranked.size(), 2u) << "full and draining dropped";
+  EXPECT_EQ(ranked[0].peer_id, "open");
+  EXPECT_EQ(ranked[1].peer_id, "busy");
+}
+
 } // namespace
 } // namespace pbr
