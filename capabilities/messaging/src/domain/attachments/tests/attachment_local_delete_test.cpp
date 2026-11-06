@@ -407,8 +407,9 @@ TEST_F(AttachmentLocalDeleteTest, DeleteRacingADownloadASendOrAForwardOfTheSameB
       } else if (op == 1) {
         // The same file sent into B: held, stored, its message written, released (as the hub's send does).
         workflow_->AcquireBytesForSend("B", file.fields.content_hash);
-        ASSERT_TRUE(SaveAttachmentPlaintext(*content_, file.fields.content_hash, file.fields.mime, file.plain,
-                                            file.fields.filename, Dek()));
+        auto saved = SaveAttachmentPlaintext(*content_, file.fields.content_hash, file.fields.mime, file.plain,
+                                             file.fields.filename, Dek());
+        ASSERT_TRUE(saved) << "round " << round << ": " << saved.error().message;
         Post("B", other_id, file.fields, "me");
         workflow_->ReleaseBytesForSend(file.fields.content_hash);
       } else {
@@ -416,8 +417,9 @@ TEST_F(AttachmentLocalDeleteTest, DeleteRacingADownloadASendOrAForwardOfTheSameB
         workflow_->AcquireBytesForSend("C", file.fields.content_hash);
         if (auto plain = LoadAttachmentPlaintext(*content_, file.fields.content_hash, Dek())) {
           ASSERT_FALSE(plain->empty());
-          ASSERT_TRUE(SaveAttachmentPlaintext(*content_, file.fields.content_hash, file.fields.mime, *plain,
-                                              file.fields.filename, Dek()));
+          auto saved = SaveAttachmentPlaintext(*content_, file.fields.content_hash, file.fields.mime, *plain,
+                                               file.fields.filename, Dek());
+          ASSERT_TRUE(saved) << "round " << round << ": " << saved.error().message;
           Post("C", other_id, file.fields, "me");
         } else {
           ++forward_refused;
