@@ -1,6 +1,6 @@
 # Group chat — current state
 
-**Last updated:** 2026-11-03 (since 2026-10-30: G016 dissolve merged in #425 on 2026-10-31; in-chat search merged in #462 on 2026-11-02). Before that: 2026-10-30 (G015 mentions implemented, m1–m6; signed roster + member check G012 / G013 merged in #411)
+**Last updated:** 2026-11-05 (open groups G017–G023 accepted, not built: [PHASES § O](PHASES.md#o--open-groups-g017g023); one PR at the end). Before that: 2026-11-03 (since 2026-10-30: G016 dissolve merged in #425 on 2026-10-31; in-chat search merged in #462 on 2026-11-02). Before that: 2026-10-30 (G015 mentions implemented, m1–m6; signed roster + member check G012 / G013 merged in #411)
 
 Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.md) G012–G015 before touching rosters or mentions.
 
@@ -20,7 +20,8 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 
 ## Open (next first)
 
-1. A lab case for a held mention; a click on a context-menu item under Xvfb did nothing (the picker's and the chat menu's) — check on a real desktop.
+1. **Open groups (G017–G023, calls V062)** — accepted 2026-11-05, nothing built yet. Order: o1 roles and policy → o2 signed change log → o3 make a group during a call → o4 member invites, removal, bans → o5 invite links → o6 privacy; call guests with o1 / o4. First: settle which key signs an op from a linked device (G018 Open). [PHASES § O](PHASES.md#o--open-groups-g017g023).
+2. A lab case for a held mention; a click on a context-menu item under Xvfb did nothing (the picker's and the chat menu's) — check on a real desktop.
 
 ## Notes for whoever picks this up
 

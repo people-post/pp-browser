@@ -7,6 +7,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G001 — Invite authority: owner-only (v1), role-extensible schema
 
 **Date:** 2026-07-16  
+**Status:** Amended by [G017](#g017--open-groups-roles-and-a-signed-group-policy) / [G019](#g019--any-member-invites-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05, not built): admins exist, and any member may invite under the group policy  
 **Decision:** v1 enforces **owner-only** invite, remove, rename, and ownership transfer. Wire and storage include `MemberRole` (`owner` | `admin` | `member`), `PermissionFlags`, and `group_policy.invite_policy` (`owner_only` | `admins` | `any_member`) so v1.1 can enable admins or any-member invites without a wire bump.  
 **Rationale:** Simple spam surface for v1; avoid second migration when roles expand.  
 **Alternatives:** Any-member invites in v1 (rejected — spam); hard-coded owner-only without role fields (rejected — blocks v1.1).
@@ -25,6 +26,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G003 — New member history: full backfill on join
 
 **Date:** 2026-07-16  
+**Status:** Amended by [G023](#g023--privacy-in-open-groups-history-from-the-join-message-requests-the-group-id-off-the-relay) (accepted 2026-11-05): a newcomer sees messages from the join by default; the full backfill below was never built  
 **Decision:** Accepted members receive **full group history** via peer backfill. `history_visibility` on group metadata defaults to `full`; `since_join` reserved for private-group mode.  
 **Rationale:** Matches common chat UX.  
 **Alternatives:** Join-point-only history in v1 (deferred via metadata field).
@@ -52,6 +54,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G006 — Membership authority vs message sync
 
 **Date:** 2026-07-16  
+**Status:** Amended by [G018](#g018--the-roster-is-a-signed-change-log-members-and-admins-sign-their-own-changes) / [G019](#g019--any-member-invites-the-invitee-consents-who-brought-whom-is-shown) (accepted 2026-11-05, not built): the member who sent the invite commits the add as a signed op; the owner is no longer the only one  
 **Decision:** **Owner-signed roster events** are authoritative for membership. **Per-sender `sender_seq`** + relaxed ingest (D046) handles message divergence — not owner arbitration. `session_epoch` bumps on membership/crypto changes.  
 **Rationale:** Aligns with D089 tier design; avoids single-writer bottleneck for messages.  
 **Alternatives:** Owner as message sync authority (rejected).
@@ -81,6 +84,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G009 — Owner leave uses transfer+leave; prune is owner-choice
 
 **Date:** 2026-07-24  
+**Status:** (2) amended by [G020](#g020--removing-a-member-order-notice-bans) (accepted 2026-11-05, not built): admins may remove members too  
 **Decision:** (1) Owner leave of a multi-member group fans out a single `owner_transferred` DM with `leave_previous: true` so peers apply succession and remove the old owner atomically. Plain `member_left` from a recorded owner is rejected. Solo-owner close is local dismiss only. (2) Send/encrypt failure marks a member unreachable locally; only the owner may `member_removed` after explicit confirm — no auto-drop. (3) Unreachable owner surfaces a local in-chat advisory (Fork / Message owner / Got it); no automatic second owner.  
 **Rationale:** Avoids transfer-without-leave / leave-without-transfer split-brain; keeps prune under human control; Fork is the ownership escape hatch.  
 **Alternatives:** Separate transfer then leave DMs; auto-promote next member; auto-prune on N failures.
@@ -114,7 +118,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G012 — Owner-signed roster statement; any online member can relay it
 
 **Date:** 2026-10-25  
-**Status:** Accepted (Hongwei, 2026-10-25), amended: the statement carries the member list only (no `sender_epoch_floor` — numbering is per pair, G010)  
+**Status:** Accepted (Hongwei, 2026-10-25), amended: the statement carries the member list only (no `sender_epoch_floor` — numbering is per pair, G010) — **to be superseded by [G018](#g018--the-roster-is-a-signed-change-log-members-and-admins-sign-their-own-changes)** (accepted 2026-11-05, not built): a signed change log replaces the single owner-signed statement  
 **Decision:** On every roster change the owner signs a full `roster_statement` (members with role and joined_at, `sender_epoch_floor` per member, `roster_epoch`, owner signature) and sends it with the roster event. Every member stores the latest one. Wire in DESIGN.md "Restore and roster sync".  
 **Rationale:** Today only `member_joined` can carry a roster (optional `members`, a snapshot for the newcomer); `member_left`, `member_removed`, `owner_transferred`, `group_renamed` carry only the changed identity and `roster_epoch`. A restored device therefore cannot learn the current roster from any single event, and nobody can prove what the roster is except the owner. The signed statement is verifiable offline from any member, and its epoch floors feed G010.  
 **Alternatives:** Owner-only answers (a restored member waits for the owner to be online); replay the event log (long, needs history); unsigned rosters from members (a member could forge adds or removals).
@@ -147,7 +151,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G015 — Mentions in group messages
 
 **Date:** 2026-10-30  
-**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits); **implemented** 2026-10-30 (phases m1–m6, [PHASES](PHASES.md)). The composer also opens the picker after non-ASCII text (a Chinese draft has no space before `@`).  
+**Status:** Accepted (Hongwei, 2026-10-30), with the review amendments folded in (generic spans, composer names, held notifications, per-message marker, mute level, stated limits); **implemented** 2026-10-30 (phases m1–m6, [PHASES](PHASES.md)). The composer also opens the picker after non-ASCII text (a Chinese draft has no space before `@`). — `@everyone` **amended by [G017](#g017--open-groups-roles-and-a-signed-group-policy)** (accepted 2026-11-05, not built): the owner and admins  
 **Decision:**
 
 | Part | Rule |
@@ -186,3 +190,155 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Old apps:** an app before this does not know `group_dissolved`: it stores a plain system line in its direct chat with the owner (the DM's `display` text) and its group stays live for it; its sends are dropped by every app that dissolved, and it is told nothing more. The product is unreleased, so no shim.
 **Tombstone:** none. The kept thread and the dissolved marker on the group are enough; a member who deleted the chat has no thread, so later traffic is rejected as for any unknown group.
 
+
+---
+
+## G017 — Open groups: roles and a signed group policy
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G001 (owner-only invites) and G015 (`@everyone` owner-only). Until O ships, `docs/` and the code hold the old rules.
+**Decision:** Groups are **open by invite**: any member may bring people in, and the group's owner and admins keep order. There is no group directory or public join (open by invite only, for now).
+
+1. **Roles.** `owner` (one), `admin` (any number, appointed by the owner), `member`. The roles live in the signed roster (G018).
+2. **Permissions.**
+
+| Action | Owner | Admin | Member |
+|---|---|---|---|
+| Send | ✓ | ✓ | ✓ |
+| Invite | ✓ | ✓ | policy `invite` |
+| Make an invite link (G021) | ✓ | ✓ | policy `links` |
+| Bring a guest into the group's call ([calls V062](../p2p-av-calls/DECISIONS.md)) | ✓ | ✓ | policy `call_guests` |
+| Remove a member, ban, unban (G020) | ✓ | members only | — |
+| Remove a guest from the group's call | ✓ | ✓ | — |
+| Appoint or demote an admin | ✓ | — | — |
+| Rename, change the avatar | ✓ | ✓ | policy `rename` |
+| Change the policy | ✓ | ✓ | — |
+| `@everyone` | ✓ | ✓ | — |
+| Transfer ownership (G009), dissolve (G016) | ✓ | — | — |
+
+3. **The policy** is part of the signed roster: a change is a signed op like any other (G018), so every member checks it the same way.
+
+| Key | Default | Values |
+|---|---|---|
+| `invite` | `members` | `members` / `approval` (a member's invite is a suggestion an admin approves) / `admins` |
+| `links` | `members` | `members` / `admins` / `off` |
+| `call_guests` | `participants` | `participants` / `members` / `admins` / `off` |
+| `rename` | `members` | `members` / `admins` |
+| `history` | `since_join` | `since_join` / `full` (G023) |
+
+4. **Enforcement is every client's.** A receiver checks each op against the roster and policy it was made under and drops what they do not allow. Each member gets its own copy of every message (G008), so a client that breaks the rules can still reach people one at a time; conforming clients do not show or apply what it sends.
+
+**Rationale:** The product owner wants openness — anyone can bring their friends — with order kept by people the group trusts rather than by a gatekeeper. A signed policy keeps that checkable offline, with no server to ask. `@everyone` stays with the owner and admins in every group: it is the one thing that cuts through a mute (G015).
+**Alternatives:** Owner-only invites (G001: every invite waits for one person); any member may also remove (a group could empty itself in a quarrel); an unsigned, local policy (members would disagree on what is allowed).
+
+---
+
+## G018 — The roster is a signed change log; members and admins sign their own changes
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). When built it supersedes G012's single owner-signed statement and G006's owner-only commit (`member_joined`); the member check (G013) carries ops instead of a statement. Wire sketch: [DESIGN § Open groups](DESIGN.md#open-groups-g017g023).
+**Decision:**
+
+1. **Ops, not one statement.** Every roster change is an op signed by the account that makes it: `add`, `leave`, `remove` (with `ban`), `unban`, `set_role`, `set_policy`, `rename`, `transfer`, `dissolve`, `link_add`, `link_revoke`. An op names the ops it was made after (`after`: the heads its signer held) and carries the signer's account key, self-certifying as in G012.
+2. **Valid** when its signer held the permission (G017) in the roster computed from its `after`. Every member checks this offline.
+3. **Concurrent ops** (neither made after the other) merge by fixed rules, so every member reaches the same roster from the same ops:
+   - **R1 — removal wins.** A `remove` of someone beats any concurrent `add`, `set_role` or `unban` of them.
+   - **R2 — a demoted or removed signer keeps only its restrictions.** If one op demotes or removes A, A's concurrent removals and bans stand; A's other concurrent ops are dropped. A kick is never lost because its signer lost its role at the same moment.
+   - **R3 — otherwise by rank, then op id.** Concurrent `rename` / `set_policy` of the same key: the higher role wins, then the lower op id.
+   - **R4 — the size limit holds after a merge.** Adds beyond 50 (G014), in op-id order, are void, and their invitee gets `group_invite_refused` from whoever signed the add.
+4. **Keeping members in step.** Each group message carries the sender's roster heads inside its ciphertext (never on the relay envelope, G023). A receiver holding different heads asks for the ops it lacks on the control lane (the G013 request / reply, carrying ops). Restore and re-invite keep G013's check.
+5. **Newcomers** start from a checkpoint: the merged roster at given heads, signed by the member who adds them (they trust that member anyway), and take ops after it from there.
+6. **The owner does not have to be online:** a member's `add`, `leave`, an admin's `remove` each take effect on their own. `transfer` and `dissolve` stay owner-only and explicit (G009, G016); there is no automatic succession.
+7. **Clean cutover.** The product is unreleased: the change log replaces the statement on all devices at once, with no old-statement reader.
+
+**Open:** which key signs an op from a linked device. Today the owner signs with the account's ML-DSA key; if only the master device holds it ([multi-device M021](../multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)), an admin could act only from that device. Decide before o2.
+**Rationale:** Any-member invites (G017) cannot each wait for the owner's device, which is often asleep. A log of signed ops lets each person act for themselves while every member checks every change. Fixed merge rules keep everyone's roster the same without a server to order the changes. A single chain with "the higher rank wins" would be simpler, but the losing branch's removals would silently vanish, letting removed people back in. At 50 members the log stays small, and a checkpoint keeps a newcomer's share short.
+**Alternatives:** Admins propose, the owner's device commits (the owner stays a bottleneck); a single linear chain with a fork-choice rule (loses removals); MLS (a group key would cost G008's property that a removal takes effect at once; out of scope at 50 members).
+
+---
+
+## G019 — Any member invites; the invitee consents; who brought whom is shown
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G001 and G006 (the invite is accepted by the member who sent it, not only the owner).
+**Decision:**
+
+1. **Who may invite:** per policy `invite` (G017), members by default. Under `approval` a member's invite is a suggestion: admins see "Alice suggests Carol — Approve / Dismiss", and the approving admin sends the invite.
+2. **The invitee consents, as today.** The invite is a DM from the inviter; the invitee's own `group_invite_policy` applies (default `contacts_only`, G007): a friend's invite reaches you, a stranger's does not. Accept goes back to the inviter, whose device signs the `add` (G018) and sends the newcomer's card to the members and the members' cards to the newcomer, as `member_joined` does (the inviter, a member, keeps every member's card).
+3. **Before accepting, the invitee sees** the inviter, the group's name and its member count — **not the member list**. Members' cards and names reach only someone who joined; a decline learns no one's keys (as now).
+4. **Accept states what joining shares:** "Joining shares your profile with N people."
+5. **Accountability.** The chat shows "Alice added Carol"; the member list shows who brought each member. Removing an inviter does not remove the people they brought.
+6. **Limits.** The size limit (G014). An inviter's client sends at most 10 invites per group per 24 h. Not enforced by receivers (a client could lie about time); a member who floods is removed and banned (G020).
+
+**Rationale:** Openness on the group side and consent on the person's side: anyone can bring a friend, nobody is put in a group they did not accept. Showing who added whom keeps an open group accountable without a gatekeeper. Hiding the member list until a join keeps members from being shown to everyone who is merely invited.
+**Alternatives:** Owner-only invites (G001); auto-join without accepting (shares a profile without consent); show the member list on the invite (exposes members to every invitee).
+
+---
+
+## G020 — Removing a member: order, notice, bans
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G009 (2): owner and admins may remove.
+**Decision:**
+
+1. **Who:** the owner removes anyone but itself; an admin removes members, not admins or the owner (G017).
+2. **Order.** The `remove` op goes to the remaining members first, then to the person removed. Until a member applies it, that member still sends the removed person copies; sending to the people who stay first shortens that window, and the heads carried on every message close it (G018 4).
+3. **The removed person is told:** "You were removed by Alice". Their chat stays, read-only (the removed state of G013). The real enforcement is the other members' clients: they stop sending copies, so a removed device that ignores the notice still gets nothing new.
+4. **Honest copy.** Removal says "They keep the messages they already received."
+5. **Ban.** `remove` may set `ban`. A banned account cannot be added back — by any member's invite, by an invite link, or by a merge (an `add` of a banned account is void) — until an admin or the owner `unban`s it.
+6. **Calls.** Someone removed from the group drops out of the group's live call (calls V053, V058), unchanged.
+
+**Rationale:** Pairwise copies (G008) make a removal take effect for content as soon as each member applies it, with no group key to rotate; what is left is the window before members hear of it, which ordering and heads shorten. Telling the person is the honest choice: starving them silently is noticed anyway, and the UI must not promise what cannot be done (unsending history).
+**Alternatives:** Remove silently; any member removes (G017); a removal that also removes the people the removed member brought in (punishes people for who invited them).
+
+---
+
+## G021 — Invite links
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Wire sketch: [DESIGN § Open groups](DESIGN.md#open-groups-g017g023).
+**Decision:**
+
+1. **Who may make one:** per policy `links` (G017), members by default.
+2. **A link carries** a random link id and secret, its expiry, and the account of the member who made it — **not** the group's id, name or members. A `link_add` op puts the link id, a hash of its secret, the expiry and an optional use limit in the roster, so every admin knows it and any of them can revoke it (`link_revoke`). Default expiry: 7 days.
+3. **Joining.** Opening the link sends a join request (link id, secret) to its maker. The maker's device checks the secret, the expiry, the uses, revocation, bans and the size limit; only then does it show the group's name and member count, and on the joiner's confirm it signs the `add` (G018). If the maker is offline the joiner waits; the request can also go to an admin, who sees the link in the roster.
+4. **Rate.** A link's answerer takes at most 20 join requests an hour for it.
+5. **No server.** Nothing resolves links; a link is only bytes between people, shown as text or a QR code (the scan flow, [SCANNING.md](../../docs/ui/SCANNING.md)).
+
+**Stated limits:** Whoever holds a link learns the account of the member who made it. A leaked link lets strangers join until it expires or is revoked; admins remove and ban (G020).
+**Rationale:** Bringing a friend should not need the friend to be your contact first. A link that names neither the group nor its members leaks nothing to someone who only sees it, and keeping links in the signed roster lets any admin see and revoke them.
+**Alternatives:** Links through a server (a lookup service that sees every join); links that name the group and preview it without the secret (leaks the group to anyone who sees the link); approval for every link join (friction in an open group; a member who wants it can use `invite: approval` instead).
+
+---
+
+## G022 — Make a group during a call
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023).
+**Decision:**
+
+1. **Where:** a call not tied to a group (one that started 1:1 and grew; `origin_group_id` empty), once three or more people are in it. The call screen offers **"Make a group…"**.
+2. **Who:** any participant. They become the new group's owner.
+3. **How:** the people picker opens with everyone in the call selected (each can be unticked) and a default name from the participants' names; confirming creates the group and invites each selected participant — the existing create-group path ("Add people" from a direct chat), with the call's participants prefilled.
+4. **The invitees** see the invite as a banner in the call: "Alice made a group "{name}" with everyone here — Join / Not now". It is the ordinary invite: nobody is added without Join (G019).
+5. **The live call is left alone.** It does not become the group's call: group calls drop people who are not in the group (V053), and someone who chose "Not now" must not lose the call. The next call from the group is a group call.
+6. **The new group starts empty**, with one line in its chat: "Group made during a call". The earlier direct chat between the first two stays between them.
+
+**Rationale:** People often grow a 1:1 call into a small group call and then want to keep talking as a group. Turning the call into an invite with one tap keeps the consent of each person and reuses what exists.
+**Alternatives:** Add everyone automatically (no consent; a group lasts and shares profiles, a call does not); attach the live call to the new group (drops whoever has not joined yet).
+
+---
+
+## G023 — Privacy in open groups: history from the join, message requests, the group id off the relay
+
+**Date:** 2026-11-05
+**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Amends G003 (full backfill on join).
+**Decision:**
+
+1. **A newcomer sees messages from when they joined.** Policy `history` (G017) defaults to `since_join`; owner or admins may set `full`. In an open group people come in whom the earlier members never picked; what members wrote was shared with the people present then. (G003's full backfill was never built — there is no `history_visibility` in the code — so nothing that ships changes.)
+2. **Direct messages from a group member who is not a contact arrive as message requests.** An open group puts your card, and the relay route that comes with it, in the hands of people you do not know. Their first direct message waits in a requests list until you accept it (then it is an ordinary chat) or decline it (nothing is sent back). There is no requests list yet: [privacy P007](../privacy/DECISIONS.md#p007--who-can-call-me-strangers-messages-stay-open-for-now) left strangers' messages open because limiting them needs one. It is built here for group members who are not contacts; any other stranger's first message stays open as P007 says, and can move to the same list later.
+3. **The relay no longer learns which group a message belongs to.** Today a group copy's envelope carries `route.group_id`, signed but in the clear ([WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md)), so the relay can map who is in which group and how busy it is. Each copy is already pairwise (G008): the group id and the roster heads (G018) move inside the copy's ciphertext, and a group copy looks to the relay like a direct message. Clean cutover (unreleased product).
+
+**Later:** padding and send jitter, so N copies of one message at the same moment, of the same size, do not stand out.
+**Rationale:** Openness is about who can come in, not about what was said before they came or what the relay can see. Each of these closes a gap an open group widens.
+**Alternatives:** Full history by default (shares members' past messages with people they did not pick); keep the group id on the envelope (the relay keeps a membership map).

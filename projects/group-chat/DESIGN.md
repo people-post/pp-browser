@@ -62,6 +62,8 @@ flowchart TB
 
 ## Roles and permissions
 
+> **Accepted 2026-11-05, not built:** open groups replace this section — roles, permissions and a signed policy in [G017](DECISIONS.md#g017--open-groups-roles-and-a-signed-group-policy), wire in [§ Open groups](#open-groups-g017g023) below. Until they ship, the tables here describe the code.
+
 ### MemberRole
 
 | Value | First slice | Notes |
@@ -394,3 +396,79 @@ The owner checks too (G013 amendment): a member may hold a newer statement the o
 - G014: 51st invite refused; accept at full yields `group_invite_refused`; pending invites not counted.
 
 Not proposed: dissolve-for-everyone. Kenneth 2026-10-25: owner transfer (G009) stays; a hijacked owner account must not be able to erase a group.
+
+---
+
+## Open groups (G017–G023)
+
+Accepted 2026-11-05, not built. Sketches to settle in each phase ([PHASES § O](PHASES.md#o--open-groups-g017g023)); the shipped wire goes to [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md). The product is unreleased: each step is a clean cutover.
+
+### Roster op (G018)
+
+```json
+{
+  "group_id": "group:…",
+  "after": ["<op id>", "…"],
+  "actor": "account:…",
+  "actor_key": "<ML-DSA public key; the account id derives from it>",
+  "at": 1767225600000,
+  "op": "add",
+  "body": { "member": "account:…", "invite_nonce": "uuid" },
+  "signature": "<over the canonical encoding of the fields above>"
+}
+```
+
+- **Op id:** the hash of the signed bytes. `at` is for display; order comes from `after`.
+- **`op` / `body`:**
+
+| op | body | Who (G017) |
+|---|---|---|
+| `add` | `member`, `invite_nonce` or `link_id` | per `invite` / `links` |
+| `leave` | — (the actor leaves) | anyone; the owner only with a `transfer` (G009) |
+| `remove` | `member`, `ban` | owner; admins for members |
+| `unban` | `member` | owner, admins |
+| `set_role` | `member`, `role` (`admin` / `member`) | owner |
+| `set_policy` | `key`, `value` | owner, admins |
+| `rename` | `title` | per `rename` |
+| `transfer` | `new_owner`, `leave_previous` | owner |
+| `dissolve` | — | owner (G016) |
+| `link_add` | `link_id`, `secret_hash`, `expires_at`, `max_uses`? | per `links` |
+| `link_revoke` | `link_id` | the link's maker, admins, owner |
+
+- **The roster** is computed from the ops reachable from a set of heads: valid ops in causal order, ties by op id, then the merge rules R1–R4 (G018).
+- **Checkpoint** (for a newcomer): `{group_id, heads, members, roles, policy, links, bans, title, signature}` from the member who adds them.
+
+### Carrying heads and syncing ops
+
+- **Each group copy's plaintext** (inside the AEAD, not the relay envelope — G023) carries `group_id` and `roster_heads`: the sender's heads, or a short hash of them.
+- **A receiver with other heads** sends `group_roster_request {group_id, request_id, heads}` (G013's control-lane request). The reply carries the ops the asker lacks (`ops: [...]`, bounded), or a checkpoint when the gap is large.
+
+### Invites (G019)
+
+- **`group_invite`** as today, with the inviter's role and the group policy's `invite` value. It shows the group's name and member count, not the members.
+- **Under `approval`:** a member sends `group_invite_suggest {group_id, invitee, suggestion_id}` to the admins. The approving admin sends the invite; the others see the suggestion closed.
+- **`group_invite_accept`** goes to the inviter, whose device signs the `add` and sends it to the members with the newcomer's card. The newcomer gets the checkpoint and the members' cards, as `member_joined` carries them today.
+
+### Invite link (G021)
+
+```
+pp://join/<base64url(link_id[16] || secret[16] || expires_at[8] || maker account id)>
+```
+
+- **Join request:** `group_join_request {link_id, secret, request_id}` goes to the maker, or else an admin, on the control lane.
+- **Answer:** `group_join_preview {request_id, group_title, member_count}`, or `group_join_refused {request_id, reason}` with reason `expired` / `revoked` / `used_up` / `banned` / `group_full` / `rate`.
+- **Confirm:** `group_join_confirm {request_id}`; the answerer signs `add` with `link_id`.
+
+### Removal notice (G020)
+
+- **The `remove` op** goes to the remaining members first.
+- **The removed account** gets the op itself and shows "You were removed by {actor}", the G013 removed state.
+- **A banned account** in the roster makes any `add` of it void.
+
+### Make a group during a call (G022)
+
+- **No new wire.** The create-group path and `group_invite`, with `context: "call"` and the `call_id`, so the invitee's device shows the invite as a banner in that call.
+
+### Guests in a group's call
+
+- See [calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-brought-by-the-groups-policy-removal-by-owner-and-admins).

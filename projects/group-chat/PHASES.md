@@ -7,6 +7,9 @@ C0 ── C1 ── C2 ── C3 ── C4 ── C5            (base group chat
                  └── R (signed roster + member check, G010–G013 — landed)
                        └── M (mentions, G015: m1 ── m2 ── m3 / m4 ── m5 ── m6)
 L (size limit, G014) — independent
+O (open groups, G017–G023): o1 ── o2 ── o4 ── o5
+                            o3 (any time; needs only today's create-group path)
+                            o6 (privacy; o6c with o2's ops in the plaintext)
 ```
 
 ## C0–C5 — Base group chat
@@ -62,3 +65,48 @@ L (size limit, G014) — independent
 **m6 — Proof and promotion**
 - [x] Probe `send_mentions`, `mute_mentions` / `allow_mentions`, a `notice` event (kind message: `mentions_us`, `alerts`); lab `muted_group_alerts_on_a_mention` (a plain message silent, a mention alerts, a member's `@everyone` does not, mentions muted too: silent)
 - [x] Promote: WIRE_SCHEMAS normative; DATA_LAYOUT `thread_mentions` / `mute_mentions` lines match the code; G015 status → implemented. gtests `group_mentions_test`, `transcript_mentions_test`. Seen on screen 2026-10-30 (the GUI on a lab member's profile, Xvfb): "You were mentioned" in the list, the jump, highlights for a member's mention and the owner's `@everyone`, the picker (members by public name, no `@everyone` for a member), Tab choosing; a picker that did not reopen after a send was fixed. A click on any context-menu item (the picker's, and the older chat menu's alike) did nothing under Xvfb — to check on a real desktop
+
+## O — Open groups (G017–G023)
+
+Accepted 2026-11-05 (Hongwei). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status.
+
+**o1 — Roles and the signed policy (G017)**
+- [ ] `admin` role live; the permission table as one function every check calls (actor, action, roster, policy)
+- [ ] Policy keys and defaults (`invite`, `links`, `call_guests`, `rename`, `history`); owner / admins change it; UI in the group's settings
+- [ ] `@everyone` for the owner and admins (G015 amendment): eligibility, the composer offer, the transcript highlight
+- [ ] Appoint / demote an admin (owner), shown in the member list
+
+**o2 — The signed change log (G018)**
+- [ ] Decide which key signs an op from a linked device (G018 Open) — before any wire
+- [ ] Op codec and signature (`roster_op`), op id; the roster computed from heads with R1–R4; checkpoint
+- [ ] Ops replace the owner statement on every roster event (`member_joined`, `member_left`, `member_removed`, `owner_transferred`, `group_renamed`, `group_dissolved`); member check (G013) carries ops
+- [ ] Heads in each group copy's plaintext; catch-up on a mismatch
+- [ ] gtests: every merge rule (concurrent remove vs add, demote vs the demoted admin's removal, concurrent renames, adds past 50); lab: two admins acting while the owner is offline
+
+**o3 — Make a group during a call (G022)**
+- [ ] "Make a group…" on a call with no group and 3+ people; picker prefilled with the participants
+- [ ] The invite with `context: call` shown as a banner in that call (Join / Not now); the live call stays as it is
+- [ ] Lab: a 1:1 call grows to three, one makes a group, two join, one says not now and stays in the call
+
+**o4 — Any member invites; removal and bans (G019, G020)**
+- [ ] Invites by members per policy; `approval`: suggestions to admins; accept goes to the inviter, who signs the `add`
+- [ ] Invite shows name and member count only; Accept states what joining shares; "Alice added Carol" and "added by" in the member list; 10 invites per group per 24 h in the inviter's client
+- [ ] Removal by admins (members only); order (remaining members first); the removed notice; "They keep the messages they already received"; ban / unban
+- [ ] Lab: a member invites with the owner offline; an admin removes and bans, the banned account cannot be re-invited
+
+**o5 — Invite links (G021)**
+- [ ] `link_add` / `link_revoke` ops; the link format; QR through the scan flow
+- [ ] Join request → preview → confirm; refusals; 20 requests an hour per link
+- [ ] Lab: join by link; a revoked and an expired link refused
+
+**o6 — Privacy (G023)**
+- [ ] o6a newcomers see messages from the join (`history: since_join`); `full` by policy
+- [ ] o6b message requests for direct messages from group members who are not contacts (the requests list P007 left open)
+- [ ] o6c the group id and roster heads move inside the copy's ciphertext; the relay envelope of a group copy looks like a direct one; WIRE_SCHEMAS updated
+
+**Calls — guests in a group's call ([calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-brought-by-the-groups-policy-removal-by-owner-and-admins))**, with o1 (policy) and o4 (roles in use)
+- [ ] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label
+- [ ] `call_guests` policy checked by each participant's device
+- [ ] `call_remove` from the owner / admins; key rotates without them; their device leaves
+- [ ] "Add {name} to the group" for a guest; the guest's "Joining shows you to N people"
+- [ ] CALLS.md updated when it ships
