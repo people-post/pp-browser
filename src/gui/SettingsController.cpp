@@ -1392,6 +1392,7 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_subpage");
   }
+  security_actions_.HideRecoveryPhrase();  // the phrase and its PIN field do not follow the user off the page
   if (security_page_.empty()) {
     return;
   }

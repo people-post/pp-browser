@@ -30,8 +30,8 @@ SettingsSecurityActions::SettingsSecurityActions(SettingsHost& host, const Setti
     : host_(host), commands_(commands), feedback_(feedback), unlock_(unlock) {
   // The phrase does not stay up behind the app (the app switcher, an unlocked phone left on the table).
   background_listener_ = AppLifecycle::AddBackgroundListener([this]() {
-    if (!recovery_phrase_.empty()) {
-      HideRecoveryPhrase();
+    if (!recovery_phrase_.empty() || recovery_pin_open_ || !recovery_phrase_pin_.empty()) {
+      HideRecoveryPhrase();  // and a reveal still being checked is void (second review 2026-11-06)
     }
   });
 }
@@ -263,10 +263,15 @@ void SettingsSecurityActions::ShowRecoveryPhrase() {
     return;
   }
   recovery_phrase_pin_ = "";
-  AppRuntime::PostWorkerNormal([this, pin]() {
+  // Cancel, the background or a timeout while the PIN is being checked voids this reveal (the count moves on).
+  const uint64_t request = ++recovery_shown_count_;
+  AppRuntime::PostWorkerNormal([this, pin, request]() {
     auto phrase = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
                                             : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
-    AppRuntime::PostUI([this, phrase = std::move(phrase)]() mutable {
+    AppRuntime::PostUI([this, request, phrase = std::move(phrase)]() mutable {
+      if (request != recovery_shown_count_) {
+        return;
+      }
       if (!phrase) {
         host_.ReportFailure(phrase.error());
         host_.PushToView(false);
@@ -420,6 +425,7 @@ void SettingsSecurityActions::PerformResetProfile() {
     return;
   }
   ClearPinFields();
+  HideRecoveryPhrase();
   host_.ShowStatus("");
   host_.Resync(true);
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));

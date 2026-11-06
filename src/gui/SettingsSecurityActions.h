@@ -26,6 +26,8 @@ namespace pbr {
  */
 class SettingsSecurityActions {
 public:
+  /** Hides the phrase, folds the PIN field away and drops a typed PIN; also voids a reveal still being checked. */
+  void HideRecoveryPhrase();
   SettingsSecurityActions(SettingsHost& host, const SettingsCommands& commands, const ShellFeedbackPorts& feedback,
                           const UnlockEnsurePorts& unlock);
   ~SettingsSecurityActions();
@@ -44,7 +46,6 @@ private:
   void ExportLinkDevice();
   /** Me → Security → Show recovery phrase: the PIN again (unless the app default), then the 24 words for a while. */
   void ShowRecoveryPhrase();
-  void HideRecoveryPhrase();
   /** Me → Security → Save a copy of my account: the sealed account state to a file the user picks (M023). */
   void SaveAccountCopy();
   void ClearUndeliveredOlderThan();

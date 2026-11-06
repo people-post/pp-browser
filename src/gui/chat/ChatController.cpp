@@ -464,7 +464,7 @@ ChatController::ChatController()
     }
     auto found = facade_->GetMessage(ActiveThreadId(), entry_id);
     if (!found || !found->has_value() || !(*found)->working_set_json || (*found)->working_set_json->empty()) {
-      log().warning << "Working set: entry " << entry_id << " not in thread " << ActiveThreadId();
+      log().warning << "Working set: entry " << entry_id << " has no stored panel in thread " << ActiveThreadId();
       return std::nullopt;
     }
     return WorkingSetController::StoredEntry{WorkingSetCandidatesFromJson(*(*found)->working_set_json),
