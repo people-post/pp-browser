@@ -84,7 +84,8 @@ CREATE TABLE IF NOT EXISTS pending_group_invites (
   status TEXT NOT NULL DEFAULT 'pending',
   expires_at INTEGER,
   created_at INTEGER NOT NULL,
-  outbound INTEGER NOT NULL DEFAULT 0
+  outbound INTEGER NOT NULL DEFAULT 0,
+  owner_identity TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_pending_invites_created ON pending_group_invites(created_at);
 )sql";
@@ -139,6 +140,10 @@ Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
                      nullptr, nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE pending_group_invites ADD COLUMN outbound INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
+  // G019: a member's invite names the group's owner.
+  (void)sqlite3_exec(profile_db,
+                     "ALTER TABLE pending_group_invites ADD COLUMN owner_identity TEXT NOT NULL DEFAULT '';", nullptr,
+                     nullptr, nullptr);
   (void)sqlite3_exec(profile_db, "ALTER TABLE group_metadata ADD COLUMN title_version INTEGER NOT NULL DEFAULT 0;",
                      nullptr, nullptr, nullptr);
   // G012 / G013: the owner-signed roster we hold, and a restored group's member check.
@@ -408,7 +413,8 @@ Roe<void> SqliteGroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& 
       // A stored invite is never rewritten by another one with the same nonce (status changes go
       // through UpdateInviteStatus).
       "INSERT INTO pending_group_invites (invite_nonce, group_id, group_title, inviter_identity, invitee_identity, "
-      "roster_epoch, status, expires_at, created_at, outbound) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "roster_epoch, status, expires_at, created_at, outbound, owner_identity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+      "?) "
       "ON CONFLICT(invite_nonce) DO NOTHING;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
@@ -428,6 +434,7 @@ Roe<void> SqliteGroupRosterStore::UpsertPendingInvite(const PendingGroupInvite& 
   }
   sqlite3_bind_int64(stmt, 9, invite.created_at);
   sqlite3_bind_int(stmt, 10, invite.outbound ? 1 : 0);
+  sqlite3_bind_text(stmt, 11, invite.owner_identity.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -447,7 +454,8 @@ Roe<std::optional<PendingGroupInvite>> SqliteGroupRosterStore::LoadPendingInvite
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
                          "SELECT group_id, group_title, inviter_identity, invitee_identity, roster_epoch, status, "
-                         "expires_at, created_at, outbound FROM pending_group_invites WHERE invite_nonce = ? LIMIT 1;",
+                         "expires_at, created_at, outbound, owner_identity FROM pending_group_invites WHERE "
+                         "invite_nonce = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare invite load");
@@ -470,6 +478,9 @@ Roe<std::optional<PendingGroupInvite>> SqliteGroupRosterStore::LoadPendingInvite
     }
     invite.created_at = sqlite3_column_int64(stmt, 7);
     invite.outbound = sqlite3_column_int(stmt, 8) != 0;
+    if (sqlite3_column_text(stmt, 9)) {
+      invite.owner_identity = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 9));
+    }
     result = std::move(invite);
   }
   sqlite3_finalize(stmt);

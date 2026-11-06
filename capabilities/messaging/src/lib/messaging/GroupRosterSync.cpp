@@ -253,6 +253,9 @@ Roe<GroupViewApplied> ApplyView(IGroupRosterStore& roster, const std::string& gr
   if (!view.title.empty() && view.title_version > updated.title_version) {
     updated.title = view.title;
     updated.title_version = view.title_version;
+    if (updated.title != now->title) {
+      applied.new_title = updated.title;
+    }
   }
   const bool same = updated.owner_identity == now->owner_identity && updated.roster_epoch == now->roster_epoch &&
                     updated.policy.preset == now->policy.preset && updated.title == now->title &&
@@ -312,6 +315,59 @@ Roe<ChangeHeld> HoldChange(IGroupRosterStore& roster, const GroupChange& change,
     return kept.error();
   }
   return held;
+}
+
+Roe<void> HoldCarried(IGroupRosterStore& roster, const std::vector<GroupChange>& changes, const GroupCardLookup& cards,
+                      const int64_t now_ms, const bool line_shown) {
+  auto lock = IGroupRosterStore::LockForUpdate();
+  std::map<std::string, AccountCard> carried;
+  for (const GroupChange& change : changes) {
+    if (change.signer_card) {
+      carried.emplace(change.signer, *change.signer_card);
+    }
+  }
+  for (GroupChange change : changes) {
+    if (auto card = carried.find(change.signer); !change.signer_card && card != carried.end()) {
+      change.signer_card = card->second;
+    }
+    if (auto held = HoldChange(roster, change, cards, now_ms, line_shown); !held) {
+      return held.error();
+    }
+  }
+  return {};
+}
+
+Roe<void> CheckJoin(IGroupRosterStore& roster, const GroupRosterStatement& statement,
+                    const std::vector<GroupChange>& changes, const GroupCardLookup& cards, const int64_t now_ms,
+                    const std::string& identity) {
+  auto metadata = MetadataOf(roster, statement.group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (statement.dissolved) {
+    return Error("the group was dissolved");
+  }
+  if (auto valid = group_roster_statement::Verify(statement, metadata->owner_identity); !valid) {
+    return valid.error();
+  }
+  std::vector<GroupChange> all = HeldChanges(roster, statement.group_id);
+  std::map<std::string, AccountCard> carried;
+  for (const GroupChange& change : changes) {
+    if (change.signer_card) {
+      carried.emplace(change.signer, *change.signer_card);
+    }
+  }
+  for (GroupChange change : changes) {
+    if (auto card = carried.find(change.signer); !change.signer_card && card != carried.end()) {
+      change.signer_card = card->second;
+    }
+    all.push_back(std::move(change));
+  }
+  const GroupRosterView view = ComputeRosterChecked(statement, CheckChanges(all, cards, now_ms), now_ms);
+  if (!view.Lists(identity)) {
+    return Error("the roster it proves does not have us");
+  }
+  return {};
 }
 
 Roe<ChangeReceived> ReceiveChange(IGroupRosterStore& roster, const GroupChange& change, const GroupCardLookup& cards,
@@ -386,6 +442,160 @@ Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group
   Bound(change->adds);
   Bound(change->keeps);
   return change;
+}
+
+std::optional<GroupRosterView> CurrentView(IGroupRosterStore& roster, const std::string& group_id,
+                                           const GroupCardLookup& cards, const int64_t now_ms) {
+  auto metadata = roster.LoadMetadata(group_id);
+  if (!metadata || !*metadata) {
+    return std::nullopt;
+  }
+  const std::optional<GroupRosterStatement> held = Held(**metadata);
+  if (!held) {
+    return std::nullopt;
+  }
+  return ComputeRosterChecked(*held, CheckChanges(HeldChanges(roster, group_id), cards, now_ms), now_ms);
+}
+
+std::optional<GroupRemovedMember> RemovedEntry(IGroupRosterStore& roster, const std::string& group_id,
+                                               const std::string& member, const GroupCardLookup& cards,
+                                               const int64_t now_ms) {
+  auto metadata = roster.LoadMetadata(group_id);
+  if (!metadata || !*metadata) {
+    return std::nullopt;
+  }
+  // The statement's entry first: a re-admit of someone it lists must name exactly that removal (R2).
+  if (const std::optional<GroupRosterStatement> held = Held(**metadata)) {
+    for (const GroupRemovedMember& r : held->removed) {
+      if (r.identity == member) {
+        return r;
+      }
+    }
+  }
+  const std::optional<GroupRosterView> view = CurrentView(roster, group_id, cards, now_ms);
+  if (!view || view->Lists(member)) {
+    return std::nullopt;
+  }
+  for (const GroupRemovedMember& r : view->removed) {
+    if (r.identity == member) {
+      return r;
+    }
+  }
+  return std::nullopt;
+}
+
+namespace {
+
+/** Our role in the group as the roster we hold has it (nullopt: not in it). */
+std::optional<MemberRole> OwnRole(IGroupRosterStore& roster, const GroupMetadata& metadata,
+                                  const std::string& local_identity) {
+  if (metadata.owner_identity == local_identity) {
+    return MemberRole::Owner;
+  }
+  auto self = roster.FindMember(metadata.group_id, local_identity);
+  if (!self || !*self) {
+    return std::nullopt;
+  }
+  return (*self)->role;
+}
+
+} // namespace
+
+Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                          const std::string& local_device, const std::string& member, const std::string& invite_nonce,
+                          const GroupCardLookup& cards, const int64_t now_ms) {
+  auto change = DraftOn(roster, group_id, local_identity, local_device, GroupChangeKind::Add, now_ms);
+  if (!change) {
+    return change.error();
+  }
+  if (member.empty() || member == local_identity || invite_nonce.empty()) {
+    return Error("An add names someone else and the invite it answers");
+  }
+  auto metadata = MetadataOf(roster, group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  const std::optional<MemberRole> role = OwnRole(roster, *metadata, local_identity);
+  if (!role || !GroupAllows(GroupAction::Invite, *role, metadata->policy.preset)) {
+    return Error(kGroupInviteNotAllowedError);
+  }
+  if (auto in = roster.IsMember(group_id, member); in && *in) {
+    return Error(kGroupAlreadyMemberError);
+  }
+  if (const auto removed = RemovedEntry(roster, group_id, member, cards, now_ms)) {
+    if (!GroupAllows(GroupAction::Readmit, *role, metadata->policy.preset)) {
+      return Error(kGroupInviteRemovedError); // R2: only the owner or an admin brings them back
+    }
+    change->readmits = removed->removal;
+  }
+  change->member = member;
+  change->invite_nonce = invite_nonce;
+  return change;
+}
+
+Roe<GroupChange> DraftRename(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                             const std::string& local_device, const std::string& title, const GroupCardLookup& cards,
+                             const int64_t now_ms) {
+  auto change = DraftOn(roster, group_id, local_identity, local_device, GroupChangeKind::Rename, now_ms);
+  if (!change) {
+    return change.error();
+  }
+  if (title.empty() || title.size() > group_change::kMaxTitleBytes) {
+    return Error("Group title required");
+  }
+  auto metadata = MetadataOf(roster, group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  const std::optional<MemberRole> role = OwnRole(roster, *metadata, local_identity);
+  if (!role || !GroupAllows(GroupAction::Rename, *role, metadata->policy.preset)) {
+    return Error(kGroupRenameNotAllowedError);
+  }
+  uint64_t version = metadata->title_version;
+  if (const std::optional<GroupRosterView> view = CurrentView(roster, group_id, cards, now_ms)) {
+    version = std::max(version, view->title_version);
+  }
+  change->title = title;
+  change->title_version = version + 1;
+  return change;
+}
+
+std::vector<std::string> RemovableAddedBy(IGroupRosterStore& roster, const std::string& group_id,
+                                          const std::string& local_identity, const std::string& account) {
+  std::vector<std::string> targets;
+  auto metadata = roster.LoadMetadata(group_id);
+  auto members = roster.ListMembers(group_id);
+  if (!metadata || !*metadata || !members || account.empty()) {
+    return targets;
+  }
+  const std::optional<MemberRole> role = OwnRole(roster, **metadata, local_identity);
+  if (!role) {
+    return targets;
+  }
+  for (const GroupRosterMember& m : *members) {
+    const MemberRole target = m.member_identity == (*metadata)->owner_identity ? MemberRole::Owner : m.role;
+    if (m.added_by == account && m.member_identity != account && m.member_identity != local_identity &&
+        GroupAllows(GroupAction::Remove, *role, (*metadata)->policy.preset, target)) {
+      targets.push_back(m.member_identity); // an admin someone added stays: only the owner removes admins
+    }
+  }
+  std::sort(targets.begin(), targets.end());
+  return targets;
+}
+
+std::vector<std::string> RemovedBy(IGroupRosterStore& roster, const std::string& group_id, const std::string& account,
+                                   const GroupCardLookup& cards, const int64_t now_ms) {
+  std::vector<std::string> removed;
+  const std::optional<GroupRosterView> view = CurrentView(roster, group_id, cards, now_ms);
+  if (!view || account.empty()) {
+    return removed;
+  }
+  for (const GroupRemovedMember& r : view->removed) {
+    if (r.removed_by == account && !view->Lists(r.identity)) {
+      removed.push_back(r.identity);
+    }
+  }
+  return removed;
 }
 
 GroupRosterView FoldBase(IGroupRosterStore& roster, const GroupMetadata& metadata,
@@ -570,6 +780,41 @@ void AddChangesTo(IGroupRosterStore& roster, const group_roster_sync_codec::Rost
   }
 }
 
+group_roster_sync_codec::CarriedChanges ChangesForNewcomer(IGroupRosterStore& roster, const std::string& group_id,
+                                                           const std::string& first) {
+  group_roster_sync_codec::CarriedChanges carried;
+  auto stored = roster.ListGroupChanges(group_id);
+  if (!stored) {
+    return carried;
+  }
+  std::sort(stored->begin(), stored->end(), [&first](const StoredGroupChange& a, const StoredGroupChange& b) {
+    if ((a.change_id == first) != (b.change_id == first)) {
+      return a.change_id == first;
+    }
+    return a.change_id < b.change_id;
+  });
+  std::set<std::string> carded;
+  size_t bytes = 0;
+  for (const StoredGroupChange& row : *stored) {
+    auto change = ParseChange(row);
+    if (!change) {
+      continue;
+    }
+    if (change->signer_card && !carded.insert(change->signer).second) {
+      change->signer_card.reset(); // the signer's card rides the bundle once
+    }
+    const size_t size = DumpJson(group_change::ToJson(*change)).size();
+    if (carried.changes.size() >= group_roster_sync_codec::kMaxReplyChanges ||
+        (!carried.changes.empty() && bytes + size > group_roster_sync_codec::kReplyChangesBudgetBytes)) {
+      carried.more = true;
+      break;
+    }
+    bytes += size;
+    carried.changes.push_back(std::move(*change));
+  }
+  return carried;
+}
+
 Roe<bool> KeepStatement(IGroupRosterStore& roster, const GroupRosterStatement& statement) {
   if (statement.dissolved) {
     return Error("roster statement: a dissolve is not a roster"); // G016: never held as the group's roster
@@ -690,21 +935,8 @@ Roe<bool> TakeReply(IGroupRosterStore& roster, const group_roster_sync_codec::Ro
   if (auto kept = KeepStatement(roster, *reply.statement); !kept) {
     return kept.error();
   }
-  // A reply carries each signer's card once; every change of that signer is kept with it, so it still proves
-  // itself once the one that carried it is folded and dropped.
-  std::map<std::string, AccountCard> carried;
-  for (const GroupChange& change : reply.changes) {
-    if (change.signer_card) {
-      carried.emplace(change.signer, *change.signer_card);
-    }
-  }
-  for (GroupChange change : reply.changes) {
-    if (auto card = carried.find(change.signer); !change.signer_card && card != carried.end()) {
-      change.signer_card = card->second;
-    }
-    if (auto held = HoldChange(roster, change, cards, now_ms); !held) {
-      return held.error();
-    }
+  if (auto held = HoldCarried(roster, reply.changes, cards, now_ms); !held) {
+    return held.error();
   }
   auto view = ApplyView(roster, reply.group_id, cards, now_ms);
   if (!view) {

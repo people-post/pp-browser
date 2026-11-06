@@ -14,15 +14,28 @@
 
 namespace pbr {
 
+/** What an accept of an invite this device sent asks of it (G019). */
+enum class InviteAccepted : uint8_t {
+  /** Accepted before: applied once (a member removed since, or one who left, needs a new invite). */
+  Already,
+  /** We own the group: the member is in now, added by us, roster epoch + 1 — publish member_joined. */
+  Added,
+  /**
+   * We invited as a member or admin: nothing written yet — sign the `add` (G018) and send it
+   * (GroupMembershipWorkflow::AdmitInvitee), which marks the invite accepted.
+   */
+  SignAdd,
+};
+
 /**
- * Owner-side: an invite this device issued (`outbound`), for `group_id`, which `local_identity`
- * owns, accepted by its invitee before it expired → active member, roster epoch +1. True when the
- * member was added now; false when the invite was already accepted (a re-delivered accept adds no
- * one — a member removed since, or one who left, needs a new invite).
+ * Inviter-side (G019): an invite this device issued (`outbound`) for `group_id`, accepted by its
+ * invitee before it expired, in a group with room (G014: else `kGroupFullError`). As the owner the
+ * member is added now (`Added`); as a member or admin who may still invite under the preset
+ * (GroupAllows, else `kGroupInviteNotAllowedError`) the add is ours to sign (`SignAdd`).
  */
-Roe<bool> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
-                                    const std::string& member_identity, const std::string& group_id,
-                                    const std::string& local_identity, int64_t now_ms);
+Roe<InviteAccepted> ApplyInviteAcceptToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
+                                              const std::string& member_identity, const std::string& group_id,
+                                              const std::string& local_identity, int64_t now_ms);
 /** Owner-side: clear a pending invite this device issued (invitee was never an encrypt target). */
 Roe<void> ApplyInviteDeclineToRoster(IGroupRosterStore& roster, const std::string& invite_nonce,
                                      const std::string& member_identity, const std::string& group_id);

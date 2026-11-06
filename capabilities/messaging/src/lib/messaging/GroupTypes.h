@@ -66,6 +66,17 @@ inline constexpr const char kGroupFullError[] = "This group is full (50 members)
 inline constexpr const char kInviteRefusedGroupFull[] = "group_full";
 /** `group_invite_refused` reason (G016): the group was dissolved before the invite could be accepted. */
 inline constexpr const char kInviteRefusedGroupDissolved[] = "group_dissolved";
+/**
+ * `group_invite_refused` reason (G019, G020): the inviter may no longer sign the add — the preset or its role changed,
+ * or the invitee was removed since (only the owner or an admin brings them back, G018 R2).
+ */
+inline constexpr const char kInviteRefusedNotAllowed[] = "not_allowed";
+
+/** G019 / G020: why an invite or a rename is refused here (i18n keys the GUI words). */
+inline constexpr const char kGroupInviteNotAllowedError[] = "chat.group.err.invite_not_allowed";
+inline constexpr const char kGroupInviteRemovedError[] = "chat.group.err.invite_removed";
+inline constexpr const char kGroupAlreadyMemberError[] = "chat.group.err.already_member";
+inline constexpr const char kGroupRenameNotAllowedError[] = "chat.group.err.rename_not_allowed";
 
 /**
  * G013: a restored group checks its members before it sends again. `Dissolved` (G016): the owner ended the
@@ -125,12 +136,21 @@ struct GroupInvitePayload {
   uint64_t roster_epoch = 0;
   std::optional<int64_t> expires_at;
   MemberRole actor_role = MemberRole::Owner;
+  /**
+   * G019: the group's owner as the inviter holds it (the newcomer checks the owner's statement against it); empty
+   * from an inviter that is the owner. Additive.
+   */
+  std::string owner_identity;
+  /** G019 3: how many are in the group now — the invite shows the count, never the members. Additive; 0: not said. */
+  uint64_t member_count = 0;
   /** G022: `kGroupInviteContextCall` for a group made during the call `call_id`; empty for any other invite. */
   std::string context;
   std::string call_id;
 
   /** Made during a call, and names it. */
   bool MadeInCall() const { return context == kGroupInviteContextCall && !call_id.empty(); }
+  /** The owner as the invite names it: the inviter when it says none. */
+  const std::string& Owner() const { return owner_identity.empty() ? inviter_identity : owner_identity; }
 };
 
 struct GroupForkPayload {
@@ -154,8 +174,12 @@ struct PendingGroupInvite {
   InviteStatus status = InviteStatus::Pending;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
-  /** This device issued the invite (we own the group); false for one we received. */
+  /** This device issued the invite (we own the group, or invited as a member, G019); false for one we received. */
   bool outbound = false;
+  /** G019: the group's owner as the invite named it (a member's invite); empty: the inviter. */
+  std::string owner_identity;
+
+  const std::string& Owner() const { return owner_identity.empty() ? inviter_identity : owner_identity; }
 };
 
 std::string GenerateGroupId();

@@ -3,6 +3,8 @@
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupRosterVersion.h"
 
+#include "common/Utilities.h"
+
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -22,10 +24,21 @@ std::optional<ThreadMessage> LineFor(const std::string& thread_id, const GroupCh
       detail = GroupMembershipCodec::EncodeMemberRemoved(change.group_id, change.member, epoch, change.signer);
       text = "Member removed";
       break;
-    case GroupChangeKind::Add:
+    case GroupChangeKind::Add: {
       type = GroupMembershipControlType::MemberJoined;
-      detail = GroupMembershipCodec::EncodeMemberJoined(change.group_id, change.member, MemberRole::Member, epoch);
+      GroupMembershipCodec::MemberJoinedPayload joined;
+      joined.group_id = change.group_id;
+      joined.member_identity = change.member;
+      joined.roster_epoch = epoch;
+      joined.added_by = change.signer; // G019 5: "Alice added Carol"
+      detail = GroupMembershipCodec::EncodeMemberJoined(joined);
       text = "Member joined the group";
+      break;
+    }
+    case GroupChangeKind::Rename:
+      type = GroupMembershipControlType::GroupRenamed;
+      detail = GroupMembershipCodec::EncodeGroupRenamed(change.group_id, change.title, epoch, change.title_version);
+      text = "Group renamed to " + change.title;
       break;
     default:
       return std::nullopt;
@@ -68,6 +81,23 @@ Roe<std::optional<std::string>> Append(IThreadStore& store, const std::string& g
   }
   GroupRosterVersion::Bump(); // the composer's `@` lines see the new roster
   return about_us;
+}
+
+Roe<void> FollowTitle(IThreadStore& store, const std::string& group_id, const std::string& title) {
+  auto thread = store.FindGroupThread(group_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread || title.empty() || (*thread)->title == title) {
+    return {};
+  }
+  Thread row = **thread;
+  row.title = title;
+  row.updated_at = util::NowUnixMs();
+  if (auto saved = store.UpsertThread(row); !saved) {
+    return saved.error();
+  }
+  return {};
 }
 
 } // namespace group_change_lines

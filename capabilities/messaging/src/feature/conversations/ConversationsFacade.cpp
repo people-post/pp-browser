@@ -656,6 +656,37 @@ Roe<GroupPreset> ConversationsFacade::GroupPresetOf(const std::string& group_id)
   return hub_.Groups().GroupPresetOf(group_id);
 }
 
+std::optional<MemberRole> ConversationsFacade::LocalGroupRole(const std::string& group_id) {
+  return hub_.Groups().LocalRole(group_id);
+}
+
+std::vector<std::string> ConversationsFacade::GroupMembersAddedBy(const std::string& group_id,
+                                                                  const std::string& account) {
+  return hub_.Groups().MembersAddedBy(group_id, account);
+}
+
+std::vector<std::string> ConversationsFacade::GroupAccountsRemovedBy(const std::string& group_id,
+                                                                     const std::string& account) {
+  return hub_.Groups().AccountsRemovedBy(group_id, account);
+}
+
+Roe<size_t> ConversationsFacade::RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account) {
+  auto removed = hub_.Groups().RemoveEveryoneAddedBy(group_id, account);
+  NotifyThreadChanged();
+  return removed;
+}
+
+Roe<size_t> ConversationsFacade::ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account) {
+  return hub_.Groups().ReinviteEveryoneRemovedBy(group_id, account);
+}
+
+Roe<void> ConversationsFacade::InviteIdentity(const std::string& group_id, const std::string& account) {
+  if (auto contact = FindContactByIdentity(account, mesh::ContactIdKind::Account); contact && *contact) {
+    return InviteMember(group_id, (*contact)->id);
+  }
+  return hub_.Groups().InviteByIdentity(group_id, account);
+}
+
 std::vector<std::string> ConversationsFacade::ListUnreachableMembers(const std::string& group_id) {
   return hub_.Groups().ListUnreachable(group_id);
 }

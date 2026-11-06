@@ -84,6 +84,15 @@ struct RelayReceiveOutcome {
   std::string refuse_invite_reason;
   std::optional<std::string> publish_member_joined_member_identity;
   uint64_t publish_member_joined_epoch = 0;
+  /** The invite the accept answered (the join bundle names it, G019). */
+  std::string publish_member_joined_invite_nonce;
+  /**
+   * G019: an accept of the invite `admit_invite_nonce` we sent as a member or admin — sign the `add` of `admit_member`
+   * and send it (GroupMembershipWorkflow::AdmitInvitee).
+   */
+  std::optional<std::string> admit_group_id;
+  std::string admit_invite_nonce;
+  std::string admit_member;
   /** G018 item 4: we own this group and hold changes on top of its statement — fold them (debounced). */
   std::optional<std::string> fold_group_id;
   /**
@@ -308,8 +317,32 @@ private:
    * G018: a member's or admin's signed change (`group_change`), from a member: kept when it proves itself (or no card
    * lists its device yet: kept, and the card asked for), the roster recomputed, its line written.
    */
-  Roe<void> ApplyGroupChange(const ThreadMessage& message, const std::string& actor_identity,
+  Roe<void> ApplyGroupChange(ThreadMessage& message, const std::string& actor_identity,
                              const std::string& local_account, RelayReceiveOutcome* outcome) const;
+  /**
+   * G019: the newcomer an `add` brought in (its card and route ride the `group_change`): kept once the add counts
+   * here; the stored copy keeps no card.
+   */
+  void KeepChangeNewcomer(ThreadMessage& message, const GroupChange& change, const std::string& local_account) const;
+  /**
+   * G019, the newcomer's side: the join bundle (`member_joined` naming us) from the inviter of an invite we accepted —
+   * the owner's statement (verified for the owner the invite named), the changes it carries (each proving itself), the
+   * roster computed from them, which must have us; then the members' cards and routes for those it lists. Nothing in
+   * it is taken on the inviter's word.
+   */
+  Roe<void> ApplyJoinBundle(ThreadMessage& message, const GroupMembershipCodec::MemberJoinedPayload& joined,
+                            const std::string& actor_identity, const std::string& local_account,
+                            RelayReceiveOutcome* outcome) const;
+  /**
+   * A member_joined's cards and routes, kept for the members `listed` says the roster has (never on the sender's word
+   * alone); the stored copy keeps none.
+   */
+  void KeepBundleCards(ThreadMessage& message, const GroupMembershipCodec::MemberJoinedPayload& joined,
+                       const std::string& local_account, const std::function<bool(const std::string&)>& listed) const;
+  /** The accept of an invite this device sent (owner, member or admin, G019). */
+  Roe<void> ApplyInviteAccepted(const GroupMembershipCodec::InviteResponsePayload& response,
+                                const std::string& actor_identity, const std::string& local_account,
+                                RelayReceiveOutcome* outcome) const;
   /** G018 item 5: a copy whose sender holds a newer roster than ours asks for a catch-up (rate-limited). */
   void NoteCopyState(const std::string& group_id, const GroupCopyState& theirs, const std::string& sender,
                      RelayReceiveOutcome& outcome);

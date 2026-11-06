@@ -48,9 +48,32 @@ inline constexpr size_t kMaxReplyChanges = 64;
 /** And at most this many bytes of them (a change with its card is ~15 KB; an envelope is at most 256 KB). */
 inline constexpr size_t kReplyChangesBudgetBytes = 96 * 1024;
 
-/** `group_change` detail (G018): `{ group_id, change }`, the change as GroupChange JSON. */
-std::string EncodeChange(const GroupChange& change);
+/**
+ * G019: who an inviter's `add` brings in, riding the `group_change` that carries it to the members — their account
+ * card (as the inviter keeps it; unchecked here: kept once it proves itself and the add counts) and relay route, so
+ * members key the newcomer with no lookup. Not signed.
+ */
+struct ChangeNewcomer {
+  std::string member_identity;
+  std::optional<Object> card;
+  std::string relay_user_id;
+};
+
+/** `group_change` detail (G018): `{ group_id, change, newcomer? }`, the change as GroupChange JSON. */
+std::string EncodeChange(const GroupChange& change, const std::optional<ChangeNewcomer>& newcomer = std::nullopt);
 Roe<GroupChange> DecodeChange(const std::string& detail_json);
+/** The newcomer a `group_change` detail carries, if any. */
+std::optional<ChangeNewcomer> NewcomerIn(const std::string& detail_json);
+
+/** G019: changes carried by a join bundle (`member_joined` to the newcomer), `more` when not all fit. */
+struct CarriedChanges {
+  std::vector<GroupChange> changes;
+  bool more = false;
+};
+/** A detail with `changes` (and `more`) added. */
+Roe<std::string> WithChanges(const std::string& detail_json, const CarriedChanges& carried);
+/** The changes a detail carries for `group_id` (one that does not parse is skipped). */
+CarriedChanges ChangesIn(const std::string& detail_json, const std::string& group_id);
 
 /** `group_roster_statement` detail: `{ group_id, roster_statement }`. */
 std::string EncodeStatement(const GroupRosterStatement& statement);

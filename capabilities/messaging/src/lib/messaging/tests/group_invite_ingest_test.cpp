@@ -19,6 +19,7 @@
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/messaging/tests/TestRosterSigner.h"
 #include "lib/messaging/GroupRosterSync.h"
+#include "lib/messaging/GroupRosterSyncCodec.h"
 #include "lib/messaging/TranscriptAssembly.h"
 
 #include "common/Utilities.h"
@@ -646,6 +647,137 @@ TEST(GroupInviteIngestTest, InboundMemberJoinedHandsOverTheOwnersCardsAndStoresN
   EXPECT_EQ(stored->members[1].relay_user_id, "relay:bob");
 }
 
+// G019 / G018 item 6: the newcomer joins from a member's bundle — the owner's statement, the member's signed add, the
+// members' cards — and checks each itself: nothing it carries is taken on the inviter's word.
+class JoinBundleIngestTest : public ::testing::Test {
+protected:
+  test::Person& alice = test::Named("alice");
+  test::Person& bob = test::Named("bob");
+  test::Person& carol = test::Named("carol");
+  test::Person& erin = test::Named("erin");
+  test::Person& frank = test::Named("frank");
+  PartyHarness erin_{"join_bundle", erin.Id(), bob.Id()};
+  std::vector<std::string> handed_;
+
+  void SetUp() override {
+    erin_.pipeline.SetOnRosterMember(
+        [this](const GroupMembershipCodec::MemberJoinedEntry& entry) { handed_.push_back(entry.member_identity); });
+    // What accepting Bob's invite left on Erin's device (GroupMembershipWorkflow::AcceptInvite).
+    PendingGroupInvite pending;
+    pending.invite_nonce = "n1";
+    pending.group_id = test::kGroupId;
+    pending.inviter_identity = bob.Id();
+    pending.invitee_identity = erin.Id();
+    pending.owner_identity = alice.Id();
+    pending.status = InviteStatus::Accepted;
+    pending.created_at = 1;
+    ASSERT_TRUE(erin_.roster.UpsertPendingInvite(pending));
+    GroupMetadata metadata;
+    metadata.group_id = test::kGroupId;
+    metadata.owner_identity = alice.Id();
+    metadata.roster_epoch = 5;
+    ASSERT_TRUE(erin_.roster.UpsertMetadata(metadata));
+    for (const auto& [identity, role] : {std::pair<std::string, MemberRole>{alice.Id(), MemberRole::Owner},
+                                         {bob.Id(), MemberRole::Member},
+                                         {erin.Id(), MemberRole::Member}}) {
+      ASSERT_TRUE(
+          erin_.roster.UpsertMember(test::kGroupId, GroupRosterMember{.member_identity = identity, .role = role}));
+    }
+  }
+
+  GroupRosterStatement OwnersStatement() {
+    GroupRosterStatement draft;
+    draft.roster_epoch = 5;
+    draft.members = {test::Row(alice.Id(), MemberRole::Owner), test::Row(bob.Id()), test::Row(carol.Id())};
+    return test::SignedStatement(alice, draft);
+  }
+
+  GroupChange BobsAdd() {
+    GroupChange add = bob.Add(erin.Id(), "n1");
+    add.signer_card = bob.Card();
+    return add;
+  }
+
+  RelayReceiveOutcome Bundle(const GroupRosterStatement& statement, const GroupChange& add,
+                             const std::string& nonce = "n1") {
+    GroupMembershipCodec::MemberJoinedPayload joined{.group_id = test::kGroupId, .member_identity = erin.Id()};
+    joined.added_by = bob.Id();
+    joined.invite_nonce = nonce;
+    Object card;
+    card.set("account_id", "a card");
+    joined.members = {{.member_identity = alice.Id(), .role = MemberRole::Owner, .card = card},
+                      {.member_identity = bob.Id()},
+                      {.member_identity = carol.Id(), .card = card, .relay_user_id = "relay:carol"},
+                      {.member_identity = frank.Id(), .card = card}};
+    std::string detail = GroupMembershipCodec::EncodeMemberJoined(joined).value();
+    detail = group_roster_sync_codec::WithStatement(detail, statement).value();
+    detail = group_roster_sync_codec::WithChanges(detail, {.changes = {add}}).value();
+    return erin_.pipeline.ProcessEnvelope(
+        erin_.MakeSystemEnvelope("member_joined", detail, "Member joined the group", ++seq_), erin.Id());
+  }
+
+  std::vector<std::string> Members() {
+    std::vector<std::string> out;
+    const std::vector<GroupRosterMember> members = erin_.roster.ListMembers(test::kGroupId).value();
+    for (const GroupRosterMember& m : members) {
+      out.push_back(m.member_identity);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+  }
+
+  uint64_t seq_ = 0;
+};
+
+TEST_F(JoinBundleIngestTest, TheNewcomerJoinsFromAMembersBundle) {
+  const RelayReceiveOutcome outcome = Bundle(OwnersStatement(), BobsAdd());
+  ASSERT_TRUE(outcome.persisted) << "decision=" << static_cast<int>(outcome.decision);
+  std::vector<std::string> expected{alice.Id(), bob.Id(), carol.Id(), erin.Id()};
+  std::sort(expected.begin(), expected.end());
+  EXPECT_EQ(Members(), expected) << "the owner's statement plus Bob's add";
+  EXPECT_EQ(erin_.roster.FindMember(test::kGroupId, erin.Id()).value()->added_by, bob.Id());
+  std::sort(handed_.begin(), handed_.end());
+  std::vector<std::string> keyed{alice.Id(), carol.Id()};
+  std::sort(keyed.begin(), keyed.end());
+  EXPECT_EQ(handed_, keyed) << "cards for those the roster lists; Frank's rides along but is not in it";
+  EXPECT_EQ(erin_.roster.ListGroupChanges(test::kGroupId).value().size(), 1u) << "the add, held until folded";
+  ASSERT_TRUE(outcome.persisted_message);
+  auto stored = GroupMembershipCodec::DecodeMemberJoinedFromMessage(*outcome.persisted_message);
+  ASSERT_TRUE(stored);
+  for (const auto& entry : stored->members) {
+    EXPECT_FALSE(entry.card.has_value()) << "the stored copy keeps no card";
+  }
+}
+
+TEST_F(JoinBundleIngestTest, AForgedAddOrStatementBringsNoOneIn) {
+  GroupChange forged = BobsAdd();
+  forged.invite_nonce = "n2"; // its signature no longer holds
+  const RelayReceiveOutcome tampered = Bundle(OwnersStatement(), forged);
+  EXPECT_TRUE(tampered.receive_failure) << "the roster it proves does not have us";
+  EXPECT_TRUE(handed_.empty()) << "no card kept on the inviter's word";
+  EXPECT_TRUE(erin_.roster.ListGroupChanges(test::kGroupId).value().empty());
+  EXPECT_TRUE(erin_.roster.IsMember(test::kGroupId, erin.Id()).value())
+      << "nothing of a bundle that does not prove the join is kept: the group stays as accepting left it";
+
+  GroupRosterStatement made_up;
+  made_up.roster_epoch = 6;
+  made_up.members = {test::Row(bob.Id(), MemberRole::Owner), test::Row(alice.Id()), test::Row(erin.Id())};
+  const RelayReceiveOutcome by_bob = Bundle(test::SignedStatement(bob, made_up), BobsAdd());
+  EXPECT_TRUE(by_bob.receive_failure) << "a statement that is not the owner's (the invite named Alice)";
+  EXPECT_TRUE(handed_.empty());
+
+  const RelayReceiveOutcome real = Bundle(OwnersStatement(), BobsAdd());
+  EXPECT_FALSE(real.receive_failure) << "the real bundle still lets them in";
+  EXPECT_TRUE(erin_.roster.IsMember(test::kGroupId, carol.Id()).value());
+}
+
+TEST_F(JoinBundleIngestTest, ABundleForAnInviteWeDidNotTakeFromItsSenderIsRefused) {
+  const RelayReceiveOutcome outcome = Bundle(OwnersStatement(), BobsAdd(), "someone-elses");
+  EXPECT_TRUE(outcome.receive_failure);
+  EXPECT_TRUE(handed_.empty());
+  EXPECT_TRUE(erin_.roster.ListGroupChanges(test::kGroupId).value().empty());
+}
+
 TEST(GroupInviteIngestTest, InboundOwnerTransferredLeavePreviousUpdatesRoster) {
   PartyHarness member("xfer_member", "account:bob", "account:alice");
 
@@ -808,8 +940,8 @@ TEST(GroupInviteIngestTest, GroupEnvelopeAfterLocalRemovalIsDropped) {
   EXPECT_FALSE(outcome.receive_failure) << "dropped on the roster, not at signature / decrypt";
 }
 
-// An invite is recorded only when its sender is the inviter and we are the invitee, and only from
-// the owner of a group we already know.
+// An invite is recorded only when its sender is the inviter and we are the invitee, and never to a group we are in or
+// one that ended; a member's invite counts (G019).
 TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
   PartyHarness bob("invite_bind", "account:bob", "account:alice");
   const auto send = [&bob](GroupInvitePayload invite, uint64_t seq) {
@@ -841,8 +973,13 @@ TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
   ASSERT_TRUE(bob.roster.UpsertMetadata(known));
   invite.group_id = "group:known";
   invite.inviter_identity = "account:alice";
-  invite.invite_nonce = "not-the-owner";
-  EXPECT_FALSE(send(invite, 3)) << "a known group the sender does not own";
+  invite.invite_nonce = "from-a-member";
+  EXPECT_TRUE(send(invite, 3)) << "G019: a member invites too; the owner is checked when the join bundle comes";
+  EXPECT_EQ(bob.roster.LoadPendingInvite("from-a-member").value()->Owner(), "account:alice")
+      << "an invite that names no owner is the inviter's own";
+  ASSERT_TRUE(bob.roster.UpsertMember("group:known", GroupRosterMember{.member_identity = "account:bob"}));
+  invite.invite_nonce = "already-in";
+  EXPECT_FALSE(send(invite, 5)) << "not to a group we are in";
 
   invite.group_id = "group:hike";
   invite.invite_nonce = "fine";

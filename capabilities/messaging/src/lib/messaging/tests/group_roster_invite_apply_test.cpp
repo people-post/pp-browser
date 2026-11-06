@@ -54,8 +54,13 @@ protected:
     ASSERT_TRUE(roster_->UpsertMetadata(metadata));
   }
 
+  /** True when the owner (alice) added them now; false when accepted before. */
   Roe<bool> Accept(const std::string& nonce, const std::string& sender, const std::string& group = "group:hike") {
-    return ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "relay:alice", util::NowUnixMs());
+    auto accepted = ApplyInviteAcceptToRoster(*roster_, nonce, sender, group, "relay:alice", util::NowUnixMs());
+    if (!accepted) {
+      return accepted.error();
+    }
+    return *accepted == InviteAccepted::Added;
   }
 
   bool IsMember(const std::string& identity) {
@@ -495,7 +500,7 @@ TEST_F(GroupRosterInviteApplyTest, ConcurrentAcceptsBothLandAndEachBumpsTheEpoch
       // connections to profile.db hold up too is sqlite_group_roster_store_test's).
       auto accepted = ApplyInviteAcceptToRoster(*roster_, "nonce-" + std::to_string(i), "relay:member" + std::to_string(i),
                                                 "group:hike", "relay:alice", util::NowUnixMs());
-      if (accepted && *accepted) {
+      if (accepted && *accepted == InviteAccepted::Added) {
         applied.fetch_add(1);
       }
     });

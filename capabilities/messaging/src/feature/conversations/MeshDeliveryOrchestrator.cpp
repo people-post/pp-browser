@@ -755,7 +755,11 @@ void FollowUpMembershipAfterIngest(GroupMembershipWorkflow* groups, const RelayR
   if (outcome.publish_member_joined_group_id && outcome.publish_member_joined_member_identity) {
     (void)groups->PublishMemberJoined(*outcome.publish_member_joined_group_id,
                                       *outcome.publish_member_joined_member_identity,
-                                      outcome.publish_member_joined_epoch);
+                                      outcome.publish_member_joined_epoch, outcome.publish_member_joined_invite_nonce);
+  }
+  if (outcome.admit_group_id) {
+    // G019: we invited as a member or admin — our device signs the add and sends it.
+    (void)groups->AdmitInvitee(*outcome.admit_group_id, outcome.admit_invite_nonce, outcome.admit_member);
   }
   if (outcome.fold_group_id) {
     groups->ScheduleFold(*outcome.fold_group_id); // G018 item 4: debounced, a burst of changes folds once

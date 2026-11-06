@@ -64,6 +64,12 @@ Roe<std::string> GroupMembershipCodec::EncodeInvite(const GroupInvitePayload& pa
   if (payload.expires_at) {
     json.set("expires_at", *payload.expires_at);
   }
+  if (!payload.owner_identity.empty() && payload.owner_identity != payload.inviter_identity) {
+    json.set("owner_identity", payload.owner_identity); // G019, additive
+  }
+  if (payload.member_count > 0) {
+    json.setJsonUInt("member_count", payload.member_count); // G019 3: the count, never the members
+  }
   if (!payload.context.empty()) {
     json.set("context", payload.context); // G022, additive
   }
@@ -110,6 +116,10 @@ Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInvite(const std::string& de
   }
   if (auto role = json->getString("actor_role")) {
     payload.actor_role = MemberRoleFromString(*role);
+  }
+  payload.owner_identity = json->getString("owner_identity").value_or("");
+  if (auto count = json->getNonNegInt("member_count")) {
+    payload.member_count = *count;
   }
   payload.context = json->getString("context").value_or("");
   payload.call_id = json->getString("call_id").value_or("");
@@ -207,6 +217,12 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayl
   if (!payload.context.empty()) {
     json.set("context", payload.context);
   }
+  if (!payload.added_by.empty()) {
+    json.set("added_by", payload.added_by); // G019 5, additive
+  }
+  if (!payload.invite_nonce.empty()) {
+    json.set("invite_nonce", payload.invite_nonce);
+  }
   return DumpJson(json);
 }
 
@@ -292,6 +308,8 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
     }
   }
   payload.context = json->getString("context").value_or("");
+  payload.added_by = json->getString("added_by").value_or("");
+  payload.invite_nonce = json->getString("invite_nonce").value_or("");
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_joined missing group_id or member_identity");
   }

@@ -290,6 +290,17 @@ Roe<void> GroupMembershipWorkflow::InviteFromCall(const std::string& group_id, c
   return InviteIdentity(group_id, invitee_identity, {}, call_id);
 }
 
+Roe<void> GroupMembershipWorkflow::InviteByIdentity(const std::string& group_id, const std::string& invitee_identity) {
+  if (invitee_identity.empty()) {
+    return Error("Choose someone to invite");
+  }
+  std::string contact_id;
+  if (auto contact = contacts_.FindByIdentity(invitee_identity, mesh::ContactIdKind::Account); contact && *contact) {
+    contact_id = (*contact)->id;
+  }
+  return InviteIdentity(group_id, invitee_identity, contact_id, {});
+}
+
 Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, const std::string& invitee_identity,
                                                   const std::string& invitee_contact_id, const std::string& call_id) {
   auto metadata = LoadMetadataOrError(group_id);
@@ -300,14 +311,26 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
   if (!local) {
     return local.error();
   }
-  if (*local != metadata->owner_identity) {
-    return Error("Only the group owner may invite members");
-  }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
     return Error(group_roster_sync::kGroupDissolvedError);  // G016: no invites into an ended group
   }
+  // G019: whoever the preset lets invite (G017: Open, any member; Managed, the owner and admins).
+  const std::optional<MemberRole> role = LocalRole(group_id);
+  if (!role || !GroupAllows(GroupAction::Invite, *role, metadata->policy.preset)) {
+    return Error(kGroupInviteNotAllowedError);
+  }
+  if (*role != MemberRole::Owner && !group_roster_sync::MaySend(*metadata)) {
+    return Error(metadata->sync_state == GroupSyncState::Removed ? group_roster_sync::kGroupRemovedError
+                                                                 : group_roster_sync::kGroupCheckingError);
+  }
+  // G020 5: someone removed comes back only through the owner or an admin (their add then re-admits, R2).
+  if (!GroupAllows(GroupAction::Readmit, *role, metadata->policy.preset) &&
+      group_roster_sync::RemovedEntry(roster_, group_id, invitee_identity, ChangeCards(), util::NowUnixMs())) {
+    return Error(kGroupInviteRemovedError);
+  }
   // G014: the active roster only — pending invites do not count (an accept that comes when full is refused).
-  if (auto members = roster_.ListMembers(group_id); members && members->size() >= kMaxGroupMembers) {
+  auto members = roster_.ListMembers(group_id);
+  if (members && members->size() >= kMaxGroupMembers) {
     return Error(kGroupFullError);
   }
 
@@ -319,7 +342,9 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
   invite.invite_nonce = util::GenerateUuid();
   invite.roster_epoch = metadata->roster_epoch;
   invite.expires_at = util::NowUnixMs() + kGroupInviteTtlMs;
-  invite.actor_role = MemberRole::Owner;
+  invite.actor_role = *role;
+  invite.owner_identity = metadata->owner_identity;
+  invite.member_count = members ? members->size() : 0; // G019 3: the count, never the members
   if (!call_id.empty()) {
     invite.context = kGroupInviteContextCall; // G022: the invitee's device shows it in that call
     invite.call_id = call_id;
@@ -339,7 +364,7 @@ Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, c
   if (auto recorded = invite_gate_.RecordPendingInvite(pending); !recorded) {
     return recorded.error();
   }
-  // Pending only — invitee is not an encrypt target until owner commits member_joined.
+  // Pending only — the invitee is not an encrypt target until the owner's member_joined or our signed add (G019).
   return SendInviteDirectMessage(invite, invitee_contact_id);
 }
 
@@ -436,9 +461,12 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
       (*pending)->group_title.empty() ? std::string("Group chat") : (*pending)->group_title;
   const uint64_t roster_epoch = (*pending)->roster_epoch == 0 ? 1 : (*pending)->roster_epoch;
 
+  // G019: the owner the invite named (a member's invite), else the inviter; the join bundle's statement must verify
+  // for it.
+  const std::string owner_identity = (*pending)->Owner();
   GroupMetadata metadata;
   metadata.group_id = (*pending)->group_id;
-  metadata.owner_identity = (*pending)->inviter_identity;
+  metadata.owner_identity = owner_identity;
   metadata.title = title;
   metadata.roster_epoch = roster_epoch;
   if (auto saved = roster_.UpsertMetadata(metadata); !saved) {
@@ -452,12 +480,19 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
 
   // Seed both sides of the v1 create-invite pair so SendGroupMessage can fan out.
   // (Owner already has self; invitee must also know the owner.)
+  // Until the join bundle comes: the owner and the inviter (it rewrites the roster from what it proves).
   GroupRosterMember owner;
-  owner.member_identity = (*pending)->inviter_identity;
+  owner.member_identity = owner_identity;
   owner.role = MemberRole::Owner;
   owner.joined_at = util::NowUnixMs();
   if (auto upsert_owner = roster_.UpsertMember((*pending)->group_id, owner); !upsert_owner) {
     return upsert_owner.error();
+  }
+  if ((*pending)->inviter_identity != owner_identity) {
+    GroupRosterMember inviter;
+    inviter.member_identity = (*pending)->inviter_identity;
+    inviter.joined_at = owner.joined_at;
+    (void)roster_.UpsertMember((*pending)->group_id, inviter);
   }
 
   GroupRosterMember member;
@@ -851,24 +886,29 @@ Roe<GroupChange> GroupMembershipWorkflow::SignOwnChange(GroupChange draft) {
 }
 
 void GroupMembershipWorkflow::FanOutChange(const std::string& group_id, const GroupChange& change,
-                                           const std::string& removed) {
+                                           const std::string& removed,
+                                           const std::optional<group_roster_sync_codec::ChangeNewcomer>& newcomer) {
   auto local = LocalRelayIdentity();
   auto members = roster_.ListMembers(group_id);
   if (!local || !members) {
     return;
   }
+  const std::string skip_newcomer = newcomer ? newcomer->member_identity : std::string();
   std::vector<std::string> identities;
   for (const GroupRosterMember& member : *members) {
-    if (member.member_identity != removed) {
+    if (member.member_identity != removed && member.member_identity != skip_newcomer) {
       identities.push_back(member.member_identity);
     }
   }
-  const std::string detail = group_roster_sync_codec::EncodeChange(change);
+  const std::string detail = group_roster_sync_codec::EncodeChange(change, newcomer);
+  // Our copies keep the change, not the newcomer's card.
+  const std::optional<std::string> stored =
+      newcomer ? std::optional<std::string>(group_roster_sync_codec::EncodeChange(change)) : std::nullopt;
   const std::string display = "Group members changed";
   (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
                        [&](const std::string& identity) {
                          return SendMembershipDirectMessage(identity, GroupMembershipControlType::GroupChange, detail,
-                                                            display);
+                                                            display, stored);
                        });
   if (!removed.empty() && removed != *local) {
     (void)SendMembershipDirectMessage(removed, GroupMembershipControlType::GroupChange, detail, display);
@@ -1461,11 +1501,11 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
   if (!local) {
     return local.error();
   }
-  if (*local != metadata->owner_identity) {
-    return Error("Only the group owner may rename the group for everyone");
-  }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
     return Error(group_roster_sync::kGroupDissolvedError);
+  }
+  if (*local != metadata->owner_identity) {
+    return RenameAsMember(group_id, title); // G017: per the preset, as a signed change (G018)
   }
 
   metadata->title = title;
@@ -1512,6 +1552,113 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
     }
   }
   return {};
+}
+
+Roe<void> GroupMembershipWorkflow::RenameAsMember(const std::string& group_id, const std::string& title) {
+  auto local = LocalRelayIdentity();
+  auto device = OwnDevice();
+  if (!local || !device) {
+    return !local ? local.error() : device.error();
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  auto draft = group_roster_sync::DraftRename(roster_, group_id, *local, *device, title, ChangeCards(), now_ms);
+  if (!draft) {
+    return draft.error();
+  }
+  auto rename = SignOwnChange(std::move(*draft));
+  if (!rename) {
+    return rename.error();
+  }
+  auto held = group_roster_sync::HoldChange(roster_, *rename, ChangeCards(), now_ms, /*line_shown=*/true);
+  if (!held || *held != group_roster_sync::ChangeHeld::Proved) {
+    return held ? Error("The rename does not prove itself on this device") : held.error();
+  }
+  auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
+  if (!applied) {
+    return applied.error();
+  }
+  FanOutChange(group_id, *rename);
+  if (applied->new_title) {
+    (void)group_change_lines::FollowTitle(store_, group_id, *applied->new_title);
+  }
+  if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
+    (void)group_change_lines::Append(store_, group_id, {*rename}, (*metadata)->roster_epoch, *local);
+  }
+  log().info << "group renamed by member group=" << group_id << " version=" << rename->title_version;
+  return {};
+}
+
+std::optional<MemberRole> GroupMembershipWorkflow::LocalRole(const std::string& group_id) const {
+  auto local = LocalRelayIdentity();
+  auto metadata = roster_.LoadMetadata(group_id);
+  if (!local || !metadata || !*metadata) {
+    return std::nullopt;
+  }
+  if ((*metadata)->owner_identity == *local) {
+    return MemberRole::Owner;
+  }
+  auto self = roster_.FindMember(group_id, *local);
+  if (!self || !*self) {
+    return std::nullopt;
+  }
+  return (*self)->role;
+}
+
+std::vector<std::string> GroupMembershipWorkflow::MembersAddedBy(const std::string& group_id,
+                                                                 const std::string& account) const {
+  std::vector<std::string> added;
+  auto members = roster_.ListMembers(group_id);
+  if (!members || account.empty()) {
+    return added;
+  }
+  for (const GroupRosterMember& m : *members) {
+    if (m.added_by == account && m.member_identity != account) {
+      added.push_back(m.member_identity);
+    }
+  }
+  return added;
+}
+
+std::vector<std::string> GroupMembershipWorkflow::AccountsRemovedBy(const std::string& group_id,
+                                                                    const std::string& account) {
+  return group_roster_sync::RemovedBy(roster_, group_id, account, ChangeCards(), util::NowUnixMs());
+}
+
+Roe<size_t> GroupMembershipWorkflow::RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  const std::optional<MemberRole> role = LocalRole(group_id);
+  if (!role || (*role != MemberRole::Owner && *role != MemberRole::Admin)) {
+    return Error("Only the owner and admins remove people from the group");
+  }
+  size_t sent = 0;
+  // One removal each (G020 6), as the owner or the admin we are.
+  for (const std::string& identity : group_roster_sync::RemovableAddedBy(roster_, group_id, *local, account)) {
+    if (auto removed = RemoveMemberInternal(group_id, identity); removed) {
+      ++sent;
+    } else {
+      log().warning << "bulk remove skipped member=" << identity << ": " << removed.error().message;
+    }
+  }
+  return sent;
+}
+
+Roe<size_t> GroupMembershipWorkflow::ReinviteEveryoneRemovedBy(const std::string& group_id,
+                                                               const std::string& account) {
+  if (LocalRole(group_id) != MemberRole::Owner) {
+    return Error("Only the group owner re-invites everyone someone removed");
+  }
+  size_t sent = 0;
+  for (const std::string& identity : AccountsRemovedBy(group_id, account)) {
+    if (auto invited = InviteByIdentity(group_id, identity); invited) {
+      ++sent;
+    } else {
+      log().warning << "bulk re-invite skipped account=" << identity << ": " << invited.error().message;
+    }
+  }
+  return sent;
 }
 
 Roe<void> GroupMembershipWorkflow::ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
@@ -1569,9 +1716,91 @@ Roe<std::string> GroupMembershipWorkflow::OwnerIdentity(const std::string& group
   return metadata->owner_identity;
 }
 
-Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_id,
-                                                      const std::string& member_identity,
-                                                      const uint64_t roster_epoch) {
+std::optional<Object> GroupMembershipWorkflow::KeptCard(const std::string& account_id) {
+  auto kept = account_keys_.Kept(account_id);
+  if (!kept || !*kept) {
+    return std::nullopt;
+  }
+  return CarriedCardJson(**kept);
+}
+
+Roe<std::string> GroupMembershipWorkflow::JoinBundleDetail(GroupMembershipCodec::MemberJoinedPayload joined,
+                                                           const GroupRosterStatement& statement,
+                                                           const std::string& first) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  // The newcomer keys every member pairwise (docs/contracts/ACCOUNT_CARD.md); it takes a card only for someone the
+  // roster it proves lists.
+  size_t card_bytes = 0;
+  for (GroupMembershipCodec::MemberJoinedEntry& entry : joined.members) {
+    if (entry.member_identity == *local || entry.member_identity == joined.member_identity) {
+      continue; // the newcomer has our keys and route from the invite's chat
+    }
+    if (auto route = mesh_messaging_.RelayRouteOf(entry.member_identity)) {
+      entry.relay_user_id = *route;
+    }
+    auto card = KeptCard(entry.member_identity);
+    if (!card) {
+      continue;
+    }
+    card_bytes += DumpJson(*card).size();
+    if (card_bytes <= kRosterCardsBudgetBytes) {
+      entry.card = std::move(card);
+    }
+  }
+  auto encoded = GroupMembershipCodec::EncodeMemberJoined(joined);
+  if (!encoded) {
+    return encoded.error();
+  }
+  auto with_statement = group_roster_sync_codec::WithStatement(*encoded, statement);
+  if (!with_statement) {
+    return with_statement.error();
+  }
+  // G018 item 6: every change it holds, all signed — the newcomer checks each and trusts no one, us included.
+  return group_roster_sync_codec::WithChanges(*with_statement,
+                                              group_roster_sync::ChangesForNewcomer(roster_, joined.group_id, first));
+}
+
+Roe<void> GroupMembershipWorkflow::SendJoinBundle(const std::string& group_id, const std::string& newcomer,
+                                                  const std::string& invite_nonce, const std::string& added_by,
+                                                  const std::string& first) {
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  const std::optional<GroupRosterStatement> statement = group_roster_sync::Held(*metadata);
+  if (!statement) {
+    return Error("No owner statement to bring a newcomer in with");
+  }
+  auto roster = roster_.ListMembers(group_id);
+  if (!roster) {
+    return roster.error();
+  }
+  GroupMembershipCodec::MemberJoinedPayload joined;
+  joined.group_id = group_id;
+  joined.member_identity = newcomer;
+  joined.roster_epoch = metadata->roster_epoch;
+  joined.added_by = added_by;
+  joined.invite_nonce = invite_nonce;
+  for (const GroupRosterMember& row : *roster) {
+    joined.members.push_back({.member_identity = row.member_identity, .role = row.role});
+  }
+  auto detail = JoinBundleDetail(joined, *statement, first);
+  if (!detail) {
+    return detail.error();
+  }
+  joined.members.clear();
+  joined.invite_nonce.clear();
+  auto plain = GroupMembershipCodec::EncodeMemberJoined(joined); // our copy keeps the line, not the bundle
+  return SendMembershipDirectMessage(newcomer, GroupMembershipControlType::MemberJoined, *detail,
+                                     "Member joined the group",
+                                     plain ? std::optional<std::string>(*plain) : std::nullopt);
+}
+
+Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
+                                                       const uint64_t roster_epoch, const std::string& invite_nonce) {
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
@@ -1585,7 +1814,7 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   payload.member_identity = member_identity;
   payload.role = MemberRole::Member;
   payload.roster_epoch = roster_epoch;
-  payload.members.reserve(roster->size());
+  payload.added_by = *local; // G019 5: "Alice added Carol"
   for (const GroupRosterMember& row : *roster) {
     payload.members.push_back({.member_identity = row.member_identity, .role = row.role});
   }
@@ -1598,58 +1827,34 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
     (void)AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberJoined,
                                       "Member joined the group", *plain, *local);
   }
-
-  // Members key each other pairwise: the members get the newcomer's card, the newcomer everyone's
-  // (docs/contracts/ACCOUNT_CARD.md). The snapshot backfills prior co-invitees for late joiners.
-  auto kept_card = [this](const std::string& account_id) -> std::optional<Object> {
-    auto kept = account_keys_.Kept(account_id);
-    if (!kept || !*kept) {
-      return std::nullopt;
-    }
-    return CarriedCardJson(**kept);
-  };
+  // The owner's statement of the roster with the newcomer in it (G012), signed once, rides both.
+  auto statement = SignRoster(group_id);
+  if (!statement) {
+    log().warning << "Roster not signed group=" << group_id << ": " << statement.error().message;
+    return statement.error();
+  }
+  // The members get the routes we know and the newcomer's card (they key each other pairwise).
   GroupMembershipCodec::MemberJoinedPayload for_members = payload;
-  GroupMembershipCodec::MemberJoinedPayload for_newcomer = payload;
-  size_t card_bytes = 0;
-  for (size_t i = 0; i < payload.members.size(); ++i) {
-    const std::string& identity = payload.members[i].member_identity;
-    if (identity == *local) {
-      continue;  // the newcomer has the owner's keys and route from the invite's chat
-    }
-    if (auto route = mesh_messaging_.RelayRouteOf(identity)) {
-      for_members.members[i].relay_user_id = *route;
-      for_newcomer.members[i].relay_user_id = *route;
-    }
-    auto card = kept_card(identity);
-    if (!card) {
+  for (GroupMembershipCodec::MemberJoinedEntry& entry : for_members.members) {
+    if (entry.member_identity == *local) {
       continue;
     }
-    if (identity == member_identity) {
-      for_members.members[i].card = std::move(card);
-      continue;
+    if (auto route = mesh_messaging_.RelayRouteOf(entry.member_identity)) {
+      entry.relay_user_id = *route;
     }
-    card_bytes += DumpJson(*card).size();
-    if (card_bytes <= kRosterCardsBudgetBytes) {
-      for_newcomer.members[i].card = std::move(card);
+    if (entry.member_identity == member_identity) {
+      entry.card = KeptCard(member_identity);
     }
   }
   auto members_encoded = GroupMembershipCodec::EncodeMemberJoined(for_members);
-  auto newcomer_encoded = GroupMembershipCodec::EncodeMemberJoined(for_newcomer);
-  if (!members_encoded || !newcomer_encoded) {
+  auto members_detail =
+      members_encoded ? group_roster_sync_codec::WithStatement(*members_encoded, *statement) : members_encoded;
+  // The newcomer gets the join bundle (G019), the same a member's invite sends.
+  GroupMembershipCodec::MemberJoinedPayload for_newcomer = payload;
+  for_newcomer.invite_nonce = invite_nonce;
+  auto newcomer_detail = JoinBundleDetail(for_newcomer, *statement, {});
+  if (!members_detail || !newcomer_detail) {
     return Error("member_joined: could not encode");
-  }
-  // Both carry the owner's statement of the roster with the newcomer in it (G012), signed once.
-  std::string members_detail = *members_encoded;
-  std::string newcomer_detail = *newcomer_encoded;
-  if (auto statement = SignRoster(group_id); statement) {
-    if (auto with = group_roster_sync_codec::WithStatement(members_detail, *statement)) {
-      members_detail = std::move(*with);
-    }
-    if (auto with = group_roster_sync_codec::WithStatement(newcomer_detail, *statement)) {
-      newcomer_detail = std::move(*with);
-    }
-  } else {
-    log().warning << "Roster not signed group=" << group_id << ": " << statement.error().message;
   }
   // Best-effort, like every membership event.
   std::vector<std::string> identities;
@@ -1662,12 +1867,85 @@ Roe<void> GroupMembershipWorkflow::PublishMemberJoined(const std::string& group_
   (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
                        [&](const std::string& identity) {
                          return SendMembershipDirectMessage(identity, GroupMembershipControlType::MemberJoined,
-                                                            members_detail, "Member joined the group", *plain);
+                                                            *members_detail, "Member joined the group", *plain);
                        });
   // Our copies keep the roster, not the cards (they are kept as cards on the other side).
-  (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, newcomer_detail,
+  (void)SendMembershipDirectMessage(member_identity, GroupMembershipControlType::MemberJoined, *newcomer_detail,
                                     "Member joined the group", *plain);
   return {};
+}
+
+void GroupMembershipWorkflow::RefuseAdmit(const std::string& group_id, const std::string& invite_nonce,
+                                          const std::string& member_identity, const std::string& reason) {
+  (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Expired);
+  if (auto refused = RefuseInvite(group_id, invite_nonce, member_identity, reason); !refused) {
+    log().warning << "invite refusal not sent group=" << group_id << ": " << refused.error().message;
+  }
+}
+
+Roe<void> GroupMembershipWorkflow::AdmitInvitee(const std::string& group_id, const std::string& invite_nonce,
+                                                const std::string& member_identity) {
+  auto local = LocalRelayIdentity();
+  auto device = OwnDevice();
+  if (!local || !device) {
+    return !local ? local.error() : device.error();
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  auto update = IGroupRosterStore::LockForUpdate(); // the invite's check, the add and the invite's close, as one
+  auto pending = roster_.LoadPendingInvite(invite_nonce);
+  if (!pending || !*pending || !(*pending)->outbound || (*pending)->group_id != group_id ||
+      (*pending)->invitee_identity != member_identity) {
+    return Error("No invite of ours for this accept");
+  }
+  if ((*pending)->status == InviteStatus::Accepted) {
+    return {}; // admitted once already
+  }
+  if (auto in = roster_.IsMember(group_id, member_identity); in && *in) {
+    (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted); // a re-invite of someone in: resync them
+    update.unlock();
+    return SendJoinBundle(group_id, member_identity, invite_nonce, {}, {});
+  }
+  auto draft = group_roster_sync::DraftAdd(roster_, group_id, *local, *device, member_identity, invite_nonce,
+                                           ChangeCards(), now_ms);
+  auto add = draft ? SignOwnChange(std::move(*draft)) : Roe<GroupChange>(draft.error());
+  if (!add) {
+    update.unlock();
+    RefuseAdmit(group_id, invite_nonce, member_identity, kInviteRefusedNotAllowed);
+    return add.error();
+  }
+  const std::string add_id = group_change::Id(*add);
+  auto held = group_roster_sync::HoldChange(roster_, *add, ChangeCards(), now_ms, /*line_shown=*/true);
+  if (!held || *held != group_roster_sync::ChangeHeld::Proved) {
+    return held ? Error("The add does not prove itself on this device") : held.error();
+  }
+  auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
+  if (!applied || !applied->view || !applied->view->Lists(member_identity)) {
+    // It does not count here (R5: the group filled meanwhile): it goes nowhere, and the invitee is told.
+    const GroupChangeVerdict* verdict = applied && applied->view ? applied->view->Verdict(add_id) : nullptr;
+    (void)roster_.DeleteGroupChanges(group_id, {add_id});
+    (void)group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
+    update.unlock();
+    const bool full = verdict && verdict->reason == GroupChangeReason::GroupFull;
+    RefuseAdmit(group_id, invite_nonce, member_identity, full ? kInviteRefusedGroupFull : kInviteRefusedNotAllowed);
+    return Error(full ? std::string(kGroupFullError) : std::string(kGroupInviteNotAllowedError));
+  }
+  (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted);
+  (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
+  update.unlock(); // not across the sends below
+  group_roster_sync_codec::ChangeNewcomer newcomer{
+      .member_identity = member_identity,
+      .card = KeptCard(member_identity),
+      .relay_user_id = mesh_messaging_.RelayRouteOf(member_identity).value_or(std::string())};
+  FanOutChange(group_id, *add, {}, newcomer);
+  if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
+    (void)group_change_lines::Append(store_, group_id, {*add}, (*metadata)->roster_epoch, *local);
+    if ((*metadata)->owner_identity == *local) {
+      ScheduleFold(group_id);
+    }
+  }
+  log().info << "member added by invite group=" << group_id << " member=" << member_identity
+             << (add->readmits.empty() ? "" : " (re-admitted)");
+  return SendJoinBundle(group_id, member_identity, invite_nonce, *local, add_id);
 }
 
 std::string GroupMembershipWorkflow::WithSignedRoster(const std::string& group_id, const std::string& detail_json) {
@@ -1933,6 +2211,7 @@ void GroupMembershipWorkflow::OnChangesApplied(const std::string& group_id, cons
   if (!local || !metadata || !*metadata) {
     return;
   }
+  (void)group_change_lines::FollowTitle(store_, group_id, (*metadata)->title); // a rename among them (G017)
   if (auto lines = group_change_lines::Append(store_, group_id, changes, (*metadata)->roster_epoch, *local); !lines) {
     log().warning << "group change lines not written group=" << group_id << ": " << lines.error().message;
   }

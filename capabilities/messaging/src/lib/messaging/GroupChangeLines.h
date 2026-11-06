@@ -16,8 +16,8 @@ namespace pbr {
 /**
  * The group chat's line for a roster change that now counts (G018): stored as the membership line it reads as — a
  * leave as `member_left` ("Bob left the group"), a removal as `member_removed` with who removed them ("Bob removed
- * Carol"), an add as `member_joined` — so the transcript words it as it words the owner's events. Renames and links
- * have no line yet (o4, o5).
+ * Carol"), an add as `member_joined` naming who added them ("Alice added Carol", G019 5), a rename as `group_renamed`
+ * from its signer — so the transcript words it as it words the owner's events. Links have no line yet (o5).
  */
 namespace group_change_lines {
 
@@ -31,6 +31,9 @@ std::optional<ThreadMessage> LineFor(const std::string& thread_id, const GroupCh
 Roe<std::optional<std::string>> Append(IThreadStore& store, const std::string& group_id,
                                        const std::vector<GroupChange>& changes, uint64_t epoch,
                                        const std::string& local_identity);
+
+/** The group's chat takes the group's shared title (a rename that counts now, G017); its local name stays. */
+Roe<void> FollowTitle(IThreadStore& store, const std::string& group_id, const std::string& title);
 
 } // namespace group_change_lines
 

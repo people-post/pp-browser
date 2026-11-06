@@ -216,6 +216,9 @@ void RelayReceivePipeline::FinishView(const std::string& group_id, group_roster_
   if (!metadata || !*metadata) {
     return;
   }
+  if (applied.new_title) {
+    (void)group_change_lines::FollowTitle(store_, group_id, *applied.new_title); // a rename that counts (G017)
+  }
   auto about_us =
       group_change_lines::Append(store_, group_id, applied.newly_applied, (*metadata)->roster_epoch, local_account);
   if (!about_us) {
@@ -238,7 +241,28 @@ void RelayReceivePipeline::FinishView(const std::string& group_id, group_roster_
   }
 }
 
-Roe<void> RelayReceivePipeline::ApplyGroupChange(const ThreadMessage& message, const std::string& actor_identity,
+void RelayReceivePipeline::KeepChangeNewcomer(ThreadMessage& message, const GroupChange& change,
+                                              const std::string& local_account) const {
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  auto newcomer = detail ? group_roster_sync_codec::NewcomerIn(*detail) : std::nullopt;
+  if (!newcomer) {
+    return;
+  }
+  auto in = group_roster_.IsMember(change.group_id, change.member);
+  if (change.kind == GroupChangeKind::Add && newcomer->member_identity == change.member &&
+      change.member != local_account && in && *in && on_roster_member_) {
+    on_roster_member_({.member_identity = newcomer->member_identity,
+                       .card = newcomer->card,
+                       .relay_user_id = newcomer->relay_user_id});
+  }
+  // What is stored keeps the change, not the card (it is kept as a card).
+  Object payload;
+  payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::GroupChange));
+  payload.set("detail", group_roster_sync_codec::EncodeChange(change));
+  message.payload_json = DumpJson(payload);
+}
+
+Roe<void> RelayReceivePipeline::ApplyGroupChange(ThreadMessage& message, const std::string& actor_identity,
                                                  const std::string& local_account, RelayReceiveOutcome* outcome) const {
   if (outcome) {
     outcome->suppress_inbox_chrome = true; // the DM carries it; the group's chat gets the line
@@ -283,7 +307,102 @@ Roe<void> RelayReceivePipeline::ApplyGroupChange(const ThreadMessage& message, c
              << " by=" << change->signer
              << (received->held == group_roster_sync::ChangeHeld::NoCard ? " (no card yet)" : "");
   FinishView(change->group_id, received->applied, local_account, outcome);
+  KeepChangeNewcomer(message, *change, local_account);
   return {};
+}
+
+Roe<void> RelayReceivePipeline::ApplyJoinBundle(ThreadMessage& message,
+                                                const GroupMembershipCodec::MemberJoinedPayload& joined,
+                                                const std::string& actor_identity, const std::string& local_account,
+                                                RelayReceiveOutcome* outcome) const {
+  auto metadata = group_roster_.LoadMetadata(joined.group_id);
+  if (!metadata || !*metadata) {
+    return Error("join bundle: a group we do not hold");
+  }
+  // From the inviter of an invite of ours we accepted — or, from an owner that names none, the owner we know.
+  bool from_inviter = false;
+  if (!joined.invite_nonce.empty()) {
+    auto pending = group_roster_.LoadPendingInvite(joined.invite_nonce);
+    from_inviter = pending && *pending && !(*pending)->outbound && (*pending)->inviter_identity == actor_identity &&
+                   (*pending)->group_id == joined.group_id && (*pending)->invitee_identity == local_account;
+  }
+  if (!from_inviter && (*metadata)->owner_identity != actor_identity) {
+    return Error("join bundle: not from the one who invited us");
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  auto statement = detail ? group_roster_sync_codec::StatementIn(*detail) : std::nullopt;
+  if (!statement) {
+    if ((*metadata)->owner_identity != actor_identity) {
+      return Error("join bundle: no owner statement");
+    }
+    // The owner's own word, as members take its member_joined (an owner that could not sign): the roster it states.
+    if (auto applied = ApplyMemberJoinedToRoster(group_roster_, joined, actor_identity); !applied) {
+      return applied.error();
+    }
+    KeepBundleCards(message, joined, local_account, [this, &joined](const std::string& identity) {
+      auto in = group_roster_.IsMember(joined.group_id, identity);
+      return in && *in;
+    });
+    return {};
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  const group_roster_sync_codec::CarriedChanges carried = group_roster_sync_codec::ChangesIn(*detail, joined.group_id);
+  // The owner's statement, checked for the owner the invite named, and the changes, each proving itself, must give a
+  // roster with us in it (G018 item 6) — before anything is kept: the inviter can make up neither.
+  if (auto proves = group_roster_sync::CheckJoin(group_roster_, *statement, carried.changes, account_cards_, now_ms,
+                                                 local_account);
+      !proves) {
+    return Error("join bundle: " + proves.error().message);
+  }
+  if (auto kept = group_roster_sync::KeepStatement(group_roster_, *statement); !kept) {
+    return Error("join bundle: " + kept.error().message);
+  }
+  // What happened before we joined gets no line here.
+  if (auto held = group_roster_sync::HoldCarried(group_roster_, carried.changes, account_cards_, now_ms, true); !held) {
+    return held.error();
+  }
+  auto applied = group_roster_sync::ApplyView(group_roster_, joined.group_id, account_cards_, now_ms);
+  if (!applied) {
+    return applied.error();
+  }
+  if (!applied->view || !applied->view->Lists(local_account)) {
+    return Error("join bundle: the roster it proves does not have us");
+  }
+  KeepBundleCards(message, joined, local_account,
+                  [&view = *applied->view](const std::string& identity) { return view.Lists(identity); });
+  if (carried.more && outcome) {
+    outcome->catch_up_group_id = joined.group_id; // the rest of the changes, from the inviter
+    outcome->catch_up_ask = actor_identity;
+  }
+  FinishView(joined.group_id, *applied, local_account, outcome);
+  log().info << "joined group_id=" << joined.group_id << " from=" << actor_identity
+             << " members=" << applied->view->members.size() << " changes=" << carried.changes.size();
+  return {};
+}
+
+void RelayReceivePipeline::KeepBundleCards(ThreadMessage& message,
+                                           const GroupMembershipCodec::MemberJoinedPayload& joined,
+                                           const std::string& local_account,
+                                           const std::function<bool(const std::string&)>& listed) const {
+  bool carried_cards = false;
+  for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined.members) {
+    carried_cards = carried_cards || entry.card.has_value();
+    // Only for those the roster we computed lists: the inviter's word adds no one.
+    if (entry.member_identity != local_account && listed(entry.member_identity) &&
+        (entry.card || !entry.relay_user_id.empty()) && on_roster_member_) {
+      on_roster_member_(entry);
+    }
+  }
+  if (!carried_cards) {
+    return;
+  }
+  // What is stored keeps the roster, not the cards (kept as cards).
+  if (auto stripped = GroupMembershipCodec::WithoutCards(joined); stripped) {
+    Object payload;
+    payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::MemberJoined));
+    payload.set("detail", *stripped);
+    message.payload_json = DumpJson(payload);
+  }
 }
 
 void RelayReceivePipeline::NoteCopyState(const std::string& group_id, const GroupCopyState& theirs,
@@ -479,7 +598,8 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     }
     return {};
   }
-  // G014: we were never added — drop the group we made on accept; its chat stays, read-only, saying why.
+  // G014 (or G019: the inviter may no longer add us): we were never added — drop the group we made on accept; its
+  // chat stays, read-only, saying why.
   if (!local_account.empty()) {
     (void)group_roster_.RemoveMember(refused->group_id, local_account);
   }
@@ -493,9 +613,10 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     auto detail = GroupMembershipCodec::EncodeInviteRefused(refused->invite_nonce, refused->group_id,
                                                            refused->reason);
     if (detail) {
-      if (auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::GroupInviteRefused,
-                                                              "The group is full: you were not added", *detail,
-                                                              actor_identity)) {
+      const char* line = refused->reason == kInviteRefusedNotAllowed ? "You were not added to the group"
+                                                                     : "The group is full: you were not added";
+      if (auto sys = GroupMembershipCodec::BuildSystemMessage(
+              (*thread)->id, GroupMembershipControlType::GroupInviteRefused, line, *detail, actor_identity)) {
         (void)store_.AppendMessage(*sys);
         if (outcome) {
           outcome->about_us = RelayReceiveOutcome::AboutUs::GroupFull;
@@ -505,6 +626,51 @@ Roe<void> RelayReceivePipeline::ApplyInviteRefused(const ThreadMessage& message,
     }
   }
   log().info << "group invite refused group_id=" << refused->group_id << " reason=" << refused->reason;
+  return {};
+}
+
+Roe<void> RelayReceivePipeline::ApplyInviteAccepted(const GroupMembershipCodec::InviteResponsePayload& response,
+                                                    const std::string& actor_identity, const std::string& local_account,
+                                                    RelayReceiveOutcome* outcome) const {
+  // An invite this device issued is required: as the owner it adds them (then publishes member_joined); as a member
+  // or admin it signs the add (G019).
+  auto applied = ApplyInviteAcceptToRoster(group_roster_, response.invite_nonce, actor_identity, response.group_id,
+                                           local_account, util::NowUnixMs());
+  if (!applied) {
+    const std::string& why = applied.error().message;
+    const char* reason = why == kGroupFullError                           ? kInviteRefusedGroupFull
+                         : why == group_roster_sync::kGroupDissolvedError ? kInviteRefusedGroupDissolved
+                         : why == kGroupInviteNotAllowedError             ? kInviteRefusedNotAllowed
+                                                                          : nullptr;
+    if (!reason) {
+      return applied.error();
+    }
+    if (outcome) {
+      outcome->refuse_invite_group_id = response.group_id;
+      outcome->refuse_invite_nonce = response.invite_nonce;
+      outcome->refuse_invite_member = actor_identity;
+      outcome->refuse_invite_reason = reason;
+    }
+    if (why == kGroupInviteNotAllowedError) {
+      (void)group_roster_.UpdateInviteStatus(response.invite_nonce, InviteStatus::Expired);
+    }
+    return {};
+  }
+  if (!outcome || *applied == InviteAccepted::Already) {
+    return {}; // already accepted: nothing new to apply or announce
+  }
+  if (*applied == InviteAccepted::SignAdd) {
+    outcome->admit_group_id = response.group_id;
+    outcome->admit_invite_nonce = response.invite_nonce;
+    outcome->admit_member = actor_identity;
+    return {};
+  }
+  if (auto metadata = group_roster_.LoadMetadata(response.group_id); metadata && *metadata) {
+    outcome->publish_member_joined_group_id = response.group_id;
+    outcome->publish_member_joined_member_identity = actor_identity;
+    outcome->publish_member_joined_epoch = (*metadata)->roster_epoch;
+    outcome->publish_member_joined_invite_nonce = response.invite_nonce;
+  }
   return {};
 }
 
@@ -549,33 +715,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       return response.error();
     }
     if (response->control_type == GroupMembershipControlType::GroupInviteAccept) {
-      // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
-      auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
-                                               response->group_id, local_account, util::NowUnixMs());
-      if (!applied && (applied.error().message == kGroupFullError ||
-                       applied.error().message == group_roster_sync::kGroupDissolvedError)) {
-        if (outcome) {
-          outcome->refuse_invite_group_id = response->group_id;
-          outcome->refuse_invite_nonce = response->invite_nonce;
-          outcome->refuse_invite_member = actor_identity;
-          outcome->refuse_invite_reason = applied.error().message == kGroupFullError ? kInviteRefusedGroupFull
-                                                                                      : kInviteRefusedGroupDissolved;
-        }
-        return {};
-      }
-      if (!applied) {
-        return applied.error();
-      }
-      if (!*applied) {
-        return {};  // already accepted: nothing new to apply or announce
-      }
-      auto metadata = group_roster_.LoadMetadata(response->group_id);
-      if (outcome && metadata && *metadata) {
-        outcome->publish_member_joined_group_id = response->group_id;
-        outcome->publish_member_joined_member_identity = actor_identity;
-        outcome->publish_member_joined_epoch = (*metadata)->roster_epoch;
-      }
-      return {};
+      return ApplyInviteAccepted(*response, actor_identity, local_account, outcome);
     }
     if (auto declined = ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity,
                                                    response->group_id);
@@ -604,32 +744,25 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto ignore = ignore_if_not_member(joined->group_id); ignore && *ignore) {
       return {};
     }
+    if (!local_account.empty() && joined->member_identity == local_account) {
+      return ApplyJoinBundle(message, *joined, actor_identity, local_account, outcome); // G019: we joined
+    }
     if (auto applied = ApplyMemberJoinedToRoster(group_roster_, *joined, actor_identity); !applied) {
       return applied.error();
     }
     KeepCarriedStatement(message, local_account, outcome);
-    // What the owner says of the other members: kept; the cards are then left out of what is stored.
-    bool carried_cards = false;
-    for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined->members) {
-      carried_cards = carried_cards || entry.card.has_value();
-      if (entry.member_identity != local_account && (entry.card || !entry.relay_user_id.empty()) &&
-          on_roster_member_) {
-        on_roster_member_(entry);
-      }
-    }
-    if (carried_cards) {
-      if (auto stripped = GroupMembershipCodec::WithoutCards(*joined); stripped) {
-        Object payload;
-        payload.set("control_type", GroupMembershipControlTypeToWire(GroupMembershipControlType::MemberJoined));
-        payload.set("detail", *stripped);
-        message.payload_json = DumpJson(payload);
-      }
-    }
+    // What the owner says of the other members: kept for those on the roster now.
+    KeepBundleCards(message, *joined, local_account, [this, &joined](const std::string& identity) {
+      auto in = group_roster_.IsMember(joined->group_id, identity);
+      return in && *in;
+    });
     auto thread = store_.FindGroupThread(joined->group_id);
     // The newcomer wrote "You joined the group" itself when it accepted: this is the same join, not a second line.
     if (thread && *thread && joined->member_identity != local_account) {
-      auto detail = GroupMembershipCodec::EncodeMemberJoined(joined->group_id, joined->member_identity, joined->role,
-                                                             joined->roster_epoch);
+      GroupMembershipCodec::MemberJoinedPayload line = *joined;
+      line.members.clear();
+      line.invite_nonce.clear();
+      auto detail = GroupMembershipCodec::EncodeMemberJoined(line); // with who added them (G019 5)
       if (detail) {
         auto sys = GroupMembershipCodec::BuildSystemMessage(
             (*thread)->id, GroupMembershipControlType::MemberJoined, "Member joined the group", *detail,
@@ -785,13 +918,11 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   if (local_account.empty() || invite->invitee_identity != local_account) {
     return Error("Invite rejected: not addressed to the local account");
   }
-  // A group we already know is the owner's to invite to, and not one we are in already.
+  // A group we already know: not one that ended, nor one we are in already. Members invite too (G019); the owner
+  // the invite names is checked when the join bundle comes (its statement must verify for it).
   if (auto known = group_roster_.LoadMetadata(invite->group_id); !known) {
     return known.error();
   } else if (*known) {
-    if ((*known)->owner_identity != actor_identity) {
-      return Error("Invite rejected: sender does not own the group");
-    }
     if ((*known)->sync_state == GroupSyncState::Dissolved) {
       return {};  // G016: the group is over; an invite to it is void
     }
@@ -822,6 +953,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   pending.expires_at = invite->expires_at;
   pending.created_at = util::NowUnixMs();
   pending.outbound = false;
+  pending.owner_identity = invite->Owner();
   if (auto recorded = group_roster_.UpsertPendingInvite(pending); !recorded) {
     return recorded.error();
   }

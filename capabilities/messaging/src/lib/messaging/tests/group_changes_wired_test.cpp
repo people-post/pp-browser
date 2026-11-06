@@ -462,7 +462,7 @@ TEST_F(GroupChangesWiredTest, AppliedChangesReadAsTheGroupsMembershipLines) {
   ASSERT_TRUE(about_us);
   EXPECT_EQ(about_us->value_or(""), thread->id) << "Dave reads that he was removed";
   const std::vector<ThreadMessage> lines = store_->GetMessages(thread->id).value();
-  ASSERT_EQ(lines.size(), 2u) << "a rename has no line yet (o4)";
+  ASSERT_EQ(lines.size(), 3u) << "a leave, a removal and a rename each read as a line";
   auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(lines[0]);
   ASSERT_TRUE(left);
   EXPECT_EQ(left->member_identity, carol.Id());
@@ -471,6 +471,12 @@ TEST_F(GroupChangesWiredTest, AppliedChangesReadAsTheGroupsMembershipLines) {
   EXPECT_EQ(removed->member_identity, dave.Id());
   EXPECT_EQ(removed->removed_by, bob.Id());
   EXPECT_EQ(lines[1].sender_contact_id, bob.Id());
+  // G017: a member's rename reads as "Carol renamed the group …", from its signer.
+  auto renamed = GroupMembershipCodec::DecodeGroupRenamedFromMessage(lines[2]);
+  ASSERT_TRUE(renamed);
+  EXPECT_EQ(renamed->title, "Bikers");
+  EXPECT_EQ(renamed->title_version, 6u);
+  EXPECT_EQ(lines[2].sender_contact_id, carol.Id());
 }
 
 } // namespace

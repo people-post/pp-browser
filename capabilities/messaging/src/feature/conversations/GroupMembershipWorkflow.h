@@ -53,6 +53,8 @@ public:
    */
   Roe<void> InviteFromCall(const std::string& group_id, const std::string& invitee_identity,
                            const std::string& call_id);
+  /** The ordinary invite to an account (its contact used when there is one), per the preset (G019). */
+  Roe<void> InviteByIdentity(const std::string& group_id, const std::string& invitee_identity);
   Roe<Thread> AcceptInvite(const std::string& invite_nonce);
   Roe<void> DeclineInvite(const std::string& invite_nonce);
   /** Local leave used by session close — stops inbound group recreate without peer notify. */
@@ -96,7 +98,10 @@ public:
   void EndDissolvedFromLocker(const AccountStateGroup& group);
   Roe<Thread> ForkGroup(const std::string& group_id, const std::string& new_title,
                         const std::vector<std::string>& member_contact_ids);
-  /** Owner-only; updates shared metadata.title and fans out group_renamed DMs. Leaves local_title alone. */
+  /**
+   * Rename for everyone; leaves local_title alone. The owner: metadata.title and group_renamed DMs. Anyone else the
+   * preset lets rename (G017: Open, any member; Managed, admins): a signed `rename` change (G018) to the members.
+   */
   Roe<void> RenameGroupShared(const std::string& group_id, const std::string& title);
   /**
    * G017, owner-only: make `member_identity` an admin or a member again (never the owner: that is a transfer).
@@ -123,8 +128,30 @@ public:
   /** G014: an accept came when the group was full — tell the invitee (`group_invite_refused`, reason group_full). */
   Roe<void> RefuseInvite(const std::string& group_id, const std::string& invite_nonce,
                          const std::string& invitee_identity, const std::string& reason = kInviteRefusedGroupFull);
-  Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity,
-                                uint64_t roster_epoch);
+  Roe<void> PublishMemberJoined(const std::string& group_id, const std::string& member_identity, uint64_t roster_epoch,
+                                const std::string& invite_nonce = {});
+  /**
+   * G019: the accept of an invite we sent as a member or admin. Our device signs the `add` (G018: `readmits` when it
+   * brings back someone removed, which only the owner or an admin may), holds it, sends it as `group_change` to the
+   * members with the newcomer's card, and sends the newcomer the join bundle (member_joined with the owner's
+   * statement, the changes and the members' cards). An add that does not count here (R5: the group filled meanwhile)
+   * goes nowhere: the invitee gets `group_invite_refused`. Someone already in gets the bundle again.
+   */
+  Roe<void> AdmitInvitee(const std::string& group_id, const std::string& invite_nonce,
+                         const std::string& member_identity);
+  /**
+   * G020 6: remove everyone `account` added who is still in and ours to remove (the owner anyone, an admin members),
+   * one removal each. How many went out.
+   */
+  Roe<size_t> RemoveEveryoneAddedBy(const std::string& group_id, const std::string& account);
+  /** G020 6, the owner: an ordinary invite to each account `account` removed who is still out. How many went out. */
+  Roe<size_t> ReinviteEveryoneRemovedBy(const std::string& group_id, const std::string& account);
+  /** G019 5: the members `account` brought in (their `added_by`), as the roster holds it now. */
+  std::vector<std::string> MembersAddedBy(const std::string& group_id, const std::string& account) const;
+  /** G020 6: the accounts `account` removed who are still out (the statement's removed list and held removals). */
+  std::vector<std::string> AccountsRemovedBy(const std::string& group_id, const std::string& account);
+  /** Our role in the group (Owner by its recorded owner); none when we are not in it. */
+  std::optional<MemberRole> LocalRole(const std::string& group_id) const;
 
   void MarkMemberUnreachable(const std::string& group_id, const std::string& member_identity);
   void ClearMemberUnreachable(const std::string& group_id, const std::string& member_identity);
@@ -229,8 +256,28 @@ private:
   Roe<GroupChange> SignOwnChange(GroupChange draft);
   /** This device's PeerId (the signer_device of our changes). */
   Roe<std::string> OwnDevice();
-  /** `group_change` to every member but us and `removed`, then (when set) to `removed` (G020 2). Best-effort. */
-  void FanOutChange(const std::string& group_id, const GroupChange& change, const std::string& removed = {});
+  /**
+   * `group_change` to every member but us and `removed`, then (when set) to `removed` (G020 2). Best-effort. With
+   * `newcomer` (an add, G019): their card and route ride along, and they get the join bundle instead.
+   */
+  void FanOutChange(const std::string& group_id, const GroupChange& change, const std::string& removed = {},
+                    const std::optional<group_roster_sync_codec::ChangeNewcomer>& newcomer = std::nullopt);
+  /** `account`'s card as we keep it, carried (CarriedCardJson); none when we keep none. */
+  std::optional<Object> KeptCard(const std::string& account_id);
+  /**
+   * The join bundle's detail (G019): `joined` with the members' routes and cards (within kRosterCardsBudgetBytes),
+   * `statement` and the held changes (`first` leading).
+   */
+  Roe<std::string> JoinBundleDetail(GroupMembershipCodec::MemberJoinedPayload joined,
+                                    const GroupRosterStatement& statement, const std::string& first);
+  /** G019: the newcomer gets the join bundle from us (as a member: the statement we hold, the changes we hold). */
+  Roe<void> SendJoinBundle(const std::string& group_id, const std::string& newcomer, const std::string& invite_nonce,
+                           const std::string& added_by, const std::string& first);
+  /** A member's or admin's rename (G017): our signed `rename`, held, applied, fanned out, its line. */
+  Roe<void> RenameAsMember(const std::string& group_id, const std::string& title);
+  /** The invite the add for `member_identity` answers was refused here (G014 / G019): void it, tell them. */
+  void RefuseAdmit(const std::string& group_id, const std::string& invite_nonce, const std::string& member_identity,
+                   const std::string& reason);
   /**
    * The owner's change to the group's settings (a role, the preset): bump the roster epoch, append `display` to the
    * group's chat and fan the event out with the newly signed roster. `apply` makes the change in the store, under the

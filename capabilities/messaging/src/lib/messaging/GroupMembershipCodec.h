@@ -51,6 +51,13 @@ public:
     uint64_t roster_epoch = 0;
     /** Optional full roster snapshot (G006 late-joiner backfill). Empty = primary member only. */
     std::vector<MemberJoinedEntry> members;
+    /** G019 5: who brought them in (the inviter); the line reads "Alice added Carol". Empty: not said. */
+    std::string added_by;
+    /**
+     * G019: the invite this join answers, on the copy the inviter sends the newcomer (the join bundle): the newcomer
+     * takes it only for an invite of its own from that sender.
+     */
+    std::string invite_nonce;
     /**
      * G022: `call` on a group's first line (local, never sent) when the group was made during a call: the line reads
      * "Group made during a call". Empty otherwise.

@@ -44,6 +44,8 @@ struct GroupViewApplied {
   /** Members the roster lost and gained. */
   std::vector<std::string> gone;
   std::vector<std::string> joined;
+  /** The group's shared title changed (a rename change, or a statement naming a newer title): the chat's follows. */
+  std::optional<std::string> new_title;
 };
 
 /**
@@ -74,6 +76,23 @@ enum class ChangeHeld {
 Roe<ChangeHeld> HoldChange(IGroupRosterStore& roster, const GroupChange& change, const GroupCardLookup& cards,
                            int64_t now_ms, bool line_shown = false);
 
+/**
+ * Changes that ride one message (a member check reply, a join bundle), each signer's card at most once: every change
+ * of a signer is held with the card one of them carried, so it still proves itself once that one is folded and
+ * dropped. Each is held as HoldChange decides (`line_shown` for all of them).
+ */
+Roe<void> HoldCarried(IGroupRosterStore& roster, const std::vector<GroupChange>& changes, const GroupCardLookup& cards,
+                      int64_t now_ms, bool line_shown = false);
+
+/**
+ * G019, the newcomer's check before it keeps anything of a join bundle: `statement` verifies for the owner this device
+ * knows for the group, and the roster it gives with the changes carried (and any held) lists `identity`. Nothing is
+ * written, so a bundle that does not prove the join leaves the group as accepting left it.
+ */
+Roe<void> CheckJoin(IGroupRosterStore& roster, const GroupRosterStatement& statement,
+                    const std::vector<GroupChange>& changes, const GroupCardLookup& cards, int64_t now_ms,
+                    const std::string& identity);
+
 /** A change received: HoldChange, then ApplyView when it was kept. */
 struct ChangeReceived {
   ChangeHeld held = ChangeHeld::Refused;
@@ -94,6 +113,44 @@ Roe<GroupChange> DraftLeave(IGroupRosterStore& roster, const std::string& group_
  */
 Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                              const std::string& local_device, const std::string& member, int64_t now_ms);
+
+/**
+ * G019: our `add` of `member` for the invite `invite_nonce`, unsigned. Errors unless the roster we hold lets us
+ * (GroupAllows Invite under the preset: `kGroupInviteNotAllowedError`), they are not in already
+ * (`kGroupAlreadyMemberError`) and, for someone removed (G020 5, R2), we may re-admit them — the add then names the
+ * removal in `readmits`; a member may not (`kGroupInviteRemovedError`).
+ */
+Roe<GroupChange> DraftAdd(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                          const std::string& local_device, const std::string& member, const std::string& invite_nonce,
+                          const GroupCardLookup& cards, int64_t now_ms);
+/**
+ * G017: our `rename` to `title` (1–256 bytes), unsigned, one past the title version the roster holds. Errors unless the
+ * preset lets our role rename (`kGroupRenameNotAllowedError`).
+ */
+Roe<GroupChange> DraftRename(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                             const std::string& local_device, const std::string& title, const GroupCardLookup& cards,
+                             int64_t now_ms);
+
+/**
+ * G020 6, "Remove everyone {name} added": the members `account` brought in (their added_by) who are still in and whom
+ * `local_identity` may remove (GroupAllows: the owner anyone but itself, an admin members), sorted. None for a role
+ * that removes no one.
+ */
+std::vector<std::string> RemovableAddedBy(IGroupRosterStore& roster, const std::string& group_id,
+                                          const std::string& local_identity, const std::string& account);
+/** G020 6, "Re-invite everyone {name} removed": the accounts `account` removed who are still out, sorted. */
+std::vector<std::string> RemovedBy(IGroupRosterStore& roster, const std::string& group_id, const std::string& account,
+                                   const GroupCardLookup& cards, int64_t now_ms);
+
+/** The roster as this device holds it now: the held statement plus the held changes; none without a statement. */
+std::optional<GroupRosterView> CurrentView(IGroupRosterStore& roster, const std::string& group_id,
+                                           const GroupCardLookup& cards, int64_t now_ms);
+/**
+ * G020 5: `member`'s entry on the group's removed list, as the roster holds it now (the statement's, else a removal
+ * among the held changes that counts) — what a re-admit names. None for someone not removed.
+ */
+std::optional<GroupRemovedMember> RemovedEntry(IGroupRosterStore& roster, const std::string& group_id,
+                                               const std::string& member, const GroupCardLookup& cards, int64_t now_ms);
 
 /**
  * G018 item 4, the owner's side: the view a fold starts from — the held statement (or, before the first one, the
@@ -158,6 +215,14 @@ Roe<std::optional<group_roster_sync_codec::RosterRequest>> BeginCatchUp(IGroupRo
  */
 void AddChangesTo(IGroupRosterStore& roster, const group_roster_sync_codec::RosterRequest& request,
                   group_roster_sync_codec::RosterReply& reply);
+
+/**
+ * G019: the changes a newcomer's join bundle carries — every change the group holds, `first` (the add that brings
+ * them in) leading and the rest in id order, bounded as a member check reply is (kMaxReplyChanges,
+ * kReplyChangesBudgetBytes; `more` when cut: the newcomer asks the inviter for the rest), each signer's card once.
+ */
+group_roster_sync_codec::CarriedChanges ChangesForNewcomer(IGroupRosterStore& roster, const std::string& group_id,
+                                                           const std::string& first);
 
 /**
  * Keep `statement` as the group's latest when it is valid for the owner we know and wins over the one
