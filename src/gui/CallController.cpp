@@ -68,7 +68,7 @@ CallController::CallController()
                               .accept = [this](const bool voice_only) { (void)presenter_.Accept(voice_only); },
                               .decline = [this]() { (void)presenter_.Decline(); },
                               .leave = [this]() { (void)presenter_.Leave(); },
-                              .toggle_mute = [this]() { presenter_.ToggleMute(); },
+                              .toggle_mute = [this]() { ToggleMute(); },
                               .display_name = [this](const std::string& identity) {
                                 return DisplayNameForIdentity(identity);
                               },
@@ -1280,15 +1280,34 @@ void CallController::RetryConnect() {
   presenter_.Retry();
 }
 
+// On hold (another call has the audio) the mic and camera are ours to keep shut: a tap on their buttons only says so
+// (second review 2026-11-06: a toggle during the hold would have reopened the mic, or been undone at its end).
+bool CallController::RefuseWhileOnHold() {
+  if (!local_on_hold_) {
+    return false;
+  }
+  UserFeedback::Ok(Tr("call.status.on_hold_local"));
+  return true;
+}
+
 void CallController::ToggleMute() {
+  if (RefuseWhileOnHold()) {
+    return;
+  }
   presenter_.ToggleMute();
 }
 
 void CallController::ToggleCamera() {
+  if (RefuseWhileOnHold()) {
+    return;
+  }
   presenter_.ToggleCamera();
 }
 
 void CallController::FlipCamera() {
+  if (RefuseWhileOnHold()) {
+    return;
+  }
   presenter_.FlipCamera();
 }
 
