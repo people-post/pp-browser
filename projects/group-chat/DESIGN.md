@@ -433,7 +433,7 @@ The statement as built, with these fields added inside what the owner signs:
 }
 ```
 
-- **Keys (G018 item 8):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key.
+- **Keys (G018 item 9):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key.
 - **Change id:** the hash of the signed bytes. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.
 - **`change` / `body`:**
 
@@ -451,6 +451,7 @@ The statement as built, with these fields added inside what the owner signs:
 ### Carrying the state and syncing
 
 - **Each group copy's plaintext** (inside the AEAD) carries `group_id`, the sender's `statement_epoch` and `changes_hash` (a hash of the sorted ids of the unfolded changes it holds).
+- **The relay sees no group (G018 item 7):** the envelope's `route` carries no `group_id`, and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ epoch ‖ lower account ‖ higher account)) instead of `v1:group:{group_id}:{epoch}:{member}`.
 - **A receiver that differs** sends `group_roster_request {group_id, request_id, statement_epoch, changes_hash}` (G013's control-lane request). The reply carries the latest statement and the changes the asker lacks (bounded; the asker asks again for more).
 
 ### Invites (G019)

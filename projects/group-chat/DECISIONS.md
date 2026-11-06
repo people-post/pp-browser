@@ -231,7 +231,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Decision:**
 
 1. **The owner's statement stays the authority** (G012 as built: signed, linear by `roster_epoch`, with the owner chain). It holds the members, roles, the preset, the title, the removed list (below), live invite links, and the changes it folded in.
-2. **Changes on top**, each signed by the **device** that makes it and checked against its account's card (item 8):
+2. **Changes on top**, each signed by the **device** that makes it and checked against its account's card (item 9):
 
 | Change | Signer |
 |---|---|
@@ -251,8 +251,13 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 4. **The owner folds** the changes it holds into its next statement when its device is online. The statement names what it folded, and devices drop those. Nothing needs the owner online: changes stand on their own until folded.
 5. **Keeping members in step.** Each group copy carries, inside its ciphertext, the sender's statement epoch and a hash of the changes it holds. A receiver that differs asks for what it lacks on the control lane (the G013 request / reply, carrying changes).
 6. **Newcomers check everything.** They get the owner's statement and every unfolded change, all signed: nobody, the member who added them included, can hand them a roster that is not the group's.
-7. **Clean cutover** (unreleased product).
-8. **Which key signs (decided 2026-11-05, Hongwei).** Two keys, by what the act can do:
+7. **The relay stops learning which group a copy is for (moved here from G023, 2026-11-05).** Today the relay sees each group copy's group id twice: `route.group_id` on the envelope (signed, in the clear) and the stream id `v1:group:{group_id}:{epoch}:{member}`, so it can map who is in which group and how busy it is. It needs neither — messenger treats the stream id as an opaque key and never reads the route. With o2, which already changes what each group copy carries inside its ciphertext (item 5):
+   - **The group id moves inside each copy's ciphertext.** The copy is already authenticated, so it stays bound to its group; the receiver reads the group id after decrypting. The member check that rejects a non-member's copy moves from before decryption to just after it (one pairwise decrypt from a known sender).
+   - **The stream id becomes** `v1:g:` + a hash of (group id, epoch, the two account ids). Both accounts and all their devices compute it, so history fetches keep working; the relay cannot (the group id is a 122-bit random value it never sees), and with the pair in the hash, Alice→Bob and Alice→Carol in one group look unrelated.
+   - **Still visible:** that a record is a group copy (the `v1:g:` prefix), and N same-size copies at one moment (padding and jitter, later — G023).
+   - **Cutover:** old and new clients cannot read each other's group copies, and group history stored on the relay under the old stream ids is not fetched again. Acceptable while the product is unreleased.
+8. **Clean cutover** (unreleased product).
+9. **Which key signs (decided 2026-11-05, Hongwei).** Two keys, by what the act can do:
 
 | Signed with | Acts | From |
 |---|---|---|
@@ -346,13 +351,13 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G023 — Privacy in open groups: history from the join; the relay's view comes later
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05). Item 1 needs no work; items 2 and 3 are follow-ups outside O ([privacy CURRENT_STATE](../privacy/CURRENT_STATE.md)). Amends G003 (full backfill on join).
+**Status:** Accepted (Hongwei, 2026-11-05). Item 1 needs no work; item 2 moved into O (G018 item 7); item 3 is a follow-up outside O ([privacy CURRENT_STATE](../privacy/CURRENT_STATE.md)). Amends G003 (full backfill on join).
 **Decision:**
 
 1. **A newcomer sees messages from when they joined.** G003's full backfill was never built (there is no `history_visibility` in the code), so this is what happens today; it becomes the rule, with no setting. In an open group people come in whom the earlier members never picked, and what members wrote was shared with the people present then. A group option for full history waits for history backfill (a later feature for 1:1 and groups alike, G013).
-2. **Follow-up — the relay's view of groups.** The relay sees each group copy's group id twice: in `route.group_id` on the envelope (signed, in the clear, [WIRE_SCHEMAS](../../docs/contracts/WIRE_SCHEMAS.md)) and in the stream id (`v1:group:{group_id}:…`). It can map who is in which group and how busy it is. Hiding it needs the group id inside each copy's ciphertext and a stream id an account's own devices can all derive but the relay cannot read, which touches multi-device history sync and may need a relay change; it needs its own design and is not part of O.
+2. **The relay's view of groups — moved into O (G018 item 7, 2026-11-05).** A closer look found it needs no relay change (messenger treats stream ids as opaque and never reads the route), and o2 already changes what each group copy carries inside its ciphertext, so it ships with o2 as one cutover for group copies.
 3. **Follow-up — message requests** for direct messages from people who are not contacts, group members included: an open group hands your card, and its relay route, to people you do not know. [Privacy P007](../privacy/DECISIONS.md#p007--who-can-call-me-strangers-messages-stay-open-for-now) left strangers' messages open until a requests list exists; that list is privacy work, not O. Until then, Block is the remedy.
 
 **Later:** padding and send jitter, so N copies of one message at the same moment, of the same size, do not stand out.
-**Rationale:** Openness is about who can come in, not about what was said before they came or what the relay can see. Item 1 costs nothing; items 2 and 3 are real work that other features share, so they get their own design rather than riding in this one.
+**Rationale:** Openness is about who can come in, not about what was said before they came or what the relay can see. Item 1 costs nothing; item 3 is work other features share, so it gets its own design rather than riding in this one.
 **Alternatives:** Full history by default (shares members' past messages with people they did not pick); fold items 2 and 3 into O (a wire and relay change, and a new inbox, inside a group feature).

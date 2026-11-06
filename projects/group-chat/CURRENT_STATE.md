@@ -20,7 +20,7 @@ Ordering and checkboxes: [PHASES.md](PHASES.md). Read [DECISIONS.md](DECISIONS.m
 
 ## Open (next first)
 
-1. **Open groups (G017–G022, calls V062)** — accepted and revised 2026-11-05, nothing built yet. Order: o1 roles and presets → o2 changes on top of the owner's statement → o3 make a group during a call → o4 member invites and removal → o5 invite links; guests in a group's call after o1 and o4. Changes are signed by the device key, the owner's statement by the account key (G018 item 8, decided 2026-11-05). G023's follow-ups (the relay's view of groups, message requests) belong to the privacy project. [PHASES § O](PHASES.md#o--open-groups-g017g023).
+1. **Open groups (G017–G022, calls V062)** — accepted and revised 2026-11-05, nothing built yet. Order: o1 roles and presets → o2 changes on top of the owner's statement → o3 make a group during a call → o4 member invites and removal → o5 invite links; guests in a group's call after o1 and o4. Changes are signed by the device key, the owner's statement by the account key (G018 item 9, decided 2026-11-05). o2 also takes the group id off the relay (G018 item 7); message requests (G023) belong to the privacy project. [PHASES § O](PHASES.md#o--open-groups-g017g023).
 2. A lab case for a held mention; a click on a context-menu item under Xvfb did nothing (the picker's and the chat menu's) — check on a real desktop.
 
 ## Notes for whoever picks this up

@@ -68,7 +68,7 @@ O (open groups, G017–G022, calls V062): o1 ── o2 ── o4 ── o5
 
 ## O — Open groups (G017–G023)
 
-Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus changes instead of a general log; two presets; no bans, approval, invite count or history setting). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status. Not in O: G023's follow-ups (the relay's view of groups, message requests) — privacy project.
+Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus changes instead of a general log; two presets; no bans, approval, invite count or history setting). One PR for the whole feature, at the end. Each phase: gtests for its rules, a lab case where two or more devices are needed, then promote the shipped wire to WIRE_SCHEMAS / DATA_LAYOUT and set the decision's status. Not in O: message requests (G023 item 3) — privacy project. The relay's view of groups is in o2 (G018 item 7).
 
 **o1 — Roles and presets (G017)**
 - [ ] `admin` role live; one permission function every check calls (signer, action, latest statement)
@@ -77,9 +77,10 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [ ] Appoint / demote an admin (owner), shown in the member list
 
 **o2 — Changes on top of the owner's statement (G018)**
-- [ ] Changes signed by the device key and checked against the signer's card; the statement stays account-signed (G018 item 8); a change carries the signer's card when the receiver may lack it
+- [ ] Changes signed by the device key and checked against the signer's card; the statement stays account-signed (G018 item 9); a change carries the signer's card when the receiver may lack it
 - [ ] Change codec and signature; the roster from the latest statement plus changes by R1–R6; the owner folds changes into its next statement
 - [ ] Statement fields: roles, preset, `added_by`, `removed`, `links`, `folded`
+- [ ] The relay stops learning the group (G018 item 7): the group id inside each copy's ciphertext (off `route.group_id`), the member check just after decryption, stream id `v1:g:` + hash(group id, epoch, the pair); WIRE_SCHEMAS updated
 - [ ] `statement_epoch` and `changes_hash` in each group copy's plaintext; the member check (G013) carries the statement and changes; catch-up on a mismatch
 - [ ] gtests: each rule (a removal against a concurrent member's add; a re-admit; a demoted admin's backdated removal void; a removed inviter's adds kept by the remover; concurrent renames; adds past 50; a change from a device taken off the card void unless folded; any order of the same changes gives the same roster); lab: a member invites and an admin removes while the owner is offline, the owner folds when back
 
