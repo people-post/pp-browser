@@ -214,5 +214,106 @@ TEST(AudioSessionInterruptionTest, OutgoingAudioIsSilenceWhileTheOsHasTheSession
   }
 }
 
+/** Loud separate devices (no starved capture, so no reopen of its own) that count their opens. */
+class CountingLoudBackend final : public IMediaDeviceBackend {
+public:
+  explicit CountingLoudBackend(std::atomic<int>& opens) : opens_(opens) {}
+  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind, const AudioDeviceFormat&, const std::function<bool()>&,
+                                            std::string*) override {
+    opens_.fetch_add(1);
+    return std::make_unique<LoudMic>();
+  }
+  std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat&, std::string*) override { return nullptr; }
+
+private:
+  std::atomic<int>& opens_;
+};
+
+// A reopen asked for while the OS has the session (a route change starved the capture just as a phone call took the
+// session) opens nothing — every open would fail and drop what is held (B178) — and runs once the interruption ends.
+TEST(AudioSessionInterruptionTest, AReopenAskedWhileTheOsHasTheSessionWaitsForItsEnd) {
+  AudioSession::ClearInterruption();
+  std::atomic<int> opens{0};
+  MediaDeviceArbiter devices(std::make_unique<CountingLoudBackend>(opens));
+  MediaEngine engine(devices);
+  auto started = engine.StartDuplex("reopen-while-held", [](const MediaEngine::MediaPacket&) {});
+  ASSERT_TRUE(started) << (started ? "" : started.error().message);
+  ASSERT_TRUE(WaitFor([&] { return opens.load() >= 2; })) << "mic and speaker never opened";
+
+  AudioSession::NotifyInterruptionBegan();
+  std::this_thread::sleep_for(50ms);
+  const int opened = opens.load();
+  engine.RequestAudioDeviceReopen();
+  std::this_thread::sleep_for(300ms);
+  EXPECT_EQ(opens.load(), opened) << "devices were opened while the OS had the session";
+
+  AudioSession::NotifyInterruptionEnded();
+  EXPECT_TRUE(WaitFor([&] { return opens.load() > opened; })) << "the reopen did not run once the session was back";
+  engine.Stop();
+  (void)engine.WaitForRetiredSessions(3s);
+  AudioSession::ClearInterruption();
+}
+
+/** A voice-processing pair that opens except on the second attempt; separate devices always open. All counted. */
+class FlakyVoiceBackend final : public IMediaDeviceBackend {
+public:
+  FlakyVoiceBackend(std::atomic<int>& voice_opens, std::atomic<int>& separate_opens)
+      : voice_opens_(voice_opens), separate_opens_(separate_opens) {}
+  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind, const AudioDeviceFormat&, const std::function<bool()>&,
+                                            std::string*) override {
+    separate_opens_.fetch_add(1);
+    return std::make_unique<LoudMic>();
+  }
+  VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat&, std::string* error) override {
+    if (voice_opens_.fetch_add(1) + 1 == 2) {
+      if (error) {
+        *error = "AudioUnitInitialize failed (test)";
+      }
+      return {};
+    }
+    VoiceDuplexEndpoints pair;
+    pair.mic = std::make_unique<LoudMic>();
+    pair.speaker = std::make_unique<LoudMic>();
+    return pair;
+  }
+  std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat&, std::string*) override { return nullptr; }
+
+private:
+  std::atomic<int>& voice_opens_;
+  std::atomic<int>& separate_opens_;
+};
+
+// A call on voice processing (echo cancellation) whose reopen fell back to separate devices — the pair would not
+// open just then — tries the pair again when the OS gives the session back; before, it stayed on the separate
+// devices (and their echo) for the rest of the call (B178). An ordinary reopen keeps the devices it has.
+TEST(AudioSessionInterruptionTest, TheSessionComingBackTriesVoiceProcessingAgain) {
+  AudioSession::ClearInterruption();
+  std::atomic<int> voice_opens{0};
+  std::atomic<int> separate_opens{0};
+  MediaDeviceArbiter devices(std::make_unique<FlakyVoiceBackend>(voice_opens, separate_opens));
+  MediaEngine engine(devices);
+  auto started = engine.StartDuplex("voice-comes-back", [](const MediaEngine::MediaPacket&) {});
+  ASSERT_TRUE(started) << (started ? "" : started.error().message);
+  ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 1; })) << "the call did not start on voice processing";
+  EXPECT_EQ(separate_opens.load(), 0);
+
+  engine.RequestAudioDeviceReopen();  // the pair fails this time: separate devices
+  ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 2 && separate_opens.load() >= 2; }))
+      << "the reopen did not fall back to separate devices";
+  std::this_thread::sleep_for(50ms);
+  const int separate = separate_opens.load();
+  engine.RequestAudioDeviceReopen();  // an ordinary reopen (a starved capture): reopens what it has
+  ASSERT_TRUE(WaitFor([&] { return separate_opens.load() >= separate + 2; })) << "the ordinary reopen did not run";
+  EXPECT_EQ(voice_opens.load(), 2) << "an ordinary reopen does not go back to voice processing";
+
+  AudioSession::NotifyInterruptionBegan();
+  AudioSession::NotifyInterruptionEnded();
+  EXPECT_TRUE(WaitFor([&] { return voice_opens.load() == 3; }))
+      << "voice processing was not tried again when the OS gave the session back";
+  engine.Stop();
+  (void)engine.WaitForRetiredSessions(3s);
+  AudioSession::ClearInterruption();
+}
+
 } // namespace
 } // namespace pbr
