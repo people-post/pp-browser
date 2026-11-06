@@ -489,7 +489,7 @@ struct MediaEngine::Impl {
   /**
    * Set with audio_reopen_requested when the OS gave the session back (interruption end): that reopen tries the
    * voice-processing pair again even when separate leases are held — a reopen that ran during the interruption fell
-   * back to them, and nothing else ever went back (B178).
+   * back to them, and nothing else ever went back (B174).
    */
   std::atomic<bool> audio_reopen_retry_voice{false};
   /** This session had a voice-processing pair (capture thread only): only then is it worth trying again. */
@@ -1202,9 +1202,10 @@ struct MediaEngine::Impl {
       int vpio_starve_reopens = 0;
       int64_t last_audio_retry_ms = 0;
       bool reopen_deferred_logged = false;  // once per interruption
+      bool interruption_silence_logged = false;  // once per interruption: a stuck flag shows in the log
       while (capture_running.load()) {
         // While the OS has the session (a phone call, or a route change that interrupted it) every open fails and
-        // drops what is held: nothing opens until the interruption's end, whose handler asks for the reopen (B178).
+        // drops what is held: nothing opens until the interruption's end, whose handler asks for the reopen (B174).
         const bool os_has_session = AudioSession::IsInterrupted();
         if (!os_has_session) {
           reopen_deferred_logged = false;
@@ -1280,7 +1281,6 @@ struct MediaEngine::Impl {
           continue;
         }
         bool paced_silence_frame = false;
-        bool interruption_silence_logged = false;  // once per interruption: a stuck flag shows in the log
         if (capture_available) {
           int16_t chunk[kFrameSamples];
           capture_stage.Set(MediaThreadStage::ReadMic);
