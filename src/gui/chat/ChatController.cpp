@@ -4870,6 +4870,7 @@ void ChatController::ChooseGroupPreset(const std::string& group_id, const GroupP
     ContextMenuAction action;
     action.id = preset == GroupPreset::Managed ? "group_preset_managed" : "group_preset_open";
     action.label = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed" : "group_info.preset_open");
+    action.detail = Tr(preset == GroupPreset::Managed ? "group_info.preset_managed_detail" : "group_info.preset_open_detail");
     action.run = [choose, preset]() { choose(preset); };
     action.selected = preset == current;
     actions.push_back(std::move(action));

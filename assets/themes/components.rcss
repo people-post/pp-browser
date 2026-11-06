@@ -8741,6 +8741,21 @@ input.checkbox {
   font-size: 14dp;
 }
 
+.context-menu-item-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 8dp 0;
+}
+
+.context-menu-item-detail {
+  margin-top: 2dp;
+  font-family: LatoLatin;
+  font-size: 13dp;
+  color: #6b7280;
+}
+
 .context-menu-item-check {
   flex-shrink: 0;
   margin-left: 8dp;
