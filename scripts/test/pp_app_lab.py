@@ -2120,7 +2120,7 @@ def scenario_admin_removes_while_owner_is_away(lab):
     wait_for(lambda: any(r.get("text") == "Member removed" and r.get("from") == b.account
                          for r in d.cmd("transcript", thread=threads[d.name])["rows"]) or None, 30,
              "dave: the line saying bob removed him")
-    sent = d.cmd("send", thread=threads[d.name], text="still here?", check=False)
+    sent = d.cmd("send_mentions", thread=threads[d.name], text="still here?", mentions=[], check=False)
     if sent.get("ok") or "chat.group.removed" not in str(sent.get("error")):
         raise ProbeError("dave: a send to a group he was removed from gave %s" % sent)
 
