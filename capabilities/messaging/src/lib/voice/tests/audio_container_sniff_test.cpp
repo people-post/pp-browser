@@ -24,6 +24,13 @@ TEST(AudioContainerSniff, KnownContainers) {
   EXPECT_EQ(Sniff(std::string("FORM\x00\x00\x00\x10", 8) + "AIFCCOMM"), AudioContainer::Aiff);
 }
 
+TEST(AudioContainerSniff, AdtsIsAacNotMp3) {
+  EXPECT_EQ(Sniff("\xFF\xF1\x50\x80"), AudioContainer::Aac) << "ADTS, MPEG-4";
+  EXPECT_EQ(Sniff("\xFF\xF9\x50\x80"), AudioContainer::Aac) << "ADTS, MPEG-2";
+  EXPECT_EQ(Sniff("\xFF\xFB\x90\x00"), AudioContainer::Mp3) << "MPEG-1 Layer III";
+  EXPECT_EQ(Sniff("ID3\x04\x00\x00\x00\x00\x00\x00"), AudioContainer::Mp3);
+}
+
 TEST(AudioContainerSniff, ShortAndUnknownBuffers) {
   EXPECT_EQ(SniffAudioContainer(nullptr, 0), AudioContainer::Unknown);
   EXPECT_EQ(Sniff(""), AudioContainer::Unknown);
@@ -42,6 +49,7 @@ TEST(AudioContainerSniff, ExtensionNames) {
   EXPECT_STREQ(AudioContainerExtension(AudioContainer::Flac), "flac");
   EXPECT_STREQ(AudioContainerExtension(AudioContainer::Ogg), "ogg");
   EXPECT_STREQ(AudioContainerExtension(AudioContainer::Aiff), "aiff");
+  EXPECT_STREQ(AudioContainerExtension(AudioContainer::Aac), "aac");
   EXPECT_EQ(AudioContainerExtension(AudioContainer::Unknown), nullptr);
 }
 

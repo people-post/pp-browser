@@ -37,12 +37,15 @@ public:
   /** Create vault (if missing) or unlock with PIN, then fan out DEK to consumers. */
   Roe<void> Unlock(const SecretText& pin);
   void Lock();
+  /** Whether `pin` opens the vault (a wrong one is a Pin-category error); the unlocked state does not change. */
+  Roe<void> VerifyPin(std::string_view pin) const;
 
   // --- PIN grace window (#21 phase 1, DEV/PLAN-pin-grace.md). Without AttachGrace every call here is a no-op. ---
   /** The grace entry and the clock it is judged by. */
   void AttachGrace(std::unique_ptr<GraceUnlock> grace, std::function<GraceClock()> clock);
   bool GraceSupported() const;
-  /** Window still open → the vault is unlocked with its DEK and fanned out as after Unlock(). */
+  /** Window still open → the vault is unlocked with its DEK and fanned out as after Unlock(). Only `status` is
+   *  meaningful: the result's `dek` is wiped and empty. */
   Roe<GraceUnlock::Result> TryGraceUnlock();
   /** After a PIN unlock: keep the unlocked DEK for `minutes` (0 forgets). A failure is reported, never fatal. */
   Roe<void> RememberGrace(int minutes);

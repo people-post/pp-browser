@@ -171,17 +171,28 @@ Roe<GraceUnlock::Result> ProfileSecretsEngine::TryGraceUnlock() {
   if (!found) {
     return found.error();
   }
+  // The result carries the DEK in the clear and callers only read `status`: wipe it on every way out.
+  auto wipe_dek = [&found]() {
+    if (!found->dek.empty()) {
+      sodium_memzero(found->dek.data(), found->dek.size());
+      found->dek.clear();
+    }
+  };
   if (found->status != GraceUnlock::Status::Found || unlocked_) {
+    wipe_dek();
     return found;
   }
   if (!vault_ || !vault_->Exists()) {
+    wipe_dek();
     grace_->Forget();
     return missing;
   }
   if (auto set = vault_->UnlockWithDek(found->dek); !set) {
+    wipe_dek();
     grace_->Forget();
     return missing;
   }
+  wipe_dek();
   // The same tail as Unlock(): fan the DEK out, mark unlocked, tell the listener.
   if (auto distributed = RedistributeUnlockedDek(); !distributed) {
     Lock();
@@ -217,6 +228,23 @@ void ProfileSecretsEngine::ForgetGrace() {
   if (grace_) {
     grace_->Forget();
   }
+}
+
+Roe<void> ProfileSecretsEngine::VerifyPin(std::string_view pin) const {
+  if (!initialized_ || !vault_) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");
+  }
+  // The KEK derivation and DEK unwrap Unlock() does, on the file alone: dek_ and the consumers stay as they are.
+  auto bytes = vault_->ReadVaultFile();
+  if (!bytes) {
+    return bytes.error();
+  }
+  auto dek = DataKeyVault::UnwrapDekFromVaultBytes(*bytes, vault_->ProfileId(), pin);
+  if (!dek) {
+    return dek.error();
+  }
+  sodium_memzero(dek->data(), dek->size());
+  return {};
 }
 
 Roe<void> ProfileSecretsEngine::ChangePin(std::string_view current_pin, std::string_view new_pin) {

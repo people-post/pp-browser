@@ -79,7 +79,7 @@ std::string DescribeForLog(NSURL* url) {
 namespace pbr {
 namespace {
 
-// The AVFileTypes to try for a sniffed container, best first (none for Flac / Ogg / Unknown: no hint).
+// The AVFileTypes to try for a sniffed container, best first (none for Flac / Ogg / Aac / Unknown: no hint).
 std::vector<NSString*> TypeHints(AudioContainer container) {
   switch (container) {
   case AudioContainer::Mp3: return {AVFileTypeMPEGLayer3};

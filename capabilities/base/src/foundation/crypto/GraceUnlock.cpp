@@ -78,6 +78,11 @@ void Wipe(ByteVector& bytes) {
   }
 }
 
+// See GraceClock: without a clock no window can be measured, so none is opened, kept or renewed.
+bool HasClock(const GraceClock& now) {
+  return now.mono_seconds > 0;
+}
+
 int64_t ExpiryFrom(const GraceClock& now, const int minutes) {
   return now.mono_seconds + static_cast<int64_t>(minutes) * 60;
 }
@@ -101,7 +106,7 @@ std::filesystem::path GraceUnlock::FilePath() const {
 
 Roe<GraceUnlock::Result> GraceUnlock::TryUnlock(const GraceClock& now) {
   Result result;
-  if (!Supported()) {
+  if (!Supported() || !HasClock(now)) {
     return result; // Missing, nothing read or deleted
   }
   auto looked = store_.Lookup(EntryName());
@@ -165,6 +170,9 @@ Roe<void> GraceUnlock::Remember(const ByteVector& dek, const int minutes, const 
     Forget();
     return {};
   }
+  if (!HasClock(now)) {
+    return {};
+  }
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
@@ -212,6 +220,9 @@ Roe<void> GraceUnlock::Touch(const int minutes, const GraceClock& now) {
   }
   if (minutes <= 0) {
     Forget();
+    return {};
+  }
+  if (!HasClock(now)) {
     return {};
   }
   auto looked = store_.Lookup(EntryName());

@@ -13,6 +13,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -254,18 +255,20 @@ TEST(AudioSessionInterruptionTest, AReopenAskedWhileTheOsHasTheSessionWaitsForIt
   AudioSession::ClearInterruption();
 }
 
-/** A voice-processing pair that opens except on the second attempt; separate devices always open. All counted. */
+/** A voice-processing pair that opens except on the attempts in `failing` (the second by default); separate devices
+ *  always open. All counted. */
 class FlakyVoiceBackend final : public IMediaDeviceBackend {
 public:
-  FlakyVoiceBackend(std::atomic<int>& voice_opens, std::atomic<int>& separate_opens)
-      : voice_opens_(voice_opens), separate_opens_(separate_opens) {}
+  FlakyVoiceBackend(std::atomic<int>& voice_opens, std::atomic<int>& separate_opens, std::vector<int> failing = {2})
+      : voice_opens_(voice_opens), separate_opens_(separate_opens), failing_(std::move(failing)) {}
   std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind, const AudioDeviceFormat&, const std::function<bool()>&,
                                             std::string*) override {
     separate_opens_.fetch_add(1);
     return std::make_unique<LoudMic>();
   }
   VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat&, std::string* error) override {
-    if (voice_opens_.fetch_add(1) + 1 == 2) {
+    const int attempt = voice_opens_.fetch_add(1) + 1;
+    if (std::find(failing_.begin(), failing_.end(), attempt) != failing_.end()) {
       if (error) {
         *error = "AudioUnitInitialize failed (test)";
       }
@@ -281,6 +284,7 @@ public:
 private:
   std::atomic<int>& voice_opens_;
   std::atomic<int>& separate_opens_;
+  std::vector<int> failing_;
 };
 
 // A call on voice processing (echo cancellation) whose reopen fell back to separate devices — the pair would not
@@ -310,6 +314,37 @@ TEST(AudioSessionInterruptionTest, TheSessionComingBackTriesVoiceProcessingAgain
   AudioSession::NotifyInterruptionEnded();
   EXPECT_TRUE(WaitFor([&] { return voice_opens.load() == 3; }))
       << "voice processing was not tried again when the OS gave the session back";
+  engine.Stop();
+  (void)engine.WaitForRetiredSessions(3s);
+  AudioSession::ClearInterruption();
+}
+
+// The pair refused once more when the OS gave the session back: that reopen ends on separate devices, but the wish to
+// go back to voice processing is kept, so the next reopen (here an ordinary one) tries the pair again.
+TEST(AudioSessionInterruptionTest, AFailedVoiceRetryIsTriedAgainAtTheNextReopen) {
+  AudioSession::ClearInterruption();
+  std::atomic<int> voice_opens{0};
+  std::atomic<int> separate_opens{0};
+  MediaDeviceArbiter devices(std::make_unique<FlakyVoiceBackend>(voice_opens, separate_opens, std::vector<int>{2, 3}));
+  MediaEngine engine(devices);
+  auto started = engine.StartDuplex("voice-retry-kept", [](const MediaEngine::MediaPacket&) {});
+  ASSERT_TRUE(started) << (started ? "" : started.error().message);
+  ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 1; })) << "the call did not start on voice processing";
+
+  engine.RequestAudioDeviceReopen();  // the pair fails: separate devices
+  ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 2 && separate_opens.load() >= 2; }))
+      << "the reopen did not fall back to separate devices";
+  std::this_thread::sleep_for(50ms);
+
+  AudioSession::NotifyInterruptionBegan();
+  const int separate = separate_opens.load();
+  AudioSession::NotifyInterruptionEnded();  // the retry: the pair refuses once more
+  ASSERT_TRUE(WaitFor([&] { return voice_opens.load() == 3 && separate_opens.load() >= separate + 2; }))
+      << "the session coming back did not try voice processing";
+  std::this_thread::sleep_for(50ms);
+
+  engine.RequestAudioDeviceReopen();  // an ordinary reopen: still meant to bring voice processing back
+  EXPECT_TRUE(WaitFor([&] { return voice_opens.load() == 4; })) << "the failed retry was forgotten";
   engine.Stop();
   (void)engine.WaitForRetiredSessions(3s);
   AudioSession::ClearInterruption();

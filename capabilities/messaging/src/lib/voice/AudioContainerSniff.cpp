@@ -32,8 +32,17 @@ AudioContainer SniffAudioContainer(const uint8_t* bytes, size_t n) {
   if (Has(bytes, n, 0, "FORM") && (Has(bytes, n, 8, "AIFF") || Has(bytes, n, 8, "AIFC"))) {
     return AudioContainer::Aiff;
   }
-  if (Has(bytes, n, 0, "ID3") || (n >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)) {
-    return AudioContainer::Mp3; // an ID3 tag, or an MPEG frame sync (11 set bits)
+  if (Has(bytes, n, 0, "ID3")) {
+    return AudioContainer::Mp3;
+  }
+  // An MPEG frame sync (11 set bits) then two layer bits: 00 is ADTS (AAC), anything else an MPEG audio layer.
+  if (n >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) {
+    if ((bytes[1] & 0xF6) == 0xF0) {
+      return AudioContainer::Aac;
+    }
+    if ((bytes[1] & 0x06) != 0) {
+      return AudioContainer::Mp3;
+    }
   }
   return AudioContainer::Unknown;
 }
@@ -54,6 +63,7 @@ const char* AudioContainerExtension(AudioContainer container) {
   case AudioContainer::Flac: return "flac";
   case AudioContainer::Ogg: return "ogg";
   case AudioContainer::Aiff: return "aiff";
+  case AudioContainer::Aac: return "aac";
   case AudioContainer::Unknown: break;
   }
   return nullptr;

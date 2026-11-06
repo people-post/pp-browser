@@ -232,6 +232,34 @@ TEST_F(GraceUnlockTest, ZeroMinutesWritesNothingAndForgets) {
   EXPECT_TRUE(NothingLeft());
 }
 
+// GraceClock: mono 0 is "no clock". Nothing opens, nothing is written, an existing entry is left alone.
+TEST_F(GraceUnlockTest, NoClockFailsClosedAndTouchesNothing) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
+  const ByteVector entry = store_.items.at(grace_->EntryName());
+  const ByteVector file = ReadFile(grace_->FilePath());
+  const int reads = store_.reads;
+  const int writes = store_.writes;
+  const int deletes = store_.deletes;
+
+  auto got = grace_->TryUnlock(Clock(0));
+  ASSERT_TRUE(static_cast<bool>(got));
+  EXPECT_EQ(got->status, GraceUnlock::Status::Missing);
+  EXPECT_TRUE(got->dek.empty());
+  EXPECT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(0))));
+  EXPECT_EQ(store_.reads, reads);
+  EXPECT_EQ(store_.writes, writes);
+  EXPECT_EQ(store_.deletes, deletes);
+  EXPECT_EQ(store_.items.at(grace_->EntryName()), entry);
+  EXPECT_EQ(ReadFile(grace_->FilePath()), file);
+  EXPECT_EQ(Try(Clock(1100)), GraceUnlock::Status::Found); // still the same window once the clock is back
+}
+
+TEST_F(GraceUnlockTest, RememberWithoutAClockWritesNothing) {
+  ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(0))));
+  EXPECT_EQ(store_.writes, 0);
+  EXPECT_TRUE(NothingLeft());
+}
+
 TEST_F(GraceUnlockTest, TouchMovesTheEnd) {
   ASSERT_TRUE(static_cast<bool>(grace_->Remember(TestDek(), 15, Clock(1000))));
   ASSERT_TRUE(static_cast<bool>(grace_->Touch(15, Clock(1600)))); // new end 2500
@@ -408,6 +436,7 @@ TEST_F(ProfileSecretsEngineGraceTest, GraceUnlocksTheVaultAndFansOut) {
   auto got = engine_.TryGraceUnlock();
   ASSERT_TRUE(static_cast<bool>(got));
   EXPECT_EQ(got->status, GraceUnlock::Status::Found);
+  EXPECT_TRUE(got->dek.empty()) << "the plaintext DEK does not leave the engine";
   EXPECT_TRUE(engine_.IsUnlocked());
   EXPECT_EQ(unlocked_calls, 1);
   auto after = engine_.Vault()->Dek();
@@ -420,6 +449,20 @@ TEST_F(ProfileSecretsEngineGraceTest, RememberNeedsAnUnlockedVault) {
   engine_.Lock();
   EXPECT_FALSE(static_cast<bool>(engine_.RememberGrace(15)));
   EXPECT_TRUE(store_.items.empty());
+}
+
+// The transfer code's PIN check (#113): the vault is opened on the side, the unlocked state is left as it was.
+TEST_F(ProfileSecretsEngineGraceTest, VerifyPinAcceptsTheRightPinAndRejectsAWrongOne) {
+  int unlocked_calls = 0;
+  engine_.SetOnUnlocked([&]() { ++unlocked_calls; });
+  EXPECT_TRUE(static_cast<bool>(engine_.VerifyPin("1234")));
+  EXPECT_FALSE(static_cast<bool>(engine_.VerifyPin("0000")));
+  EXPECT_TRUE(engine_.IsUnlocked()) << "a wrong PIN does not lock";
+
+  engine_.Lock();
+  EXPECT_TRUE(static_cast<bool>(engine_.VerifyPin("1234")));
+  EXPECT_FALSE(engine_.IsUnlocked()) << "the right PIN does not unlock";
+  EXPECT_EQ(unlocked_calls, 0);
 }
 
 TEST_F(ProfileSecretsEngineGraceTest, ProfileSecretsEngineForgetsGraceWhenPinChanges) {

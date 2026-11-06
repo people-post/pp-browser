@@ -403,12 +403,13 @@ Roe<void> Application::ResetActiveProfile() {
     }
   }
 
-  // The PIN grace window's keychain entry outlives the profile directory: deleted before the wipe.
-  ForgetGrace();
-
   if (auto stopped = StopMessagingForReset(/*with_secrets=*/true); !stopped) {
     return stopped.error();
   }
+
+  // The PIN grace window's keychain entry outlives the profile directory: deleted right before the wipe, so a reset
+  // that stopped short above keeps the window.
+  ForgetGrace();
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -567,8 +568,10 @@ void Application::StartGraceTimer() {
   if (grace_timer_ != 0 || !secrets_ || !secrets_->GraceSupported()) {
     return;  // the window's length is read at each tick (TouchGrace): 0 extends nothing
   }
-  // Half the shortest window (5 minutes) is the most a kill without a background event may cost: 1 minute.
-  grace_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::minutes(1), [this]() {
+  // A kill without a background event may cost up to one interval of the window, so the interval stays at most half
+  // the window chosen (5 → 2 minutes) and at most 5 minutes (15 / 60): no keychain write every minute for nothing.
+  const int every_minutes = std::clamp(GraceMinutes() / 2, 1, 5);
+  grace_timer_ = AppRuntime::ScheduleCoordinatorRepeating(std::chrono::minutes(every_minutes), [this]() {
     AppRuntime::PostUI([this]() {
       if (grace_timer_ != 0 && AppLifecycle::IsForeground()) {
         TouchGrace();
@@ -955,10 +958,12 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       }
     }
     if (AppLifecycle::IsForeground()) {
+      StopGraceTimer();   // its interval follows the window's length
       StartGraceTimer();  // kept running, or back after "Immediately"
     }
   };
   settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
+  settings_commands.verify_pin = [this](const SecretText& pin) { return secrets_->VerifyPin(pin.Reveal()); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
   settings_commands.export_account_copy = [&facade]() { return facade.ExportAccountCopy(); };
   settings_commands.own_devices = [&facade]() -> Roe<OwnDevicesView> {

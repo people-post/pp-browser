@@ -117,6 +117,9 @@ GraceClock GraceClockNow() {
     const unsigned __int128 nanos =
         static_cast<unsigned __int128>(mach_continuous_time()) * timebase.numer / timebase.denom;
     now.mono_seconds = static_cast<int64_t>(nanos / 1000000000u);
+  } else {
+    // No timebase, no clock: 0 tells GraceUnlock there is none, and it fails closed (no window opened or used).
+    now.mono_seconds = 0;
   }
   return now;
 }

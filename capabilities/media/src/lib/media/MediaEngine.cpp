@@ -1246,6 +1246,11 @@ struct MediaEngine::Impl {
           } else if (!capture_available) {
             SDL_Log("MediaEngine: audio reopen — no capture device; sending silence");
           }
+          // A reopen meant to bring voice processing back that did not get the pair (it failed, or the pair would
+          // not open just then) keeps that intent for the next reopen; asking for one is left to the starvation path.
+          if (retry_voice && !(mic_lease && mic_lease->IsVoiceDuplex())) {
+            audio_reopen_retry_voice.store(true, std::memory_order_release);
+          }
           last_capture_pcm_ms = util::NowUnixMs();
           capture_opened_ms = last_capture_pcm_ms;
         }
