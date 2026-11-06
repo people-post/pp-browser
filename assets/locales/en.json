@@ -833,6 +833,7 @@
     "chat.attachment.sending_too_fast": "You're sending too fast — please wait a moment.",
     "chat.attachment.space_warning": "Cloud space is {percent}% used — please clear some space.",
     "chat.attachment.uploading": "Sending…",
+    "chat.attachment.cancelling": "Cancelling…",
     "chat.attachment.sending": "Sending…",
     "chat.attachment.downloading": "Downloading…",
     "chat.attachment.downloading_percent": "Downloading {percent}%",
