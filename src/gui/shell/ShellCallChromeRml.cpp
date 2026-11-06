@@ -247,6 +247,9 @@ void AppendControls(std::ostringstream& out, const CallInProgressState& call, co
     mute();
     speaker();
     camera();
+    if (call.show_roster) {
+      flip();  // the group page draws its own tiles (never the video layout) but flips the camera all the same
+    }
   }
   // Still ringing the others: the red button cancels (Kenneth 2026-11-04: a group call he started rang everyone and
   // he saw no way to cancel it); in a group it leaves, else it ends.

@@ -259,5 +259,21 @@ TEST(ShellCallChromeRmlTest, PhoneVideoFlipButtonIsLitOnTheFrontCamera) {
                        "data-class-call-phone-control--on=\"call_in_progress_camera_front\""));
 }
 
+// The group video page has the flip button too, lit the same way, next to the camera; none while the camera is off.
+TEST(ShellCallChromeRmlTest, PhoneGroupVideoHasTheFlipButtonNextToTheCamera) {
+  ShellState state = PhoneGroupCall();
+  state.call_in_progress.show_camera = true;
+  state.call_in_progress.show_flip = true;
+  const std::string rml = CallInProgressRml(state);
+  const size_t flip = rml.find("data-event-click=\"call_flip_camera()\" "
+                               "data-class-call-phone-control--on=\"call_in_progress_camera_front\"");
+  ASSERT_NE(flip, std::string::npos);
+  EXPECT_LT(rml.find("data-event-click=\"call_camera()\""), flip);
+  EXPECT_LT(flip, rml.find("data-event-click=\"call_leave()\""));
+
+  state.call_in_progress.show_flip = false;
+  EXPECT_FALSE(Has(CallInProgressRml(state), "call_flip_camera()"));
+}
+
 } // namespace
 } // namespace pbr
