@@ -425,6 +425,8 @@
     "pin.unlock_title": "Unlock profile",
     "pin.unlock_message": "Enter your PIN to open PP.",
     "pin.unlock_call_message": "Enter your PIN to connect your call.",
+    "pin.unlock_phone_call_message": "Unlock your phone to connect the call.",
+    "pin.unlock_use_pin_instead": "Enter PIN instead",
     "pin.create_title": "Set a PIN",
     "pin.create_message":
         "You'll enter it to open PP. It stays on this device only; if you forget it, no one can recover it.",

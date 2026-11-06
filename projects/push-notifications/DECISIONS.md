@@ -16,7 +16,8 @@
 
 **Date:** 2026-07-13  
 **Decision:** Background sync must not unlock the vault. Alerts on + locked → generic “New message”. Alerts off + locked → silent.  
-**Rationale:** Avoids decrypt-without-consent and PIN bypass via wake path.
+**Rationale:** Avoids decrypt-without-consent and PIN bypass via wake path.  
+*Amended 2026-11-06 ([at-rest A013](../at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)):* a push wake inside the PIN grace window unlocks the vault through the grace entry; it never extends the window. Outside a window (or with it off) the rule above stands.
 
 ## P004 — Desktop local-only v1
 

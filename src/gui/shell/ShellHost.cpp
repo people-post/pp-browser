@@ -142,6 +142,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_saved_copy_name", &host.state_.pin_gate.saved_copy_name);
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
+    ctor.Bind("pin_gate_waiting_device_unlock", &host.state_.pin_gate.waiting_device_unlock);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -306,6 +307,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_phrase", DataEvent<>([this]() { PinGateIdentityPhrase(); }));
     ctor.BindEventCallback("pin_gate_use_saved_copy", DataEvent<>([this]() { PinGateUseSavedCopy(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
+    ctor.BindEventCallback("pin_gate_use_pin_instead", DataEvent<>([this]() { PinGateUsePinInstead(); }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
     ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
@@ -981,6 +983,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_saved_copy_name");
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
+  DataModelHost::Instance().Dirty("window", "pin_gate_waiting_device_unlock");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -2567,6 +2570,12 @@ void ShellHost::PinGateUseSavedCopy() {
 void ShellHost::PinGateForgotToggle() {
   if (pin_gate_actions_.on_forgot_toggle) {
     pin_gate_actions_.on_forgot_toggle();
+  }
+}
+
+void ShellHost::PinGateUsePinInstead() {
+  if (pin_gate_actions_.on_use_pin_instead) {
+    pin_gate_actions_.on_use_pin_instead();
   }
 }
 

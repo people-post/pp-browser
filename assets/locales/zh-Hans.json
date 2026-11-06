@@ -420,6 +420,8 @@
     "pin.unlock_title": "解锁个人资料",
     "pin.unlock_message": "输入 PIN 码打开 PP。",
     "pin.unlock_call_message": "输入 PIN 码接通通话。",
+    "pin.unlock_phone_call_message": "解锁手机以接通通话。",
+    "pin.unlock_use_pin_instead": "改输 PIN",
     "pin.create_title": "设一个 PIN 码",
     "pin.create_message": "打开 PP 时要输入它。它只存在这台设备上，忘了没有人能帮你找回。",
     "pin.chooser_title": "要设 PIN 码吗？",

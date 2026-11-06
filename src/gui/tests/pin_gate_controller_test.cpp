@@ -39,6 +39,8 @@ protected:
     complete.complete_link_device = [this](const SecretText& pin, const std::string& bundle, bool is_default) {
       link_ = std::make_tuple(pin.Reveal(), bundle, is_default);
     };
+    complete.complete_with_pin = [this](const SecretText& pin, bool) { typed_pin_ = pin.Reveal(); };
+    complete.use_device_pin_instead = [this]() { ++use_pin_instead_; };
     controller_.BindGateComplete(std::move(complete));
   }
 
@@ -52,7 +54,40 @@ protected:
   std::vector<std::string> saved_copies_;
   std::string pick_name_;
   std::optional<std::string> pick_text_;
+  std::optional<std::string> typed_pin_;
+  int use_pin_instead_ = 0;
 };
+
+// PIN grace window: a call answered on a locked phone waits for the phone's unlock; the screen says so and offers the
+// PIN instead of a PIN box. Off again: the unlock screen as before.
+TEST_F(PinGateControllerTest, TheWaitingScreenOffersThePinInstead) {
+  controller_.ShowUnlock();
+  const std::string plain_message = shown_.message.c_str();
+  ASSERT_TRUE(shown_.unlock_mode);
+  EXPECT_FALSE(shown_.waiting_device_unlock);
+
+  controller_.SetWaitingDeviceUnlock(true);
+  EXPECT_TRUE(shown_.waiting_device_unlock);
+  EXPECT_NE(std::string(shown_.message.c_str()), plain_message);
+
+  controller_.OnSubmit();
+  EXPECT_FALSE(typed_pin_) << "no PIN box while waiting";
+
+  controller_.OnUsePinInstead();
+  EXPECT_EQ(use_pin_instead_, 1);
+
+  controller_.SetWaitingDeviceUnlock(false);
+  EXPECT_FALSE(shown_.waiting_device_unlock);
+  EXPECT_EQ(std::string(shown_.message.c_str()), plain_message);
+  controller_.OnUsePinInstead();
+  EXPECT_EQ(use_pin_instead_, 1) << "only while waiting";
+}
+
+TEST_F(PinGateControllerTest, WaitingNeedsTheUnlockScreen) {
+  controller_.ShowIdentityFork();
+  controller_.SetWaitingDeviceUnlock(true);
+  EXPECT_FALSE(shown_.waiting_device_unlock);
+}
 
 TEST_F(PinGateControllerTest, ThePhrasePathAsksForAPinThenTheWords) {
   controller_.ShowIdentityFork();
