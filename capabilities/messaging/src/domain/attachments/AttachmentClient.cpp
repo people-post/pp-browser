@@ -140,11 +140,12 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
   const std::string relay_id = *relay_user_id;
   OutgoingAttachmentStore* store = options.outgoing;
   const ByteVector dek = options.dek;
-  if (HonourCancel(blob, relay_id, options, store, record.id, finish, resuming)) {
+  if (record.delivered) {
+    // Already with the contact (or on the server, its link kept): a cancel is too late, the message is made.
+    finish(record.fields);
     return;
   }
-  if (record.delivered) {
-    finish(record.fields);
+  if (HonourCancel(blob, relay_id, options, store, record.id, finish, resuming)) {
     return;
   }
   auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
