@@ -65,6 +65,13 @@ else()
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
 endif()
 
+# Whether the app is on screen now (PIN grace window: only the foreground extends it): iOS asks UIKit; else true.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsAppState_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
+endif()
+
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsThreadName_Win32.cpp
