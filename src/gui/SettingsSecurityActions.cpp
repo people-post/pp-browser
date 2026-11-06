@@ -239,7 +239,7 @@ void SettingsSecurityActions::ExportLinkDevice() {
           AppError::Pin(Err::Pin::Required, "PIN required").WithUser(Tr("settings.security.export_pin_prompt")));
       return;
     }
-    if (!commands_.recovery_phrase) {
+    if (!commands_.verify_pin) {
       host_.ReportFailure(Error("Messaging is not ready").WithUser(Tr("settings.security.link_device.not_ready")));
       return;
     }
@@ -247,14 +247,9 @@ void SettingsSecurityActions::ExportLinkDevice() {
     const uint64_t request = ++export_pin_count_;
     export_pin_in_flight_ = request;
     AppRuntime::PostWorkerNormal([this, pin, request]() {
-      // The same check that guards the recovery phrase: the PIN must open the vault again. The phrase it returns
-      // is dropped here, on the worker; only pass / fail goes back.
-      Roe<void> checked = {};
-      if (auto opened = commands_.recovery_phrase ? commands_.recovery_phrase(pin)
-                                                  : Roe<std::optional<SecretText>>(Error("Messaging is not ready"));
-          !opened) {
-        checked = opened.error();
-      }
+      // The PIN must open the vault again (not the recovery phrase: linked and older accounts have none, #113).
+      // Only pass / fail goes back.
+      Roe<void> checked = commands_.verify_pin ? commands_.verify_pin(pin) : Roe<void>(Error("Messaging is not ready"));
       AppRuntime::PostUI([this, request, checked = std::move(checked)]() {
         export_pin_in_flight_ = 0;
         if (request != export_pin_count_) {

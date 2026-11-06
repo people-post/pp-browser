@@ -174,9 +174,7 @@ protected:
       ++exports_;
       return std::string("code");
     };
-    commands_.recovery_phrase = [](const SecretText&) -> Roe<std::optional<SecretText>> {
-      return std::optional<SecretText>{};
-    };
+    commands_.verify_pin = [](const SecretText&) -> Roe<void> { return {}; };
     feedback_.show_confirm = [this](const std::string&, const std::string&, std::function<void(bool)>,
                                     const std::string&) { ++confirms_; };
   }

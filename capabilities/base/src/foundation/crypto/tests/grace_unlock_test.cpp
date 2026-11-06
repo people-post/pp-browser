@@ -451,6 +451,20 @@ TEST_F(ProfileSecretsEngineGraceTest, RememberNeedsAnUnlockedVault) {
   EXPECT_TRUE(store_.items.empty());
 }
 
+// The transfer code's PIN check (#113): the vault is opened on the side, the unlocked state is left as it was.
+TEST_F(ProfileSecretsEngineGraceTest, VerifyPinAcceptsTheRightPinAndRejectsAWrongOne) {
+  int unlocked_calls = 0;
+  engine_.SetOnUnlocked([&]() { ++unlocked_calls; });
+  EXPECT_TRUE(static_cast<bool>(engine_.VerifyPin("1234")));
+  EXPECT_FALSE(static_cast<bool>(engine_.VerifyPin("0000")));
+  EXPECT_TRUE(engine_.IsUnlocked()) << "a wrong PIN does not lock";
+
+  engine_.Lock();
+  EXPECT_TRUE(static_cast<bool>(engine_.VerifyPin("1234")));
+  EXPECT_FALSE(engine_.IsUnlocked()) << "the right PIN does not unlock";
+  EXPECT_EQ(unlocked_calls, 0);
+}
+
 TEST_F(ProfileSecretsEngineGraceTest, ProfileSecretsEngineForgetsGraceWhenPinChanges) {
   Attach();
   ASSERT_TRUE(static_cast<bool>(engine_.RememberGrace(15)));

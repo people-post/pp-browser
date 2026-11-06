@@ -93,6 +93,8 @@ struct SettingsCommands {
   std::function<Roe<std::string>()> export_link_device;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */
   std::function<Roe<std::optional<SecretText>>(const SecretText& pin)> recovery_phrase;
+  /** Whether `pin` opens the vault again (the transfer code's own PIN); works on accounts without a phrase. */
+  std::function<Roe<void>(const SecretText& pin)> verify_pin;
   /** Whether the account has a recovery phrase (vault unlocked). */
   std::function<bool()> has_recovery_phrase;
   /** The account's state as a saved copy's text (an exported locker file, M023 §6 amendment). */
