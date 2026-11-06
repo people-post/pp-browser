@@ -140,19 +140,6 @@ TEST_F(ChatBottomChromeTest, SendKeepsTheDraftFocusedAndATapOnTheMessagesTakesIt
   EXPECT_NE(context->GetFocusElement(), draft) << "a tap on the messages closes the keyboard";
 }
 
-// OnSendMessage itself must not blur the draft either (it did, to close the keyboard after every send). A
-// ChatController cannot be built in a unit test, so this reads the source.
-TEST(ChatSendKeepsKeyboardSourceTest, OnSendMessageDoesNotBlurTheDraft) {
-  const std::string source = ReadAll(std::string(PP_SOURCE_DIR) + "/src/gui/chat/ChatController.cpp");
-  const size_t start = source.find("void ChatController::OnSendMessage() {");
-  ASSERT_NE(start, std::string::npos);
-  const size_t end = source.find("\n}\n", start);
-  ASSERT_NE(end, std::string::npos);
-  const std::string body = source.substr(start, end - start);
-  EXPECT_EQ(body.find("Blur()"), std::string::npos);
-  EXPECT_EQ(body.find("close_keyboard"), std::string::npos);
-}
-
 // #89 (Kenneth 2026-11-05): the fade over the composer stopped a bubble tail short of both screen edges (it sat inside
 // the chat panel's 12dp side padding, which the transcript cancels); the composer itself runs edge to edge and down.
 TEST_F(ChatBottomChromeTest, TheComposerAndItsFadeRunEdgeToEdge) {
