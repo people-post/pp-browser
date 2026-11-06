@@ -441,8 +441,14 @@ ChatController::ChatController()
     const std::string thread_id = ActiveThreadId();
     // Making the plaintext view of a stored copy is blocking work: off the UI thread.
     AppRuntime::PostWorkerNormal([this, thread_id, message_id, done = std::move(done)]() mutable {
-      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id);
-      AppRuntime::PostUI([done = std::move(done), path = std::move(path)]() mutable { done(std::move(path)); });
+      bool made_view = false;
+      auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
+      AppRuntime::PostUI([this, made_view, done = std::move(done), path = std::move(path)]() mutable {
+        done(std::move(path));
+        if (made_view) {
+          SyncDisplayFromThread(); // a large sound file's card can now read its title and cover from the view
+        }
+      });
     });
   };
   playback_ports.element = [this](const std::string& element_id) -> ui::Element* {

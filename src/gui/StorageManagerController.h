@@ -65,6 +65,8 @@ public:
     bool audio = false;
     bool playing = false;
     ui::String progress; // "37%" while it plays or is paused, "" otherwise
+    /** A sound file's cover from its own tags (the chat card made it this session), "" none: its badge and tile. */
+    ui::String cover;
   };
 
   /** `visible`: the storage section shows now (changes are counted again only then). */

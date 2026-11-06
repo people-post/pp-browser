@@ -193,6 +193,7 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
     file.RegisterMember("audio", &FileRow::audio);
     file.RegisterMember("playing", &FileRow::playing);
     file.RegisterMember("progress", &FileRow::progress);
+    file.RegisterMember("cover", &FileRow::cover);
   }
   ctor.RegisterArray<std::vector<Segment>>();
   ctor.RegisterArray<std::vector<ChatRow>>();
@@ -461,6 +462,11 @@ void StorageManagerController::BuildCells() {
     const StoredKind kind = StoredKindOfMime(item.mime);
     if (kind == StoredKind::File) {
       const std::string file_name = item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename;
+      const bool audio = IsAudioFileAttachment(item.mime, item.filename);
+      // A sound file's cover is the chat card's (made from its tags at the poster path): shown when it is there.
+      const std::string cover = audio && commands_.storage.thumbnail_path
+                                    ? commands_.storage.thumbnail_path(item.thread_id, item.content_hash)
+                                    : std::string();
       files_.push_back({.name = file_name.c_str(),
                         .detail = MessageTimeLabel(item.timestamp_ms, now).c_str(),
                         .size = FormatByteSize(item.bytes).c_str(),
@@ -468,7 +474,8 @@ void StorageManagerController::BuildCells() {
                          .kind = FileIconKind(item).c_str(),
                          .tile_name = TileName(file_name).c_str(),
                          .picked = picked,
-                         .audio = IsAudioFileAttachment(item.mime, item.filename) && AudioPlayer() != nullptr});
+                         .audio = audio && AudioPlayer() != nullptr,
+                         .cover = cover.c_str()});
       continue;
     }
     std::string thumb = commands_.storage.thumbnail_path

@@ -94,7 +94,10 @@ protected:
     ports.message_store_bytes = [](std::function<void(uint64_t)> done) { done(0); };
     ports.profile_bytes = [](std::function<void(uint64_t)> done) { done(0); };
     ports.chat_names = []() { return std::vector<StorageChatName>{{.thread_id = "a", .name = "A", .avatar_seed = "a"}}; };
-    ports.thumbnail_path = [](const std::string&, const std::vector<uint8_t>&) { return std::string("tall.png"); };
+    // The sound file has no cover here (one comes from its chat card's tags): only the pictures get one.
+    ports.thumbnail_path = [](const std::string&, const std::vector<uint8_t>& hash) {
+      return hash.front() == 50 ? std::string() : std::string("tall.png");
+    };
     ports.run_later = [](std::chrono::milliseconds, std::function<void()> task) { task(); };
     navigation.push_local_back = [](const std::string&, std::function<void()>) {};
     navigation.clear_local_back = [](const std::string&) {};

@@ -147,6 +147,14 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
                                                 const std::vector<uint8_t>& content_hash, const std::string& mime,
                                                 const ByteVector& image_bytes);
 
+/**
+ * A sound file's cover for its card: a small JPEG made by the platform's `image_thumbnail_jpeg` from `picture` (the
+ * file's embedded picture, in memory), stored at the poster path, so it goes with the view cache and the
+ * attachment's local delete like a picture's thumbnail. Local only: never sent.
+ */
+Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,
+                                            const std::vector<uint8_t>& content_hash, const ByteVector& picture);
+
 /** Remove view / pending-cipher caches for a thread (and any leftover pre-cutover `blobs/` dir). */
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id);
 

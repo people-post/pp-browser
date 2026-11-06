@@ -244,7 +244,8 @@
                     data-class-storage-tile--picked="file.picked"
                     data-event-click="storage_tap_file(file_index)">
               <div class="storage-tile-frame storage-file-frame">
-                <svg class="storage-file-icon" data-if="file.kind == 'audio'" src="../icons/v2/music.svg" width="30" height="30"></svg>
+                <img class="storage-file-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
+                <svg class="storage-file-icon" data-if="file.kind == 'audio' && file.cover == ''" src="../icons/v2/music.svg" width="30" height="30"></svg>
                 <svg class="storage-file-icon" data-if="file.kind != 'audio'" src="../icons/v2/file.svg" width="30" height="30"></svg>
                 <span class="storage-file-ext" data-if="file.kind == 'pdf'">PDF</span>
                 <span class="storage-file-name">{{file.tile_name}}</span>
@@ -261,9 +262,11 @@
             <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
                     data-attr-storage-file="file_index"
                     data-event-click="storage_tap_file(file_index)">
-              <div class="storage-file-type">
+              <div class="storage-file-type" data-class-storage-file-type--cover="file.cover != ''">
+                <!-- A sound file plays here: play / pause in the badge (over its cover when it has one), the time
+                     under the name, a bar. -->
+                <img class="storage-audio-cover" data-if="file.cover != ''" data-attr-src="file.cover"/>
                 <span class="storage-file-type-text" data-if="!file.audio">{{file.ext}}</span>
-                <!-- A sound file plays here: play / pause in the badge, the time under the name, a bar. -->
                 <svg class="storage-audio-icon" data-if="file.audio && !file.playing" src="../icons/play.svg" width="14" height="14"></svg>
                 <svg class="storage-audio-icon" data-if="file.audio && file.playing" src="../icons/pause.svg" width="14" height="14"></svg>
               </div>

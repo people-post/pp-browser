@@ -340,8 +340,14 @@ std::string AttachmentRml(const ThreadMessage& message, const TranscriptFacts& f
   }
   if (ready && facts.audio_files_play && IsAudioFileAttachment(fields->mime, fields->filename) &&
       (!local_path.empty() || view.on_demand)) {
-    return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), label,
-                              fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string(),
+    // A music card: the file's own title and artist when its tags name them (read on this device), else its name.
+    AudioCardFace face;
+    face.title = view.audio_title.empty() ? label : view.audio_title;
+    const std::string size = fields->byte_length > 0 ? FormatAttachmentByteSize(fields->byte_length) : std::string();
+    face.subtitle = view.audio_artist.empty() ? size : (size.empty() ? view.audio_artist : view.audio_artist + " · " + size);
+    face.cover_path = view.poster_path;
+    face.duration_ms = view.audio_duration_ms;
+    return AudioFileBubbleRml(message.id, JsArgInAttribute(message.id), face,
                               facts.voice_state ? facts.voice_state(message.id) : VoiceBubbleState{});
   }
   if (inline_image) {

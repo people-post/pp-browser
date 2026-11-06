@@ -7617,17 +7617,81 @@ input.checkbox {
   margin-left: auto;
 }
 
-/* A sound file (an MP3) played in place: its name over a voice-message player. */
-.chat-audio-file-name {
-  max-width: 280dp;
-  margin-bottom: 6dp;
+/* A sound file (an MP3) played in place: a small music card. The cover on the left, title and artist / size on the
+   right, one line each; under them play / pause, a bar that takes the room left and the time in a fixed width, so a
+   long time ("12:34 / 59:59") never runs past the card (Kenneth 2026-11-06). */
+.chat-audio-card {
+  width: 280dp;
+  box-sizing: border-box;
+}
+
+.chat-audio-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.chat-audio-cover {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48dp;
+  height: 48dp;
+  margin-right: 10dp;
+  border-radius: 8dp;
+  overflow: hidden;
+}
+
+.chat-audio-cover-image {
+  display: block;
+  width: 48dp;
+  height: 48dp;
+}
+
+.chat-audio-cover-note {
+  width: 24dp;
+  height: 24dp;
+}
+
+.chat-audio-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-audio-title,
+.chat-audio-sub {
+  display: block;
+  margin: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.message-row-user .chat-audio-file-player {
-  margin-left: 0;
+.chat-audio-controls {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  margin-top: 8dp;
+}
+
+/* The voice message's 36dp play / pause button. */
+.chat-audio-controls .chat-voice-play {
+  margin-right: 10dp;
+}
+
+.chat-audio-controls .chat-voice-track {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-audio-time {
+  flex-shrink: 0;
+  width: 80dp;
+  margin-left: 8dp;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 /* A voice message: play / pause, a progress line, the length. */
@@ -10419,6 +10483,24 @@ input.checkbox {
   max-width: 216dp;
 }
 
+/* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */
+.shell-chat-overlay .chat-audio-card {
+  width: 240dp;
+  min-width: 0;
+  padding-bottom: 10dp;
+}
+
+/* Its subtitle is not a card's status line: no room under it (the card's own padding ends it); reactions hang under
+   the controls instead. */
+.shell-chat-overlay .chat-audio-card .chat-audio-meta .chat-audio-sub,
+.shell-chat-overlay .chat-audio-card.chat-reaction-host .chat-audio-meta .chat-audio-sub {
+  margin-bottom: 0;
+}
+
+.shell-chat-overlay .chat-audio-card.chat-reaction-host {
+  padding-bottom: 20dp;
+}
+
 .shell-chat-overlay .chat-attachment-card .chat-suggestion {
   display: block;
   width: 100%;
@@ -12304,6 +12386,33 @@ textarea:composing ~ .prompt-composer-label,
   width: 14dp;
   height: 14dp;
   image-color: #ffffff;
+}
+
+/* A sound file with a cover: the badge is the cover, play / pause on a dark round mark over it. */
+.storage-file-type--cover {
+  position: relative;
+  width: 40dp;
+  overflow: hidden;
+}
+
+.storage-audio-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 40dp;
+  height: 40dp;
+}
+
+.storage-file-type--cover .storage-audio-icon {
+  padding: 4dp;
+  border-radius: 11dp;
+}
+
+.storage-file-cover {
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 6dp;
 }
 
 .storage-audio-bar {

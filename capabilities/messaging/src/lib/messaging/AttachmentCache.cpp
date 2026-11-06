@@ -30,6 +30,8 @@ namespace {
 constexpr int kVideoPosterMaxDimension = 480;
 /** The thumbnail of a large image: same bound as the poster. */
 constexpr int kImageThumbnailMaxDimension = 480;
+/** A sound file's cover: shown 48dp square on its card (three times that for a dense screen). */
+constexpr int kAudioCoverMaxDimension = 144;
 
 Roe<void> MarkDownloaded(const std::string& path) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
@@ -44,12 +46,13 @@ Roe<std::vector<uint8_t>> VideoPoster(const std::string& video_path) {
   return platform.video_poster_jpeg(video_path, kVideoPosterMaxDimension);
 }
 
-Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes) {
+Roe<std::vector<uint8_t>> ImageThumbnail(const ByteVector& image_bytes,
+                                         const int max_dimension = kImageThumbnailMaxDimension) {
   const AttachmentPlatform platform = CurrentAttachmentPlatform();
   if (!platform.image_thumbnail_jpeg) {
     return Error("No image thumbnail on this platform");
   }
-  return platform.image_thumbnail_jpeg(image_bytes, kImageThumbnailMaxDimension);
+  return platform.image_thumbnail_jpeg(image_bytes, max_dimension);
 }
 
 Roe<std::vector<uint8_t>> SoftPoster() {
@@ -677,6 +680,30 @@ Roe<std::string> EnsureAttachmentImageThumbnail(const std::string& profile_dir, 
     return written.error();
   }
   return thumb_path;
+}
+
+Roe<std::string> EnsureAttachmentAudioCover(const std::string& profile_dir, const std::string& thread_id,
+                                            const std::vector<uint8_t>& content_hash, const ByteVector& picture) {
+  if (profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return Error("Invalid attachment cover lookup");
+  }
+  const std::string cover_path = AttachmentPosterPath(profile_dir, thread_id, content_hash);
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(cover_path, ec) && !ec) {
+    return cover_path;
+  }
+  auto jpeg = ImageThumbnail(picture, kAudioCoverMaxDimension); // from memory: only the small JPEG is written
+  if (!jpeg) {
+    return jpeg.error();
+  }
+  if (jpeg->empty()) {
+    return Error("Audio cover JPEG empty");
+  }
+  const ByteVector bytes(jpeg->begin(), jpeg->end());
+  if (auto written = WriteBytesAtomic(std::filesystem::path(cover_path), bytes); !written) {
+    return written.error();
+  }
+  return cover_path;
 }
 
 Roe<void> WipeThreadAttachmentBlobs(const std::string& profile_dir, const std::string& thread_id) {
