@@ -256,5 +256,53 @@ TEST(PictureBubbleFit, ThePictureCarriesItsFittedSize) {
       << unknown;
 }
 
+// Kenneth 2026-11-06 (iPhone): a video was a black box wider than its bubble with an Open button. Now the poster sits
+// in a clipped frame of explicit dp size with a play disc, and a tap on the frame opens the system player.
+TEST(VideoBubbleRender, APosterFrameWithPlayDiscAndNoOpenButton) {
+  TranscriptFacts facts = Facts(true);
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    view.poster_path = "/tmp/v.poster.jpg";
+    view.image_width = 1280;
+    view.image_height = 720;
+    return view;
+  };
+  const std::string rml = Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts);
+  EXPECT_NE(rml.find("chat-attachment-clip chat-attachment-video-frame\" style=\"width:200dp;height:113dp\""),
+            std::string::npos) << rml;
+  EXPECT_NE(rml.find("width=\"200\" height=\"113\""), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('v1')\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos) << "no Open button";
+  EXPECT_NE(rml.find("282 KB"), std::string::npos);
+  // Unknown poster size: the 216 x 122dp fallback.
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    view.poster_path = "/tmp/v.poster.jpg";
+    return view;
+  };
+  EXPECT_NE(Render(Attachment("v1", "v.mp4", "video/mp4", 289000), facts).find("width:216dp;height:122dp"),
+            std::string::npos);
+}
+
+TEST(VideoBubbleRender, WithoutAPosterTheBadgeLayoutIsStillTappable) {
+  TranscriptFacts facts = Facts(true);
+  facts.attachment = [](const ThreadMessage&) {
+    TranscriptAttachmentView view;
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
+    view.local_path = "/tmp/v.mp4";
+    return view;
+  };
+  const std::string rml = Render(Attachment("v2", "v.mp4", "video/mp4", 289000), facts);
+  EXPECT_NE(rml.find("chat-attachment-video-badge"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("chat-attachment-video-play"), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"open_attachment('v2')\""), std::string::npos);
+  EXPECT_EQ(rml.find("chat-suggestion"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr
