@@ -146,7 +146,7 @@ private:
 
   // Page state.
   std::string page_ = "main";
-  std::string tab_ = "picture";
+  std::string tab_ = "all";
   bool items_large_ = false;
   std::string items_thread_;
   std::vector<StoredAttachmentItem> page_all_;   // the open chat's items (or the large list), every kind
@@ -172,6 +172,7 @@ private:
   std::vector<ChatRow> chats_;
   bool media_empty_ = false;
   ui::String items_title_;
+  ui::String tab_all_label_;
   ui::String tab_picture_label_;
   ui::String tab_video_label_;
   ui::String tab_file_label_;
@@ -182,7 +183,7 @@ private:
   bool has_selection_ = false;
   ui::String selection_label_;
   ui::String page_binding_ = "main";
-  ui::String tab_binding_ = "picture";
+  ui::String tab_binding_ = "all";
 };
 
 } // namespace pbr

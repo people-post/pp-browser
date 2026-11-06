@@ -229,14 +229,14 @@ TEST_F(StorageManagerControllerTest, ThumbnailsOnlyForTheCellsOnThePage) {
   controller_.Enter();
   controller_.OpenManage();
   controller_.OpenChat(0);
-  EXPECT_EQ(controller_.Tab(), "picture");
+  EXPECT_EQ(controller_.Tab(), "all");
   EXPECT_EQ(controller_.Cells().size(), pbr::kStoragePageSize);
   ASSERT_EQ(thumbnail_requests_.size(), pbr::kStoragePageSize);
   const uint64_t generation = thumbnail_requests_.front();
 
   controller_.LoadMore();
-  EXPECT_EQ(controller_.Cells().size(), 70u);
-  EXPECT_EQ(thumbnail_requests_.size(), 70u) << "the next batch only, nothing asked twice";
+  EXPECT_EQ(controller_.Cells().size(), 71u) << "the video sits in the grid with the pictures";
+  EXPECT_EQ(thumbnail_requests_.size(), 71u) << "the next batch only, nothing asked twice";
 
   controller_.SetTab("video");
   EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), generation), cancelled_.end())
@@ -249,6 +249,52 @@ TEST_F(StorageManagerControllerTest, ThumbnailsOnlyForTheCellsOnThePage) {
   controller_.Back();
   EXPECT_NE(std::find(cancelled_.begin(), cancelled_.end(), video_generation), cancelled_.end())
       << "leaving the page drops its jobs";
+}
+
+TEST_F(StorageManagerControllerTest, ChatPageListsPicturesVideosAndFilesTogether) {
+  items_ = {Item("a", 1, "image/jpeg", 2 * kMiB), Item("a", 2, "video/mp4", 8 * kMiB),
+            Item("a", 3, "application/pdf", 3 * kMiB), Item("a", 4, "application/zip", 512 * 1024)};
+  controller_.Enter();
+  controller_.OpenManage();
+  controller_.OpenChat(0);
+  EXPECT_EQ(controller_.Tab(), "all");
+  ASSERT_EQ(controller_.Cells().size(), 2u);
+  EXPECT_TRUE(controller_.Cells()[0].video) << "newest first: the video";
+  EXPECT_FALSE(controller_.Cells()[1].video);
+  EXPECT_EQ(std::string(controller_.Cells()[0].size.c_str()), "8.0 MB");
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  EXPECT_EQ(std::string(controller_.Files()[0].name.c_str()), "file4.pdf");
+  EXPECT_EQ(std::string(controller_.Files()[0].size.c_str()), "512 KB");
+  EXPECT_EQ(std::string(controller_.Files()[1].size.c_str()), "3.0 MB");
+
+  // Selecting a file row, a video cell and a picture works the same; the delete weighs all three.
+  controller_.ToggleSelect();
+  controller_.TapFile(1);
+  controller_.TapCell(0);
+  EXPECT_TRUE(controller_.Files()[1].picked);
+  EXPECT_FALSE(controller_.Files()[0].picked);
+  EXPECT_TRUE(controller_.Cells()[0].picked);
+  EXPECT_EQ(controller_.SelectedCount(), 2u);
+  controller_.TapFile(1);
+  EXPECT_EQ(controller_.SelectedCount(), 1u);
+  controller_.TapFile(0);
+  controller_.DeleteSelected();
+  ASSERT_TRUE(confirm_);
+  confirm_(true);
+  ASSERT_EQ(deleted_refs_.size(), 2u);
+  ASSERT_TRUE(delete_done_);
+  delete_done_({.deleted = 2, .freed_bytes = 0, .kept_shared = 0});
+
+  // A long press on a file row (index after the cells) starts selecting with that row picked.
+  ASSERT_FALSE(controller_.Selecting());
+  controller_.PickByLongPress(2);
+  ASSERT_EQ(controller_.Files().size(), 2u);
+  EXPECT_TRUE(controller_.Selecting());
+  EXPECT_TRUE(controller_.Files()[0].picked);
+
+  controller_.SetTab("file");
+  EXPECT_TRUE(controller_.Cells().empty());
+  EXPECT_EQ(controller_.Files().size(), 2u);
 }
 
 TEST_F(StorageManagerControllerTest, DeleteAsksOnceThenLocksThePageUntilDone) {
@@ -303,7 +349,7 @@ TEST_F(StorageManagerControllerTest, DeletingFromTheLargeListNamesEveryChat) {
   controller_.OpenManage();
   controller_.OpenLarge();
   ASSERT_EQ(controller_.Page(), "items");
-  EXPECT_EQ(controller_.Tab(), "video");
+  EXPECT_EQ(controller_.Tab(), "all");
   ASSERT_EQ(controller_.Cells().size(), 1u);
   controller_.ToggleSelect();
   controller_.TapCell(0);

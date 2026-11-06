@@ -201,6 +201,9 @@
           </div>
           <div class="storage-seg row">
             <button class="storage-seg-tab" type="button"
+                    data-class-settings-row="storage_tab == 'all'" data-class-storage-seg-tab--on="storage_tab == 'all'"
+                    data-event-click="storage_set_tab('all')">{{storage_tab_all_label}}</button>
+            <button class="storage-seg-tab" type="button"
                     data-class-settings-row="storage_tab == 'picture'" data-class-storage-seg-tab--on="storage_tab == 'picture'"
                     data-event-click="storage_set_tab('picture')">{{storage_tab_picture_label}}</button>
             <button class="storage-seg-tab" type="button"
@@ -218,7 +221,7 @@
                     data-event-click="storage_delete()">{{i18n:settings.storage.manage.delete}}</button>
           </div>
           <p class="storage-group-foot settings-choice-value-text" data-if="storage_list_empty">{{i18n:settings.storage.manage.nothing}}</p>
-          <div class="storage-grid" data-if="storage_tab != 'file' && !storage_list_empty"
+          <div class="storage-grid" data-if="storage_cells.size > 0"
                data-class-storage-busy="storage_busy">
             <button data-for="cell, cell_index : storage_cells" class="storage-tile" type="button"
                     data-attr-storage-cell="cell_index"
@@ -236,7 +239,7 @@
               </div>
             </button>
           </div>
-          <div class="settings-row storage-group stack" data-if="storage_tab == 'file' && !storage_list_empty"
+          <div class="settings-row storage-group stack" data-if="storage_files.size > 0"
                data-class-storage-busy="storage_busy">
             <button data-for="file, file_index : storage_files" class="settings-choice-row storage-row row" type="button"
                     data-attr-storage-file="file_index"

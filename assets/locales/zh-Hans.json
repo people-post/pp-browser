@@ -366,6 +366,7 @@
     "settings.storage.attachment_policy.on_demand": "全部手动（省流量）",
     "settings.storage.manage.used": "这台设备上 PP 用掉的空间",
     "settings.storage.manage.counting": "计算中…",
+    "settings.storage.manage.kind.all": "全部",
     "settings.storage.manage.kind.picture": "图片",
     "settings.storage.manage.kind.video": "视频",
     "settings.storage.manage.kind.file": "文件",

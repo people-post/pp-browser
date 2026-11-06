@@ -162,6 +162,7 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
   ctor.Bind("storage_media_empty", &media_empty_);
   ctor.Bind("storage_items_title", &items_title_);
   ctor.Bind("storage_tab", &tab_binding_);
+  ctor.Bind("storage_tab_all_label", &tab_all_label_);
   ctor.Bind("storage_tab_picture_label", &tab_picture_label_);
   ctor.Bind("storage_tab_video_label", &tab_video_label_);
   ctor.Bind("storage_tab_file_label", &tab_file_label_);
@@ -198,7 +199,10 @@ void StorageManagerController::Bind(ui::DataModelConstructor& ctor) {
                                     : cur->HasAttribute("storage-file") ? "storage-file"
                                                                         : nullptr;
             if (attribute != nullptr) {
-              const int index = cur->GetAttribute<int>(attribute, -1);
+              int index = cur->GetAttribute<int>(attribute, -1);
+              if (index >= 0 && cur->HasAttribute("storage-file")) {
+                index += static_cast<int>(cells_.size());  // a file row follows the cells in tab_items_
+              }
               // After the press is handled: the rows re-render.
               AppRuntime::PostUI(lifetime_.Bind([this, index]() { PickByLongPress(index); }));
               break;
@@ -300,12 +304,8 @@ void StorageManagerController::EnterItems() {
   selected_.clear();
   releasable_.reset();
   BuildPageItems();
-  // The first kind this page has, pictures when it has none.
-  tab_ = "picture";
-  const StorageKindTotals totals = StorageTotalsOf(page_all_);
-  if (totals.pictures == 0) {
-    tab_ = totals.videos > 0 ? "video" : totals.files > 0 ? "file" : "picture";
-  }
+  // Every kind together first; the tabs narrow it down.
+  tab_ = "all";
   shown_ = kStoragePageSize;
   NewGeneration();
   BuildCells();
@@ -345,7 +345,7 @@ void StorageManagerController::NewGeneration() {
 }
 
 void StorageManagerController::SetTab(const std::string& kind) {
-  if (page_ != "items" || kind == tab_ || !StoredKindFromId(kind)) {
+  if (page_ != "items" || kind == tab_ || (kind != "all" && !StoredKindFromId(kind))) {
     return;
   }
   tab_ = kind;
@@ -367,14 +367,32 @@ void StorageManagerController::BuildPageItems() {
     }
   }
   const StorageKindTotals totals = StorageTotalsOf(page_all_);
+  tab_all_label_ = (Tr("settings.storage.manage.kind.all") + " " +
+                    std::to_string(totals.pictures + totals.videos + totals.files)).c_str();
   tab_picture_label_ = (KindLabel("picture") + " " + std::to_string(totals.pictures)).c_str();
   tab_video_label_ = (KindLabel("video") + " " + std::to_string(totals.videos)).c_str();
   tab_file_label_ = (KindLabel("file") + " " + std::to_string(totals.files)).c_str();
 }
 
 void StorageManagerController::BuildCells() {
-  const StoredKind kind = StoredKindFromId(tab_).value_or(StoredKind::Picture);
-  tab_items_ = items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
+  const auto items_of = [this](const StoredKind kind) {
+    return items_large_ ? StorageItemsOfKind(page_all_, kind) : StorageItemsOfChat(page_all_, items_thread_, kind);
+  };
+  if (tab_ == "all") {
+    // Photos and videos together (newest first) for the grid, then the files: a cell's index is its place in
+    // tab_items_, and a file row's is cells_.size() + its own, whatever the tab.
+    tab_items_ = items_of(StoredKind::Picture);
+    const std::vector<StoredAttachmentItem> videos = items_of(StoredKind::Video);
+    tab_items_.insert(tab_items_.end(), videos.begin(), videos.end());
+    std::stable_sort(tab_items_.begin(), tab_items_.end(),
+                     [](const StoredAttachmentItem& a, const StoredAttachmentItem& b) {
+                       return a.timestamp_ms > b.timestamp_ms;
+                     });
+    const std::vector<StoredAttachmentItem> files = items_of(StoredKind::File);
+    tab_items_.insert(tab_items_.end(), files.begin(), files.end());
+  } else {
+    tab_items_ = items_of(StoredKindFromId(tab_).value_or(StoredKind::Picture));
+  }
   const size_t count = std::min(shown_, tab_items_.size());
   cells_.clear();
   files_.clear();
@@ -383,6 +401,7 @@ void StorageManagerController::BuildCells() {
     const StoredAttachmentItem& item = tab_items_[i];
     const std::string key = HashKey(item.content_hash);
     const bool picked = selected_.count(key) != 0;
+    const StoredKind kind = StoredKindOfMime(item.mime);
     if (kind == StoredKind::File) {
       files_.push_back({.name = (item.filename.empty() ? Tr("settings.storage.manage.unnamed_file") : item.filename)
                                     .c_str(),
@@ -475,10 +494,10 @@ void StorageManagerController::TapFile(const int index) {
     return;
   }
   if (selecting_) {
-    TogglePicked(index);
+    TogglePicked(static_cast<int>(cells_.size()) + index);
     return;
   }
-  OpenItem(tab_items_[static_cast<size_t>(index)]);
+  OpenItem(tab_items_[cells_.size() + static_cast<size_t>(index)]);
 }
 
 void StorageManagerController::PickByLongPress(const int index) {
@@ -503,8 +522,8 @@ void StorageManagerController::TogglePicked(const int index) {
   if (static_cast<size_t>(index) < cells_.size()) {
     cells_[static_cast<size_t>(index)].picked = picked;
   }
-  if (static_cast<size_t>(index) < files_.size()) {
-    files_[static_cast<size_t>(index)].picked = picked;
+  if (static_cast<size_t>(index) >= cells_.size() && static_cast<size_t>(index) - cells_.size() < files_.size()) {
+    files_[static_cast<size_t>(index) - cells_.size()].picked = picked;
   }
   SelectionChanged();
   DirtyAll();
@@ -847,7 +866,7 @@ void StorageManagerController::DirtyAll() {
   for (const char* key :
        {"storage_page", "storage_ready", "storage_total_label", "storage_segments", "storage_manage_label",
         "storage_manage_segments", "storage_large_visible", "storage_large_count_label", "storage_large_size_label",
-        "storage_chats", "storage_media_empty", "storage_items_title", "storage_tab", "storage_tab_picture_label",
+        "storage_chats", "storage_media_empty", "storage_items_title", "storage_tab", "storage_tab_all_label", "storage_tab_picture_label",
         "storage_tab_video_label", "storage_tab_file_label", "storage_cells", "storage_files", "storage_list_empty",
         "storage_has_more", "storage_selecting", "storage_busy", "storage_has_selection",
         "storage_selection_label"}) {
