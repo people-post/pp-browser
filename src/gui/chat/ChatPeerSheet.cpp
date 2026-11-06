@@ -110,7 +110,7 @@ std::vector<ContextMenuAction> ChatPeerSheet::DirectActions(const Thread& thread
         blocked ? "unblock" : "block",
         Tr(blocked ? "chat.menu.unblock" : "chat.menu.block"),
         nullptr,
-        [this, contact_id, peer_id, name, blocked]() { SetBlocked(contact_id, peer_id, name, !blocked); },
+        [this, contact_id, peer_id, name, blocked]() { RunBlockFlow(host_, presenter_, contacts_notify_, contact_id, peer_id, name, !blocked); },
         "../icons/v2/block.svg",
         !blocked,  // danger styling
     });
@@ -143,43 +143,6 @@ void ChatPeerSheet::AddToContacts(const std::string& peer_id) {
   if (contacts_notify_.select_contact) {
     contacts_notify_.select_contact(*added);
   }
-}
-
-void ChatPeerSheet::SetBlocked(const std::optional<std::string>& contact_id, const std::string& peer_id,
-                               const std::string& name, const bool block) {
-  const auto apply = [this, contact_id, peer_id, name, block]() {
-    ConversationsFacade* facade = host_.Facade();
-    if (!facade) {
-      return;
-    }
-    if (!contact_id) {  // a stranger: saved as a blocked contact
-      if (auto blocked = presenter_.BlockStranger(peer_id); !blocked) {
-        UserFeedback::Fail(Tr(blocked.error().message));
-        host_.NotifySurfaceChanged();
-        return;
-      }
-    } else if (auto set = facade->SetContactTrust(*contact_id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
-               !set) {
-      UserFeedback::Fail(Tr("contacts.err.trust"));
-      host_.NotifySurfaceChanged();
-      return;
-    }
-    if (contacts_notify_.refresh) {
-      contacts_notify_.refresh();
-    }
-    host_.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
-    host_.AfterThreadPrefsChanged();
-  };
-  if (!block) {
-    apply();
-    return;
-  }
-  host_.ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"),
-                    [apply](const bool ok) {
-                      if (ok) {
-                        apply();
-                      }
-                    }, true);
 }
 
 void ChatPeerSheet::RenameForMe(const std::string& thread_id, std::function<void()> after) {

@@ -16,6 +16,7 @@
 #include <ui/dom/Event.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -133,5 +134,13 @@ private:
   const ShellFeedbackPorts& shell_feedback_;
   const CallActionsPorts& call_actions_;
 };
+
+/**
+ * Block (asks first) or unblock someone from a chat menu; no contact id means a stranger, who is saved as
+ * a blocked contact. The pill names them. Shared by the session menu and the peer sheet.
+ */
+void RunBlockFlow(ChatMenusHost& host, ChatPresenter& presenter, const ContactsNotifyPorts& contacts_notify,
+                  const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  bool block);
 
 } // namespace pbr

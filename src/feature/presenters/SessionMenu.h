@@ -40,6 +40,8 @@ struct SessionMenuState {
   bool unread = false;
   /** Direct chat whose peer is a saved contact. */
   bool has_contact = false;
+  /** The peer's identity is known (a stranger can only be blocked by it). */
+  bool has_peer_identity = true;
   /** That contact is blocked (messages and calls from them are dropped). */
   bool blocked = false;
   bool pinned = false;
@@ -120,7 +122,7 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   if (state.kind == SessionKind::Direct && state.has_contact) {
     items.push_back(SessionMenuItem::ViewContact);
     items.push_back(state.blocked ? SessionMenuItem::Unblock : SessionMenuItem::Block);
-  } else if (state.kind == SessionKind::Direct) {
+  } else if (state.kind == SessionKind::Direct && state.has_peer_identity) {
     items.push_back(SessionMenuItem::Block); // a stranger: blocking saves them as a blocked contact
   }
   items.push_back(SessionMenuItem::ClearChat);

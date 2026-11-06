@@ -30,6 +30,11 @@ TEST(SessionMenuTest, DirectChatWithAStrangerOffersBlockButNoViewContact) {
   EXPECT_FALSE(Has(items, Item::ViewContact));
 }
 
+TEST(SessionMenuTest, NoBlockForAStrangerWithoutAnIdentity) {
+  const auto items = SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_peer_identity = false});
+  EXPECT_FALSE(Has(items, Item::Block));
+}
+
 TEST(SessionMenuTest, DirectChatWithAContact) {
   EXPECT_EQ(Items(SessionKind::Direct, false, true),
             (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ViewContact,
