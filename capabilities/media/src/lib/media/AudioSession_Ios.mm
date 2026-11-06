@@ -7,6 +7,9 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UIKit/UIKit.h>
 
+#include "common/Logger.h"
+#include "common/Metrics.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -41,6 +44,78 @@ void ResumeAfterInterruption(const char* why);
 /** The app came back with no interruption end seen: resume only if the session can be had (a phone call may still hold it). */
 void ResumeIfSessionFree();
 
+/** The app's file log (NSLog does not reach it). */
+logging::Logger& SessionLog() {
+  static logging::Logger log = logging::getLogger("AudioSession");
+  return log;
+}
+
+const char* Utf8(NSString* text) {
+  return text ? text.UTF8String : "-";
+}
+
+/** AVAudioSessionInterruptionReasonKey; raw values: 1 and 4 are deprecated / newer than the deployment target. */
+ShareWord InterruptionReasonWord(NSUInteger reason) {
+  switch (reason) {
+    case 0: return "default";
+    case 1: return "app_was_suspended";
+    case 2: return "built_in_mic_muted";
+    case 4: return "route_disconnected";  // iOS 17+: no "ended" follows
+    default: return "other";
+  }
+}
+
+ShareWord RouteChangeReasonWord(AVAudioSessionRouteChangeReason reason) {
+  switch (reason) {
+    case AVAudioSessionRouteChangeReasonNewDeviceAvailable: return "NewDeviceAvailable";
+    case AVAudioSessionRouteChangeReasonOldDeviceUnavailable: return "OldDeviceUnavailable";
+    case AVAudioSessionRouteChangeReasonCategoryChange: return "CategoryChange";
+    case AVAudioSessionRouteChangeReasonOverride: return "Override";
+    case AVAudioSessionRouteChangeReasonWakeFromSleep: return "WakeFromSleep";
+    case AVAudioSessionRouteChangeReasonNoSuitableRouteForCategory: return "NoSuitableRouteForCategory";
+    case AVAudioSessionRouteChangeReasonRouteConfigurationChange: return "RouteConfigurationChange";
+    default: return "Unknown";
+  }
+}
+
+/** The current output's port type (never its name: that can be a person's "AirPods of …"). */
+ShareWord OutputPortWord() {
+  AVAudioSessionRouteDescription* route = [AVAudioSession sharedInstance].currentRoute;
+  NSString* port = route.outputs.count > 0 ? route.outputs.firstObject.portType : nil;
+  if (port == nil) return "none";
+  if ([port isEqualToString:AVAudioSessionPortBuiltInReceiver]) return "Receiver";
+  if ([port isEqualToString:AVAudioSessionPortBuiltInSpeaker]) return "Speaker";
+  if ([port isEqualToString:AVAudioSessionPortHeadphones]) return "Headphones";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothHFP]) return "BluetoothHFP";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothA2DP]) return "BluetoothA2DPOutput";
+  if ([port isEqualToString:AVAudioSessionPortBluetoothLE]) return "BluetoothLE";
+  if ([port isEqualToString:AVAudioSessionPortUSBAudio]) return "USBAudio";
+  if ([port isEqualToString:AVAudioSessionPortLineOut]) return "LineOut";
+  if ([port isEqualToString:AVAudioSessionPortHDMI]) return "HDMI";
+  if ([port isEqualToString:AVAudioSessionPortAirPlay]) return "AirPlay";
+  if ([port isEqualToString:AVAudioSessionPortCarAudio]) return "CarAudio";
+  return "other";
+}
+
+/**
+ * The device the session was using went away while the OS had the session: iOS sends no "ended" for that
+ * (route_disconnected), and the app stays in the foreground, so nothing else resumes — retry shortly, and once more.
+ * A resume only happens when the session can be had (a phone call keeps it), so not while CallKit owns the session
+ * (ResumeIfSessionFree does not test it then). One serial queue: the second try sees the first's resume.
+ */
+void ResumeSoonIfSessionFree() {
+  {
+    std::lock_guard<std::mutex> lock(g_session_mu);
+    if (g_system_managed) {
+      return;
+    }
+  }
+  static dispatch_queue_t queue = dispatch_queue_create("pp.audio.resume", DISPATCH_QUEUE_SERIAL);
+  for (const int64_t ms : {300, 1000}) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ms * NSEC_PER_MSEC), queue, ^{ ResumeIfSessionFree(); });
+  }
+}
+
 /**
  * Once, at the first live session: an interruption that begins marks the session interrupted (NotifyInterruptionBegan);
  * its end, a media-services reset, or the app becoming active again with no end seen (iOS does not always send one)
@@ -61,8 +136,32 @@ void InstallInterruptionObservers() {
                         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
                                        ^{ ResumeAfterInterruption("interruption ended"); });
                       } else if (type == AVAudioSessionInterruptionTypeBegan && g_session_active.load()) {
-                        NSLog(@"AudioSession interruption began");
+                        NSNumber* reason_value = note.userInfo[AVAudioSessionInterruptionReasonKey];
+                        const ShareWord reason =
+                            reason_value ? InterruptionReasonWord(reason_value.unsignedIntegerValue) : ShareWord("none");
+                        SessionLog().info << "AudioSession interruption began reason=" << reason.view();
                         NotifyInterruptionBegan();
+                        if (reason_value && reason_value.unsignedIntegerValue == 4) {  // route_disconnected
+                          ResumeSoonIfSessionFree();
+                        }
+                      }
+                    }];
+    [center addObserverForName:AVAudioSessionRouteChangeNotification
+                        object:nil
+                         queue:nil
+                    usingBlock:^(NSNotification* note) {
+                      if (!g_session_active.load()) {
+                        return;  // a call's route only (B178)
+                      }
+                      const auto reason = static_cast<AVAudioSessionRouteChangeReason>(
+                          [note.userInfo[AVAudioSessionRouteChangeReasonKey] unsignedIntegerValue]);
+                      const ShareWord reason_word = RouteChangeReasonWord(reason);
+                      const ShareWord output = OutputPortWord();
+                      SessionLog().info << "AudioSession route change reason=" << reason_word.view()
+                                        << " output=" << output.view() << " interrupted=" << (IsInterrupted() ? 1 : 0);
+                      MetricsLine("audio.route").Add("reason", reason_word).Add("output", output).Emit();
+                      if (reason == AVAudioSessionRouteChangeReasonOldDeviceUnavailable && IsInterrupted()) {
+                        ResumeSoonIfSessionFree();
                       }
                     }];
     [center addObserverForName:UIApplicationDidBecomeActiveNotification
@@ -91,9 +190,9 @@ void LogRoute(const char* where) {
   if (session.currentRoute.outputs.count > 0) {
     out = session.currentRoute.outputs.firstObject.portType;
   }
-  NSLog(@"AudioSession %s: speaker_flag=%d category=%@ mode=%@ options=0x%lx output=%@", where,
-        g_speakerphone.load() ? 1 : 0, session.category, session.mode,
-        static_cast<unsigned long>(session.categoryOptions), out);
+  SessionLog().info << "AudioSession " << where << ": speaker_flag=" << (g_speakerphone.load() ? 1 : 0)
+                    << " category=" << Utf8(session.category) << " mode=" << Utf8(session.mode)
+                    << " options=" << static_cast<unsigned long>(session.categoryOptions) << " output=" << Utf8(out);
 }
 
 void ApplyRoute(bool speaker_on) {
@@ -220,7 +319,7 @@ void ResumeAfterInterruption(const char* why) {
   if (!g_session_active.load()) {
     return;
   }
-  NSLog(@"AudioSession %s: resuming", why);
+  SessionLog().info << "AudioSession " << why << ": resuming";
   ActivateForVoip();
   NotifyInterruptionEnded();
 }
@@ -237,11 +336,12 @@ void ResumeIfSessionFree() {
   if (!managed) {
     NSError* error = nil;
     if (![[AVAudioSession sharedInstance] setActive:YES error:&error]) {
-      NSLog(@"AudioSession app active: session still taken (%@), staying interrupted", error);
+      SessionLog().info << "AudioSession resume: session still taken (" << Utf8(error.localizedDescription)
+                        << "), staying interrupted";
       return;
     }
   }
-  ResumeAfterInterruption("app active, no interruption end seen");
+  ResumeAfterInterruption("no interruption end seen");
 }
 
 } // namespace
