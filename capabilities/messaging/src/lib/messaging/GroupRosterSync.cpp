@@ -246,15 +246,21 @@ Roe<GroupViewApplied> ApplyView(IGroupRosterStore& roster, const std::string& gr
   if (!now) {
     return now.error();
   }
-  now->owner_identity = held->owner_identity;
-  now->roster_epoch = held->roster_epoch;
-  now->policy.preset = held->preset;
-  if (!view.title.empty() && view.title_version > now->title_version) {
-    now->title = view.title;
-    now->title_version = view.title_version;
+  GroupMetadata updated = *now;
+  updated.owner_identity = held->owner_identity;
+  updated.roster_epoch = held->roster_epoch;
+  updated.policy.preset = held->preset;
+  if (!view.title.empty() && view.title_version > updated.title_version) {
+    updated.title = view.title;
+    updated.title_version = view.title_version;
   }
-  if (auto saved = roster.UpsertMetadata(*now); !saved) {
-    return saved.error();
+  const bool same = updated.owner_identity == now->owner_identity && updated.roster_epoch == now->roster_epoch &&
+                    updated.policy.preset == now->policy.preset && updated.title == now->title &&
+                    updated.title_version == now->title_version;
+  if (!same) { // an unchanged roster writes nothing (each write republishes the account locker)
+    if (auto saved = roster.UpsertMetadata(updated); !saved) {
+      return saved.error();
+    }
   }
   applied.view = std::move(view);
   return applied;
