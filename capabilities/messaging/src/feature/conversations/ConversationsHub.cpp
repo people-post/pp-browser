@@ -2148,7 +2148,8 @@ Roe<Thread> ConversationsHub::AttachmentTargetThread(const std::string& thread_i
 
 void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                                            std::function<void(Roe<ThreadMessage>)> on_done,
-                                           std::function<bool(uint64_t done, uint64_t total)> progress) {
+                                           std::function<bool(uint64_t done, uint64_t total)> progress,
+                                           std::shared_ptr<const std::atomic<bool>> cancelled) {
   auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -2191,6 +2192,7 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
   upload_opts.thread_id = thread_id;
   upload_opts.max_plaintext_bytes = max_bytes;
   upload_opts.progress = LaneAwareProgress(std::move(progress));
+  upload_opts.cancelled = std::move(cancelled);
   if (!job->dek.empty() && !profile_id_.empty()) {
     upload_opts.outgoing = store.get(); // staged: a failed send can be resumed without the original file
     upload_opts.dek = job->dek;
@@ -2225,11 +2227,13 @@ void ConversationsHub::SendAttachmentAsync(const std::string& thread_id, Outgoin
 
 void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                                              std::function<void(Roe<ThreadMessage>)> on_done,
-                                             std::function<bool(uint64_t done, uint64_t total)> progress) {
+                                             std::function<bool(uint64_t done, uint64_t total)> progress,
+                                             std::shared_ptr<const std::atomic<bool>> cancelled) {
   // Never on the caller's thread (the UI's): the record is read, a small file may be pushed straight to the
   // contact, and the upload itself is blocking work. A large file goes to the upload lane.
-  auto body = [this, thread_id, record_id, on_done = std::move(on_done), progress = std::move(progress)]() mutable {
-    ResumeAttachmentNow(thread_id, record_id, std::move(on_done), std::move(progress));
+  auto body = [this, thread_id, record_id, on_done = std::move(on_done), progress = std::move(progress),
+               cancelled = std::move(cancelled)]() mutable {
+    ResumeAttachmentNow(thread_id, record_id, std::move(on_done), std::move(progress), std::move(cancelled));
   };
   if (AppRuntime::IsRunning()) {
     AppRuntime::PostWorkerNormal(std::move(body));
@@ -2240,7 +2244,8 @@ void ConversationsHub::ResumeAttachmentAsync(const std::string& thread_id, const
 
 void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
                                            std::function<void(Roe<ThreadMessage>)> on_done,
-                                           std::function<bool(uint64_t done, uint64_t total)> progress) {
+                                           std::function<bool(uint64_t done, uint64_t total)> progress,
+                                           std::shared_ptr<const std::atomic<bool>> cancelled) {
   auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
     if (on_done) {
       on_done(std::move(value));
@@ -2299,6 +2304,7 @@ void ConversationsHub::ResumeAttachmentNow(const std::string& thread_id, const s
   upload_opts.thread = *target;
   upload_opts.thread_id = thread_id;
   upload_opts.progress = LaneAwareProgress(std::move(progress));
+  upload_opts.cancelled = std::move(cancelled);
   upload_opts.outgoing = store.get();
   upload_opts.dek = dek;
   auto run = [this, job, finish, record = std::move(*record), upload_opts = std::move(upload_opts)]() mutable {

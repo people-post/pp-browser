@@ -54,7 +54,7 @@ protected:
       for (const char* name : {"send_message", "stop_turn", "voice_press", "voice_click", "voice_send",
                                "voice_cancel", "voice_mode_toggle", "attach_file", "open_emoji_insert", "draft_changed",
                                "cancel_quote_reply", "retry_attachment_send", "discard_attachment_send",
-                               "remove_image", "attach_capture"}) {
+                               "cancel_attachment_send", "remove_image", "attach_capture"}) {
         ctor.BindEventCallback(name, [](ui::DataModelHandle, ui::Event&, const ui::VariantList&) {});
       }
     }));
@@ -287,14 +287,15 @@ TEST_F(ComposerVoiceMarkupTest, AFailedAttachmentShowsRetryAndCancelInTheStatusR
   EXPECT_TRUE(InsideClass("prompt-attachment-chip-action", "prompt-composer-status"));
 }
 
-TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithoutRetry) {
+// No Retry while it is going up; only Cancel (it stops the send and nothing is sent).
+TEST_F(ComposerVoiceMarkupTest, AnUploadInProgressShowsTheChipWithCancelOnly) {
   state.attachment_uploading = true;
   state.attachment_here = true;
   state.attachment_draft_name = "clip.mp4";
   Apply();
   EXPECT_EQ(Shown("prompt-composer-status"), 1);
   EXPECT_EQ(Shown("prompt-attachment-chip"), 1);
-  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 0);
+  EXPECT_EQ(Shown("prompt-attachment-chip-action"), 1);
 }
 
 TEST_F(ComposerVoiceMarkupTest, TheStatusRowTextIsRenderedNotJustBound) {

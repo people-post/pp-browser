@@ -2174,6 +2174,15 @@ void ChatController::OnDiscardAttachmentSend() {
   RefreshPendingAttachmentChip(/*force=*/true);
 }
 
+void ChatController::OnCancelAttachmentSend() {
+  if (!chat_.attachment_uploading || !send_cancel_ || send_cancel_->exchange(true)) {
+    return;
+  }
+  // The chip goes when the send stops (the upload at its next step; a direct push when it answers).
+  chat_.attachment_status = Tr("chat.attachment.cancelling").c_str();
+  DataModelHost::Instance().Dirty("chat", "attachment_status");
+}
+
 void ChatController::OnRetryAttachmentSend() {
   if (!failed_voice_path_.empty()) {
     if (facade_ && !chat_.attachment_uploading) {
@@ -2194,16 +2203,18 @@ void ChatController::OnRetryAttachmentSend() {
   chat_.attachment_failed = false;
   chat_.attachment_uploading = true;
   attachment_thread_ = thread_id;
+  send_cancel_ = std::make_shared<std::atomic<bool>>(false);
+  const auto cancel = send_cancel_;
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
   DirtyChatHeader();
   // Same dialog as a first send when the space is full: free the oldest file, then send the staged ciphertext again.
   BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-      [this, thread_id, record_id](std::function<void(Roe<ThreadMessage>)> done) {
-        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress());
+      [this, thread_id, record_id, cancel](std::function<void(Roe<ThreadMessage>)> done) {
+        facade_->ResumeAttachmentAsync(thread_id, record_id, std::move(done), MakeSendProgress(), cancel);
       },
-      [this](Roe<ThreadMessage> sent) {
+      [this, cancel](Roe<ThreadMessage> sent) {
         chat_.attachment_uploading = false;
         chat_.attachment_status = "";
         chat_.attachment_draft_name = "";
@@ -2211,7 +2222,7 @@ void ChatController::OnRetryAttachmentSend() {
         SyncComposerInputState();
         const bool stale_chip = !sent && sent.error().category == 0 &&
                                 sent.error().code == OutgoingAttachmentStore::kWrongThread;
-        if (!sent && !stale_chip) {
+        if (!sent && !stale_chip && !cancel->load()) {
           UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
         }
         RefreshPendingAttachmentChip(/*force=*/true); // still staged: Retry again; gone or sent: nothing shown
@@ -2249,6 +2260,8 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   chat_.attachment_failed = false;
   attachment_thread_ = thread_id;
   failed_record_id_.clear();
+  send_cancel_ = std::make_shared<std::atomic<bool>>(false);
+  const auto cancel = send_cancel_;
   const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
   chat_.attachment_draft_name =
       (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
@@ -2272,10 +2285,10 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const AttachmentLimits limits = facade_->CurrentAttachmentLimits();
   const std::string scratch_dir = (std::filesystem::path(facade_->ProfileDataDir()) / "picked").string();
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
-                                staged_before]() {
+                                staged_before, cancel]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
     release_pick_(path); // read by now (and kept as a CAS copy once sent)
-    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before,
+    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel,
                         prepared = std::move(prepared)]() mutable {
       if (!prepared) {
         finish_uploading();
@@ -2291,9 +2304,10 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
       auto attachment = std::make_shared<OutgoingAttachment>(std::move(*prepared));
       auto attempts = std::make_shared<int>(0);
       BlobQuotaRecoveryFlow::RunUploadAsync<ThreadMessage>(
-          [this, thread_id, attachment, attempts](std::function<void(Roe<ThreadMessage>)> done) {
+          [this, thread_id, attachment, attempts, cancel](std::function<void(Roe<ThreadMessage>)> done) {
             if ((*attempts)++ == 0) {
-              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress());
+              facade_->SendAttachmentAsync(thread_id, std::move(*attachment), std::move(done), MakeSendProgress(),
+                                           cancel);
               return;
             }
             const auto staged = facade_->PendingOutgoingAttachments(thread_id);
@@ -2301,11 +2315,15 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               done(Error("The attachment is no longer staged").WithUser(Tr("chat.attachment.pick_again")));
               return;
             }
-            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress());
+            facade_->ResumeAttachmentAsync(thread_id, staged.back().id, std::move(done), MakeSendProgress(), cancel);
           },
-          [this, thread_id, path, finish_uploading, voice_file, staged_before](Roe<ThreadMessage> sent) {
+          [this, thread_id, path, finish_uploading, voice_file, staged_before, cancel](Roe<ThreadMessage> sent) {
             finish_uploading();
-            if (voice_file) {
+            const bool cancelled = !sent && cancel->load(); // nothing was sent and nothing is kept: no message
+            if (voice_file && cancelled) {
+              std::error_code ec;
+              std::filesystem::remove(path, ec);
+            } else if (voice_file) {
               // The recording's file goes once the message is out or its encrypted copy is staged for a retry; a send
               // refused before staging (the rate limit, for one) keeps it, with a Retry / Discard of its own.
               const size_t staged_after = facade_->PendingOutgoingAttachments(thread_id).size();
@@ -2317,7 +2335,9 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
               }
             }
             if (!sent) {
-              UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              if (!cancelled) {
+                UserFeedback::Fail(UserFeedback::UserMessage(sent.error()));
+              }
               RefreshPendingAttachmentChip(/*force=*/true); // a kept ciphertext shows Retry
               return;
             }
@@ -4082,6 +4102,7 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
+        ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));
         ctor.BindEventCallback("remove_image", DataEvent([this] { agent_.DiscardPendingAiImage(); }));
         ctor.BindEventCallback("cancel_quote_reply", DataEvent([this] { CancelQuoteReply(); }));
         ctor.BindEventCallback("jump_to_quote", DataEvent<std::string>(

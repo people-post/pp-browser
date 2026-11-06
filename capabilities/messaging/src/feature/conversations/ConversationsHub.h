@@ -336,14 +336,16 @@ public:
    */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                           std::shared_ptr<const std::atomic<bool>> cancelled = {});
   /**
    * Send again an attachment whose send failed (also after the app was killed): the same staged ciphertext and
    * key, from the stage it stopped at. When nothing is left to send from, the error says to pick the file again.
    */
   void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                              std::function<void(Roe<ThreadMessage>)> on_done,
-                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                             std::shared_ptr<const std::atomic<bool>> cancelled = {});
   /** Attachments of this thread whose send did not finish and whose staged ciphertext is still there. */
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
   /** Drop a staged attachment (the person gave up on it). */
@@ -631,7 +633,8 @@ private:
   Roe<Thread> AttachmentTargetThread(const std::string& thread_id);
   void ResumeAttachmentNow(const std::string& thread_id, const std::string& record_id,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress);
+                           std::function<bool(uint64_t done, uint64_t total)> progress,
+                           std::shared_ptr<const std::atomic<bool>> cancelled);
   std::function<bool(uint64_t done, uint64_t total)> LaneAwareProgress(
       std::function<bool(uint64_t done, uint64_t total)> progress);
   void FinishAttachmentSend(const std::shared_ptr<AttachmentSendJob>& job, Roe<ChatAttachmentFields> fields,

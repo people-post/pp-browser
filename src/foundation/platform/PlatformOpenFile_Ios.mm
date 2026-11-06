@@ -12,7 +12,9 @@
 
 #import <QuickLook/QuickLook.h>
 #import <UIKit/UIKit.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include <functional>
 #include <string>
 
 /**
@@ -24,12 +26,21 @@
 @public
   NSURL* url;
   UIDocumentInteractionController* interaction;
+  bool sound; // the sound hooks' `begin` ran for it: `end` runs when it goes
 }
 @end
 
 namespace {
 
 PPAttachmentPreview* g_preview = nil; // the preview that is up (or being presented); nil when none
+std::function<void()> g_sound_begin;   // SetPlatformOpenFileSoundHooks
+std::function<void()> g_sound_end;
+
+/** Sound or video: QuickLook plays it through the app's own audio session. */
+bool PlaysSound(NSURL* url) {
+  UTType* type = [UTType typeWithFilenameExtension:url.pathExtension];
+  return type != nil && [type conformsToType:UTTypeAudiovisualContent];
+}
 
 /** Let go of the current preview. Autoreleased: this runs inside the preview's own delegate callbacks. */
 void EndPreview(PPAttachmentPreview* ended) {
@@ -40,6 +51,9 @@ void EndPreview(PPAttachmentPreview* ended) {
   g_preview = nil;
   if (pbr::ios_pick::ActivePicker() == preview) {
     pbr::ios_pick::SetActivePicker(nil);
+  }
+  if (preview->sound && g_sound_end) {
+    g_sound_end();
   }
   [preview autorelease];
 }
@@ -67,6 +81,10 @@ bool OpenOnMain(const std::string& path) {
       controller.delegate = preview;
       g_preview = preview;
       pbr::ios_pick::SetActivePicker(preview);
+      if (PlaysSound(url) && g_sound_begin) {
+        g_sound_begin(); // loud, with the silent switch on: not on the earpiece a call left the session on
+        preview->sound = true;
+      }
       [host presentViewController:controller animated:YES completion:nil];
       // UIKit may refuse silently: if the preview never appears, do not keep the guard claimed.
       dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -139,6 +157,13 @@ bool OpenOnMain(const std::string& path) {
 @end
 
 namespace pbr {
+
+void SetPlatformOpenFileSoundHooks(std::function<void()> begin, std::function<void()> end) {
+  dispatch_async(dispatch_get_main_queue(), ^{ // read on the main thread only (the preview's)
+    g_sound_begin = begin;
+    g_sound_end = end;
+  });
+}
 
 bool PlatformOpenFile(const std::string& path) {
   if (path.empty() || ![[NSFileManager defaultManager] fileExistsAtPath:[NSString stringWithUTF8String:path.c_str()]]) {

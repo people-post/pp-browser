@@ -3,9 +3,11 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "foundation/data/PlatformDefaults.h"
 #include "foundation/platform/ImageThumbnail.h"
+#include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/VideoPosterExtractor.h"
 #include "foundation/platform/os/OsDownloadMark.h"
+#include "lib/media/AudioSession.h"
 #include "lib/messaging/AttachmentPlatform.h"
 #include "lib/storage/ProfileStorage.h"
 
@@ -25,6 +27,9 @@ ProductStack::ProductStack() : hub_(std::make_unique<ConversationsHub>()), calls
         return MakeImageThumbnailJpeg(image_bytes, max_dimension);
       },
   });
+  // A sound or video shown in the app plays like a voice message: on the loudspeaker, also with the silent switch on
+  // (never while a call holds the session).
+  SetPlatformOpenFileSoundHooks([] { AudioSession::ActivateForVoicePlayback(); }, [] { AudioSession::ReleaseVoice(); });
   hub_->SetMeshOwner(&mesh_);
   hub_->SetHost({.mobile = Platform::IsMobile(), .desktop = Platform::IsDesktop()});
   // An empty endpoint in the profile's config falls back to the platform's defaults (the app's to know).

@@ -993,14 +993,17 @@ std::string ConversationsFacade::GridThumbnailPath(const std::string& thread_id,
 
 void ConversationsFacade::SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                                               std::function<void(Roe<ThreadMessage>)> on_done,
-                                              std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress));
+                                              std::function<bool(uint64_t done, uint64_t total)> progress,
+                                              std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.SendAttachmentAsync(thread_id, std::move(attachment), std::move(on_done), std::move(progress),
+                           std::move(cancelled));
 }
 
 void ConversationsFacade::ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                                                 std::function<void(Roe<ThreadMessage>)> on_done,
-                                                std::function<bool(uint64_t done, uint64_t total)> progress) {
-  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress));
+                                                std::function<bool(uint64_t done, uint64_t total)> progress,
+                                                std::shared_ptr<const std::atomic<bool>> cancelled) {
+  hub_.ResumeAttachmentAsync(thread_id, record_id, std::move(on_done), std::move(progress), std::move(cancelled));
 }
 
 std::vector<OutgoingAttachmentRecord> ConversationsFacade::PendingOutgoingAttachments(const std::string& thread_id) {

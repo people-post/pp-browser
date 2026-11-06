@@ -812,6 +812,7 @@
     "chat.attachment.sending_too_fast": "发得太快了，请稍等。",
     "chat.attachment.space_warning": "云端空间已用 {percent}%，请注意清理。",
     "chat.attachment.uploading": "正在发送…",
+    "chat.attachment.cancelling": "正在取消…",
     "chat.attachment.sending": "正在发送…",
     "chat.attachment.downloading": "正在下载…",
     "chat.attachment.downloading_percent": "正在下载 {percent}%",

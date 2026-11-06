@@ -344,10 +344,12 @@ public:
   /** Send bytes the picker already prepared (a shrunk picture, an original with its location removed). */
   void SendAttachmentAsync(const std::string& thread_id, OutgoingAttachment attachment,
                            std::function<void(Roe<ThreadMessage>)> on_done,
-                           std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                           std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                           std::shared_ptr<const std::atomic<bool>> cancelled = {});
   void ResumeAttachmentAsync(const std::string& thread_id, const std::string& record_id,
                              std::function<void(Roe<ThreadMessage>)> on_done,
-                             std::function<bool(uint64_t done, uint64_t total)> progress = {});
+                             std::function<bool(uint64_t done, uint64_t total)> progress = {},
+                             std::shared_ptr<const std::atomic<bool>> cancelled = {});
   std::vector<OutgoingAttachmentRecord> PendingOutgoingAttachments(const std::string& thread_id);
   void DiscardOutgoingAttachment(const std::string& record_id);
   void CleanStaleAttachmentFiles();

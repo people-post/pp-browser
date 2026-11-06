@@ -98,13 +98,34 @@ void DeliverStaged(IBlobClient& blob, IdentityStore& identity, OutgoingAttachmen
     finish(relay_user_id.error());
     return;
   }
+  const std::string relay_id = *relay_user_id;
+  OutgoingAttachmentStore* store = options.outgoing;
+  const ByteVector dek = options.dek;
+  if (const auto cancelled = options.cancelled) {
+    options.progress = [cancelled, progress = std::move(options.progress)](const uint64_t done, const uint64_t total) {
+      return !cancelled->load() && (!progress || progress(done, total));
+    };
+    finish = [&blob, relay_id, store, record_id = record.id, cancelled,
+              finish = std::move(finish)](Roe<ChatAttachmentFields> result) {
+      if (!cancelled->load()) {
+        finish(std::move(result));
+        return;
+      }
+      store->Remove(record_id);
+      if (result) {
+        (void)DeleteUploadedAttachmentCopy(blob, relay_id, result->url); // uploaded before the cancel landed
+      }
+      finish(Error("Attachment send cancelled"));
+    };
+    if (cancelled->load()) {
+      finish(Error("Attachment send cancelled"));
+      return;
+    }
+  }
   if (record.delivered) {
     finish(record.fields);
     return;
   }
-  const std::string relay_id = *relay_user_id;
-  OutgoingAttachmentStore* store = options.outgoing;
-  const ByteVector dek = options.dek;
   auto to_server = [&blob, relay_id, record, store, dek, progress = options.progress,
                     finish](const bool direct_failed) mutable {
     // start → PUT → complete → stored link: all of it, also if the app goes to the background meanwhile.

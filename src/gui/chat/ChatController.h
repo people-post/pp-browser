@@ -57,8 +57,10 @@
 #include <ui/base/Input.h>
 #include <ui/base/Types.h>
 
+#include <atomic>
 #include <chrono>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -319,6 +321,8 @@ private:
   /** Retry / discard the failed send the chip shows; the staged ciphertext is what a retry sends again. */
   void OnRetryAttachmentSend();
   void OnDiscardAttachmentSend();
+  /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
+  void OnCancelAttachmentSend();
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
@@ -381,6 +385,8 @@ private:
   void UpdateThreadChrome();
   void ResetChatPanelState();
   std::string failed_record_id_;
+  /** Set by Cancel on the chip while a send is in flight; a new one for each send. */
+  std::shared_ptr<std::atomic<bool>> send_cancel_;
   /** A voice recording waiting for Retry / Discard (nothing was staged), and the chat it is for. */
   std::string failed_voice_path_;
   std::string failed_voice_thread_;

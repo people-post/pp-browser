@@ -19,6 +19,8 @@
               data-event-click="retry_attachment_send()">{{i18n:chat.attachment.retry}}</button>
       <button class="prompt-attachment-chip-action" type="button" data-if="attachment_failed"
               data-event-click="discard_attachment_send()">{{i18n:common.cancel}}</button>
+      <button class="prompt-attachment-chip-action" type="button" data-if="attachment_uploading"
+              data-event-click="cancel_attachment_send()">{{i18n:common.cancel}}</button>
     </div>
     <div class="prompt-attachment-chip" data-if="image_chip">
       <!-- The remove button is a badge on the picture's corner: dark disc, white cross, white ring, so it shows on
