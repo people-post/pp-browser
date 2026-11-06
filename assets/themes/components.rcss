@@ -8812,15 +8812,22 @@ input.checkbox {
 }
 
 .context-menu-item-text {
-  display: flex;
+  display: block;
   flex: 1;
-  flex-direction: column;
   min-width: 0;
   padding: 8dp 0;
 }
 
+.context-menu-item-text .context-menu-item-label {
+  display: block;
+  flex: none;
+  white-space: normal;
+}
+
 .context-menu-item-detail {
+  display: block;
   margin-top: 2dp;
+  white-space: normal;
   font-family: LatoLatin;
   font-size: 13dp;
   color: #6b7280;
@@ -10121,6 +10128,13 @@ input.checkbox {
 
 .cd-card.cd-card--headed {
   margin-top: 0;
+}
+
+/* Inside the centred qr-body column the card would shrink to its content (one character per line, B179). */
+.shell-layer-compact .qr-page .cd-card {
+  align-self: stretch;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 /* A person in a card (the group info's members): a 60dp row with a 44dp round avatar before the name (the lists'

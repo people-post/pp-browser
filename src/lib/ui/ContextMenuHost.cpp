@@ -182,8 +182,9 @@ void AppendLabel(std::ostringstream& out, const ContextMenuAction& action) {
     out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
     return;
   }
-  out << "<span class=\"context-menu-item-text\"><span class=\"context-menu-item-label\">" << EscapeRml(action.label)
-      << "</span><span class=\"context-menu-item-detail\">" << EscapeRml(action.detail) << "</span></span>";
+  // Block elements: as spans the label and the explanation were drawn over each other (B180).
+  out << "<div class=\"context-menu-item-text\"><div class=\"context-menu-item-label\">" << EscapeRml(action.label)
+      << "</div><div class=\"context-menu-item-detail\">" << EscapeRml(action.detail) << "</div></div>";
 }
 
 void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions,
