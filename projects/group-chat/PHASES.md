@@ -105,9 +105,10 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [ ] Lab (written, not yet run): `member_invites_while_owner_is_away`, `managed_group_only_admins_invite`, `admin_readmits_a_removed_member`, `remove_everyone_they_added`
 
 **o5 — Invite links (G021)**
-- [ ] `link_add` / `link_revoke`; links die with their maker's membership; the link format; QR through the scan flow
-- [ ] Join request → preview → confirm; refusals; 20 requests an hour per link
-- [ ] Lab: join by link; a revoked, an expired, and a removed maker's link refused
+- [x] `link_add` / `link_revoke` (`DraftLinkAdd` per the preset, `DraftLinkRevoke` by the maker, admins, owner); links die with their maker's membership (`ended_links`, a void `link_add` of a maker who left included); a link's `uses` signed into the statement; the link format (`pp://join/…`, `GroupInviteLink`), the secret's hash, the secret kept encrypted (`group_invite_links`); QR through the scan flow (`ContactsController::BindGroupJoinOffer`, `IncomingLink`, the `pp` scheme registered) and on the "Invite link…" sheet
+- [x] Join request → preview → confirm on the control lane (family `group join`); `JudgeJoin`'s refusals (`expired` / `revoked` / `used_up` / `removed` / `group_full` / `rate` / `unknown`); 20 requests an hour per link; the confirm's `add` with `link_id` (`AdmitByLink`, shared with `AdmitInvitee`), the join bundle taken from the answerer of a confirmed join (`JoinRecord`); "Joining shares your profile with N people." on the preview; "{name} joined by {maker}'s link"; the live links with Revoke for the owner and admins
+- [x] gtests `group_invite_links_test` (the link's text and malformed ones, the hash, the wire, each refusal, the rate, the uses, a link dying with its maker, the drafts, the join record), `group_roster_rules_test` (ended links, uses and the fold), `LinkJoinBundleIngestTest`, `group_link_text_test` (who sees "Invite link…" and the links, the preview text, how a join ends), `GroupInfoSheetTest.TheInviteLinkRowAndTheOwnersLinksWithRevoke`, `GroupEventTextTest.AJoinByLinkNamesWhoseLinkItWas`; probe `make_invite_link`, `revoke_invite_link`, `join_by_link`, `confirm_join`, `group_roster.links`
+- [ ] Lab (written, not yet run): `join_by_link` (a member's link, a stranger with no contacts joins, the full roster, "joined by {maker}'s link", the use counted), `refused_links` (revoked by the owner, expired, a maker who left)
 
 **Guests in a group's call ([calls V062](../p2p-av-calls/DECISIONS.md#v062--guests-in-a-groups-call-labelled-brought-by-members-removed-by-owner-and-admins))** — after o1 and o4
 - [x] `guest` / `brought_by` on the mid-call invite in a group's call; "joined as …'s guest", the Guest label

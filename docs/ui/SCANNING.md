@@ -5,7 +5,10 @@ beside the Home header's Me button; in expanded layout it is beside Me in the na
 Point it at a friend's PP
 QR code; after one successful scan the scanner closes and the existing contact-invite
 confirmation shows the person's name and Account ID. Only confirmation saves the contact.
-Other QR contents, including ordinary URLs, produce an unsupported-contact notice.
+A group's **invite link** (`pp://join/…`, [group-chat G021](../../projects/group-chat/DECISIONS.md#g021--invite-links))
+is the other kind it reads: the chats' join prompt asks the link's maker, then shows the group's name and
+member count with Join / Cancel; only Join joins. Other QR contents, including ordinary URLs, produce an
+unsupported-contact notice.
 
 The camera fills the preview, with a centered square guide, a darkened surrounding area,
 corner marks and an animated scan line. This guide is local UI; recognition sees the captured
@@ -31,8 +34,17 @@ a payload. A new caller can reuse this entry and interpret supported payloads in
 feature. The scanner does not navigate URLs, add contacts or execute decoded commands.
 
 Application owns `QrScanController` and binds its ports; Contacts supplies the caller-specific
-locator handling through `OfferInvite`. `QrScanner` uses a worker and `MediaDeviceArbiter`
-camera lease, preferring the rear camera. Generation checks discard results from a canceled
+locator handling through `OfferInvite`, and hands a `pp://join/…` payload first to the chats'
+`GroupJoinPrompt` (`ContactsController::BindGroupJoinOffer` → `ChatController::OfferGroupJoin`).
+
+**Where a link arrives.** One rule for every entry: a `pp://join/…` anywhere in the text goes to the
+join prompt (`group_invite_link::Find`), else a contact locator to Contacts — the in-app scan, text
+pasted into *Add contact*, and a link the OS opens the app with (`IncomingLink`: the app registers
+the `pp` scheme with host `join` beside `pp-browser-contact-v1` — iOS / macOS `CFBundleURLTypes`, an
+Android `VIEW` intent filter). A group's link is shown as text and as a QR code in group info's
+*Invite link…* sheet (`lib/ui/QrSvg`, as the contact QR).
+
+`QrScanner` uses a worker and `MediaDeviceArbiter` camera lease, preferring the rear camera. Generation checks discard results from a canceled
 or replaced scan. quirc decodes the QR; `ElementScanPreview` owns the preview texture within
 the document, independently of call video tiles.
 

@@ -431,7 +431,7 @@ The statement as built, with these fields added inside what the owner signs. **B
 | `preset` | `open` / `managed` (G017) |
 | `title`, `title_version` | the group's name and its version (R4); as `group_renamed` today |
 | `removed[]` | `{identity, removal, by}`: accounts removed and not re-admitted (G018 R2, G020); `removal` is the id of the `remove` change a re-admit names |
-| `links[]` | live links: `{link_id, secret_hash, maker, expires_at, max_uses?}` (G021); `max_uses` omitted (0) means no limit |
+| `links[]` | live links: `{link_id, secret_hash, maker, expires_at, max_uses?, uses?}` (G021); `max_uses` omitted (0) means no limit; `uses` the joins by it the owner folded (o5) |
 | `folded[]` | `{id, base_epoch}` of **every** change the owner has folded, in this statement and earlier ones (carried forward, so a device that missed a statement still drops what it folded) — but none whose `base_epoch` is below the floor; `base_epoch` as the change states it, at most the epoch of the statement that folded it |
 | `change_floor_epoch` | a change made against an older statement (`base_epoch` below it) is dropped as too old, so `folded` need not name it. Folding at epoch e raises it to e − `kChangeFloorLag` (32), never lower |
 
@@ -446,7 +446,7 @@ member count, then per member: identity, role, joined_at, added_by
 preset
 title, title_version
 removed count, then per entry: identity, removal, by
-link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none)
+link count, then per link: link_id, secret_hash, maker, expires_at, max_uses (0: none), uses
 folded count, then per entry: id, base_epoch
 change_floor_epoch
 ```
@@ -531,15 +531,16 @@ then the body by change:
 - **`group_invite_accept`** goes to the inviter. The owner adds them itself (`member_joined` + its re-signed statement, `added_by` the owner). A member or admin checks its pending invite and that it may still invite (`ApplyInviteAcceptToRoster` → `SignAdd`), signs the `add` (`DraftAdd`: `readmits` for someone removed, owner / admin only), holds it, and only if it counts (R5) sends `group_change` with `newcomer` (card, route) to the members and the join bundle to the newcomer; else `group_invite_refused` (`group_full` / `not_allowed`).
 - **The join bundle** is `member_joined` to the newcomer, from the owner or a member: `invite_nonce`, `added_by`, the members with routes and cards, `roster_statement`, `changes` (the add first, bounded, `more`). The newcomer checks the statement against the owner the invite named and that the roster it proves lists it (`CheckJoin`) before keeping anything (`ApplyJoinBundle`). Normative: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
 
-### Invite link (G021)
+### Invite link (G021, built o5)
 
 ```
-pp://join/<base64url(link_id[16] || secret[16] || expires_at[8] || maker account id)>
+pp://join/<base64url(link_id[16] || secret[16] || expires_at u64 BE ms || maker account id)>
 ```
 
-- **Join request:** `group_join_request {link_id, secret, request_id}` goes to the maker, or else an admin, on the control lane.
-- **Answer:** `group_join_preview {request_id, group_title, member_count}`, or `group_join_refused {request_id, reason}` with reason `expired` / `revoked` / `used_up` / `removed` / `group_full` / `rate`.
-- **Confirm:** `group_join_confirm {request_id}`; the answerer signs `add` with `link_id`.
+- **Making** (`GroupInviteLinkWorkflow::MakeLink`): random id and secret (`group_invite_link::Mint`), a signed `link_add` (`DraftLinkAdd`: `GroupAllows(MakeInviteLink…)`, `secret_hash` = BLAKE2b-256 over `pp-browser:group-link-secret-v1`, the id, the secret) through `GroupMembershipWorkflow::CommitOwnChange`; the secret kept encrypted (`group_invite_links`). **Revoking:** `DraftLinkRevoke` (its maker, an admin, the owner).
+- **The roster** (`ComputeRoster`): live links with their `uses` (the statement's plus the held adds carrying the id that took someone in); `ended_links` with why (revoked, maker out — also a `link_add` void only because its signer left —, expired). The fold signs `uses` into the statement's links.
+- **Joining** (control lane, family `group join`, `lib/messaging/GroupLinkJoin*`): `group_join_request {request_id, link_id, secret}` → the maker's account; `JudgeJoin` (unknown, rate, secret, revoked / maker out, expired, our standing, used up, removed, full) → `group_join_preview {request_id, group_id, owner, group_title, member_count, device}` or `group_join_refused {request_id, reason}`; the joiner's `group_join_confirm {request_id, device}` → `AdmitByLink` (the `add` with `link_id`, the members' `group_change`, the join bundle under the request id). The joiner's record (`JoinRecord`) is an accepted invite from the answerer, so `ApplyJoinBundle` takes the bundle as for an invite. Normative: [WIRE_SCHEMAS § Owner-signed roster](../../docs/contracts/WIRE_SCHEMAS.md).
+- **UI:** group info's "Invite link…" (`GroupLinkSheet`: text, QR, expiry, Revoke link…) and, for the owner and admins, the live links with Revoke; a link scanned, pasted or opened goes to `GroupJoinPrompt` (the preview sheet, or the refusal in plain words) — [SCANNING](../../docs/ui/SCANNING.md).
 
 ### Removal (G020)
 
