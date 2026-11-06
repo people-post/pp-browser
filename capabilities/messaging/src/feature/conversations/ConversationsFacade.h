@@ -117,7 +117,7 @@ public:
   Roe<Thread> CreateNewAiThread();
   /** A new AI thread, stored but not opened (the ask-AI panel's conversation when there is none yet). */
   Roe<Thread> CreateAiThread();
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
   Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);

@@ -220,8 +220,9 @@ void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread()
 Roe<Thread> ConversationsFacade::CreateNewAiThread() { return hub_.Inbox().CreateNewAiThread(); }
 Roe<Thread> ConversationsFacade::CreateAiThread() { return hub_.Inbox().CreateAiThread(); }
 
-Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview) {
-  return hub_.Inbox().UpdatePreview(thread_id, preview);
+Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const std::string& preview,
+                                              const bool assistant_text) {
+  return hub_.Inbox().UpdatePreview(thread_id, preview, assistant_text);
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {

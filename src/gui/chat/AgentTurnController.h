@@ -198,6 +198,8 @@ public:
    * that still arrives, so a late answer never stores a message into (and so brings back) the deleted thread.
    */
   void ForgetThread(const std::string& thread_id);
+  /** The deleted-conversation list is per profile: emptied on a profile reset / switch (and in `Reset`). */
+  void ClearForgottenThreads();
   /**
    * A permission card ended (answered, given up, or found stale on a tap): rewrite that one stored message by its
    * id so its buttons are gone. `thread_id` empty = the open thread.

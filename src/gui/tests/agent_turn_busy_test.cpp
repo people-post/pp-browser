@@ -911,6 +911,24 @@ TEST_F(AgentTurnBusyTest, DeletingAnAiConversationStopsItsTurnAndDropsItsQueuedS
   EXPECT_EQ(cancel_calls_, 1) << "C had no turn running, nothing to stop";
 }
 
+TEST_F(AgentTurnBusyTest, TheDeletedConversationListIsEmptiedOnResetAndProfileReset) {
+  BindSession();
+  Open("B");
+  for (const bool full_reset : {true, false}) {
+    controller_.ForgetThread("A");
+    controller_.HandleAgentEvent(Loading(true, "A"));
+    EXPECT_FALSE(controller_.Busy().BusyIn("A")) << "dropped while remembered";
+    if (full_reset) {
+      controller_.Reset();
+    } else {
+      controller_.ClearForgottenThreads();
+    }
+    controller_.HandleAgentEvent(Loading(true, "A"));
+    EXPECT_TRUE(controller_.Busy().BusyIn("A")) << "a thread with the same id in a new profile works again";
+    controller_.HandleAgentEvent(Loading(false, "A"));
+  }
+}
+
 TEST_F(AgentTurnBusyTest, ALateEventOfADeletedConversationIsIgnored) {
   BindSession();
   Open("B");

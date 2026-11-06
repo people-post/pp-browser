@@ -247,6 +247,14 @@ TEST(InboxAiThreadTest, APlainNumberOrLongCjkIsNotMasked) {
   }
 }
 
+TEST(InboxAiThreadTest, AnAssistantAnswerWithALongHashKeepsItsPreview) {
+  AiInboxEnv env;
+  env.AddAiThread("ai-1", kDefaultAiThreadTitle);
+  const std::string answer = "The file hash is QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5 as asked";
+  ASSERT_TRUE(env.inbox->UpdatePreview("ai-1", answer, /*assistant_text=*/true));
+  EXPECT_EQ(StoredPreview(env, "ai-1"), answer);
+}
+
 TEST(InboxAiThreadTest, AHumanChatPreviewIsNotMasked) {
   AiInboxEnv env;
   Thread direct;

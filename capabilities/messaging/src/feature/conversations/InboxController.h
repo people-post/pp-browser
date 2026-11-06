@@ -143,7 +143,8 @@ public:
                                  const std::optional<std::string>& preview = std::nullopt);
   int SumUnread() const;
   int SumUnreadForContact(const std::string& contact_id) const;
-  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
+  /** `assistant_text`: an AI answer, shown as is (only the user's own text is checked for codes and pasted blobs). */
+  Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview, bool assistant_text = false);
 
   /**
    * The thread's transcript entries (D031), drawn by the GUI with Facts().

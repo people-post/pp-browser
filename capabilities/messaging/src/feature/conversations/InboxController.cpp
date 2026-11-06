@@ -482,7 +482,8 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   return total;
 }
 
-Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview) {
+Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std::string& preview,
+                                           const bool assistant_text) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -491,8 +492,11 @@ Roe<void> InboxController::UpdatePreview(const std::string& thread_id, const std
     return Error("Thread not found");
   }
   Thread updated = **thread;
-  // An AI thread's preview is the user's own text or the answer; a sensitive one never reaches the row.
-  updated.preview = updated.kind == ThreadKind::Ai && LooksSensitiveForAiTitle(preview) ? Localized("chat.new_chat") : preview;
+  // The user's own text in an AI thread never shows a code or pasted blob in the row; an answer is shown as is
+  // (a long URL or hash in it is not a secret).
+  updated.preview = updated.kind == ThreadKind::Ai && !assistant_text && LooksSensitiveForAiTitle(preview)
+                        ? Localized("chat.new_chat")
+                        : preview;
   updated.updated_at = util::NowUnixMs();
   if (store_.UpsertThread(updated)) {
     return {};

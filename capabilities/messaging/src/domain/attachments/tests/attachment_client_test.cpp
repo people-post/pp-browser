@@ -432,20 +432,69 @@ TEST_F(StagedUploadTest, ACancelDuringTheUploadSendsNothingAndLeavesNothingBehin
   EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
 }
 
-// A cancel while a small file is pushed straight to the contact: no server fallback and no message.
-TEST_F(StagedUploadTest, ACancelDuringADirectPushSendsNothing) {
+// A cancel while a small file is pushed straight to the contact, and the push fails: no message, nothing left.
+TEST_F(StagedUploadTest, ACancelDuringAFailingDirectPushSendsNothing) {
   auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.push_ok = false;
   peer_.on_push = [cancelled] { cancelled->store(true); };
   auto options = Staged(direct_);
   options.cancelled = cancelled;
   auto result = UploadStaged(5000, std::move(options));
   ASSERT_FALSE(result);
   EXPECT_EQ(peer_.push_calls, 1);
-  EXPECT_EQ(blob_.FileStartCallCount(), 0u);
+  EXPECT_TRUE(blob_.UploadedBodies().empty());
   EXPECT_TRUE(store_->ListForThread(direct_.id, TestDek()).empty());
 }
 
-// A Retry cancelled before it starts touches no network and drops the staged copy.
+// A cancel that lands after the push reached the contact is too late: the send stands (fields come back, nothing is
+// deleted, the record stays delivered); the caller tells the person it was already sent.
+TEST_F(StagedUploadTest, ACancelAfterASuccessfulDirectPushIsTooLate) {
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  peer_.on_push = [cancelled] { cancelled->store(true); };
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  auto result = UploadStaged(5000, std::move(options));
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_TRUE(result->url.empty());
+  EXPECT_EQ(peer_.push_calls, 1);
+  EXPECT_TRUE(blob_.DeletedFileIds().empty());
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  EXPECT_TRUE(record->delivered);
+}
+
+// A cancel during a staged Retry only stops that attempt: the record stays, so Retry still works.
+TEST_F(StagedUploadTest, ACancelledResumeKeepsTheRecordForRetry) {
+  peer_.reachable = false;
+  blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
+  ASSERT_FALSE(UploadStaged(5000, Staged(direct_)));
+  blob_.ClearFileStartError();
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  auto cancelled = std::make_shared<std::atomic<bool>>(false);
+  auto options = Staged(direct_);
+  options.cancelled = cancelled;
+  options.progress = [cancelled](uint64_t, uint64_t) {
+    cancelled->store(true);
+    return true;
+  };
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, std::move(options),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  ASSERT_FALSE(resumed);
+  EXPECT_EQ(resumed.error().message, "Attachment send cancelled");
+  EXPECT_TRUE(store_->HasCipher(staged_.id));
+  EXPECT_FALSE(store_->ListForThread(direct_.id, TestDek()).empty());
+  // Retry again, uncancelled: it sends.
+  auto again_record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(again_record);
+  Roe<ChatAttachmentFields> again = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *again_record, Staged(direct_),
+                            [&](Roe<ChatAttachmentFields> value) { again = std::move(value); });
+  EXPECT_TRUE(again);
+}
+
+// A Retry cancelled before it starts touches no network and keeps the staged copy.
 TEST_F(StagedUploadTest, ACancelledResumeTouchesNoNetwork) {
   peer_.reachable = false;
   blob_.SetFileStartError(AppError::Blob(Err::Blob::Unavailable, "HTTP 503"));
@@ -461,7 +510,7 @@ TEST_F(StagedUploadTest, ACancelledResumeTouchesNoNetwork) {
                             [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
   EXPECT_FALSE(resumed);
   EXPECT_EQ(blob_.FileStartCallCount(), starts);
-  EXPECT_FALSE(store_->HasCipher(staged_.id));
+  EXPECT_TRUE(store_->HasCipher(staged_.id));
 }
 
 TEST(AttachmentRoutingTest, OnlyAnE2eDirectThreadUpToTheLimitTriesDirect) {

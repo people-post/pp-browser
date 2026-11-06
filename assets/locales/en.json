@@ -910,6 +910,7 @@
     "chat.attachment.cancelling": "Cancelling…",
     "chat.attachment.audio_cannot_play": "Can't play this sound file",
     "chat.attachment.cancel_send": "Cancel sending",
+    "chat.attachment.already_sent": "Already sent, can't cancel",
     "chat.attachment.sending": "Sending…",
     "chat.attachment.downloading": "Downloading…",
     "chat.attachment.downloading_percent": "Downloading {percent}%",
