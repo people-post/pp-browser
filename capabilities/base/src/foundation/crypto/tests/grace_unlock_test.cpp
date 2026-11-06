@@ -436,6 +436,7 @@ TEST_F(ProfileSecretsEngineGraceTest, GraceUnlocksTheVaultAndFansOut) {
   auto got = engine_.TryGraceUnlock();
   ASSERT_TRUE(static_cast<bool>(got));
   EXPECT_EQ(got->status, GraceUnlock::Status::Found);
+  EXPECT_TRUE(got->dek.empty()) << "the plaintext DEK does not leave the engine";
   EXPECT_TRUE(engine_.IsUnlocked());
   EXPECT_EQ(unlocked_calls, 1);
   auto after = engine_.Vault()->Dek();

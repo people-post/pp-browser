@@ -42,7 +42,8 @@ public:
   /** The grace entry and the clock it is judged by. */
   void AttachGrace(std::unique_ptr<GraceUnlock> grace, std::function<GraceClock()> clock);
   bool GraceSupported() const;
-  /** Window still open → the vault is unlocked with its DEK and fanned out as after Unlock(). */
+  /** Window still open → the vault is unlocked with its DEK and fanned out as after Unlock(). Only `status` is
+   *  meaningful: the result's `dek` is wiped and empty. */
   Roe<GraceUnlock::Result> TryGraceUnlock();
   /** After a PIN unlock: keep the unlocked DEK for `minutes` (0 forgets). A failure is reported, never fatal. */
   Roe<void> RememberGrace(int minutes);

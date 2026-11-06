@@ -171,17 +171,28 @@ Roe<GraceUnlock::Result> ProfileSecretsEngine::TryGraceUnlock() {
   if (!found) {
     return found.error();
   }
+  // The result carries the DEK in the clear and callers only read `status`: wipe it on every way out.
+  auto wipe_dek = [&found]() {
+    if (!found->dek.empty()) {
+      sodium_memzero(found->dek.data(), found->dek.size());
+      found->dek.clear();
+    }
+  };
   if (found->status != GraceUnlock::Status::Found || unlocked_) {
+    wipe_dek();
     return found;
   }
   if (!vault_ || !vault_->Exists()) {
+    wipe_dek();
     grace_->Forget();
     return missing;
   }
   if (auto set = vault_->UnlockWithDek(found->dek); !set) {
+    wipe_dek();
     grace_->Forget();
     return missing;
   }
+  wipe_dek();
   // The same tail as Unlock(): fan the DEK out, mark unlocked, tell the listener.
   if (auto distributed = RedistributeUnlockedDek(); !distributed) {
     Lock();
