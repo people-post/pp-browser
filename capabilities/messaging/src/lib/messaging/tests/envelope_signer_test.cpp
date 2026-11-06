@@ -61,8 +61,8 @@ TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
   EXPECT_TRUE(*verified);
 }
 
-// Everything that decides something on receipt is signed — the decrypted blob, the group, the AutoKey
-// key_init, the sender's relay id (v2) and the sending and recipient devices (v3).
+// Everything that decides something on receipt is signed — the decrypted blob (and, inside it, a group copy's
+// group), the AutoKey key_init, the sender's relay id (v2) and the sending and recipient devices (v3).
 TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
   const RelayEnvelope base = MakeE2eVectorEnvelope();
   auto base_bytes = EnvelopeSigner::BuildSignBytes(base);
@@ -117,14 +117,46 @@ TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
 
   RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;
-  group.route.group_id = "group:a";
   auto group_bytes = EnvelopeSigner::BuildSignBytes(group);
   ASSERT_TRUE(group_bytes) << group_bytes.error().message;
-  RelayEnvelope other_group = group;
-  other_group.route.group_id = "group:b";
-  auto other_bytes = EnvelopeSigner::BuildSignBytes(other_group);
-  ASSERT_TRUE(other_bytes);
-  EXPECT_NE(*group_bytes, *other_bytes) << "group_id";
+  EXPECT_NE(*group_bytes, *base_bytes) << "the route kind";
+}
+
+// Sign v4 (group-chat G018 item 7): the bytes name no group — a group copy carries its group id inside its
+// ciphertext, bound there by the AEAD and by the copy hash these bytes sign.
+TEST(EnvelopeSignerTest, SignBytesAreV4AndNameNoGroup) {
+  RelayEnvelope group = MakeE2eVectorEnvelope();
+  group.route.kind = kRelayRouteGroup;
+  auto bytes = EnvelopeSigner::BuildSignBytes(group);
+  ASSERT_TRUE(bytes) << bytes.error().message;
+  const std::string domain = "pp-browser:relay-envelope-sign-v4";
+  ASSERT_GE(bytes->size(), domain.size() + 6);
+  EXPECT_EQ(std::string(bytes->begin(), bytes->begin() + static_cast<std::ptrdiff_t>(domain.size())), domain);
+  EXPECT_EQ((*bytes)[domain.size()], 0u) << "NUL after the domain";
+  EXPECT_EQ((*bytes)[34], 4u) << "sign_version";
+  EXPECT_EQ((*bytes)[36], 1u) << "route kind group";
+  EXPECT_EQ((*bytes)[37], 0xFFu) << "a group has no channel";
+  // After the timestamp: message_id, sender_contact_id, sender_relay_id, then straight to sender_device.
+  const auto len_utf8 = [](const std::string& value) {
+    std::vector<uint8_t> out(8, 0);
+    const uint64_t size = value.size();
+    for (int i = 0; i < 8; ++i) {
+      out[7 - i] = static_cast<uint8_t>(size >> (8 * i));
+    }
+    out.insert(out.end(), value.begin(), value.end());
+    return out;
+  };
+  std::vector<uint8_t> expected;
+  for (const std::string* field :
+       {&group.message_id, &group.sender_contact_id, &group.sender_relay_id, &group.sender_device}) {
+    const std::vector<uint8_t> encoded = len_utf8(*field);
+    expected.insert(expected.end(), encoded.begin(), encoded.end());
+  }
+  ASSERT_GE(bytes->size(), 46 + expected.size());
+  EXPECT_EQ(
+      std::vector<uint8_t>(bytes->begin() + 46, bytes->begin() + 46 + static_cast<std::ptrdiff_t>(expected.size())),
+      expected)
+      << "no group id between the sender's relay id and its device";
 }
 
 // One body shape per route: the signer refuses (and so verification fails on) anything else.
@@ -149,10 +181,7 @@ TEST(EnvelopeSignerTest, MalformedEnvelopesAreRefused) {
 
   RelayEnvelope group = base;
   group.route.kind = kRelayRouteGroup;
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(group)) << "group without group_id";
-  RelayEnvelope direct = base;
-  direct.route.group_id = "group:a";
-  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(direct)) << "direct with a group_id";
+  EXPECT_TRUE(EnvelopeSigner::BuildSignBytes(group)) << "a group envelope names no group (G018 item 7)";
 
   RelayEnvelope unknown = base;
   unknown.route.kind = "other";

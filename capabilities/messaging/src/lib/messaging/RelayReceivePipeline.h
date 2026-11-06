@@ -227,6 +227,15 @@ private:
                                const std::string& local_account, RelayReceiveOutcome* outcome) const;
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
+  /** The groups `sender` and we are both on this device's roster of (a group copy names its group only inside). */
+  std::vector<std::string> GroupsSharedWith(const std::string& sender, const std::string& local_account) const;
+  /**
+   * Which of `candidates` a group record's stream id is the pair's stream of (G018 item 7) — a hint only (the
+   * stream id is not signed): which chat to tell of a copy we could not read, which group a missing copy was for.
+   */
+  static std::optional<std::string> GroupOfStream(const RelayEnvelope& envelope,
+                                                  const std::vector<std::string>& candidates,
+                                                  const std::string& local_account);
   /** A sender's numbering in a thread: a group thread holds one per member (and per pair epoch). */
   struct ReplayKey {
     std::string thread_id;

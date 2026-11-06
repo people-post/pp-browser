@@ -714,6 +714,138 @@ TEST_F(ReInvitedMemberTest, AMemberWhoClearedTheGroupIsHeardAfterEveryReInvite) 
   }
 }
 
+// G018 item 7: the relay cannot tell which group a copy is for. The group id rides inside each copy's
+// ciphertext; the receiver reads it after decrypting and checks the roster then.
+class GroupCopyPrivacyTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    EnsureSodiumInit();
+    alice_ = std::make_unique<Side>("alice-p", 0x10);
+    bob_ = std::make_unique<Side>("bob-p", 0x40);
+    carol_ = std::make_unique<Side>("carol-p", 0x70);
+    everyone_ = {alice_.get(), bob_.get(), carol_.get()};
+    for (const Side* a : everyone_) {
+      for (const Side* b : everyone_) {
+        if (a != b) {
+          const_cast<Side*>(a)->Know(*b);
+        }
+      }
+    }
+    for (const Side* side : everyone_) {
+      const_cast<Side*>(side)->JoinGroup(group_, everyone_);
+    }
+  }
+
+  /** What `side` holds in `group`'s chat. */
+  static std::vector<ThreadMessage> GroupRows(Side& side, const std::string& group) {
+    auto thread = side.store->FindGroupThread(group);
+    if (!thread || !*thread) {
+      return {};
+    }
+    return side.store->GetMessages((*thread)->id).value();
+  }
+
+  /** Bob receives `envelope`: refused, nothing kept, and not a failure (a roster drop, as before it read the group). */
+  void ExpectRefusedOnTheRoster(const RelayEnvelope& envelope, const std::string& why) {
+    const RelayReceiveOutcome outcome = bob_->pipeline->ProcessEnvelope(envelope, bob_->account);
+    EXPECT_EQ(outcome.decision, IngestDecision::HardReject) << why;
+    EXPECT_FALSE(outcome.persisted) << why;
+    EXPECT_FALSE(outcome.receive_failure) << why;
+  }
+
+  const std::string group_ = "group:" + util::GenerateUuid();
+  std::unique_ptr<Side> alice_;
+  std::unique_ptr<Side> bob_;
+  std::unique_ptr<Side> carol_;
+  std::vector<const Side*> everyone_;
+};
+
+TEST_F(GroupCopyPrivacyTest, WhatTheRelayStoresNamesNoGroupAndTheCopyArrivesInItsGroup) {
+  const RelayEnvelope envelope = alice_->GroupChat(group_, everyone_, "hello group").at(bob_->account);
+  auto record = RelayWireSendRecordFromEnvelope(envelope);
+  ASSERT_TRUE(record) << record.error().message;
+  const std::string uuid = group_.substr(std::string("group:").size());
+  const std::string wire = DumpJson(RelayWireSendRecordToJson(*record));
+  EXPECT_EQ(wire.find(uuid), std::string::npos) << "the record the relay indexes";
+  auto blob = Base64Decode(record->blob_b64);
+  ASSERT_TRUE(blob);
+  const std::string stored(blob->begin(), blob->end());
+  EXPECT_EQ(stored.find(uuid), std::string::npos) << "the envelope the relay stores (it can base64-decode it)";
+  EXPECT_EQ(stored.find("group_id"), std::string::npos) << "the route names no group";
+  EXPECT_EQ(record->stream_id.rfind("v1:g:", 0), 0u) << record->stream_id;
+  EXPECT_EQ(record->stream_id.find(uuid), std::string::npos);
+  EXPECT_EQ(record->stream_id, BuildGroupRelayStreamKey(group_, alice_->account, bob_->account, alice_->Device()));
+
+  // From the relay to bob: read, and filed in the group the ciphertext names.
+  RelayInboundRecord inbound{.sender_contact_id = record->sender_contact_id,
+                             .stream_id = record->stream_id,
+                             .index_key = record->index_key,
+                             .blob_b64 = record->blob_b64};
+  auto received = RelayEnvelopeFromInboundRecord(inbound);
+  ASSERT_TRUE(received) << received.error().message;
+  const RelayReceiveOutcome outcome = bob_->pipeline->ProcessEnvelope(*received, bob_->account);
+  ASSERT_TRUE(outcome.persisted);
+  ASSERT_TRUE(outcome.persisted_message);
+  EXPECT_EQ(outcome.persisted_message->text, "hello group");
+  EXPECT_EQ(outcome.thread_id, (*bob_->store->FindGroupThread(group_))->id);
+}
+
+TEST_F(GroupCopyPrivacyTest, ACopyIsFiledInTheGroupItsCiphertextNames) {
+  const std::string other = "group:" + util::GenerateUuid();
+  for (const Side* side : everyone_) {
+    const_cast<Side*>(side)->JoinGroup(other, everyone_);
+  }
+  EXPECT_TRUE(bob_->Keep(alice_->GroupChat(other, everyone_, "to the other group").at(bob_->account)));
+  EXPECT_TRUE(bob_->Keep(alice_->GroupChat(group_, everyone_, "to the first").at(bob_->account)));
+  const auto in_other = GroupRows(*bob_, other);
+  const auto in_first = GroupRows(*bob_, group_);
+  ASSERT_EQ(in_other.size(), 1u);
+  ASSERT_EQ(in_first.size(), 1u);
+  EXPECT_EQ(in_other.front().text, "to the other group");
+  EXPECT_EQ(in_first.front().text, "to the first");
+}
+
+// The member check, now just after decrypting: the same outcomes as when it came first.
+TEST_F(GroupCopyPrivacyTest, ACopyForAGroupWeAndTheSenderAreNotBothInIsRefusedOnceRead) {
+  // A group bob knows, with alice not on his roster for it.
+  const std::string without_alice = "group:" + util::GenerateUuid();
+  bob_->JoinGroup(without_alice, {bob_.get(), carol_.get()});
+  alice_->JoinGroup(without_alice, everyone_);
+  ExpectRefusedOnTheRoster(alice_->GroupChat(without_alice, everyone_, "not on bob's roster").at(bob_->account),
+                           "a sender off our roster for the group it names");
+  EXPECT_TRUE(GroupRows(*bob_, without_alice).empty());
+
+  // A group bob is no longer in (removed), its chat still there.
+  const std::string left = "group:" + util::GenerateUuid();
+  for (const Side* side : everyone_) {
+    const_cast<Side*>(side)->JoinGroup(left, everyone_);
+  }
+  ASSERT_TRUE(bob_->roster->RemoveMember(left, bob_->account));
+  ExpectRefusedOnTheRoster(alice_->GroupChat(left, everyone_, "after bob left").at(bob_->account),
+                           "a group we are not in");
+  EXPECT_TRUE(GroupRows(*bob_, left).empty());
+
+  // A group bob never heard of.
+  const std::string unknown = "group:" + util::GenerateUuid();
+  alice_->JoinGroup(unknown, {alice_.get(), bob_.get()});
+  ExpectRefusedOnTheRoster(alice_->GroupChat(unknown, {alice_.get(), bob_.get()}, "who?").at(bob_->account),
+                           "an unknown group");
+  EXPECT_FALSE(bob_->store->FindGroupThread(unknown)->has_value()) << "no chat made for it";
+
+  // The group they share still works.
+  EXPECT_TRUE(bob_->Keep(alice_->GroupChat(group_, everyone_, "still here").at(bob_->account)));
+}
+
+// A sender bob shares no group with is refused unread (as before the group id moved inside).
+TEST_F(GroupCopyPrivacyTest, ACopyFromSomeoneInNoGroupWithUsIsRefusedUnread) {
+  const std::string theirs = "group:" + util::GenerateUuid();
+  ASSERT_TRUE(bob_->roster->RemoveMember(group_, alice_->account));
+  alice_->JoinGroup(theirs, {alice_.get(), bob_.get()});
+  const RelayEnvelope envelope = alice_->GroupChat(theirs, {alice_.get(), bob_.get()}, "hi").at(bob_->account);
+  ExpectRefusedOnTheRoster(envelope, "no group in common");
+  EXPECT_EQ(bob_->PairEpoch(*alice_), 0u) << "not read: the pair session its key_init opens is not kept";
+}
+
 } // namespace
 } // namespace pbr
 
@@ -836,6 +968,23 @@ TEST_F(LinkedDevicesTest, AnOlderCardDoesNotBringBackADeviceTakenOut) {
       bob_->pipeline->ProcessEnvelope(laptop_->DeviceChat(bob_->account, "still here").at(bob_->Device()), bob_->account);
   EXPECT_FALSE(outcome.persisted);
   EXPECT_EQ(outcome.receive_failure, std::optional<ReceiveFailure>(ReceiveFailure::SignatureCheckFailed));
+}
+
+// A record with a copy for a sibling only (M021 §9): the device asks for its own copy, and finds which group
+// it was for from the record's stream id (G018 item 7: the route names none), computed for the groups it shares
+// with the sender.
+TEST_F(LinkedDevicesTest, AMissingGroupCopyIsAskedForInItsGroup) {
+  const std::string group = "group:" + util::GenerateUuid();
+  const std::vector<const Side*> members{bob_.get(), phone_.get(), laptop_.get()};
+  for (Side* side : {bob_.get(), phone_.get(), laptop_.get()}) {
+    side->JoinGroup(group, members);
+  }
+  auto sent = bob_->GroupChat(group, members, "to the group", true);
+  const RelayReceiveOutcome outcome = phone_->pipeline->ProcessEnvelope(sent.at(laptop_->Device()), phone_->account);
+  EXPECT_FALSE(outcome.persisted);
+  ASSERT_TRUE(outcome.missing_copy);
+  EXPECT_EQ(outcome.missing_copy->group_id, group);
+  EXPECT_EQ(outcome.missing_copy->sender_device, bob_->Device());
 }
 
 TEST_F(LinkedDevicesTest, GroupCopiesGoToEachMemberDevice) {

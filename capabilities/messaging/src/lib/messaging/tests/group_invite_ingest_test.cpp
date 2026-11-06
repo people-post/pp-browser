@@ -1,3 +1,4 @@
+#include "common/chat/RelayStreamKey.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "lib/delivery/ChatPayloadCodec.h"
@@ -660,7 +661,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsClosedThreadEvenIfStillMembe
   envelope.sender_contact_id = "account:alice";
   envelope.sender_relay_id = "relay:alice";
   envelope.route.kind = "group";
-  envelope.route.group_id = "group:hike";
+  envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
@@ -692,7 +693,7 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   envelope.sender_contact_id = "account:alice";
   envelope.sender_relay_id = "relay:alice";
   envelope.route.kind = "group";
-  envelope.route.group_id = "group:hike";
+  envelope.stream_key = BuildGroupRelayStreamKey("group:hike", "account:alice", "account:bob", "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
   envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
@@ -710,10 +711,9 @@ RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& gr
   envelope.sender_contact_id = sender;
   envelope.sender_relay_id = PartyHarness::RelayForAccount(sender);
   envelope.route.kind = "group";
-  envelope.route.group_id = group_id;
+  envelope.stream_key = BuildGroupRelayStreamKey(group_id, sender, to, "");
   envelope.sender_seq = 1;
   envelope.session_epoch = 1;
-  (void)to;
   envelope = WithSingleRelayCopy(std::move(envelope), RelayCopy{.session_epoch = 1, .sender_seq = 1, .payload_b64 = "deadbeef"});
   return envelope;
 }

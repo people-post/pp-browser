@@ -27,6 +27,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/ShortRelayId.h"
 #include "common/chat/MessagingLimits.h"
+#include "common/chat/RelayStreamKey.h"
 #include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/delivery/PskRotateCodec.h"
@@ -893,10 +894,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& r
     const bool chat = received.route.kind == kRelayRouteGroup || received.route.kind == kRelayRouteDirect;
     if (chat && self && !received.sender_contact_id.empty() && received.sender_contact_id != local_relay_user_id &&
         !received.sender_device.empty() && !received.message_id.empty()) {
-      outcome.missing_copy = RelayReceiveOutcome::MissingCopy{.sender_account = received.sender_contact_id,
-                                                              .sender_device = received.sender_device,
-                                                              .message_id = received.message_id,
-                                                              .group_id = received.route.group_id.value_or("")};
+      // A group record names no group (G018 item 7): its stream id, computed for the groups we share, tells.
+      std::string group_id;
+      if (received.route.kind == kRelayRouteGroup) {
+        group_id = GroupOfStream(received, GroupsSharedWith(received.sender_contact_id, local_relay_user_id),
+                                 local_relay_user_id)
+                       .value_or("");
+      }
+      if (received.route.kind != kRelayRouteGroup || !group_id.empty()) {
+        outcome.missing_copy = RelayReceiveOutcome::MissingCopy{.sender_account = received.sender_contact_id,
+                                                                .sender_device = received.sender_device,
+                                                                .message_id = received.message_id,
+                                                                .group_id = group_id};
+      }
     }
     return outcome;
   }
@@ -1605,12 +1615,41 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   return outcome;
 }
 
+std::vector<std::string> RelayReceivePipeline::GroupsSharedWith(const std::string& sender,
+                                                                const std::string& local_account) const {
+  std::vector<std::string> shared;
+  auto groups = group_roster_.ListGroupIds();
+  if (!groups || sender.empty() || local_account.empty()) {
+    return shared;
+  }
+  for (const std::string& group_id : *groups) {
+    auto local_member = group_roster_.IsMember(group_id, local_account);
+    auto sender_member = group_roster_.IsMember(group_id, sender);
+    if (local_member && *local_member && sender_member && *sender_member) {
+      shared.push_back(group_id);
+    }
+  }
+  return shared;
+}
+
+std::optional<std::string> RelayReceivePipeline::GroupOfStream(const RelayEnvelope& envelope,
+                                                               const std::vector<std::string>& candidates,
+                                                               const std::string& local_account) {
+  for (const std::string& group_id : candidates) {
+    if (!envelope.stream_key.empty() && BuildGroupRelayStreamKey(group_id, envelope.sender_contact_id, local_account,
+                                                                 envelope.sender_device) == envelope.stream_key) {
+      return group_id;
+    }
+  }
+  return std::nullopt;
+}
+
 RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelope& envelope,
                                                                const std::string& local_relay_user_id,
                                                                const bool authorized_older_backfill,
                                                                const MessageTransport transport) {
   RelayReceiveOutcome outcome;
-  if (!envelope.route.group_id || local_relay_user_id.empty()) {
+  if (local_relay_user_id.empty()) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
@@ -1620,28 +1659,16 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  const std::string& group_id = *envelope.route.group_id;
-  // Both ends must be on this device's roster for the group: us (after leave / dismiss / removal
-  // peers may still fan out — silent), and the sender (a member, not blocked).
-  auto local_member = group_roster_.IsMember(group_id, local_relay_user_id);
-  if (!local_member || !*local_member) {
-    outcome.decision = IngestDecision::HardReject;
-    return outcome;
-  }
+  // The copy names its group only inside its ciphertext (G018 item 7). Unread, it is refused from a blocked
+  // sender, or one in no group with us; once read, the group it names must be one of those (below).
   if (SenderBlocked(envelope.sender_contact_id)) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
-  auto sender_member = group_roster_.IsMember(group_id, envelope.sender_contact_id);
-  if (!sender_member || !*sender_member) {
+  const std::vector<std::string> shared = GroupsSharedWith(envelope.sender_contact_id, local_relay_user_id);
+  if (shared.empty()) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
-  }
-  // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
-  if (auto metadata = group_roster_.LoadMetadata(group_id);
-      metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&
-      util::NowUnixMs() - (*metadata)->sync_requested_at >= group_roster_sync::kCheckRetryMs) {
-    outcome.restart_roster_check_group_id = group_id;
   }
   // Another device's copy in the shared mailbox (M013); our own account's siblings do not write yet (M021 d3).
   if (WhoseCopy(envelope) == CopyTo::Sibling || envelope.sender_contact_id == local_relay_user_id) {
@@ -1681,14 +1708,29 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
                                                                  *kem_private, &read);
   if (!decrypted) {
     outcome.decision = IngestDecision::HardReject;
-    std::optional<std::string> tid;
-    if (auto existing = store_.FindGroupThread(group_id); existing && *existing) {
-      tid = (**existing).id;
+    std::optional<std::string> tid; // the chat to tell, when the stream id shows which group (a hint, unsigned)
+    if (auto group_id = GroupOfStream(envelope, shared, local_relay_user_id)) {
+      if (auto existing = store_.FindGroupThread(*group_id); existing && *existing) {
+        tid = (**existing).id;
+      }
     }
     MarkReceiveFailure(outcome, envelope.sender_contact_id, ReceiveFailure::DecryptFailed, decrypted.error().message, tid);
     return outcome;
   }
-  ThreadMessage message = std::move(*decrypted);
+  const std::string group_id = std::move(decrypted->group_id);
+  // Right after reading it: both ends must be on this device's roster for the group it names — us (after leave /
+  // dismiss / removal peers may still fan out), and the sender (a member, not blocked: checked above).
+  if (std::find(shared.begin(), shared.end(), group_id) == shared.end()) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
+  if (auto metadata = group_roster_.LoadMetadata(group_id);
+      metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&
+      util::NowUnixMs() - (*metadata)->sync_requested_at >= group_roster_sync::kCheckRetryMs) {
+    outcome.restart_roster_check_group_id = group_id;
+  }
+  ThreadMessage message = std::move(decrypted->message);
   // Signed by the member (checked above) and read: what that proves about the pair's session is kept,
   // at the pair's epoch, as for a 1:1 message — so the next copy, without the key_init, is read too (G011).
   if (auto kept = ReconcileE2ePublicSession(psk_store_, pair_key, envelope.session_epoch, read,
