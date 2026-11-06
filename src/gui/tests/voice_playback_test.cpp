@@ -188,6 +188,19 @@ TEST(VoicePlayback, OneSoundAtATimeAndStopEndsIt) {
   EXPECT_EQ(env.session.back(), false);
 }
 
+// Review 2026-11-06: a Stop handed the audio session back twice (on the stop and again on its reported end); the
+// second release could end a session a call had taken in between.
+TEST(VoicePlayback, StoppingASoundFileHandsTheSessionBackOnce) {
+  Env env;
+  env.playback->ToggleFile("f1");
+  env.pending[0](std::string("/views/a.mp3"));
+  env.playback->Stop();
+  env.Pump();
+  EXPECT_EQ(env.files->calls, std::vector<std::string>{"stop"});
+  EXPECT_EQ(env.session, (std::vector<bool>{true, false}));
+  EXPECT_FALSE(env.playback->Active());
+}
+
 TEST(VoicePlayback, ASoundFileTheSystemCannotReadSaysSo) {
   Env env;
   env.files->refuse = true;

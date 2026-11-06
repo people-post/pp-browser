@@ -184,6 +184,8 @@ void SetPlatformOpenFileSoundHooks(std::function<void()> begin, std::function<vo
   });
 }
 
+void PlatformForgetOpenedFiles() {} // QuickLook is handed the named link inside the view cache: wiped with it
+
 bool PlatformOpenFile(const std::string& path) {
   if (path.empty() || ![[NSFileManager defaultManager] fileExistsAtPath:[NSString stringWithUTF8String:path.c_str()]]) {
     return false;

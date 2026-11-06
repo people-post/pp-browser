@@ -28,6 +28,12 @@ struct AttachmentPlatform {
    */
   std::function<Roe<std::vector<uint8_t>>(const std::vector<uint8_t>& image_bytes, int max_dimension)>
       image_thumbnail_jpeg;
+  /**
+   * Removes what the OS was handed to open a file outside the view cache (Android: the links in the app's
+   * cache/open/ that another app reads through the FileProvider). Run with every view-cache wipe (lock, start, a
+   * chat's local delete), so no plaintext outlives it there.
+   */
+  std::function<void()> forget_opened_copies;
 };
 
 /** Installs the platform's hooks (once at start; any thread reads them after). */

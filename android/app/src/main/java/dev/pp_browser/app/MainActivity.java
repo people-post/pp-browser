@@ -283,14 +283,16 @@ public class MainActivity extends SDLActivity {
 
     /** The only folder shared with other apps (pp_file_paths.xml "open"): links to attachments being opened. */
     private static final String OPEN_DIR = "open";
-    /** A link older than this is gone at the next open (the viewer it was for has read it by then). */
+    /** A link folder older than this is gone at the next open (the viewer it was for has read it by then). */
     private static final long OPEN_KEEP_MS = 10 * 60 * 1000;
 
     /**
      * Called from native (PlatformOpenFile_Android.cpp): shows a downloaded attachment in an app that can open it.
      * Only an attachment view under {@code <filesDir>/pp-browser/.../blobs_view/} is accepted (the profile's
-     * databases and keys never are). It is linked (else copied) into {@code <cacheDir>/open/} under its own name and
-     * that one file goes as a FileProvider address with read permission. A file:// address is refused by Android 7+.
+     * databases and keys never are). It is linked (else copied) into {@code <cacheDir>/open/<hash prefix>/} under
+     * its own name (a folder per content, so two files with one name never meet) and that one file goes as a
+     * FileProvider address with read permission. A file:// address is refused by Android 7+. The links go with every
+     * view-cache wipe (clearOpenLinks: lock, start, a chat's delete) and after OPEN_KEEP_MS.
      */
     public static boolean openFile(final String path) {
         final SDLActivity activity = mSingleton;
@@ -310,23 +312,30 @@ public class MainActivity extends SDLActivity {
                 Log.w(TAG, "openFile: no share folder");
                 return false;
             }
+            // Old folders go by their own age (set when their link was made; a link's mtime is the source's inode).
             final long now = System.currentTimeMillis();
             final File[] old = dir.listFiles();
             if (old != null) {
                 for (File f : old) {
                     if (now - f.lastModified() > OPEN_KEEP_MS) {
-                        f.delete();
+                        deleteTree(f);
                     }
                 }
             }
-            final File shared = new File(dir, source.getName());
-            shared.delete();
-            try {
-                android.system.Os.link(source.getPath(), shared.getPath());
-            } catch (Exception linkFailed) {
-                java.nio.file.Files.copy(source.toPath(), shared.toPath());
+            final File folder = new File(dir, contentFolderName(source));
+            if (!folder.isDirectory() && !folder.mkdirs()) {
+                Log.w(TAG, "openFile: no share folder");
+                return false;
             }
-            shared.setLastModified(now);
+            final File shared = new File(folder, source.getName());
+            if (!shared.isFile()) {  // the same content opened again keeps its link (a viewer may still read it)
+                try {
+                    android.system.Os.link(source.getPath(), shared.getPath());
+                } catch (Exception linkFailed) {
+                    java.nio.file.Files.copy(source.toPath(), shared.toPath());
+                }
+            }
+            folder.setLastModified(now);  // the folder's own age (never the link's: that is the source's inode)
             final Uri uri;
             try {
                 uri = FileProvider.getUriForFile(activity, activity.getPackageName() + ".capture", shared);
@@ -349,13 +358,57 @@ public class MainActivity extends SDLActivity {
         }
     }
 
+    /**
+     * The open folder for a view: its content hash's first 16 hex digits (from {@code <hash>.open/<name>} or
+     * {@code <hash>.<ext>}), so one content has one folder and two files with the same name never share one.
+     */
+    private static String contentFolderName(File source) {
+        final File parent = source.getParentFile();
+        String stem = parent != null && parent.getName().endsWith(".open")
+                ? parent.getName().substring(0, parent.getName().length() - ".open".length())
+                : source.getName();
+        final int dot = stem.indexOf('.');
+        if (dot >= 0) {
+            stem = stem.substring(0, dot);
+        }
+        final StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < stem.length() && hex.length() < 16; ++i) {
+            final char c = Character.toLowerCase(stem.charAt(i));
+            if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+                hex.append(c);
+            }
+        }
+        return hex.length() > 0 ? hex.toString() : "x" + Long.toHexString(System.nanoTime());
+    }
+
+    private static void deleteTree(File file) {
+        final File[] children = file.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                deleteTree(child);
+            }
+        }
+        file.delete();
+    }
+
     /** At start: the links of the last session go (the views they point at were wiped too). */
     private static void clearOpenDir(Context context) {
         final File[] files = new File(context.getCacheDir(), OPEN_DIR).listFiles();
         if (files != null) {
             for (File f : files) {
-                f.delete();
+                deleteTree(f);
             }
+        }
+    }
+
+    /**
+     * Called from native (PlatformOpenFile_Android.cpp) with every attachment view-cache wipe (a lock, a start, a
+     * chat's local delete): the links handed to other apps go with the views, so no plaintext outlives them here.
+     */
+    public static void clearOpenLinks() {
+        final SDLActivity activity = mSingleton;
+        if (activity != null) {
+            clearOpenDir(activity);
         }
     }
 

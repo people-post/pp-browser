@@ -16,4 +16,10 @@ bool PlatformOpenFile(const std::string& path);
  */
 void SetPlatformOpenFileSoundHooks(std::function<void()> begin, std::function<void()> end);
 
+/**
+ * Removes the copies PlatformOpenFile handed to other apps outside the attachment view cache (Android: the links in
+ * cache/open/ behind the FileProvider). Run with every view-cache wipe. Elsewhere nothing is copied: does nothing.
+ */
+void PlatformForgetOpenedFiles();
+
 } // namespace pbr
