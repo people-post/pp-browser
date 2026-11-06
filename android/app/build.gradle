@@ -33,6 +33,11 @@ if (ppBrowserUiDemo) {
 if (System.getenv('PP_BROWSER_DEV_TOOLS')) {
     ppBrowserCmakeArgs += ["-DPP_BROWSER_DEV_TOOLS=ON"] // developer builds only: Settings -> About -> Engine test
 }
+if (System.getenv('PP_BROWSER_DEV_PIN') && !ppBrowserUiDemo) {
+    // Developer builds only, as the Mac / iPhone install scripts do: the PIN is compiled in and the app unlocks
+    // itself on a cold start. Never set in CI or for a release.
+    ppBrowserCmakeArgs += ["-DPP_BROWSER_DEV_PIN=${System.getenv('PP_BROWSER_DEV_PIN')}"]
+}
 if (ppBrowserCompilerCache == 'ON') {
     ppBrowserCmakeArgs += [
         "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
