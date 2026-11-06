@@ -759,8 +759,11 @@ void ChatController::FinalizeThreadDisplay() {
   RestoreWorkingSetsFromActiveThread();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
   scroller_.RequestScrollToLatest();
+  // The phone's chat overlay opens over the Chats tab, and over the AI 助手 page (Home) for an AI conversation —
+  // so an AI chat opened/started there stays on that page and Back returns to it (not to the Chats list).
   if (ChromeSnapshot().layout_mode == LayoutMode::Compact &&
-      ChromeSnapshot().nav_tab == NavTab::Sessions) {
+      (ChromeSnapshot().nav_tab == NavTab::Sessions ||
+       (ChromeSnapshot().nav_tab == NavTab::Home && InAiComposerContext()))) {
     ShellOpenCompactChat();
   }
 }
@@ -790,9 +793,14 @@ void ChatController::OnSelectThread(std::string thread_id) {  // by value: Shell
   if (thread_id != search_thread_) {
     CloseSearch(); // another chat: the search and its index belong to the one left
   }
-  // A row of Home's "New messages" widget: go to Chats first, as a tap in the Chats list would, so the chat opens
-  // (the phone's chat overlay only opens over Chats) instead of the row just being read and vanishing.
-  if (ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
+  // A row of Home's "New messages" widget (a human chat) goes to Chats first, as a tap in the Chats list would, so
+  // the chat overlay opens there. An AI conversation tapped on the AI 助手 page stays on that page (the overlay
+  // opens over Home in FinalizeThreadDisplay), so Back returns to the AI list.
+  const bool selecting_ai = facade_ && [&] {
+    auto thread = facade_->GetThread(thread_id);
+    return thread && *thread && (*thread)->kind == ThreadKind::Ai;
+  }();
+  if (!selecting_ai && ShellLayout::OpenChatSwitchesToChats(ChromeSnapshot().layout_mode, ChromeSnapshot().nav_tab)) {
     ShellSelectNavTab(NavTab::Sessions);
   }
   if (presenter_.SelectThread(thread_id)) {
@@ -854,7 +862,19 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   case CloseChatPlan::Kind::DeleteAi:
     confirm_then("chat.delete_conversation",
                  plan.kind == CloseChatPlan::Kind::DeleteAi ? "chat.delete_confirm_ai" : "chat.delete_confirm",
-                 [this, thread_id]() { CloseChatWith(thread_id, [this, thread_id]() { return presenter_.CloseThread(thread_id); }); });
+                 [this, thread_id, ai = plan.kind == CloseChatPlan::Kind::DeleteAi]() {
+                   CloseChatWith(thread_id, [this, thread_id, ai]() {
+                     if (ai) {
+                       // An AI conversation: stop its turn first (a late answer must not bring the thread back), and
+                       // clear what the AI remembered of it.
+                       agent_.ForgetThread(thread_id);
+                       if (facade_) {
+                         (void)facade_->ForgetThreadMemory(thread_id);
+                       }
+                     }
+                     return presenter_.CloseThread(thread_id);
+                   });
+                 });
     return;
   case CloseChatPlan::Kind::Dismiss:
     confirm_then("chat.group.dismiss_title", "chat.group.dismiss_confirm", [this, thread_id, group_id]() {
@@ -943,6 +963,12 @@ void ChatController::OnSessionsSearchChanged() {
   ApplySessionList();
   DataModelHost::Instance().Dirty("shell", "sessions");
   DataModelHost::Instance().Dirty("shell", "sessions_more");
+}
+
+void ChatController::OnToggleArchivedAi() {
+  presenter_.ToggleArchivedAi();
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnToggleArchived() {
@@ -1067,6 +1093,7 @@ void ChatController::OnProfileDataReset() {
   chat_.draft = "";
   DataModelHost::Instance().Dirty("chat", "draft");
   shell_.showing_archived = false;
+  shell_.showing_archived_ai = false;
   session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
@@ -1134,6 +1161,12 @@ void ChatController::ApplySessionList() {
   shell_.archived_entry_label =
       list.showing_archived ? Tr("sidebar.archived.back").c_str()
                             : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count)}}).c_str();
+  shell_.archived_count_ai = list.archived_count_ai;
+  shell_.showing_archived_ai = list.showing_archived_ai;
+  shell_.archived_entry_label_ai =
+      list.showing_archived_ai
+          ? Tr("sidebar.archived.back_ai").c_str()
+          : Tr("sidebar.archived.entry", {{"count", std::to_string(list.archived_count_ai)}}).c_str();
   // The open chat is always drawn, wherever it sorts (opened from Contacts, or pushed down by newer ones).
   for (size_t i = 0; i < list.rows.size(); ++i) {
     if (list.rows[i].active) {
@@ -1155,6 +1188,12 @@ void ChatController::ApplySessionList() {
       continue;
     }
     shell_.sessions.push_back(std::move(row));
+  }
+  // AI conversations for the AI 助手 page (no search window yet; the whole list, newest/pinned first).
+  shell_.ai_sessions.clear();
+  shell_.ai_sessions.reserve(list.ai_rows.size());
+  for (const ChatSessionRow& from : list.ai_rows) {
+    shell_.ai_sessions.push_back(ToSessionDisplayRow(from));
   }
   ApplyHomeToday(list);
 }
@@ -3291,7 +3330,11 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
     log().warning << "Home: could not create an AI thread: " << created.error().message;
     return false;
   }
-  ShellSelectNavTab(NavTab::Sessions);
+  // The phone keeps the new AI conversation on the AI 助手 page (Home): the chat overlay opens over it and Back
+  // returns to the AI list. The desktop shows the chat in its panes, so it still moves to the Chats surface.
+  if (ChromeSnapshot().layout_mode != LayoutMode::Compact) {
+    ShellSelectNavTab(NavTab::Sessions);
+  }
   ShellSetPrimaryPane("chat");
   FinalizeThreadDisplay();
   NotifySurfaceChanged();
@@ -3326,7 +3369,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   bool home_thread_was_empty = false;
-  if (ChromeSnapshot().nav_tab == NavTab::Home) {
+  // The composer on the PP 助手 page (the list, no chat overlay) starts a NEW conversation each send. Once a
+  // conversation is open (the overlay), the same Home tab keeps sending into that thread — continue, don't re-create.
+  if (ChromeSnapshot().nav_tab == NavTab::Home && !ChromeSnapshot().compact_chat_open) {
     if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       log().info << "Send ignored: could not open a thread from Home";
       return;
@@ -3385,7 +3430,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
   // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
   // the preview update, which rebuilds the session rows once.
-  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), AiThreadTitleFromMessage(trimmed));
+  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), trimmed);
   UpdateSidebarPreview(trimmed);
   DirtyChatChrome();
 
@@ -3642,7 +3687,7 @@ QueuedSendOutcome ChatController::RunQueuedAgentSend(const QueuedAgentSend& item
     }
     return QueuedSendOutcome::NotStarted;
   }
-  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, AiThreadTitleFromMessage(item.text));
+  (void)facade_->NameAiThreadFromFirstMessage(item.thread_id, item.text);
   if (!expects) {
     return QueuedSendOutcome::NotStarted;
   }
@@ -4111,6 +4156,7 @@ bool ChatController::Setup(ui::Context* context) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
+        ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
@@ -4654,7 +4700,7 @@ std::string ChatController::AskAiStoreQuestion(const std::string& thread_id, con
     log().warning << "Ask AI: could not store the question: " << stored.error().message;
     return {};
   }
-  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(text));
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, text);
   (void)facade_->UpdatePreview(thread_id, text);
   SyncShellSessions();
   return stored->id.empty() ? message.id : stored->id;

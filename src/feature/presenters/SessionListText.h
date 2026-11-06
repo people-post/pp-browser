@@ -2,6 +2,7 @@
 
 #include "common/CivilTime.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/messaging/AiThreadTitle.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -14,41 +15,6 @@
 namespace pbr {
 
 /** Pure text rules for a row in the sessions list (no RmlUi). */
-
-constexpr size_t kAiThreadTitleMaxChars = 24;
-
-/**
- * Title for an AI thread from the user's first message: whitespace collapsed, cut to
- * `kAiThreadTitleMaxChars` characters (UTF-8 aware) with an ellipsis. Empty when the message has no text.
- */
-inline std::string AiThreadTitleFromMessage(std::string_view message) {
-  std::string collapsed;
-  bool pending_space = false;
-  for (const char c : message) {
-    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
-      pending_space = !collapsed.empty();
-      continue;
-    }
-    if (pending_space) {
-      collapsed += ' ';
-      pending_space = false;
-    }
-    collapsed += c;
-  }
-  size_t chars = 0;
-  size_t i = 0;
-  while (i < collapsed.size() && chars < kAiThreadTitleMaxChars) {
-    ++i;
-    while (i < collapsed.size() && (static_cast<unsigned char>(collapsed[i]) & 0xC0) == 0x80) {
-      ++i; // continuation bytes belong to the character just counted
-    }
-    ++chars;
-  }
-  if (i >= collapsed.size()) {
-    return collapsed;
-  }
-  return collapsed.substr(0, i) + "…";
-}
 
 constexpr size_t kSessionPreviewMaxChars = 120;
 

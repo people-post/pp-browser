@@ -48,7 +48,24 @@ TEST(SessionMenuTest, GroupLeavesInsteadOfDeleting) {
 TEST(SessionMenuTest, AiThreadHasNothingToMute) {
   // An AI thread never notifies, and has no contact or group.
   EXPECT_EQ(Items(SessionKind::Ai, false, true),
-            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Archive, Item::ClearChat, Item::Delete}));
+            (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Rename, Item::Archive, Item::ClearChat,
+                               Item::Delete}));
+}
+
+TEST(SessionMenuTest, PinnedAiThreadSortsBeforeNewerUnpinnedOnes) {
+  EXPECT_TRUE(SessionSortsBefore(/*a_pinned_at=*/100, /*a_updated_at=*/1, /*b_pinned_at=*/0, /*b_updated_at=*/5));
+  EXPECT_FALSE(SessionSortsBefore(0, 5, 100, 1));
+  EXPECT_TRUE(SessionSortsBefore(0, 5, 0, 1)) << "unpinned: newest first";
+  EXPECT_EQ(Items(SessionKind::Ai, false, true).at(1), Item::Pin);
+  SessionMenuState pinned{.kind = SessionKind::Ai};
+  pinned.pinned = true;
+  EXPECT_TRUE(Has(SessionMenuItems(pinned), Item::Unpin));
+}
+
+TEST(SessionMenuTest, RenameIsOnlyForAiThreads) {
+  EXPECT_TRUE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Ai}), Item::Rename));
+  EXPECT_FALSE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct}), Item::Rename));
+  EXPECT_FALSE(Has(SessionMenuItems(SessionMenuState{.kind = SessionKind::Group}), Item::Rename));
 }
 
 TEST(SessionMenuTest, SetStatesOfferTheirOpposite) {

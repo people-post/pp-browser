@@ -1422,7 +1422,7 @@ void ShellHost::ApplySafeAreaLayout() {
                                                      : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
-      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface);
+      config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
   ui::ElementDocument* doc = context_->GetDocument(0);
 
   auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
@@ -1441,8 +1441,10 @@ void ShellHost::ApplySafeAreaLayout() {
   const float statusbar_dp = state_.statusbar_visible ? config_.statusbar_height_dp : 0.f;
   const float bottom_chrome_dp =
       bottom_chrome_open_ ? static_cast<float>(bottom_chrome_height_dp_) : 0.f;
-  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root).
-  set_dp(doc->GetElementById("shell-root"), "bottom", statusbar_dp + bottom_chrome_dp);
+  // Lift shell-root above the bottom chrome (nav chrome lives inside shell-root) and, with a keyboard up, above the
+  // keyboard — the body itself stays full-bleed so its background paints behind the keyboard's rounded corners.
+  set_dp(doc->GetElementById("shell-root"), "bottom",
+         statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
@@ -1481,6 +1483,16 @@ void ShellHost::ApplySafeAreaLayout() {
   const float strip_dp = layout.bottom_surface_padding_dp;
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
+  // Keyboard up, or an emoji/attachment panel open, over a tab-bar page: hide the nav tab bar so the keyboard / panel
+  // covers it (the content's own composer stays above it). Only fires for the TabBar surface, so a chat's composer is
+  // untouched.
+  if (ui::Element* bottom_chrome = doc->GetElementById("shell-bottom-chrome")) {
+    if (layout.tab_bar_hidden) {
+      bottom_chrome->SetProperty("display", "none");
+    } else {
+      bottom_chrome->RemoveProperty("display");
+    }
+  }
   set_dp(doc->GetElementById("shell-composer-mount"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
