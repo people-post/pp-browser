@@ -77,11 +77,11 @@ Accepted 2026-11-05 (Hongwei), revised the same day after review (statement plus
 - [ ] Appoint / demote an admin (owner), shown in the member list
 
 **o2 — Changes on top of the owner's statement (G018)**
-- [ ] Decide which key signs a change from a linked device (G018 Open) — before any wire
-- [ ] Change codec and signature; the roster from the latest statement plus changes by R1–R5; the owner folds changes into its next statement
+- [ ] Changes signed by the device key and checked against the signer's card; the statement stays account-signed (G018 item 8); a change carries the signer's card when the receiver may lack it
+- [ ] Change codec and signature; the roster from the latest statement plus changes by R1–R6; the owner folds changes into its next statement
 - [ ] Statement fields: roles, preset, `added_by`, `removed`, `links`, `folded`
 - [ ] `statement_epoch` and `changes_hash` in each group copy's plaintext; the member check (G013) carries the statement and changes; catch-up on a mismatch
-- [ ] gtests: each rule (a removal against a concurrent member's add; a re-admit; a demoted admin's backdated removal void; a removed inviter's adds kept by the remover; concurrent renames; adds past 50; any order of the same changes gives the same roster); lab: a member invites and an admin removes while the owner is offline, the owner folds when back
+- [ ] gtests: each rule (a removal against a concurrent member's add; a re-admit; a demoted admin's backdated removal void; a removed inviter's adds kept by the remover; concurrent renames; adds past 50; a change from a device taken off the card void unless folded; any order of the same changes gives the same roster); lab: a member invites and an admin removes while the owner is offline, the owner folds when back
 
 **o3 — Make a group during a call (G022)**
 - [ ] "Make a group…" on a call with no group and 3+ people; picker prefilled with the participants

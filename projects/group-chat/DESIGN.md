@@ -424,15 +424,17 @@ The statement as built, with these fields added inside what the owner signs:
   "group_id": "group:…",
   "base_epoch": 7,
   "signer": "account:…",
-  "signer_key": "<ML-DSA public key; the account id derives from it>",
+  "signer_device": "<Peer ID of the signing device>",
+  "signer_card": { "…": "the signer's account card, when the receiver may lack it" },
   "at": 1767225600000,
   "change": "add",
   "body": { "member": "account:…", "invite_nonce": "uuid" },
-  "signature": "<over the canonical encoding of the fields above>"
+  "signature": "<by the device key, over the canonical encoding of the fields above>"
 }
 ```
 
-- **Change id:** the hash of the signed bytes. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R5 against the latest statement.
+- **Keys (G018 item 8):** a change is signed by the signing device's key, which must be on the signer's card (signed by the account key). The owner's statement stays signed by the account key.
+- **Change id:** the hash of the signed bytes. `base_epoch` (the statement the signer held) and `at` are for display and diagnosis; validity is R1–R6 against the latest statement and the signers' newest cards.
 - **`change` / `body`:**
 
 | change | body |
@@ -444,7 +446,7 @@ The statement as built, with these fields added inside what the owner signs:
 | `link_add` | `link_id`, `secret_hash`, `expires_at`, `max_uses`? |
 | `link_revoke` | `link_id` |
 
-- **Roster:** the latest statement, then every unfolded valid change by R1–R5. Set operations only: no order between changes is needed.
+- **Roster:** the latest statement, then every unfolded valid change by R1–R6. Set operations only: no order between changes is needed.
 
 ### Carrying the state and syncing
 

@@ -231,7 +231,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 **Decision:**
 
 1. **The owner's statement stays the authority** (G012 as built: signed, linear by `roster_epoch`, with the owner chain). It holds the members, roles, the preset, the title, the removed list (below), live invite links, and the changes it folded in.
-2. **Changes on top**, each signed by the account that makes it (account key, self-certifying as in G012):
+2. **Changes on top**, each signed by the **device** that makes it and checked against its account's card (item 8):
 
 | Change | Signer |
 |---|---|
@@ -247,14 +247,23 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
    - **R3 — a change counts while its signer may make it.** A change is valid if its signer may make it under the **latest owner statement this device holds** — not the one it was made under, so a demoted admin's backdated change gets nowhere. A signer's changes still count after the signer lost the right if something entitled kept them: the owner's statement folded them in, a `remove` of the signer lists them (the remover's device keeps the people they brought in), or the signer's own `leave` lists them.
    - **R4 — renames:** the highest `title_version`, then the higher role, then the lower change id.
    - **R5 — size:** adds beyond 50 (G014), in change-id order, are void; whoever signed one sends its invitee `group_invite_refused`.
+   - **R6 — a device off the card.** A change signed by a device that the signer's newest card (the one this device holds) no longer lists counts only if it was folded or kept (R3). A device taken out of an account stops being able to act in its groups as soon as members hold the newer card.
 4. **The owner folds** the changes it holds into its next statement when its device is online. The statement names what it folded, and devices drop those. Nothing needs the owner online: changes stand on their own until folded.
 5. **Keeping members in step.** Each group copy carries, inside its ciphertext, the sender's statement epoch and a hash of the changes it holds. A receiver that differs asks for what it lacks on the control lane (the G013 request / reply, carrying changes).
 6. **Newcomers check everything.** They get the owner's statement and every unfolded change, all signed: nobody, the member who added them included, can hand them a roster that is not the group's.
 7. **Clean cutover** (unreleased product).
+8. **Which key signs (decided 2026-11-05, Hongwei).** Two keys, by what the act can do:
 
-**Stated limit:** a change by someone the owner demotes or removes at the same moment, and that nobody kept, is dropped — even a removal. The owner chose to revoke them; what was dropped can be redone.
-**Open:** which key signs a change from a linked device. The owner signs with the account's ML-DSA key; if only the master device holds it ([multi-device M021](../multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits)), a member could invite only from that device. Decide before o2.
+| Signed with | Acts | From |
+|---|---|---|
+| The **device key**, checked against the account's card as messages are ([multi-device M021](../multi-device-account/DECISIONS.md#m021--per-device-sessions-a-master-device-keeps-the-device-list-stated-limits) §7) | every change: `add`, `leave`, `remove`, `rename`, `link_add`, `link_revoke` — all a member or admin does | any linked device |
+| The **account key** | the owner's statement: appointing / demoting admins, the preset, folding changes in, `transfer`, `dissolve` (G009, G016) | today every linked device (all hold the account key); once M021 takes it off non-master devices, the master |
+
+   A change names its signer's account and device and carries the signer's card when the receiver may not hold it (a change by someone who has since left, in a sync reply); the card proves itself (the account id derives from the account key that signs it).
+
+**Stated limits:** (1) A change by someone the owner demotes or removes at the same moment, and that nobody kept, is dropped — even a removal. The owner chose to revoke them; what was dropped can be redone. (2) A stolen device can act in its account's groups — invite, remove — until the account takes it off its card and members hold the newer card (M021 limit 4); the remedy is G020's bulk actions. Until M021 takes the account key off non-master devices, a stolen device holds the account key too, so for an owner it can also sign the statement; option C limits the damage only from then.
 **Rationale:** Any-member invites (G017) cannot each wait for the owner's device. The first version of this entry made the roster a general log of changes that named the changes before them, merged by rank; review found it hard to build and to keep correct, with two holes: a demoted admin could sign removals that claimed to precede the demotion and every member would keep them, and a newcomer started from a snapshot signed by whoever added them, who could forge it. Keeping the owner's statement as the base and allowing only changes that combine in any order closes both — R3 checks every change against the latest statement, and a newcomer verifies everything — and leaves set operations to build and test instead of a merge of branches.
+**Signing keys, rationale:** Everyday openness must work from the phone in someone's hand, so changes use the device key, the path messages already take. The acts that cannot be undone — handing the group over, dissolving it, changing who is in charge — stay behind the account key, which M021 means to keep on one device; a stolen phone then cannot seize a group. Account key for everything (rejected: members could invite only from the master once M021 lands, and a stolen device could sign anything as the account until the key — and with it the account id — changes); device key for everything (rejected: a stolen phone could dissolve or transfer an owner's group, and the statement would have to carry the owner's card to stay checkable offline).
 **Alternatives:** A general log with merge rules (the first version: the holes above); admins only propose and the owner's device commits (the owner stays a bottleneck); MLS (a group key would cost G008's property that a removal takes effect at once).
 
 ---
