@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include "common/PathUtf8.h"
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -279,8 +281,9 @@ TEST(AttachmentNamedOpenPathTest, Mp4BytesUnderAnMp3NameOpenAsM4a) {
   std::ofstream(view, std::ios::binary) << "mp4 sound";
   const std::string opened =
       AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "六字大明咒.mp3", view.string(), "m4a");
-  EXPECT_EQ(std::filesystem::path(opened).extension().string(), ".m4a");
-  EXPECT_EQ(std::filesystem::path(opened).filename().u8string(), u8"六字大明咒.mp3.m4a");
+  const std::filesystem::path opened_path = PathFromUtf8(opened);  // not path(std::string): throws on Windows for CJK
+  EXPECT_EQ(PathToUtf8(opened_path.extension()), ".m4a");
+  EXPECT_EQ(PathToUtf8(opened_path.filename()), "六字大明咒.mp3.m4a");
   std::filesystem::remove_all(dir);
 }
 
