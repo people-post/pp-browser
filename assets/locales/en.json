@@ -1097,8 +1097,6 @@
     "chat.menu.block_confirm_title": "Block this person?",
     "chat.menu.block_confirm_body":
         "You won't get messages or calls from this person. They are not told. You can undo this any time.",
-    "chat.menu.blocked_toast": "Blocked",
-    "chat.menu.unblocked_toast": "Unblocked",
     "chat.menu.add_to_contacts": "Add to contacts",
     "chat.toast.id_copied": "ID copied",
     "chat.toast.pin_required": "PIN required to continue",

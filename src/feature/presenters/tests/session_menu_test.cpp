@@ -23,6 +23,13 @@ bool Has(const std::vector<Item>& items, const Item item) {
 
 } // namespace
 
+TEST(SessionMenuTest, DirectChatWithAStrangerOffersBlockButNoViewContact) {
+  const auto items = Items(SessionKind::Direct);
+  EXPECT_TRUE(Has(items, Item::Block));
+  EXPECT_FALSE(Has(items, Item::Unblock));
+  EXPECT_FALSE(Has(items, Item::ViewContact));
+}
+
 TEST(SessionMenuTest, DirectChatWithAContact) {
   EXPECT_EQ(Items(SessionKind::Direct, false, true),
             (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ViewContact,
@@ -174,7 +181,7 @@ TEST(SessionMenuTest, DirectChatWithAContactOffersBlockOrUnblock) {
       SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_contact = true, .blocked = true});
   EXPECT_TRUE(Has(blocked, Item::Unblock));
   EXPECT_FALSE(Has(blocked, Item::Block));
-  EXPECT_FALSE(Has(Items(SessionKind::Direct), Item::Block)) << "a stranger has no contact to block";
+  EXPECT_TRUE(Has(Items(SessionKind::Direct), Item::Block)) << "a stranger can be blocked too";
   EXPECT_FALSE(Has(Items(SessionKind::Group), Item::Block));
   EXPECT_TRUE(SessionMenuItemIsDestructive(Item::Block));
   EXPECT_FALSE(SessionMenuItemIsDestructive(Item::Unblock));

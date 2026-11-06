@@ -1064,8 +1064,6 @@
     "chat.menu.unblock": "取消屏蔽",
     "chat.menu.block_confirm_title": "屏蔽这个人？",
     "chat.menu.block_confirm_body": "屏蔽后收不到这个人的消息和来电，对方不会被告知。随时可以取消。",
-    "chat.menu.blocked_toast": "已屏蔽",
-    "chat.menu.unblocked_toast": "已取消屏蔽",
     "chat.menu.add_to_contacts": "添加到通讯录",
     "chat.toast.id_copied": "ID 已复制",
     "chat.toast.pin_required": "需要输入 PIN 才能继续",

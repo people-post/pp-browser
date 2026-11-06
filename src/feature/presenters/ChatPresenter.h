@@ -379,6 +379,12 @@ public:
    * i18n key.
    */
   Roe<std::string> AddPeerToContacts(const std::string& peer_id);
+  /**
+   * Blocks someone who is not a saved contact. A block is a trust level on a contact record, so the
+   * person is saved first, as a blocked contact (it shows in Security > Blocked, not as a friend).
+   * Returns the contact id.
+   */
+  Roe<std::string> BlockStranger(const std::string& peer_id);
   ChatGroupSheet GroupSheetOf(const std::string& group_id);
   /** The phone's group info sheet for group chat `thread_id` (an empty screen when it is not one). */
   GroupInfoScreen GroupInfoOf(const std::string& thread_id);

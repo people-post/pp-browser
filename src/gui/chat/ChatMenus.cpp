@@ -372,20 +372,26 @@ std::vector<ContextMenuAction> ChatMenus::SessionActions(const std::string& thre
       const bool block = item == SessionMenuItem::Block;
       action.id = block ? "session_block" : "session_unblock";
       action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
-      action.run = [this, id = *contact_id, block]() {
-        const auto apply = [this, id, block]() {
+      action.run = [this, id = contact_id, peer_id = thread.peer_identity_value, name = facade->ResolveThreadLabel(thread).title, block]() {
+        const auto apply = [this, id, peer_id, name, block]() {
           ConversationsFacade* facade = host_.Facade();
           if (!facade) {
             return;
           }
-          if (auto set = facade->SetContactTrust(id, block ? TrustLevel::Blocked : TrustLevel::Unknown); !set) {
+          if (!id) { // a stranger: saved as a blocked contact
+            if (auto blocked = presenter_.BlockStranger(peer_id); !blocked) {
+              UserFeedback::Fail(Tr(blocked.error().message));
+              return;
+            }
+          } else if (auto set = facade->SetContactTrust(*id, block ? TrustLevel::Blocked : TrustLevel::Unknown);
+                     !set) {
             UserFeedback::Fail(Tr("contacts.err.trust"));
             return;
           }
           if (contacts_notify_.refresh) {
             contacts_notify_.refresh();
           }
-          host_.ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
+          host_.ShowToast(Tr(block ? "contacts.toast.blocked" : "contacts.toast.unblocked", {{"name", name}}));
           host_.AfterThreadPrefsChanged(); // the row shows (or drops) its "Blocked" mark at once
         };
         if (!block) {

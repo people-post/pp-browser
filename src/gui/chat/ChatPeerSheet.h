@@ -9,6 +9,7 @@
 #include <ui/dom/Event.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "common/PbrCompat.h"
@@ -43,6 +44,9 @@ private:
   std::vector<ContextMenuAction> DirectActions(const Thread& thread);
   std::vector<ContextMenuAction> GroupActions(const Thread& thread);
   void AddToContacts(const std::string& peer_id);
+  /** Block (asks first) or unblock; a stranger (no contact id) is saved as a blocked contact. */
+  void SetBlocked(const std::optional<std::string>& contact_id, const std::string& peer_id, const std::string& name,
+                  bool block);
 
   ChatMenusHost& host_;
   ChatPresenter& presenter_;

@@ -120,6 +120,8 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   if (state.kind == SessionKind::Direct && state.has_contact) {
     items.push_back(SessionMenuItem::ViewContact);
     items.push_back(state.blocked ? SessionMenuItem::Unblock : SessionMenuItem::Block);
+  } else if (state.kind == SessionKind::Direct) {
+    items.push_back(SessionMenuItem::Block); // a stranger: blocking saves them as a blocked contact
   }
   items.push_back(SessionMenuItem::ClearChat);
   // Closing a group thread is leaving the group; the close flow asks and hands ownership over when needed.

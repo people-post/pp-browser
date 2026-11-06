@@ -539,6 +539,17 @@ Roe<std::string> ChatPresenter::AddPeerToContacts(const std::string& peer_id) {
   return created->id;
 }
 
+Roe<std::string> ChatPresenter::BlockStranger(const std::string& peer_id) {
+  auto added = AddPeerToContacts(peer_id);
+  if (!added) {
+    return added;
+  }
+  if (auto set = facade_->SetContactTrust(*added, TrustLevel::Blocked); !set) {
+    return Error("contacts.err.trust");
+  }
+  return added;
+}
+
 ChatGroupSheet ChatPresenter::GroupSheetOf(const std::string& group_id) {
   ChatGroupSheet sheet;
   if (!facade_ || facade_->IsGroupDissolved(group_id)) {
