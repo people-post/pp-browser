@@ -229,11 +229,14 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberLeft(const std::string& group
 
 Roe<std::string> GroupMembershipCodec::EncodeMemberRemoved(const std::string& group_id,
                                                            const std::string& member_identity,
-                                                           const uint64_t roster_epoch) {
+                                                           const uint64_t roster_epoch, const std::string& removed_by) {
   Object json;
   json.set("group_id", group_id);
   json.set("member_identity", member_identity);
   json.setJsonUInt("roster_epoch", roster_epoch);
+  if (!removed_by.empty()) {
+    json.set("by", removed_by);
+  }
   return DumpJson(json);
 }
 
@@ -348,6 +351,7 @@ Roe<GroupMembershipCodec::MemberRemovedPayload> GroupMembershipCodec::DecodeMemb
     payload.member_identity = *member;
   }
   payload.roster_epoch = ReadRosterEpoch(*json);
+  payload.removed_by = json->getString("by").value_or("");
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_removed missing group_id or member_identity");
   }

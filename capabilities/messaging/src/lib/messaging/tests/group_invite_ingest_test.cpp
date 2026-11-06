@@ -15,6 +15,7 @@
 #include "foundation/crypto/MlDsa.h"
 #include "lib/messaging/GroupInviteGate.h"
 #include "lib/messaging/RelayReceivePipeline.h"
+#include "lib/messaging/tests/GroupChangeTestKit.h"
 #include "lib/messaging/tests/TestAccount.h"
 #include "lib/messaging/tests/TestRosterSigner.h"
 #include "lib/messaging/GroupRosterSync.h"
@@ -1249,6 +1250,198 @@ TEST(GroupSettingCodecTest, ARoleChangeNeverMakesAnOwner) {
   ASSERT_TRUE(back);
   EXPECT_EQ(back->role, MemberRole::Admin);
   EXPECT_FALSE(GroupMembershipCodec::DecodeGroupPresetChanged(R"({"group_id":"group:g","preset":"anarchy"})"));
+}
+
+// ---- G018 wired: a member's or admin's change arrives as `group_change` ----
+
+/**
+ * Bob's device in the group of Alice (owner), Bob, Carol (admin) and Dave, holding Alice's statement; changes reach
+ * it in DMs from Alice's device (the signer's own, or one handed on by a member).
+ */
+class GroupChangeIngestTest : public ::testing::Test {
+protected:
+  GroupChangeIngestTest()
+      : bob_("changes_" + util::GenerateUuid(), test::Named("bob").Id(), test::Named("alice").Id()) {}
+
+  void SetUp() override {
+    GroupRosterStatement draft;
+    draft.group_id = test::kGroupId;
+    draft.roster_epoch = 5;
+    draft.members = {test::Row(alice.Id(), MemberRole::Owner), test::Row(bob.Id()),
+                     test::Row(carol.Id(), MemberRole::Admin), test::Row(dave.Id())};
+    statement_ = test::SignedStatement(alice, draft);
+    GroupMetadata metadata;
+    metadata.group_id = test::kGroupId;
+    metadata.owner_identity = alice.Id();
+    metadata.roster_epoch = 5;
+    ASSERT_TRUE(bob_.roster.UpsertMetadata(metadata));
+    ASSERT_TRUE(*group_roster_sync::KeepStatement(bob_.roster, statement_));
+    ASSERT_TRUE(group_roster_sync::ApplyView(bob_.roster, test::kGroupId, {}, util::NowUnixMs()));
+    auto thread = bob_.store.FindOrCreateGroupThread(test::kGroupId, "Hikers", {});
+    ASSERT_TRUE(thread);
+    group_thread_ = *thread;
+    ASSERT_TRUE(bob_.roster.UpsertGroupTarget(test::kGroupId, group_thread_.id, 1, 1));
+  }
+
+  /** `change` as first sent: with its signer's card (Bob's device keeps none of theirs). */
+  static GroupChange Carded(GroupChange change, const test::Person& signer) {
+    change.signer_card = signer.Card();
+    return change;
+  }
+
+  RelayReceiveOutcome Receive(const GroupChange& change) {
+    return bob_.pipeline.ProcessEnvelope(
+        bob_.MakeSystemEnvelope("group_change", group_roster_sync_codec::EncodeChange(change), "Group members changed",
+                                ++seq_),
+        bob_.local_account);
+  }
+
+  bool IsMember(const test::Person& who) { return bob_.roster.IsMember(test::kGroupId, who.Id()).value(); }
+  GroupMetadata Metadata() { return bob_.roster.LoadMetadata(test::kGroupId).value().value(); }
+
+  std::vector<ThreadMessage> Lines(const GroupMembershipControlType type) {
+    std::vector<ThreadMessage> out;
+    const std::vector<ThreadMessage> all = bob_.store.GetMessages(group_thread_.id).value();
+    for (const ThreadMessage& m : all) {
+      if (GroupMembershipCodec::ControlTypeFromMessage(m) == type) {
+        out.push_back(m);
+      }
+    }
+    return out;
+  }
+
+  test::Person& alice = test::Named("alice");
+  test::Person& bob = test::Named("bob");
+  test::Person& carol = test::Named("carol");
+  test::Person& dave = test::Named("dave");
+  PartyHarness bob_;
+  GroupRosterStatement statement_;
+  Thread group_thread_;
+  uint64_t seq_ = 0;
+};
+
+// The leave is the leaver's signed change now (G018): handed on by a member, it takes Dave off and the group's chat
+// says so; an old app's member_left changes nothing.
+TEST_F(GroupChangeIngestTest, ALeaveChangeReplacesMemberLeft) {
+  const auto legacy = GroupMembershipCodec::EncodeMemberLeft(test::kGroupId, alice.Id(), 6);
+  ASSERT_TRUE(legacy);
+  (void)bob_.pipeline.ProcessEnvelope(bob_.MakeSystemEnvelope("member_left", *legacy, "Member left", ++seq_),
+                                      bob_.local_account);
+  EXPECT_TRUE(bob_.roster.IsMember(test::kGroupId, alice.Id()).value()) << "member_left is no longer read";
+
+  const RelayReceiveOutcome outcome = Receive(Carded(dave.Leave(), dave));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_TRUE(outcome.suppress_inbox_chrome) << "the DM is bookkeeping; the group's chat has the line";
+  EXPECT_FALSE(IsMember(dave));
+  const std::vector<ThreadMessage> left = Lines(GroupMembershipControlType::MemberLeft);
+  ASSERT_EQ(left.size(), 1u);
+  EXPECT_EQ(GroupMembershipCodec::DecodeMemberLeftFromMessage(left[0])->member_identity, dave.Id());
+  EXPECT_EQ(bob_.roster.ListGroupChanges(test::kGroupId).value().size(), 1u) << "held until Alice folds it";
+  EXPECT_FALSE(outcome.fold_group_id) << "folding is the owner's";
+
+  (void)Receive(Carded(dave.Leave(), dave)); // a second copy
+  EXPECT_EQ(Lines(GroupMembershipControlType::MemberLeft).size(), 1u) << "one line per change";
+}
+
+TEST_F(GroupChangeIngestTest, AForgedChangeIsRefused) {
+  GroupChange forged = Carded(dave.Leave(), dave);
+  forged.signature_b64 = carol.Leave().signature_b64;
+  const RelayReceiveOutcome outcome = Receive(forged);
+  EXPECT_TRUE(outcome.receive_failure);
+  EXPECT_TRUE(IsMember(dave));
+  EXPECT_TRUE(bob_.roster.ListGroupChanges(test::kGroupId).value().empty());
+}
+
+TEST_F(GroupChangeIngestTest, AChangeWhoseCardIsMissingIsKeptToProveLater) {
+  const RelayReceiveOutcome outcome = Receive(dave.Leave()); // no card carried, none kept
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_TRUE(IsMember(dave)) << "not proved yet";
+  EXPECT_EQ(bob_.roster.ListGroupChanges(test::kGroupId).value().size(), 1u);
+  // The card arrives (kept by the app): the recompute takes Dave off.
+  test::CardBook book;
+  book.Hold(dave.Card());
+  auto applied = group_roster_sync::ApplyView(bob_.roster, test::kGroupId, book.Lookup(), util::NowUnixMs());
+  ASSERT_TRUE(applied);
+  EXPECT_FALSE(IsMember(dave));
+  EXPECT_EQ(applied->newly_applied.size(), 1u);
+}
+
+// G017 / G020: an admin's removal counts, and the line says who; a member's does not.
+TEST_F(GroupChangeIngestTest, AnAdminRemovesAMemberAndAMemberCannot) {
+  (void)Receive(Carded(dave.Remove(carol.Id()), dave));
+  EXPECT_TRUE(IsMember(carol)) << "a member removes no one";
+  EXPECT_TRUE(Lines(GroupMembershipControlType::MemberRemoved).empty());
+
+  const RelayReceiveOutcome outcome = Receive(Carded(carol.Remove(dave.Id()), carol));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_FALSE(IsMember(dave));
+  const std::vector<ThreadMessage> removed = Lines(GroupMembershipControlType::MemberRemoved);
+  ASSERT_EQ(removed.size(), 1u);
+  auto payload = GroupMembershipCodec::DecodeMemberRemovedFromMessage(removed[0]);
+  EXPECT_EQ(payload->member_identity, dave.Id());
+  EXPECT_EQ(payload->removed_by, carol.Id());
+}
+
+// G020 3: removed by an admin, Bob's chat stays, read-only, and he is told who did it.
+TEST_F(GroupChangeIngestTest, RemovedByAnAdminTheGroupGoesReadOnly) {
+  const RelayReceiveOutcome outcome = Receive(Carded(carol.Remove(bob.Id()), carol));
+  EXPECT_FALSE(outcome.receive_failure);
+  EXPECT_FALSE(IsMember(bob));
+  EXPECT_EQ(Metadata().sync_state, GroupSyncState::Removed);
+  EXPECT_FALSE(group_roster_sync::MaySend(Metadata()));
+  EXPECT_EQ(outcome.about_us, RelayReceiveOutcome::AboutUs::Removed);
+  EXPECT_EQ(outcome.about_us_group_thread_id, group_thread_.id);
+  const auto removed = Lines(GroupMembershipControlType::MemberRemoved);
+  ASSERT_EQ(removed.size(), 1u);
+  EXPECT_EQ(GroupMembershipCodec::DecodeMemberRemovedFromMessage(removed[0])->removed_by, carol.Id());
+}
+
+// A change for a group we are no longer in, or handed on by someone outside it, does nothing.
+TEST_F(GroupChangeIngestTest, OnlyTheGroupsMembersHandChangesOn) {
+  PartyHarness outsider("changes_outsider_" + util::GenerateUuid(), bob.Id(), "account:mallory");
+  GroupMetadata metadata;
+  metadata.group_id = test::kGroupId;
+  metadata.owner_identity = alice.Id();
+  metadata.roster_epoch = 5;
+  ASSERT_TRUE(outsider.roster.UpsertMetadata(metadata));
+  ASSERT_TRUE(*group_roster_sync::KeepStatement(outsider.roster, statement_));
+  ASSERT_TRUE(group_roster_sync::ApplyView(outsider.roster, test::kGroupId, {}, util::NowUnixMs()));
+  const RelayReceiveOutcome outcome = outsider.pipeline.ProcessEnvelope(
+      outsider.MakeSystemEnvelope("group_change", group_roster_sync_codec::EncodeChange(Carded(dave.Leave(), dave)),
+                                  "Group members changed", 1),
+      bob.Id());
+  EXPECT_TRUE(outcome.receive_failure) << "Mallory is not in the group";
+  EXPECT_TRUE(outsider.roster.IsMember(test::kGroupId, dave.Id()).value());
+}
+
+// The owner's device folds what arrives (debounced by the app): the outcome asks for it.
+TEST(GroupChangeOwnerIngestTest, TheOwnerIsAskedToFoldWhatArrives) {
+  test::Person& alice = test::Named("alice");
+  test::Person& bob = test::Named("bob");
+  test::Person& dave = test::Named("dave");
+  PartyHarness owner("changes_owner_" + util::GenerateUuid(), alice.Id(), bob.Id());
+  GroupRosterStatement draft;
+  draft.group_id = test::kGroupId;
+  draft.roster_epoch = 5;
+  draft.members = {test::Row(alice.Id(), MemberRole::Owner), test::Row(bob.Id()), test::Row(dave.Id())};
+  const GroupRosterStatement statement = test::SignedStatement(alice, draft);
+  GroupMetadata metadata;
+  metadata.group_id = test::kGroupId;
+  metadata.owner_identity = alice.Id();
+  metadata.roster_epoch = 5;
+  ASSERT_TRUE(owner.roster.UpsertMetadata(metadata));
+  ASSERT_TRUE(*group_roster_sync::KeepStatement(owner.roster, statement));
+  ASSERT_TRUE(group_roster_sync::ApplyView(owner.roster, test::kGroupId, {}, util::NowUnixMs()));
+  GroupChange leave = dave.Leave();
+  leave.signer_card = dave.Card();
+  const RelayReceiveOutcome outcome = owner.pipeline.ProcessEnvelope(
+      owner.MakeSystemEnvelope("group_change", group_roster_sync_codec::EncodeChange(leave), "Group members changed",
+                               1),
+      alice.Id());
+  EXPECT_FALSE(outcome.receive_failure);
+  ASSERT_TRUE(outcome.fold_group_id);
+  EXPECT_EQ(*outcome.fold_group_id, test::kGroupId);
+  EXPECT_FALSE(owner.roster.IsMember(test::kGroupId, dave.Id()).value());
 }
 
 TEST(BlockedSenderIngestTest, DirectEnvelopesFromABlockedSenderAreDropped) {

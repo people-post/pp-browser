@@ -66,8 +66,9 @@ public:
   static Roe<std::string> WithoutCards(MemberJoinedPayload payload);
   static Roe<std::string> EncodeMemberLeft(const std::string& group_id, const std::string& member_identity,
                                            uint64_t roster_epoch);
+  /** `removed_by`: who removed them (G020: the owner or an admin), shown in the line; empty: not said. */
   static Roe<std::string> EncodeMemberRemoved(const std::string& group_id, const std::string& member_identity,
-                                              uint64_t roster_epoch);
+                                              uint64_t roster_epoch, const std::string& removed_by = {});
   static Roe<std::string> EncodeOwnerTransferred(const std::string& group_id, const std::string& new_owner_identity,
                                                  uint64_t roster_epoch, bool leave_previous = false);
 
@@ -80,6 +81,8 @@ public:
     std::string group_id;
     std::string member_identity;
     uint64_t roster_epoch = 0;
+    /** G020: who removed them (`by`); empty when the event does not say. */
+    std::string removed_by;
   };
   struct OwnerTransferredPayload {
     std::string group_id;

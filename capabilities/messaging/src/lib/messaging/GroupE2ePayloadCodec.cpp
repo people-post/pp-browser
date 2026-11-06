@@ -30,7 +30,9 @@ bool GroupE2ePayloadCodec::IsGroupEnvelope(const RelayEnvelope& envelope) {
 
 namespace {
 
-constexpr uint8_t kGroupCopyVersion = 1;
+// 2 (G018 item 5): the sender's statement epoch and changes hash. Version 1 (no state) is not read: unreleased.
+constexpr uint8_t kGroupCopyVersion = 2;
+constexpr size_t kChangesHashChars = 64;
 /** A group id is ours (`group:` + a UUID) or another app's: bounded, and plain text (it is stored and bound). */
 constexpr size_t kMaxGroupIdBytes = 128;
 
@@ -42,12 +44,26 @@ bool PlainGroupId(const std::string& group_id) {
                       [](const char c) { return static_cast<unsigned char>(c) < 0x20 || c == 0x7F; });
 }
 
+/** Empty, or a lowercase hex BLAKE2b-256 (group_change::ChangesHash). */
+bool WellFormedHash(const std::string& hash) {
+  if (hash.empty()) {
+    return true;
+  }
+  return hash.size() == kChangesHashChars && std::all_of(hash.begin(), hash.end(), [](const char c) {
+           return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+         });
+}
+
 } // namespace
 
 Roe<std::vector<uint8_t>> GroupE2ePayloadCodec::EncodeCopyPlaintext(const std::string& group_id,
-                                                                    const std::vector<uint8_t>& chat_payload) {
+                                                                    const std::vector<uint8_t>& chat_payload,
+                                                                    const GroupCopyState& state) {
   if (!PlainGroupId(group_id)) {
     return Error("Invalid group id");
+  }
+  if (!WellFormedHash(state.changes_hash)) {
+    return Error("Invalid changes hash");
   }
   std::ostringstream oss;
   {
@@ -55,6 +71,10 @@ Roe<std::vector<uint8_t>> GroupE2ePayloadCodec::EncodeCopyPlaintext(const std::s
     ar & kGroupCopyVersion;
     WireLenUtf8 id{group_id};
     ar & id;
+    uint64_t epoch = state.statement_epoch;
+    ar& epoch;
+    WireLenUtf8 hash{state.changes_hash};
+    ar& hash;
     WireLenBytes payload{chat_payload};
     ar & payload;
   }
@@ -62,8 +82,7 @@ Roe<std::vector<uint8_t>> GroupE2ePayloadCodec::EncodeCopyPlaintext(const std::s
   return std::vector<uint8_t>(packed.begin(), packed.end());
 }
 
-Roe<std::pair<std::string, std::vector<uint8_t>>> GroupE2ePayloadCodec::DecodeCopyPlaintext(
-    const std::vector<uint8_t>& plaintext) {
+Roe<GroupCopyPlaintext> GroupE2ePayloadCodec::DecodeCopyPlaintext(const std::vector<uint8_t>& plaintext) {
   const std::string data(plaintext.begin(), plaintext.end());
   std::istringstream iss(data);
   InputArchive ar(iss);
@@ -74,6 +93,10 @@ Roe<std::pair<std::string, std::vector<uint8_t>>> GroupE2ePayloadCodec::DecodeCo
   }
   WireLenUtf8 group_id;
   ar & group_id;
+  uint64_t statement_epoch = 0;
+  ar& statement_epoch;
+  WireLenUtf8 changes_hash;
+  ar& changes_hash;
   WireLenBytes chat_payload;
   ar & chat_payload;
   if (ar.failed() || !ar.exactEnd()) {
@@ -82,15 +105,20 @@ Roe<std::pair<std::string, std::vector<uint8_t>>> GroupE2ePayloadCodec::DecodeCo
   if (!PlainGroupId(group_id.value)) {
     return Error("Invalid group id in group copy");
   }
-  return std::make_pair(std::move(group_id.value), std::move(chat_payload.value));
+  if (!WellFormedHash(changes_hash.value)) {
+    return Error("Invalid changes hash in group copy");
+  }
+  return GroupCopyPlaintext{
+      .group_id = std::move(group_id.value),
+      .state = {.statement_epoch = statement_epoch, .changes_hash = std::move(changes_hash.value)},
+      .chat_payload = std::move(chat_payload.value)};
 }
 
 Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
-    const std::string& message_id, const int64_t timestamp,
-    const std::vector<GroupMemberTarget>& members, IPeerSessionStore& psk_store,
-    const std::function<Roe<ByteVector>(const PeerSessionKey&)>& resolve_peer_kem_public,
-    const std::optional<std::vector<uint8_t>>& chat_payload_plaintext) {
+    const std::string& message_id, const int64_t timestamp, const std::vector<GroupMemberTarget>& members,
+    IPeerSessionStore& psk_store, const std::function<Roe<ByteVector>(const PeerSessionKey&)>& resolve_peer_kem_public,
+    const std::optional<std::vector<uint8_t>>& chat_payload_plaintext, const GroupCopyState& state) {
   // One plaintext for every copy (G018 item 7): the group id, then the message's ChatPayload.
   std::vector<uint8_t> chat_payload;
   if (chat_payload_plaintext && !chat_payload_plaintext->empty()) {
@@ -105,7 +133,7 @@ Roe<GroupEncryptResult> GroupE2ePayloadCodec::EncryptForMembers(
     }
     chat_payload = std::move(*encoded);
   }
-  auto plaintext = EncodeCopyPlaintext(group_id, chat_payload);
+  auto plaintext = EncodeCopyPlaintext(group_id, chat_payload, state);
   if (!plaintext) {
     return plaintext.error();
   }
@@ -206,11 +234,11 @@ Roe<GroupCopyRead> GroupE2ePayloadCodec::DecryptForLocalMember(
   if (!copy) {
     return copy.error();
   }
-  auto message = E2eRelayPayloadCodec::DecodeChatPayload(copy->second);
+  auto message = E2eRelayPayloadCodec::DecodeChatPayload(copy->chat_payload);
   if (!message) {
     return message.error();
   }
-  return GroupCopyRead{.group_id = std::move(copy->first), .message = std::move(*message)};
+  return GroupCopyRead{.group_id = std::move(copy->group_id), .message = std::move(*message), .state = copy->state};
 }
 
 } // namespace pbr

@@ -1,11 +1,16 @@
 #pragma once
 
+#include "lib/messaging/GroupChange.h"
+#include "lib/messaging/GroupE2ePayloadCodec.h"
 #include "lib/messaging/GroupMembershipApply.h"
+#include "lib/messaging/GroupRosterRules.h"
 #include "lib/messaging/GroupRosterStatement.h"
 #include "lib/messaging/IGroupRosterStore.h"
 #include "lib/messaging/GroupRosterSyncCodec.h"
 #include "common/Error.h"
 
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,13 +19,145 @@
 namespace pbr {
 
 /**
- * The rules of the owner-signed roster (G012) and of a restored group's member check (G013), over the
- * roster store. The workflow sends; these decide.
+ * The rules of the owner-signed roster (G012), the changes members and admins sign on top of it (G018), and a
+ * group's member check (G013), over the roster store. The workflow sends; these decide.
  */
 namespace group_roster_sync {
 
 /** The statement a group holds, if any. */
 std::optional<GroupRosterStatement> Held(const GroupMetadata& metadata);
+
+// ---- G018: the changes on top of the statement ----
+
+/** At most this many unfolded changes per group: past it a new one is refused until the owner folds. */
+inline constexpr size_t kMaxHeldChanges = 512;
+
+/** The changes a group holds, parsed (one that no longer parses is skipped; ApplyView drops it). */
+std::vector<GroupChange> HeldChanges(IGroupRosterStore& roster, const std::string& group_id);
+
+/** What ApplyView did. */
+struct GroupViewApplied {
+  /** The roster as it stands now; none when it was left alone (no statement held, or the group ended). */
+  std::optional<GroupRosterView> view;
+  /** Changes that count now and had no line in the group's chat yet (now marked as having one): write theirs. */
+  std::vector<GroupChange> newly_applied;
+  /** Members the roster lost and gained. */
+  std::vector<std::string> gone;
+  std::vector<std::string> joined;
+};
+
+/**
+ * G018, the one apply path: whenever the statement or the held changes change, the roster becomes the latest
+ * statement plus the changes (CheckChanges, ComputeRosterChecked) — members with their roles, added_by and
+ * joined_at (the contact ids we had kept), the owner, the epoch, the preset, a newer title. The changes the view
+ * drops (folded, too old, another group's, forged) are dropped; a dissolved group (G016) keeps none. With no
+ * statement held, or one older than the roster's epoch (a roster event applied whose statement was not kept), the
+ * roster is left as it is.
+ */
+Roe<GroupViewApplied> ApplyView(IGroupRosterStore& roster, const std::string& group_id, const GroupCardLookup& cards,
+                                int64_t now_ms);
+
+/** How a change was taken (HoldChange). */
+enum class ChangeHeld {
+  /** It proves itself (against a card we hold or the one it carries): kept. */
+  Proved,
+  /** No card we have lists its device: kept, to verify once the card arrives (ask for it). */
+  NoCard,
+  /** Forged, damaged, for a group we do not hold (or one that ended), or the group holds too many: not kept. */
+  Refused,
+};
+
+/**
+ * Keep `change` for its group as HoldChange decides, `line_shown` when its line is already written (our own). A copy
+ * already held under its id is replaced only by one that carries the signer's card (it proves more).
+ */
+Roe<ChangeHeld> HoldChange(IGroupRosterStore& roster, const GroupChange& change, const GroupCardLookup& cards,
+                           int64_t now_ms, bool line_shown = false);
+
+/** A change received: HoldChange, then ApplyView when it was kept. */
+struct ChangeReceived {
+  ChangeHeld held = ChangeHeld::Refused;
+  GroupViewApplied applied;
+};
+Roe<ChangeReceived> ReceiveChange(IGroupRosterStore& roster, const GroupChange& change, const GroupCardLookup& cards,
+                                  int64_t now_ms);
+
+/**
+ * Our `leave` (G018 item 2), unsigned: `adds` the held adds that brought us in, `keeps` our own held changes; its base
+ * epoch the statement we hold. The owner does not leave (G009).
+ */
+Roe<GroupChange> DraftLeave(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                            const std::string& local_device, int64_t now_ms);
+/**
+ * Our `remove` of `member` (G018, G020), unsigned: `adds` the held adds of the member we saw, `keeps` the member's
+ * held changes. Errors when the roster we hold does not let us (GroupAllows: the owner anyone, an admin members).
+ */
+Roe<GroupChange> DraftRemove(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
+                             const std::string& local_device, const std::string& member, int64_t now_ms);
+
+/**
+ * G018 item 4, the owner's side: the view a fold starts from — the held statement (or, before the first one, the
+ * roster as `rows` and `metadata` state it) plus the held changes.
+ */
+GroupRosterView FoldBase(IGroupRosterStore& roster, const GroupMetadata& metadata,
+                         const std::vector<GroupRosterStatementMember>& rows, const GroupCardLookup& cards,
+                         int64_t now_ms, GroupRosterStatement& base);
+
+/**
+ * The owner's next statement over `rows` (the roster as the owner's device holds it, its own edits in), unsigned:
+ * the epoch at least `metadata`'s and the held statement's (one past it when what it says changed), `metadata`'s
+ * preset and title, the owner chain as given, and the fold (FoldInto): the removed the changes leave (not
+ * re-added), the live links of makers still in, the changes folded, the change floor raised.
+ */
+GroupRosterStatement OwnerDraft(IGroupRosterStore& roster, const GroupMetadata& metadata,
+                                std::vector<GroupRosterStatementMember> rows, std::vector<GroupOwnerTransfer> chain,
+                                const std::string& owner_identity, const std::string& owner_key_b64,
+                                const GroupCardLookup& cards, int64_t now_ms);
+
+/** The group holds a change its owner would fold now (FoldsIn). */
+bool HoldsFoldable(IGroupRosterStore& roster, const std::string& group_id, const GroupCardLookup& cards,
+                   int64_t now_ms);
+
+/** The groups holding a change signed by `signer` (its card just arrived: they are worth a recompute). */
+std::vector<std::string> GroupsWithChangesBy(IGroupRosterStore& roster, const std::string& signer);
+
+// ---- G018 item 5: keeping members in step ----
+
+/** What our group copies say of our roster: the statement's epoch, the hash of the changes we hold. */
+GroupCopyState CopyState(IGroupRosterStore& roster, const std::string& group_id);
+
+/**
+ * A copy's sender holds what we lack: a newer statement, or the same one with other changes. A sender behind us is
+ * not a reason to ask (it asks when our copy reaches it).
+ */
+bool NeedsCatchUp(const GroupCopyState& ours, const GroupCopyState& theirs);
+
+/** Ask at most once per group per kCatchUpGapMs, however many copies a burst brings. Thread-safe. */
+class CatchUpLimiter {
+public:
+  static constexpr int64_t kCatchUpGapMs = 30'000;
+  bool Allow(const std::string& group_id, int64_t now_ms);
+
+private:
+  std::mutex mutex_;
+  std::map<std::string, int64_t> last_;
+};
+
+/**
+ * A catch-up check (G018 item 5): a request carrying our copy state, its id the group's open one, while the group
+ * stays active (sends go on). None for a group that is not active (a check of its own runs, or it is over).
+ */
+Roe<std::optional<group_roster_sync_codec::RosterRequest>> BeginCatchUp(IGroupRosterStore& roster,
+                                                                        const std::string& group_id, int64_t now_ms,
+                                                                        const std::string& after = {});
+
+/**
+ * The changes `request`'s asker lacks, into `reply`: when its changes hash is not ours, the ones we hold after its
+ * `after`, in id order, bounded (kMaxReplyChanges, kReplyChangesBudgetBytes; `more` when cut), each signer's card
+ * carried once.
+ */
+void AddChangesTo(IGroupRosterStore& roster, const group_roster_sync_codec::RosterRequest& request,
+                  group_roster_sync_codec::RosterReply& reply);
 
 /**
  * Keep `statement` as the group's latest when it is valid for the owner we know and wins over the one
@@ -29,16 +166,11 @@ std::optional<GroupRosterStatement> Held(const GroupMetadata& metadata);
 Roe<bool> KeepStatement(IGroupRosterStore& roster, const GroupRosterStatement& statement);
 
 /**
- * Make the roster the statement's — its members (keeping the contact ids we had), its owner and its
- * epoch — and hold it. The caller has verified it.
+ * A statement from the owner (`group_roster_statement`, or one a roster event carries): kept when it wins, then the
+ * roster recomputed over it (ApplyView). True when kept; `applied` gets what the recompute did.
  */
-Roe<void> Adopt(IGroupRosterStore& roster, const GroupRosterStatement& statement);
-
-/**
- * A statement from the owner outside a roster event (`group_roster_statement`): kept when it wins, and
- * adopted when it is newer than our roster (we missed the event it follows). True when kept.
- */
-Roe<bool> KeepAndCatchUp(IGroupRosterStore& roster, const GroupRosterStatement& statement);
+Roe<bool> KeepAndCatchUp(IGroupRosterStore& roster, const GroupRosterStatement& statement, const GroupCardLookup& cards,
+                         int64_t now_ms, GroupViewApplied* applied = nullptr);
 
 /** A member check to send: the request, and who to ask (the owner and the members we know, not us). */
 struct Check {
@@ -46,14 +178,14 @@ struct Check {
   std::vector<std::string> ask;
 };
 
-/** Start (or restart) the group's member check: state checking, a new request id. */
+/** Start (or restart) the group's member check: state checking, a new request id, our copy state in the request. */
 Roe<Check> BeginCheck(IGroupRosterStore& roster, const std::string& group_id, const std::string& local_identity,
                       int64_t now_ms);
 
 /**
- * A member's answer to `asker`'s check: the statement it holds, and removed when its roster no longer
- * has the asker. Nullopt when we hold nothing to say (not a group we know). A member still checking
- * itself answers with its statement only (its roster may be stale).
+ * A member's answer to `asker`'s check: the statement it holds, the changes the asker lacks (AddChangesTo), and
+ * removed when its roster no longer has the asker. Nullopt when we hold nothing to say (not a group we know). A
+ * member still checking itself answers with its statement only (its roster may be stale).
  */
 Roe<std::optional<group_roster_sync_codec::RosterReply>> Answer(IGroupRosterStore& roster,
                                                                 const group_roster_sync_codec::RosterRequest& request,
@@ -69,15 +201,17 @@ enum class ReplyOutcome {
 };
 
 /**
- * Apply `replier`'s reply to our check (G013): only one for our latest request; a statement must verify
- * for the owner we know. The winning statement becomes the roster when it is not older than ours; the
- * check ends active when it lists us, removed when not. With no statement, only the owner's `removed`
- * counts. Later replies to the same request still apply (the owner's own reply wins when it arrives). A statement
- * that is the owner's dissolve (G016) ends the group (`Dissolved`; what it voided in `dissolved`).
+ * Apply `replier`'s reply to our check (G013) or catch-up (G018 item 5): only one for our latest request; a
+ * statement must verify for the owner we know. The winning statement is kept and the changes the reply carries are
+ * held (each proving itself), then the roster recomputed (ApplyView); the check ends active when the roster lists
+ * us, removed when not. With no statement, only the owner's `removed` counts. Later replies to the same request
+ * still apply (the owner's own reply wins when it arrives). A statement that is the owner's dissolve (G016) ends the
+ * group (`Dissolved`; what it voided in `dissolved`). A reply with `more` is the caller's to ask again.
  */
 Roe<ReplyOutcome> ApplyReply(IGroupRosterStore& roster, const group_roster_sync_codec::RosterReply& reply,
                              const std::string& local_identity, const std::string& replier,
-                             GroupDissolvedApplied* dissolved = nullptr);
+                             const GroupCardLookup& cards, int64_t now_ms, GroupDissolvedApplied* dissolved = nullptr,
+                             GroupViewApplied* applied = nullptr);
 
 /** An unanswered check is asked again when a group message shows a member is online (G013 amendment). */
 inline constexpr int64_t kCheckRetryMs = 15000;

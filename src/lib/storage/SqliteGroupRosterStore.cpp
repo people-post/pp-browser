@@ -50,7 +50,18 @@ CREATE TABLE IF NOT EXISTS group_rosters (
   contact_id TEXT NOT NULL DEFAULT '',
   role TEXT NOT NULL DEFAULT 'member',
   joined_at INTEGER NOT NULL DEFAULT 0,
+  added_by TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (group_id, member_identity)
+);
+
+-- G018: roster changes this device holds that the owner has not folded yet (the JSON as received).
+CREATE TABLE IF NOT EXISTS group_changes (
+  group_id TEXT NOT NULL,
+  change_id TEXT NOT NULL,
+  change_json TEXT NOT NULL,
+  received_at INTEGER NOT NULL DEFAULT 0,
+  line_shown INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (group_id, change_id)
 );
 
 -- G016: what a dissolve (or the refusals to its invitees) still has to send; kept until each copy reached the outbox.
@@ -137,6 +148,9 @@ Roe<void> SqliteGroupRosterStore::EnsureSchema(sqlite3* profile_db) const {
     const std::string sql = std::string("ALTER TABLE group_metadata ADD COLUMN ") + column + ";";
     (void)sqlite3_exec(profile_db, sql.c_str(), nullptr, nullptr, nullptr);
   }
+  // G019: who brought each member in.
+  (void)sqlite3_exec(profile_db, "ALTER TABLE group_rosters ADD COLUMN added_by TEXT NOT NULL DEFAULT '';", nullptr,
+                     nullptr, nullptr);
   return {};
 }
 
@@ -280,9 +294,10 @@ Roe<void> SqliteGroupRosterStore::UpsertMember(const std::string& group_id, cons
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
-      "INSERT INTO group_rosters (group_id, member_identity, contact_id, role, joined_at) VALUES (?, ?, ?, ?, ?) "
-      "ON CONFLICT(group_id, member_identity) DO UPDATE SET contact_id=excluded.contact_id, role=excluded.role, "
-      "joined_at=excluded.joined_at;";
+      "INSERT INTO group_rosters (group_id, member_identity, contact_id, role, joined_at, added_by) VALUES (?, ?, ?, "
+      "?, "
+      "?, ?) ON CONFLICT(group_id, member_identity) DO UPDATE SET contact_id=excluded.contact_id, role=excluded.role, "
+      "joined_at=excluded.joined_at, added_by=excluded.added_by;";
   if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare roster upsert");
@@ -292,6 +307,7 @@ Roe<void> SqliteGroupRosterStore::UpsertMember(const std::string& group_id, cons
   sqlite3_bind_text(stmt, 3, member.contact_id.c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_text(stmt, 4, MemberRoleToString(member.role).c_str(), -1, SQLITE_TRANSIENT);
   sqlite3_bind_int64(stmt, 5, member.joined_at);
+  sqlite3_bind_text(stmt, 6, member.added_by.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(db);
@@ -333,7 +349,8 @@ Roe<std::vector<GroupRosterMember>> SqliteGroupRosterStore::ListMembers(const st
   (void)EnsureSchema(db);
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(db,
-                         "SELECT member_identity, contact_id, role, joined_at FROM group_rosters WHERE group_id = ?;",
+                         "SELECT member_identity, contact_id, role, joined_at, added_by FROM group_rosters WHERE "
+                         "group_id = ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(db);
     return Error("Failed to prepare roster list");
@@ -348,6 +365,9 @@ Roe<std::vector<GroupRosterMember>> SqliteGroupRosterStore::ListMembers(const st
     }
     member.role = MemberRoleFromString(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2)));
     member.joined_at = sqlite3_column_int64(stmt, 3);
+    if (sqlite3_column_text(stmt, 4)) {
+      member.added_by = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+    }
     members.push_back(std::move(member));
   }
   sqlite3_finalize(stmt);
@@ -666,7 +686,8 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> SqliteGroupRosterStore::EndG
     return fail(voided.error().message);
   }
   if (!RunBound(db, "DELETE FROM group_rosters WHERE group_id = ?;", {group_id}) ||
-      !RunBound(db, "DELETE FROM group_targets WHERE group_id = ?;", {group_id})) {
+      !RunBound(db, "DELETE FROM group_targets WHERE group_id = ?;", {group_id}) ||
+      !RunBound(db, "DELETE FROM group_changes WHERE group_id = ?;", {group_id})) {
     return fail("roster");
   }
   if (!RunBound(db,
@@ -736,6 +757,104 @@ Roe<void> SqliteGroupRosterStore::DeletePendingSend(const PendingGroupSend& send
     return Error("Failed to delete a pending send");
   }
   return {};
+}
+
+Roe<void> SqliteGroupRosterStore::UpsertGroupChange(const StoredGroupChange& change) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  const bool done = RunBound(db,
+                             "INSERT OR REPLACE INTO group_changes (group_id, change_id, change_json, received_at, "
+                             "line_shown) VALUES (?, ?, ?, ?, ?);",
+                             {change.group_id, change.change_id, change.change_json},
+                             {change.received_at, change.line_shown ? 1 : 0});
+  sqlite3_close(db);
+  if (!done) {
+    return Error("Failed to keep a group change");
+  }
+  return {};
+}
+
+Roe<std::vector<StoredGroupChange>> SqliteGroupRosterStore::ListGroupChanges(const std::string& group_id) const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db,
+                         "SELECT change_id, change_json, received_at, line_shown FROM group_changes WHERE group_id = ? "
+                         "ORDER BY change_id;",
+                         -1, &stmt, nullptr) != SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare group changes list");
+  }
+  sqlite3_bind_text(stmt, 1, group_id.c_str(), -1, SQLITE_TRANSIENT);
+  const auto text = [stmt](int column) {
+    const unsigned char* value = sqlite3_column_text(stmt, column);
+    return value ? std::string(reinterpret_cast<const char*>(value)) : std::string();
+  };
+  std::vector<StoredGroupChange> changes;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    changes.push_back({.group_id = group_id,
+                       .change_id = text(0),
+                       .change_json = text(1),
+                       .received_at = sqlite3_column_int64(stmt, 2),
+                       .line_shown = sqlite3_column_int(stmt, 3) != 0});
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return changes;
+}
+
+Roe<void> SqliteGroupRosterStore::DeleteGroupChanges(const std::string& group_id,
+                                                     const std::vector<std::string>& change_ids) const {
+  if (change_ids.empty()) {
+    return {};
+  }
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  bool done = sqlite3_exec(db, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
+  for (const std::string& id : change_ids) {
+    done = done && RunBound(db, "DELETE FROM group_changes WHERE group_id = ? AND change_id = ?;", {group_id, id});
+  }
+  done = done && sqlite3_exec(db, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+  if (!done) {
+    sqlite3_exec(db, "ROLLBACK;", nullptr, nullptr, nullptr);
+  }
+  sqlite3_close(db);
+  if (!done) {
+    return Error("Failed to drop group changes");
+  }
+  return {};
+}
+
+Roe<std::vector<std::string>> SqliteGroupRosterStore::ListGroupsWithChanges() const {
+  sqlite3* db = nullptr;
+  if (!OpenDb(&db)) {
+    return Error("Failed to open profile.db");
+  }
+  (void)EnsureSchema(db);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, "SELECT DISTINCT group_id FROM group_changes ORDER BY group_id;", -1, &stmt, nullptr) !=
+      SQLITE_OK) {
+    sqlite3_close(db);
+    return Error("Failed to prepare groups with changes");
+  }
+  std::vector<std::string> groups;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (const unsigned char* id = sqlite3_column_text(stmt, 0)) {
+      groups.emplace_back(reinterpret_cast<const char*>(id));
+    }
+  }
+  sqlite3_finalize(stmt);
+  sqlite3_close(db);
+  return groups;
 }
 
 Roe<size_t> SqliteGroupRosterStore::CountPendingInvitesSince(const int64_t since_ms) const {

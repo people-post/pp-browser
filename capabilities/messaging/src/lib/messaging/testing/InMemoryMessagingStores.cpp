@@ -179,6 +179,7 @@ Roe<std::optional<std::vector<PendingGroupInvite>>> InMemoryGroupRosterStore::En
     }
     voided = VoidPendingInvitesLocked(group_id);
     rosters_.erase(group_id);
+    changes_.erase(group_id);
     threads_.ClearGroupTarget(group_id);
     GroupMetadata& ended = metadata->second;
     ended.roster_epoch = std::max(ended.roster_epoch, ending.roster_epoch);
@@ -211,6 +212,50 @@ Roe<void> InMemoryGroupRosterStore::DeletePendingSend(const PendingGroupSend& se
   std::lock_guard lock(mutex_);
   sends_.erase({send.group_id, send.recipient, send.control_type});
   return {};
+}
+
+Roe<void> InMemoryGroupRosterStore::UpsertGroupChange(const StoredGroupChange& change) const {
+  std::lock_guard lock(mutex_);
+  changes_[change.group_id][change.change_id] = change;
+  return {};
+}
+
+Roe<std::vector<StoredGroupChange>> InMemoryGroupRosterStore::ListGroupChanges(const std::string& group_id) const {
+  std::lock_guard lock(mutex_);
+  std::vector<StoredGroupChange> out;
+  if (auto group = changes_.find(group_id); group != changes_.end()) {
+    for (const auto& [id, change] : group->second) {
+      out.push_back(change);
+    }
+  }
+  return out;
+}
+
+Roe<void> InMemoryGroupRosterStore::DeleteGroupChanges(const std::string& group_id,
+                                                       const std::vector<std::string>& change_ids) const {
+  std::lock_guard lock(mutex_);
+  auto group = changes_.find(group_id);
+  if (group == changes_.end()) {
+    return {};
+  }
+  for (const std::string& id : change_ids) {
+    group->second.erase(id);
+  }
+  if (group->second.empty()) {
+    changes_.erase(group);
+  }
+  return {};
+}
+
+Roe<std::vector<std::string>> InMemoryGroupRosterStore::ListGroupsWithChanges() const {
+  std::lock_guard lock(mutex_);
+  std::vector<std::string> out;
+  for (const auto& [group_id, changes] : changes_) {
+    if (!changes.empty()) {
+      out.push_back(group_id);
+    }
+  }
+  return out;
 }
 
 Roe<std::vector<PendingGroupInvite>> InMemoryGroupRosterStore::ListOutboundPendingInvites(const std::string& group_id,

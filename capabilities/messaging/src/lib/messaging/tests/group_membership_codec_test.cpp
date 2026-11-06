@@ -185,36 +185,47 @@ TEST(GroupE2ePayloadCodecTest, DetectsGroupEnvelope) {
   EXPECT_FALSE(GroupE2ePayloadCodec::IsGroupEnvelope(envelope));
 }
 
-// G018 item 7: a group copy's plaintext names its group, then carries the ChatPayload; nothing else is read.
+// G018 items 5 and 7: a group copy's plaintext names its group and the sender's roster state, then carries the
+// ChatPayload; nothing else is read.
 TEST(GroupE2ePayloadCodecTest, ACopysPlaintextNamesItsGroup) {
   const std::vector<uint8_t> payload{0x01, 0x00, 0, 0, 0, 0, 0, 0, 0, 0x02, 'h', 'i'};
-  auto encoded = GroupE2ePayloadCodec::EncodeCopyPlaintext("group:hike", payload);
+  const GroupCopyState state{.statement_epoch = 7, .changes_hash = std::string(64, 'a')};
+  auto encoded = GroupE2ePayloadCodec::EncodeCopyPlaintext("group:hike", payload, state);
   ASSERT_TRUE(encoded) << encoded.error().message;
-  std::vector<uint8_t> expected{0x01, 0, 0, 0, 0, 0, 0, 0, 10};
+  std::vector<uint8_t> expected{0x02, 0, 0, 0, 0, 0, 0, 0, 10};
   const std::string id = "group:hike";
   expected.insert(expected.end(), id.begin(), id.end());
+  const std::vector<uint8_t> epoch{0, 0, 0, 0, 0, 0, 0, 7};
+  expected.insert(expected.end(), epoch.begin(), epoch.end());
+  const std::vector<uint8_t> hash_length{0, 0, 0, 0, 0, 0, 0, 64};
+  expected.insert(expected.end(), hash_length.begin(), hash_length.end());
+  expected.insert(expected.end(), state.changes_hash.begin(), state.changes_hash.end());
   const std::vector<uint8_t> length{0, 0, 0, 0, 0, 0, 0, static_cast<uint8_t>(payload.size())};
   expected.insert(expected.end(), length.begin(), length.end());
   expected.insert(expected.end(), payload.begin(), payload.end());
-  EXPECT_EQ(*encoded, expected) << "version 1, the group id (LenUtf8), the ChatPayload (LenBytes)";
+  EXPECT_EQ(*encoded, expected)
+      << "version 2, the group id (LenUtf8), the statement epoch (u64), the changes hash (LenUtf8), the ChatPayload";
 
   auto decoded = GroupE2ePayloadCodec::DecodeCopyPlaintext(*encoded);
   ASSERT_TRUE(decoded) << decoded.error().message;
-  EXPECT_EQ(decoded->first, "group:hike");
-  EXPECT_EQ(decoded->second, payload);
+  EXPECT_EQ(decoded->group_id, "group:hike");
+  EXPECT_EQ(decoded->state, state);
+  EXPECT_EQ(decoded->chat_payload, payload);
 
   std::vector<uint8_t> trailing = *encoded;
   trailing.push_back(0);
   EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(trailing)) << "bytes after the payload";
   std::vector<uint8_t> other_version = *encoded;
-  other_version[0] = 2;
-  EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(other_version)) << "an unknown version";
+  other_version[0] = 1;
+  EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(other_version)) << "version 1 (no roster state)";
+  EXPECT_FALSE(GroupE2ePayloadCodec::EncodeCopyPlaintext("group:hike", payload, {.changes_hash = "ABC"}))
+      << "a hash that is not one";
   EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(payload)) << "a bare ChatPayload (a direct message's)";
   EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(std::vector<uint8_t>(encoded->begin(), encoded->end() - 1)))
       << "cut short";
   EXPECT_FALSE(GroupE2ePayloadCodec::EncodeCopyPlaintext("", payload)) << "no group";
   EXPECT_FALSE(GroupE2ePayloadCodec::EncodeCopyPlaintext("group:\n", payload)) << "a control character";
-  auto bad_id = GroupE2ePayloadCodec::EncodeCopyPlaintext("group:x", payload);
+  auto bad_id = GroupE2ePayloadCodec::EncodeCopyPlaintext("group:x", payload, state);
   ASSERT_TRUE(bad_id);
   (*bad_id)[9 + 6] = 0x01; // "group:x" becomes "group:" and a control character
   EXPECT_FALSE(GroupE2ePayloadCodec::DecodeCopyPlaintext(*bad_id)) << "a group id that is not plain text";

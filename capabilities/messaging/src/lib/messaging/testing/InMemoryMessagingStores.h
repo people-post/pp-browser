@@ -58,6 +58,11 @@ public:
   Roe<std::vector<PendingGroupInvite>> ListOutboundPendingInvites(const std::string& group_id,
                                                                   int64_t now_ms) const override;
 
+  Roe<void> UpsertGroupChange(const StoredGroupChange& change) const override;
+  Roe<std::vector<StoredGroupChange>> ListGroupChanges(const std::string& group_id) const override;
+  Roe<void> DeleteGroupChanges(const std::string& group_id, const std::vector<std::string>& change_ids) const override;
+  Roe<std::vector<std::string>> ListGroupsWithChanges() const override;
+
   Roe<void> UpsertGroupTarget(const std::string& group_id, const std::string& local_thread_id, uint32_t session_epoch,
                               uint64_t next_outgoing_seq) const override;
   Roe<void> ClearGroupTarget(const std::string& group_id) const override;
@@ -90,6 +95,8 @@ private:
   mutable std::map<std::tuple<std::string, std::string, std::string>, PendingGroupSend> sends_;
   /** By (group, member identity or identity/device). */
   mutable std::map<std::pair<std::string, std::string>, MemberSeq> member_seqs_;
+  /** Per group, by change id. */
+  mutable std::map<std::string, std::map<std::string, StoredGroupChange>> changes_;
 };
 
 class InMemoryThreadLocalPrefsStore : public IThreadLocalPrefsStore {

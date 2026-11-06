@@ -43,13 +43,6 @@ Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
                                         const std::string& actor_identity);
 
 /**
- * Apply member_left. Actor must match member_identity; reject if actor is still recorded owner;
- * roster_epoch must be strictly greater than local.
- */
-Roe<void> ApplyMemberLeftToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
-                                  const std::string& actor_identity);
-
-/**
  * Apply member_removed. Actor must be current owner; roster_epoch must be strictly greater than local.
  */
 Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,

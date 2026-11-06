@@ -40,11 +40,41 @@ Roe<GroupRosterStatement> DecodeStatement(const std::string& detail_json) {
   return statement;
 }
 
+std::string EncodeChange(const GroupChange& change) {
+  Object detail;
+  detail.set("group_id", change.group_id);
+  detail.set("change", group_change::ToJson(change));
+  return DumpJson(detail);
+}
+
+Roe<GroupChange> DecodeChange(const std::string& detail_json) {
+  auto detail = ParseDetail(detail_json);
+  if (!detail) {
+    return detail.error();
+  }
+  const Object* json = detail->getObject("change");
+  if (!json) {
+    return Error("group_change: no change");
+  }
+  auto change = group_change::FromJson(*json);
+  if (change && change->group_id != detail->getString("group_id").value_or("")) {
+    return Error("group_change: the change is for another group");
+  }
+  return change;
+}
+
 std::string EncodeRequest(const RosterRequest& request) {
   Object detail;
   detail.set("group_id", request.group_id);
   detail.set("request_id", request.request_id);
   detail.setJsonUInt("roster_epoch", request.roster_epoch);
+  detail.setJsonUInt("statement_epoch", request.statement_epoch);
+  if (!request.changes_hash.empty()) {
+    detail.set("changes_hash", request.changes_hash);
+  }
+  if (!request.after.empty()) {
+    detail.set("after", request.after);
+  }
   return DumpJson(detail);
 }
 
@@ -57,6 +87,9 @@ Roe<RosterRequest> DecodeRequest(const std::string& detail_json) {
   request.group_id = detail->getString("group_id").value_or("");
   request.request_id = detail->getString("request_id").value_or("");
   request.roster_epoch = detail->getNonNegInt("roster_epoch").value_or(0);
+  request.statement_epoch = detail->getNonNegInt("statement_epoch").value_or(0);
+  request.changes_hash = detail->getString("changes_hash").value_or("");
+  request.after = detail->getString("after").value_or("");
   if (request.group_id.empty() || request.request_id.empty()) {
     return Error("roster request: missing group_id or request_id");
   }
@@ -71,6 +104,16 @@ std::string EncodeReply(const RosterReply& reply) {
     detail.set("roster_statement", group_roster_statement::ToJson(*reply.statement));
   }
   detail.set("removed", reply.removed);
+  if (!reply.changes.empty()) {
+    std::vector<Value> changes;
+    for (const GroupChange& change : reply.changes) {
+      changes.push_back(ObjectValue(group_change::ToJson(change)));
+    }
+    detail.set("changes", ArrayValue(std::move(changes)));
+  }
+  if (reply.more) {
+    detail.set("more", true);
+  }
   return DumpJson(detail);
 }
 
@@ -98,6 +141,16 @@ Roe<RosterReply> DecodeReply(const std::string& detail_json) {
     }
     reply.statement = std::move(*statement);
   }
+  if (const Array* changes = detail->getArray("changes")) {
+    for (const Value& item : changes->elements) {
+      const Object* json = asObject(item);
+      auto change = json ? group_change::FromJson(*json) : Roe<GroupChange>(Error("not an object"));
+      if (change && change->group_id == reply.group_id) {
+        reply.changes.push_back(std::move(*change)); // one that does not parse is skipped, not the reply
+      }
+    }
+  }
+  reply.more = detail->getIf<bool>("more").value_or(false);
   return reply;
 }
 

@@ -51,6 +51,11 @@ enum class GroupMembershipControlType {
   MemberRoleChanged,
   /** Owner → members (G017): the group set Open or Managed; carries the owner-signed roster. */
   GroupPresetChanged,
+  /**
+   * A member's or admin's signed roster change (G018: a leave, a removal, ...) from the signer's device to each member
+   * (and the account a removal names): `{ group_id, change }`.
+   */
+  GroupChange,
 };
 
 /** G014: a group has at most this many active members (the owner included; pending invites do not count). */
@@ -78,6 +83,8 @@ struct GroupRosterMember {
   std::string contact_id;
   MemberRole role = MemberRole::Member;
   int64_t joined_at = 0;
+  /** G019: who brought them in (the signer of the `add`); empty for the group's first members. */
+  std::string added_by;
 };
 
 struct GroupMetadata {

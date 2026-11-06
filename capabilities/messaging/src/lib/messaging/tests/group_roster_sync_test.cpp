@@ -60,7 +60,17 @@ protected:
     metadata.title = "Weekend hike";
     metadata.roster_epoch = held.roster_epoch;
     ASSERT_TRUE(roster_->UpsertMetadata(metadata));
-    ASSERT_TRUE(group_roster_sync::Adopt(*roster_, held));
+    ASSERT_TRUE(group_roster_sync::KeepStatement(*roster_, held));
+    ASSERT_TRUE(group_roster_sync::ApplyView(*roster_, kGroup, {}, 1));
+  }
+
+  Roe<ReplyOutcome> Apply(const RosterReply& reply, const std::string& local, const std::string& replier,
+                          GroupDissolvedApplied* dissolved = nullptr) {
+    return group_roster_sync::ApplyReply(*roster_, reply, local, replier, {}, 1, dissolved);
+  }
+
+  Roe<bool> CatchUp(const GroupRosterStatement& statement) {
+    return group_roster_sync::KeepAndCatchUp(*roster_, statement, {}, 1);
   }
 
   GroupMetadata Metadata() { return roster_->LoadMetadata(kGroup).value().value(); }
@@ -104,9 +114,7 @@ TEST_F(GroupRosterSyncTest, RestoredMemberTakesTheNewerRosterAndStopsSendingToTh
   EXPECT_FALSE(group_roster_sync::MaySend(Metadata())) << "no send while checking (a stale roster would leak)";
 
   // Alice removed Dave after the locker snapshot; Bob holds her newer statement.
-  auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith(check->request.request_id,
-                                                                   Statement(4, {bob_, carol_})),
-                                               carol_, bob_);
+  auto outcome = Apply(ReplyWith(check->request.request_id, Statement(4, {bob_, carol_})), carol_, bob_);
   ASSERT_TRUE(outcome);
   EXPECT_EQ(*outcome, ReplyOutcome::Active);
   std::vector<std::string> now{alice_.Id(), bob_, carol_};
@@ -120,16 +128,14 @@ TEST_F(GroupRosterSyncTest, AnUnchangedRosterEndsTheCheck) {
   const GroupRosterStatement s3 = Statement(3, {bob_, carol_});
   Seed(s3);
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, s3), carol_, bob_),
-            ReplyOutcome::Active)
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, s3), carol_, bob_), ReplyOutcome::Active)
       << "same epoch: not dropped as stale";
 }
 
 TEST_F(GroupRosterSyncTest, AMemberRemovedSinceItsLockerSnapshotEndsRemoved) {
   Seed(Statement(3, {bob_, carol_, dave_}));  // Dave's locker snapshot
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, dave_, 1).value();
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})),
-                                           dave_, bob_),
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})), dave_, bob_),
             ReplyOutcome::Removed);
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Removed);
   EXPECT_FALSE(group_roster_sync::MaySend(Metadata()));
@@ -138,13 +144,9 @@ TEST_F(GroupRosterSyncTest, AMemberRemovedSinceItsLockerSnapshotEndsRemoved) {
 TEST_F(GroupRosterSyncTest, RepliesToAnotherCheckOrUnverifiableStatementsAreIgnored) {
   Seed(Statement(3, {bob_, carol_}));
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith("an-old-request", Statement(4, {bob_, carol_})), carol_,
-                                           bob_),
-            ReplyOutcome::Ignored);
+  EXPECT_EQ(*Apply(ReplyWith("an-old-request", Statement(4, {bob_, carol_})), carol_, bob_), ReplyOutcome::Ignored);
   TestSigner mallory;
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_,
-                                           ReplyWith(check.request.request_id, Statement(9, {carol_}, &mallory)),
-                                           carol_, bob_),
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, Statement(9, {carol_}, &mallory)), carol_, bob_),
             ReplyOutcome::Ignored)
       << "signed by someone who is not the owner";
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Checking);
@@ -156,11 +158,9 @@ TEST_F(GroupRosterSyncTest, TheOwnersLaterReplyWins) {
   Seed(s3);
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
   // A member that is itself behind answers first.
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, s3), carol_, dave_),
-            ReplyOutcome::Active);
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, s3), carol_, dave_), ReplyOutcome::Active);
   // Then the owner, with the roster after Dave's removal.
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})),
-                                           carol_, alice_.Id()),
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, Statement(4, {bob_, carol_})), carol_, alice_.Id()),
             ReplyOutcome::Active);
   EXPECT_EQ(Members().size(), 3u) << "Dave is gone";
   EXPECT_EQ(Metadata().roster_epoch, 4u);
@@ -169,22 +169,19 @@ TEST_F(GroupRosterSyncTest, TheOwnersLaterReplyWins) {
 TEST_F(GroupRosterSyncTest, WithoutAStatementOnlyTheOwnerCanSayWeAreOut) {
   Seed(Statement(3, {bob_, carol_}));
   auto check = group_roster_sync::BeginCheck(*roster_, kGroup, carol_, 1).value();
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, std::nullopt, true), carol_,
-                                           bob_),
-            ReplyOutcome::Ignored);
-  EXPECT_EQ(*group_roster_sync::ApplyReply(*roster_, ReplyWith(check.request.request_id, std::nullopt, true), carol_,
-                                           alice_.Id()),
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, std::nullopt, true), carol_, bob_), ReplyOutcome::Ignored);
+  EXPECT_EQ(*Apply(ReplyWith(check.request.request_id, std::nullopt, true), carol_, alice_.Id()),
             ReplyOutcome::Removed);
 }
 
 TEST_F(GroupRosterSyncTest, AStatementAfterAMissedLeaveCatchesTheRosterUp) {
   Seed(Statement(3, {bob_, carol_, dave_}));
   // Dave left; we missed his member_left; Alice re-signs.
-  EXPECT_TRUE(*group_roster_sync::KeepAndCatchUp(*roster_, Statement(4, {bob_, carol_})));
+  EXPECT_TRUE(*CatchUp(Statement(4, {bob_, carol_})));
   EXPECT_EQ(Members().size(), 3u);
   EXPECT_EQ(Metadata().roster_epoch, 4u);
   // An older statement afterwards changes nothing.
-  EXPECT_FALSE(*group_roster_sync::KeepAndCatchUp(*roster_, Statement(3, {bob_, carol_, dave_})));
+  EXPECT_FALSE(*CatchUp(Statement(3, {bob_, carol_, dave_})));
   EXPECT_EQ(Members().size(), 3u);
 }
 
@@ -196,7 +193,7 @@ TEST_F(GroupRosterSyncTest, AStatementFromTheNewOwnerIsKeptThroughTheChain) {
   GroupMetadata metadata = Metadata();
   metadata.owner_identity = bob.Id();
   ASSERT_TRUE(roster_->UpsertMetadata(metadata));
-  EXPECT_TRUE(*group_roster_sync::KeepAndCatchUp(*roster_, Statement(5, {carol_}, &bob, {handed})));
+  EXPECT_TRUE(*CatchUp(Statement(5, {carol_}, &bob, {handed})));
   EXPECT_EQ(Metadata().owner_identity, bob.Id());
 }
 
@@ -333,7 +330,7 @@ TEST_F(GroupRosterSyncTest, ADissolvedGroupChecksNothingAnswersNothingAndKeepsNo
   open.sync_state = GroupSyncState::Dissolved;
   open.sync_request_id = "r-old";
   ASSERT_TRUE(roster_->UpsertMetadata(open));
-  auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith("r-old", Statement(5, {bob_, carol_})), carol_, bob_);
+  auto outcome = Apply(ReplyWith("r-old", Statement(5, {bob_, carol_})), carol_, bob_);
   ASSERT_TRUE(outcome);
   EXPECT_EQ(*outcome, ReplyOutcome::Ignored);
   EXPECT_EQ(Metadata().sync_state, GroupSyncState::Dissolved);
@@ -346,7 +343,7 @@ TEST_F(GroupRosterSyncTest, ADissolveIsNeverKeptAsTheRoster) {
       group_roster_statement::Sign(alice_, alice_.Key(), kGroup, 9, rows, {}, /*dissolved=*/true).value();
   ASSERT_TRUE(group_roster_statement::Verify(dissolve, alice_.Id())) << "it verifies as what it is";
   EXPECT_FALSE(group_roster_sync::KeepStatement(*roster_, dissolve));
-  EXPECT_FALSE(group_roster_sync::KeepAndCatchUp(*roster_, dissolve));
+  EXPECT_FALSE(CatchUp(dissolve));
   EXPECT_EQ(Metadata().roster_epoch, 3u);
   EXPECT_EQ(Members().size(), 3u);
 }
@@ -378,8 +375,7 @@ TEST_F(GroupRosterSyncTest, ADissolvedGroupAnswersWithTheDissolveAndTheAskerEnds
   ASSERT_TRUE(check);
   ASSERT_EQ(Metadata().sync_state, GroupSyncState::Checking);
   GroupDissolvedApplied ended;
-  auto outcome = group_roster_sync::ApplyReply(*roster_, ReplyWith(check->request.request_id, (*answer)->statement),
-                                               carol_, bob_, &ended);
+  auto outcome = Apply(ReplyWith(check->request.request_id, (*answer)->statement), carol_, bob_, &ended);
   ASSERT_TRUE(outcome);
   EXPECT_EQ(*outcome, ReplyOutcome::Dissolved) << "relayed by a member, it holds: the owner's signature carries it";
   EXPECT_TRUE(ended.applied);
@@ -387,7 +383,7 @@ TEST_F(GroupRosterSyncTest, ADissolvedGroupAnswersWithTheDissolveAndTheAskerEnds
   EXPECT_TRUE(Members().empty());
 
   // The owner itself answers with a fresh signature over what it held; the statement is the dissolve either way.
-  auto again = group_roster_sync::ApplyReply(*roster_, ReplyWith(check->request.request_id, dissolve), carol_, alice_.Id());
+  auto again = Apply(ReplyWith(check->request.request_id, dissolve), carol_, alice_.Id());
   ASSERT_TRUE(again);
   EXPECT_EQ(*again, ReplyOutcome::Ignored) << "a group already over takes nothing more";
 }

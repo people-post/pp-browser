@@ -39,10 +39,32 @@ struct GroupMemberCopy {
   std::optional<std::string> key_init_b64;
 };
 
+/**
+ * G018 item 5: what a group copy carries of its sender's roster, inside the ciphertext — the epoch of the owner's
+ * statement it holds and the hash of the unfolded changes it holds (group_change::ChangesHash). A receiver that
+ * holds something else checks its members (G013).
+ */
+struct GroupCopyState {
+  uint64_t statement_epoch = 0;
+  /** Lowercase hex, 64 characters; empty only from a sender that holds no statement yet. */
+  std::string changes_hash;
+
+  bool operator==(const GroupCopyState&) const = default;
+};
+
 /** A group copy as its member reads it: the group it names (inside the ciphertext, G018 item 7) and the message. */
 struct GroupCopyRead {
   std::string group_id;
   ThreadMessage message;
+  /** The sender's roster as the copy states it (G018 item 5). */
+  GroupCopyState state;
+};
+
+/** A group copy's plaintext, decoded (GroupE2ePayloadCodec::DecodeCopyPlaintext). */
+struct GroupCopyPlaintext {
+  std::string group_id;
+  GroupCopyState state;
+  std::vector<uint8_t> chat_payload;
 };
 
 struct GroupEncryptResult {
@@ -57,15 +79,13 @@ class GroupE2ePayloadCodec {
 public:
   /** The pair's session key with `member_identity` — with one of its devices, or its account (M021). */
   static PeerSessionKey PairTargetKey(const std::string& member_identity, const std::string& member_device = {});
-  static Roe<GroupEncryptResult> EncryptForMembers(const std::string& text, const std::string& group_id,
-                                                   const std::string& sender_contact_id,
-                                                   const std::string& message_id, int64_t timestamp,
-                                                   const std::vector<GroupMemberTarget>& members,
-                                                   IPeerSessionStore& psk_store,
-                                                   const std::function<Roe<ByteVector>(const PeerSessionKey&)>&
-                                                       resolve_peer_kem_public,
-                                                   const std::optional<std::vector<uint8_t>>& chat_payload_plaintext =
-                                                       std::nullopt);
+  static Roe<GroupEncryptResult> EncryptForMembers(
+      const std::string& text, const std::string& group_id, const std::string& sender_contact_id,
+      const std::string& message_id, int64_t timestamp, const std::vector<GroupMemberTarget>& members,
+      IPeerSessionStore& psk_store,
+      const std::function<Roe<ByteVector>(const PeerSessionKey&)>& resolve_peer_kem_public,
+      const std::optional<std::vector<uint8_t>>& chat_payload_plaintext = std::nullopt,
+      const GroupCopyState& state = {});
   /**
    * The local member's payload, read as the pairwise e2e_public message it is: under the pair's session
    * (`target_key`) at the envelope's epoch (or the key_init it carries). `read` says which
@@ -79,13 +99,15 @@ public:
   static bool IsGroupEnvelope(const RelayEnvelope& envelope);
 
   /**
-   * A group copy's AEAD plaintext (G018 item 7): `group_copy_version` u8 = 1, `group_id` LenUtf8, the message's
-   * ChatPayload LenBytes, nothing after. The relay sees no group id; the AEAD binds the copy to the group it names.
+   * A group copy's AEAD plaintext (G018 items 5 and 7): `group_copy_version` u8 = 2, `group_id` LenUtf8,
+   * `statement_epoch` u64 BE, `changes_hash` LenUtf8, the message's ChatPayload LenBytes, nothing after. The relay
+   * sees no group id; the AEAD binds the copy to the group it names.
    */
   static Roe<std::vector<uint8_t>> EncodeCopyPlaintext(const std::string& group_id,
-                                                       const std::vector<uint8_t>& chat_payload);
-  /** The group id and ChatPayload a copy's plaintext carries; malformed, another version or a bad id: an error. */
-  static Roe<std::pair<std::string, std::vector<uint8_t>>> DecodeCopyPlaintext(const std::vector<uint8_t>& plaintext);
+                                                       const std::vector<uint8_t>& chat_payload,
+                                                       const GroupCopyState& state = {});
+  /** What a copy's plaintext carries; malformed, another version, a bad id or a bad hash: an error. */
+  static Roe<GroupCopyPlaintext> DecodeCopyPlaintext(const std::vector<uint8_t>& plaintext);
 };
 
 } // namespace pbr

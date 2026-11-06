@@ -7,6 +7,7 @@
 #include "lib/people/AccountCard.h"
 
 #include "lib/delivery/DeliveryNotice.h"
+#include "lib/messaging/GroupChangeLines.h"
 #include "lib/messaging/GroupRosterSync.h"
 
 #include <cstdlib>
@@ -181,15 +182,120 @@ void RelayReceivePipeline::ApplyOutOfOrderControls(ThreadMessage& message, const
   }
 }
 
-void RelayReceivePipeline::KeepCarriedStatement(const ThreadMessage& message) const {
+void RelayReceivePipeline::KeepCarriedStatement(const ThreadMessage& message, const std::string& local_account,
+                                                RelayReceiveOutcome* outcome) const {
   auto detail = group_roster_sync_codec::DetailOf(message);
   auto statement = detail ? group_roster_sync_codec::StatementIn(*detail) : std::nullopt;
   if (!statement) {
     return;  // an event from an app before G012
   }
-  if (auto kept = group_roster_sync::KeepStatement(group_roster_, *statement); !kept) {
+  group_roster_sync::GroupViewApplied applied;
+  if (auto kept =
+          group_roster_sync::KeepAndCatchUp(group_roster_, *statement, account_cards_, util::NowUnixMs(), &applied);
+      !kept) {
     log().warning << "Roster statement not kept group_id=" << statement->group_id << ": " << kept.error().message;
+    return;
   }
+  FinishView(statement->group_id, applied, local_account, outcome);
+}
+
+void RelayReceivePipeline::MarkRemovedHere(const std::string& group_id) const {
+  auto lock = IGroupRosterStore::LockForUpdate();
+  (void)group_roster_.ClearGroupTarget(group_id);
+  if (auto metadata = group_roster_.LoadMetadata(group_id);
+      metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Active) {
+    GroupMetadata removed = **metadata;
+    removed.sync_state = GroupSyncState::Removed;
+    (void)group_roster_.UpsertMetadata(removed);
+  }
+}
+
+void RelayReceivePipeline::FinishView(const std::string& group_id, group_roster_sync::GroupViewApplied& applied,
+                                      const std::string& local_account, RelayReceiveOutcome* outcome) const {
+  auto metadata = group_roster_.LoadMetadata(group_id);
+  if (!metadata || !*metadata) {
+    return;
+  }
+  auto about_us =
+      group_change_lines::Append(store_, group_id, applied.newly_applied, (*metadata)->roster_epoch, local_account);
+  if (!about_us) {
+    log().warning << "group change lines not written group_id=" << group_id << ": " << about_us.error().message;
+  }
+  const bool we_left = !local_account.empty() &&
+                       std::find(applied.gone.begin(), applied.gone.end(), local_account) != applied.gone.end();
+  if (we_left) {
+    MarkRemovedHere(group_id);
+    if (outcome && about_us && *about_us) {
+      outcome->about_us = RelayReceiveOutcome::AboutUs::Removed;
+      outcome->about_us_group_thread_id = **about_us;
+    }
+    return;
+  }
+  if (outcome && (*metadata)->owner_identity == local_account) {
+    if (auto held = group_roster_.ListGroupChanges(group_id); held && !held->empty()) {
+      outcome->fold_group_id = group_id;
+    }
+  }
+}
+
+Roe<void> RelayReceivePipeline::ApplyGroupChange(const ThreadMessage& message, const std::string& actor_identity,
+                                                 const std::string& local_account, RelayReceiveOutcome* outcome) const {
+  if (outcome) {
+    outcome->suppress_inbox_chrome = true; // the DM carries it; the group's chat gets the line
+  }
+  auto detail = group_roster_sync_codec::DetailOf(message);
+  if (!detail) {
+    return Error("group_change: no detail");
+  }
+  auto change = group_roster_sync_codec::DecodeChange(*detail);
+  if (!change) {
+    return change.error();
+  }
+  auto member = group_roster_.IsMember(change->group_id, local_account);
+  if (!member) {
+    return member.error();
+  }
+  if (local_account.empty() || !*member) {
+    return {}; // not our group (any more)
+  }
+  // From the signer's device, or a member handing it on: the change speaks for its signer only (checked below).
+  if (actor_identity != change->signer) {
+    if (auto sender = group_roster_.IsMember(change->group_id, actor_identity); !sender || !*sender) {
+      return Error("group_change: handed on by someone outside the group");
+    }
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  auto received = group_roster_sync::ReceiveChange(group_roster_, *change, account_cards_, now_ms);
+  if (!received) {
+    return received.error();
+  }
+  if (received->held == group_roster_sync::ChangeHeld::Refused) {
+    return Error("group_change: it does not prove itself (forged, damaged, or the group holds too many)");
+  }
+  if (received->held == group_roster_sync::ChangeHeld::NoCard && on_unknown_sender_device_) {
+    on_unknown_sender_device_(change->signer, change->signer_device, now_ms); // verified once its card is here
+  }
+  if (received->held == group_roster_sync::ChangeHeld::Proved && change->signer_card && on_sender_card_ &&
+      change->signer_card->keys.account_id == change->signer && VerifyAccountCard(*change->signer_card, now_ms)) {
+    on_sender_card_(*change->signer_card); // newer than ours, it is kept
+  }
+  log().info << "group change " << group_change::KindToString(change->kind) << " group_id=" << change->group_id
+             << " by=" << change->signer
+             << (received->held == group_roster_sync::ChangeHeld::NoCard ? " (no card yet)" : "");
+  FinishView(change->group_id, received->applied, local_account, outcome);
+  return {};
+}
+
+void RelayReceivePipeline::NoteCopyState(const std::string& group_id, const GroupCopyState& theirs,
+                                         const std::string& sender, RelayReceiveOutcome& outcome) {
+  const GroupCopyState ours = group_roster_sync::CopyState(group_roster_, group_id);
+  if (!group_roster_sync::NeedsCatchUp(ours, theirs) || !catch_up_limiter_.Allow(group_id, util::NowUnixMs())) {
+    return;
+  }
+  log().info << "group copy from " << sender << " holds a newer roster (statement " << theirs.statement_epoch
+             << ", ours " << ours.statement_epoch << ") group_id=" << group_id;
+  outcome.catch_up_group_id = group_id;
+  outcome.catch_up_ask = sender;
 }
 
 Roe<void> RelayReceivePipeline::ApplyGroupSettingChanged(const ThreadMessage& message,
@@ -243,13 +349,15 @@ Roe<void> RelayReceivePipeline::ApplyGroupSettingChanged(const ThreadMessage& me
   if (!agrees(*statement)) {
     return Error("group setting: the event does not match the roster it carries");
   }
-  auto kept = group_roster_sync::KeepAndCatchUp(group_roster_, *statement);
+  group_roster_sync::GroupViewApplied applied;
+  auto kept = group_roster_sync::KeepAndCatchUp(group_roster_, *statement, account_cards_, util::NowUnixMs(), &applied);
   if (!kept) {
     return kept.error();
   }
   if (!*kept) {
     return {}; // an older roster than ours: nothing changes, no line
   }
+  FinishView(group_id, applied, local_account, nullptr);
   auto thread = store_.FindGroupThread(group_id);
   if (thread && *thread) {
     if (auto sys =
@@ -279,9 +387,14 @@ Roe<void> RelayReceivePipeline::ApplyRosterStatement(const ThreadMessage& messag
   if (!member || !*member || statement->owner_identity != actor_identity) {
     return {};  // not our group, or not sent by the owner it names
   }
-  if (auto kept = group_roster_sync::KeepAndCatchUp(group_roster_, *statement); !kept) {
+  group_roster_sync::GroupViewApplied applied;
+  if (auto kept =
+          group_roster_sync::KeepAndCatchUp(group_roster_, *statement, account_cards_, util::NowUnixMs(), &applied);
+      !kept) {
     log().warning << "Roster statement not kept group_id=" << statement->group_id << ": " << kept.error().message;
+    return {};
   }
+  FinishView(statement->group_id, applied, local_account, outcome);
   return {};
 }
 
@@ -494,7 +607,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberJoinedToRoster(group_roster_, *joined, actor_identity); !applied) {
       return applied.error();
     }
-    KeepCarriedStatement(message);
+    KeepCarriedStatement(message, local_account, outcome);
     // What the owner says of the other members: kept; the cards are then left out of what is stored.
     bool carried_cards = false;
     for (const GroupMembershipCodec::MemberJoinedEntry& entry : joined->members) {
@@ -567,36 +680,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     return {};
   }
 
-  if (kind == GroupMembershipControlType::MemberLeft) {
-    auto left = GroupMembershipCodec::DecodeMemberLeftFromMessage(message);
-    if (!left) {
-      return left.error();
-    }
-    if (auto ignore = ignore_if_not_member(left->group_id); ignore && *ignore) {
-      return {};
-    }
-    if (auto applied = ApplyMemberLeftToRoster(group_roster_, *left, actor_identity); !applied) {
-      return applied.error();
-    }
-    if (outcome) {
-      auto metadata = group_roster_.LoadMetadata(left->group_id);
-      if (metadata && *metadata && (*metadata)->owner_identity == local_account) {
-        outcome->resign_roster_group_id = left->group_id;
-      }
-    }
-    auto thread = store_.FindGroupThread(left->group_id);
-    if (thread && *thread) {
-      auto detail =
-          GroupMembershipCodec::EncodeMemberLeft(left->group_id, left->member_identity, left->roster_epoch);
-      if (detail) {
-        auto sys = GroupMembershipCodec::BuildSystemMessage((*thread)->id, GroupMembershipControlType::MemberLeft,
-                                                            "Member left", *detail, actor_identity);
-        if (sys) {
-          (void)store_.AppendMessage(*sys);
-        }
-      }
-    }
-    return {};
+  if (kind == GroupMembershipControlType::GroupChange) {
+    return ApplyGroupChange(message, actor_identity, local_account, outcome);
   }
 
   if (kind == GroupMembershipControlType::MemberRemoved) {
@@ -611,14 +696,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto applied = ApplyMemberRemovedToRoster(group_roster_, *removed, actor_identity); !applied) {
       return applied.error();
     }
-    KeepCarriedStatement(message);
+    KeepCarriedStatement(message, local_account, outcome);
     if (!local_account.empty() && removed->member_identity == local_account) {
-      (void)group_roster_.ClearGroupTarget(removed->group_id);
+      MarkRemovedHere(removed->group_id); // G020 3: the chat stays, read-only
     }
     auto thread = store_.FindGroupThread(removed->group_id);
     if (thread && *thread) {
       auto detail = GroupMembershipCodec::EncodeMemberRemoved(removed->group_id, removed->member_identity,
-                                                             removed->roster_epoch);
+                                                              removed->roster_epoch, actor_identity);
       if (detail) {
         auto sys = GroupMembershipCodec::BuildSystemMessage(
             (*thread)->id, GroupMembershipControlType::MemberRemoved, "Member removed", *detail, actor_identity);
@@ -1725,6 +1810,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }
+  NoteCopyState(group_id, decrypted->state, envelope.sender_contact_id, outcome); // G018 item 5
   // G013: while our check of a restored group goes unanswered, a member's message shows it is online.
   if (auto metadata = group_roster_.LoadMetadata(group_id);
       metadata && *metadata && (*metadata)->sync_state == GroupSyncState::Checking &&

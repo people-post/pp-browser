@@ -222,30 +222,6 @@ Roe<void> ApplyOwnerTransferredToRoster(IGroupRosterStore& roster,
   return {};
 }
 
-Roe<void> ApplyMemberLeftToRoster(IGroupRosterStore& roster, const GroupMembershipCodec::MemberLeftPayload& payload,
-                                  const std::string& actor_identity) {
-  const auto lock = IGroupRosterStore::LockForUpdate();  // read-then-write of the roster
-  if (payload.member_identity != actor_identity) {
-    return Error("member_left actor must match member_identity");
-  }
-  auto metadata = LoadMetadataRequired(roster, payload.group_id);
-  if (!metadata) {
-    return metadata.error();
-  }
-  if (metadata->owner_identity == actor_identity) {
-    return Error("Owner cannot leave without transfer");
-  }
-  if (auto epoch = RequireNewerEpoch(*metadata, payload.roster_epoch); !epoch) {
-    return epoch.error();
-  }
-  if (auto removed = roster.RemoveMember(payload.group_id, payload.member_identity); !removed) {
-    return removed.error();
-  }
-  GroupMetadata updated = *metadata;
-  updated.roster_epoch = payload.roster_epoch;
-  return roster.UpsertMetadata(updated);
-}
-
 Roe<void> ApplyMemberRemovedToRoster(IGroupRosterStore& roster,
                                      const GroupMembershipCodec::MemberRemovedPayload& payload,
                                      const std::string& actor_identity) {

@@ -1919,6 +1919,8 @@ void ConversationsHub::ResumeGroupRosterChecks() {
   }
   // G016: a dissolve or a refusal that did not get sent (the app quit, or messaging was down) goes now.
   group_membership_->ResumePendingGroupSends();
+  // G018 item 4: changes held for a group we own (they arrived while we were away, or before a fold went out).
+  group_membership_->FoldHeldChanges();
   std::vector<AccountStateGroup> restored;
   {
     std::lock_guard lock(restored_mutex_);
@@ -2674,6 +2676,29 @@ void ConversationsHub::BindGroupRosterSyncFamily() {
             group_membership_->OnGroupDissolvedElsewhere(end);
           }
         });
+      },
+      GroupRosterSyncHooks{
+          .cards = [this](const std::string& account) -> std::optional<AccountCard> {
+            return mesh_messaging_ ? mesh_messaging_->GroupChangeCards()(account) : std::nullopt;
+          },
+          // G018 item 5: the changes a reply brought, their lines (and the owner's fold), off the ingest.
+          .on_applied =
+              [this](std::string group_id, std::vector<GroupChange> applied) {
+                AppRuntime::PostWorkerNormal([this, group_id = std::move(group_id), applied = std::move(applied)]() {
+                  if (group_membership_) {
+                    group_membership_->OnChangesApplied(group_id, applied);
+                  }
+                });
+              },
+          .ask_more =
+              [this](std::string group_id, std::string replier, std::string after) {
+                AppRuntime::PostWorkerNormal(
+                    [this, group_id = std::move(group_id), replier = std::move(replier), after = std::move(after)]() {
+                      if (group_membership_) {
+                        (void)group_membership_->StartCatchUp(group_id, replier, after);
+                      }
+                    });
+              },
       }));
 }
 

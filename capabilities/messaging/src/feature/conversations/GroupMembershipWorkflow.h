@@ -61,9 +61,15 @@ public:
   Roe<void> ResolveInviteCard(const std::string& inviter_identity, const std::string& invite_nonce,
                               InviteStatus status, const std::string& status_text);
   Roe<void> RemoveMember(const std::string& group_id, const std::string& member_contact_id);
-  /** Owner prune by communicating identity (unreachable members may lack a contact row). */
+  /**
+   * Remove by account (unreachable members may lack a contact row): the owner anyone, an admin members (G017, G020).
+   * Signed as a `remove` change by this device (G018); the owner folds it into its statement at once.
+   */
   Roe<void> RemoveMemberByIdentity(const std::string& group_id, const std::string& member_identity);
-  /** Non-owner leave: fan-out member_left then clear local membership. */
+  /**
+   * Non-owner leave (G018): a `leave` change signed by this device, fanned out to the members, then our membership
+   * cleared. The owner transfers or dissolves instead (G009, G016).
+   */
   Roe<void> LeaveGroup(const std::string& group_id);
   /** Owner leave with successor: fan-out owner_transferred (leave_previous) then clear local. */
   Roe<void> LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity);
@@ -142,6 +148,27 @@ public:
   /** G012: sign the roster and send it to the members (after a member left, or once we took the group over). */
   Roe<void> SignAndSendRoster(const std::string& group_id,
                               const std::optional<GroupOwnerTransfer>& handed = std::nullopt);
+  /**
+   * G018 item 4: as the group's owner, fold the changes it holds into a new statement and send it to the members —
+   * a few seconds after the last one arrived (kFoldDelayMs), so a burst folds once.
+   */
+  void ScheduleFold(const std::string& group_id);
+  static constexpr int64_t kFoldDelayMs = 3'000;
+  /** Fold now when we own the group and hold a change to fold; true when a statement went out. */
+  Roe<bool> FoldNow(const std::string& group_id);
+  /** Every group we own that holds changes folds them (when messaging comes up). */
+  void FoldHeldChanges();
+  /**
+   * G018 item 5: a member's copy says its roster is newer than ours: ask it (the control lane, G013's request) for
+   * the statement and the changes we lack, from `after` on when a reply had more.
+   */
+  Roe<void> StartCatchUp(const std::string& group_id, const std::string& ask, const std::string& after = {});
+  /** The changes that count now (a member check reply's, a card that arrived): their lines in the group's chat. */
+  void OnChangesApplied(const std::string& group_id, const std::vector<GroupChange>& changes);
+  /** `account`'s card arrived: a change of theirs held without it may count now. */
+  void RecheckChangesBy(const std::string& account);
+  /** The cards a change is checked against (ours and the ones kept). */
+  GroupCardLookup ChangeCards();
   /** G013: answer a member's roster check; as the owner, with a statement signed now. */
   Roe<void> AnswerRosterRequest(const group_roster_sync_codec::RosterRequest& request, const std::string& asker);
   /**
@@ -193,6 +220,17 @@ private:
   Roe<void> SendRenameDirectMessage(const std::string& member_identity, const std::string& group_id,
                                     const std::string& title, uint64_t roster_epoch, uint64_t title_version);
   Roe<void> RemoveMemberInternal(const std::string& group_id, const std::string& member_identity);
+  /** The owner's removal: its `remove` folded at once into the statement `member_removed` carries. */
+  Roe<void> RemoveAsOwner(const std::string& group_id, const std::string& member_identity,
+                          const std::optional<GroupChange>& removal);
+  /** An admin's removal (G020): the signed `remove` to the remaining members first, then to the one removed. */
+  Roe<void> RemoveAsAdmin(const std::string& group_id, const GroupChange& removal);
+  /** `draft` as this device's change (G018 item 9): our card carried, signed by the device key. */
+  Roe<GroupChange> SignOwnChange(GroupChange draft);
+  /** This device's PeerId (the signer_device of our changes). */
+  Roe<std::string> OwnDevice();
+  /** `group_change` to every member but us and `removed`, then (when set) to `removed` (G020 2). Best-effort. */
+  void FanOutChange(const std::string& group_id, const GroupChange& change, const std::string& removed = {});
   /**
    * The owner's change to the group's settings (a role, the preset): bump the roster epoch, append `display` to the
    * group's chat and fan the event out with the newly signed roster. `apply` makes the change in the store, under the
@@ -233,6 +271,10 @@ private:
 
   mutable std::mutex unreachable_mutex_;
   std::set<std::pair<std::string, std::string>> unreachable_;
+
+  std::mutex fold_mutex_;
+  /** Groups with a fold scheduled (ScheduleFold). */
+  std::set<std::string> folds_pending_;
 
   /** False once destroyed: the retry one-shots of ResumePendingGroupSends check it before touching `this`. */
   std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);

@@ -355,12 +355,14 @@ struct Side {
       targets.push_back(target);
     }
     auto encrypted = GroupE2ePayloadCodec::EncryptForMembers(
-        text, group_id, account, message.id, message.timestamp, targets, *psk, [this](const PeerSessionKey& key) {
+        text, group_id, account, message.id, message.timestamp, targets, *psk,
+        [this](const PeerSessionKey& key) {
           if (!key.peer_device.empty()) {
             return Base64Decode(FindCardDevice(cards.at(key.peer_identity_value), key.peer_device)->kem_public_key_b64);
           }
           return Base64Decode(peer_kem.at(key.peer_identity_value));
-        });
+        },
+        std::nullopt, copy_state);
     EXPECT_TRUE(encrypted) << encrypted.error().message;
     std::map<std::string, RelayEnvelope> out;
     for (size_t i = 0; i < targets.size(); ++i) {
@@ -415,6 +417,8 @@ struct Side {
   int landed = 0;
   std::map<uint32_t, uint64_t> chat_seq;  // next seq per epoch
   std::map<std::pair<std::string, uint32_t>, uint64_t> group_seq;  // our seq per (member, pair epoch)
+  /** What our group copies say of our roster (G018 item 5); the app reads it from the store. */
+  GroupCopyState copy_state;
   /** Carry our account card with a key_init (as the app does): `own_card` when set, else one listing this device. */
   bool carry_keys = false;
   std::optional<AccountCard> own_card;
@@ -788,6 +792,29 @@ TEST_F(GroupCopyPrivacyTest, WhatTheRelayStoresNamesNoGroupAndTheCopyArrivesInIt
   ASSERT_TRUE(outcome.persisted_message);
   EXPECT_EQ(outcome.persisted_message->text, "hello group");
   EXPECT_EQ(outcome.thread_id, (*bob_->store->FindGroupThread(group_))->id);
+}
+
+// G018 item 5: a copy says which roster its sender holds; one newer than ours asks the sender for what we lack — once
+// per group in a burst.
+TEST_F(GroupCopyPrivacyTest, ACopyFromASenderAheadOfUsAsksItToCatchUsUp) {
+  alice_->copy_state = group_roster_sync::CopyState(*alice_->roster, group_);
+  RelayReceiveOutcome outcome = bob_->pipeline->ProcessEnvelope(
+      alice_->GroupChat(group_, everyone_, "same roster").at(bob_->account), bob_->account);
+  ASSERT_TRUE(outcome.persisted);
+  EXPECT_FALSE(outcome.catch_up_group_id) << "we hold what Alice holds";
+
+  alice_->copy_state.statement_epoch += 1;
+  outcome =
+      bob_->pipeline->ProcessEnvelope(alice_->GroupChat(group_, everyone_, "newer").at(bob_->account), bob_->account);
+  ASSERT_TRUE(outcome.persisted);
+  ASSERT_TRUE(outcome.catch_up_group_id);
+  EXPECT_EQ(*outcome.catch_up_group_id, group_);
+  EXPECT_EQ(outcome.catch_up_ask, alice_->account);
+
+  outcome = bob_->pipeline->ProcessEnvelope(alice_->GroupChat(group_, everyone_, "and again").at(bob_->account),
+                                            bob_->account);
+  ASSERT_TRUE(outcome.persisted);
+  EXPECT_FALSE(outcome.catch_up_group_id) << "a burst asks once";
 }
 
 TEST_F(GroupCopyPrivacyTest, ACopyIsFiledInTheGroupItsCiphertextNames) {

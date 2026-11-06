@@ -30,9 +30,12 @@
 //   stay_connected {on}                 the "Stay connected in the background" setting (P011)
 //   create_group {title, accounts}      a group with these contacts (each invited)
 //   group_invites                       group invites in this user's chats {nonce, group_id, title, from}
-//   group_roster {group_id}             the members this user knows of
+//   group_roster {group_id}             the members this user knows of {members, roles, owner, sync_state,
+//                                       roster_epoch, statement_epoch, held_changes, changes_hash} (G018: the
+//                                       changes held unfolded, and the hash its group copies carry)
 //   accept_group_invite {nonce, group_id}  the invite card's Accept → the group's thread
-//   remove_member {thread, account}     the owner removes a member from the group
+//   remove_member {thread, account}     the owner (anyone) or an admin (members, G020) removes someone from the group
+//   leave_group {thread}                a member leaves the group (G018: its signed leave), the chat kept
 //   set_group_role {thread, account, role} the owner makes a member admin (role admin) or member again (G017)
 //   set_group_preset {thread, preset}   the owner sets the group open or managed (G017)
 //   make_group_from_call {title?, accounts?}
@@ -78,6 +81,7 @@
 // --synthetic-video: a camera and an H.264 stand-in with real frame sizes (SyntheticVideo): video calls run in a
 //   container with no camera or GPU, for measuring how video travels.
 
+#include "lib/messaging/GroupRosterSync.h"
 #include "lib/people/DevicePeerId.h"
 #include "app/Bootstrap.h"
 #include "common/Logger.h"
@@ -764,6 +768,13 @@ public:
             out.set("statement", !(*metadata)->roster_statement_json.empty());
             out.set("preset", GroupPresetToString((*metadata)->policy.preset));
           }
+          // G018: the changes held on top of the owner's statement, and what this device's copies say of them.
+          const std::string group_id = request->getString("group_id").value_or("");
+          const GroupCopyState state = group_roster_sync::CopyState(*rosters, group_id);
+          out.setJsonUInt("statement_epoch", state.statement_epoch);
+          out.set("changes_hash", state.changes_hash);
+          auto held = rosters->ListGroupChanges(group_id);
+          out.setJsonUInt("held_changes", held ? static_cast<uint64_t>(held->size()) : 0);
         }
         Emit(out);
       }
@@ -775,6 +786,15 @@ public:
                                                                 request->getString("account").value_or(""));
                  !removed) {
         ReplyError(id, removed.error().message);
+      } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "leave_group") {
+      auto thread = facade_->GetThread(request->getString("thread").value_or(""));
+      if (!thread || !*thread || !(*thread)->group_id) {
+        ReplyError(id, "not a group chat");
+      } else if (auto left = facade_->LeaveGroup(*(*thread)->group_id); !left) {
+        ReplyError(id, left.error().message);
       } else {
         Emit(Reply(id, true));
       }

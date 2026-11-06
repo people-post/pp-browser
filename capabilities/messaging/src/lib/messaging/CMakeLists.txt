@@ -21,6 +21,7 @@ pp_browser_add_lib_library(pp_lib_messaging
     GroupMembershipCodec.cpp
     GroupPermissions.cpp
     GroupChange.cpp
+    GroupChangeLines.cpp
     GroupRosterRules.cpp
     GroupRosterStatement.cpp
     GroupRosterSync.cpp

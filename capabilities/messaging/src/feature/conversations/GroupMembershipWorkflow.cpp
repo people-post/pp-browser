@@ -4,6 +4,7 @@
 #include "lib/messaging/GroupRosterVersion.h"
 
 #include "lib/delivery/DirectChatTargetFromContact.h"
+#include "lib/messaging/GroupChangeLines.h"
 #include "lib/messaging/GroupMembershipApply.h"
 #include "lib/messaging/GroupMembershipCodec.h"
 #include "lib/messaging/GroupTypes.h"
@@ -667,31 +668,72 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
 
 Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group_id,
                                                         const std::string& member_identity) {
-  auto update = IGroupRosterStore::LockForUpdate();  // the epoch read below and its apply, as one
-  auto metadata = LoadMetadataOrError(group_id);
-  if (!metadata) {
-    return metadata.error();
-  }
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
-  if (*local != metadata->owner_identity) {
-    return Error("Only the group owner may remove members");
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
   }
   if (metadata->sync_state == GroupSyncState::Dissolved) {
     return Error(group_roster_sync::kGroupDissolvedError);
   }
   if (member_identity == *local) {
-    return Error("Owner cannot remove self — transfer ownership or leave");
+    return Error(*local == metadata->owner_identity ? "Owner cannot remove self — transfer ownership or leave"
+                                                    : "Leave the group instead");
   }
+  // G018: the removal is this device's signed `remove` (it names the adds and changes of the member it holds).
+  auto device = OwnDevice();
+  auto draft =
+      device ? group_roster_sync::DraftRemove(roster_, group_id, *local, *device, member_identity, util::NowUnixMs())
+             : Roe<GroupChange>(device.error());
+  std::optional<GroupChange> removal;
+  if (draft) {
+    if (auto signed_change = SignOwnChange(std::move(*draft))) {
+      removal = std::move(*signed_change);
+    } else {
+      log().warning << "remove not signed group=" << group_id << ": " << signed_change.error().message;
+    }
+  } else if (*local != metadata->owner_identity) {
+    return draft.error(); // an admin's removal is its signed change, or nothing
+  }
+  if (*local == metadata->owner_identity) {
+    return RemoveAsOwner(group_id, member_identity, removal);
+  }
+  if (!removal) {
+    return Error("The removal could not be signed on this device");
+  }
+  return RemoveAsAdmin(group_id, *removal);
+}
 
+Roe<void> GroupMembershipWorkflow::RemoveAsOwner(const std::string& group_id, const std::string& member_identity,
+                                                 const std::optional<GroupChange>& removal) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto update = IGroupRosterStore::LockForUpdate(); // the epoch read below and its apply, as one
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (removal) {
+    // Folded by the statement signed below: its id is the removal a re-admit names (G018 R2).
+    (void)group_roster_sync::HoldChange(roster_, *removal, ChangeCards(), util::NowUnixMs(), /*line_shown=*/true);
+  }
   // The same change every member applies from the event (one rule for both replicas).
-  const GroupMembershipCodec::MemberRemovedPayload removal{group_id, member_identity, metadata->roster_epoch + 1};
-  if (auto applied = ApplyMemberRemovedToRoster(roster_, removal, *local); !applied) {
+  const GroupMembershipCodec::MemberRemovedPayload event{group_id, member_identity, metadata->roster_epoch + 1};
+  if (auto applied = ApplyMemberRemovedToRoster(roster_, event, *local); !applied) {
     return applied.error();
   }
-  metadata->roster_epoch = removal.roster_epoch;
+  metadata->roster_epoch = event.roster_epoch;
+  auto detail = GroupMembershipCodec::EncodeMemberRemoved(group_id, member_identity, metadata->roster_epoch, *local);
+  if (!detail) {
+    return detail.error();
+  }
+  // Signed under the same lock as the removal: a change arriving in between cannot be lost from the fold.
+  const std::string sent = WithSignedRoster(group_id, *detail);
   update.unlock();  // not across the sends below
   // A removed member must not keep showing as "invited, waiting".
   (void)roster_.ExpireOutboundInvitesTo(group_id, member_identity);
@@ -702,17 +744,41 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
   if (!thread || !*thread) {
     return Error("Group thread not found");
   }
-  auto detail = GroupMembershipCodec::EncodeMemberRemoved(group_id, member_identity, metadata->roster_epoch);
-  if (!detail) {
-    return detail.error();
+  if (auto line = AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberRemoved,
+                                              "Member removed", *detail, *local);
+      !line) {
+    return line.error();
   }
-  if (auto event = AppendMembershipSystemEvent((*thread)->id, GroupMembershipControlType::MemberRemoved,
-                                               "Member removed", *detail, *local);
-      !event) {
-    return event.error();
+  // The roster has lost them already: the members first, then the one removed (G020 2).
+  return FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberRemoved, sent, "Member removed", *local,
+                               member_identity);
+}
+
+Roe<void> GroupMembershipWorkflow::RemoveAsAdmin(const std::string& group_id, const GroupChange& removal) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
   }
-  return FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberRemoved, WithSignedRoster(group_id, *detail),
-                               "Member removed", *local, member_identity);
+  const int64_t now_ms = util::NowUnixMs();
+  auto held = group_roster_sync::HoldChange(roster_, removal, ChangeCards(), now_ms, /*line_shown=*/true);
+  if (!held) {
+    return held.error();
+  }
+  if (*held != group_roster_sync::ChangeHeld::Proved) {
+    return Error("The removal does not prove itself on this device (its card is not here)");
+  }
+  FanOutChange(group_id, removal, removal.member); // while the roster still lists everyone to tell
+  auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms);
+  if (!applied) {
+    return applied.error();
+  }
+  (void)roster_.ExpireOutboundInvitesTo(group_id, removal.member);
+  ClearMemberUnreachable(group_id, removal.member);
+  if (auto metadata = roster_.LoadMetadata(group_id); metadata && *metadata) {
+    (void)group_change_lines::Append(store_, group_id, {removal}, (*metadata)->roster_epoch, *local);
+  }
+  log().info << "member removed by admin group=" << group_id << " member=" << removal.member;
+  return {};
 }
 
 Roe<void> GroupMembershipWorkflow::RemoveMember(const std::string& group_id, const std::string& member_contact_id) {
@@ -743,20 +809,70 @@ Roe<void> GroupMembershipWorkflow::LeaveGroup(const std::string& group_id) {
   if (*local == metadata->owner_identity) {
     return Error("Owner must transfer ownership before leaving");
   }
-
-  const GroupMembershipCodec::MemberLeftPayload leave{group_id, *local, metadata->roster_epoch + 1};
-  auto detail = GroupMembershipCodec::EncodeMemberLeft(group_id, *local, leave.roster_epoch);
-  if (!detail) {
-    return detail.error();
+  // G018: our signed `leave` (it names the adds that brought us in and our own changes the owner has not folded),
+  // to every member while we still hold the roster. Best-effort: leaving here always proceeds, so a close cannot get
+  // stuck.
+  const int64_t now_ms = util::NowUnixMs();
+  auto device = OwnDevice();
+  auto draft = device ? group_roster_sync::DraftLeave(roster_, group_id, *local, *device, now_ms)
+                      : Roe<GroupChange>(device.error());
+  auto leave = draft ? SignOwnChange(std::move(*draft)) : Roe<GroupChange>(draft.error());
+  if (leave) {
+    (void)group_roster_sync::HoldChange(roster_, *leave, ChangeCards(), now_ms, /*line_shown=*/true);
+    FanOutChange(group_id, *leave);
+    if (auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms); !applied) {
+      log().warning << "LeaveGroup roster: " << applied.error().message << " group=" << group_id;
+    }
+  } else {
+    log().warning << "LeaveGroup: no signed leave (" << leave.error().message << ") group=" << group_id;
   }
-  // Best-effort notify remaining members (while we still hold the roster); local leave always
-  // proceeds so close cannot get stuck.
-  (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberLeft, *detail, "Member left", *local);
-  if (auto applied = ApplyMemberLeftToRoster(roster_, leave, *local); !applied) {
-    log().warning << "LeaveGroup local roster: " << applied.error().message << " group=" << group_id;
+  if (auto still = roster_.IsMember(group_id, *local); still && *still) {
+    (void)roster_.RemoveMember(group_id, *local); // the leave did not count here: we are out all the same
   }
   (void)roster_.ClearGroupTarget(group_id);
   return {};
+}
+
+Roe<std::string> GroupMembershipWorkflow::OwnDevice() {
+  return mesh_messaging_.OwnAccountCards().DevicePeerId();
+}
+
+GroupCardLookup GroupMembershipWorkflow::ChangeCards() {
+  return mesh_messaging_.GroupChangeCards();
+}
+
+Roe<GroupChange> GroupMembershipWorkflow::SignOwnChange(GroupChange draft) {
+  // The first send of a change carries our card: a member who never had a pair session with us can check it.
+  if (auto card = mesh_messaging_.OwnAccountCards().Card(util::NowUnixMs())) {
+    draft.signer_card = std::move(*card);
+  }
+  return group_change::Sign(std::move(draft),
+                            [this](const ByteVector& bytes) { return identity_.SignDeviceBytes(bytes); });
+}
+
+void GroupMembershipWorkflow::FanOutChange(const std::string& group_id, const GroupChange& change,
+                                           const std::string& removed) {
+  auto local = LocalRelayIdentity();
+  auto members = roster_.ListMembers(group_id);
+  if (!local || !members) {
+    return;
+  }
+  std::vector<std::string> identities;
+  for (const GroupRosterMember& member : *members) {
+    if (member.member_identity != removed) {
+      identities.push_back(member.member_identity);
+    }
+  }
+  const std::string detail = group_roster_sync_codec::EncodeChange(change);
+  const std::string display = "Group members changed";
+  (void)FanOutPairwise(SelectPairwiseFanoutTargets(identities, *local), PairwiseFanoutMode::BestEffort,
+                       [&](const std::string& identity) {
+                         return SendMembershipDirectMessage(identity, GroupMembershipControlType::GroupChange, detail,
+                                                            display);
+                       });
+  if (!removed.empty() && removed != *local) {
+    (void)SendMembershipDirectMessage(removed, GroupMembershipControlType::GroupChange, detail, display);
+  }
 }
 
 Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, const std::string& new_owner_identity) {
@@ -1570,7 +1686,7 @@ GroupMembershipWorkflow::RosterParts GroupMembershipWorkflow::RosterPartsOf(
   RosterParts parts;
   parts.rows.reserve(members.size());
   for (const GroupRosterMember& m : members) {
-    parts.rows.push_back({m.member_identity, m.role, m.joined_at});
+    parts.rows.push_back({m.member_identity, m.role, m.joined_at, m.added_by});
   }
   if (auto held = group_roster_sync::Held(metadata)) {
     parts.chain = held->owner_chain;
@@ -1626,15 +1742,27 @@ Roe<GroupRosterStatement> GroupMembershipWorkflow::SignRoster(const std::string&
   if (!members) {
     return members.error();
   }
+  // G018 item 4: every statement the owner signs folds the changes it holds (a leave, an admin's removal, ...).
   RosterParts parts = RosterPartsOf(*metadata, *members, handed);
-  auto statement = group_roster_statement::Sign(identity_, *key, group_id, metadata->roster_epoch,
-                                                std::move(parts.rows), std::move(parts.chain),
-                                                /*dissolved=*/false, metadata->policy.preset);
+  const int64_t now_ms = util::NowUnixMs();
+  GroupRosterStatement draft = group_roster_sync::OwnerDraft(
+      roster_, *metadata, std::move(parts.rows), std::move(parts.chain), *account, *key, ChangeCards(), now_ms);
+  auto statement = group_roster_statement::SignStatement(identity_, *key, std::move(draft));
   if (!statement) {
     return statement.error();
   }
+  if (statement->roster_epoch > metadata->roster_epoch) {
+    metadata->roster_epoch = statement->roster_epoch;
+    if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
+      return saved.error();
+    }
+  }
   if (auto kept = group_roster_sync::KeepStatement(roster_, *statement); !kept) {
     return kept.error();
+  }
+  // What it folded is dropped here too; the rows are what it says.
+  if (auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), now_ms); !applied) {
+    return applied.error();
   }
   return statement;
 }
@@ -1691,7 +1819,8 @@ Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_c
       reply.statement = held;
     }
   } else if ((*metadata)->owner_identity == *local && (*metadata)->sync_state == GroupSyncState::Active) {
-    // The owner answers with the roster as it is now.
+    // The owner answers with the roster as it is now: what it holds folded first, and sent to every member.
+    (void)FoldNow(request.group_id);
     auto statement = SignRoster(request.group_id);
     if (!statement) {
       return statement.error();
@@ -1700,6 +1829,7 @@ Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_c
     reply.request_id = request.request_id;
     reply.removed = !statement->Lists(asker);
     reply.statement = std::move(*statement);
+    group_roster_sync::AddChangesTo(roster_, request, reply); // what it could not fold yet
   } else {
     auto answer = group_roster_sync::Answer(roster_, request, asker);
     if (!answer) {
@@ -1711,9 +1841,115 @@ Roe<void> GroupMembershipWorkflow::AnswerRosterRequest(const group_roster_sync_c
     reply = std::move(**answer);
   }
   log().info << "Roster answer group=" << request.group_id << " to=" << asker
-             << " statement=" << (reply.statement ? reply.statement->roster_epoch : 0) << " removed=" << reply.removed;
+             << " statement=" << (reply.statement ? reply.statement->roster_epoch : 0) << " removed=" << reply.removed
+             << " changes=" << reply.changes.size() << (reply.more ? "+" : "");
   return SendRosterControl(asker, GroupMembershipControlType::GroupRosterReply,
                            group_roster_sync_codec::EncodeReply(reply), "Group members", *local);
+}
+
+void GroupMembershipWorkflow::ScheduleFold(const std::string& group_id) {
+  {
+    std::lock_guard lock(fold_mutex_);
+    if (!folds_pending_.insert(group_id).second) {
+      return; // one is on its way: it folds what arrives meanwhile too
+    }
+  }
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kFoldDelayMs), [this, group_id, alive = alive_]() {
+    if (!alive->load()) {
+      return;
+    }
+    AppRuntime::PostWorkerNormal([this, group_id, alive]() {
+      if (!alive->load() || AppRuntime::IsShuttingDown()) {
+        return;
+      }
+      {
+        std::lock_guard lock(fold_mutex_);
+        folds_pending_.erase(group_id);
+      }
+      if (auto folded = FoldNow(group_id); !folded) {
+        log().warning << "fold failed group=" << group_id << ": " << folded.error().message;
+      }
+    });
+  });
+}
+
+Roe<bool> GroupMembershipWorkflow::FoldNow(const std::string& group_id) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  auto metadata = LoadMetadataOrError(group_id);
+  if (!metadata) {
+    return metadata.error();
+  }
+  if (metadata->owner_identity != *local ||
+      !group_roster_sync::HoldsFoldable(roster_, group_id, ChangeCards(), util::NowUnixMs())) {
+    return false;
+  }
+  if (auto sent = SignAndSendRoster(group_id); !sent) {
+    return sent.error();
+  }
+  log().info << "changes folded group=" << group_id;
+  return true;
+}
+
+void GroupMembershipWorkflow::FoldHeldChanges() {
+  auto groups = roster_.ListGroupsWithChanges();
+  if (!groups) {
+    return;
+  }
+  for (const std::string& group_id : *groups) {
+    if (auto folded = FoldNow(group_id); !folded) {
+      log().warning << "fold failed group=" << group_id << ": " << folded.error().message;
+    }
+  }
+}
+
+Roe<void> GroupMembershipWorkflow::StartCatchUp(const std::string& group_id, const std::string& ask,
+                                                const std::string& after) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  if (ask.empty() || ask == *local) {
+    return {};
+  }
+  auto request = group_roster_sync::BeginCatchUp(roster_, group_id, util::NowUnixMs(), after);
+  if (!request) {
+    return request.error();
+  }
+  if (!*request) {
+    return {}; // a check of its own runs, or the group is over
+  }
+  log().info << "Roster catch-up group=" << group_id << " asking=" << ask
+             << " statement=" << (*request)->statement_epoch << (after.empty() ? "" : " (more)");
+  return SendRosterControl(ask, GroupMembershipControlType::GroupRosterRequest,
+                           group_roster_sync_codec::EncodeRequest(**request), "Checking group members", *local);
+}
+
+void GroupMembershipWorkflow::OnChangesApplied(const std::string& group_id, const std::vector<GroupChange>& changes) {
+  auto local = LocalRelayIdentity();
+  auto metadata = roster_.LoadMetadata(group_id);
+  if (!local || !metadata || !*metadata) {
+    return;
+  }
+  if (auto lines = group_change_lines::Append(store_, group_id, changes, (*metadata)->roster_epoch, *local); !lines) {
+    log().warning << "group change lines not written group=" << group_id << ": " << lines.error().message;
+  }
+  if ((*metadata)->owner_identity == *local) {
+    ScheduleFold(group_id);
+  }
+}
+
+void GroupMembershipWorkflow::RecheckChangesBy(const std::string& account) {
+  for (const std::string& group_id : group_roster_sync::GroupsWithChangesBy(roster_, account)) {
+    auto applied = group_roster_sync::ApplyView(roster_, group_id, ChangeCards(), util::NowUnixMs());
+    if (!applied) {
+      log().warning << "recheck failed group=" << group_id << ": " << applied.error().message;
+      continue;
+    }
+    OnChangesApplied(group_id, applied->newly_applied);
+  }
 }
 
 Roe<void> GroupMembershipWorkflow::StartRosterCheck(const std::string& group_id) {

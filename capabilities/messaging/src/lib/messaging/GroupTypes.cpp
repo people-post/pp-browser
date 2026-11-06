@@ -79,6 +79,8 @@ std::string GroupMembershipControlTypeToWire(const GroupMembershipControlType ty
     return "member_role_changed";
   case GroupMembershipControlType::GroupPresetChanged:
     return "group_preset_changed";
+  case GroupMembershipControlType::GroupChange:
+    return "group_change";
   }
   return "group_invite";
 }
@@ -137,6 +139,9 @@ std::optional<GroupMembershipControlType> GroupMembershipControlTypeFromWire(con
   }
   if (value == "group_dissolved_sibling") {
     return GroupMembershipControlType::GroupDissolvedSibling;
+  }
+  if (value == "group_change") {
+    return GroupMembershipControlType::GroupChange;
   }
   return std::nullopt;
 }
