@@ -183,16 +183,68 @@ TEST(ProfileSheetTest, OpeningAnotherPersonDropsTheAdminCard) {
   EXPECT_FALSE(controller.GroupAdminShown());
 }
 
-TEST(ProfileSheetTest, TheAdminCardIsAtTheBottomWithReinviteNoteAndRedRemove) {
+// Kenneth 2026-11-06: the group actions left the bottom of the page; a member's page opened from a group has an
+// "In this group" card under the name (role, who added them), and a "Manage…" row only for who may manage.
+TEST(ProfileSheetTest, TheInThisGroupCardSitsUnderTheNameAndManageIsOnlyForWhoMayManage) {
   const std::string rml = ReadAsset("views/contact_detail.rml");
-  const size_t card = rml.find("data-if=\"admin_shown\"");
+  const size_t card = rml.find("data-if=\"group_role_shown\"");
   ASSERT_NE(card, std::string::npos);
-  EXPECT_GT(card, rml.find("data-event-click=\"remove_contact()\""));
-  EXPECT_NE(rml.find("{{i18n:contacts.group_admin}}"), std::string::npos);
-  EXPECT_NE(rml.find("data-if=\"admin_can_reinvite\" data-event-click=\"admin_reinvite()\""), std::string::npos);
-  EXPECT_NE(rml.find("{{admin_reinvite_note}}"), std::string::npos);
-  EXPECT_NE(rml.find("cd-row--danger\" type=\"button\" data-if=\"admin_can_remove\" data-event-click=\"admin_remove()\""),
-            std::string::npos);
+  EXPECT_LT(rml.find("{{selected.title}}"), card) << "under the name card";
+  EXPECT_LT(card, rml.find("data-event-click=\"start_chat()\""));
+  EXPECT_NE(rml.find("{{group_role_text}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:contacts.group_in_group}}"), std::string::npos);
+  const size_t manage = rml.find("data-if=\"admin_shown\" data-event-click=\"admin_menu()\"");
+  ASSERT_NE(manage, std::string::npos) << "the Manage row only when the viewer may manage";
+  EXPECT_GT(manage, card);
+  EXPECT_NE(rml.find("{{i18n:contacts.group_manage}}"), std::string::npos);
+  // Nothing of the group actions is left as rows on the page.
+  EXPECT_EQ(rml.find("data-event-click=\"admin_remove()\""), std::string::npos);
+  EXPECT_EQ(rml.find("data-event-click=\"admin_set_admin()\""), std::string::npos);
+  EXPECT_EQ(rml.find("data-event-click=\"admin_reinvite()\""), std::string::npos);
+}
+
+TEST(ProfileSheetTest, ARoleCardShowsForAnyGroupMemberButManageOnlyWithActions) {
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  controller.OnShowMemberSheet("acct:ann", "Ann", "");
+  EXPECT_FALSE(controller.GroupRoleShown()) << "not from a group: no card";
+  GroupAdminCard card;
+  card.role_text = "Member · Added by Bo";
+  controller.SetGroupAdminCard(card);
+  EXPECT_TRUE(controller.GroupRoleShown());
+  EXPECT_FALSE(controller.GroupAdminShown()) << "a plain member's viewer cannot manage";
+  EXPECT_TRUE(controller.GroupAdminActions().empty());
+  controller.OnShowMemberSheet("acct:bo", "Bo", "");
+  EXPECT_FALSE(controller.GroupRoleShown());
+}
+
+TEST(ProfileSheetTest, TheManageSheetListsTheActionsInOrderWithRemoveLastAndRed) {
+  FakeShell shell;
+  ContactsController controller;
+  controller.BindShellNavigation(shell.Ports());
+  controller.OnShowMemberSheet("acct:ann", "Ann", "");
+  GroupAdminCard card;
+  card.role_text = "Member";
+  card.can_set_admin = true;
+  card.set_admin = []() {};
+  card.can_remove = true;
+  card.remove = [](std::function<void()>) {};
+  card.reinvite_removed_label = "Re-invite everyone Ann removed…";
+  card.reinvite_removed = []() {};
+  card.remove_added_label = "Remove everyone Ann added…";
+  card.remove_added = []() {};
+  controller.SetGroupAdminCard(card);
+  ASSERT_TRUE(controller.GroupAdminShown());
+  const auto actions = controller.GroupAdminActions();
+  ASSERT_EQ(actions.size(), 4u);
+  EXPECT_EQ(actions[0].id, "admin_set_admin");
+  EXPECT_EQ(actions[1].id, "admin_reinvite_removed");
+  EXPECT_EQ(actions[2].id, "admin_remove_added");
+  EXPECT_EQ(actions[3].id, "admin_remove");
+  EXPECT_FALSE(actions[0].danger);
+  EXPECT_FALSE(actions[1].danger);
+  EXPECT_TRUE(actions[3].danger);
 }
 
 } // namespace

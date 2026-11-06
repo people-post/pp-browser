@@ -1604,10 +1604,24 @@ void PeoplePickerController::ShowMemberTap(const GroupMemberRow& row, const std:
 
 void PeoplePickerController::OfferAdminCard(const GroupMemberTap& tap, const std::string& group_id,
                                             const GroupMemberRow& row) {
-  if (tap.admin_actions.empty() || group_id.empty() || !contacts_notify_.set_group_admin) {
+  if (group_id.empty() || !contacts_notify_.set_group_admin) {
     return;
   }
   GroupAdminCard card;
+  // The "In this group" row: their role, and who brought them in (the same words as the member list).
+  card.role_text = Tr(row.is_owner   ? "people_picker.badge_owner"
+                      : row.is_admin ? "people_picker.badge_admin"
+                                     : "contacts.group_role_member");
+  std::string local_identity;
+  if (picker_ports_.local_relay_identity) {
+    if (auto identity = picker_ports_.local_relay_identity()) {
+      local_identity = *identity;
+    }
+  }
+  if (!row.added_by.empty()) {
+    card.role_text += " · " + (row.added_by == local_identity ? Tr("people_picker.added_by_you")
+                                                              : Tr("people_picker.added_by", {{"name", row.added_by_title}}));
+  }
   for (const GroupMemberAction action : tap.admin_actions) {
     switch (action) {
     case GroupMemberAction::Reinvite:

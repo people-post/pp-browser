@@ -206,6 +206,11 @@ public:
   void SetGroupAdminCard(GroupAdminCard card);
   /** The admin card is shown (tests). */
   bool GroupAdminShown() const { return admin_shown_; }
+  /** The "In this group" card is shown (every group member's page; tests). */
+  bool GroupRoleShown() const { return group_role_shown_; }
+  /** The sheet the "Manage…" row opens, in order, the red one last (tests). */
+  std::vector<ContextMenuAction> GroupAdminActions();
+  void OnGroupAdminMenu();
   /** The card's Remove row, as its tap does (tests, and the view). */
   void OnGroupAdminRemove();
   void OnGroupAdminSetAdmin();
@@ -398,6 +403,8 @@ private:
   void WakeForRemarkNotice();
   GroupAdminCard group_admin_;
   bool admin_shown_ = false;
+  bool group_role_shown_ = false;
+  ui::String group_role_text_;
   bool admin_can_reinvite_ = false;
   bool admin_can_remove_ = false;
   bool admin_can_set_admin_ = false;
