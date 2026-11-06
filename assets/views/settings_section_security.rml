@@ -65,6 +65,10 @@
             {{i18n:settings.security.devices.not_main}}
           </p>
         </div>
+        <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
+          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p></div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
+        </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
           <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
