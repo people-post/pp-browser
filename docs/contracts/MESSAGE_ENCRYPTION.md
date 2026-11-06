@@ -102,6 +102,8 @@ Binary **`ChatPayload` v1** — AEAD plaintext. Layout: [WIRE_SCHEMAS § ChatPay
 
 Max decrypted size: **128 KiB** (`kMaxE2ePlaintextBytes`). Check length before `ChatPayloadCodec::Decode`; reject trailing bytes.
 
+**Group copies (group-chat G018 item 7):** the plaintext is a *group copy* — `group_copy_version` u8 `1`, `group_id` LenUtf8, the ChatPayload LenBytes, nothing after ([WIRE_SCHEMAS § Group](WIRE_SCHEMAS.md)) — under the same AAD as a 1:1 `e2e_public` message in that device pair. The relay never sees the group id; the receiver reads it after decrypting, then checks the roster. **Sign v3** (with `route.group_id`) is no longer produced or read: a clean cutover (unreleased product).
+
 ## Encrypted payload blob
 
 Binary inside `body.e2e.payload_b64` (RFC 4648 base64):
@@ -142,15 +144,15 @@ Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknow
 
 Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
 
-**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v3"` + NUL.
+**Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v4"` + NUL.
 
-Then: `sign_version=3`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `route.group_id` LenUtf8 (empty when none), `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
+Then: `sign_version=4`, `envelope_version=2`, `route_kind`, `channel`, `timestamp` (i64 BE), `message_id` LenUtf8, `sender_contact_id` LenUtf8, `sender_relay_id` LenUtf8, `sender_device` LenUtf8, the copy count (u64 BE), then for each copy in `recipient_device` byte order: `recipient_device` LenUtf8 (empty for the account copy), `session_epoch` (u32 BE), `sender_seq` (u64 BE), `key_init_b64` LenUtf8 (empty when none), its copy hash (32 bytes).
 
 **Signer:** the sending device's ML-DSA-65 key (its PeerId's), not the account's (M021). The receiver takes that key from the sender's account card — the carried `sender_card` when it proves itself and is newer than the one kept, else the kept one — and refuses a device the card does not list.
 
-Everything the receiver acts on is signed: the blob it decrypts, the group thread it files into, the AutoKey session it may move to, the relay route it may learn for the sender (learned only from envelopes whose signature verified), and which device sent it and which device it is for.
+Everything the receiver acts on is signed: the blob it decrypts (and, inside it, the group a group copy files into), the AutoKey session it may move to, the relay route it may learn for the sender (learned only from envelopes whose signature verified), and which device sent it and which device it is for.
 
-**Body shape (M022):** every envelope carries 1–8 copies (one per recipient device, at most one account copy); a `group` envelope names its `group_id`, a `direct` / `control` one does not; the control lane is one account copy. A group copy is a pairwise `e2e_public` message at the copy's `session_epoch` — its device pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
+**Body shape (M022):** every envelope carries 1–8 copies (one per recipient device, at most one account copy); no envelope names a group; the control lane is one account copy. A group copy is a pairwise `e2e_public` message at the copy's `session_epoch` — its device pair's epoch, not a group's (G011): read and kept as a 1:1 message is (`ReconcileE2ePublicSession`); a group never selects, opens or writes a pair's session by any other epoch. Signer and parser refuse anything else, and unknown route kinds.
 
 **Copy hash:**
 

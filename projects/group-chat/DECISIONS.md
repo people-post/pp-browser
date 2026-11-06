@@ -227,7 +227,7 @@ Cross-project refs: [D076/D089/D095](../chat-storage-and-memory/DECISIONS.md), [
 ## G018 — Members and admins sign roster changes on top of the owner's statement
 
 **Date:** 2026-11-05
-**Status:** Accepted (Hongwei, 2026-11-05) — not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G012 (the owner's statement stays the base) and amends G006 (members and admins commit their own changes). Wire sketch: [DESIGN § Open groups](DESIGN.md#open-groups-g017g023).
+**Status:** Accepted (Hongwei, 2026-11-05) — item 7 built (2026-11-05, [WIRE_SCHEMAS § Group](../../docs/contracts/WIRE_SCHEMAS.md)): the stream id has no epoch and keeps the sending device (`v1:g:{hash}:from:{device}`: since M022 a record holds copies at several pair epochs); the rest not built; phases [PHASES § O](PHASES.md#o--open-groups-g017g023). Extends G012 (the owner's statement stays the base) and amends G006 (members and admins commit their own changes). Wire sketch: [DESIGN § Open groups](DESIGN.md#open-groups-g017g023).
 **Decision:**
 
 1. **The owner's statement stays the authority** (G012 as built: signed, linear by `roster_epoch`, with the owner chain). It holds the members, roles, the preset, the title, the removed list (below), live invite links, and the changes it folded in.

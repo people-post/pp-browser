@@ -137,7 +137,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v3 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums), `timestamp`, `sender_device`, and every copy: `recipient_device`, `session_epoch`, `sender_seq`, `key_init_b64`, its payload hash (sign v4 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md); a group copy's group is inside its payload) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
 | Copy hash | BLAKE2b-256 over exactly what that device decrypts: `0x02` ‖ LenBytes(payload) — no `0x01` public path |
 | Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, `body.e2e.sender_card` (signed by its account), `body.e2e.sender_card_at` (a hint), relay metadata, unknown keys |
@@ -163,17 +163,19 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required on send | Notes |
 |-------|------|------------------|-------|
 | `recipient_contact_id` | string | yes | Inbox owner — relay delivery target |
-| `stream_id` | string | yes | Opaque conversation scope, per sending device (an account's devices share its `relay:` id): `v2:{channel}:{id_lo}:{id_hi}:from:{sender_device}` (direct, sorted relay ids), `v2:group:{group_id}:{member}:from:{sender_device}` (group), the control lane's `v1:control:{lo}:{hi}:from:{sender_device}` |
+| `stream_id` | string | yes | Opaque conversation scope, per sending device (an account's devices share its `relay:` id): `v2:{channel}:{id_lo}:{id_hi}:from:{sender_device}` (direct, sorted relay ids), `v1:g:{hash}:from:{sender_device}` (group, below), the control lane's `v1:control:{lo}:{hi}:from:{sender_device}` |
 | `index_key` | integer (u64) | yes | Unique and rising per sending device (ms × 1000 + a counter): one per record — a message can be several records (a device's copy over a link that failed, then the relay) |
 
-**Client builders:** `BuildCanonicalRelayStreamKey` (`base/messaging/RelayStreamKey.*`) maps to wire `stream_id`.
+**Client builders:** `common/chat/RelayStreamKey.*` (delivery) maps to wire `stream_id`.
+
+**Group stream id (group-chat G018 item 7):** `v1:g:` + lowercase hex of BLAKE2b-128 (libsodium `crypto_generichash`, 16-byte output) over LenUtf8 of, in order, the tag `pp-browser:group-stream-v1`, the group id, and the two accounts of the pair (sender and member account ids, the lower first by bytes), then `:from:{sender_device}` (`BuildGroupRelayStreamKey`). Both accounts and all their devices compute it; the relay, which never sees the group id, cannot, and one sender's streams to two members of one group look unrelated. No epoch: a record carries copies for several device pairs, each at its own epoch (M022). A device holding a record with no copy for it (a sibling's only) finds the group by computing this for the groups it shares with the sender (`copy_ask`). Stream ids of the earlier form (`v2:group:{group_id}:…`) are not read again (clean cutover).
 
 ### `Route`
 
 | `kind` | Fields |
 |--------|--------|
 | `direct` | `channel`: `e2e` \| `e2e_public` |
-| `group` | `group_id`: string |
+| `group` | none — a group copy names its group only inside its ciphertext (G018 item 7); a route with `group_id` is refused |
 
 ### `body.e2e` (D090, E024, M022)
 
@@ -188,7 +190,15 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | `sender_card` | object | no | Only when a copy carries a `key_init_b64`: the sender's account card ([ACCOUNT_CARD](ACCOUNT_CARD.md)) — the device list the receiver verifies the sending device with and answers. Must name `sender_contact_id`. |
 | `sender_card_at` | integer (i64) | no | The `issued_at` of the sender's newest account card, on every envelope (M021 d6). A receiver whose kept card is older asks the sending device for it (`card_ask`, below). Not signed — a false value costs one ask; the card proves itself |
 
-**Group (D095, E022):** `route.kind=group` with `group_id` and the same `copies[]` — one record per member account, a copy per member device (or the member's account copy while we know none of its devices). Each copy is numbered in its pair (G010/G011): `session_epoch` is the device pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, sending device, epoch). `direct` / `control` envelopes carry no `group_id`. See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
+**Group (D095, E022):** `route.kind=group` and the same `copies[]` — one record per member account, a copy per member device (or the member's account copy while we know none of its devices). Each copy is numbered in its pair (G010/G011): `session_epoch` is the device pair's `e2e_public` session epoch — the copy is keyed by that session — and `sender_seq` the sender's own count for the group in that pair; receivers tell senders apart per (thread, sending device, epoch). No envelope names a group (G018 item 7): a group copy's AEAD plaintext is a **group copy**, not a bare ChatPayload —
+
+| Field | Encoding |
+|-------|----------|
+| `group_copy_version` | `u8` = **`1`** |
+| `group_id` | **LenUtf8** (1–128 bytes, no control characters) |
+| `chat_payload` | **LenBytes** — the message's ChatPayload v1 (below) |
+
+with nothing after it, the whole within `kMaxE2ePlaintextBytes`. The AEAD and the signed copy hash bind the copy to the group it names. The receiver refuses, before reading, a copy from a blocked sender or one it shares no group with; after decrypting, one for a group that we and the sender are not both on its roster of (same outcomes as when the route named the group). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 
@@ -253,7 +263,7 @@ A dissolved group **answers a `group_roster_request` with the dissolve** in `gro
 
 **Sent-message copies (`control_type` `sent_copy`, M021 d3):** what one of an account's devices sends in a public direct chat or a group also goes, as a control-lane notice to the account itself (one account copy sealed to the account KEM, signed by the sending device; its card rides only the first notice after the card changed — the siblings check the rest with the card of their account they keep), to the account's other devices. `detail` JSON: `{ to_account | to_group, message_id, timestamp, row_b64 }` — the sent message's ChatPayload row (base64) and where it went. A sibling files it as a message it sent (`local:self`, no numbering), in the chat with `to_account` (opened if needed) or the group's chat if it holds the group, once per `message_id`; not news (no unread count or notice). Its sender skips it; one from another account is never read as one. Reactions and deletes (annotations) are copied too and applied as a peer's are: a delete for everyone made on one device deletes the message on the others (also when it comes first). Not copied: private `e2e` chats (M014), controls.
 
-**Missing-copy ask (`control_type` `copy_ask`, M021 §9):** a device that finds a chat record from another account with copies for its siblings but none for itself waits 20 s (its copy may come over a link) and, if the message still has not arrived, asks the sending device: a control-lane account copy to the sender's account (carrying the asker's card) with `detail` `{ message_id, group_id?, to_device, from_device }`. Only `to_device` answers, for a message it sent (not a sibling's copy), to a device the asker's card lists (and, in a group, a member): one copy sealed in their device pair, sent as any copy is. Once per message on each side.
+**Missing-copy ask (`control_type` `copy_ask`, M021 §9):** a device that finds a chat record from another account with copies for its siblings but none for itself waits 20 s (its copy may come over a link) and, if the message still has not arrived, asks the sending device: a control-lane account copy to the sender's account (carrying the asker's card) with `detail` `{ message_id, group_id?, to_device, from_device }` (`group_id`: the group whose stream id the record had — the route names none). Only `to_device` answers, for a message it sent (not a sibling's copy), to a device the asker's card lists (and, in a group, a member): one copy sealed in their device pair, sent as any copy is. Once per message on each side.
 
 **Newer card ask (`control_type` `card_ask`, M021 d6):** a receiver whose kept card of an account is older than an envelope's `sender_card_at` asks that envelope's sending device for the card: a control-lane account copy to the account, `detail` `{ to_device }` — through the relay, as a direct link may be refused by the sender's privacy gate. The device named answers with the `device_list` notice (an account copy: its card rides it). Once per account per list.
 

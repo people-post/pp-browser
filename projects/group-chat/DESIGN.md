@@ -182,10 +182,17 @@ Separate from 1:1 DM blocking: a contact may DM but not spam group invites.
 ### Route
 
 ```json
-{ "kind": "group", "group_id": "group:550e8400-…" }
+{ "kind": "group" }
 ```
 
-No `channel` field on group routes (sign bytes use `channel=0xFF` per E014).
+No `channel` field on group routes (sign bytes use `channel=0xFF` per E014), and no `group_id` (G018 item 7): the
+relay can read the envelope, so the group id rides inside each copy's ciphertext.
+
+**Group copy plaintext:** `group_copy_version` u8 `1`, `group_id` LenUtf8, the message's ChatPayload LenBytes
+(`GroupE2ePayloadCodec::EncodeCopyPlaintext`). Inside the AEAD rather than in its associated data: the receiver
+must read the group id without knowing it, and AAD it cannot rebuild would mean trying each group shared with the
+sender. The AEAD authenticates it and the signed copy hash covers the ciphertext, so the copy stays bound to its
+group. o2 adds `statement_epoch` and `changes_hash` here (G018 item 5).
 
 ### Body — N ciphertexts
 
@@ -210,9 +217,15 @@ Direct tiers continue using `payload_b64` only.
 
 ### Stream id
 
-Opaque: `v1:group:{group_id}:{session_epoch}:{member account}` — one per member: the relay stores one
-row per (sender, stream, seq), so copies of one message to different members must not share a stream
-(until 2026-10-23 they did, and only the first member's copy was kept).
+Opaque: `v1:g:` + hex(BLAKE2b-128(LenUtf8 of `pp-browser:group-stream-v1`, group id, lower account, higher
+account)) + `:from:{sender_device}` (G018 item 7; [WIRE_SCHEMAS § Group stream id](../../docs/contracts/WIRE_SCHEMAS.md)).
+One per member and sending device: the relay stores one row per (sender, stream, index), so copies of one message
+to different members must not share a stream (until 2026-10-23 they did, and only the first member's copy was
+kept), nor two devices of one sender. Both accounts' devices compute it; the relay cannot, and with the pair in the
+hash Alice→Bob and Alice→Carol in one group look unrelated. No epoch, unlike the first sketch of G018 item 7: since
+M022 a record carries copies for several device pairs, each at its own epoch, and the stream was already
+epoch-free (`v2:group:{group_id}:{member}:from:{device}`, retired). Still visible: that a record is a group copy
+(`v1:g:`, and `route.kind`).
 
 ---
 
@@ -278,11 +291,13 @@ Group scope: `peer_identity_kind=group`, `peer_identity_value={group_id}` (D076 
 
 ## Inbound ingest
 
-1. Verify signature (sender identity)
-2. If `route.kind=group`: lookup roster — hard-reject if recipient not a member (except invite path on direct thread)
-3. Decrypt local slice from `member_payloads[local_relay_id]`
-4. Classify seq (relaxed ingest default — D046)
-5. Append to group thread; update sync_state
+1. If `route.kind=group`: hard-reject a blocked sender, or one in no group with us (the roster, before reading)
+2. Verify signature (sender identity)
+3. Decrypt this device's copy; read the group id it names (G018 item 7)
+4. Hard-reject unless both the local account and the sender are on that group's roster (same outcomes as when the
+   route named the group)
+5. Classify seq (relaxed ingest default — D046)
+6. Append to group thread; update sync_state
 
 **Invite handshake :** Invite records **pending only** — the invitee is not an encrypt target until commit. Invitee Accept/Decline send `group_invite_accept` / `group_invite_decline` DMs back to the inviter. Owner ingest of accept requires an invite this device issued (pending rows carry their direction), for the group the accept names, which this device owns, not expired; it upserts the member, bumps its own `roster_epoch` by one, then publishes owner-signed `member_joined` to all active members (G006 commit). An accept for an invite already accepted adds no one (a member removed since, or one who left, needs a new invite). An inbound `group_invite` is recorded only when its signed sender is the `inviter_identity` and the local account the `invitee_identity`, and — for a group already known locally — only from that group's owner while we are not a member; a stored invite is never rewritten by another with the same nonce. Group messages are dropped unless both the local account and the (non-blocked) sender are on the local roster. Peers apply `member_joined` (owner + epoch gates) as the roster source of truth. Decline clears pending only. Pending invites store `group_title` / `roster_epoch` so Accept can seed local `group_metadata`. On Accept, the invitee also upserts the inviter as `Owner` and self as `Member` locally so member→owner fan-out works before `member_joined` arrives. Closing a group session dismisses local membership (and clears `group_targets`) so inbound group traffic hard-rejects instead of recreating the thread with an unread. After Accept/Decline/Block, the DM invite card is resolved in-place (actions cleared; status line text).
 
@@ -451,7 +466,7 @@ The statement as built, with these fields added inside what the owner signs:
 ### Carrying the state and syncing
 
 - **Each group copy's plaintext** (inside the AEAD) carries `group_id`, the sender's `statement_epoch` and `changes_hash` (a hash of the sorted ids of the unfolded changes it holds).
-- **The relay sees no group (G018 item 7):** the envelope's `route` carries no `group_id`, and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ epoch ‖ lower account ‖ higher account)) instead of `v1:group:{group_id}:{epoch}:{member}`.
+- **The relay sees no group (G018 item 7, built):** the envelope's `route` carries no `group_id` (sign v4), and the copy's relay stream id is `v1:g:` + hex(BLAKE2b-128(`pp-browser:group-stream-v1` ‖ group id ‖ lower account ‖ higher account)) + `:from:{sender_device}` — [§ Stream id](#stream-id).
 - **A receiver that differs** sends `group_roster_request {group_id, request_id, statement_epoch, changes_hash}` (G013's control-lane request). The reply carries the latest statement and the changes the asker lacks (bounded; the asker asks again for more).
 
 ### Invites (G019)
