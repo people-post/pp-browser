@@ -9,6 +9,8 @@
 #include "lib/pricing/PricingTypes.h"
 #include "common/runtime/AppRuntime.h"
 #include "lib/messaging/AttachmentCache.h"
+#include "lib/voice/AudioContainerSniff.h"
+#include "common/PathUtf8.h"
 #include "lib/delivery/ChatPayloadCodec.h"
 #include "lib/pricing/InitiationPricing.h"
 #include "domain/registration/RegistrationClient.h"
@@ -1199,8 +1201,15 @@ std::optional<std::string> ConversationsFacade::AttachmentOpenPathForMessage(con
   if (!fields) {
     return view;
   }
+  // A sound file's name may not say what it is (an MPEG-4 file named .mp3): the link gets the real extension.
+  std::string content_ext;
+  if (fields->mime.rfind("audio/", 0) == 0) {
+    if (const char* ext = AudioContainerExtension(SniffAudioFile(PathFromUtf8(*view)))) {
+      content_ext = ext;
+    }
+  }
   return AttachmentNamedOpenPath(hub_.ProfileDataDir(), thread_id, fields->content_hash, fields->mime,
-                                 fields->filename, *view);
+                                 fields->filename, *view, content_ext);
 }
 
 Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
