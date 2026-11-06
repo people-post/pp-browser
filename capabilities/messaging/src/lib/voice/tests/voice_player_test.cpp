@@ -401,6 +401,10 @@ public:
   }
   void Pause() override { log_->push_back(name_ + " pause"); }
   void Resume() override { log_->push_back(name_ + " resume"); }
+  Roe<void> Seek(double seconds) override {
+    log_->push_back(name_ + " seek " + std::to_string(static_cast<int>(seconds)));
+    return {};
+  }
   void Stop() override { log_->push_back(name_ + " stop"); }
 
 private:

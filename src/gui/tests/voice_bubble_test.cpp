@@ -82,6 +82,11 @@ TEST(VoiceBubbleRender, ASoundFilePlaysInPlaceWhereThePlatformHasAPlayer) {
   EXPECT_NE(rml.find("10 MB"), std::string::npos) << "the line under the name gives the size";
   EXPECT_NE(rml.find("chat-audio-cover-note"), std::string::npos) << "no tags read: the music-note placeholder";
   EXPECT_EQ(rml.find("open_attachment("), std::string::npos) << "not handed to the system's viewer";
+  // The bar sits in a wrapper that takes the press (seek by tap and drag); the thin bar is inside it.
+  const size_t seek = rml.find("id=\"vk-m7\" class=\"chat-audio-seek\" data-event-mousedown=\"audio_seek_press()\"");
+  ASSERT_NE(seek, std::string::npos) << rml;
+  EXPECT_LT(seek, rml.find("class=\"chat-voice-track\"")) << "the track is inside the touch area";
+  EXPECT_LT(rml.find("class=\"chat-voice-track\""), rml.find("id=\"vf-m7\""));
   // An m4a named file with a generic type plays too; a PDF stays a file row with Open.
   EXPECT_NE(Render(Attachment("m8", "a.m4a", "application/octet-stream", 5000), facts).find("play_audio_file"),
             std::string::npos);
@@ -90,6 +95,13 @@ TEST(VoiceBubbleRender, ASoundFilePlaysInPlaceWhereThePlatformHasAPlayer) {
   // A voice message keeps its own bubble.
   EXPECT_NE(Render(Attachment("m1", "voice-4200.ogg", "audio/ogg", 25000), facts).find("play_voice('m1')"),
             std::string::npos);
+}
+
+TEST(VoiceBubbleRender, ThePointerSpotInTheBarIsAFractionClampedToIt) {
+  EXPECT_DOUBLE_EQ(SeekFractionAt(150.f, 100.f, 200.f), 0.25);
+  EXPECT_DOUBLE_EQ(SeekFractionAt(50.f, 100.f, 200.f), 0.0) << "left of the bar";
+  EXPECT_DOUBLE_EQ(SeekFractionAt(900.f, 100.f, 200.f), 1.0) << "right of the bar";
+  EXPECT_DOUBLE_EQ(SeekFractionAt(150.f, 100.f, 0.f), 0.0) << "an empty bar";
 }
 
 TEST(VoiceBubbleRender, WithoutAPlayerASoundFileIsAFileRowToOpen) {

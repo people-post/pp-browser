@@ -42,6 +42,12 @@ public:
       inner_->Resume();
     }
   }
+  Roe<void> Seek(double seconds) override {
+    if (g_playing != this) {
+      return Error("no sound file playing here");
+    }
+    return inner_->Seek(seconds);
+  }
   void Stop() override {
     on_ended_ = nullptr;
     if (g_playing == this) {

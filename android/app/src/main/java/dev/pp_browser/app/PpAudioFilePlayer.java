@@ -79,6 +79,17 @@ final class PpAudioFilePlayer {
         }
     }
 
+    /** Jumps to `positionMs` (playing or paused). */
+    static synchronized void seek(int positionMs) {
+        if (player != null) {
+            try {
+                player.seekTo(Math.max(0, positionMs));
+            } catch (IllegalStateException ignored) {
+                // released meanwhile
+            }
+        }
+    }
+
     static synchronized void stop() {
         MAIN.removeCallbacks(TICK);
         if (player != null) {

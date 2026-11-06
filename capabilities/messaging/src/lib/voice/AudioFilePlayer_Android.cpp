@@ -79,6 +79,14 @@ public:
 
   void Pause() override { CallActivity("pauseAudioFile", "()V", nullptr, nullptr); }
   void Resume() override { CallActivity("resumeAudioFile", "()V", nullptr, nullptr); }
+  Roe<void> Seek(double seconds) override {
+    jvalue args[1];
+    args[0].i = static_cast<jint>(seconds <= 0 ? 0 : seconds * 1000.0);
+    if (!CallActivity("seekAudioFile", "(I)V", args, nullptr)) {
+      return Error("seek failed");
+    }
+    return {};
+  }
   void Stop() override {
     Forget();
     CallActivity("stopAudioFile", "()V", nullptr, nullptr);

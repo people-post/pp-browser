@@ -4155,6 +4155,7 @@ bool ChatController::Setup(ui::Context* context) {
             [this](const std::string& message_id) { voice_playback_->Toggle(message_id); }));
         ctor.BindEventCallback("play_audio_file", DataEvent<std::string>(
             [this](const std::string& message_id) { voice_playback_->ToggleFile(message_id); }));
+        ctor.BindEventCallback("audio_seek_press", DataEventAt([this](ui::Event& ev) { voice_playback_->SeekPress(ev); }));
         ctor.BindEventCallback("retry_attachment_send", DataEvent([this] { OnRetryAttachmentSend(); }));
         ctor.BindEventCallback("discard_attachment_send", DataEvent([this] { OnDiscardAttachmentSend(); }));
         ctor.BindEventCallback("cancel_attachment_send", DataEvent([this] { OnCancelAttachmentSend(); }));

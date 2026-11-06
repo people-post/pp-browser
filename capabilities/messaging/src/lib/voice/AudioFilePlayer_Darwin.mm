@@ -160,6 +160,16 @@ public:
     [player_ play];
   }
 
+  Roe<void> Seek(double seconds) override {
+    if (player_ == nil) {
+      return Error("no sound file playing");
+    }
+    // Works playing or paused; AVAudioPlayer clamps nothing itself, so keep it inside the file.
+    const double length = player_.duration;
+    player_.currentTime = seconds < 0 ? 0 : (length > 0 && seconds > length ? length : seconds);
+    return {};
+  }
+
   void Stop() override {
     StopTimer();
     if (player_ != nil) {
