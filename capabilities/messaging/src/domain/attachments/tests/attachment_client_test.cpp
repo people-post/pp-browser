@@ -374,6 +374,23 @@ TEST_F(StagedUploadTest, ADeliveredRecordResumesWithoutAnyNetwork) {
   EXPECT_EQ(blob_.FileStartCallCount(), starts);
 }
 
+// A Retry of a record the contact already has (the process died before the message was made): a cancel is too late,
+// the record stays and the fields come back so the message is created.
+TEST_F(StagedUploadTest, ACancelledResumeOfADeliveredRecordStillGivesTheFields) {
+  auto fields = UploadStaged(5000, Staged(direct_));
+  ASSERT_TRUE(fields);
+  auto record = store_->Load(staged_.id, TestDek());
+  ASSERT_TRUE(record);
+  ASSERT_TRUE(record->delivered);
+  auto options = Staged(direct_);
+  options.cancelled = std::make_shared<std::atomic<bool>>(true);
+  Roe<ChatAttachmentFields> resumed = Error("not called");
+  ResumeChatAttachmentAsync(blob_, *identity_, *record, std::move(options),
+                            [&](Roe<ChatAttachmentFields> value) { resumed = std::move(value); });
+  ASSERT_TRUE(resumed) << resumed.error().message;
+  EXPECT_TRUE(store_->Load(staged_.id, TestDek()));
+}
+
 TEST_F(StagedUploadTest, ADirectPushIsRecordedAsDeliveredWithNoUrl) {
   auto fields = UploadStaged(5000, Staged(direct_));
   ASSERT_TRUE(fields) << fields.error().message;
