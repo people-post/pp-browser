@@ -58,7 +58,14 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     const bool ringing = Ringing(shown_);
     const bool answering = screen.kind == CallScreen::Kind::Answering && screen.ring_call_id == shown_;
     const bool in_call = active_call_id == shown_;
+    if (shown_answered_ && (answering || in_call)) {
+      shown_taken_ = true;
+    }
     if (!ringing && !answering && !in_call) {
+      if (StillTaking()) {
+        Note("answer_settling");
+        return;
+      }
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
       shown_.clear();
     } else if (!ringing && !shown_answered_) {
@@ -94,14 +101,25 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     ui_.ReportIncoming(screen.ring_call_id, name, screen.ring_video);
     shown_ = screen.ring_call_id;
     shown_answered_ = false;
+    shown_taken_ = false;
     if (answered) {
-      shown_answered_ = true;
       Note("accept_applied");
-      if (actions_.accept) {
-        actions_.accept(!screen.ring_video);
-      }
+      AcceptShown(!screen.ring_video);
     }
   }
+}
+
+void CallSystemUiBridge::AcceptShown(const bool voice_only) {
+  shown_answered_ = true;
+  shown_taken_ = false;
+  answered_at_ms_ = Now();
+  if (actions_.accept) {
+    actions_.accept(shown_, voice_only); // redraws at once: Sync re-enters (StillTaking keeps the call)
+  }
+}
+
+bool CallSystemUiBridge::StillTaking() const {
+  return shown_answered_ && !shown_taken_ && Now() - answered_at_ms_ < kAnswerSettleMs;
 }
 
 bool CallSystemUiBridge::TakesRing(const bool app_foreground) const {
@@ -144,10 +162,7 @@ void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
     return;
   }
   Note("answer_ring");
-  shown_answered_ = true;
-  if (actions_.accept) {
-    actions_.accept(!screen_.ring_video);
-  }
+  AcceptShown(!screen_.ring_video);
 }
 
 void CallSystemUiBridge::OnEnd(const std::string& call_id) {

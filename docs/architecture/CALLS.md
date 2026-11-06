@@ -102,6 +102,14 @@ Instrument: INFO `[LiveCall] status=… phase=… reason=…` (and `admit` / `ac
 
 Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Two planes](#two-planes).
 
+### The phone's own call screen (Android's call notification)
+
+`CallSystemUiBridge` keeps the phone's call screen (`ICallSystemUi`: Android's incoming-call notification, P014; iPhone has none since P015 — the app rings itself, an alert push wakes it) in step with the presenter's screen.
+
+- **Where a ring goes:** the app in front rings itself; in the background, or while a push's call is waiting, the notification rings it. Meanwhile the app's own ring dialog and ringtone stay off (`SystemRings`): one ring.
+- **Answered there, it stays there until the call ends.** Accept's click frame already shows the call answering (`CallPresenter::Accept` → `AnsweringFrom`), and the bridge keeps a call answered there while the app takes it (until a frame shows it answering or in the call, at most `kAnswerSettleMs`, 5 s): Accept redraws at once, re-entering `Sync` inside the notification's answer, and a frame in between must not end the call just answered (it did: the bridge forgot the call the instant it was answered, so a later hang-up or mute from the notification reached nothing). The presenter accepts the call the notification names.
+- **A push's call** (`call_wake`, before the invite is read) is filled in with the ring found next; a change of it refreshes the call screen at once, so an Answer made before the ring was known applies as soon as the ring shows.
+
 ### Thread policy
 
 | Work | Thread | Why |

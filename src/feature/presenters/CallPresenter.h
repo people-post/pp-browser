@@ -148,7 +148,11 @@ public:
   void PutOffGroupInvite();
   bool VideoCallAvailable();
   /** The ring's answer buttons. Return the call answered (empty: nothing ringing). */
-  std::string Accept(bool voice_only);
+  /**
+   * Answer the ring: `call_id`, the one the phone's call screen answered, else the ring on screen. The click frame
+   * already shows it answering (a redraw inside Accept must not read as the ring gone).
+   */
+  std::string Accept(bool voice_only, const std::string& call_id = {});
   std::string AcceptWithCharge();
   std::string Decline();
   /** End. Returns the call left (empty: none — a stale button only clears the screen). */
