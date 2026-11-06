@@ -12,6 +12,7 @@
 #include "gui/chat/DeliveryNoticeText.h"
 #include "gui/chat/TranscriptRml.h"
 #include "gui/chat/OutgoingAttachmentPrep.h"
+#include "gui/AttachmentTypeLabel.h"
 #include "gui/chat/VoiceBubble.h"
 #include "gui/chat/VoiceSendPolicy.h"
 #include <SDL3/SDL.h>
@@ -2088,7 +2089,9 @@ std::function<bool(uint64_t done, uint64_t total)> ChatController::MakeSendProgr
           Tr(large ? "chat.attachment.uploading_stay" : "chat.attachment.uploading_percent",
              {{"percent", std::to_string(percent)}})
               .c_str();
+      chat_.attachment_progress_width = (std::to_string(percent) + "%").c_str();
       DataModelHost::Instance().Dirty("chat", "attachment_status");
+      DataModelHost::Instance().Dirty("chat", "attachment_progress_width");
     });
     return true;
   };
@@ -2178,9 +2181,22 @@ void ChatController::OnCancelAttachmentSend() {
   if (!chat_.attachment_uploading || !send_cancel_ || send_cancel_->exchange(true)) {
     return;
   }
-  // The chip goes when the send stops (the upload at its next step; a direct push when it answers).
+  // The card goes when the send stops (the upload at its next step; a direct push when it answers).
   chat_.attachment_status = Tr("chat.attachment.cancelling").c_str();
+  chat_.attachment_cancelling = true;
   DataModelHost::Instance().Dirty("chat", "attachment_status");
+  DataModelHost::Instance().Dirty("chat", "attachment_cancelling");
+}
+
+void ChatController::ResetUploadCard(const std::string& name) {
+  if (!chat_.attachment_thumb.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(std::string(chat_.attachment_thumb.c_str()), ec); // a copy in "picked": ours to delete
+  }
+  chat_.attachment_thumb = "";
+  chat_.attachment_progress_width = "0%";
+  chat_.attachment_type_label = AttachmentTypeLabel(name, AttachmentMimeFromFilename(name)).c_str();
+  chat_.attachment_cancelling = false;
 }
 
 void ChatController::OnRetryAttachmentSend() {
@@ -2205,6 +2221,7 @@ void ChatController::OnRetryAttachmentSend() {
   attachment_thread_ = thread_id;
   send_cancel_ = std::make_shared<std::atomic<bool>>(false);
   const auto cancel = send_cancel_;
+  ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
   DirtyChatChrome();
@@ -2216,6 +2233,7 @@ void ChatController::OnRetryAttachmentSend() {
       },
       [this, cancel](Roe<ThreadMessage> sent) {
         chat_.attachment_uploading = false;
+        ResetUploadCard(std::string());
         chat_.attachment_status = "";
         chat_.attachment_draft_name = "";
         failed_record_id_.clear();
@@ -2265,6 +2283,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   const std::string shown_name = DisplayNameFromPickedPath(path);  // a content:// URI is not a name
   chat_.attachment_draft_name =
       (shown_name.empty() ? std::filesystem::path(path).filename().string() : shown_name).c_str();
+  ResetUploadCard(chat_.attachment_draft_name.c_str());
   chat_.status = Tr("chat.attachment.uploading").c_str();
   chat_.attachment_status = Tr("chat.attachment.uploading").c_str();
   SyncComposerInputState();
@@ -2273,6 +2292,7 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
 
   const auto finish_uploading = [this]() {
     chat_.attachment_uploading = false;
+    ResetUploadCard(std::string());
     chat_.attachment_draft_name = "";
     chat_.attachment_status = "";
     chat_.status = "";
@@ -2287,9 +2307,19 @@ void ChatController::StartAttachmentUpload(const std::string& path, const Outgoi
   AppRuntime::PostWorkerNormal([this, thread_id, path, source, limits, scratch_dir, finish_uploading, voice_file,
                                 staged_before, cancel]() {
     auto prepared = PrepareOutgoingAttachment(path, limits, source, scratch_dir);
+    std::string thumb = prepared && !voice_file ? WriteUploadThumbnail(path, *prepared, scratch_dir) : std::string();
     release_pick_(path); // read by now (and kept as a CAS copy once sent)
-    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel,
+    AppRuntime::PostUI([this, thread_id, path, finish_uploading, voice_file, staged_before, cancel, thumb,
                         prepared = std::move(prepared)]() mutable {
+      if (chat_.attachment_uploading && send_cancel_ == cancel && prepared) {
+        chat_.attachment_thumb = thumb.c_str(); // the card shows it; ResetUploadCard deletes it
+        chat_.attachment_type_label = AttachmentTypeLabel(prepared->filename, prepared->mime).c_str();
+        DataModelHost::Instance().Dirty("chat", "attachment_thumb");
+        DataModelHost::Instance().Dirty("chat", "attachment_type_label");
+      } else if (!thumb.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(thumb, ec);
+      }
       if (!prepared) {
         finish_uploading();
         UserFeedback::Fail(UserFeedback::UserMessage(prepared.error()));

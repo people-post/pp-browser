@@ -727,6 +727,122 @@ select selectbox option {
   opacity: 0.72;
 }
 
+/* The upload card (sending a picture or file): picture or type badge, name over a progress bar, red cancel disc.
+   The bar breathes (opacity only: no layout per frame) while bytes move; it stops when done or cancelled. */
+.prompt-upload-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10dp;
+  padding: 8dp 4dp 8dp 10dp;
+  border-radius: 14dp;
+  background-color: rgba(127, 127, 127, 0.14);
+}
+
+.prompt-upload-thumb {
+  flex-shrink: 0;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 8dp;
+}
+
+.prompt-upload-type {
+  width: 40dp;
+  height: 44dp;
+  border-radius: 8dp;
+}
+
+.prompt-upload-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5dp;
+}
+
+.prompt-upload-name {
+  font-size: 14dp;
+  text-overflow: ellipsis;
+}
+
+.prompt-upload-bar {
+  height: 6dp;
+  border-radius: 3dp;
+  background-color: rgba(127, 127, 127, 0.28);
+}
+
+.prompt-upload-fill {
+  height: 6dp;
+  min-width: 6dp;
+  border-radius: 3dp;
+  background-color: #0a84ff;
+}
+
+@keyframes prompt-upload-breathe {
+  0% { opacity: 1; }
+  50% { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+
+.prompt-upload-fill--moving {
+  animation: 1.4s sine-in-out infinite prompt-upload-breathe;
+}
+
+.prompt-upload-status {
+  font-size: 11dp;
+}
+
+/* 44dp tap target around a 30dp red disc with a white cross; cancelling: dimmed, the cross turns into a spinner. */
+.prompt-upload-cancel {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-upload-cancel-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30dp;
+  height: 30dp;
+  border-radius: 15dp;
+  background-color: #ff3b30;
+}
+
+.prompt-upload-cancel-icon {
+  width: 12dp;
+  height: 12dp;
+  image-color: #ffffff;
+}
+
+.prompt-upload-cancel--busy .prompt-upload-cancel-disc {
+  opacity: 0.5;
+}
+
+@keyframes prompt-upload-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.prompt-upload-cancel-spin {
+  width: 10dp;
+  height: 10dp;
+  border-width: 2dp;
+  border-color: #ffffff #ffffff #ffffff transparent;
+  border-radius: 7dp;
+  animation: 0.9s linear infinite prompt-upload-spin;
+}
+
 /* The AI picture in the composer: a small thumbnail with a remove badge overlapping its top-right corner
    (a dark disc with a white ring and a white cross: visible on any picture and on both themes). */
 .prompt-image-thumb-wrap {

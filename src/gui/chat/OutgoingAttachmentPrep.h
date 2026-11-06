@@ -44,4 +44,12 @@ inline constexpr int kShrunkImageLongEdge = 2048;
 Roe<OutgoingAttachment> PrepareOutgoingAttachment(const std::string& path, const AttachmentLimits& limits,
                                                   OutgoingPickSource source, const std::string& scratch_dir = {});
 
+/**
+ * The upload card's small picture: a JPEG thumbnail of a picture (from the prepared bytes) or a video's first frame
+ * (from `picked_path`), written into `scratch_dir`; empty when there is none (other files, or this platform cannot
+ * make one). The caller deletes it when the send ends.
+ */
+std::string WriteUploadThumbnail(const std::string& picked_path, const OutgoingAttachment& prepared,
+                                 const std::string& scratch_dir);
+
 } // namespace pbr

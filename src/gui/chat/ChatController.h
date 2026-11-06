@@ -323,6 +323,8 @@ private:
   void OnDiscardAttachmentSend();
   /** Cancel the send in flight: its upload stops, its staged copy goes, and nothing is sent. */
   void OnCancelAttachmentSend();
+  /** The upload card for a send starting (`name`: the file's name) or ended (empty): bar, badge, picture, ✕. */
+  void ResetUploadCard(const std::string& name);
   /** Show the chip for a staged send of the open thread that did not finish (also after the app was killed). */
   void RefreshPendingAttachmentChip(bool force);
   void ShowFailedAttachment(const std::string& record_id, const std::string& name);
