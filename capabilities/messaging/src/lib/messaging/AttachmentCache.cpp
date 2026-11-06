@@ -2,6 +2,7 @@
 #include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/BoundedRead.h"
+#include "common/PathUtf8.h"
 
 #include "lib/messaging/AttachmentPlaintextMemoryCache.h"
 
@@ -374,11 +375,11 @@ std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::s
   if (name.empty() || profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
     return view_path;
   }
-  const std::filesystem::path dir(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash));
-  const std::filesystem::path link = dir / name;
+  const std::filesystem::path dir = PathFromUtf8(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash));
+  const std::filesystem::path link = dir / PathFromUtf8(name);  // the sender's name may be CJK
   std::error_code ec;
-  if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, view_path, ec)) {
-    return link.string(); // made by an earlier open of the same view
+  if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, PathFromUtf8(view_path), ec)) {
+    return PathToUtf8(link); // made by an earlier open of the same view
   }
   // Only this name is replaced: a viewer may still be reading another link here. The folder goes with the view
   // cache (each start, a lock) and with the attachment's local delete.
@@ -386,17 +387,17 @@ std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::s
   ec.clear();
   std::filesystem::create_directories(dir, ec);
   if (!ec) {
-    std::filesystem::create_hard_link(view_path, link, ec);
+    std::filesystem::create_hard_link(PathFromUtf8(view_path), link, ec);
     if (ec) {
       ec.clear();
-      std::filesystem::copy_file(view_path, link, ec); // a file system without hard links
+      std::filesystem::copy_file(PathFromUtf8(view_path), link, ec); // a file system without hard links
     }
   }
   if (ec) {
     std::filesystem::remove(link, ec);
     return view_path;
   }
-  return link.string();
+  return PathToUtf8(link);
 }
 
 bool IsAttachmentImageMime(const std::string& mime) {
@@ -413,7 +414,7 @@ bool AttachmentOpenNeedsConfirm(const std::string& mime) {
 
 bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime) {
   static constexpr size_t kSniffLen = 16;
-  std::ifstream in(path, std::ios::binary);
+  std::ifstream in(PathFromUtf8(path), std::ios::binary);
   if (!in) {
     return true; // Can't read it; nothing to flag here (open will fail on its own).
   }
@@ -487,7 +488,7 @@ bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime) 
   if (expected_ext.empty()) {
     return false; // Not one of the whitelisted mimes (e.g. image/svg+xml, video/quicktime).
   }
-  std::string actual_ext = std::filesystem::path(path).extension().string();
+  std::string actual_ext = PathToUtf8(PathFromUtf8(path).extension());
   if (!actual_ext.empty() && actual_ext[0] == '.') {
     actual_ext = actual_ext.substr(1);
   }
