@@ -15,6 +15,7 @@ set(_pp_platform_core_sources
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
+  os/KeychainStatus.cpp
   AssetIO.cpp
   IAssetLocator.cpp
   DesktopAssetLocator.cpp
@@ -63,6 +64,14 @@ if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
 else()
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
+endif()
+
+# Protected-data state + the PIN grace clock (#21 phase 1): iOS UIKit / sysctl / mach; a stub elsewhere
+# (macOS, Windows, Linux, Android until its own file in PR 2).
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Default.cpp)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
@@ -258,7 +267,8 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::Crypto
     "-framework Security"
     "-framework CoreFoundation"
-    "-framework Foundation")
+    "-framework Foundation"
+    "-framework UIKit")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL

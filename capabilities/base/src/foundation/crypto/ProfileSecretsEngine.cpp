@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <sodium.h>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -149,6 +150,83 @@ Roe<void> ProfileSecretsEngine::RedistributeUnlockedDek() {
   }
   unlocked_ = true;
   NotifyUnlocked();
+  return {};
+}
+
+void ProfileSecretsEngine::AttachGrace(std::unique_ptr<GraceUnlock> grace, std::function<GraceClock()> clock) {
+  grace_ = std::move(grace);
+  grace_clock_ = std::move(clock);
+}
+
+bool ProfileSecretsEngine::GraceSupported() const {
+  return grace_ && grace_clock_ && grace_->Supported();
+}
+
+Roe<GraceUnlock::Result> ProfileSecretsEngine::TryGraceUnlock() {
+  GraceUnlock::Result missing;
+  if (!initialized_ || !GraceSupported()) {
+    return missing;
+  }
+  auto found = grace_->TryUnlock(grace_clock_());
+  if (!found) {
+    return found.error();
+  }
+  if (found->status != GraceUnlock::Status::Found || unlocked_) {
+    return found;
+  }
+  if (!vault_ || !vault_->Exists()) {
+    grace_->Forget();
+    return missing;
+  }
+  if (auto set = vault_->UnlockWithDek(found->dek); !set) {
+    grace_->Forget();
+    return missing;
+  }
+  // The same tail as Unlock(): fan the DEK out, mark unlocked, tell the listener.
+  if (auto distributed = RedistributeUnlockedDek(); !distributed) {
+    Lock();
+    return distributed.error();
+  }
+  return found;
+}
+
+Roe<void> ProfileSecretsEngine::RememberGrace(const int minutes) {
+  if (!GraceSupported()) {
+    return {};
+  }
+  if (!vault_ || !vault_->IsUnlocked()) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile vault is not unlocked");
+  }
+  auto dek = vault_->Dek();
+  if (!dek) {
+    return dek.error();
+  }
+  auto remembered = grace_->Remember(*dek, minutes, grace_clock_());
+  sodium_memzero(dek->data(), dek->size());
+  return remembered;
+}
+
+Roe<void> ProfileSecretsEngine::TouchGrace(const int minutes) {
+  if (!GraceSupported()) {
+    return {};
+  }
+  return grace_->Touch(minutes, grace_clock_());
+}
+
+void ProfileSecretsEngine::ForgetGrace() {
+  if (grace_) {
+    grace_->Forget();
+  }
+}
+
+Roe<void> ProfileSecretsEngine::ChangePin(std::string_view current_pin, std::string_view new_pin) {
+  if (!initialized_ || !vault_) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");
+  }
+  if (auto changed = vault_->ChangePin(current_pin, new_pin); !changed) {
+    return changed.error();
+  }
+  ForgetGrace();
   return {};
 }
 
