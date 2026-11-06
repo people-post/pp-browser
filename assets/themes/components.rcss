@@ -7811,12 +7811,14 @@ input.checkbox {
   border-radius: 24dp;
   background-color: rgba(0, 0, 0, 140);
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chat-attachment-video-play-icon {
-  position: absolute;
-  top: 13dp;
-  left: 15dp;
+  /* In flow, not absolute: the engine gives an absolutely placed <svg> no size (the disc showed empty). */
+  margin-left: 3dp;
   pointer-events: none;
 }
 
