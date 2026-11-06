@@ -7777,10 +7777,47 @@ input.checkbox {
 
 .chat-attachment-video-poster {
   display: block;
-  max-width: 100%;
-  max-height: 240dp;
   border-radius: 8dp;
-  margin-bottom: 8dp;
+}
+
+/* The frame holds the poster (explicit dp size from the poster's own proportions) and the play disc; it clips both
+   (clip: always: overflow:hidden alone clips only scrolling content) and is the tap target for the system player. */
+.chat-attachment-video-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  clip: always;
+  border-radius: 8dp;
+  max-width: 200dp;
+  cursor: pointer;
+}
+
+.chat-attachment-video-frame--bare {
+  width: 200dp;
+  height: 112dp;
+  padding: 10dp;
+  background-color: #1a1a1a;
+  color: #ffffff;
+}
+
+.chat-attachment-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 48dp;
+  height: 48dp;
+  margin-top: -24dp;
+  margin-left: -24dp;
+  border-radius: 24dp;
+  background-color: rgba(0, 0, 0, 140);
+  pointer-events: none;
+}
+
+.chat-attachment-video-play-icon {
+  position: absolute;
+  top: 13dp;
+  left: 15dp;
+  pointer-events: none;
 }
 
 .chat-attachment-video {
@@ -10514,8 +10551,9 @@ input.checkbox {
   margin-bottom: 20dp;
 }
 
-.shell-chat-overlay .chat-attachment-video-poster {
-  max-width: 216dp;
+.shell-chat-overlay .chat-attachment-video-frame {
+  max-width: 200dp;
+  margin-bottom: 6dp;
 }
 
 /* The music card is one width on the phone, inside the 240dp card limit, with room under its controls. */

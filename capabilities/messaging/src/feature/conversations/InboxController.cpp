@@ -751,6 +751,19 @@ TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& me
   if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
       AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
     view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
+    // The poster's own size (the frame is laid out for it); read once per poster file.
+    auto cached = inline_image_ok_.find(view.poster_path);
+    if (cached == inline_image_ok_.end()) {
+      InlineImageFacts facts;
+      if (const auto header = ReadImageHeader(view.poster_path)) {
+        facts.ok = true;
+        facts.width = header->width;
+        facts.height = header->height;
+      }
+      cached = inline_image_ok_.emplace(view.poster_path, facts).first;
+    }
+    view.image_width = cached->second.width;
+    view.image_height = cached->second.height;
   }
   if (attachment_downloads_ && !view.local_path.empty() && IsAudioFileAttachment(fields->mime, fields->filename) &&
       !ParseVoiceFileName(fields->filename)) {
