@@ -4,10 +4,26 @@
 #include "lib/calls/CallMediaSeat.h"
 
 #include <cstdint>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace pbr {
+
+/**
+ * G022: an invite to a group someone in this call made "with everyone here", still waiting on this device. The call
+ * shows it as a banner (Join / Not now); messaging holds the invite itself (the product layer hands it over).
+ */
+struct CallGroupInvite {
+  /** The invite's id (its nonce): what Join accepts. */
+  std::string invite_id;
+  std::string group_title;
+  /** Who made the group (an account id). */
+  std::string maker_identity;
+
+  bool operator==(const CallGroupInvite&) const = default;
+};
 
 /**
  * The call surface as the user sees it, decided without a GUI (CallPresenter). The desktop and
@@ -81,6 +97,10 @@ struct CallScreen {
   bool speaker_on = false;
   bool show_retry = false;
   bool show_invite = false;
+  /** G022: "Make a group…" (OffersMakeGroup). */
+  bool show_make_group = false;
+  /** G022: the banner of a group made in this call that this device may join (none: no banner). */
+  std::optional<CallGroupInvite> group_invite;
   bool media_connected = false;
   /** Media was live at some point in this call. */
   bool was_connected = false;
@@ -136,6 +156,22 @@ bool EndedWithoutConnecting(const CallScreen& before, const CallScreen& after, b
 
 /** The group call this device waited alone in went away at the end of the wait: it left by itself. */
 bool EndedAlone(const CallScreen& before, const CallScreen& after, int64_t now_ms);
+
+/** G022: "Make a group…" shows once this many are in a call (the local device included). */
+inline constexpr size_t kMakeGroupMinPeople = 3;
+
+/**
+ * G022: the call screen offers "Make a group…": a call not tied to a group (`origin_group_id` empty — it started 1:1
+ * and grew) with kMakeGroupMinPeople or more joined. Any participant may; they become the group's owner.
+ */
+bool OffersMakeGroup(bool tied_to_group, size_t joined);
+
+/**
+ * G022: the banner the call shows: the first of `waiting` (the invites made in this call, oldest first) that the user
+ * has not put off with "Not now" (`not_now`: invite ids). None: no banner.
+ */
+std::optional<CallGroupInvite> PickGroupInviteBanner(const std::vector<CallGroupInvite>& waiting,
+                                                     const std::set<std::string>& not_now);
 
 /** A live group call in which nothing arrives from anyone for this long ends (B97). */
 inline constexpr int64_t kGroupNoMediaEndMs = 30'000;

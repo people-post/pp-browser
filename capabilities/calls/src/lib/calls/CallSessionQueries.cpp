@@ -120,6 +120,22 @@ bool IsStickyInitiator(const ICallSessionReader& sessions, const std::string& ca
   return SelectCallInitiator(peers) == local_identity;
 }
 
+bool InLiveCallWith(const ICallSessionReader& sessions, const std::string& local_identity, const std::string& call_id,
+                    const std::string& identity) {
+  if (call_id.empty() || local_identity.empty() || identity.empty() || identity == local_identity) {
+    return false;
+  }
+  auto session = sessions.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return false;
+  }
+  const auto joined = [&](const std::string& who) {
+    auto row = sessions.FindParticipant(call_id, who);
+    return row && row->has_value() && (*row)->state == CallParticipantState::Joined;
+  };
+  return joined(local_identity) && joined(identity);
+}
+
 bool SenderIsInCall(const ICallSessionReader& sessions, const std::string& call_id,
                     const std::string& sender_identity) {
   if (call_id.empty() || sender_identity.empty()) {

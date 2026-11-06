@@ -440,6 +440,14 @@ public:
   /** Opens the content index the profile's content store is built on (the app's storage, or a test's). */
   using OpenContentIndex = std::function<std::unique_ptr<IObjectIndex>(const std::string& profile_data_dir)>;
   void SetContentStorage(OpenContentIndex open) { open_content_index_ = std::move(open); }
+  /**
+   * G022: whether this device is in the live call `call_id` right now with `inviter` in it (the app's to say: calls
+   * ride the hub, messaging never names them). A stranger's group invite made there may reach us. Set before
+   * Initialize; any thread.
+   */
+  void SetInLiveCallQuery(GroupInviteGate::InLiveCallFn query) { in_live_call_ = std::move(query); }
+  /** G022: the group invites made during the call `call_id` still waiting here, oldest first (none before unlock). */
+  std::vector<GroupInviteGate::InviteInCall> GroupInvitesInCall(const std::string& call_id) const;
 
   void SetOnReachabilityUpdated(std::function<void()> callback);
 
@@ -581,6 +589,7 @@ private:
   /** Unread mentions of this account (G015 marker). */
   std::unique_ptr<IThreadMentionsStore> thread_mentions_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
+  GroupInviteGate::InLiveCallFn in_live_call_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;

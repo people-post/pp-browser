@@ -315,6 +315,22 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("call_flip_camera", DataEvent<>([this]() { CallFlipCamera(); }));
     ctor.BindEventCallback("call_speaker", DataEvent<>([this]() { CallSpeaker(); }));
     ctor.BindEventCallback("call_invite", DataEvent<>([this]() { CallInvite(); }));
+    // G022: "Make a group…"; the group banner's Join / Not now.
+    ctor.BindEventCallback("call_make_group", DataEvent<>([this]() {
+                             if (call_actions_.make_group_from_call) {
+                               call_actions_.make_group_from_call();
+                             }
+                           }));
+    ctor.BindEventCallback("call_group_join", DataEvent<>([this]() {
+                             if (call_actions_.join_call_group_invite) {
+                               call_actions_.join_call_group_invite();
+                             }
+                           }));
+    ctor.BindEventCallback("call_group_not_now", DataEvent<>([this]() {
+                             if (call_actions_.put_off_call_group_invite) {
+                               call_actions_.put_off_call_group_invite();
+                             }
+                           }));
     ctor.BindEventCallback("call_minimize", DataEvent<>([this]() { CallMinimize(); }));
     ctor.BindEventCallback("call_expand", DataEvent<>([this]() { CallExpand(); }));
     ctor.BindEventCallback("call_immersive", DataEvent<>([this]() { CallImmersive(); }));

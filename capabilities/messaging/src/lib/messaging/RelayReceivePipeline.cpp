@@ -740,6 +740,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   if (auto recorded = group_roster_.UpsertPendingInvite(pending); !recorded) {
     return recorded.error();
   }
+  invite_gate_->NoteInviteInCall(*invite); // G022: made during a call: that call shows it too
   message.chat_actions = GroupMembershipCodec::BuildInviteChatActions(*invite);
   return {};
 }

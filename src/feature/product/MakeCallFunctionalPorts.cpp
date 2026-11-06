@@ -3,6 +3,7 @@
 #include "foundation/data/SessionStore.h"
 #include "common/media/CallMediaHealth.h"
 #include "feature/calls/CallUiBackend.h"
+#include "common/ValueJson.h"
 #include "common/MeshAlias.h"
 
 namespace pbr {
@@ -24,6 +25,26 @@ CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, Conversation
       }
     }
     return std::nullopt;
+  };
+  ports.group_invites_in_call = [&hub](const std::string& call_id) {
+    std::vector<CallGroupInvite> invites;
+    for (const GroupInviteGate::InviteInCall& invite : hub.GroupInvitesInCall(call_id)) {
+      invites.push_back({.invite_id = invite.invite_nonce,
+                         .group_title = invite.group_title,
+                         .maker_identity = invite.inviter_identity});
+    }
+    return invites;
+  };
+  ports.join_group_invite = [&hub](const std::string& invite_id, std::function<void(Roe<void>)> done) {
+    // The invite card's own Accept (ContactActionDispatcher): the group's chat opens, the inviter is told.
+    Object action;
+    action.set("type", "accept_group_invite");
+    action.set("invite_nonce", invite_id);
+    hub.Actions().DispatchAsync(DumpJson(action), [done = std::move(done)](Roe<std::optional<std::string>> accepted) {
+      if (done) {
+        done(accepted ? Roe<void>() : Roe<void>(accepted.error()));
+      }
+    });
   };
   ports.call_diagnostics_enabled = [session_store]() {
     const bool pref =

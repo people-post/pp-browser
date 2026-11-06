@@ -51,6 +51,11 @@ public:
     uint64_t roster_epoch = 0;
     /** Optional full roster snapshot (G006 late-joiner backfill). Empty = primary member only. */
     std::vector<MemberJoinedEntry> members;
+    /**
+     * G022: `call` on a group's first line (local, never sent) when the group was made during a call: the line reads
+     * "Group made during a call". Empty otherwise.
+     */
+    std::string context;
   };
 
   static Roe<std::string> EncodeMemberJoined(const std::string& group_id, const std::string& member_identity,

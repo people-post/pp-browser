@@ -64,6 +64,12 @@ Roe<std::string> GroupMembershipCodec::EncodeInvite(const GroupInvitePayload& pa
   if (payload.expires_at) {
     json.set("expires_at", *payload.expires_at);
   }
+  if (!payload.context.empty()) {
+    json.set("context", payload.context); // G022, additive
+  }
+  if (!payload.call_id.empty()) {
+    json.set("call_id", payload.call_id);
+  }
   return DumpJson(json);
 }
 
@@ -105,6 +111,8 @@ Roe<GroupInvitePayload> GroupMembershipCodec::DecodeInvite(const std::string& de
   if (auto role = json->getString("actor_role")) {
     payload.actor_role = MemberRoleFromString(*role);
   }
+  payload.context = json->getString("context").value_or("");
+  payload.call_id = json->getString("call_id").value_or("");
   return payload;
 }
 
@@ -196,6 +204,9 @@ Roe<std::string> GroupMembershipCodec::EncodeMemberJoined(const MemberJoinedPayl
     }
     json.set("members", ArrayValue(std::move(members)));
   }
+  if (!payload.context.empty()) {
+    json.set("context", payload.context);
+  }
   return DumpJson(json);
 }
 
@@ -277,6 +288,7 @@ Roe<GroupMembershipCodec::MemberJoinedPayload> GroupMembershipCodec::DecodeMembe
       payload.members.push_back(std::move(entry));
     }
   }
+  payload.context = json->getString("context").value_or("");
   if (payload.group_id.empty() || payload.member_identity.empty()) {
     return Error("member_joined missing group_id or member_identity");
   }

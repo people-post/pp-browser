@@ -87,6 +87,11 @@ CallController::CallController()
       people_picker_notify_.open_for_call_add_guest(call_id);
     }
   };
+  callbacks.open_make_group = [this](const std::string& call_id) {
+    if (people_picker_notify_.open_for_call_make_group) {
+      people_picker_notify_.open_for_call_make_group(call_id);
+    }
+  };
   callbacks.on_ring_started = [this](const std::string& call_id, const bool video) {
     const int64_t now = util::NowUnixMs();
     EmitMetrics(metrics_.NoteRing(call_id, video, now, Vitals(now)));
@@ -239,6 +244,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_remote_placeholder = in_call.remote_placeholder.c_str(),
       .in_call_show_roster = in_call.show_roster,
       .in_call_show_invite = in_call.show_invite,
+      .in_call_show_make_group = in_call.show_make_group,
+      .in_call_group_invite = in_call.group_invite_text.c_str(),
       .in_call_show_retry = in_call.show_retry,
       .in_call_calling = in_call.calling,
       .in_call_show_speaker = in_call.show_speaker,
@@ -259,17 +266,17 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .in_call_show_debug_subtitle = in_call.show_debug_subtitle,
       .in_call_debug_subtitle = in_call.debug_subtitle.c_str(),
       .in_call_roster = RosterKey(in_call.roster),
-      .in_call_speaking = phone ? SpeakingKey(in_call.roster) : std::string{},  // only the phone page rings
+      .in_call_speaking = phone ? SpeakingKey(in_call.roster) : std::string{}, // only the phone page rings
       .phone = phone,
       .ring_phone_title = ring.phone_title.c_str(),
       .ring_phone_subtitle = ring.phone_subtitle.c_str(),
       .ring_avatar = AvatarKey(ring.group, ring.has_avatar, ring.avatar_src, ring.avatar_letter, ring.avatar_tone),
       .in_call_phone_title = in_call.phone_title.c_str(),
       .in_call_video = in_call.video,
-      .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src,
-                                   in_call.peer_avatar_letter, in_call.peer_avatar_tone) +
-                         AvatarKey(false, in_call.self_has_avatar, in_call.self_avatar_src,
-                                   in_call.self_avatar_letter, in_call.self_avatar_tone),
+      .in_call_avatars = AvatarKey(false, in_call.peer_has_avatar, in_call.peer_avatar_src, in_call.peer_avatar_letter,
+                                   in_call.peer_avatar_tone) +
+                         AvatarKey(false, in_call.self_has_avatar, in_call.self_avatar_src, in_call.self_avatar_letter,
+                                   in_call.self_avatar_tone),
       .in_call_phone_failed = in_call.phone_failed,
       .in_call_failed_text = in_call.failed_text.c_str(),
       .in_call_story_active = in_call.story_active,
@@ -1055,6 +1062,13 @@ void CallController::FillInCallFromScreen(const CallScreen& screen) {
   in_call.participant_count = joined_count;
   in_call.show_roster = screen.group;
   in_call.show_invite = screen.show_invite;
+  in_call.show_make_group = screen.show_make_group;
+  in_call.group_invite_text =
+      screen.group_invite
+          ? Tr("call.group_invite.banner", {{"name", DisplayNameForIdentity(screen.group_invite->maker_identity)},
+                                            {"group", screen.group_invite->group_title}})
+                .c_str()
+          : "";
   in_call.roster.clear();
   in_call.roster.reserve(screen.members.size());
   for (const CallScreen::Member& member : screen.members) {
@@ -1207,6 +1221,18 @@ void CallController::OpenGroupCallPicker(const std::string& thread_id, const boo
 
 void CallController::OpenMidCallInvitePicker() {
   presenter_.OpenAddPeople();
+}
+
+void CallController::OpenMakeGroup() {
+  presenter_.OpenMakeGroup();
+}
+
+void CallController::JoinGroupInvite() {
+  presenter_.JoinGroupInvite();
+}
+
+void CallController::PutOffGroupInvite() {
+  presenter_.PutOffGroupInvite();
 }
 
 void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities) {

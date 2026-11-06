@@ -407,6 +407,33 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   NotifySurfaceChanged();
 }
 
+void PeoplePickerController::OpenForCallMakeGroup(const std::string& call_id) {
+  if (!MessagingInitialized() || call_id.empty() || !picker_ports_.create_group_from_call) {
+    UserFeedback::Fail(Tr("people_picker.err.calls_unavailable"));
+    return;
+  }
+  Close();
+  mode_ = PeoplePickerMode::CallMakeGroup;
+  call_id_ = call_id;
+  search_query_ = "";
+  step_ = kStepSelect;
+  title_ = SelectStepTitle().c_str();
+  empty_hint_ = Tr("people_picker.empty").c_str();
+  SyncCallMakeGroupRows();
+  for (PickerRow& row : rows_) {
+    selected_ids_.insert(row.id.c_str()); // everyone in the call to start with
+    row.selected = true;
+  }
+  UpdateCta();
+  DirtyAll();
+  PaneSpec spec;
+  spec.key = "people_picker";
+  spec.page_sheet = true;
+  layer_id_ = shell_navigation_.push_layer ? shell_navigation_.push_layer(spec) : -1;
+  RegisterFlow();
+  NotifySurfaceChanged();
+}
+
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
   if (!MessagingInitialized()) {
     UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
@@ -430,8 +457,7 @@ void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std:
   group_title_help_ = Tr("people_picker.group_title_help").c_str();
   pending_member_ids_.clear();
   member_summary_.clear();
-  title_ = mode_ == PeoplePickerMode::FromDm ? Tr("people_picker.title_add").c_str()
-                                             : Tr("people_picker.title").c_str();
+  title_ = SelectStepTitle().c_str();
   empty_hint_ = Tr("people_picker.empty").c_str();
 
   SyncRows();
@@ -947,10 +973,90 @@ void PeoplePickerController::SyncCallAddGuestRows() {
   }
 }
 
+void PeoplePickerController::SyncCallMakeGroupRows() {
+  rows_.clear();
+  if (!MessagingInitialized() || call_id_.empty() || !picker_ports_.list_call_participants) {
+    return;
+  }
+  std::vector<std::string> joined;
+  if (auto participants = picker_ports_.list_call_participants(call_id_)) {
+    for (const CallParticipant& row : *participants) {
+      joined.push_back(row.identity);
+    }
+  }
+  std::string self;
+  if (picker_ports_.local_relay_identity) {
+    self = picker_ports_.local_relay_identity().value_or("");
+  }
+  std::string query = search_query_.c_str();
+  std::transform(query.begin(), query.end(), query.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  for (const std::string& identity : CallMakeGroupPick(joined, self)) {
+    const std::string title = CallMemberName(identity);
+    if (!MatchesIdentityQuery(title, identity, query)) {
+      continue;
+    }
+    PickerRow row;
+    row.id = identity.c_str();
+    row.title = title.c_str();
+    std::optional<Contact> contact;
+    if (picker_ports_.find_contact_by_identity) {
+      if (auto found = picker_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account); found) {
+        contact = *found;
+      }
+    }
+    row.subtitle = contact ? ContactSubtitle(*contact).c_str() : Tr("people_picker.in_this_call").c_str();
+    row.selected = selected_ids_.count(identity) > 0;
+    rows_.push_back(std::move(row));
+  }
+}
+
+std::string PeoplePickerController::CallMemberName(const std::string& identity) const {
+  if (picker_ports_.find_contact_by_identity) {
+    if (auto contact = picker_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account);
+        contact && *contact) {
+      if (std::string title = FormatContactTitle(**contact); !title.empty()) {
+        return title;
+      }
+    }
+  }
+  if (picker_ports_.kept_card_nickname) {
+    if (std::string nickname = picker_ports_.kept_card_nickname(identity); !nickname.empty()) {
+      return nickname;
+    }
+  }
+  return Tr("people_picker.unnamed");
+}
+
+std::string PeoplePickerController::DefaultGroupTitleFor(const std::vector<std::string>& ids) const {
+  const std::string fallback = Tr("people_picker.default_group_title");
+  if (mode_ != PeoplePickerMode::CallMakeGroup) {
+    return fallback;
+  }
+  // The group's name is everyone's: the maker's own public name first, then the people picked.
+  std::vector<std::string> names;
+  names.push_back(picker_ports_.local_nickname ? picker_ports_.local_nickname() : std::string());
+  for (const std::string& identity : ids) {
+    names.push_back(CallMemberName(identity));
+  }
+  return DefaultCallGroupTitle(names, Tr("people_picker.name_separator"), fallback);
+}
+
+std::string PeoplePickerController::SelectStepTitle() const {
+  switch (mode_) {
+    case PeoplePickerMode::FromDm:
+      return Tr("people_picker.title_add");
+    case PeoplePickerMode::CallMakeGroup:
+      return Tr("people_picker.title_call_make_group");
+    default:
+      return Tr("people_picker.title");
+  }
+}
+
 void PeoplePickerController::UpdateCta() {
   const PeoplePickerCta cta = ComputePeoplePickerCta(mode_, FreeSelectedCount(), group_sending_);
   cta_enabled_ = cta != PeoplePickerCta::Disabled && cta != PeoplePickerCta::Inviting;
-  invite_hint_ = ShowInviteNeedsContactHint(cta) ? Tr("people_picker.invite_needs_contact").c_str() : "";
+  invite_hint_ = ShowInviteNeedsContactHint(cta, mode_) ? Tr("people_picker.invite_needs_contact").c_str() : "";
   if (mode_ == PeoplePickerMode::GroupAddMember) {
     RefreshGroupAddLimit();
   }
@@ -1144,6 +1250,8 @@ void PeoplePickerController::OnSearchChanged() {
     SyncGroupCallRows();
   } else if (mode_ == PeoplePickerMode::CallAddGuest) {
     SyncCallAddGuestRows();
+  } else if (mode_ == PeoplePickerMode::CallMakeGroup) {
+    SyncCallMakeGroupRows();
   } else if (mode_ == PeoplePickerMode::GroupMembers) {
     SyncGroupMemberRows();
   } else if (mode_ == PeoplePickerMode::GroupAddMember) {
@@ -1198,7 +1306,7 @@ void PeoplePickerController::OnConfirm() {
     return;
   }
   if (cta == PeoplePickerCta::CreateGroup) {
-    if (ids.size() < 2) {
+    if (ids.size() < MinGroupPick(mode_)) {
       return;
     }
     AdvanceToNameStep(ids);
@@ -1620,7 +1728,7 @@ void PeoplePickerController::AdvanceToNameStep(const std::vector<std::string>& m
   }
   step_ = kStepName;
   title_ = Tr("people_picker.group_title_prompt").c_str();
-  group_title_ = Tr("people_picker.default_group_title").c_str();
+  group_title_ = DefaultGroupTitleFor(member_contact_ids).c_str();
   DirtyAll();
 }
 
@@ -1628,14 +1736,13 @@ void PeoplePickerController::GoBackToSelect() {
   step_ = kStepSelect;
   pending_member_ids_.clear();
   member_summary_.clear();
-  title_ = mode_ == PeoplePickerMode::FromDm ? Tr("people_picker.title_add").c_str()
-                                             : Tr("people_picker.title").c_str();
+  title_ = SelectStepTitle().c_str();
   UpdateCta();
   DirtyAll();
 }
 
 void PeoplePickerController::OnCreateGroup() {
-  if (pending_member_ids_.size() < 2) {
+  if (pending_member_ids_.size() < MinGroupPick(mode_)) {
     return;
   }
   CreateGroupWithTitle(pending_member_ids_, group_title_.c_str());
@@ -1685,22 +1792,28 @@ void PeoplePickerController::CreateGroupWithTitle(const std::vector<std::string>
   if (!unlock_ensure_.ensure_unlocked) {
     return;
   }
-  unlock_ensure_.ensure_unlocked([this, member_contact_ids,
-                                                title = TrimTitle(std::move(title))](const bool unlocked) {
-    if (!unlocked) {
-      ShowToast(Tr("people_picker.pin_required"));
-      NotifySurfaceChanged();
-      return;
-    }
-    auto thread = picker_ports_.create_group ? picker_ports_.create_group(title, member_contact_ids)
-                                             : Roe<Thread>::error(Error("picker port unavailable"));
-    if (!thread) {
-      UserFeedback::Fail(thread.error().message);
-      NotifySurfaceChanged();
-      return;
-    }
-    FinishOpenThread();
-  });
+  // G022: from a call the pick is accounts, and the group is made "during the call" (its invites say which).
+  const std::string from_call = mode_ == PeoplePickerMode::CallMakeGroup ? call_id_ : std::string();
+  unlock_ensure_.ensure_unlocked(
+      [this, member_contact_ids, from_call, title = TrimTitle(std::move(title))](const bool unlocked) {
+        if (!unlocked) {
+          ShowToast(Tr("people_picker.pin_required"));
+          NotifySurfaceChanged();
+          return;
+        }
+        Roe<Thread> thread = Roe<Thread>::error(Error("picker port unavailable"));
+        if (!from_call.empty() && picker_ports_.create_group_from_call) {
+          thread = picker_ports_.create_group_from_call(title, from_call, member_contact_ids);
+        } else if (from_call.empty() && picker_ports_.create_group) {
+          thread = picker_ports_.create_group(title, member_contact_ids);
+        }
+        if (!thread) {
+          UserFeedback::Fail(thread.error().message);
+          NotifySurfaceChanged();
+          return;
+        }
+        FinishOpenThread();
+      });
 }
 
 } // namespace pbr

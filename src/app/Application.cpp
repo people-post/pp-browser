@@ -1221,6 +1221,9 @@ void Application::WireCalls() {
     call_actions.flip_camera = [this]() { call_->FlipCamera(); };
     call_actions.toggle_speaker = [this]() { call_->ToggleSpeaker(); };
     call_actions.open_mid_call_invite_picker = [this]() { call_->OpenMidCallInvitePicker(); };
+    call_actions.make_group_from_call = [this]() { call_->OpenMakeGroup(); };
+    call_actions.join_call_group_invite = [this]() { call_->JoinGroupInvite(); };
+    call_actions.put_off_call_group_invite = [this]() { call_->PutOffGroupInvite(); };
     call_actions.minimize_chrome = [this]() { call_->MinimizeChrome(); };
     call_actions.expand_chrome = [this]() { call_->ExpandChrome(); };
     call_actions.immersive_chrome = [this]() { call_->ImmersiveChrome(); };
@@ -1653,6 +1656,9 @@ bool Application::MountPresenters(ui::Context* context) {
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);
+  };
+  call_people_picker_notify.open_for_call_make_group = [this](const std::string& call_id) {
+    people_picker_->OpenForCallMakeGroup(call_id);
   };
   call_->BindPeoplePickerNotify(std::move(call_people_picker_notify));
 

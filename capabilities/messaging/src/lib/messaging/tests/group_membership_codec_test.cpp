@@ -234,5 +234,62 @@ TEST(GroupMembershipCodecTest, GroupDissolvedHasItsOwnWireNameAndIsNotRosterBook
   EXPECT_EQ(GroupMembershipControlTypeFromWire("group_dissolved_sibling"), GroupMembershipControlType::GroupDissolvedSibling);
 }
 
+// G022: an invite made during a call carries `context: call` and the call id; other invites carry neither.
+TEST(GroupMembershipCodecTest, InviteMadeInACallRoundTrips) {
+  GroupInvitePayload payload;
+  payload.group_id = "group:call";
+  payload.group_title = "Ann, Bo, Cy";
+  payload.inviter_identity = "account:ann";
+  payload.invitee_identity = "account:cy";
+  payload.invite_nonce = "nonce-call";
+  payload.roster_epoch = 1;
+  payload.context = kGroupInviteContextCall;
+  payload.call_id = "call:abc";
+
+  auto encoded = GroupMembershipCodec::EncodeInvite(payload);
+  ASSERT_TRUE(encoded);
+  auto json = TryParseObject(*encoded);
+  ASSERT_TRUE(json);
+  EXPECT_EQ(json->getString("context").value_or(""), "call");
+  EXPECT_EQ(json->getString("call_id").value_or(""), "call:abc");
+  auto decoded = GroupMembershipCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->context, kGroupInviteContextCall);
+  EXPECT_EQ(decoded->call_id, "call:abc");
+  EXPECT_TRUE(decoded->MadeInCall());
+
+  GroupInvitePayload plain = payload;
+  plain.context.clear();
+  plain.call_id.clear();
+  auto plain_encoded = GroupMembershipCodec::EncodeInvite(plain);
+  ASSERT_TRUE(plain_encoded);
+  auto plain_json = TryParseObject(*plain_encoded);
+  ASSERT_TRUE(plain_json);
+  EXPECT_FALSE(plain_json->getString("context")) << "additive: an ordinary invite is written as before";
+  EXPECT_FALSE(plain_json->getString("call_id"));
+  auto plain_decoded = GroupMembershipCodec::DecodeInvite(*plain_encoded);
+  ASSERT_TRUE(plain_decoded);
+  EXPECT_FALSE(plain_decoded->MadeInCall());
+}
+
+// G022: the first line of a group made in a call says so (`context` on the local member_joined).
+TEST(GroupMembershipCodecTest, MemberJoinedKeepsTheCallContext) {
+  GroupMembershipCodec::MemberJoinedPayload joined;
+  joined.group_id = "group:call";
+  joined.member_identity = "account:ann";
+  joined.role = MemberRole::Owner;
+  joined.roster_epoch = 1;
+  joined.context = kGroupInviteContextCall;
+  auto encoded = GroupMembershipCodec::EncodeMemberJoined(joined);
+  ASSERT_TRUE(encoded);
+  auto decoded = GroupMembershipCodec::DecodeMemberJoined(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->context, kGroupInviteContextCall);
+  auto ordinary = GroupMembershipCodec::DecodeMemberJoined(
+      *GroupMembershipCodec::EncodeMemberJoined("group:x", "account:ann", MemberRole::Owner, 1));
+  ASSERT_TRUE(ordinary);
+  EXPECT_TRUE(ordinary->context.empty());
+}
+
 } // namespace
 } // namespace pbr

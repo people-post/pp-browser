@@ -960,6 +960,7 @@ Roe<void> ConversationsHub::Initialize(const HubSettings& settings, const std::s
     }
   }
   group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
+  group_invite_gate_->SetInLiveCall(in_live_call_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, PeerDisplaySourcesFrom(*directory_shadows_, group_roster_.get()));
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
@@ -1394,6 +1395,13 @@ std::unique_ptr<MessageRouter> ConversationsHub::MakeRouter() {
 
 void ConversationsHub::BindSecrets(ProfileSecretsEngine& secrets) {
   secrets_ = &secrets;
+}
+
+std::vector<GroupInviteGate::InviteInCall> ConversationsHub::GroupInvitesInCall(const std::string& call_id) const {
+  if (!group_invite_gate_) {
+    return {};
+  }
+  return group_invite_gate_->InvitesInCall(call_id, util::NowUnixMs());
 }
 
 std::string ConversationsHub::KeptCardNickname(const std::string& account_id) {

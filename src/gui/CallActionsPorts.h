@@ -47,6 +47,10 @@ struct CallActionsPorts {
   std::function<void()> flip_camera;
   std::function<void()> toggle_speaker;
   std::function<void()> open_mid_call_invite_picker;
+  /** G022: "Make a group…"; the group banner's Join and Not now. */
+  std::function<void()> make_group_from_call;
+  std::function<void()> join_call_group_invite;
+  std::function<void()> put_off_call_group_invite;
   std::function<void()> minimize_chrome;
   std::function<void()> expand_chrome;
   std::function<void()> immersive_chrome;

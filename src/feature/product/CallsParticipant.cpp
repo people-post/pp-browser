@@ -2,6 +2,7 @@
 
 #include "lib/storage/ProfileStorage.h"
 #include "lib/calls/CallSessionLogic.h"
+#include "lib/calls/CallSessionQueries.h"
 #include "lib/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/LocalNetworkReaction.h"
@@ -195,6 +196,16 @@ Roe<std::vector<CallParticipant>> CallsParticipant::JoinedParticipants(const std
     return *participants;
   }
   return Error("call participants unavailable");
+}
+
+bool CallsParticipant::InLiveCallWith(const std::string& call_id, const std::string& identity) {
+  const CallReads* calls = stack_.Reads();
+  const ICallSessionStore* sessions = stack_.Sessions();
+  if (!calls || !sessions) {
+    return false;
+  }
+  auto local = calls->LocalIdentity();
+  return local && call_queries::InLiveCallWith(*sessions, *local, call_id, identity);
 }
 
 Roe<void> CallsParticipant::OnStoresOpened(ConversationsHub& hub) {

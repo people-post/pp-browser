@@ -38,6 +38,13 @@ public:
   void SetInboundPolicy(GroupInvitePolicy policy);
 
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
+  /**
+   * G022: a group made during the call `call_id`, we its owner. It starts with us alone and one line ("Group made
+   * during a call"); each of `member_identities` (accounts: people met in the call need not be contacts) gets the
+   * ordinary invite with `context: call` and the call id. An invite that cannot be sent does not stop the others.
+   */
+  Roe<Thread> CreateGroupFromCall(const std::string& title, const std::string& call_id,
+                                  const std::vector<std::string>& member_identities);
   Roe<void> InviteMember(const std::string& group_id, const std::string& invitee_contact_id);
   Roe<Thread> AcceptInvite(const std::string& invite_nonce);
   Roe<void> DeclineInvite(const std::string& invite_nonce);
@@ -155,6 +162,16 @@ private:
   Roe<void> AppendMembershipSystemEvent(const std::string& thread_id, GroupMembershipControlType type,
                                         const std::string& text, const std::string& detail_json,
                                         const std::string& sender_identity);
+  /**
+   * A new group with us as owner and its first line (`first_line_context`: `call` for G022's line). `participants`:
+   * the thread's contact ids; `invitee_count`: how many will be invited (the size limit).
+   */
+  Roe<Thread> StartGroup(const std::string& title, const std::vector<std::string>& participants, size_t invitee_count,
+                         const std::string& first_line_context);
+  /** One invite to `invitee_identity` (its contact, if known); `call_id`: made during that call (G022). */
+  Roe<void> InviteIdentity(const std::string& group_id, const std::string& invitee_identity,
+                           const std::string& invitee_contact_id, const std::string& call_id);
+  /** The invite DM: to the contact `invitee_contact_id`, else to the invitee's account. */
   Roe<void> SendInviteDirectMessage(const GroupInvitePayload& invite, const std::string& invitee_contact_id);
   Roe<void> SendInviteResponseDirectMessage(const std::string& inviter_identity, const std::string& invite_nonce,
                                             const std::string& group_id, GroupMembershipControlType response_type);

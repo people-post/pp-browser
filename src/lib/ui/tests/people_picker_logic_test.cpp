@@ -82,3 +82,29 @@ TEST(PeoplePickerLogicTest, InviteNeedsContactHintShowsWhenTheButtonCreatesOrInv
   EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupCall, 2)));
   EXPECT_FALSE(ShowInviteNeedsContactHint(ComputePeoplePickerCta(PeoplePickerMode::GroupMembers, 2)));
 }
+
+// G022: "Make a group…" — everyone in the call but us, each once, all picked; Next with one or more.
+TEST(PeoplePickerLogicTest, MakeAGroupFromACallPicksEveryoneElseInIt) {
+  EXPECT_EQ(pbr::CallMakeGroupPick({"account:ann", "account:me", "account:bo", "account:ann", "", "account:cy"},
+                                   "account:me"),
+            (std::vector<std::string>{"account:ann", "account:bo", "account:cy"}));
+  EXPECT_TRUE(pbr::CallMakeGroupPick({"account:me"}, "account:me").empty());
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::CallMakeGroup, 0), PeoplePickerCta::Disabled)
+      << "everyone unticked";
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::CallMakeGroup, 1), PeoplePickerCta::CreateGroup);
+  EXPECT_EQ(ComputePeoplePickerCta(PeoplePickerMode::CallMakeGroup, 4), PeoplePickerCta::CreateGroup);
+  EXPECT_EQ(pbr::MinGroupPick(PeoplePickerMode::CallMakeGroup), 1u);
+  EXPECT_EQ(pbr::MinGroupPick(PeoplePickerMode::Free), 2u);
+  // People met in the call need not have us as a contact: no "must have added you" hint.
+  EXPECT_FALSE(pbr::ShowInviteNeedsContactHint(PeoplePickerCta::CreateGroup, PeoplePickerMode::CallMakeGroup));
+  EXPECT_TRUE(pbr::ShowInviteNeedsContactHint(PeoplePickerCta::CreateGroup, PeoplePickerMode::FromDm));
+}
+
+// G022: the default name lists the people (the maker first), three at most, then counts the rest.
+TEST(PeoplePickerLogicTest, ACallGroupIsNamedAfterThePeopleInIt) {
+  EXPECT_EQ(pbr::DefaultCallGroupTitle({"Ann", "Bo", "Cy"}, ", ", "Group chat"), "Ann, Bo, Cy");
+  EXPECT_EQ(pbr::DefaultCallGroupTitle({"Ann", "Bo", "Cy", "Di", "Ed"}, ", ", "Group chat"), "Ann, Bo, Cy +2");
+  EXPECT_EQ(pbr::DefaultCallGroupTitle({"", "Bo", "Cy"}, ", ", "Group chat"), "Bo, Cy") << "a name we lack is skipped";
+  EXPECT_EQ(pbr::DefaultCallGroupTitle({"安", "博"}, "、", "群聊"), "安、博");
+  EXPECT_EQ(pbr::DefaultCallGroupTitle({"", ""}, ", ", "Group chat"), "Group chat");
+}

@@ -74,6 +74,10 @@ public:
                              const std::vector<std::string>& invitee_identities);
   void OpenGroupCallPicker(const std::string& thread_id, bool video_allowed);
   void OpenMidCallInvitePicker();
+  /** G022: "Make a group…" and the group banner's Join / Not now (CallPresenter decides). */
+  void OpenMakeGroup();
+  void JoinGroupInvite();
+  void PutOffGroupInvite();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */
   bool VideoCallAvailable();

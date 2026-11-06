@@ -112,12 +112,26 @@ Roe<void> GroupMembershipWorkflow::AppendMembershipSystemEvent(const std::string
 
 Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayload& invite,
                                                           const std::string& invitee_contact_id) {
-  auto contact = contacts_.Get(invitee_contact_id);
-  if (!contact || !*contact) {
-    return Error("Invitee contact not found");
+  // The DM with the invitee: their contact's, else (G022: someone met in a call) the one with their account.
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
+  direct_target.peer_identity_value = invite.invitee_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+  std::string contact_id = invitee_contact_id;
+  std::string dm_title = invite.invitee_identity;
+  if (!contact_id.empty()) {
+    auto contact = contacts_.Get(contact_id);
+    if (!contact || !*contact) {
+      return Error("Invitee contact not found");
+    }
+    direct_target = DirectChatTargetFromContact(**contact, ThreadChannel::E2ePublic);
+    dm_title = (*contact)->display_name;
+  } else if (auto contact = contacts_.FindByIdentity(invite.invitee_identity, mesh::ContactIdKind::Account);
+             contact && *contact) {
+    contact_id = (*contact)->id;
+    dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
   }
-  const DirectChatTarget direct_target = DirectChatTargetFromContact(**contact, ThreadChannel::E2ePublic);
-  auto thread = store_.FindOrCreateDirectThread(direct_target, invitee_contact_id, (*contact)->display_name);
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
   if (!thread) {
     return thread.error();
   }
@@ -148,21 +162,17 @@ Roe<void> GroupMembershipWorkflow::SendInviteDirectMessage(const GroupInvitePayl
   return {};
 }
 
-Roe<Thread> GroupMembershipWorkflow::CreateGroup(const std::string& title,
-                                                const std::vector<std::string>& member_contact_ids) {
+Roe<Thread> GroupMembershipWorkflow::StartGroup(const std::string& title, const std::vector<std::string>& participants,
+                                                const size_t invitee_count, const std::string& first_line_context) {
   auto local_identity = LocalRelayIdentity();
   if (!local_identity) {
     return local_identity.error();
   }
 
-  if (member_contact_ids.size() + 1 > kMaxGroupMembers) {
+  if (invitee_count + 1 > kMaxGroupMembers) {
     return Error(kGroupFullError);  // G014: the owner and its members
   }
   const std::string group_id = GenerateGroupId();
-  std::vector<std::string> participants;
-  for (const std::string& contact_id : member_contact_ids) {
-    participants.push_back(contact_id);
-  }
 
   auto thread = store_.FindOrCreateGroupThread(group_id, title, participants);
   if (!thread) {
@@ -190,25 +200,89 @@ Roe<Thread> GroupMembershipWorkflow::CreateGroup(const std::string& title,
     log().warning << "Roster not signed group=" << group_id << ": " << signed_roster.error().message;
   }
 
-  auto joined_detail = GroupMembershipCodec::EncodeMemberJoined(group_id, *local_identity, MemberRole::Owner, 1);
+  GroupMembershipCodec::MemberJoinedPayload joined;
+  joined.group_id = group_id;
+  joined.member_identity = *local_identity;
+  joined.role = MemberRole::Owner;
+  joined.roster_epoch = 1;
+  joined.context = first_line_context;
+  auto joined_detail = GroupMembershipCodec::EncodeMemberJoined(joined);
   if (!joined_detail) {
     return joined_detail.error();
   }
-  if (auto event = AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined,
-                                               "Owner created the group", *joined_detail, *local_identity);
+  const char* line = first_line_context.empty() ? "Owner created the group" : kGroupMadeInCallLine;
+  if (auto event = AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined, line,
+                                               *joined_detail, *local_identity);
       !event) {
     return event.error();
   }
+  return *thread;
+}
 
+Roe<Thread> GroupMembershipWorkflow::CreateGroup(const std::string& title,
+                                                 const std::vector<std::string>& member_contact_ids) {
+  auto thread = StartGroup(title, member_contact_ids, member_contact_ids.size(), {});
+  if (!thread) {
+    return thread.error();
+  }
   for (const std::string& contact_id : member_contact_ids) {
-    if (auto invited = InviteMember(group_id, contact_id); !invited) {
+    if (auto invited = InviteMember(thread->group_id.value_or(""), contact_id); !invited) {
       return invited.error();
     }
   }
   return *thread;
 }
 
+Roe<Thread> GroupMembershipWorkflow::CreateGroupFromCall(const std::string& title, const std::string& call_id,
+                                                         const std::vector<std::string>& member_identities) {
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return local.error();
+  }
+  std::vector<std::string> invitees;
+  for (const std::string& identity : member_identities) {
+    if (!identity.empty() && identity != *local &&
+        std::find(invitees.begin(), invitees.end(), identity) == invitees.end()) {
+      invitees.push_back(identity);
+    }
+  }
+  if (invitees.empty()) {
+    return Error("Pick someone from the call");
+  }
+  // The thread names contacts where they are (people met in the call may not be).
+  std::vector<std::string> participants;
+  for (const std::string& identity : invitees) {
+    if (auto contact = contacts_.FindByIdentity(identity, mesh::ContactIdKind::Account); contact && *contact) {
+      participants.push_back((*contact)->id);
+    }
+  }
+  auto thread = StartGroup(title, participants, invitees.size(), kGroupInviteContextCall);
+  if (!thread) {
+    return thread.error();
+  }
+  // Each invite best-effort: one participant out of reach does not keep the others out.
+  const std::string group_id = thread->group_id.value_or("");
+  for (const std::string& identity : invitees) {
+    if (auto invited = InviteIdentity(group_id, identity, {}, call_id); !invited) {
+      log().warning << "call group invite not sent group=" << group_id << ": " << invited.error().message;
+    }
+  }
+  return *thread;
+}
+
 Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, const std::string& invitee_contact_id) {
+  auto invitee_identity = ResolveRelayIdentity(invitee_contact_id);
+  if (!invitee_identity) {
+    return invitee_identity.error();
+  }
+  return InviteIdentity(group_id, *invitee_identity, invitee_contact_id, {});
+}
+
+Roe<void> GroupMembershipWorkflow::InviteIdentity(const std::string& group_id, const std::string& invitee_identity,
+                                                  const std::string& invitee_contact_id, const std::string& call_id) {
   auto metadata = LoadMetadataOrError(group_id);
   if (!metadata) {
     return metadata.error();
@@ -228,20 +302,19 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
     return Error(kGroupFullError);
   }
 
-  auto invitee_identity = ResolveRelayIdentity(invitee_contact_id);
-  if (!invitee_identity) {
-    return invitee_identity.error();
-  }
-
   GroupInvitePayload invite;
   invite.group_id = group_id;
   invite.group_title = metadata->title;
   invite.inviter_identity = *local;
-  invite.invitee_identity = *invitee_identity;
+  invite.invitee_identity = invitee_identity;
   invite.invite_nonce = util::GenerateUuid();
   invite.roster_epoch = metadata->roster_epoch;
   invite.expires_at = util::NowUnixMs() + kGroupInviteTtlMs;
   invite.actor_role = MemberRole::Owner;
+  if (!call_id.empty()) {
+    invite.context = kGroupInviteContextCall; // G022: the invitee's device shows it in that call
+    invite.call_id = call_id;
+  }
 
   PendingGroupInvite pending;
   pending.invite_nonce = invite.invite_nonce;
@@ -388,13 +461,22 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
   (void)roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Accepted);
   (void)roster_.UpsertGroupTarget((*pending)->group_id, thread->id, 1, 1);
 
-  auto detail =
-      GroupMembershipCodec::EncodeMemberJoined((*pending)->group_id, *local, MemberRole::Member, roster_epoch);
+  // G022: a group made during a call this device was in says so on its first line.
+  const bool made_in_call = !invite_gate_.CallOfInvite(invite_nonce).empty();
+  invite_gate_.ForgetInviteInCall(invite_nonce);
+  GroupMembershipCodec::MemberJoinedPayload joined;
+  joined.group_id = (*pending)->group_id;
+  joined.member_identity = *local;
+  joined.role = MemberRole::Member;
+  joined.roster_epoch = roster_epoch;
+  joined.context = made_in_call ? kGroupInviteContextCall : "";
+  auto detail = GroupMembershipCodec::EncodeMemberJoined(joined);
   if (!detail) {
     return detail.error();
   }
-  if (auto event = AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined,
-                                               "You joined the group", *detail, *local);
+  if (auto event =
+          AppendMembershipSystemEvent(thread->id, GroupMembershipControlType::MemberJoined,
+                                      made_in_call ? kGroupMadeInCallLine : "You joined the group", *detail, *local);
       !event) {
     return event.error();
   }
@@ -427,6 +509,7 @@ Roe<void> GroupMembershipWorkflow::DeclineInvite(const std::string& invite_nonce
   if (auto status = roster_.UpdateInviteStatus(invite_nonce, InviteStatus::Declined); !status) {
     return status.error();
   }
+  invite_gate_.ForgetInviteInCall(invite_nonce);
   // Best-effort notify inviter; local decline already recorded.
   (void)SendInviteResponseDirectMessage((*pending)->inviter_identity, invite_nonce, (*pending)->group_id,
                                         GroupMembershipControlType::GroupInviteDecline);

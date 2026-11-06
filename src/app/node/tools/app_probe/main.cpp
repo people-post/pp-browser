@@ -32,6 +32,13 @@
 //   remove_member {thread, account}     the owner removes a member from the group
 //   set_group_role {thread, account, role} the owner makes a member admin (role admin) or member again (G017)
 //   set_group_preset {thread, preset}   the owner sets the group open or managed (G017)
+//   make_group_from_call {title?, accounts?}
+//                                       the call screen's "Make a group…" (G022: a call with no group, 3+ in it) and
+//                                       the picker's Create: everyone else in the call (or the picked `accounts`) is
+//                                       invited, the title defaults to their names {thread, group_id, title, invited}
+//   call_group_invite                   the call's group banner {shown, nonce, title, from} (G022)
+//   call_group_invite_join              the banner's Join (the ordinary accept) {thread}
+//   call_group_invite_not_now           the banner's Not now (the invite stays waiting)
 //   warm_seeds                          connect the bootstrap seeds now (what reconnects an idle app to
 //                                       them in the field, #382)
 //   recovery_phrase {pin}               Me → Security → Show recovery phrase: {phrase} (24 words; "" when none)
@@ -91,6 +98,8 @@
 #include "feature/product/ProductStack.h"
 #include "feature/product/HubSettingsProjection.h"
 #include "lib/ai/StructuredTextParser.h"
+#include "lib/people/PeerDisplayLabel.h"
+#include "lib/ui/PeoplePickerLogic.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "feature/conversations/AccountLockerWorkflow.h"
 #include "lib/people/ContactClock.h"
@@ -187,6 +196,8 @@ public:
       event.set("identity", notice.identity);
       Emit(event);
     };
+    // G022: "Make a group…" opens the picker in the app; here the command that pressed it takes the call.
+    callbacks.open_make_group = [this](const std::string& call_id) { make_group_call_id_ = call_id; };
     presenter_.BindCallbacks(std::move(callbacks));
     // The preview line reads an AI reply as prose, as the app's does.
     chats_.BindCallbacks({.prose = [](const std::string& text) { return StructuredTextParser::PlainText(text); }});
@@ -318,6 +329,8 @@ public:
     out.set("conflict", screen.conflict);
     out.set("show_retry", screen.show_retry);
     out.set("show_invite", screen.show_invite);
+    out.set("show_make_group", screen.show_make_group); // G022
+    out.set("group_invite", screen.group_invite ? screen.group_invite->invite_id : std::string());
     out.set("group", screen.group);
     if (calls_->Available()) {
       IMediaView& media = calls_->Media();
@@ -752,6 +765,35 @@ public:
       if (!set) {
         ReplyError(id, set.error().message);
       } else {
+        Emit(Reply(id, true));
+      }
+    } else if (cmd == "make_group_from_call") {
+      std::vector<std::string> accounts;
+      if (const Array* picked = request->getArray("accounts")) {
+        for (const Value& item : picked->elements) {
+          if (auto account = asString(item)) {
+            accounts.push_back(*account);
+          }
+        }
+      }
+      MakeGroupFromCall(id, request->getString("title").value_or(""), accounts);
+    } else if (cmd == "call_group_invite") {
+      Settle();
+      const CallScreen& screen = presenter_.Screen();
+      Object out = Reply(id, true);
+      out.set("shown", screen.group_invite.has_value());
+      out.set("nonce", screen.group_invite ? screen.group_invite->invite_id : std::string());
+      out.set("title", screen.group_invite ? screen.group_invite->group_title : std::string());
+      out.set("from", screen.group_invite ? screen.group_invite->maker_identity : std::string());
+      Emit(out);
+    } else if (cmd == "call_group_invite_join") {
+      JoinCallGroupInvite(id);
+    } else if (cmd == "call_group_invite_not_now") {
+      Settle();
+      if (!presenter_.Screen().group_invite) {
+        ReplyError(id, "no group banner in this call");
+      } else {
+        presenter_.PutOffGroupInvite();
         Emit(Reply(id, true));
       }
     } else if (cmd == "accept_group_invite") {
@@ -1280,6 +1322,111 @@ private:
     Emit(out);
   }
 
+  /** Someone in a call by their account, as the picker names them: their contact, else their card's nickname. */
+  std::string CallMemberName(const std::string& account) {
+    if (auto contact = facade_->FindContactByIdentity(account, mesh::ContactIdKind::Account); contact && *contact) {
+      if (std::string name = FormatContactTitle(**contact); !name.empty()) {
+        return name;
+      }
+    }
+    return Hub().KeptCardNickname(account);
+  }
+
+  /**
+   * G022: the call screen's "Make a group…" (CallPresenter::OpenMakeGroup), then the picker's Create: everyone else in
+   * the call picked, or just `accounts` (each must be in it); the title defaults to the names, as the picker's does.
+   */
+  void MakeGroupFromCall(int64_t id, std::string title, const std::vector<std::string>& accounts) {
+    Settle();
+    make_group_call_id_.clear();
+    presenter_.OpenMakeGroup();
+    const std::string call_id = make_group_call_id_;
+    if (call_id.empty()) {
+      ReplyError(id, "this call offers no Make a group");
+      return;
+    }
+    std::vector<std::string> members;
+    if (auto participants = calls_->ListJoinedParticipants(call_id)) {
+      for (const CallParticipant& participant : *participants) {
+        members.push_back(participant.identity);
+      }
+    }
+    const std::string self = facade_->LoadProfileIdentityView().account_id;
+    std::vector<std::string> picked = CallMakeGroupPick(members, self);
+    if (!accounts.empty()) {
+      for (const std::string& account : accounts) {
+        if (std::find(picked.begin(), picked.end(), account) == picked.end()) {
+          ReplyError(id, "not in the call: " + account);
+          return;
+        }
+      }
+      picked = accounts;
+    }
+    if (title.empty()) {
+      std::vector<std::string> names;
+      auto own = Hub().Identity().Get();
+      names.push_back(own ? own->nickname : std::string());
+      for (const std::string& account : picked) {
+        names.push_back(CallMemberName(account));
+      }
+      title = DefaultCallGroupTitle(names, ", ", "Group chat");
+    }
+    AppRuntime::PostWorkerAndReplyOnUI<Roe<Thread>>(
+        WorkerLane::Normal,
+        [this, title, call_id, picked]() { return Hub().Groups().CreateGroupFromCall(title, call_id, picked); },
+        [id, title, picked](Roe<Thread> thread) {
+          if (!thread) {
+            ReplyError(id, thread.error().message);
+            return;
+          }
+          Object out = Reply(id, true);
+          out.set("thread", thread->id);
+          out.set("group_id", thread->group_id.value_or(""));
+          out.set("title", title);
+          std::vector<Value> invited;
+          for (const std::string& account : picked) {
+            invited.emplace_back(account);
+          }
+          out.set("invited", ArrayValue(std::move(invited)));
+          Emit(out);
+        });
+  }
+
+  /** G022: the call's group banner Join (CallPresenter::JoinGroupInvite → the ordinary accept). */
+  void JoinCallGroupInvite(int64_t id) {
+    Settle();
+    if (!presenter_.Screen().group_invite) {
+      ReplyError(id, "no group banner in this call");
+      return;
+    }
+    const std::string group_id = [this]() {
+      const std::string nonce = presenter_.Screen().group_invite->invite_id;
+      for (const GroupInviteGate::InviteInCall& invite : Hub().GroupInvitesInCall(presenter_.Screen().call_id)) {
+        if (invite.invite_nonce == nonce) {
+          return invite.group_id;
+        }
+      }
+      return std::string();
+    }();
+    presenter_.JoinGroupInvite([this, id, group_id](Roe<void> joined) {
+      if (!joined) {
+        ReplyError(id, joined.error().message);
+        return;
+      }
+      Object out = Reply(id, true);
+      out.set("group_id", group_id);
+      if (auto threads = facade_->ListThreads()) {
+        for (const Thread& thread : *threads) {
+          if (thread.kind == ThreadKind::Group && thread.group_id == group_id) {
+            out.set("thread", thread.id);
+            break;
+          }
+        }
+      }
+      Emit(out);
+    });
+  }
+
   /** The invite card's Accept (ContactActionDispatcher accept_group_invite). */
   void AcceptGroupInvite(int64_t id, const std::string& nonce, const std::string& group_id) {
     Object action;
@@ -1353,6 +1500,8 @@ private:
   std::string last_kind_ = "none";
   std::string last_line_;
   std::string last_error_;
+  /** G022: the call "Make a group…" was pressed in (its callback; the command that pressed it takes it). */
+  std::string make_group_call_id_;
   std::string last_call_id_;
   std::string last_phase_;
   std::string last_status_;

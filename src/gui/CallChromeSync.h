@@ -48,6 +48,9 @@ struct CallChromeLayer {
   std::string in_call_remote_placeholder;
   bool in_call_show_roster = false;
   bool in_call_show_invite = false;
+  /** G022: "Make a group…" and the group banner's words (written into the markup: a change remounts). */
+  bool in_call_show_make_group = false;
+  std::string in_call_group_invite;
   bool in_call_show_retry = false;
   bool in_call_calling = false;
   bool in_call_show_speaker = false;

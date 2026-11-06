@@ -70,6 +70,34 @@ std::string Plain(const std::string& text) {
   return out;
 }
 
+/**
+ * G022: the banner of a group someone in the call made with everyone here (Join / Not now), else "Make a group…" when
+ * the call offers it. `phone`: the phone call page's look (else the desktop bar's). Text is written into the markup.
+ */
+void AppendGroupOffer(std::ostringstream& out, const CallInProgressState& call, const bool phone) {
+  const char* variant = phone ? " call-group-offer--phone" : "";
+  if (!call.group_invite_text.empty()) {
+    out << "<div class=\"call-group-offer" << variant << "\">";
+    out << "<p class=\"call-group-offer-text\">" << Plain(call.group_invite_text.c_str()) << "</p>";
+    out << "<div class=\"call-group-offer-actions\">";
+    out << "<button class=\"call-group-offer-btn\" type=\"button\" data-event-click=\"call_group_not_now()\">"
+        << Tr("call.group_invite.not_now") << "</button>";
+    out << "<button class=\"call-group-offer-btn call-group-offer-btn--primary\" type=\"button\" "
+           "data-event-click=\"call_group_join()\">"
+        << Tr("call.group_invite.join") << "</button>";
+    out << "</div></div>";
+    return;
+  }
+  if (call.show_make_group) {
+    out << "<div class=\"call-make-group-row" << (phone ? " call-make-group-row--phone" : "") << "\">";
+    out << "<button class=\"call-make-group" << (phone ? " call-make-group--phone" : "")
+        << "\" type=\"button\" "
+           "data-event-click=\"call_make_group()\">"
+        << "<svg src=\"../icons/group.svg\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg>"
+        << "<span class=\"call-make-group-label\">" << Tr("call.make_group") << "</span></button></div>";
+  }
+}
+
 /** A round avatar on the phone call pages: the group icon on the group colour, a photo, or the initial. */
 void AppendAvatar(std::ostringstream& out, const char* size_class, const bool group, const bool has_photo,
                   const std::string& photo, const std::string& letter, const int tone) {
@@ -541,6 +569,7 @@ std::string CallPhoneRml(const ShellState& state) {
     AppendTips(out);
   }
 
+  AppendGroupOffer(out, call, true);
   AppendControls(out, call, video_layout);
   out << "</div>";
   if (call.story_sheet_open) {
@@ -771,6 +800,7 @@ std::string CallInProgressRml(const ShellState& state) {
       out << "</div>";
     }
     out << "<div class=\"shell-call-immersive-controls\">";
+    AppendGroupOffer(out, call, false);
     out << "<div class=\"shell-call-bar-actions row\">";
     append_core_actions(out);
     out << "</div>";
@@ -805,6 +835,7 @@ std::string CallInProgressRml(const ShellState& state) {
   out << "<div class=\"shell-call-bar-actions row\">";
   append_core_actions(out);
   out << "</div></div>";
+  AppendGroupOffer(out, call, false);
   append_cancel(out);
   out << "<div class=\"shell-call-roster row\" data-if=\"call_in_progress_show_roster\">";
   out << "<div data-for=\"p : call_in_progress_roster\" class=\"shell-call-roster-chip row\">";

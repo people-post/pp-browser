@@ -104,6 +104,11 @@ inline constexpr int64_t kGroupInviteAcceptGraceMs = 24LL * 60 * 60 * 1000;
 /** Accepting an invite past its expiry; also the localization key of what the user sees. */
 inline constexpr const char kGroupInviteExpiredError[] = "chat.group.invite_expired";
 
+/** G022: an invite's `context` when it was made during a call (its `call_id` names the call). */
+inline constexpr const char kGroupInviteContextCall[] = "call";
+/** G022: the stored text of such a group's first line (the transcript says it in the user's language). */
+inline constexpr const char kGroupMadeInCallLine[] = "Group made during a call";
+
 struct GroupInvitePayload {
   std::string group_id;
   std::string group_title;
@@ -113,6 +118,12 @@ struct GroupInvitePayload {
   uint64_t roster_epoch = 0;
   std::optional<int64_t> expires_at;
   MemberRole actor_role = MemberRole::Owner;
+  /** G022: `kGroupInviteContextCall` for a group made during the call `call_id`; empty for any other invite. */
+  std::string context;
+  std::string call_id;
+
+  /** Made during a call, and names it. */
+  bool MadeInCall() const { return context == kGroupInviteContextCall && !call_id.empty(); }
 };
 
 struct GroupForkPayload {

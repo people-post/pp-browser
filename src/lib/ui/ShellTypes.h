@@ -332,6 +332,10 @@ struct CallInProgressState {
   bool show_roster = false;
   /** Mid-call invite affordance. */
   bool show_invite = false;
+  /** G022: "Make a group…" (a call with no group and 3+ in it). */
+  bool show_make_group = false;
+  /** G022: the banner of a group someone here made with everyone ("" = none); Join / Not now under it. */
+  ui::String group_invite_text;
   /** Show Retry after 1:1 P2P connect fail/timeout. */
   bool show_retry = false;
   /** An outgoing call still ringing: the phone shows a labelled Cancel (ShowsCancelCall). */

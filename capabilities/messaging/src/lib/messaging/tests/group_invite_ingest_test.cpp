@@ -225,6 +225,52 @@ TEST(GroupInviteIngestTest, InboundInviteStoresPendingWithTitleAndActions) {
   EXPECT_EQ(messages->back().chat_actions.size(), 3u);
 }
 
+// G022: someone met in a call (not a contact) invites us from it: kept, and shown in that call, only while we are
+// in the call with them; it stays the ordinary invite (Accept / Decline / Block on the card).
+TEST(GroupInviteIngestTest, AStrangersInviteFromOurLiveCallIsKeptAndShownInTheCall) {
+  PartyHarness invitee("call_invitee", "account:bob", "account:alice");
+  invitee.contacts.known.clear(); // Alice was brought into the call by someone else
+  std::string live_call = "call:live";
+  invitee.gate.SetInLiveCall([&live_call](const std::string& call_id, const std::string& inviter) {
+    return call_id == live_call && inviter == "account:alice";
+  });
+
+  const auto send_invite = [&](const std::string& nonce, const std::string& call_id, const uint64_t seq) {
+    GroupInvitePayload invite;
+    invite.group_id = "group:call-" + nonce;
+    invite.group_title = "Alice, Bob, Carol";
+    invite.inviter_identity = "account:alice";
+    invite.invitee_identity = "account:bob";
+    invite.invite_nonce = nonce;
+    invite.roster_epoch = 1;
+    invite.expires_at = util::NowUnixMs() + 86400000;
+    invite.context = kGroupInviteContextCall;
+    invite.call_id = call_id;
+    auto detail = GroupMembershipCodec::EncodeInvite(invite);
+    EXPECT_TRUE(detail);
+    return invitee.pipeline.ProcessEnvelope(
+        invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation: Alice, Bob, Carol", seq), "account:bob");
+  };
+
+  (void)send_invite("nonce-in-call", "call:live", 1);
+  auto pending = invitee.roster.LoadPendingInvite("nonce-in-call");
+  ASSERT_TRUE(pending && pending->has_value()) << "met in the call: the invite reaches us";
+  EXPECT_EQ((*pending)->status, InviteStatus::Pending) << "nobody is added without Join";
+  const auto in_call = invitee.gate.InvitesInCall("call:live", util::NowUnixMs());
+  ASSERT_EQ(in_call.size(), 1u);
+  EXPECT_EQ(in_call[0].invite_nonce, "nonce-in-call");
+  EXPECT_EQ(in_call[0].inviter_identity, "account:alice");
+
+  (void)send_invite("nonce-other-call", "call:other", 2);
+  auto other = invitee.roster.LoadPendingInvite("nonce-other-call");
+  EXPECT_FALSE(other && other->has_value()) << "a call we are not in with them is no reason";
+
+  live_call.clear(); // the call is over
+  (void)send_invite("nonce-after-call", "call:live", 3);
+  auto after = invitee.roster.LoadPendingInvite("nonce-after-call");
+  EXPECT_FALSE(after && after->has_value()) << "only while the call goes on";
+}
+
 TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
   PartyHarness owner("owner", "account:alice", "account:bob");
 

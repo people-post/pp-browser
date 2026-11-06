@@ -85,6 +85,12 @@ public:
   /** Active call: invite additional contacts as guests. */
   void OpenForCallAddGuest(const std::string& call_id);
 
+  /**
+   * G022: "Make a group…" in the call `call_id`: everyone in it picked (each can be unticked), Next names the group
+   * (a default from their names), Create makes it with us as owner and invites them.
+   */
+  void OpenForCallMakeGroup(const std::string& call_id);
+
   /** The member list of the group chat `thread_id`; the owner adds, removes and re-invites from it. */
   void OpenForGroupMembers(const std::string& thread_id);
 
@@ -114,6 +120,14 @@ private:
   void SyncRows();
   void SyncGroupCallRows();
   void SyncCallAddGuestRows();
+  /** G022: the call's people but us, as account rows (they need not be contacts). */
+  void SyncCallMakeGroupRows();
+  /** Someone in a call by their account: their contact's name, the nickname on their card, else unnamed. */
+  std::string CallMemberName(const std::string& identity) const;
+  /** The name step's default for `ids` (accounts in CallMakeGroup; else the usual default). */
+  std::string DefaultGroupTitleFor(const std::vector<std::string>& ids) const;
+  /** The select step's title for the mode open. */
+  std::string SelectStepTitle() const;
   void SyncGroupMemberRows();
   void SyncGroupAddRows();
   void OpenForGroupAddMember();

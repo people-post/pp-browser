@@ -25,6 +25,18 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
   ports.create_group = [&hub](const std::string& title, const std::vector<std::string>& member_contact_ids) {
     return hub.Inbox().CreateGroup(title, member_contact_ids);
   };
+  ports.create_group_from_call = [&hub](const std::string& title, const std::string& call_id,
+                                        const std::vector<std::string>& member_identities) -> Roe<Thread> {
+    auto created = hub.Groups().CreateGroupFromCall(title, call_id, member_identities);
+    if (!created) {
+      return created.error();
+    }
+    return hub.Inbox().OpenThread(created->id);
+  };
+  ports.local_nickname = [&hub]() -> std::string {
+    auto identity = hub.Identity().Get();
+    return identity ? identity->nickname : std::string();
+  };
   ports.list_unreachable_members = [&hub](const std::string& group_id) { return hub.Groups().ListUnreachable(group_id); };
   ports.list_invited_waiting = [&hub](const std::string& group_id) { return hub.Groups().ListInvitedWaiting(group_id); };
   ports.kept_card_nickname = [&hub](const std::string& account_id) { return hub.KeptCardNickname(account_id); };

@@ -76,5 +76,33 @@ TEST_F(GroupEventTextTest, ForkedLinesTellTheTwoSidesApart) {
   EXPECT_NE(*source, *fresh);
 }
 
+// G022: a group made during a call starts with one line saying so, on the maker's side and on the joiner's.
+TEST_F(GroupEventTextTest, AGroupMadeInACallSaysSoOnItsFirstLine) {
+  GroupMembershipCodec::MemberJoinedPayload made;
+  made.group_id = "g";
+  made.member_identity = "acct-me";
+  made.role = MemberRole::Owner;
+  made.roster_epoch = 1;
+  made.context = kGroupInviteContextCall;
+  const auto maker =
+      GroupEventText(Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(made),
+                           kGroupMadeInCallLine, "acct-me"),
+                     kNames, "acct-me");
+  ASSERT_TRUE(maker);
+  EXPECT_EQ(*maker, Tr("chat.group_event.made_in_call"));
+  EXPECT_NE(*maker, kGroupMadeInCallLine) << "in the reader's language";
+
+  GroupMembershipCodec::MemberJoinedPayload joined = made;
+  joined.member_identity = "acct-bo";
+  joined.role = MemberRole::Member;
+  const auto joiner =
+      GroupEventText(Event(GroupMembershipControlType::MemberJoined, GroupMembershipCodec::EncodeMemberJoined(joined),
+                           kGroupMadeInCallLine, "acct-bo"),
+                     kNames, "acct-bo");
+  ASSERT_TRUE(joiner);
+  EXPECT_EQ(*joiner, Tr("chat.group_event.made_in_call"));
+  EXPECT_TRUE(IsStoredGroupEventText(kGroupMadeInCallLine)) << "the chat list words the preview too";
+}
+
 } // namespace
 } // namespace pbr

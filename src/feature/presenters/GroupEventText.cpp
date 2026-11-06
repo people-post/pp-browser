@@ -52,6 +52,9 @@ std::optional<std::string> GroupEventText(const ThreadMessage& message,
     if (!joined) {
       return std::nullopt;
     }
+    if (joined->context == kGroupInviteContextCall && is_self(joined->member_identity)) {
+      return Tr("chat.group_event.made_in_call"); // G022: the first line, the maker's or the joiner's
+    }
     if (joined->role == MemberRole::Owner && is_self(joined->member_identity)) {
       return Tr("chat.group_event.created");
     }
@@ -125,6 +128,7 @@ bool IsStoredGroupEventText(const std::string& preview) {
   static const char* const kExact[] = {"Member joined the group",
                                        "You joined the group",
                                        "Owner created the group",
+                                       kGroupMadeInCallLine,
                                        "Member removed",
                                        "Member left",
                                        "Group ownership transferred",

@@ -233,6 +233,7 @@ void CallPresenter::Refresh() {
     const std::string local = ports_.local_relay_identity ? ports_.local_relay_identity().value_or(std::string{})
                                                           : std::string{};
     next.placed_here = !local.empty() && surface.active->initiator_identity == local;
+    FillGroupInvite(next, util::NowUnixMs());
     MaybeAutoCamera(*backend, next);
   } else {
     active_call_id_.clear();
@@ -321,6 +322,7 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   s.was_connected = signals.was_connected;
   s.show_retry = decided.show_retry;
   s.show_invite = decided.show_invite;
+  s.show_make_group = OffersMakeGroup(group_call, static_cast<size_t>(joined));
   s.hint = decided.hint;
   s.hint_missing_mic = signals.direct_missing_mic;
   s.hint_seed_unreachable = signals.direct_seed_unreachable;
@@ -335,6 +337,27 @@ void CallPresenter::FillInCall(CallScreen& s, CallUiBackend& backend, const std:
   if (decided.show_elapsed || ShowsParticipantCount(s)) {
     s.connected_at_ms = live_since_ms;  // the call's, not the current path's
   }
+}
+
+void CallPresenter::FillGroupInvite(CallScreen& s, const int64_t now) {
+  if (group_invites_call_id_ != s.call_id) {
+    // Another call: what was read and put off belonged to the last one.
+    group_invites_call_id_ = s.call_id;
+    group_invites_.clear();
+    group_invites_put_off_.clear();
+    group_invite_joining_.clear();
+    group_invites_read_ms_ = 0;
+  }
+  // Refresh runs every frame in a call; the invites change only when one arrives or is answered.
+  if (ports_.group_invites_in_call && (group_invites_read_ms_ == 0 || now - group_invites_read_ms_ >= 1'000)) {
+    group_invites_read_ms_ = now;
+    group_invites_ = ports_.group_invites_in_call(s.call_id);
+  }
+  std::set<std::string> hidden = group_invites_put_off_;
+  if (!group_invite_joining_.empty()) {
+    hidden.insert(group_invite_joining_);
+  }
+  s.group_invite = PickGroupInviteBanner(group_invites_, hidden);
 }
 
 void CallPresenter::WatchForNoMedia(CallUiBackend& backend, const CallScreen& s, const int64_t now) {
@@ -546,6 +569,49 @@ void CallPresenter::OpenAddPeople() {
   if (callbacks_.open_add_people) {
     callbacks_.open_add_people(active_call_id_);
   }
+}
+
+void CallPresenter::OpenMakeGroup() {
+  if (screen_.kind != CallScreen::Kind::InCall || !screen_.show_make_group || screen_.call_id.empty()) {
+    return; // a stale tap: the call ended, or is not one a group may be made from
+  }
+  if (callbacks_.open_make_group) {
+    callbacks_.open_make_group(screen_.call_id);
+  }
+}
+
+void CallPresenter::JoinGroupInvite(std::function<void(Roe<void>)> done) {
+  if (!screen_.group_invite || !ports_.join_group_invite) {
+    if (done) {
+      done(Error("No group invite in this call"));
+    }
+    return;
+  }
+  const std::string invite_id = screen_.group_invite->invite_id;
+  group_invite_joining_ = invite_id;
+  Refresh();
+  ports_.join_group_invite(invite_id, WhileAlive([this, invite_id, done](Roe<void> joined) {
+                             if (group_invite_joining_ == invite_id) {
+                               group_invite_joining_.clear();
+                             }
+                             if (!joined) {
+                               FailText(joined.error().message);
+                             }
+                             group_invites_read_ms_ =
+                                 0; // read again: an accepted invite is gone, a failed one back on the banner
+                             Refresh();
+                             if (done) {
+                               done(joined);
+                             }
+                           }));
+}
+
+void CallPresenter::PutOffGroupInvite() {
+  if (!screen_.group_invite) {
+    return;
+  }
+  group_invites_put_off_.insert(screen_.group_invite->invite_id);
+  Refresh();
 }
 
 void CallPresenter::InviteToActiveCall(const std::vector<std::string>& identities,

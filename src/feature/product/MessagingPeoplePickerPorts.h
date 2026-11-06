@@ -30,6 +30,15 @@ struct MessagingPeoplePickerPorts {
   std::function<Roe<std::optional<Contact>>(const std::string& identity_value, mesh::ContactIdKind kind)>
       find_contact_by_identity;
   std::function<Roe<Thread>(const std::string& title, const std::vector<std::string>& member_contact_ids)> create_group;
+  /**
+   * G022: a group made during the call `call_id`, inviting these accounts (people met in the call need not be
+   * contacts); the chat opens.
+   */
+  std::function<Roe<Thread>(const std::string& title, const std::string& call_id,
+                            const std::vector<std::string>& member_identities)>
+      create_group_from_call;
+  /** This account's public name (its profile nickname; empty if none). */
+  std::function<std::string()> local_nickname;
   std::function<Roe<std::vector<CallParticipant>>(const std::string& call_id)> list_call_participants;
   std::function<std::vector<std::string>(const std::string& group_id)> list_unreachable_members;
   /** Owner: invites this device sent that are still waiting (not expired); latest per invitee. */
