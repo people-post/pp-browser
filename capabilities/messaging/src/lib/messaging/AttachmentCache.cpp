@@ -277,6 +277,16 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   if (mime == "text/plain") {
     return "txt";
   }
+  // Sound: the system viewer types it by the extension (iOS QuickLook shows no player without one).
+  if (mime == "audio/mpeg") {
+    return "mp3";
+  }
+  if (mime == "audio/mp4") {
+    return "m4a";
+  }
+  if (mime == "audio/wav") {
+    return "wav";
+  }
   if (AttachmentOpenNeedsConfirm(mime)) {
     const std::string ext = LowerFilenameExtension(filename);
     if (IsInertAttachmentExtension(ext)) {
@@ -284,6 +294,78 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
     }
   }
   return {};
+}
+
+std::string AttachmentOpenFilename(const std::string& filename, const std::string& mime,
+                                   const std::string& fallback_stem) {
+  const std::string ext = AttachmentExtensionFromMime(mime, filename);
+  if (ext.empty()) {
+    return {};
+  }
+  constexpr size_t kMaxNameBytes = 100;
+  const size_t slash = filename.find_last_of("/\\");
+  std::string name;
+  for (const char ch : filename.substr(slash == std::string::npos ? 0 : slash + 1)) {
+    const auto c = static_cast<unsigned char>(ch);
+    if (c >= 0x20 && c != 0x7F && std::strchr("<>:\"|?*", ch) == nullptr) {
+      name.push_back(ch);
+    }
+  }
+  const auto trim = [&name]() {
+    const size_t first = name.find_first_not_of(". ");
+    name = first == std::string::npos ? std::string() : name.substr(first, name.find_last_not_of(". ") - first + 1);
+  };
+  trim();
+  if (name.size() > kMaxNameBytes) {
+    size_t cut = kMaxNameBytes;
+    while (cut > 0 && (static_cast<unsigned char>(name[cut]) & 0xC0) == 0x80) {
+      --cut; // not inside a UTF-8 character
+    }
+    name.resize(cut);
+    trim();
+  }
+  if (name.empty()) {
+    name = fallback_stem;
+  }
+  if (LowerFilenameExtension(name) != ext) {
+    name += "." + ext;
+  }
+  return name;
+}
+
+std::string AttachmentOpenLinkDir(const std::string& profile_dir, const std::string& thread_id,
+                                  const std::vector<uint8_t>& content_hash) {
+  return (std::filesystem::path(AttachmentViewRoot(profile_dir, thread_id)) / (AttachmentHashHex(content_hash) + ".open"))
+      .string();
+}
+
+std::string AttachmentNamedOpenPath(const std::string& profile_dir, const std::string& thread_id,
+                                    const std::vector<uint8_t>& content_hash, const std::string& mime,
+                                    const std::string& filename, const std::string& view_path) {
+  const std::string name = AttachmentOpenFilename(filename, mime, AttachmentHashHex(content_hash));
+  if (name.empty() || profile_dir.empty() || thread_id.empty() || content_hash.size() != kAttachmentContentHashSize) {
+    return view_path;
+  }
+  const std::filesystem::path dir(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash));
+  const std::filesystem::path link = dir / name;
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(link, ec) && std::filesystem::equivalent(link, view_path, ec)) {
+    return link.string(); // made by an earlier open of the same view
+  }
+  std::filesystem::remove_all(dir, ec);
+  std::filesystem::create_directories(dir, ec);
+  if (!ec) {
+    std::filesystem::create_hard_link(view_path, link, ec);
+    if (ec) {
+      ec.clear();
+      std::filesystem::copy_file(view_path, link, ec); // a file system without hard links
+    }
+  }
+  if (ec) {
+    std::filesystem::remove_all(dir, ec);
+    return view_path;
+  }
+  return link.string();
 }
 
 bool IsAttachmentImageMime(const std::string& mime) {

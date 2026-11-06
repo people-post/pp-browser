@@ -1,8 +1,13 @@
 #include "lib/messaging/AttachmentCache.h"
 #include "lib/messaging/AttachmentLimits.h"
 #include "lib/messaging/ChatAttachmentPrepare.h"
+#include "foundation/crypto/AttachmentContentHash.h"
 
 #include <gtest/gtest.h>
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 
 namespace pbr {
 namespace {
@@ -189,6 +194,50 @@ TEST(AttachmentMimeTest, NewTypesKeepTheirExtensionOnDisk) {
   EXPECT_EQ(AttachmentExtensionFromMime("audio/wav", "a.wav"), "wav");
   EXPECT_EQ(AttachmentExtensionFromMime("audio/ogg", "voice-9.ogg"), "ogg");
   EXPECT_EQ(AttachmentExtensionFromMime("audio/ogg", "evil.exe"), "") << "an executable name is never kept";
+}
+
+TEST(AttachmentOpenFilenameTest, TheSendersNameIsKeptWithASafeExtension) {
+  EXPECT_EQ(AttachmentOpenFilename("Song Title.mp3", "audio/mpeg", "ab12"), "Song Title.mp3");
+  EXPECT_EQ(AttachmentOpenFilename("歌.MP3", "audio/mpeg", "ab12"), "歌.MP3") << "the case of a matching extension stays";
+  EXPECT_EQ(AttachmentOpenFilename("song", "audio/mpeg", "ab12"), "song.mp3") << "missing: from the type";
+  EXPECT_EQ(AttachmentOpenFilename("notes", "text/plain", "ab12"), "notes.txt");
+  EXPECT_EQ(AttachmentOpenFilename("report.exe", "application/pdf", "ab12"), "report.exe.pdf")
+      << "the type's extension wins; the name never ends in another one";
+  EXPECT_EQ(AttachmentOpenFilename("", "application/pdf", "ab12"), "ab12.pdf");
+  EXPECT_EQ(AttachmentOpenFilename("setup.exe", "application/x-msdownload", "ab12"), "")
+      << "no safe extension: the stored file is opened as it is";
+}
+
+TEST(AttachmentOpenFilenameTest, FoldersAndUnsafeCharactersAreStripped) {
+  EXPECT_EQ(AttachmentOpenFilename("../../etc/passwd.txt", "text/plain", "ab12"), "passwd.txt");
+  EXPECT_EQ(AttachmentOpenFilename("..\\..\\boot.pdf", "application/pdf", "ab12"), "boot.pdf");
+  EXPECT_EQ(AttachmentOpenFilename("..", "application/pdf", "ab12"), "ab12.pdf");
+  EXPECT_EQ(AttachmentOpenFilename(".hidden.pdf", "application/pdf", "ab12"), "hidden.pdf");
+  EXPECT_EQ(AttachmentOpenFilename("a<b>:c|d?e*\"f\n.pdf", "application/pdf", "ab12"), "abcdef.pdf");
+  const std::string long_name = std::string(150, 'x') + ".pdf";
+  const std::string shown = AttachmentOpenFilename(long_name, "application/pdf", "ab12");
+  EXPECT_EQ(shown, std::string(100, 'x') + ".pdf") << "at most 100 bytes of the name, then the extension";
+}
+
+TEST(AttachmentOpenFilenameTest, TheNamedLinkHoldsTheViewsBytes) {
+  const auto dir = std::filesystem::temp_directory_path() /
+                   ("pp_open_name_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::filesystem::remove_all(dir);
+  const std::vector<uint8_t> hash(kAttachmentContentHashSize, 0xAB);
+  const std::filesystem::path view_root = AttachmentViewRoot(dir.string(), "t1");
+  std::filesystem::create_directories(view_root);
+  const auto view = view_root / (AttachmentHashHex(hash) + ".mp3");
+  std::ofstream(view, std::ios::binary) << "ID3 sound";
+  const std::string opened =
+      AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string());
+  EXPECT_EQ(std::filesystem::path(opened).filename().string(), "My Song.mp3");
+  EXPECT_EQ(std::filesystem::path(opened).parent_path().string(), AttachmentOpenLinkDir(dir.string(), "t1", hash));
+  std::ifstream in(opened, std::ios::binary);
+  EXPECT_EQ(std::string(std::istreambuf_iterator<char>(in), {}), "ID3 sound");
+  EXPECT_EQ(AttachmentNamedOpenPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3", view.string()), opened);
+  EXPECT_EQ(AttachmentLocalPath(dir.string(), "t1", hash, "audio/mpeg", "My Song.mp3"), view.string())
+      << "the link folder is not taken for the view";
+  std::filesystem::remove_all(dir);
 }
 
 TEST(ChatAttachmentPrepareTest, BytesAreCheckedAgainstTheCallersLimit) {

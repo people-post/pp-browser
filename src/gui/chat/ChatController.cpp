@@ -2465,7 +2465,7 @@ void ChatController::OpenAttachment(const std::string& message_id) {
       });
     }
     bool made_view = false;
-    auto path = facade_->AttachmentLocalPathForMessage(thread_id, message_id, &made_view);
+    auto path = facade_->AttachmentOpenPathForMessage(thread_id, message_id, &made_view);
     const bool needs_confirm = path && facade_->AttachmentOpenNeedsConfirmForMessage(thread_id, message_id);
     const int64_t worker_ms = ms_since(tapped);
     AppRuntime::PostUI([this, thread_id, message_id, is_video, made_view, tapped, lookup_ms, worker_ms,

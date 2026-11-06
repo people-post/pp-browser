@@ -915,6 +915,7 @@ void DeleteLocalBytes(const std::string& profile_dir, CasStore& content, const s
     std::filesystem::remove(view, ec);
   }
   std::filesystem::remove(AttachmentPosterPath(profile_dir, thread_id, content_hash), ec); // video first frame
+  std::filesystem::remove_all(AttachmentOpenLinkDir(profile_dir, thread_id, content_hash), ec); // its named link
 }
 
 /** What a message refers to in the private store: its attachment and / or the image of an AI question. */
