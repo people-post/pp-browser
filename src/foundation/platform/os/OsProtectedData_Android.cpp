@@ -92,8 +92,9 @@ GraceClock GraceClockNow() {
   // Settings.Global.BOOT_COUNT: one more each boot. Byte 0 = 1 (the format), bytes 1-8 the count big-endian.
   // Without it there is no clock at all (mono_seconds stays 0 and GraceUnlock fails closed): CLOCK_BOOTTIME
   // restarts at boot, so an all-zero id would let a window outlive a reboot.
+  // A count of 0 was never incremented (a ROM that does not keep it): treated as unreadable.
   jint count = -1;
-  if (!CallActivity("bootCount", "()I", true, &count) || count < 0) {
+  if (!CallActivity("bootCount", "()I", true, &count) || count <= 0) {
     return now;
   }
   const uint64_t value = static_cast<uint64_t>(count);

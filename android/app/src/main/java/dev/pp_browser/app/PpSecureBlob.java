@@ -85,6 +85,7 @@ final class PpSecureBlob {
      * file is complete before it takes the old one's place. Null on success, else what failed. {@code bytes} is wiped.
      */
     static synchronized String write(Context context, byte[] name, byte[] bytes, boolean whenUnlocked) {
+        File tmp = null;
         try {
             if (!supported()) {
                 return "Secure blob store is not supported on this platform";
@@ -99,19 +100,22 @@ final class PpSecureBlob {
                 return "cannot create " + DIR;
             }
             final byte[] sealed = seal(level, name, bytes);
-            final File tmp = new File(dir, file.getName() + ".tmp");
+            tmp = new File(dir, file.getName() + ".tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) {
                 out.write(sealed);
                 out.getFD().sync();
             }
             if (!tmp.renameTo(file)) {
-                tmp.delete();
                 return "rename failed";
             }
+            tmp = null;
             return null;
         } catch (Exception e) {
             return "write failed: " + e;
         } finally {
+            if (tmp != null) {
+                tmp.delete();  // a write that did not reach the rename leaves nothing behind
+            }
             if (bytes != null) {
                 Arrays.fill(bytes, (byte) 0);
             }
@@ -130,9 +134,6 @@ final class PpSecureBlob {
         if (context == null || name == null) {
             return error("no activity");
         }
-        if (deviceLocked(context)) {
-            return new byte[] {UNAVAILABLE, CODE_DEVICE_LOCKED};
-        }
         final File file = fileFor(context, name);
         if (!file.isFile()) {
             return new byte[] {MISSING};
@@ -146,6 +147,9 @@ final class PpSecureBlob {
         if (sealed.length < 1 + IV_BYTES + TAG_BITS / 8
                 || (sealed[0] != LEVEL_AFTER_FIRST_UNLOCK && sealed[0] != LEVEL_WHEN_UNLOCKED)) {
             return new byte[] {MISSING};  // not a file this class wrote: it will never open
+        }
+        if (sealed[0] == LEVEL_WHEN_UNLOCKED && deviceLocked(context)) {
+            return new byte[] {UNAVAILABLE, CODE_DEVICE_LOCKED};  // AFTER_FIRST_UNLOCK reads on
         }
         byte[] plain = null;
         try {
@@ -267,7 +271,11 @@ final class PpSecureBlob {
         return out;
     }
 
-    /** UserNotAuthenticatedException, or a Keystore error that names the lock (the wording differs by release). */
+    /** A Keystore refusal that names the lock or the missing authentication (the wording differs by release). */
+    private static final java.util.regex.Pattern LOCKED_WORDS =
+            java.util.regex.Pattern.compile("\\b(locked|lock screen|not authenticated)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** UserNotAuthenticatedException, or a Keystore error whose message says locked (not "blocked" or "clock"). */
     private static boolean isLocked(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
             if (t instanceof UserNotAuthenticatedException) {
@@ -275,7 +283,7 @@ final class PpSecureBlob {
             }
             final String message = t.getMessage();
             if (t.getClass().getSimpleName().equals("KeyStoreException") && message != null
-                    && message.toLowerCase(Locale.ROOT).contains("lock")) {
+                    && LOCKED_WORDS.matcher(message).find()) {
                 return true;
             }
         }

@@ -7,11 +7,11 @@ namespace pbr::os {
 
 bool AppShownNow() {
   // MainActivity.isAppShown: between onStart and onStop, so false while the app runs behind another one or the lock
-  // screen (a push or a sync there must not extend the PIN grace window). True when it cannot be asked.
+  // screen (a push or a sync there must not extend the PIN grace window). No activity: not shown.
   JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
   jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
   if (env == nullptr || activity == nullptr) {
-    return true;
+    return false;
   }
   bool shown = true;
   // The activity's class: FindClass from a native thread does not see app classes.

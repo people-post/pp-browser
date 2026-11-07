@@ -48,6 +48,7 @@ import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
@@ -456,32 +457,38 @@ public class MainActivity extends SDLActivity {
 
     /** Called from native (OsSecureBlob_Android.cpp, any thread): see PpSecureBlob. Null on success. */
     public static String secureBlobWrite(final byte[] name, final byte[] bytes, final boolean whenUnlocked) {
-        return PpSecureBlob.write(mSingleton, name, bytes, whenUnlocked);
+        return PpSecureBlob.write(blobContext(), name, bytes, whenUnlocked);
+    }
+
+    /** PpSecureBlob needs a Context, not the Activity: the application context stays after onDestroy. */
+    private static Context blobContext() {
+        final Context context = SDL.getContext();
+        return context != null ? context.getApplicationContext() : null;
     }
 
     /** Called from native (OsSecureBlob_Android.cpp, any thread): status byte, then the blob / code / message. */
     public static byte[] secureBlobLookup(final byte[] name) {
-        return PpSecureBlob.lookup(mSingleton, name);
+        return PpSecureBlob.lookup(blobContext(), name);
     }
 
     /** Called from native (OsSecureBlob_Android.cpp, any thread). Null on success. */
     public static String secureBlobDelete(final byte[] name) {
-        return PpSecureBlob.delete(mSingleton, name);
+        return PpSecureBlob.delete(blobContext(), name);
     }
 
     /** Called from native (OsProtectedData_Android.cpp, any thread): the lock screen is up. */
     public static boolean isDeviceLocked() {
-        return PpSecureBlob.deviceLocked(mSingleton);
+        return PpSecureBlob.deviceLocked(blobContext());
     }
 
     /** Called from native (OsProtectedData_Android.cpp): Settings.Global.BOOT_COUNT, -1 when it cannot be read. */
     public static int bootCount() {
-        final SDLActivity activity = mSingleton;
-        if (activity == null) {
+        final Context context = blobContext();
+        if (context == null) {
             return -1;
         }
         try {
-            return Settings.Global.getInt(activity.getContentResolver(), Settings.Global.BOOT_COUNT);
+            return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT);
         } catch (Exception e) {
             return -1;
         }
