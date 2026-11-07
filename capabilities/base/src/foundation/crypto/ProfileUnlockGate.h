@@ -71,6 +71,12 @@ struct ProfileUnlockPorts {
   std::function<Roe<GraceUnlock::Result>()> try_grace_unlock;
   /** ProfileSecretsEngine::RememberGrace after a PIN unlock; a failure is reported, never fatal. */
   std::function<Roe<void>(int minutes)> remember_grace;
+  /**
+   * A PIN the user chose opened the vault (typed on the gate, set on it, or the one an account was brought here
+   * under): called once per unlock, on the UI thread, with that PIN — never for the app's default PIN. The app keeps
+   * the PIN's kind (`pin_digits`, DEV/PLAN-pin-gate-redesign.md B) from it; the gate cannot read preferences.
+   */
+  std::function<void(const SecretText& pin)> on_pin_verified;
   /** A call answered on the phone's call screen waits for the unlock (ICallSystemUi::HasPendingPushCall). */
   std::function<bool()> has_pending_push_call;
   /** os::ProtectedDataAvailable. */

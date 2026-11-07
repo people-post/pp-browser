@@ -292,6 +292,36 @@ TEST_F(ProfileUnlockGateGraceTest, APinUnlockKeepsTheWindow) {
   EXPECT_EQ(remembered_, std::vector<int>{15});
 }
 
+// DEV/PLAN-pin-gate-redesign.md B: the app keeps the PIN's kind from the PIN that opened the vault — reported once per
+// PIN unlock, with the PIN typed; a wrong PIN and the silent default-PIN unlock report nothing.
+TEST_F(ProfileUnlockGateGraceTest, PinUnlockReportsVerifiedPinOnce) {
+  std::vector<std::string> verified;
+  ProfileUnlockPorts ports = Ports();
+  ports.on_pin_verified = [&verified](const SecretText& pin) { verified.push_back(pin.Reveal()); };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+
+  gate_.CompleteWithPin("0000", /*create_mode=*/false);
+  EXPECT_TRUE(verified.empty()) << "a wrong PIN";
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  EXPECT_EQ(verified, std::vector<std::string>{"4321"});
+
+  // The default PIN's silent unlock (a gate of its own: this one has started already).
+  engine_.Vault()->Lock();
+  ASSERT_TRUE(static_cast<bool>(engine_.Vault()->ChangePin("4321", std::string(kDefaultProfilePin))));
+  pin_is_default_ = true;
+  ProfileUnlockGate silent;
+  silent.BindSecrets(engine_);
+  ProfileUnlockPorts silent_ports = Ports();
+  silent_ports.on_pin_verified = [&verified](const SecretText& pin) { verified.push_back(pin.Reveal()); };
+  silent.BindPorts(std::move(silent_ports));
+  silent.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(verified.size(), 1U) << "the default PIN is not a PIN the user chose";
+  silent.BindPorts({});
+}
+
 TEST_F(ProfileUnlockGateGraceTest, AWrongPinKeepsNoWindow) {
   gate_.BindPorts(Ports());
   gate_.BeginDeferredUnlockAfterFirstPresent();

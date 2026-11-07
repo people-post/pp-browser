@@ -3,6 +3,7 @@
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -45,6 +46,12 @@ struct ProfilePreferences {
   std::string language = "system";
   /** True when vault was created with kDefaultProfilePin and not yet changed. */
   bool pin_is_default = false;
+  /**
+   * The PIN's kind, not a secret (DEV/PLAN-pin-gate-redesign.md B): nullopt = unknown (a profile from before the
+   * field, until its next PIN unlock), 0 = a text PIN, 4–8 = a digit PIN of that many digits (the phone's keypad).
+   * Optional on disk; the schema version stays.
+   */
+  std::optional<int> pin_digits;
   /** The user has opened their recovery phrase on Me → Security once (Home's Security widget; device-only). */
   bool recovery_phrase_seen = false;
   /**

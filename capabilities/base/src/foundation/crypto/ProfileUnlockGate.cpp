@@ -178,8 +178,14 @@ void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_de
   SetUnlockInProgress(true);
   StartupMark("unlock_and_ready_begin");
 
+  // `remember_grace` marks a PIN the user chose (typed, set, the dev PIN): its kind is reported after the unlock.
+  std::optional<SecretText> verified_pin;
+  if (remember_grace) {
+    verified_pin = pin;
+  }
   auto work = [this, pin = std::move(pin)]() -> Roe<void> { return UnlockAndReady(pin); };
-  auto on_done = [this, set_default_pin, clear_default_pin, remember_grace](Roe<void> result) {
+  auto on_done = [this, set_default_pin, clear_default_pin, remember_grace,
+                  verified_pin = std::move(verified_pin)](Roe<void> result) {
     if (!result) {
       StartupMark("unlock_and_ready_fail");
       ReportError(result.error());
@@ -187,6 +193,9 @@ void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_de
     }
     if (remember_grace) {
       RememberGraceAfterPinUnlock();
+    }
+    if (verified_pin && ports_.on_pin_verified) {
+      ports_.on_pin_verified(*verified_pin);
     }
     if (set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(true);
@@ -392,11 +401,14 @@ void ProfileUnlockGate::CompleteAccountImport(const SecretText& pin, const bool 
     }
     return UnlockAndReady(pin);
   };
-  auto on_done = [this, set_default_pin, mark_name](Roe<void> result) {
+  auto on_done = [this, pin, set_default_pin, mark_name](Roe<void> result) {
     if (!result) {
       StartupMark((mark_name + "_fail").c_str());
       ReportError(result.error());
       return;
+    }
+    if (!set_default_pin && ports_.on_pin_verified) {
+      ports_.on_pin_verified(pin);
     }
     if (set_default_pin && ports_.set_pin_is_default) {
       ports_.set_pin_is_default(true);
