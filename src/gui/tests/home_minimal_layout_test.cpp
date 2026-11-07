@@ -164,5 +164,50 @@ TEST_F(HomeMinimalLayoutTest, KeyboardUpOnTallScreenKeepsFieldAboveTheKeyboard) 
   EXPECT_GE(pill.top, 90.f);
 }
 
+// The Chats bar (sidebar.rml's .pane-nav) on a phone: the 52dp avatar and the name beside it are on screen, inside the
+// 56dp bar, with the name's text drawn. Bindings stripped (the name is a stand-in word).
+TEST_F(HomeMinimalLayoutTest, ChatsBarShowsTheAvatarAndTheName) {
+  ui::SetRenderInterface(&renderer);
+  initialized = ui::Initialise();
+  ASSERT_TRUE(initialized);
+  context = ui::CreateContext("home-minimal-layout-test", {390, 844});
+  ASSERT_NE(context, nullptr);
+  context->ActivateTheme("light", true);
+  const std::string sidebar = Asset("views/sidebar.rml");
+  std::string bar = sidebar.substr(sidebar.find("<div class=\"pane-nav\">"),
+                                   sidebar.find("<div class=\"sidebar-header row\">") - sidebar.find("<div class=\"pane-nav\">"));
+  bar = std::regex_replace(bar, std::regex("<!--[\\s\\S]*?-->"), "");
+  bar = std::regex_replace(bar, std::regex("\\s+data-[a-z-]+=\"[^\"]*\""), "");
+  bar = std::regex_replace(bar, std::regex("\\{\\{profile_nickname\\}\\}"), "Kenneth");
+  bar = std::regex_replace(bar, std::regex("\\{\\{[^}]*\\}\\}"), "K");
+  const std::string rml =
+      "<rml><head><style>" + Asset("themes/foundation.rcss") + Asset("themes/components.rcss") +
+      Asset("themes/colors-light.rcss") + "</style></head><body style=\"padding: 0;\">"
+      "<div class=\"shell-layer-compact\" style=\"position: absolute; top: 0dp; left: 0dp; width: 390dp; height: 800dp;\">"
+      "<div class=\"sidebar-panel\">" + bar + "</div></div></body></rml>";
+  document = context->LoadDocumentFromMemory(rml);
+  ASSERT_NE(document, nullptr);
+  document->Show();
+  context->Update();
+  context->Update();
+  ui::ElementList found;
+  document->GetElementsByClassName(found, "pane-nav-avatar");
+  ASSERT_FALSE(found.empty());
+  ui::Element* avatar = found.front();
+  const ui::Vector2f size = avatar->GetBox().GetSize(ui::BoxArea::Border);
+  EXPECT_GE(size.x, 52.f) << "avatar plus name";
+  EXPECT_FLOAT_EQ(size.y, 52.f);
+  EXPECT_FLOAT_EQ(avatar->GetAbsoluteOffset(ui::BoxArea::Border).x, 16.f);
+  EXPECT_LE(avatar->GetAbsoluteOffset(ui::BoxArea::Border).y + size.y, 56.f + 2.f);
+  ui::ElementList names;
+  document->GetElementsByClassName(names, "pane-nav-avatar-name");
+  ASSERT_FALSE(names.empty());
+  EXPECT_GT(names.front()->GetBox().GetSize(ui::BoxArea::Border).x, 20.f) << "the name has a width";
+  ui::ElementList faces;
+  document->GetElementsByClassName(faces, "shell-circle-btn-face");
+  ASSERT_FALSE(faces.empty());
+  EXPECT_FLOAT_EQ(faces.front()->GetBox().GetSize(ui::BoxArea::Border).x, 52.f);
+}
+
 } // namespace
 } // namespace pbr

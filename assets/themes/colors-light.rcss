@@ -1814,6 +1814,20 @@ input.checkbox:checked {
   background-color: #f2f2f7;
 }
 
+.shell-layer-compact .nc-page {
+  background-color: #f2f2f7;
+}
+
+.shell-layer-compact .nc-page .nc-action,
+.shell-layer-compact .nc-page .nc-group,
+.shell-layer-compact .nc-page .nc-group .contacts-row {
+  background-color: #ffffff;
+}
+
+.shell-layer-compact .nc-page .nc-section-header {
+  background-color: transparent;
+}
+
 
 .contacts-index-letter {
   color: #3c3c434c;

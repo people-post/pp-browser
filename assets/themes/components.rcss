@@ -4207,7 +4207,7 @@ select selectbox option {
   display: flex;
   flex-direction: row;
   align-items: center;
-  max-width: 45%;
+  width: 45%;
   margin: 0;
   padding: 0;
   border: 0;
@@ -4223,7 +4223,8 @@ select selectbox option {
 }
 
 .pane-nav-avatar-name {
-  flex: 0 1 auto;
+  display: block;
+  flex: 1 1 0;
   min-width: 0;
   margin-left: 10dp;
   font-size: 17dp;
@@ -13369,4 +13370,77 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .nc-page .contacts-index {
   top: 56dp;
+}
+
+/* New chat page (mockup 24-minimal-final.html screen 4, Kenneth 2026-11-07): the settings' grouped look. Two cards side
+   by side (new group, add contact), then the contacts as white rounded cards under small grey letter headers; 16dp
+   side margins; the A-Z strip stays on the right edge. Colours: colors.rcss.tmpl. */
+.shell-layer-compact .nc-page .nc-search {
+  margin: 0 16dp 12dp 16dp;
+}
+
+.shell-layer-compact .nc-page .nc-actions {
+  display: flex;
+  flex-direction: row;
+  gap: 12dp;
+  padding: 0 16dp 8dp 16dp;
+}
+
+.shell-layer-compact .nc-page .nc-action {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 12dp;
+  gap: 10dp;
+  border-radius: 14dp;
+}
+
+.shell-layer-compact .nc-page .nc-action-icon {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 10dp;
+}
+
+.shell-layer-compact .nc-page .nc-action-label {
+  font-size: 16dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shell-layer-compact .nc-page .nc-section-header {
+  height: 24dp;
+  padding: 0 32dp;
+  margin-top: 8dp;
+  font-size: 13dp;
+  line-height: 24dp;
+}
+
+.shell-layer-compact .nc-page .nc-group {
+  margin: 0 16dp;
+  border-radius: 14dp;
+  overflow: hidden;
+}
+
+.shell-layer-compact .nc-page .contacts-row {
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 0 0 12dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-avatar-frame {
+  width: 40dp;
+  height: 40dp;
+  border-radius: 20dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-avatar-image {
+  width: 40dp;
+  height: 40dp;
+}
+
+.shell-layer-compact .nc-page .contacts-row-title {
+  font-size: 17dp;
+  line-height: 55dp;
 }

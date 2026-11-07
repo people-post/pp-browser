@@ -167,6 +167,37 @@ TEST(NewChatPageTest, ActionRowsAreBigAndTheRowsAreTheContactsTabRows) {
   EXPECT_NE(css.find("height: 60dp;", css.find(".shell-layer-compact .contacts-row {")), std::string::npos);
 }
 
+// Mockup screen 4: two side-by-side cards, then white rounded groups of 56dp rows with 40dp avatars under grey letters.
+TEST(NewChatPageTest, PageIsTheGroupedLookWithTwoCardsAndRoundedGroups) {
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t actions = css.find(".shell-layer-compact .nc-page .nc-actions {");
+  ASSERT_NE(actions, std::string::npos);
+  EXPECT_NE(css.find("flex-direction: row;", actions), std::string::npos);
+  EXPECT_NE(css.find("gap: 12dp;", actions), std::string::npos);
+  const size_t card = css.find(".shell-layer-compact .nc-page .nc-action {");
+  ASSERT_NE(card, std::string::npos);
+  EXPECT_NE(css.find("border-radius: 14dp;", card), std::string::npos);
+  const size_t group = css.find(".shell-layer-compact .nc-page .nc-group {");
+  ASSERT_NE(group, std::string::npos);
+  EXPECT_NE(css.find("margin: 0 16dp;", group), std::string::npos);
+  const size_t row = css.find(".shell-layer-compact .nc-page .contacts-row {");
+  ASSERT_NE(row, std::string::npos);
+  EXPECT_NE(css.find("height: 56dp;", row), std::string::npos);
+  EXPECT_NE(css.find("width: 40dp;", css.find(".shell-layer-compact .nc-page .contacts-row-avatar-frame {")), std::string::npos);
+  const std::string rml = ReadAsset("views/new_chat.rml");
+  EXPECT_EQ(rml.find("new_friends"), std::string::npos) << "no new-friends row";
+  EXPECT_NE(rml.find("class=\"nc-group\""), std::string::npos);
+}
+
+// The Chats bar keeps its avatar and the name beside it (the name span had collapsed to zero width once).
+TEST(NewChatPageTest, ChatsBarHasTheNicknameBesideTheAvatar) {
+  const std::string rml = ReadAsset("views/sidebar.rml");
+  const size_t bar_end = rml.find("<div class=\"sidebar-header row\">");
+  const std::string bar = rml.substr(0, bar_end);
+  EXPECT_NE(bar.find("class=\"pane-nav-avatar\""), std::string::npos);
+  EXPECT_NE(bar.find("{{profile_nickname}}"), std::string::npos);
+}
+
 TEST(NewChatPageTest, ColoursComeFromTokensOnly) {
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t begin = css.find("\n.nc-page {");
