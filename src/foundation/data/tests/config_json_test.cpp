@@ -79,6 +79,8 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.media_relay_video.serve_levels = {2};
   config.mesh.media_relay_video.carry_levels = 1;
   config.mesh.media_relay_video.strict = true;
+  config.mesh.capacity.links = 20000;
+  config.mesh.capacity.group_calls = 64;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
   ASSERT_TRUE(out.contains("mesh"));
@@ -125,6 +127,9 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.media_relay_video.serve_levels, std::vector<int>{2});
   EXPECT_EQ(parsed.mesh.media_relay_video.carry_levels, 1);
   EXPECT_TRUE(parsed.mesh.media_relay_video.strict);
+  EXPECT_EQ(parsed.mesh.capacity.links, 20000u);
+  EXPECT_EQ(parsed.mesh.capacity.group_calls, 64u);
+  EXPECT_EQ(parsed.mesh.capacity.reservations, 0u) << "unset keeps the default";
 }
 
 TEST(ConfigJsonTest, RoundTripsDirectoryProviders) {

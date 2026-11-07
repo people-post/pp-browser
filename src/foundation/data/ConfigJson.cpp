@@ -116,6 +116,38 @@ void MediaRelayVideoFromObject(const Object& object, mesh::MediaRelayVideoConfig
   }
 }
 
+Object MeshCapacityToObject(const mesh::MeshCapacityConfig& capacity) {
+  auto set_count = [](Object& object, const char* key, size_t value) {
+    if (value == 0) {
+      object.set(key, Null{});
+    } else {
+      object.set(key, static_cast<int64_t>(value));
+    }
+  };
+  Object object;
+  set_count(object, "links", capacity.links);
+  set_count(object, "reservations", capacity.reservations);
+  set_count(object, "bridges", capacity.bridges);
+  set_count(object, "group_calls", capacity.group_calls);
+  return object;
+}
+
+/** Null, absent, zero or negative keeps the default (0). */
+void MeshCapacityFromObject(const Object& object, mesh::MeshCapacityConfig& capacity) {
+  auto read_count = [&](const char* key, size_t& out) {
+    if (!object.contains(key) || object.isNull(key)) {
+      return;
+    }
+    if (auto value = ReadI64(object, key); value && *value > 0) {
+      out = static_cast<size_t>(*value);
+    }
+  };
+  read_count("links", capacity.links);
+  read_count("reservations", capacity.reservations);
+  read_count("bridges", capacity.bridges);
+  read_count("group_calls", capacity.group_calls);
+}
+
 void MediaRelayBudgetFromObject(const Object& object, mesh::MediaRelayBudgetConfig& budget) {
   auto read_bps = [&](const char* key, int64_t& out) {
     if (!object.contains(key) || object.isNull(key)) {
@@ -499,6 +531,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("dht", MeshDhtConfigToObject(config.dht));
   object.set("pricing", MeshPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
+  object.set("capacity", MeshCapacityToObject(config.capacity));
   object.set("media_relay_video", MediaRelayVideoToObject(config.media_relay_video));
   return object;
 }
@@ -566,6 +599,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (const Object* media_relay_budget = object.getObject("media_relay_budget")) {
     MediaRelayBudgetFromObject(*media_relay_budget, config.media_relay_budget);
+  }
+  if (const Object* capacity = object.getObject("capacity")) {
+    MeshCapacityFromObject(*capacity, config.capacity);
   }
   if (const Object* media_relay_video = object.getObject("media_relay_video")) {
     MediaRelayVideoFromObject(*media_relay_video, config.media_relay_video);

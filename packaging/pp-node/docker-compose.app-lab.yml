@@ -23,6 +23,9 @@ services:
       PP_NODE_STATUS_ADDR: 0.0.0.0:18518
       PP_NODE_CAP_CIRCUIT_RELAY: 1
       PP_NODE_CAP_MEDIA_RELAY: 1
+      # Small, so pp-node-load can fill it (full_seed_parks_elsewhere, full_hop_hosts_the_call_elsewhere).
+      PP_NODE_CAPACITY_RESERVATIONS: ${PP_APP_LAB_HOP_RESERVATIONS:-24}
+      PP_NODE_CAPACITY_GROUP_CALLS: ${PP_APP_LAB_HOP_GROUP_CALLS:-8}
       # Listed in the lab directory as a mesh node, as prod's seeds are (#385): its address carries its
       # PeerId, so pp_local_test.sh passes it in once the seed has one (PP_APP_LAB_HOP_ADVERTISE).
       PP_NODE_ADVERTISE_MULTIADDRS: ${PP_APP_LAB_HOP_ADVERTISE:-}
