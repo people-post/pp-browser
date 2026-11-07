@@ -93,8 +93,8 @@ public:
   void SetLocalContactsSource(LocalContactsFn source);
   /** Tests / a fake server: the brief_AI stream of every session. */
   void SetBriefAiStream(BriefAiStreamFn fn);
-  /** Every session: how a brief turn renews its key after HTTP 401 (AgentSession::SetBriefKeyRenewer). */
-  void SetBriefKeyRenewer(BriefKeyRenewFn renew);
+  /** Every session: how a brief turn renews its key after HTTP 401 (AgentSession::SetBriefKeyPorts). */
+  void SetBriefKeyPorts(BriefKeyPorts ports);
 
   // --- turns -----------------------------------------------------------------------------------
   /** An empty `thread_id` is the Home composer: always Yes unless its own turn runs. */
@@ -194,7 +194,7 @@ private:
   IThreadStore* thread_store_ = nullptr;
   LocalContactsFn local_contacts_;
   BriefAiStreamFn brief_stream_;
-  BriefKeyRenewFn brief_key_renewer_;
+  BriefKeyPorts brief_key_ports_;
 
   std::unique_ptr<AgentSession> home_;
   std::unique_ptr<AgentSession> spare_;

@@ -16,6 +16,7 @@
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
+#include "domain/registration/BriefLlmKeyRenewal.h"
 
 #include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
@@ -1738,50 +1739,37 @@ void Application::WireAgentAndConfig() {
   agent_sessions_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
   if (messaging_facade_) {
-    // B183: the gateway refused the AI Bearer (HTTP 401). Drop the key that was sent, mint a guest key (never
-    // re-register) and hand it back so the turn asks once more. Runs on the turn's thread: the identity store locks
-    // itself (the diagnostics Bearer does the same off the UI); the sessions take the new key once no turn runs.
-    agent_sessions_->SetBriefKeyRenewer([this, &facade = *messaging_facade_](const std::string& rejected) -> Roe<std::string> {
-      auto identity = facade.GetIdentity();
-      if (!identity) {
-        return Error("Messaging is not ready");
-      }
-      LocalIdentity cleared = *identity;
-      const SecretText sent = rejected;
-      const bool registered = !rejected.empty() && cleared.brief_llm_api_key == sent;
-      const bool guest = !rejected.empty() && cleared.brief_llm_guest_api_key == sent;
-      if (!registered && !guest) {
-        // Another turn already replaced it: ask again with the stored key.
-        std::string current =
-            ResolveBriefLlmApiKey(cleared.brief_llm_api_key.Reveal(), cleared.brief_llm_guest_api_key.Reveal());
-        if (!current.empty()) {
-          log().info << "Brief LLM key refused (HTTP 401): the stored key changed meanwhile; asking with it";
-          AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); });
-          return current;
-        }
-      }
-      log().warning << "Brief LLM key refused (HTTP 401): dropping the stored key (registered=" << registered
-                    << ", guest=" << guest << "), minting a guest key";
-      if (registered) {
-        cleared.brief_llm_api_key.clear();
-      }
-      if (guest) {
-        cleared.brief_llm_guest_api_key.clear();
-      }
-      if (auto saved = facade.UpdateLocalIdentity(cleared); !saved) {
-        return saved.error();
-      }
-      auto minted = MintBriefGuestLlmKey(BriefLlmBaseUrl());
-      if (!minted) {
-        return minted.error();
-      }
-      LocalIdentity updated = cleared;
-      updated.brief_llm_guest_api_key = minted->llm_api_key;
-      if (auto saved = facade.UpdateLocalIdentity(updated); !saved) {
-        return saved.error();
-      }
-      AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); });
-      return minted->llm_api_key.Reveal();
+    // B183: the gateway refused the AI Bearer (HTTP 401). A guest key is minted and stored beside the registered key
+    // (never re-registers); the refused key goes only once a retry with the new one was answered. Runs on the turn's
+    // thread: the identity store locks itself (the diagnostics Bearer does the same off the UI); the sessions take the
+    // new key once no turn runs.
+    ConversationsFacade& facade = *messaging_facade_;
+    BriefLlmKeyStore key_store{
+        .get = [&facade]() { return facade.GetIdentity(); },
+        .save = [&facade](const LocalIdentity& identity) -> Roe<void> {
+          if (auto saved = facade.UpdateLocalIdentity(identity); !saved) {
+            return saved.error();
+          }
+          return {};
+        },
+        .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
+    };
+    agent_sessions_->SetBriefKeyPorts(BriefKeyPorts{
+        .renew = [key_store](const std::string& rejected, const std::string& llm_base_url) -> Roe<BriefKeyRenewal> {
+          auto renewed = RenewBriefLlmKey(key_store, rejected, llm_base_url);
+          if (!renewed) {
+            return renewed.error();
+          }
+          return BriefKeyRenewal{.key = std::move(renewed->key), .reused = renewed->reused};
+        },
+        .commit =
+            [this, key_store](const std::string& rejected) {
+              if (auto committed = CommitBriefLlmKey(key_store, rejected); !committed) {
+                log().warning << "Brief LLM key: the refused key was not dropped: " << committed.error().message;
+              }
+              AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); });
+            },
+        .stored_key = [key_store]() { return StoredBriefLlmKey(key_store); },
     });
   }
   if (messaging_facade_) {

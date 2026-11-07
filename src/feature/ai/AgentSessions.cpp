@@ -63,8 +63,8 @@ std::unique_ptr<AgentSession> AgentSessions::MakeSession() {
   if (brief_stream_) {
     session->SetBriefAiStream(brief_stream_);
   }
-  if (brief_key_renewer_) {
-    session->SetBriefKeyRenewer(brief_key_renewer_);
+  if (brief_key_ports_.renew) {
+    session->SetBriefKeyPorts(brief_key_ports_);
   }
   // A question asked before this configure is done waits for it in the session (submit_when_ready).
   if (config_) {
@@ -127,9 +127,9 @@ void AgentSessions::SetBriefAiStream(BriefAiStreamFn fn) {
   ForEach([&](AgentSession& session) { session.SetBriefAiStream(brief_stream_); });
 }
 
-void AgentSessions::SetBriefKeyRenewer(BriefKeyRenewFn renew) {
-  brief_key_renewer_ = std::move(renew);
-  ForEach([&](AgentSession& session) { session.SetBriefKeyRenewer(brief_key_renewer_); });
+void AgentSessions::SetBriefKeyPorts(BriefKeyPorts ports) {
+  brief_key_ports_ = std::move(ports);
+  ForEach([&](AgentSession& session) { session.SetBriefKeyPorts(brief_key_ports_); });
 }
 
 // --- turns -----------------------------------------------------------------------------------------

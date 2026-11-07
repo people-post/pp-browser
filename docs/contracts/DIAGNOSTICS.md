@@ -52,7 +52,7 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `relay.poll_too_large` | `n` | `MeshDeliveryOrchestrator` |
 | `chat.send_failed` | `failure` (`SendFailureWord`), `thread` (ref) | `MeshDeliveryOrchestrator` |
 | `chat.receive_failed` | `reason` (`ReceiveFailureWord`), `sender` (ref) | `MeshDeliveryOrchestrator` |
-| `ai.llm_key` | `reason` (`401` — the gateway refused the Brief LLM Bearer), `outcome` (`minted` — the key that was sent was dropped and a new guest key came back (or another turn had already replaced it); the turn asks once more / `mint_failed` — no new key, `error` set; the turn ends in its error / `retry_401` — the question asked again with the new key was refused too) — at most one renewal until a turn is answered again (B183) | `AgentSession` (brief stream turn) |
+| `ai.llm_key` | `reason` (`401` — the gateway refused the Brief LLM Bearer), `outcome` (`minted` — a guest key was minted and stored beside the registered key; the turn asks once more with it / `reused` — the stored key had already changed (another turn renewed it), the turn asks once more with that one, nothing minted / `mint_failed` — no new key (mint or save failed), `error` set; the turn ends in its error / `retry_401` — the question asked again was refused too; the registered key is kept) — at most one mint until a turn is answered again; the refused registered key is dropped only after the retry was answered (B183) | `AgentSession` (brief stream turn) |
 | `unlock.start` | — (a PIN or silent unlock began) | `ProfileUnlockGate` |
 | `unlock.done` | `unlocked` | `ProfileUnlockGate` |
 | `unlock.failed` | `wrong_pin`, `silent` (no PIN was typed) | `ProfileUnlockGate` |
