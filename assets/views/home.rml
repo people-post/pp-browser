@@ -173,7 +173,6 @@
          like the Chats page (Kenneth 2026-11-05). No search box (the assistant keeps context). Empty = just the title.
          滑动菜单（右滑：置顶、重命名；左滑：更多、归档、删除）复用聊天行的 sidebar-session 样式和 SessionSwipeGesture。 -->
     <div class="home-ai-list root-scroll" id="home-ai-sessions" data-model="shell" data-if="!home_show_dynamic">
-      <p class="home-ai-header">{{i18n:nav.home}}</p>
       <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
         <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
         <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
@@ -246,6 +245,9 @@
            (Kenneth 2026-11-05 "加一点点毛玻璃"). -->
       <div class="bar-fade bar-fade--up home-composer-fade"></div>
       <!-- The ask-AI field, above the chips on both desktop and phone (Kenneth 2026-11-05). -->
+      <!-- Phone minimal Home (Kenneth 2026-11-07): the app logo, then the two-line field, then the chips that wrap. The
+           logo hides on the desktop. -->
+      <div class="home-logo"><img src="../branding/app-icon.png" alt=""/></div>
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
         <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"

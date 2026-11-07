@@ -237,6 +237,9 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (key == "contact_detail") {
       contacts.OnDetailDismissed();
     }
+    if (key == "new_chat") {
+      contacts.OnNewChatDismissed();
+    }
     if (key == "blocked_people") {
       contacts.OnBlockedPeopleDismissed();
       settings.RefreshBlockedCount();
