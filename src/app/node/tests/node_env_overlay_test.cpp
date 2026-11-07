@@ -117,3 +117,22 @@ TEST(NodeEnvOverlayTest, TheHeartbeatIsTheOperatorsChoice) {
   pbr::ApplyPpNodeConfigEnvOverlays(config);
   EXPECT_TRUE(config.mesh.mesh_heartbeat);
 }
+
+// mesh.capacity from the environment: a positive count, anything else keeps what the config said.
+TEST(NodeEnvOverlayTest, CapacitiesComeFromTheEnvironment) {
+  EnvGuard links("PP_NODE_CAPACITY_LINKS");
+  EnvGuard reservations("PP_NODE_CAPACITY_RESERVATIONS");
+  EnvGuard bridges("PP_NODE_CAPACITY_BRIDGES");
+  EnvGuard calls("PP_NODE_CAPACITY_GROUP_CALLS");
+  pbr::AppConfig config;
+  config.mesh.capacity.bridges = 100;
+  SetEnv("PP_NODE_CAPACITY_LINKS", "20000");
+  SetEnv("PP_NODE_CAPACITY_RESERVATIONS", "40");
+  SetEnv("PP_NODE_CAPACITY_BRIDGES", "-1");
+  SetEnv("PP_NODE_CAPACITY_GROUP_CALLS", "many");
+  pbr::ApplyPpNodeConfigEnvOverlays(config);
+  EXPECT_EQ(config.mesh.capacity.links, 20000u);
+  EXPECT_EQ(config.mesh.capacity.reservations, 40u);
+  EXPECT_EQ(config.mesh.capacity.bridges, 100u) << "a bad value keeps the config's";
+  EXPECT_EQ(config.mesh.capacity.group_calls, 0u);
+}

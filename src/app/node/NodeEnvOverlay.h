@@ -26,6 +26,7 @@ std::vector<std::string> ParsePpNodeBootstrapPeersCsv(std::string_view csv);
  *   PP_NODE_CAP_CIRCUIT_RELAY
  *   PP_NODE_CAP_MEDIA_RELAY
  *   PP_NODE_CAP_DHT
+ *   PP_NODE_CAPACITY_LINKS / _RESERVATIONS / _BRIDGES / _GROUP_CALLS   (mesh.capacity; a positive count)
  *   PP_NODE_ADVERTISE_MULTIADDRS
  *   PP_NODE_MESH_PUBLISH
  *   PP_NODE_REGISTRATION_BASE_URL

@@ -9,7 +9,7 @@ other cores; reads the node's /metrics once a second; prints a timeline and a su
   scripts/test/pp_node_stress.py calls --calls 30 --members 4 --duration 90
   scripts/test/pp_node_stress.py bridges --pairs 100 --duration 90
 
-Extra pp-node-load flags pass through (--video-kbps, --fps, --renew, …). --procs splits the clients over several
+--capacity sizes the node (mesh.capacity: links, reservations, bridges, group_calls). Extra pp-node-load flags pass through (--video-kbps, --fps, --renew, …). --procs splits the clients over several
 load processes (each with its own threads), for runs bigger than one process pumps comfortably.
 """
 
@@ -61,12 +61,27 @@ def read_metrics(url):
     return out
 
 
+def build_type(build):
+    """CMAKE_BUILD_TYPE of a build dir ("" when unknown)."""
+    try:
+        with open(os.path.join(build, "CMakeCache.txt")) as f:
+            for line in f:
+                if line.startswith("CMAKE_BUILD_TYPE:"):
+                    return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
 def start_node(args, work):
     data = os.path.join(work, "node")
     os.makedirs(data)
     config = os.path.join(work, "node.json")
+    node_config = json.loads(json.dumps(NODE_CONFIG))
+    if args.capacity:
+        node_config["mesh"]["capacity"] = {k: int(v) for k, v in (kv.split("=", 1) for kv in args.capacity.split(","))}
     with open(config, "w") as f:
-        json.dump(NODE_CONFIG, f)
+        json.dump(node_config, f)
     env = dict(os.environ, PP_BROWSER_PIN="stress-lab", PP_NODE_DATA_DIR=data,
                PP_NODE_AMP_UDP_PORT=str(args.port), PP_NODE_STATUS_ADDR="127.0.0.1:%d" % (args.port + 1),
                PP_NODE_BOOTSTRAP_PEERS=LAB_BOOTSTRAP)
@@ -183,10 +198,17 @@ def main():
     ap.add_argument("--node-cores", default="0-1", help="taskset cores for the node (its size)")
     ap.add_argument("--load-cores", default="4-23")
     ap.add_argument("--port", type=int, default=19517)
+    ap.add_argument("--capacity", help="the node's mesh.capacity, e.g. links=20000,reservations=20000")
     ap.add_argument("--build", default=os.path.join(ROOT, "build"))
     ap.add_argument("--out", help="write the timeline + summary JSON here")
     ap.add_argument("--keep", action="store_true", help="keep the work dir (node log)")
+    ap.add_argument("--allow-debug", action="store_true", help="run a non-Release build (its numbers are not a seed's)")
     args, extra = ap.parse_known_args()
+    kind = build_type(args.build)
+    if kind not in ("Release", "RelWithDebInfo") and not args.allow_debug:
+        # A Debug node is several times slower: its numbers say nothing about a seed (2026-11-07).
+        sys.exit("%s is a %s build: measure a Release one (e.g. build-pp-node), or pass --allow-debug" %
+                 (args.build, kind or "unknown"))
 
     work = tempfile.mkdtemp(prefix="pp-stress-")
     node, hop, status = start_node(args, work)
