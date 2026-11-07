@@ -240,6 +240,8 @@ public:
   int BlockedCount() const;
   /** The New chat page left the screen (back, swipe, or a row was chosen). */
   void OnNewChatDismissed();
+  /** The Add contact page was closed (the shell popped its transient, or the sheet layer went). */
+  void OnAddContactDismissed();
 
   /** Contacts → find people; also the first-run wizard's "Find friends". */
   /**
@@ -293,7 +295,6 @@ private:
   void LoadMyAccount();
   void DirtyAddContact();
   void CloseAddContactPage();
-  void OnAddContactDismissed();
   void OpenMyQrPage();
   void OnMyQrDismissed();
   /** A directory hit chosen (or the only hit of a typed query): already a contact, ask first, or add. */
