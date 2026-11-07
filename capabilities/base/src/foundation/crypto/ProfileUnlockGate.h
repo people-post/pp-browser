@@ -43,6 +43,11 @@ struct ProfileUnlockUiPorts {
    * plain unlock screen again.
    */
   std::function<void(bool waiting)> show_waiting_device_unlock;
+  /**
+   * Face / fingerprint unlock is no longer set up (the entry or `biometric.bin` gone, at-rest A014): the door's
+   * face / fingerprint key goes and `hint` (pin.biometric_reset_hint) shows on it.
+   */
+  std::function<void(const std::string& hint)> show_biometric_reset;
 };
 
 /**
@@ -77,6 +82,21 @@ struct ProfileUnlockPorts {
    * the PIN's kind (`pin_digits`, DEV/PLAN-pin-gate-redesign.md B) from it; the gate cannot read preferences.
    */
   std::function<void(const SecretText& pin)> on_pin_verified;
+  // --- Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C). Without try_biometric_unlock or
+  // biometric_enabled there is no biometric step. Order: default PIN → grace window → biometric → dev PIN → the door.
+  /** The switch is on for this profile (ProfileSecretsEngine::BiometricEnabled). */
+  std::function<bool()> biometric_enabled;
+  /**
+   * ProfileSecretsEngine::TryBiometricUnlock: shows the system prompt with `prompt` and blocks until it is answered
+   * (run through run_heavy, never on the UI thread); Found means the vault is open.
+   */
+  std::function<Roe<BiometricUnlock::Result>(const std::string& prompt)> try_biometric_unlock;
+  /** The words under the system prompt (unset: none). */
+  std::function<std::string()> biometric_prompt_text;
+  /** os::AppShownNow: the app is on screen (unset: it is). A door raised off screen prompts on the next foreground. */
+  std::function<bool()> app_shown;
+  /** The biometric pieces were found gone (Missing; the engine deleted them): the settings switch reads off. */
+  std::function<void()> on_biometric_lost;
   /** A call answered on the phone's call screen waits for the unlock (ICallSystemUi::HasPendingPushCall). */
   std::function<bool()> has_pending_push_call;
   /** os::ProtectedDataAvailable. */
@@ -144,8 +164,13 @@ public:
 
   /** UI: "Enter PIN instead" while waiting for the phone's unlock: the plain unlock screen, at once. */
   void UseDevicePinInstead();
-  /** The app came to the foreground: a grace entry the locked phone kept unreadable is tried again. */
+  /**
+   * The app came to the foreground: a grace entry the locked phone kept unreadable is tried again; otherwise a door
+   * still up whose face / fingerprint prompt has not run yet (raised off screen) prompts once.
+   */
   void OnForeground();
+  /** UI: the door's face / fingerprint key (or link): prompts again, unless a prompt is still running. */
+  void TryBiometric();
 
   /** How long a call answered on a locked phone waits for its unlock (Leo's pending-call limit). */
   static constexpr std::chrono::minutes kDeviceUnlockWait{3};
@@ -161,6 +186,12 @@ private:
   void StopGrace();
   void SetGraceAttemptInProgress(bool in_progress);
   void RememberGraceAfterPinUnlock();
+  /** The automatic face / fingerprint prompt may run now (switch on, on screen, not yet prompted at this door…). */
+  bool BiometricDue() const;
+  /** The switch on and nothing in the way of a prompt (no unlock running, no prompt in flight, vault still locked). */
+  bool BiometricPossible() const;
+  void StartBiometric();
+  void OnBiometricDone(uint64_t door, std::optional<BiometricUnlock::Result> got, Roe<void> result);
   /** The dev PIN (local builds) or the unlock screen: the deferred unlock without the grace window. */
   void UnlockWithoutGrace();
   /** A first secrets use that brings an existing account (link / phrase): `import` under `pin`, then unlock. */
@@ -192,6 +223,13 @@ private:
   /** Bumped when a wait ends, so a stale timeout does nothing. */
   uint64_t device_unlock_wait_generation_ = 0;
   std::optional<uint64_t> protected_data_handler_;
+  /** The unlock door (show_unlock) is up: from its show until the gate finishes. */
+  bool unlock_door_up_ = false;
+  /** The automatic prompt ran at this door (cleared when the door rises and when it closes). */
+  bool biometric_prompted_this_door_ = false;
+  bool biometric_in_flight_ = false;
+  /** Bumped when the door rises and when it closes: a prompt's answer for another door is dropped. */
+  uint64_t door_generation_ = 0;
 };
 
 /** Shared bootstrap / CLI path: Unlock then ensure_messaging_ready. */
