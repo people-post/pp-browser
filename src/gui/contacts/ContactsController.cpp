@@ -1762,6 +1762,10 @@ void ContactsController::OnScanQr() {
 // "Add contact" asks the directory first: an account id or nickname is looked up and the person is
 // added from the hit; no empty contacts (Kenneth 2026-10-23, TODO #33).
 void ContactsController::OnAddContact() {
+  if (AddContactUsesPage(compact_layout_)) {
+    OpenAddContactPage(); // the phone: the Add contact page (scan, my QR, search), same as the Contacts "+"
+    return;
+  }
   if (!contacts_ports_.snapshot || !contacts_ports_.snapshot().initialized || !contacts_ports_.search_people ||
       !contacts_ports_.add_contact_from_directory_hit || !shell_feedback_.show_prompt) {
     return;

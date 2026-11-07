@@ -262,6 +262,9 @@ public:
                                std::function<void(bool shared)> done);
   /** The desktop "+" menu: add contact, then find someone (the phone opens the Add contact sheet). Exposed for tests. */
   static std::vector<ContextMenuAction> AddContactMenuActions();
+  /** "Add contact" (New chat's card, the Contacts "+") opens the Add contact page on a phone; the old paste-an-ID prompt
+   *  is the desktop's. */
+  static constexpr bool AddContactUsesPage(const bool compact) { return compact; }
   /** The Contacts tab's rows in index order (A-Z by name, Chinese by pinyin initial, then #), one section per letter. */
   static std::vector<NewChatSectionRow> ContactSections(std::vector<ContactListRow> rows);
   /** The index strip: every letter A-Z then #, marked present where `sections` has it. */

@@ -251,6 +251,8 @@ std::string ReadAsset(const std::string& relative) {
 
 TEST_F(ContactsPhoneTest, AddContactSheetHasTopCardsSearchAccountCardAndTwoTiles) {
   EXPECT_EQ(ViewCatalog::ResolvePath("add_contact"), "views/add_contact.rml");
+  EXPECT_TRUE(ContactsController::AddContactUsesPage(true)) << "phone: the page, not the paste-an-ID dialog";
+  EXPECT_FALSE(ContactsController::AddContactUsesPage(false));
   EXPECT_EQ(ViewCatalog::ResolvePath("my_qr"), "views/my_qr.rml");
   const std::string rml = ReadAsset("views/add_contact.rml");
   ASSERT_FALSE(rml.empty());
