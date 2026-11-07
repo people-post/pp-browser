@@ -636,8 +636,8 @@ TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
   ASSERT_NE(harness_->mgr_b().FindLinkByPeerId(a_id), nullptr);
 
   // End the call first so no channel traffic refreshes liveness (matches the field trace:
-  // eviction happened 5 s after hangup).
-  a_call_->DetachLeg(leg1);
+  // eviction happened 5 s after hangup). A hangup says bye: B's leg goes too (K014).
+  a_call_->HangUpLeg(leg1);
   for (int i = 0; i < 5; ++i) {
     harness_->PumpBoth();
   }
@@ -1307,7 +1307,7 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   EXPECT_EQ(b_call.Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(a_call.Phase(), CallMediaSessionPhase::MediaReady);
 
-  a_call.DetachLeg(ab_leg);
+  a_call.HangUpLeg(ab_leg); // A leaves: its bye ends B's leg (K014)
   harness->PumpUntil([&] { return b_call.Phase() == CallMediaSessionPhase::Idle; }, 2000);
   EXPECT_EQ(b_call.Phase(), CallMediaSessionPhase::Idle);
 

@@ -133,7 +133,8 @@ feature-facing L4 that goes through `IChatPeerLinks` wraps that port's `Failure`
 child table.
 
 **Decisions read codes, never message text:** retry / backoff, "dial a fresh link next time"
-(`CallMediaErr::StaleLink`), a clean stream close (`CallMediaErr::StreamClosed`), chat send notices.
+(`CallMediaErr::StaleLink`), a clean stream close (`CallMediaErr::StreamClosed`), a connected call that
+dropped (`CallMediaErr::Dropped`: never a connect failure), chat send notices.
 Group-membership controls dispatch on their control type (`RelayReceivePipeline`), not text.
 
 **Not coded:** codecs, SQLite, HTTP clients beyond the relay send, and peer transports whose callers

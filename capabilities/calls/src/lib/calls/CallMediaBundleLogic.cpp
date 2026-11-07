@@ -138,6 +138,19 @@ bool ShouldEnterPathLost(const CallMediaFailoverInput& in) {
          in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
 }
 
+CallMediaActiveCloseAction DecideCallMediaActiveClose(const CallMediaActiveCloseInput& in) {
+  if (in.role == CallMediaChannelRole::Media && in.remote_close && in.control_open) {
+    return CallMediaActiveCloseAction::AwaitControl;
+  }
+  if (in.retiring_alive) {
+    return CallMediaActiveCloseAction::FallBackToRetiring;
+  }
+  if (in.standby_alive) {
+    return CallMediaActiveCloseAction::FailOverToStandby;
+  }
+  return CallMediaActiveCloseAction::PathLost;
+}
+
 bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   const auto anchor = [&]() {
     have_ = true;

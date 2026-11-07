@@ -32,6 +32,9 @@ CallMediaControlType TypeFromWire(const std::string& type) {
   if (type == "path_release_ack") {
     return CallMediaControlType::PathReleaseAck;
   }
+  if (type == "bye") {
+    return CallMediaControlType::Bye;
+  }
   return CallMediaControlType::Unknown;
 }
 
@@ -111,6 +114,11 @@ std::string EncodeCallMediaPathRelease(const bool ack, const uint32_t path_gen) 
   o.set("type", ack ? "path_release_ack" : "path_release");
   o.set("path_gen", static_cast<int64_t>(path_gen));
   return DumpJson(o);
+}
+
+const std::string& EncodeCallMediaBye() {
+  static const std::string bye = R"({"v":1,"type":"bye"})";
+  return bye;
 }
 
 } // namespace pbr

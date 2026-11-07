@@ -1,6 +1,6 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-28 (k6: mobility + pair policy + relay standby; k5: network monitor + Amp network-change probing + lab FLIP; k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
+**Last updated:** 2026-11-07 (K014: hangup `bye`, peer close = lost path, dropped ≠ connect timeout, re-anchor reach policy; 2026-09-28 k6: mobility + pair policy + relay standby; k5: network monitor + Amp network-change probing + lab FLIP; k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
 
 > **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.6.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
@@ -65,6 +65,16 @@
 | **Relay standby (K003)** | A direct / punched call gets a relayed standby (`path_add`) from its offerer; lab FLIP now fails over in 1.5 s, never Reconnecting |
 | **Relay admission** | `standby_priority` on bridge requests; relays refuse the least needed standby first, per-dialer cap 4 |
 | **Fixes found on the way** | `exclude_direct` reach settled on the direct link (TX-only escalation shared it); Amp nested establish skipped the nested link beside an ADP one — pp-cpp-amp **v2.7.1**, pinned; a path dying before the previous one's release now falls back onto it (and the winning direct link is taken at once); inbound-placeholder use-after-free (keys collided across links) |
+
+## Landed 2026-11-07 (K014)
+
+| Item | State |
+|------|-------|
+| **Hangup `bye`** ([K014](DECISIONS.md)) | Call-media `bye` before the channels close on a hangup; the receiver ends the leg as the peer's end (no ConnectFailed, no "Mesh connect timeout"), `call_leave` closes the call (`RemoteEnded`), or the bye stands in after 5 s. Folds in Kenneth's [diag 2026-11-06](DIAG-reconnect-and-peer-close-2026-11-06.md) finding 2 |
+| **Close without `bye` = lost path** | A pathless end's close (or an older peer's hangup) puts the other end into fallback / failover / the reconnect window; the offerer re-anchors and the call survives (`APathClosedWithoutByeIsLostAtBothEndsAndTheCallComesBack`) |
+| **Dropped, not timed out** | A connected leg's end is reported (`CallMediaErr::Dropped`); the health tick's backstop says dropped after 2 s, never connect timeout; no more 75 s `InCall` with no media. UI "Call dropped" / "通话掉线了" |
+| **Re-anchor reach** | Same pair policy and H013 advertised relays as the first connect (a relay-only pair re-anchors over relays only). Diag finding 1 (no redial in the window) is expected to be covered by this plus the 2 s re-anchor retry — **device / lab check pending** |
+| pp-call-probe | Its calls end with `HangUp` (bye), so its peer does not hold the last cycle as a lost path |
 
 ## Still open (as of 2026-09-24/25 — see the note above)
 

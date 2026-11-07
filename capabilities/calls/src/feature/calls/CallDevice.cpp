@@ -442,6 +442,8 @@ void CallDevice::OnDirectReport(const DirectReport& report) {
           live_calls_.NoteDirectHandedToHop(r.call_id);
         } else if constexpr (std::is_same_v<R, direct_report::ConnectFailed>) {
           live_calls_.NoteMediaFailed(r.call_id);
+        } else if constexpr (std::is_same_v<R, direct_report::PeerEnded>) {
+          workflow_.NotePeerEndedCall(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::GaveUpReaching>) {
           SendConnectGiveUp(r.call_id, r.peer_identity);
         } else if constexpr (std::is_same_v<R, direct_report::PeerReconnected>) {

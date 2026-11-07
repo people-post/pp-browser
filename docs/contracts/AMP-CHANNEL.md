@@ -199,7 +199,7 @@ One call attempt = **`call_id`-keyed control + media channel pair** on an existi
 
 | Channel role | Class | Role |
 |--------------|-------|------|
-| Outbound / inbound control | Reliable `RealtimeControl` | JSON hello / hello_ack (provisional dual-dial may have both briefly) |
+| Outbound / inbound control | Reliable `RealtimeControl` | JSON hello / hello_ack (provisional dual-dial may have both briefly), path migration, heartbeats, `bye` |
 | Media | BestEffort `Realtime` | length-prefixed AEAD frames (same crypto as libp2p path) |
 
 **Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **glare winner** keeps outbound control — the offerer beats the answerer; equal roles fall back to the **higher base58 PeerId** (`LocalWinsCallMediaGlareForRoles`). The loser abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
@@ -232,6 +232,14 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 - **Quiet rebind** (k7): when the path is lost while the peer is still Connected on another link (typically a simultaneous punch: both ends' associations came up and the dual-dial election dropped the one the call had bound), the glare winner migrates onto that link at once and the loss is not reported. The product hears of it (`on_path_lost` → `Reconnecting…`) only if the call is still without a path **1 s** later. The lost path leaves nothing behind: no retiring or standby entry.
 - **Standby add** (k6, K003): `{"v":1,"type":"path_add","call_id","media_epoch","path_gen"}` runs the migration handshake (`migrate_ack`, media channel) but the new path becomes the call's **standby** — TX stays on the active path, nothing is released. Refused (`migrate_ack` `ok:false`, `standby present`) when the call has a standby already; a peer without k6 ignores the unknown type, the add times out (5 s) and the call is unchanged. The offerer adds a relayed standby to a call Live on a direct / punched path (5 / 20 / 60 s attempts).
 - **Roles:** the glare winner is the offerer. A bundle created from the peer's `hello` takes the complementary role, and a local leg that joins it (the offerer's media started after the answerer's hello arrived) sets its own role, so exactly one end drives.
+
+### Ending a call (call-path-resilience K014)
+
+- **Bye:** an end whose call is over on its device (left, ended, superseded — the call closed there) sends `{"v":1,"type":"bye"}` on its active path's control channel, then closes the call's channels. Best-effort, no ack; the call's end itself is the `call_leave` on the control lane. Only a live (MediaReady) call with a path says it; a reconnecting one has nothing to say it on.
+- **Receiving `bye`** (on any path of the call): the leg ends at once as the peer's end of the call — not a failure, no reconnect window. Its channels' close that follows finds nothing.
+- **A close without `bye`** — `peer_close` / `peer_reset` on the active path of a live call — is a **lost path**, handled like a dead link: back onto a retiring path, failover onto the standby, or the reconnect window (the offerer re-anchors, the answerer accepts its `migrate`). An end that lost its path (silence) and closed it therefore never hangs the other end up. A peer from before K014 hangs up without `bye`: the other end shows `Reconnecting…` until that peer's `call_leave` ends the call.
+- **Media CLOSE first:** the media channel is best-effort, so its CLOSE can overtake the reliable `bye`. When the peer closes the active path's media channel while the path's control channel is still up, the path drops the media channel and waits **1.5 s** (`kCallMediaByeAwaitMs`) for that control channel's `bye` (the call ended) or its close (a lost path); with neither, the path is lost.
+- Peers from before K014 ignore the unknown `type`.
 
 ## Circuit tunnel (v1)
 

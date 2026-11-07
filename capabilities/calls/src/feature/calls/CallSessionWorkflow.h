@@ -18,6 +18,7 @@
 #include "feature/calls/CallHopService.h"
 #include "feature/calls/ICallSessionNotes.h"
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <set>
@@ -28,6 +29,12 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * K014: after a peer's call-media `bye`, how long its call_leave (control lane: the mesh, else the
+ * relay inbox) may take before the bye stands in for it.
+ */
+inline constexpr std::chrono::milliseconds kPeerByeLeaveGrace{5000};
 
 /**
  * Durable session / roster / invite-leave workflow (V044).
@@ -139,6 +146,14 @@ public:
    * run against a store / delivery being torn down.
    */
   void DropFollowUps();
+  /**
+   * K014: `peer` ended the call on its device (its call-media `bye`). Its call_leave on the control
+   * lane ends the call here as usual; if none came within the grace, the bye stands in for it
+   * (ParticipantGone — a remote end, never a failure).
+   */
+  void NotePeerEndedCall(const std::string& call_id, const std::string& peer);
+  /** Test seam: the wait for call_leave after a peer's bye (production kPeerByeLeaveGrace). */
+  void SetPeerByeLeaveGraceForTest(std::chrono::milliseconds grace) { peer_bye_leave_grace_ = grace; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -382,6 +397,9 @@ private:
   OwnerOutbox<WorkflowReport> reports_;
   /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
   uint64_t followup_epoch_ = 0;
+  /** K014: how long a peer's call-media bye waits for its call_leave before standing in for it. */
+  std::chrono::milliseconds peer_bye_leave_grace_ = kPeerByeLeaveGrace;
+  void EndForPeerBye(const workflow_event::PeerByeGraceOver& over);
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

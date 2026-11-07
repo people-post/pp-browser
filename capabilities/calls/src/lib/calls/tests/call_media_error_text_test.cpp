@@ -9,8 +9,12 @@ namespace pbr {
 namespace {
 
 TEST(CallMediaErrorTextTest, ReconnectWindowExpiry) {
-  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: no path within the reconnect window"),
-               "call.error.reconnect_failed");
+  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: no path within the reconnect window"), "call.error.call_dropped");
+  // K014: a connected call that lost its media dropped — however its leg or the health tick said it.
+  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: call dropped [leg: amp call-media: peer link lost]"),
+               "call.error.call_dropped");
+  EXPECT_STREQ(CallMediaErrorUserKey("amp call-media: call dropped [health: the 1:1 stream is gone]"),
+               "call.error.call_dropped");
 }
 
 TEST(CallMediaErrorTextTest, PeerNotReachedChains) {

@@ -37,8 +37,10 @@ const char* CallMediaErrorUserKey(const std::string& technical) {
   if (Has(technical, "payment_unavailable")) {
     return nullptr;  // PaymentErrorUserMessage owns these
   }
-  if (Has(technical, "no path within the reconnect window")) {
-    return "call.error.reconnect_failed";
+  // K014: a call that was connected and lost its media for good (no path within the reconnect
+  // window, the link gone): it dropped — never "couldn't reach them".
+  if (Has(technical, "call dropped") || Has(technical, "no path within the reconnect window")) {
+    return "call.error.call_dropped";
   }
   // Giving up before the call ever connected (CallDirectPath SurfaceConnectFailed, e.g. "mesh connect timeout"):
   // the user sees plain words, the raw reason stays in the log (B-2026-11-05, Kenneth phone test).
