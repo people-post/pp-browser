@@ -1367,6 +1367,10 @@ class Filler:
             except subprocess.TimeoutExpired:
                 self.proc.kill()
         self.log.close()
+        # Leave the hop as found: the filler's parks and calls end only when their links time out, and the next
+        # scenario must not meet a full hop (group_call_three did, after these ran).
+        wait_for(lambda: node_level(self.lab.hop_status, self.service) == "open", 180,
+                 "the first hop's %s to be open again after the filler" % self.service)
         return False
 
 
@@ -1401,6 +1405,30 @@ def scenario_full_seed_parks_elsewhere(lab):
     wait_for(lambda: node_metric(lab.hop_status, "pp_circuit_relay_reservations") == 2 or None, 300,
              "both parked on the first seed again once it had room (and the filler's parks gone)")
     return {"parked_elsewhere_s": parked_s, "call": call, "back_on_first_s": round(time.time() - freed, 2)}
+
+
+def scenario_full_hop_known_before_the_call(lab):
+    """Phones stay reachable, so they are parked on both seeds before anyone calls: the park replies say the
+    first seed's group calls are full (p2p-mesh N033 "loads"), and Alice's group call is planned on the second
+    from the start — nobody even asks the full one."""
+    with Filler(lab, "calls", "media_relay", int(os.environ.get("PP_APP_LAB_HOP_GROUP_CALLS", "8"))):
+        (a, b, c), threads = open_group(lab, seeds=[lab.hop, lab.hop2], reachable=True)
+        # Parked on the second seed too: the users have heard both seeds' levels.
+        wait_for(lambda: node_metric(lab.hop2_status, "pp_circuit_relay_reservations") >= 3, 60, "all parked")
+        asked = 'pp_media_relay_quotes_total{result="refused_busy"}'
+        asked_before = node_metric(lab.hop_status, asked)
+        started = time.time()
+        group_call(a, threads[a.name], [b, c])
+        for u in (a, b, c):
+            assert_hears(u, 2, timeout=60)
+        took = round(time.time() - started, 2)
+        if node_metric(lab.hop2_status, "pp_media_relay_participants") < 3:
+            raise ProbeError("the call is not on the second seed")
+        refused = node_metric(lab.hop_status, asked) - asked_before
+        leave_all([a, b, c])
+    if refused:
+        raise ProbeError("the full seed was asked for the call %d times: the plan did not know it was full" % refused)
+    return {"all_hear_all_s": took}
 
 
 def scenario_full_hop_hosts_the_call_elsewhere(lab):
@@ -1440,12 +1468,12 @@ def add_contacts(users, links):
             by_name[x].cmd("open_chat", account=by_name[y].account)
 
 
-def open_group(lab, n=3, title="lab group", contacts=(), seeds=None):
+def open_group(lab, n=3, title="lab group", contacts=(), seeds=None, reachable=False):
     """n people; the first creates a group with the others, who accept its invites. The owner and
     each member have added each other (an invite comes from a contact); members have added nobody
     else unless `contacts` says so (see `add_contacts`) — linked before the group, as friends are."""
     names = ["alice", "bob", "carol", "dave", "erin"][:n]
-    users = [lab.user(name, seeds=seeds) for name in names]
+    users = [lab.user(name, seeds=seeds, reachable=reachable) for name in names]
     for u in users:
         u.wait_mesh()
     owner, members = users[0], users[1:]
@@ -3800,6 +3828,7 @@ SCENARIOS = [
     ("seed_dies_in_use", scenario_seed_dies_in_use),
     ("full_seed_parks_elsewhere", scenario_full_seed_parks_elsewhere),
     ("full_hop_hosts_the_call_elsewhere", scenario_full_hop_hosts_the_call_elsewhere),
+    ("full_hop_known_before_the_call", scenario_full_hop_known_before_the_call),
     ("group_call_three", scenario_group_call_three),
     ("group_one_declines", scenario_group_one_declines),
     ("group_leave_one_by_one", scenario_group_leave_one_by_one),

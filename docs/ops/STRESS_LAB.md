@@ -46,4 +46,4 @@ The node says `busy` / `full` before its members feel it, and new work goes else
 - A deadline on real-time media in the send queue (3), and the data plane on more than one thread (2): a design of their own.
 - The link-table walks in Amp (2): per-tick work that grows with the table; indexed, a node's idle cost would grow with its clients, not their square.
 - Thresholds per machine type (the 0.70 / 0.95 lines are first guesses); a run on the org seeds' size with the host's buffers raised.
-- Restart storms (every parked client redialing at once, 4–5), a soak, and abuse (one client's uncapped bandwidth through a bridge).
+- Restart storms and an overloaded node's lost parks (4–5), as one piece of work: every parked client redialing at once is the same spiral. Then a soak, and abuse (one client's uncapped bandwidth through a bridge).
