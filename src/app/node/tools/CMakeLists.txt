@@ -21,6 +21,13 @@ pp_browser_apply_warnings(pp-node-probe)
 set_target_properties(pp-node-probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
 install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
 
+# Stress lab load generator (docs/ops/STRESS_LAB.md): many Amp clients against one pp-node.
+add_executable(pp-node-load load/main.cpp)
+target_include_directories(pp-node-load PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(pp-node-load PRIVATE ${_pp_probe_libs})
+pp_browser_apply_warnings(pp-node-load)
+set_target_properties(pp-node-load PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${_pp_node_tools_out}")
+
 # call_probe needs AmpDirectChatTransport (--with-chat); skip in headless (no messaging).
 if(TARGET pp_feature_conversations OR TARGET pp_lib_messaging)
   add_executable(pp-call-probe
