@@ -192,7 +192,13 @@ void PinGateController::ShowError(const std::string& message) {
 std::string PinGateController::UnlockMessage() const {
   const bool call_waiting = ICallSystemUi::Instance().HasPendingPushCall() ||
                             PendingNotificationTap::Instance().PeekCallRoute(PendingNotificationTap::Clock::now());
-  return call_waiting ? Tr("pin.unlock_call_message") : Tr("pin.unlock_message");
+  if (call_waiting) {
+    return Tr("pin.unlock_call_message");
+  }
+  if (pin_state_.biometric_first) {
+    return Tr(std::string("pin.biometric_first.") + pin_state_.biometric_kind.c_str());
+  }
+  return Tr("pin.unlock_message");
 }
 
 void PinGateController::RefreshCallHint() {
@@ -225,10 +231,28 @@ void PinGateController::ShowBiometricReset(const std::string& hint) {
     return;
   }
   PullBoundPinFields();
+  const bool was_first = pin_state_.biometric_first;
   pin_state_.biometric_key = false;
+  pin_state_.biometric_first = false;
   pin_state_.biometric_hint = hint.c_str();
+  pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
+  if (was_first) {
+    Remount();  // the pad / field instead of the key-only door
+    return;
+  }
   DirtyPinFields();
+}
+
+void PinGateController::OnUsePin() {
+  if (!pin_state_.active || !pin_state_.unlock_mode || !pin_state_.biometric_first ||
+      pin_state_.waiting_device_unlock) {
+    return;
+  }
+  pin_state_.biometric_first = false;
+  pin_state_.message = UnlockMessage().c_str();
+  ApplyPinGate();
+  Remount();  // the pad / field instead of the key-only door
 }
 
 void PinGateController::OnBiometric() {
@@ -326,12 +350,14 @@ void PinGateController::ShowUnlock() {
   pin_state_.create_mode = false;
   pin_state_.unlock_mode = true;
   pin_state_.title = Tr("pin.unlock_title").c_str();
-  pin_state_.message = UnlockMessage().c_str();
   SetupKnownPinEntry();
-  // Face / fingerprint unlock on (at-rest A014): the pad's bottom-left key / the field's link prompt again.
+  // Face / fingerprint unlock on (at-rest A014): the door opens with the sensor's key and "Enter PIN" only; after
+  // that button the pad's bottom-left key / the field's link prompt again.
   const std::string biometric_kind = keypad_ports_.biometric_kind ? keypad_ports_.biometric_kind() : std::string();
   pin_state_.biometric_key = !biometric_kind.empty();
   pin_state_.biometric_kind = biometric_kind.c_str();
+  pin_state_.biometric_first = pin_state_.biometric_key;
+  pin_state_.message = UnlockMessage().c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();

@@ -42,6 +42,7 @@ private:
   const PaneState* FindPane(const std::string& key) const;
   void PinGateFields(std::ostringstream& out) const;
   void PinGateKeypad(std::ostringstream& out) const;
+  void PinGateBiometricFirst(std::ostringstream& out) const;
   bool ChromeFrostEnabled() const;
 
   const ShellState& state_;

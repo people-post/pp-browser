@@ -79,6 +79,8 @@ public:
   void OnUseKeypad();
   /** The face / fingerprint key (pad) or link (field) on the unlock door: the system prompt again. */
   void OnBiometric();
+  /** "Enter PIN" on a biometric-first unlock door: the pad / field come up. */
+  void OnUsePin();
   /** Create / chooser / identity-fork / link-paste may cancel. Unlock ignores cancel. */
   void OnCancel();
   void OnSetPin();

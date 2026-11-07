@@ -156,6 +156,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_biometric_key", &host.state_.pin_gate.biometric_key);
     ctor.Bind("pin_gate_biometric_kind", &host.state_.pin_gate.biometric_kind);
     ctor.Bind("pin_gate_biometric_hint", &host.state_.pin_gate.biometric_hint);
+    ctor.Bind("pin_gate_biometric_first", &host.state_.pin_gate.biometric_first);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -349,6 +350,11 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_biometric", DataEvent<>([this]() {
       if (pin_gate_actions_.on_biometric) {
         pin_gate_actions_.on_biometric();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_use_pin", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_use_pin) {
+        pin_gate_actions_.on_use_pin();
       }
     }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
@@ -1040,6 +1046,7 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_biometric_key");
   DataModelHost::Instance().Dirty("window", "pin_gate_biometric_kind");
   DataModelHost::Instance().Dirty("window", "pin_gate_biometric_hint");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_first");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");

@@ -640,12 +640,22 @@ TEST_F(PinGateControllerTest, UnlockShowsTheBiometricKeyWhenOn) {
   pin_digits_ = 6;
   biometric_kind_ = "face";
   controller_.ShowUnlock();
-  EXPECT_TRUE(shown_.keypad);
+  EXPECT_TRUE(shown_.biometric_first) << "the door opens with the key and Enter PIN only";
   EXPECT_TRUE(shown_.biometric_key);
   EXPECT_EQ(std::string(shown_.biometric_kind.c_str()), "face");
-  EXPECT_FALSE(shown_.keypad_ok_shown) << "the bottom-left key is free for it";
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.biometric_first.face"));
   controller_.OnBiometric();
   EXPECT_EQ(biometric_tries_, 1);
+  const int remounts = remounts_;
+  controller_.OnUsePin();
+  EXPECT_FALSE(shown_.biometric_first);
+  EXPECT_GT(remounts_, remounts) << "the pad instead of the key-only door";
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_message"));
+  EXPECT_TRUE(shown_.keypad);
+  EXPECT_TRUE(shown_.biometric_key);
+  EXPECT_FALSE(shown_.keypad_ok_shown) << "the bottom-left key is free for it";
+  controller_.OnUsePin();
+  EXPECT_EQ(remounts_, remounts + 1) << "nothing more to open";
 
   controller_.OnUseText();  // the field: the link prompts too
   EXPECT_FALSE(shown_.keypad);
@@ -656,6 +666,8 @@ TEST_F(PinGateControllerTest, UnlockShowsTheBiometricKeyWhenOn) {
   biometric_kind_.clear();  // off
   controller_.ShowUnlock();
   EXPECT_FALSE(shown_.biometric_key);
+  EXPECT_FALSE(shown_.biometric_first) << "straight to the pad";
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_message"));
   controller_.OnBiometric();
   EXPECT_EQ(biometric_tries_, 2);
 }
@@ -665,6 +677,7 @@ TEST_F(PinGateControllerTest, TheBiometricKeyIsOnlyOnTheUnlockDoor) {
   biometric_kind_ = "touch";
   controller_.ShowVerify(PinVerifyPurpose::EnableBiometric, Check(), [] {});
   EXPECT_FALSE(shown_.biometric_key);
+  EXPECT_FALSE(shown_.biometric_first);
   controller_.ShowChange(Check(), Change());
   EXPECT_FALSE(shown_.biometric_key);
   ShowCreate();
@@ -687,13 +700,31 @@ TEST_F(PinGateControllerTest, ALostBiometricUnlockHidesTheKeyAndSaysWhy) {
   pin_digits_ = 4;
   biometric_kind_ = "face";
   controller_.ShowUnlock();
+  controller_.OnUsePin();
   Keys("12");
   controller_.ShowBiometricReset("turn it on again");
   EXPECT_FALSE(shown_.biometric_key);
+  EXPECT_FALSE(shown_.biometric_first);
   EXPECT_EQ(std::string(shown_.biometric_hint.c_str()), "turn it on again");
   EXPECT_EQ(Pin(), "12") << "what was typed stays";
   controller_.OnBiometric();
   EXPECT_EQ(biometric_tries_, 0);
+}
+
+// Lost while the door is still key-only: the pad opens by itself (there is no key left to tap).
+TEST_F(PinGateControllerTest, ALostBiometricUnlockOpensThePadOnAKeyOnlyDoor) {
+  pin_digits_ = 4;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  ASSERT_TRUE(shown_.biometric_first);
+  const int remounts = remounts_;
+  controller_.ShowBiometricReset("turn it on again");
+  EXPECT_FALSE(shown_.biometric_first);
+  EXPECT_FALSE(shown_.biometric_key);
+  EXPECT_TRUE(shown_.keypad);
+  EXPECT_GT(remounts_, remounts);
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_message"));
+  EXPECT_EQ(std::string(shown_.biometric_hint.c_str()), "turn it on again");
 }
 
 } // namespace

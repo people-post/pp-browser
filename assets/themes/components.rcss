@@ -6525,6 +6525,39 @@ input.checkbox {
   color: #b42318;
 }
 
+/* Face / fingerprint first (at-rest A014): one big sensor key, then "Enter PIN"; the pad comes after that. */
+.shell-pin-bio {
+  display: block;
+  margin-top: 16dp;
+}
+
+.shell-pin-bio-key {
+  display: block;
+  width: 112dp;
+  height: 112dp;
+  margin: 8dp auto 24dp auto;
+  padding: 0;
+  border-width: 0;
+  border-radius: 56dp;
+  background-color: #7878802e;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.shell-pin-bio-key:active {
+  background-color: #78788066;
+}
+
+.shell-pin-bio-icon {
+  margin-top: 24dp;
+}
+
+.shell-pin-bio-pin {
+  display: block;
+  width: 100%;
+  min-height: 48dp;
+}
+
 /* The number pad (phones, a digit PIN; DEV/PLAN-pin-gate-redesign.md B): dots, then 3 x 4 round keys >= 64dp. */
 .shell-pin-pad {
   display: block;

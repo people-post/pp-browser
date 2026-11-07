@@ -248,6 +248,11 @@ struct PinGateState {
   ui::String biometric_kind;
   /** One line about face / fingerprint unlock on the door ("" none): pin.biometric_reset_hint after it was lost. */
   ui::String biometric_hint;
+  /**
+   * Face / fingerprint unlock on: the door opens with only the sensor's key and an "Enter PIN" button (as the
+   * phone's own lock screen); the pad / field come after that button, or once the biometric unlock is lost.
+   */
+  bool biometric_first = false;
   ui::String title;
   ui::String message;
   ui::String error;

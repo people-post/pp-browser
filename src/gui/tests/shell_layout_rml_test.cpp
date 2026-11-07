@@ -222,7 +222,8 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
   EXPECT_TRUE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
 
   for (bool PinGateState::*mode : {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode,
-                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock}) {
+                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock,
+                                   &PinGateState::biometric_first}) {
     PinGateState gate = state.pin_gate;
     gate.*mode = true;
     EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(gate)) << "no PIN field to type in there";
@@ -258,6 +259,24 @@ TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {
   }
   EXPECT_TRUE(Has(field, "pin_gate_biometric()"));
   EXPECT_TRUE(Has(field, "{{pin_gate_biometric_hint}}"));
+}
+
+// Face / fingerprint first: the door opens with the big sensor key and "Enter PIN" -- no pad, no field.
+TEST(ShellLayoutRmlTest, ABiometricFirstDoorHasOnlyTheKeyAndEnterPin) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  state.pin_gate.biometric_first = true;
+  const std::string door = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(door, "class=\"shell-pin-bio-key\" data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(door, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
+  EXPECT_TRUE(Has(door, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));
+  EXPECT_TRUE(Has(door, "data-event-click=\"pin_gate_use_pin()\">" + Tr("pin.biometric_use_pin")));
+  EXPECT_FALSE(Has(door, "shell-pin-keys")) << "no pad yet";
+  EXPECT_FALSE(Has(door, "pin_gate_key("));
+  EXPECT_FALSE(Has(door, std::string("id=\"") + ShellLayoutRml::kPinGateFieldId)) << "no field yet";
+  EXPECT_TRUE(Has(door, "pin_gate_forgot_toggle()")) << "Forgot PIN stays";
 }
 
 TEST(ShellLayoutRmlTest, ThePinPadKeysAreAtLeast64dp) {

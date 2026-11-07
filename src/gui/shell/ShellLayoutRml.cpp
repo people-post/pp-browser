@@ -408,7 +408,9 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
-  if (state_.pin_gate.keypad) {
+  if (state_.pin_gate.biometric_first) {
+    PinGateBiometricFirst(out);
+  } else if (state_.pin_gate.keypad) {
     PinGateKeypad(out);
   } else {
     PinGateFields(out);
@@ -427,8 +429,8 @@ std::string ShellLayoutRml::PinGate() const {
 }
 
 bool ShellLayoutRml::PinGateFocusesField(const PinGateState& gate) {
-  return gate.active && !gate.keypad && !gate.chooser_mode && !gate.identity_fork_mode && !gate.link_paste_mode &&
-         !gate.waiting_device_unlock;
+  return gate.active && !gate.keypad && !gate.biometric_first && !gate.chooser_mode && !gate.identity_fork_mode &&
+         !gate.link_paste_mode && !gate.waiting_device_unlock;
 }
 
 // The field mode: the PIN (and a new PIN's confirmation) in password fields with the system keyboard; Continue submits.
@@ -468,6 +470,21 @@ void ShellLayoutRml::PinGateFields(std::ostringstream& out) const {
         << kind << "' && !pin_gate_waiting_device_unlock\" data-event-click=\"pin_gate_biometric()\">"
         << Tr(std::string("pin.biometric_link.") + kind) << "</button>";
   }
+}
+
+// Face / fingerprint unlock on (at-rest A014): the door opens like the phone's own lock screen -- the sensor's key
+// (prompts again) and "Enter PIN"; the pad / field come only after that button.
+void ShellLayoutRml::PinGateBiometricFirst(std::ostringstream& out) const {
+  out << "<div class=\"shell-pin-bio\" data-if=\"!pin_gate_waiting_device_unlock\">";
+  out << "<button class=\"shell-pin-bio-key\" data-event-click=\"pin_gate_biometric()\">"
+         "<svg class=\"shell-pin-bio-icon\" data-if=\"pin_gate_biometric_kind == 'face'\" "
+         "src=\"../icons/v2/face-id.svg\" width=\"64\" height=\"64\"></svg>"
+         "<svg class=\"shell-pin-bio-icon\" data-if=\"pin_gate_biometric_kind != 'face'\" "
+         "src=\"../icons/v2/fingerprint.svg\" width=\"64\" height=\"64\"></svg>"
+         "</button>";
+  out << "<button class=\"btn btn-secondary shell-pin-bio-pin\" data-event-click=\"pin_gate_use_pin()\">"
+      << Tr("pin.biometric_use_pin") << "</button>";
+  out << "</div>";
 }
 
 // The number pad (phones, a digit PIN; DEV/PLAN-pin-gate-redesign.md B): a row of dots, 3 x 4 keys, no input element

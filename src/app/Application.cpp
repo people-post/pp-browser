@@ -1706,6 +1706,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_text = [this]() { pin_gate_->OnUseText(); };
     pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
     pin_actions.on_biometric = [this]() { pin_gate_->OnBiometric(); };
+    pin_actions.on_use_pin = [this]() { pin_gate_->OnUsePin(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
