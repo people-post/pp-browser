@@ -796,6 +796,22 @@ void ChatController::OnSessionsTabActivated() {
   working_set_.ClearAll();
 }
 
+void ChatController::OnCompactChatShownAgain() {
+  if (!messaging_ready_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  // An answer or a message counted unread (and notified) while the hidden tab covered the chat is read now.
+  presenter_.MarkRead(thread_id);
+  ILocalNotifier::Instance().ClearForThread(thread_id);
+  RefreshFromMessaging();
+  scroller_.RequestScrollToLatest();
+  NotifySurfaceChanged();
+}
+
 void ChatController::OnSelectThread(std::string thread_id) {  // by value: ShellSelectNavTab below rebuilds Home (B161)
   if (!messaging_ready_) {
     return;

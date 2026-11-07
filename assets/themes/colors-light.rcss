@@ -3305,4 +3305,37 @@ input.checkbox:checked {
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
   image-color: #000000;
 }
+
+/* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the page colour, a soft shadow fading out from its right edge, and the
+   bottom "you" row pressed like a list row. */
+.shell-drawer-body {
+  background-color: #ffffff;
+}
+
+.shell-drawer-edge {
+  decorator: linear-gradient(to right, #0000001f, #00000000);
+}
+
+.ai-drawer-title,
+.ai-drawer-me-name {
+  color: #000000;
+}
+
+.ai-drawer-me,
+.ai-drawer-me:hover,
+.ai-drawer-me:focus {
+  background-color: transparent;
+}
+
+.ai-drawer-me:active {
+  background-color: #7878801f;
+}
+
+.ai-drawer-me-avatar .avatar-letter {
+  color: #ffffff;
+}
+
+.ai-drawer-me-chevron {
+  image-color: #3c3c434c;
+}
 }

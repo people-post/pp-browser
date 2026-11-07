@@ -205,6 +205,8 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     shell.DirtyNavChrome();
   });
 
+  shell.SetOnCompactChatShownAgain([&chat]() { chat.OnCompactChatShownAgain(); });
+
   shell.SetOnLayoutModeChanged([&shell, &settings, &contacts, &chat](LayoutMode mode) {
     const ShellChromeSnapshot chrome = ProjectShellChromeSnapshot(shell.State());
     if (chrome.nav_tab == NavTab::Contacts) {

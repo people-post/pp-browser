@@ -3987,6 +3987,181 @@ select selectbox option {
   height: 18dp;
 }
 
+/* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the AI conversation list slides in from the left over the AI page,
+   86% wide and full height, the rest of the page (and the tab bar under it) dimmed by the scrim; a soft shadow on its
+   right edge (colors-*.rcss). Above the tab bar (15) and the chat overlay (25), under pushed pages (30), the call bar
+   (45) and dialogs (50). The empty host takes no taps. */
+.shell-drawer-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 28;
+  pointer-events: none;
+}
+
+.shell-drawer-host .shell-layer {
+  pointer-events: auto;
+}
+
+@keyframes shell-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0%); }
+}
+
+@keyframes shell-drawer-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.shell-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 86%;
+  transform: translateX(0%);
+  transition: transform 0.25s cubic-out;
+}
+
+.shell-drawer-layer--enter .shell-drawer {
+  animation: 0.25s cubic-out shell-drawer-in;
+}
+
+.shell-drawer-layer--enter .shell-scrim {
+  animation: 0.25s cubic-out shell-drawer-scrim-in;
+}
+
+.shell-drawer-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: 12dp;
+  pointer-events: none;
+}
+
+.shell-drawer-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+}
+
+.ai-drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.ai-drawer-head {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  height: 44dp;
+  padding: 0 4dp;
+}
+
+.ai-drawer-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 44dp;
+  font-weight: bold;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.ai-drawer-head-gap {
+  display: block;
+  flex: 0 0 44dp;
+}
+
+/* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. */
+.ai-drawer-list {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.ai-drawer-me {
+  flex: none;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  min-height: 56dp;
+  margin: 0;
+  padding: 8dp 16dp;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-drawer-me-avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+  overflow: hidden;
+}
+
+.ai-drawer-me-image {
+  width: 36dp;
+  height: 36dp;
+}
+
+.ai-drawer-me-avatar .avatar-letter {
+  font-size: 15dp;
+}
+
+.ai-drawer-me-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-drawer-me-chevron {
+  flex: none;
+  width: 16dp;
+  height: 16dp;
+}
+
+/* An AI conversation's bar: the new-conversation button on the right; the chat's own header row, lifted onto the bar,
+   leaves it room. */
+.shell-chat-new-slot {
+  display: none;
+}
+
+.shell-layer-compact .shell-chat-new-slot {
+  display: flex;
+  position: absolute;
+  top: 6dp;
+  right: 4dp;
+  z-index: 4;
+}
+
+.shell-chat-overlay .chat-shell--ai .chat-header {
+  margin-right: 36dp;
+}
+
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;

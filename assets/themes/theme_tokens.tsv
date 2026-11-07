@@ -107,3 +107,5 @@ x-storage-video-tint	#af52de40	#af52de4d	extra: Me -> Storage manager, a video t
 x-on-media	#ffffff	#ffffff	extra: text and ticks drawn over a picture (storage manager tiles), white in both themes
 x-on-media-shadow	#00000099	#00000099	extra: shadow under text over a picture
 x-home-empty-calls	#34c7591f	#30d1582e	extra: Home Calls widget with nothing to show, tint behind the faint phone
+x-drawer-edge	#0000001f	#00000066	extra: the AI drawer's right edge, where its 12dp shadow starts
+x-drawer-edge-fade	#00000000	#00000000	extra: where the AI drawer's edge shadow ends (clear)

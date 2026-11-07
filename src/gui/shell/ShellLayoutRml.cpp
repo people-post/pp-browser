@@ -149,6 +149,13 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
     out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>";
     out << "</button>";
+    // An AI conversation's bar: a new conversation on the right (DEV/PLAN-minimal-nav.md B). thread_is_ai is the chat
+    // model's, new_chat the shell model's (ChatController).
+    out << "<div class=\"shell-chat-new-slot\" data-model=\"chat\" data-if=\"thread_is_ai\">";
+    out << "<button class=\"shell-circle-btn shell-chat-new-btn\" type=\"button\" data-model=\"shell\" "
+           "data-event-click=\"new_chat()\">";
+    out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/compose.svg\"></svg></span>";
+    out << "</button></div>";
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
@@ -178,7 +185,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab, the chat or a pushed page.
+  // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab or under the chat.
   if (ShellLayout::CompactTabBarDp(state_) > 0.f) {
     out << "<div class=\"shell-bottom-chrome";
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
@@ -550,6 +557,21 @@ void ShellLayoutRml::PinGateKeypad(std::ostringstream& out) const {
   out << "</div>";
 }
 
+std::string ShellLayoutRml::AiDrawer() const {
+  if (state_.layout_mode != LayoutMode::Compact || !state_.ai_drawer_open) {
+    return {};
+  }
+  std::ostringstream out;
+  // The compact class: the phone styles of the rows and the round buttons in the view apply.
+  out << "<div class=\"shell-layer shell-layer-compact shell-drawer-layer\" data-model=\"window\">";
+  out << "<div class=\"shell-scrim shell-drawer-scrim\" data-event-click=\"close_ai_drawer()\"></div>";
+  // The edge shadow rides with the drawer; the view goes into the body (ShellHost::MountAiDrawer).
+  out << "<div class=\"shell-drawer\"><div class=\"shell-drawer-edge\"></div>";
+  out << "<div class=\"shell-drawer-body\" id=\"shell-ai-drawer-mount\"></div></div>";
+  out << "</div>";
+  return out.str();
+}
+
 std::string ShellLayoutRml::ShellRoot() const {
   std::ostringstream out;
   if (state_.layout_mode == LayoutMode::Expanded) {
@@ -557,6 +579,8 @@ std::string ShellLayoutRml::ShellRoot() const {
   } else {
     out << CompactBase();
   }
+  // Filled by ShellHost::RemountAiDrawerNow (AiDrawer), so opening / closing the drawer never rebuilds this root.
+  out << "<div id=\"shell-ai-drawer-host\" class=\"shell-drawer-host\"></div>";
   out << TransientLayer();
   out << Overlays();
   // The dialog lives only in its mount below: SyncLayout fills the mount right after this root is

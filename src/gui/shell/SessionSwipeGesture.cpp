@@ -15,6 +15,8 @@ namespace {
 constexpr const char* kListId = "sidebar-sessions";
 // The PP助手 page's AI conversations list: its rows swipe like the Chats rows.
 constexpr const char* kAiListId = "home-ai-sessions";
+// The phone AI drawer's list (ai_drawer.rml; DEV/PLAN-minimal-nav.md C): its own id, the Home list stays in the DOM.
+constexpr const char* kDrawerListId = "ai-drawer-sessions";
 constexpr const char* kRowClass = "sidebar-session";
 constexpr const char* kDraggingClass = "session-swipe-dragging";
 // Set while the row is moved off its rest position: the buttons outside the row are only drawn then, so they never
@@ -92,7 +94,7 @@ ui::Element* SessionSwipeGesture::RowOf(ui::Element* target) const {
   for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node->IsClassSet(kRowClass) && node->HasAttribute("session-id")) {
       row = node;
-    } else if (row && (node->GetId() == kListId || node->GetId() == kAiListId)) {
+    } else if (row && (node->GetId() == kListId || node->GetId() == kAiListId || node->GetId() == kDrawerListId)) {
       return row;
     }
   }

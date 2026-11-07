@@ -161,6 +161,12 @@ public:
   /** The profile preferences changed (a contact starred, Edit Home): Home's widgets are drawn again. */
   void OnHomePrefsChanged();
   void OnSessionsTabActivated();
+  /**
+   * Phone: back from Settings / Contacts to the chat overlay left open under them (ShellHost
+   * SetOnCompactChatShownAgain). What arrived meanwhile was not on screen; the chat is read now, refreshed and at
+   * its newest message, as when it is opened.
+   */
+  void OnCompactChatShownAgain();
   void OnFindSomeone() override;
   /**
    * The phone "New chat" page's "AI chat": a new AI chat, opened. Being the newest, it is the one the ask-AI panel

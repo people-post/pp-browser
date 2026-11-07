@@ -13,6 +13,7 @@
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellCallChromeGesture.h"
+#include "gui/shell/ShellDrawerOpenGesture.h"
 #include "lib/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellLargeTitleScroll.h"
 #include "gui/shell/ShellFavoritesSnap.h"
@@ -135,9 +136,18 @@ public:
   void HiddenTabBack();
   /** An avatar opens Settings (the Me tab) from anywhere. */
   void OpenSettingsFromAvatar();
-  /** Phone Home: the AI list drawer opens / closes (state only; the drawer view is DEV/PLAN-minimal-nav.md C). */
+  /**
+   * Phone AI page: the AI conversation list slides in from the left (DEV/PLAN-minimal-nav.md C). Opening first lets
+   * go of the composer (keyboard down, its inset back to the home indicator's). No-op on the desktop. The drawer is
+   * closed again by its ✕ / scrim, a picked conversation (OpenCompactChat), a tab switch, the desktop layout, a call
+   * screen or ring, a pushed page or layer, and the system back (HandleDismiss, before anything under it). Closing
+   * lets go of the drawer's row swipes at once; its DOM goes on the next UI turn (RemountAiDrawer), never inside the
+   * click that closed it.
+   */
   void OpenAiDrawer();
   void CloseAiDrawer();
+  /** The drawer's rows have their swipe listeners (only while it is mounted). */
+  bool AiDrawerRowSwipesAttached() const { return drawer_session_swipe_.Attached(); }
   /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */
   bool HomeRootShown() const;
   /** Phone layout: the hidden tab's own root page is on top (nothing pushed over it, no settings page open). */
@@ -209,6 +219,11 @@ public:
   void SetOnTransientMounted(std::function<void(const std::string& key)> callback);
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
+  /**
+   * Phone: back from a hidden tab (Me, Contacts) to the tab it covered, where a chat overlay stayed open: the chat is
+   * on screen again (after the tab-changed callback). Its messages are read now (ChatController).
+   */
+  void SetOnCompactChatShownAgain(std::function<void()> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
 
   /** Secondary-pane prefs from disk (width is clamped). Remounts when they differ from the current state. */
@@ -340,6 +355,16 @@ private:
   /** SyncLayout rebuilt the DOM: put every MountOverlayBody body back into its (now empty) mount. */
   void RemountOverlayBodiesNow();
   void FlushRemountPinGateChrome();
+  /** The AI drawer's host (#shell-ai-drawer-host): deferred (safe from a click), or now (SyncLayout). */
+  void RemountAiDrawer();
+  void FlushRemountAiDrawer();
+  void RemountAiDrawerNow();
+  /** The `ai_drawer` view into #shell-ai-drawer-mount, then its rows' swipes (one attachment per list id). */
+  void MountAiDrawer();
+  /** The AI page's rightward drag (ShellDrawerOpenGesture) on its minimal block, when the AI page shows. */
+  void AttachDrawerOpenGesture();
+  /** Composer blurred, keyboard and emoji panel down, the keyboard's inset dropped (OpenAiDrawer). */
+  void ReleaseKeyboard();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
   /** Compact only: the element that slides out (and in) for `target`; null when it has no page to slide. */
@@ -410,6 +435,9 @@ private:
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
+  bool remount_ai_drawer_pending_ = false;
+  /** The drawer was just opened: it slides in once mounted (not on a remount while it stays open). */
+  bool drawer_enter_pending_ = false;
   /** Last body per overlay mount id (onboarding wizard); survives the full rebuild in SyncLayout. */
   std::map<std::string, std::string> overlay_bodies_;
   /** True from first paint until SettleStartupCoverArm (deferred unlock decision). */
@@ -432,6 +460,10 @@ private:
   /** Home's 关注联系人 row: eases onto a whole person once its scroll is at rest. */
   ShellFavoritesSnap favorites_snap_;
   SessionSwipeGesture session_swipe_;
+  /** The AI drawer's list (#ai-drawer-sessions): attached while the drawer is mounted, released when it closes. */
+  SessionSwipeGesture drawer_session_swipe_;
+  ShellDrawerOpenGesture drawer_open_gesture_;
+  std::function<void()> on_compact_chat_shown_again_;
   SessionSwipeGesture::ActionCallback on_session_swipe_action_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;

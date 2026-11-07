@@ -59,8 +59,8 @@ bool ShellLayout::HiddenTabShown(const ShellState& state) {
 }
 
 float ShellLayout::CompactTabBarDp(const ShellState& state, const float bar_height_dp) {
-  if (state.layout_mode != LayoutMode::Compact || HiddenTabShown(state) || state.compact_chat_open ||
-      !state.transient_stack.empty()) {
+  // A pushed page covers the bar but does not remove it: during its swipe-back the page underneath shows its bar.
+  if (state.layout_mode != LayoutMode::Compact || HiddenTabShown(state) || state.compact_chat_open) {
     return 0.f;
   }
   return bar_height_dp;

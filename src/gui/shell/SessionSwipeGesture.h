@@ -30,6 +30,7 @@ public:
 
   void Attach(ui::Element* page, ui::Context* context, ActionCallback on_action);
   void Detach();
+  bool Attached() const { return static_cast<bool>(page_); }
 
   void ProcessEvent(ui::Event& event) override;
 
