@@ -1,6 +1,7 @@
 pp_browser_add_foundation_library(pp_foundation_crypto
   SOURCES
     AttachmentContentHash.cpp
+    BiometricUnlock.cpp
     DataKeyVault.cpp
     EncryptedPayload.cpp
     FileCipher.cpp
