@@ -3355,3 +3355,23 @@ input.checkbox:checked {
   color: {{label-on-accent}};
 }
 }
+
+/* Phone round button (DEV/PLAN-minimal-nav.md G): a clear 44dp target, the 34dp disc a quiet grey that darkens while
+   pressed, the icon in the label colour. */
+.shell-layer-compact .shell-circle-btn,
+.shell-layer-compact .shell-circle-btn:hover,
+.shell-layer-compact .shell-circle-btn:focus {
+  background-color: transparent;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  background-color: {{fill-2}};
+}
+
+.shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
+  background-color: {{fill}};
+}
+
+.shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
+  image-color: {{label}};
+}

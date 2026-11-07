@@ -3952,6 +3952,41 @@ select selectbox option {
 }
 
 .shell-layer-overlay,
+/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 44dp target around a 34dp grey disc
+   holding an 18dp icon; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
+   keeps its own buttons. */
+.shell-circle-btn-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-layer-compact .shell-circle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  width: 34dp;
+  height: 34dp;
+  border-radius: 17dp;
+}
+
+.shell-layer-compact .shell-circle-btn-face svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
 .shell-layer-dialog {
   z-index: 50;
 }
@@ -8639,6 +8674,18 @@ input.checkbox {
   padding: 4dp 10dp;
   border-radius: 999dp;
   font-size: 13dp;
+}
+
+/* The back: a word on the desktop, the round back on phones. */
+.people-picker-back-circle,
+.shell-layer-compact .people-picker-back-text {
+  display: none;
+}
+
+.shell-layer-compact .people-picker-back-circle {
+  display: flex;
+  flex: 0 0 44dp;
+  align-self: center;
 }
 
 .contact-detail-panel {

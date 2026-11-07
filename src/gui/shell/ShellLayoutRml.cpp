@@ -138,8 +138,8 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
-    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
-    out << "<svg src=\"../icons/v2/back.svg\"></svg>";
+    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"compact_chat_back()\">";
+    out << "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>";
     out << "</button>";
     out << "<div class=\"bar-fade\"></div>";
     out << "</div>";
@@ -214,9 +214,16 @@ std::string ShellLayoutRml::TransientLayer() const {
   if (titled) {
     out << "<div class=\"nav-bar-bg\"></div>";
   }
-  out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
-         "<svg src=\"../icons/v2/back.svg\"></svg>"
-         "</button>";
+  if (compact[0] != '\0') {
+    // Phones: the round back (DEV/PLAN-minimal-nav.md G); shell-back-btn keeps it chrome for the swipe-back.
+    out << "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" data-event-click=\"transient_back()\">"
+           "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\"></svg></span>"
+           "</button>";
+  } else {
+    out << "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"
+           "<svg src=\"../icons/v2/back.svg\"></svg>"
+           "</button>";
+  }
   out << "<div class=\"bar-fade\"></div>";
   out << "</div>";
   out << PaneSlot(top.spec.key, "shell-pane-transient");
