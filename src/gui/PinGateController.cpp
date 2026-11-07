@@ -235,7 +235,9 @@ void PinGateController::ShowBiometricReset(const std::string& hint) {
   pin_state_.biometric_key = false;
   pin_state_.biometric_first = false;
   pin_state_.biometric_hint = hint.c_str();
-  pin_state_.message = UnlockMessage().c_str();
+  if (!pin_state_.waiting_device_unlock) {
+    pin_state_.message = UnlockMessage().c_str();  // the waiting screen keeps its own words
+  }
   ApplyPinGate();
   if (was_first) {
     Remount();  // the pad / field instead of the key-only door
@@ -559,7 +561,7 @@ void PinGateController::OnSubmit() {
     return;
   }
   PullBoundPinFields();
-  if (!pin_state_.active || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
+  if (!pin_state_.active || pin_state_.biometric_first || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
       pin_state_.waiting_device_unlock || pin_state_.keypad || pin_state_.keypad_busy) {
     return;  // the pad has no Continue: a full PIN submits itself
   }
@@ -742,7 +744,7 @@ void PinGateController::OnCheckDone(const uint64_t request, Roe<void> result, st
 }
 
 void PinGateController::OnKey(const int digit) {
-  if (!pin_state_.active || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock ||
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock ||
       digit < 0 || digit > 9) {
     return;
   }
@@ -791,7 +793,7 @@ void PinGateController::OnKey(const int digit) {
 }
 
 void PinGateController::OnBackspace() {
-  if (!pin_state_.active || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
     return;
   }
   // The repeat's backspace stays in the repeat (an empty repeat does not go back to the first entry).
@@ -808,7 +810,7 @@ void PinGateController::OnBackspace() {
 }
 
 void PinGateController::OnKeypadOk() {
-  if (!pin_state_.active || !pin_state_.keypad || pin_state_.keypad_busy || !InNewPinStep() || new_pin_step_ != 0 ||
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || !InNewPinStep() || new_pin_step_ != 0 ||
       std::string(pin_state_.pin.c_str()).size() < 4) {
     return;
   }
@@ -822,7 +824,7 @@ void PinGateController::OnKeypadOk() {
 }
 
 void PinGateController::OnUseText() {
-  if (!pin_state_.active || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
+  if (!pin_state_.active || pin_state_.biometric_first || !pin_state_.keypad || pin_state_.keypad_busy || pin_state_.waiting_device_unlock) {
     return;
   }
   pin_state_.keypad = false;
@@ -840,7 +842,7 @@ void PinGateController::OnUseText() {
 }
 
 void PinGateController::OnUseKeypad() {
-  if (!pin_state_.active || pin_state_.keypad || !pin_state_.keypad_offered || pin_state_.keypad_busy ||
+  if (!pin_state_.active || pin_state_.biometric_first || pin_state_.keypad || !pin_state_.keypad_offered || pin_state_.keypad_busy ||
       pin_state_.waiting_device_unlock) {
     return;
   }

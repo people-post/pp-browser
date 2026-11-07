@@ -672,6 +672,33 @@ TEST_F(PinGateControllerTest, UnlockShowsTheBiometricKeyWhenOn) {
   EXPECT_EQ(biometric_tries_, 2);
 }
 
+TEST_F(PinGateControllerTest, AKeyOnlyDoorTakesNoPadOrFieldEvents) {
+  pin_digits_ = 4;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  ASSERT_TRUE(shown_.biometric_first);
+  const int completes = completes_;
+  Keys("1234");
+  EXPECT_EQ(completes_, completes) << "no pad to type on";
+  EXPECT_FALSE(shown_.keypad_busy);
+  controller_.OnUseText();
+  EXPECT_TRUE(shown_.keypad) << "the mode cannot flip behind the key-only door";
+  controller_.OnSubmit();
+  EXPECT_EQ(completes_, completes);
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 1) << "the key itself still prompts";
+}
+
+TEST_F(PinGateControllerTest, ALostBiometricUnlockKeepsTheWaitingScreensWords) {
+  pin_digits_ = 4;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  controller_.SetWaitingDeviceUnlock(true);
+  controller_.ShowBiometricReset("turn it on again");
+  EXPECT_EQ(std::string(shown_.message.c_str()), Tr("pin.unlock_phone_call_message"));
+  EXPECT_FALSE(shown_.biometric_first);
+}
+
 TEST_F(PinGateControllerTest, TheBiometricKeyIsOnlyOnTheUnlockDoor) {
   pin_digits_ = 4;
   biometric_kind_ = "touch";
@@ -690,6 +717,7 @@ TEST_F(PinGateControllerTest, TheBiometricKeyWaitsWhileThePinIsChecked) {
   pin_digits_ = 4;
   biometric_kind_ = "face";
   controller_.ShowUnlock();
+  controller_.OnUsePin();
   Keys("1234");
   ASSERT_TRUE(shown_.keypad_busy);
   controller_.OnBiometric();
