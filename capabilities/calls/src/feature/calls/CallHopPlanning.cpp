@@ -188,7 +188,7 @@ CallHopPlanning::JoinOutcome CallHopPlanning::ResolveAtJoin(const std::string& c
   case GroupHopAtJoin::UseAlternative: {
     // The one adjustment replaces the plan (not a re-pick): SoftMigrate ranks the planned hop first.
     log().info << "group hop adjustment call_id=" << call_id << " planned=" << in.planned_hop << " → " << decision.hop
-               << " (a participant cannot reach the planned hop)";
+               << " (a participant cannot use the planned hop: unreachable or full)";
     return JoinOutcome{JoinOutcome::Action::Proceed, CallPlannedHop{decision.hop, ranking_.HopMultiaddr(decision.hop)}};
   }
   case GroupHopAtJoin::RefuseJoiner:

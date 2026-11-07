@@ -34,6 +34,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_CAP_MEDIA_RELAY` | `capabilities.media_relay` | Same bool forms |
 | `PP_NODE_CAP_DHT` | `capabilities.dht` | Same bool forms (Node DHT participation; default off) |
 | `PP_NODE_DHT_K` | `dht.k_bucket_size` | 1–20 (default 20). Labs only: a small k makes lookups walk |
+| `PP_NODE_CAPACITY_LINKS` / `_RESERVATIONS` / `_BRIDGES` / `_GROUP_CALLS` | `mesh.capacity.*` | A positive count ([Node capacity](#node-capacity-meshcapacity)); anything else keeps the config's |
 | `PP_NODE_LAB_DHT_FIND` | — | `1`: status HTTP serves `GET /dht/find?peer_id=…` (starts a lookup). Labs only — leave unset on a reachable status port |
 | `PP_NODE_CAP_LEDGER_GATEWAY` | `capabilities.ledger_gateway` | Same bool forms (N029 Phase C prep; default off; no chain runtime yet) |
 | `PP_NODE_ADVERTISE_MULTIADDRS` | `libp2p.advertise_multiaddrs` | Comma-separated **public** multiaddrs for directory publish (never `0.0.0.0`) |
@@ -192,6 +193,19 @@ On tab entry, [`SettingsController`](../../src/gui/SettingsController.cpp) reloa
 - **`backend.env`** — `prod` (default) | `qa` | `custom`; set in Me → Network → Service. `prod` / `qa` derive every backend URL from the compiled origin and ignore the `relay` / `directory` / `registration` values (kept in the file, untouched by saves); `custom` uses them, and only then does Network show the URL fields. `qa` is offered only when the build has a QA origin (otherwise it loads as `prod`). The backend is fixed for a run: a change is saved at once and applies after a restart, and the settings row says so. Saving the switch also unbinds this device's push token from the running backend (best effort); switching back before the restart registers it again. A file with no `backend` key whose saved URLs differ from the defaults loads as `custom`. `PP_BROWSER_ORIGIN` overrides all of it.
 - **`relay` / `directory` / `registration`** — HTTP endpoints (the `custom` backend's); platform default is Brief. Empty `base_url` coalesces to platform defaults (not mocks). `directory` may also list ordered `providers[]` for failover (N029 nd3); see [SERVICE_ENDPOINTS.md](../contracts/SERVICE_ENDPOINTS.md).
 - **`libp2p`** — mesh role and Amp underlay policy. `node_enabled` (desktop; ignored on mobile) selects Node vs Client hosting posture ([p2p-mesh N001](../../projects/p2p-mesh/DECISIONS.md)). **`mesh_enabled`** (default **true**) is required for the peer mesh: Amp UDP + MSH + channels ([adp D10](../../projects/adp/PHASES.md)). Amp bind/start failure **fails mesh start** (no TCP underlay fallback). Set `mesh_enabled=false` to leave peer mesh off. Optional **`amp_udp_port`** (0 = ephemeral; org seed should pin **443**). Empty `bootstrap_peers` fills the Brief ADP L0 seeds (`/udp/443/adp/2/…`, [N002](../../projects/p2p-mesh/DECISIONS.md#n002--seed-multiaddr-ip--443--peerid-no-dns)); a non-empty list overrides hardcoded. SoftMigrate / dial-back / circuit warm prefer HTTP `GET /v1/mesh/nodes` and last-good `{data_dir}/mesh_directory_nodes.json` ahead of config/hardcoded ([N027](../../projects/p2p-mesh/DECISIONS.md#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). LAN mDNS TXT includes `amp_udp=` so peers can build ADP multiaddrs. Org **`pp-node`** hosts Amp circuit/media-relay when capabilities are on. Me → Network shows Help-the-network, Amp listen, and Inbound via Amp dial-back (D8). Contacts may store dialable ADP `multiaddrs` (`/ip4/…/udp/…/adp/2/p2p/<PeerId>`). Optional **`mobility`** (`auto` default | `stationary` | `mobile`) pins this device's call-path mobility class (dogfood / hard lab; [CALLS.md § Call media paths](../architecture/CALLS.md#call-media-paths-11--call-path-resilience)); `--mobility=` overrides it. Prefer the modern **`mesh`** key (same schema); **`libp2p`** is a legacy alias at load time.
+
+### Node capacity (`mesh.capacity`)
+
+How much a node serving others takes on. Each is a hard limit and the 1.0 of its pressure behind the service levels ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): busy from 70 %, full from 95 %. Unset or `null` keeps the default; a device ignores it. Read at mesh start.
+
+| Key | Default | What it counts |
+|-----|---------|----------------|
+| `links` | `8192` | Amp links — one per client, whatever it uses |
+| `reservations` | `8192` | Parked answerers (phones that stay reachable through this node) |
+| `bridges` | `4096` | Live 1:1 relayed calls and other circuits |
+| `group_calls` | `512` | Group calls hosted (`media_relay` sessions) |
+
+The link default is measured ([STRESS_LAB.md](STRESS_LAB.md)): on two cores a parked client renewing every 10 s costs ~20 KB, and the node's one pump thread saturates past ~11k links, so 8192 keeps an idle table near half a core. Size it to the machine: a smaller node lower, a bigger one only once the stress lab says its pump keeps up.
 
 ### Mesh DHT (n2)
 
