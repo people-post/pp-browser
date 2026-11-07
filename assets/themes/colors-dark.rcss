@@ -2696,6 +2696,26 @@ input.checkbox:checked {
   image-color: #0a84ff;
 }
 
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn {
+  background-color: #7878805c;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-home {
+  image-color: #ebebf599;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
+  image-color: #ebebf599;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  background-color: transparent;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-disc {
+  background-color: #0a84ff;
+}
+
 /* Grouped lists on phones: Me tab and settings pages (DESIGN-pp-ui 8.7 / 8.10); geometry in components.rcss. */
 .shell-layer-compact .settings-panel,
 .shell-layer-compact .settings-detail-view {

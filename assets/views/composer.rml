@@ -91,13 +91,14 @@
       <p class="prompt-composer-label prompt-composer-label--thread" data-if="draft == '' && thread_is_ai">{{draft_placeholder}}</p>
       <!-- Only the Home-root field (inside #home-composer-mount) shows this one; inside a conversation the thread label above
            (draft_placeholder) stays (Kenneth 2026-11-07: 我能为你做点什么？). -->
-      <p class="prompt-composer-label prompt-composer-label--home" data-if="draft == '' && thread_is_ai">{{i18n:home.composer.placeholder}}</p>
+      <p class="prompt-composer-label prompt-composer-label--home" data-if="draft == ''">{{i18n:home.composer.placeholder}}</p>
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"
               title="{{i18n:chat.attach_file}}">
         <svg class="prompt-icon-classic" src="../icons/attach.svg" width="18" height="18" crop-to-content="true"></svg>
         <svg class="prompt-icon-v2" src="../icons/v2/paperclip.svg" width="20" height="20"></svg>
+        <svg class="prompt-icon-home" src="../icons/v2/plus.svg" width="22" height="22"></svg>
       </button>
       <button class="prompt-capture-btn" type="button" data-if="show_capture && !voice_mode && !voice_recording"
               data-event-click="attach_capture()" data-attrif-disabled="composer_input_disabled"

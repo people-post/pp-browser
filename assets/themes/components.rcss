@@ -4175,7 +4175,7 @@ select selectbox option {
 .shell-layer-compact .pane-nav-avatar {
   position: absolute;
   top: 1dp;
-  left: 10dp;
+  left: 8dp;
   z-index: 1;
 }
 
@@ -4183,27 +4183,34 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  border-radius: 22dp;
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
   overflow: hidden;
 }
 
 .shell-circle-avatar .avatar-letter {
-  font-size: 18dp;
+  font-size: 20dp;
 }
 
 .shell-circle-avatar-image {
-  width: 44dp;
-  height: 44dp;
+  width: 48dp;
+  height: 48dp;
 }
 
-/* The Chats avatar is the one circle bigger than its 40dp face: its disc is the 44dp photo (list avatars are 44dp too
-   but sit in a column of text; here it stands alone). */
+/* The Chats avatar is the one circle bigger than its 40dp face: 48dp, clearly larger than the 44dp list avatars. Its
+   box is the same 48dp, flush with the bar top (so it never rides up into the status bar), 16dp from the left edge. */
+.shell-layer-compact .pane-nav-avatar {
+  top: 0;
+  left: 16dp;
+  width: 48dp;
+  height: 48dp;
+}
+
 .shell-layer-compact .pane-nav-avatar .shell-circle-btn-face {
-  width: 44dp;
-  height: 44dp;
-  border-radius: 22dp;
+  width: 48dp;
+  height: 48dp;
+  border-radius: 24dp;
 }
 
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
@@ -12700,14 +12707,88 @@ textarea:composing ~ .prompt-composer-label,
 
 .shell-layer-compact .home-composer-mount .prompt-composer-pill {
   min-height: 76dp;
-  padding: 0 4dp 0 16dp;
+  padding: 0 16dp 40dp 16dp;
   border-radius: 24dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-input {
   align-self: stretch;
-  min-height: 52dp;
-  padding: 12dp 0;
+  min-height: 36dp;
+  padding: 12dp 0 0 0;
+}
+
+/* The tools sit inside the box (Kenneth 2026-11-07): a plus circle (the attach flow: Photo / File) and the emoji key at
+   the bottom left, Send at the bottom right once there is text; no microphone or camera here. The row and the pill
+   are the positioning boxes, so the buttons leave the flow. */
+.prompt-icon-home {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row {
+  position: relative;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-classic,
+.shell-layer-compact .home-composer-mount .prompt-icon-v2,
+.shell-layer-compact .home-composer-mount .prompt-capture-btn,
+.shell-layer-compact .home-composer-mount .prompt-voice-toggle-btn {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-icon-home {
+  display: block;
+  flex-shrink: 0;
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn {
+  position: absolute;
+  left: 8dp;
+  bottom: 8dp;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  left: 52dp;
+  bottom: 8dp;
+  z-index: 1;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
+  width: 22dp;
+  height: 22dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {
+  position: absolute;
+  right: 8dp;
+  bottom: 8dp;
+  z-index: 1;
+  width: 36dp;
+  height: 36dp;
+  min-width: 36dp;
+  margin: 0;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-send-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32dp;
+  height: 32dp;
+  border-radius: 16dp;
 }
 
 .prompt-composer-label--home,

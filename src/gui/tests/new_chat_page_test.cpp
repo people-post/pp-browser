@@ -106,6 +106,10 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
   EXPECT_NE(composer.find("prompt-composer-label--thread\" data-if=\"draft == '' && thread_is_ai\">{{draft_placeholder}}"),
             std::string::npos);
   EXPECT_NE(composer.find("{{i18n:home.composer.placeholder}}"), std::string::npos);
+  // The Home-root label must not wait for a thread: no thread is open there, thread_is_ai is false.
+  EXPECT_NE(composer.find("prompt-composer-label--home\" data-if=\"draft == ''\">{{i18n:home.composer.placeholder}}"),
+            std::string::npos);
+  EXPECT_NE(composer.find("class=\"prompt-icon-home\" src=\"../icons/v2/plus.svg\""), std::string::npos);
   // The Home label shows only inside the Home mount; the thread one hides there.
   const std::string css = ReadAsset("themes/components.rcss");
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--thread {\n  display: none;"),
