@@ -1195,7 +1195,14 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
-  ICallSystemUi::Instance().SetPendingChangedHandler([this]() { pin_gate_->RefreshCallHint(); });
+  // A push's call came or went (Android's call notification, P014): the PIN screen words itself by it, and the call
+  // screen looks again for the ring it announced (an Answer made on it before the ring was known applies at once).
+  ICallSystemUi::Instance().SetPendingChangedHandler([this]() {
+    pin_gate_->RefreshCallHint();
+    if (call_) {
+      call_->OnCallWake();
+    }
+  });
   // A tap arrives off the UI thread; the PIN screen words itself by it.
   PendingNotificationTap::Instance().SetRecordedHandler(
       [this]() { AppRuntime::PostUI([this]() { pin_gate_->RefreshCallHint(); }); });

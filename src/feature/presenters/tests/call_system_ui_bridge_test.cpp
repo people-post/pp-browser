@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -40,7 +41,14 @@ class CallSystemUiBridgeTest : public ::testing::Test {
 protected:
   CallSystemUiBridgeTest()
       : bridge_(ui_, {
-                         .accept = [this](bool voice_only) { did.push_back(voice_only ? "accept voice" : "accept"); },
+                         .accept =
+                             [this](const std::string& call_id, bool voice_only) {
+                               did.push_back(voice_only ? "accept voice" : "accept");
+                               accepted_ids.push_back(call_id);
+                               if (on_accept) {
+                                 on_accept(); // what the presenter does: it redraws at once
+                               }
+                             },
                          .decline = [this]() { did.push_back("decline"); },
                          .leave = [this]() { did.push_back("leave"); },
                          .toggle_mute = [this]() { did.push_back("toggle mute"); },
@@ -71,6 +79,8 @@ protected:
 
   FakeCallSystemUi ui_;
   std::vector<std::string> did;
+  std::vector<std::string> accepted_ids;
+  std::function<void()> on_accept;
   int64_t now = 1'000'000;
   CallSystemUiBridge bridge_;
 };
@@ -118,6 +128,46 @@ TEST_F(CallSystemUiBridgeTest, AnsweredOnTheSystemScreenItKeepsTheCallUntilItEnd
   EXPECT_EQ(did.back(), "leave");
   bridge_.Sync(CallScreen{}, "", false);
   EXPECT_EQ(ui_.log.size(), 1u);  // the system screen ended it itself
+}
+
+// The bug answered calls had: Accept redraws inside the system screen's answer (CallPresenter::Accept, Changed),
+// so Sync re-enters before the app shows the call. That frame must not end the call just answered there.
+TEST_F(CallSystemUiBridgeTest, AnAcceptThatRedrawsAtOnceKeepsTheCallOnTheSystemScreen) {
+  bridge_.Sync(Ring("c1"), "", false);
+  on_accept = [this]() { bridge_.Sync(Answering("c1"), "", false); }; // the presenter's click frame
+  ui_.callbacks_.answer("c1");
+  EXPECT_EQ(accepted_ids, (std::vector<std::string>{"c1"})) << "the call the system screen answered";
+  bridge_.Sync(InCall("c1"), "c1", false);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"})) << "nothing ended";
+}
+
+TEST_F(CallSystemUiBridgeTest, AFrameWithoutTheCallRightAfterTheAnswerDoesNotEndIt) {
+  bridge_.Sync(Ring("c1"), "", false);
+  on_accept = [this]() { bridge_.Sync(CallScreen{}, "", false); }; // an empty frame before "answering"
+  ui_.callbacks_.answer("c1");
+  EXPECT_EQ(ui_.log.size(), 1u) << "the call stays while the app takes it";
+  bridge_.Sync(Answering("c1"), "", false);
+  bridge_.Sync(InCall("c1"), "c1", false);
+  EXPECT_EQ(ui_.log.size(), 1u);
+}
+
+TEST_F(CallSystemUiBridgeTest, AnAnswerTheAppNeverTakesEndsOnTheSystemScreenInTime) {
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.callbacks_.answer("c1");
+  bridge_.Sync(CallScreen{}, "", false);
+  EXPECT_EQ(ui_.log.size(), 1u);
+  now += CallSystemUiBridge::kAnswerSettleMs;
+  bridge_.Sync(CallScreen{}, "", false);
+  EXPECT_EQ(ui_.log.back(), "ended c1") << "the accept failed: the system screen lets it go";
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsAnswerAppliedAtTheRingAlsoSurvivesTheRedraw) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer(""); // answered before the ring was known
+  on_accept = [this]() { bridge_.Sync(Answering("c1"), "", true); };
+  bridge_.Sync(Ring("c1"), "", true);
+  EXPECT_EQ(accepted_ids, (std::vector<std::string>{"c1"}));
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, ThePeerHangingUpEndsItOnTheSystemScreen) {

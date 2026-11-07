@@ -773,6 +773,29 @@ bool CallPresenter::VideoCallAvailable() {
   return backend && backend->Available() && backend->Media().VideoEncoderAvailable();
 }
 
+namespace {
+
+/**
+ * The click frame of Accept: `call_id` answering, with what the ring showed of it (the next Refresh fills in the rest).
+ * Not an empty screen: the phone's call screen reads that as the ring gone and would end the call just answered there.
+ */
+CallScreen AnsweringFrom(const CallScreen& ring, const std::string& call_id) {
+  CallScreen next;
+  next.kind = CallScreen::Kind::Answering;
+  next.ring_call_id = call_id;
+  if (ring.ring_call_id == call_id) {
+    next.caller_identity = ring.caller_identity;
+    next.ring_video = ring.ring_video;
+    next.ring_group = ring.ring_group;
+    next.thread_id = ring.thread_id;
+  }
+  next.show_speaker = AudioSession::SupportsSpeakerToggle();
+  next.speaker_on = AudioSession::IsSpeakerphoneOn();
+  return next;
+}
+
+} // namespace
+
 std::string CallPresenter::RingCallId(CallUiBackend& backend) const {
   if (!ringing_call_id_.empty()) {
     return ringing_call_id_;
@@ -783,13 +806,13 @@ std::string CallPresenter::RingCallId(CallUiBackend& backend) const {
   return backend.LastRingCallId();
 }
 
-std::string CallPresenter::Accept(const bool voice_only) {
+std::string CallPresenter::Accept(const bool voice_only, const std::string& answered) {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
     return {};
   }
-  const std::string call_id = RingCallId(*backend);
+  const std::string call_id = answered.empty() ? RingCallId(*backend) : answered;
   if (call_id.empty()) {
     log().warning << "Accept ignored (no call_id)";
     return {};
@@ -811,7 +834,7 @@ std::string CallPresenter::Accept(const bool voice_only) {
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
-  screen_ = {};
+  screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "Accept → lifecycle AcceptClicked call_id=" << call_id << " charge=waive"
                 << (voice_only ? " voice_only=1" : "");
@@ -847,7 +870,7 @@ std::string CallPresenter::AcceptWithCharge() {
   ringing_call_id_.clear();
   ring_shown_ = false;
   answered_call_id_ = call_id;
-  screen_ = {};
+  screen_ = AnsweringFrom(screen_, call_id);
   Changed();
   log().warning << "AcceptWithCharge → lifecycle AcceptClicked call_id=" << call_id << " charge=take_all";
   backend->Apply(CallLifecycleEvent::AcceptClicked, call_id);

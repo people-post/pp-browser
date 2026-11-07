@@ -64,17 +64,17 @@
 namespace pbr {
 
 CallController::CallController()
-    : system_call_screen_(ICallSystemUi::Instance(),
-                          {
-                              .accept = [this](const bool voice_only) { (void)presenter_.Accept(voice_only); },
-                              .decline = [this]() { (void)presenter_.Decline(); },
-                              .leave = [this]() { (void)presenter_.Leave(); },
-                              .toggle_mute = [this]() { ToggleMute(); },
-                              .display_name = [this](const std::string& identity) {
-                                return DisplayNameForIdentity(identity);
-                              },
-                              .now_ms = {},
-                          }) {
+    : system_call_screen_(
+          ICallSystemUi::Instance(),
+          {
+              .accept = [this](const std::string& call_id,
+                               const bool voice_only) { (void)presenter_.Accept(voice_only, call_id); },
+              .decline = [this]() { (void)presenter_.Decline(); },
+              .leave = [this]() { (void)presenter_.Leave(); },
+              .toggle_mute = [this]() { ToggleMute(); },
+              .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
+              .now_ms = {},
+          }) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
   CallPresenter::Callbacks callbacks;
@@ -957,7 +957,14 @@ void CallController::Render() {
     RenderAnswering(screen);
     return;
   case CallScreen::Kind::Ringing:
-    RenderRing(screen);
+    if (system_call_screen_.SystemRings(screen.ring_call_id)) {
+      // The phone's own call screen rings it (Android's call notification, P014): one ring, not the app's dialog too.
+      ClearRing();
+      SyncShellState();
+      SyncRingtone();
+    } else {
+      RenderRing(screen);
+    }
     // The ring of a tapped call alert (its call id, or the first ring for a push without one): land on its chat
     // once; a stale tap expires unused.
     if (open_thread_ && !screen.thread_id.empty() &&

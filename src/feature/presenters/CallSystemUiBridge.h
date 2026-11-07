@@ -29,7 +29,8 @@ namespace pbr {
 class CallSystemUiBridge {
 public:
   struct Actions {
-    std::function<void(bool voice_only)> accept;
+    /** Answer `call_id` (the ring the system screen answered). */
+    std::function<void(const std::string& call_id, bool voice_only)> accept;
     std::function<void()> decline;
     std::function<void()> leave;
     std::function<void()> toggle_mute;
@@ -39,6 +40,12 @@ public:
   };
   static constexpr int64_t kPendingChoiceMs = 60'000;
   static constexpr int64_t kPendingMaxMs = 180'000;
+  /**
+   * Answered on the system screen, the call stays there while the app takes it: until a frame shows it answering or
+   * in the call, at most this long. Accept redraws at once (re-entering Sync inside the system screen's answer), and
+   * a frame between the ring and "answering" must not end the call the user just answered.
+   */
+  static constexpr int64_t kAnswerSettleMs = 5'000;
 
   CallSystemUiBridge(ICallSystemUi& ui, Actions actions);
   ~CallSystemUiBridge();
@@ -67,6 +74,10 @@ private:
   bool Ringing(const std::string& call_id) const;
   /** A choice made at `at_ms` on the push's call is still good for the ring found now. */
   bool ChoiceLive(int64_t at_ms) const;
+  /** The call on the system screen was answered there; tell the presenter to accept it. */
+  void AcceptShown(bool voice_only);
+  /** A frame without the shown call: it is over, unless the app is still taking a call answered there. */
+  bool StillTaking() const;
 
   ICallSystemUi& ui_;
   Actions actions_;
@@ -76,6 +87,9 @@ private:
   std::string shown_;
   /** Answered on the system screen (it keeps the call until it ends). */
   bool shown_answered_ = false;
+  /** When it was answered there, and whether a frame has shown the app taking it since (answering, in the call). */
+  int64_t answered_at_ms_ = 0;
+  bool shown_taken_ = false;
   /** The push's call was answered / declined before its ring showed (0: no such choice). */
   int64_t answer_pending_at_ms_ = 0;
   int64_t decline_pending_at_ms_ = 0;
