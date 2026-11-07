@@ -101,6 +101,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** The unlock gate found face / fingerprint unlock gone (its pieces deleted): Security's switch reads off. */
+  void OnBiometricLost();
   /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
   void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
@@ -207,6 +209,10 @@ private:
     int unlock_grace_minutes = 15;
     ui::String unlock_grace_label;
     bool security_grace_shown = false;
+    /** Face / fingerprint unlock (at-rest A014): the switch shows, its state, its title. */
+    bool security_biometric_shown = false;
+    bool security_biometric_on = false;
+    ui::String security_biometric_label;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";

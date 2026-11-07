@@ -4,6 +4,7 @@
 #include "common/Secret.h"
 
 #include <functional>
+#include <optional>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -27,8 +28,12 @@ using PinGateChange =
 struct PinPromptPorts {
   /** Ask once; `on_ok` runs after `check` passed and the gate closed (not after a cancel). */
   std::function<void(PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok)> show_verify;
-  /** Current PIN (checked by `check_old`) → new PIN → again → `change`. */
-  std::function<void(PinGateCheck check_old, PinGateChange change)> show_change;
+  /**
+   * Current PIN (checked by `check_old`) → new PIN → again → `change`. With `current_pin` (the app default PIN) the
+   * first step is skipped and `change` gets it as the old PIN.
+   */
+  std::function<void(PinGateCheck check_old, PinGateChange change, std::optional<SecretText> current_pin)>
+      show_change;
 };
 
 } // namespace pbr

@@ -89,6 +89,18 @@ struct SettingsCommands {
    * value restarts it at that length (only where one is open; it never opens a new one).
    */
   std::function<void(int minutes)> set_grace_minutes;
+  // --- Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C) ---
+  /**
+   * The device's sensor with something enrolled, where the secure store can hold the entry: "face", "touch" or
+   * "fingerprint"; "" (or unset) when there is none — Security's switch does not show.
+   */
+  std::function<std::string()> biometric_kind;
+  /** The switch's state (ProfileSecretsEngine::BiometricEnabled). */
+  std::function<bool()> biometric_enabled;
+  /** Opens the vault with `pin` on the side and seals its DEK for face / fingerprint unlock. Argon2: off the UI thread. */
+  std::function<Roe<void>(const SecretText& pin)> enable_biometric;
+  /** Deletes both pieces; no PIN (off only makes the profile safer). */
+  std::function<void()> disable_biometric;
   /** Copy a time-limited link-device payload (account keys, shared DEK, account card; no sessions — M021). */
   std::function<Roe<std::string>()> export_link_device;
   /** The recovery phrase once `pin` opens the vault (M023); nullopt for an account without one. */

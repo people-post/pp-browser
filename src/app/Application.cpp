@@ -1583,8 +1583,9 @@ void Application::WireUnlockPinAndFlow() {
     pin_prompt.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
       pin_gate_->ShowVerify(purpose, std::move(check), std::move(on_ok));
     };
-    pin_prompt.show_change = [this](PinGateCheck check_old, PinGateChange change) {
-      pin_gate_->ShowChange(std::move(check_old), std::move(change));
+    pin_prompt.show_change = [this](PinGateCheck check_old, PinGateChange change,
+                                    std::optional<SecretText> current_pin) {
+      pin_gate_->ShowChange(std::move(check_old), std::move(change), std::move(current_pin));
     };
     settings_->BindPinPrompt(std::move(pin_prompt));
     contacts_->BindUnlockEnsure(unlock_ensure);

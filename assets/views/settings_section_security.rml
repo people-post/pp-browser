@@ -1,6 +1,19 @@
       <div class="settings-section settings-section--grouped stack">
         <p class="text group-head">{{i18n:settings.security.group.unlock}}</p>
-        <!-- biometric toggle row goes here (plan C) -->
+        <!-- Face / fingerprint unlock (A014): a device with the sensor and an own PIN; on asks for the PIN first. -->
+        <div class="group-card" data-if="security_biometric_shown">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{security_biometric_label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="security_biometric_on"
+                      data-event-click="toggle_biometric()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="security_biometric_shown">{{i18n:settings.security.biometric.help}}</p>
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         </div>

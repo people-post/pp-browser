@@ -305,6 +305,9 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.unlock_grace_minutes = bindings_.unlock_grace_minutes;
   ui_state_.unlock_grace_label = bindings_.unlock_grace_label.c_str();
   ui_state_.security_grace_shown = bindings_.security_grace_shown;
+  ui_state_.security_biometric_shown = bindings_.security_biometric_shown;
+  ui_state_.security_biometric_on = bindings_.security_biometric_on;
+  ui_state_.security_biometric_label = bindings_.security_biometric_label.c_str();
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
@@ -413,6 +416,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.unlock_grace_minutes = ui_state_.unlock_grace_minutes;
   bindings_.unlock_grace_label = ui_state_.unlock_grace_label.c_str();
   bindings_.security_grace_shown = ui_state_.security_grace_shown;
+  bindings_.security_biometric_shown = ui_state_.security_biometric_shown;
+  bindings_.security_biometric_on = ui_state_.security_biometric_on;
+  bindings_.security_biometric_label = ui_state_.security_biometric_label.c_str();
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
@@ -625,6 +631,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("unlock_grace_label", &controller.bindings_.unlock_grace_label);
     ctor.Bind("security_grace_shown", &controller.bindings_.security_grace_shown);
+    ctor.Bind("security_biometric_shown", &controller.bindings_.security_biometric_shown);
+    ctor.Bind("security_biometric_on", &controller.bindings_.security_biometric_on);
+    ctor.Bind("security_biometric_label", &controller.bindings_.security_biometric_label);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
@@ -819,6 +828,9 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_has_recovery_phrase");
   host.Dirty("settings", "unlock_grace_label");
   host.Dirty("settings", "security_grace_shown");
+  host.Dirty("settings", "security_biometric_shown");
+  host.Dirty("settings", "security_biometric_on");
+  host.Dirty("settings", "security_biometric_label");
   host.Dirty("settings", "recovery_phrase");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
@@ -2179,6 +2191,12 @@ void SettingsController::RequestSyncLayout(const char* reason) {
   if (shell_navigation_.request_sync_layout) {
     shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, reason);
   }
+}
+
+void SettingsController::OnBiometricLost() {
+  bindings_.security_biometric_on = false;
+  ui_state_.security_biometric_on = false;
+  DataModelHost::Instance().Dirty("settings", "security_biometric_on");
 }
 
 void SettingsController::OpenChangePin() {

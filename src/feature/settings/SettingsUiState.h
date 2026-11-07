@@ -128,6 +128,13 @@ struct SettingsUiState {
   std::string unlock_grace_label;
   /** The "Ask for PIN again after" row shows: an own PIN (not the app default) on a platform with a secure store. */
   bool security_grace_shown = false;
+  /**
+   * Face / fingerprint unlock (at-rest A014): the switch shows (the device has the sensor, an own PIN is set), its
+   * state, and its title ("Unlock with Face ID / Touch ID / fingerprint").
+   */
+  bool security_biometric_shown = false;
+  bool security_biometric_on = false;
+  std::string security_biometric_label;
   /** G007 — everyone | contacts_only | nobody */
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */

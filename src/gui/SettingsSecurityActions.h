@@ -46,8 +46,16 @@ public:
    * (plan #21 ⑧); the app default PIN only confirms.
    */
   void ExportLinkDevice();
-  /** Me → Security → Change PIN: the PIN gate's three steps (current, new, again), then the engine's change. */
+  /**
+   * Me → Security → Change PIN: the PIN gate's three steps (current, new, again), then the engine's change. On the app
+   * default PIN the current-PIN step is skipped (that PIN is public): new, again.
+   */
   void ChangePin();
+  /**
+   * Me → Security → "Unlock with Face ID" switch (at-rest A014): on asks for the PIN on the gate first (the engine
+   * seals the DEK with it, off the UI thread), then "Turned on"; off needs no PIN.
+   */
+  void ToggleBiometric();
 
 private:
   /** The PIN opens the vault again (on a worker); `done` on the UI thread. */

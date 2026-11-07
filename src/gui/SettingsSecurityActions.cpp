@@ -50,6 +50,7 @@ SettingsSecurityActions::~SettingsSecurityActions() {
 void SettingsSecurityActions::Bind(ui::DataModelConstructor& ctor) {
   ctor.BindEventCallback("change_pin", DataEvent<>([this]() { ChangePin(); }));
   ctor.BindEventCallback("export_link_device", DataEvent<>([this]() { ExportLinkDevice(); }));
+  ctor.BindEventCallback("toggle_biometric", DataEvent<>([this]() { ToggleBiometric(); }));
   ctor.Bind("recovery_phrase", &recovery_phrase_);
   ctor.BindEventCallback("show_recovery_phrase", DataEvent<>([this]() { ShowRecoveryPhrase(); }));
   ctor.BindEventCallback("hide_recovery_phrase", DataEvent<>([this]() { HideRecoveryPhrase(); }));
@@ -180,7 +181,11 @@ void SettingsSecurityActions::ChangePin() {
       return;
     }
     // The gate checks the current PIN first (a wrong one stays on that step) and compares the new one with its
-    // repeat; the engine's change is the same as before.
+    // repeat; the engine's change is the same as before. The app default PIN is public: no step asks for it.
+    std::optional<SecretText> current_pin;
+    if (host_.Store().Snapshot().profile_prefs.pin_is_default) {
+      current_pin = SecretText(std::string(kDefaultProfilePin));
+    }
     pin_prompt_.show_change(
         [this](const SecretText& pin, std::function<void(Roe<void>)> done) { CheckPin(pin, std::move(done)); },
         [this](const SecretText& old_pin, const SecretText& new_pin, std::function<void(Roe<void>)> done) {
@@ -200,8 +205,45 @@ void SettingsSecurityActions::ChangePin() {
           host_.Resync(true);
           host_.ShowStatus(Tr("settings.security.pin_updated"));
           UserFeedback::Ok(Tr("settings.security.pin_updated"));
-        });
+        },
+        std::move(current_pin));
   });
+}
+
+void SettingsSecurityActions::ToggleBiometric() {
+  host_.PullFromView();
+  SettingsUiState& state = host_.UiState();
+  if (!state.security_biometric_shown) {
+    return;
+  }
+  if (state.security_biometric_on) {
+    if (commands_.disable_biometric) {
+      commands_.disable_biometric();
+    }
+    state.security_biometric_on = false;
+    host_.PushToView(false);
+    return;
+  }
+  if (!commands_.enable_biometric || !pin_prompt_.show_verify) {
+    host_.ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Face / fingerprint unlock is not available"));
+    return;
+  }
+  pin_prompt_.show_verify(
+      PinVerifyPurpose::EnableBiometric,
+      [this](const SecretText& pin, std::function<void(Roe<void>)> done) {
+        AppRuntime::PostWorkerNormal([this, pin, done = std::move(done)]() {
+          // A wrong PIN comes back as the vault's refusal: the gate says so and stays.
+          Roe<void> enabled = commands_.enable_biometric ? commands_.enable_biometric(pin)
+                                                         : Roe<void>(Error("Face / fingerprint unlock is not available"));
+          AppRuntime::PostUI([done, enabled = std::move(enabled)]() { done(enabled); });
+        });
+      },
+      [this]() {
+        host_.PullFromView();
+        host_.UiState().security_biometric_on = true;
+        host_.PushToView(false);
+        UserFeedback::Ok(Tr("settings.security.biometric.enabled"));
+      });
 }
 
 void SettingsSecurityActions::ExportLinkDevice() {
