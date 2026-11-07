@@ -12627,14 +12627,11 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 /* Phone minimal AI Home (Kenneth 2026-11-07): one centred block, logo, two-line field, wrapping chips, with open
-   space under it. The sessions list moved to the drawer, so it is not drawn here; there is no page heading. The block
-   sits in the middle of the page; both spacers give way first, then the chips and the logo shrink and clip, so with the
-   keyboard up the field stays on its top edge (the tab bar hides then, ShellHost). */
+   space under it. The sessions list moved to the drawer (home.rml keeps the inline one in an expanded-only data-if);
+   there is no page heading. The block sits in the middle of the page; both spacers give way first, then the chips and
+   the logo shrink and clip, so with the keyboard up the field stays on its top edge (the tab bar hides then,
+   ShellHost). */
 .home-logo {
-  display: none;
-}
-
-.shell-layer-compact .home-landing--minimal .home-ai-list {
   display: none;
 }
 
