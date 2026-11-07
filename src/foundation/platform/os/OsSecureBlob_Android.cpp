@@ -122,6 +122,7 @@ Roe<std::optional<std::vector<uint8_t>>> SecureBlobRead(const std::string& name)
   case pbr::SecureBlobLookup::Status::Missing:
     return std::optional<std::vector<uint8_t>>{};
   case pbr::SecureBlobLookup::Status::Unavailable:
+  case pbr::SecureBlobLookup::Status::Canceled:  // no prompts on Android yet (#137)
     break;
   }
   return Error("Secure blob: not readable now (code " + std::to_string(looked->code) + ")");
