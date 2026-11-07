@@ -194,6 +194,53 @@ TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
+// DEV/PLAN-pin-gate-redesign.md B: the number pad has no input element (no system keyboard, the PIN bound nowhere);
+// the field mode keeps its field, which takes the focus as the gate comes up (Kenneth 2026-11-07).
+TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  const std::string pad = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(pad, "<input"));
+  EXPECT_FALSE(Has(pad, "pin_gate_pin"));
+  EXPECT_FALSE(Has(pad, "pin_gate_submit()")) << "a full PIN submits itself";
+  for (int digit = 0; digit <= 9; ++digit) {
+    EXPECT_TRUE(Has(pad, "pin_gate_key(" + std::to_string(digit) + ")")) << digit;
+  }
+  EXPECT_TRUE(Has(pad, "pin_gate_backspace()"));
+  EXPECT_TRUE(Has(pad, "pin_gate_ok()"));
+  EXPECT_TRUE(Has(pad, "pin_gate_use_text()")) << "the field is always one tap away";
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
+
+  state.pin_gate.keypad = false;
+  const std::string field = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(field, std::string("id=\"") + ShellLayoutRml::kPinGateFieldId + "\""));
+  EXPECT_TRUE(Has(field, "data-value=\"pin_gate_pin\""));
+  EXPECT_FALSE(Has(field, "pin_gate_key("));
+  EXPECT_TRUE(Has(field, "pin_gate_use_keypad()"));
+  EXPECT_TRUE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
+
+  for (bool PinGateState::*mode : {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode,
+                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock}) {
+    PinGateState gate = state.pin_gate;
+    gate.*mode = true;
+    EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(gate)) << "no PIN field to type in there";
+  }
+  PinGateState closed;
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(closed));
+}
+
+TEST(ShellLayoutRmlTest, ThePinPadKeysAreAtLeast64dp) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string css = buffer.str();
+  const size_t key = css.find(".shell-pin-key {");
+  ASSERT_NE(key, std::string::npos);
+  EXPECT_EQ(css.find("width: 72dp;\n  height: 72dp;", key), css.find("width:", key));
+}
+
 TEST(ShellLayoutRmlTest, NoDialogNoPinGateNoMarkup) {
   const ShellLayoutRml rml(ShellState{}, false, "");
   EXPECT_TRUE(rml.Dialog().empty());
