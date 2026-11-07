@@ -42,7 +42,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   preferences.json
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
-  grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS; only within a window — AT_REST_ENCRYPTION § PIN grace window)
+  grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS, Android 9+; only within a window — AT_REST_ENCRYPTION § PIN grace window)
   biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
@@ -152,9 +152,11 @@ Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
 Earlier builds kept a PIN-sealed account backup in one Keychain generic-password item (service `dev.pp-browser.secure-blob`, account `account-backup`). It is retired — nothing reads or writes it ([at-rest A011](../../projects/at-rest-crypto/DECISIONS.md#a011--local-account-backup-and-restore-unsupported-in-the-product)); account state now lives in the encrypted account locker ([ACCOUNT_LOCKER.md](ACCOUNT_LOCKER.md)). Once messaging is up the app deletes that item if present (`RemoveRetiredKeychainBackup`), until app version 1.1.0 (`kRetiredKeychainBackupRemoveAt`).
 
-### PIN grace window (iOS Keychain, outside the data dir)
+### PIN grace window (iOS Keychain / Android Keystore, outside the data dir)
 
 One Keychain generic-password item per profile: service `dev.pp-browser.secure-blob`, account `{profile_id}/unlock_grace`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. It holds the key of `grace.bin` and the window's end on the device's own clocks, never the PIN or the DEK ([AT_REST_ENCRYPTION § PIN grace window](AT_REST_ENCRYPTION.md#pin-grace-window-gracebin--a-keychain-entry), [at-rest A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Deleted with `grace.bin` on expiry, Change PIN and a profile reset; one left by a deleted profile opens nothing (its `grace.bin` is gone).
+
+Android 9+ (API 28+; nothing below): the same entry is a file `noBackupFilesDir/secure_blob/{hex sha256 of the name}` (the app's `no_backup` directory: never in a backup or a device transfer, deleted with an uninstall) = level (1 byte) | IV (12) | AES-256-GCM ciphertext + tag, AAD = level | name, under an AndroidKeyStore key: `pp_secure_blob_when_unlocked` (`setUnlockedDeviceRequired`, refused while the lock screen is up; the grace entry) or `pp_secure_blob_after_first_unlock` (`PpSecureBlob.java`).
 
 ### Face ID / Touch ID unlock (iOS Keychain, outside the data dir)
 
@@ -165,7 +167,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | File / field | Role |
 |--------------|------|
 | `vault.bin` | PIN-wrapped DEK |
-| `grace.bin` | DEK under the PIN grace window's key (with the Keychain item above; deleted when the window ends) |
+| `grace.bin` | DEK under the PIN grace window's key (with the Keychain item / Keystore file above; deleted when the window ends) |
 | `biometric.bin` | DEK under the Face ID / Touch ID unlock key (with the Keychain item above; present while the switch is on) |
 | `identity.enc` | Identity JSON under DEK AEAD |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |

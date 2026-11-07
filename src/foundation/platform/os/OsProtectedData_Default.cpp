@@ -5,7 +5,7 @@
 
 namespace pbr::os {
 
-// No protected-data state here (desktop; Android until its own file, #21 PR 2): always readable, so the
+// No protected-data state here (desktop; Android has OsProtectedData_Android.cpp): always readable, so the
 // handlers never fire; no boot session id, and the steady clock stands in for the monotonic one.
 
 bool ProtectedDataAvailable() {

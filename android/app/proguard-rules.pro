@@ -13,6 +13,13 @@
     public void stopNetworkMonitor();
     public static void startCameraCapture(int, int, long);
     public static java.lang.String captureScratchDir();
+    public static java.lang.String secureBlobWrite(byte[], byte[], boolean);
+    public static byte[] secureBlobLookup(byte[]);
+    public static java.lang.String secureBlobDelete(byte[]);
+    public static boolean isDeviceLocked();
+    public static int bootCount();
+    public static boolean isAppShown();
+    private static native void nativeOnUserPresent();
 }
 
 # Native CameraCapture_Android.cpp delivers the camera result through this JNI entry point.

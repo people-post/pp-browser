@@ -5,8 +5,10 @@ import android.app.ActivityManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -46,6 +48,7 @@ import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import org.libsdl.app.SDL;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 
@@ -96,6 +99,8 @@ public class MainActivity extends SDLActivity {
     private static final int REQ_NOTIFICATIONS = 0x5053;
     /** Between onResume and onPause: a call push is rung by the app itself. */
     private static volatile boolean sInFront;
+    /** Between onStart and onStop: the app is on screen (native OsAppState: only then the PIN grace window extends). */
+    private static volatile boolean sShown;
     /** Main thread: the call this device is in (native OngoingCallService), and whether PpCallService runs for it. */
     private static boolean sOngoingCall;
     private static String sOngoingCallTitle;
@@ -120,6 +125,19 @@ public class MainActivity extends SDLActivity {
     };
 
     private static native void nativeOnCallAudioFocus(boolean lost);
+
+    /** The lock screen went away: native OsProtectedData runs whoever waits for it (the PIN grace window). */
+    private static native void nativeOnUserPresent();
+
+    private final BroadcastReceiver mUserPresentReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            try {
+                nativeOnUserPresent();
+            } catch (UnsatisfiedLinkError ignored) {
+            }
+        }
+    };
 
     private static void onCallAudioFocus(boolean lost) {
         Log.i(TAG, lost ? "call audio focus lost" : "call audio focus back");
@@ -219,6 +237,10 @@ public class MainActivity extends SDLActivity {
         }
         PpFirebaseMessagingService.requestToken();
         requestNotificationPermission();
+        // USER_PRESENT is a protected broadcast (no app can send it), so exported is safe. Not NOT_EXPORTED: its
+        // sender is SystemUI's keyguard, not the system uid, and a not-exported receiver may not hear it.
+        ContextCompat.registerReceiver(this, mUserPresentReceiver, new IntentFilter(Intent.ACTION_USER_PRESENT),
+                ContextCompat.RECEIVER_EXPORTED);
     }
 
     /** Like iOS at launch: calls ring by notification, and messages show by it. Android 13+ asks. */
@@ -433,6 +455,50 @@ public class MainActivity extends SDLActivity {
         PpAudioFilePlayer.stop();
     }
 
+    /** Called from native (OsSecureBlob_Android.cpp, any thread): see PpSecureBlob. Null on success. */
+    public static String secureBlobWrite(final byte[] name, final byte[] bytes, final boolean whenUnlocked) {
+        return PpSecureBlob.write(blobContext(), name, bytes, whenUnlocked);
+    }
+
+    /** PpSecureBlob needs a Context, not the Activity: the application context stays after onDestroy. */
+    private static Context blobContext() {
+        final Context context = SDL.getContext();
+        return context != null ? context.getApplicationContext() : null;
+    }
+
+    /** Called from native (OsSecureBlob_Android.cpp, any thread): status byte, then the blob / code / message. */
+    public static byte[] secureBlobLookup(final byte[] name) {
+        return PpSecureBlob.lookup(blobContext(), name);
+    }
+
+    /** Called from native (OsSecureBlob_Android.cpp, any thread). Null on success. */
+    public static String secureBlobDelete(final byte[] name) {
+        return PpSecureBlob.delete(blobContext(), name);
+    }
+
+    /** Called from native (OsProtectedData_Android.cpp, any thread): the lock screen is up. */
+    public static boolean isDeviceLocked() {
+        return PpSecureBlob.deviceLocked(blobContext());
+    }
+
+    /** Called from native (OsProtectedData_Android.cpp): Settings.Global.BOOT_COUNT, -1 when it cannot be read. */
+    public static int bootCount() {
+        final Context context = blobContext();
+        if (context == null) {
+            return -1;
+        }
+        try {
+            return Settings.Global.getInt(context.getContentResolver(), Settings.Global.BOOT_COUNT);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** Called from native (OsAppState_Android.cpp, the UI thread). */
+    public static boolean isAppShown() {
+        return sShown;
+    }
+
     /** Only the camera flow's fixed request codes are handled here; SDL's pickers depend on super for the rest. */
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -464,6 +530,11 @@ public class MainActivity extends SDLActivity {
 
     @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(mUserPresentReceiver);
+        } catch (IllegalArgumentException ignored) {
+            // not registered
+        }
         PpCallNotifications.appGone();
         if (sOngoingCallServiceStarted) {
             PpCallService.stop(getApplicationContext());  // the call goes with the app's native side
@@ -713,6 +784,18 @@ public class MainActivity extends SDLActivity {
         mPublishedBottom = bottom;
         Log.i(TAG, "Safe-area insets LRTB=" + left + "," + right + "," + top + "," + bottom);
         onNativeInsetsChanged(left, right, top, bottom);
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        sShown = true;
+    }
+
+    @Override
+    protected void onStop() {
+        sShown = false;
+        super.onStop();
     }
 
     @Override

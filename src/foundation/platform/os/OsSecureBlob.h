@@ -14,7 +14,8 @@ namespace pbr::os {
 
 /**
  * One small blob per `name`, kept where an app uninstall does not delete it (iOS: Keychain item,
- * this device only, never synced or backed up). Other platforms keep the user directory across
+ * this device only, never synced or backed up). Android 9+: a Keystore-sealed file in the no-backup
+ * directory (an uninstall does delete it). Other platforms keep the user directory across
  * reinstalls and return `Unsupported` here. Behind lib/people SecureBlobStore.
  */
 Roe<void> SecureBlobWrite(const std::string& name, const std::vector<uint8_t>& bytes);
