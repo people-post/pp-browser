@@ -38,6 +38,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/Platform.h"
 #include "common/IPushDeviceRegistrar.h"
+#include "lib/ui/ContextMenuHost.h"
 #include "foundation/platform/CameraCapture.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "lib/messaging/DeleteForEveryone.h"
@@ -344,6 +345,26 @@ void AgentTurnController::SendSharedAssistantRelay(const std::string& thread_id,
 
 void AgentTurnController::OnAttachAiImage() {
   PickAiImage([this](std::string path) { StartAiImagePrepare(std::move(path)); });
+}
+
+void AgentTurnController::ShowHomeAttachMenu(ui::Element* anchor) {
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr,
+                     [this]() { CaptureAiPhoto([this](std::string path) { StartAiImagePrepare(std::move(path)); }); },
+                     "../icons/v2/camera.svg"});
+  actions.push_back({"home_attach_photo", Tr("home.attach.photo"), nullptr,
+                     [this]() {
+                       NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
+                         AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+                           if (!paths.empty()) {
+                             StartAiImagePrepare(std::move(paths.front()));
+                           }
+                         });
+                       };
+                       ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+                     },
+                     "../icons/v2/photo.svg"});
+  ContextMenuHost::Instance().ShowActionsPopoverAbove(anchor, std::move(actions));
 }
 
 void AgentTurnController::PickAiImage(std::function<void(std::string path)> picked) {

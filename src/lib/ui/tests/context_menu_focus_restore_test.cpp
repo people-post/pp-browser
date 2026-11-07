@@ -402,6 +402,24 @@ TEST_F(ContextMenuSheetTest, ThePlusGrowsTheSheetAndHandsItsBodyOver) {
   ContextMenuHost::Instance().SetCompactLayout(false);
 }
 
+// The Home composer's plus: a floating pull-down opened above the button (two rows), closed by a dismiss.
+TEST_F(ContextMenuPopoverTest, APopoverAboveIsAFloatMenuThatClosesOnDismiss) {
+  ContextMenuHost::Instance().SetCompactLayout(true);
+  std::vector<ContextMenuAction> actions = OneAction();
+  actions.push_back(actions.front());
+  actions[1].id = "second";
+  ContextMenuHost::Instance().ShowActionsPopoverAbove(document_->GetElementById("field"), std::move(actions));
+  context_->Update();
+  ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
+  ui::Element* layer = document_->GetElementById("context-menu-layer");
+  ASSERT_NE(layer, nullptr);
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
+  EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+  EXPECT_TRUE(ContextMenuHost::Instance().HandleDismiss());
+  EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
+  ContextMenuHost::Instance().SetCompactLayout(false);
+}
+
 TEST_F(ContextMenuPopoverTest, APopoverOnTheDesktopIsAPlainFloatMenu) {
   ContextMenuHost::Instance().ShowActionsPopover(document_->GetElementById("field"), OneAction());
   context_->Update();

@@ -12759,36 +12759,53 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .home-composer-mount .prompt-icon-home {
   display: block;
   flex-shrink: 0;
-  width: 22dp;
-  height: 22dp;
+  width: 26dp;
+  height: 26dp;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn {
+.shell-layer-compact .home-composer-mount .prompt-attach-btn {
+  display: none;
+}
+
+.prompt-home-plus {
+  display: none;
+}
+
+/* Both tools are 44dp targets inside the box (the row and the pill are the same rectangle): the plus 8dp from the left
+   edge, the emoji key 8dp after it. */
+.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: absolute;
   left: 8dp;
-  bottom: 8dp;
-  width: 36dp;
-  height: 36dp;
-  min-width: 36dp;
+  bottom: 4dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
   margin: 0;
-  border-radius: 18dp;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {
   position: absolute;
-  left: 52dp;
-  bottom: 8dp;
+  left: 60dp;
+  bottom: 4dp;
   z-index: 1;
-  width: 36dp;
-  height: 36dp;
-  min-width: 36dp;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
   margin: 0;
-  border-radius: 18dp;
+  border-radius: 22dp;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-emoji-btn svg {
-  width: 22dp;
-  height: 22dp;
+.shell-layer-compact .home-composer-mount .prompt-emoji-btn .prompt-icon-v2 {
+  display: block;
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-send-btn {

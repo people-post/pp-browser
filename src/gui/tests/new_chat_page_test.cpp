@@ -109,13 +109,35 @@ TEST(NewChatPageTest, HomePlaceholderIsNewAndTheConversationOneIsUnchanged) {
   // The Home-root label must not wait for a thread: no thread is open there, thread_is_ai is false.
   EXPECT_NE(composer.find("prompt-composer-label--home\" data-if=\"draft == ''\">{{i18n:home.composer.placeholder}}"),
             std::string::npos);
-  EXPECT_NE(composer.find("class=\"prompt-icon-home\" src=\"../icons/v2/plus.svg\""), std::string::npos);
+  // The Home field's tools sit inside the pill: the bold plus (opens the Camera / Photos menu) is a child of the pill,
+  // and the emoji key is positioned inside the row, which is the pill's rectangle.
+  const size_t pill = composer.find("class=\"prompt-composer-pill\"");
+  const size_t plus = composer.find("class=\"prompt-home-plus\"");
+  const size_t pill_end = composer.find("<!-- Voice mode (WeChat style)");
+  ASSERT_NE(pill, std::string::npos);
+  ASSERT_NE(plus, std::string::npos);
+  EXPECT_TRUE(plus > pill && plus < pill_end) << "the plus is inside the pill";
+  EXPECT_NE(composer.find("data-event-click=\"home_attach_menu()\"", plus), std::string::npos);
+  EXPECT_NE(composer.find("src=\"../icons/v2/plus-bold.svg\"", plus), std::string::npos);
+  EXPECT_NE(composer.find("class=\"prompt-emoji-btn\""), std::string::npos);
+  EXPECT_NE(en.find("\"home.attach.camera\": \"Camera\""), std::string::npos);
+  EXPECT_NE(en.find("\"home.attach.photo\": \"Photos\""), std::string::npos);
+  EXPECT_NE(zh.find("\"home.attach.camera\": \"相机\""), std::string::npos);
+  EXPECT_NE(zh.find("\"home.attach.photo\": \"图片\""), std::string::npos);
   // The Home label shows only inside the Home mount; the thread one hides there.
   const std::string css = ReadAsset("themes/components.rcss");
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--thread {\n  display: none;"),
             std::string::npos);
   EXPECT_NE(css.find(".shell-layer-compact .home-composer-mount .prompt-composer-label--home {\n  display: block;"),
             std::string::npos);
+  // Both tools are 44dp targets inside the box, the emoji 8dp after the plus (8 + 44 + 8 = 60).
+  const size_t plus_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-home-plus {");
+  ASSERT_NE(plus_rule, std::string::npos);
+  EXPECT_NE(css.find("left: 8dp;", plus_rule), std::string::npos);
+  EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", plus_rule), std::string::npos);
+  const size_t emoji_rule = css.find(".shell-layer-compact .home-composer-mount .prompt-composer-row .prompt-emoji-btn {");
+  ASSERT_NE(emoji_rule, std::string::npos);
+  EXPECT_NE(css.find("left: 60dp;", emoji_rule), std::string::npos);
 }
 
 // The Chats bar: round avatar at the left (Settings), round plus at the right, no title, no large title.

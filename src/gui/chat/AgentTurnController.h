@@ -223,6 +223,9 @@ public:
     int height = 0;
   };
   void OnAttachAiImage();
+  /** The Home composer's plus: a floating menu above it with Camera and Photos (no file item); each hands its image to
+   *  StartAiImagePrepare like a picked photo. */
+  void ShowHomeAttachMenu(ui::Element* anchor);
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();

@@ -757,6 +757,8 @@
     "chat.ai_thread.subtitle": "AI 助手",
     "chat.ai_thread.placeholder": "随便问点什么…",
     "home.composer.placeholder": "我能为你做点什么？",
+    "home.attach.camera": "相机",
+    "home.attach.photo": "图片",
     "chat.ai_rename.title": "重命名对话",
     "chat.ai_rename.prompt": "给这个对话起个名字。留空则使用自动名称。",
     "chat.direct.placeholder": "输入消息… · @ai 问 AI（只发送你的问题）",

@@ -2636,10 +2636,6 @@ input.checkbox:checked {
   image-color: #007aff;
 }
 
-.shell-layer-compact .home-composer-mount .prompt-composer-pill .prompt-attach-btn {
-  background-color: #78788033;
-}
-
 .shell-layer-compact .home-composer-mount .prompt-icon-home {
   image-color: #3c3c4399;
 }

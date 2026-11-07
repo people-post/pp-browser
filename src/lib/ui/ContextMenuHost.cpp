@@ -789,6 +789,21 @@ void ContextMenuHost::ShowActionsPopover(ui::Element* anchor, std::vector<Contex
   ShowActions(position, std::move(actions), std::move(on_dismissed));
 }
 
+void ContextMenuHost::ShowActionsPopoverAbove(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                                              std::function<void()> on_dismissed) {
+  ui::Vector2i position{0, 0};
+  if (anchor) {
+    const ui::Vector2f offset = anchor->GetAbsoluteOffset(ui::BoxArea::Border);
+    const ui::Vector2f size = anchor->GetBox().GetSize(ui::BoxArea::Border);
+    const float gap = context_ ? kAnchorGapDp * context_->GetDensityIndependentPixelRatio() : 4.f;
+    position.x = static_cast<int>(offset.x + size.x);
+    position.y = static_cast<int>(offset.y - gap);
+  }
+  next_show_above_ = true;
+  next_show_popover_ = true;
+  ShowActions(position, std::move(actions), std::move(on_dismissed));
+}
+
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions,
                                   std::function<void()> on_dismissed, std::string title) {
   const bool above = std::exchange(next_show_above_, false);

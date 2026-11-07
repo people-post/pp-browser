@@ -773,6 +773,8 @@
     "chat.ai_thread.subtitle": "AI assistant",
     "chat.ai_thread.placeholder": "Ask anything…",
     "home.composer.placeholder": "What can I do for you?",
+    "home.attach.camera": "Camera",
+    "home.attach.photo": "Photos",
     "chat.ai_rename.title": "Rename chat",
     "chat.ai_rename.prompt": "Give this chat a name. Leave it empty to use the automatic name.",
     "chat.direct.placeholder": "Message… · @ai asks the assistant (only your question is sent)",

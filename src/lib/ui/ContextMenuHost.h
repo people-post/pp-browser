@@ -103,6 +103,10 @@ public:
   /// right edge. Compact layout too (no action sheet); there the panel gets the phone pull-down look.
   void ShowActionsPopover(ui::Element* anchor, std::vector<ContextMenuAction> actions,
                           std::function<void()> on_dismissed = {});
+  /// ShowActionsPopover that opens above `anchor` (its bottom edge on the button's top) when it fits: the Home composer's
+  /// plus, so the menu does not cover what is below the field.
+  void ShowActionsPopoverAbove(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                               std::function<void()> on_dismissed = {});
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();
