@@ -24,6 +24,9 @@ bool SDLCALL AppLifecycleWatch(void* /*userdata*/, SDL_Event* event) {
   case SDL_EVENT_WILL_ENTER_BACKGROUND:
     AppLifecycle::OnWillEnterBackground();
     break;
+  case SDL_EVENT_DID_ENTER_BACKGROUND:
+    AppLifecycle::OnDidEnterBackground();
+    break;
   case SDL_EVENT_DID_ENTER_FOREGROUND:
     AppLifecycle::OnDidEnterForeground();
     break;

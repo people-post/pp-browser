@@ -106,7 +106,7 @@
   <array>
     <string>fetch</string>
     <string>remote-notification</string>
-    <string>audio</string>
+    <string>audio</string>@PP_BROWSER_IOS_VOIP_BACKGROUND_MODE@
   </array>
   <key>CFBundleURLTypes</key>
   <array>

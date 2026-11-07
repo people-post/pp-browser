@@ -7,6 +7,8 @@ void ActivateForVoip() {}
 void Deactivate() {}
 
 void CancelPendingDeactivate() {}
+void SetSystemManaged(bool /*managed*/) {}
+void NotifySystemActivation(bool /*active*/) {}
 
 void ActivateForVoicePlayback() {}
 void ActivateForVoiceRecording() {}
