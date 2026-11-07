@@ -116,6 +116,10 @@ private:
   void StopGraceTimer();
   /** Both pieces deleted, the timer stopped (the engine's ForgetGrace cannot stop the app's timer). */
   void ForgetGrace();
+  /** Gives secrets_ its face / fingerprint unlock entry (at-rest A014), beside AttachGrace. */
+  void AttachBiometric();
+  /** "face" / "touch" / "fingerprint" when this device can unlock with it here; "" otherwise. */
+  std::string BiometricKind() const;
 
   bool initialized_ = false;
   uint64_t grace_timer_ = 0;
