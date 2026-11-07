@@ -104,9 +104,10 @@ public:
   void ShowActionsPopover(ui::Element* anchor, std::vector<ContextMenuAction> actions,
                           std::function<void()> on_dismissed = {});
   /// ShowActionsPopover that opens below `anchor` (8dp under it) with its left edge on the button's left edge, a
-  /// narrow 150dp card; it flips above only where there is no room below. The Home composer's plus.
+  /// narrow 150dp card; it flips above only where there is no room below. The Home composer's plus. `above`: the card
+  /// opens 8dp over the button instead (a chat's composer sits at the screen bottom).
   void ShowActionsPopoverLeftAligned(ui::Element* anchor, std::vector<ContextMenuAction> actions,
-                               std::function<void()> on_dismissed = {});
+                               std::function<void()> on_dismissed = {}, bool above = false);
   void Dismiss();
   bool IsOpen() const { return layer_ != nullptr; }
   bool HandleDismiss();

@@ -68,5 +68,14 @@ TEST(ChatRowAvatarTest, TheBlockMarkIsPhoneOnlyAndSitsBeforeThePreview) {
   EXPECT_NE(rml.find("data-if=\"session.blocked\"", mark), std::string::npos);
 }
 
+// The AI drawer's search (and the Chats one): a row stays when its title or last message contains the query, any case.
+TEST(ChatRowAvatarTest, AListSearchKeepsRowsWhoseTitleOrPreviewMatches) {
+  EXPECT_TRUE(ChatController::SessionRowMatches("Trip to Tokyo", "", ""));
+  EXPECT_TRUE(ChatController::SessionRowMatches("Trip to Tokyo", "", "tokyo"));
+  EXPECT_TRUE(ChatController::SessionRowMatches("Notes", "Flights are BOOKED", "booked"));
+  EXPECT_TRUE(ChatController::SessionRowMatches("天气怎么样", "", "天气"));
+  EXPECT_FALSE(ChatController::SessionRowMatches("Notes", "Flights", "hotel"));
+}
+
 } // namespace
 } // namespace pbr

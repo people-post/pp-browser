@@ -97,3 +97,26 @@ TEST(RmlBindingGuardTest, TheChatsAvatarTapIsHandledByTheWindowModel) {
   EXPECT_LT(window_model, event);
   EXPECT_GT(host.find("Register(context, ", window_model + 1), event) << "inside the window model's constructor";
 }
+
+// The round back on New chat and Add contact is the shell's transient chrome (window model, transient_back), and the
+// pages' own title bar (a pane-nav drawn over it) lets taps through: on the phone the back did nothing (2026-11-07).
+TEST(RmlBindingGuardTest, NewChatAndAddContactBackReachTheShellsTransientBack) {
+  const std::string layout = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellLayoutRml.cpp");
+  const size_t layer = layout.find("id=\\\"shell-transient-layer\\\" data-model=\\\"window\\\"");
+  const size_t back = layout.find("data-event-click=\\\"transient_back()\\\"");
+  ASSERT_NE(layer, std::string::npos);
+  ASSERT_NE(back, std::string::npos);
+  EXPECT_LT(layer, back) << "the back button sits in the window-model layer";
+  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
+  const size_t window_model = host.find("Register(context, \"window\"");
+  const size_t event = host.find("BindEventCallback(\"transient_back\"");
+  ASSERT_NE(event, std::string::npos);
+  EXPECT_LT(window_model, event);
+  for (const char* view : {"new_chat.rml", "add_contact.rml"}) {
+    const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / view);
+    EXPECT_NE(rml.find("class=\"pane-nav nc-bar"), std::string::npos) << view << ": its bar is the nc-bar";
+  }
+  const std::string css = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes" / "components.rcss");
+  EXPECT_NE(css.find(".shell-layer-compact .nc-bar {\n  pointer-events: none;\n}"), std::string::npos)
+      << "the bar over the shell's back lets taps through";
+}

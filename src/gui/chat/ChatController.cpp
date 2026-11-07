@@ -991,6 +991,31 @@ void ChatController::OnSessionsSearchChanged() {
   DataModelHost::Instance().Dirty("shell", "sessions_more");
 }
 
+void ChatController::OnAiSessionsSearch(ui::Event& ev, const bool submit) {
+  // A change event runs before data-value copies the field into the model: take the new text from the event.
+  if (!submit) {
+    shell_.ai_sessions_query = ev.GetParameter<ui::String>("value", shell_.ai_sessions_query);
+  }
+  ApplySessionList();
+  DataModelHost::Instance().Dirty("shell", "ai_sessions");
+  if (submit || ev.GetParameter<bool>("linebreak", false)) {
+    if (ui::Context* context = ev.GetTargetElement() ? ev.GetTargetElement()->GetContext() : nullptr) {
+      if (ui::Element* focused = context->GetFocusElement()) {
+        focused->Blur();
+      }
+    }
+    if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+      system->DeactivateKeyboard();
+    }
+  }
+}
+
+bool ChatController::SessionRowMatches(const std::string& title, const std::string& preview,
+                                       const std::string& lowered_query) {
+  return lowered_query.empty() || util::ToLowerAscii(title).find(lowered_query) != std::string::npos ||
+         util::ToLowerAscii(preview).find(lowered_query) != std::string::npos;
+}
+
 void ChatController::OnToggleArchivedAi() {
   presenter_.ToggleArchivedAi();
   RefreshFromMessaging();
@@ -1210,17 +1235,20 @@ void ChatController::ApplySessionList() {
   for (size_t i = 0; i < visible; ++i) {
     const ChatSessionRow& from = list.rows[i];
     SessionRow row = ToSessionDisplayRow(from);
-    if (searching && LowerAscii(row.title.c_str()).find(query) == std::string::npos &&
-        LowerAscii(from.preview).find(query) == std::string::npos) {
+    if (searching && !SessionRowMatches(row.title.c_str(), from.preview, query)) {
       continue;
     }
     shell_.sessions.push_back(std::move(row));
   }
-  // AI conversations for the AI 助手 page (no search window yet; the whole list, newest/pinned first).
+  // AI conversations for the AI drawer (no window; the whole list, newest/pinned first), filtered by its search box.
+  const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());
   shell_.ai_sessions.clear();
   shell_.ai_sessions.reserve(list.ai_rows.size());
   for (const ChatSessionRow& from : list.ai_rows) {
-    shell_.ai_sessions.push_back(ToSessionDisplayRow(from));
+    SessionRow row = ToSessionDisplayRow(from);
+    if (SessionRowMatches(row.title.c_str(), from.preview, ai_query)) {
+      shell_.ai_sessions.push_back(std::move(row));
+    }
   }
   ApplyHomeToday(list);
 }
@@ -1997,6 +2025,16 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     return [on_picked = picked(OutgoingPickSource::File)]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); };
   };
 
+  // A phone's chat (Kenneth 2026-11-07): the bold plus opens the Home composer's floating card over it, Camera / Photos /
+  // File, each the chat's own path (the camera capture, the library with the send-smaller choice, the file picker).
+  if (ev && Platform::IsMobile() && ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+    ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(
+        ev->GetCurrentElement(),
+        AgentTurnController::HomeAttachActions([this]() { OnAttachCapture(nullptr); }, pick_photo_or_video(),
+                                               pick_file()),
+        {}, /*above=*/true);
+    return;
+  }
   // A phone keeps photos and files apart; the desktop dialog shows both at once, so there a picture and a file
   // have their own entries.
   std::vector<ContextMenuAction> actions;
@@ -4270,6 +4308,10 @@ bool ChatController::Setup(ui::Context* context) {
   if (!DataModelHost::Instance().Register(context, "shell", [this](ui::DataModelConstructor& ctor) {
         BindChatShellState(ctor, shell_);
         ctor.BindEventCallback("sessions_search_changed", DataEvent([this] { OnSessionsSearchChanged(); }));
+        ctor.BindEventCallback("ai_sessions_search_changed",
+                               DataEventAt([this](ui::Event& ev) { OnAiSessionsSearch(ev, /*submit=*/false); }));
+        ctor.BindEventCallback("ai_sessions_search",
+                               DataEventAt([this](ui::Event& ev) { OnAiSessionsSearch(ev, /*submit=*/true); }));
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));

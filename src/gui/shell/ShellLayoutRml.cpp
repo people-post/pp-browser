@@ -570,7 +570,9 @@ std::string ShellLayoutRml::AiDrawer() const {
   out << "<div class=\"shell-layer shell-layer-compact shell-drawer-layer\" data-model=\"window\">";
   out << "<div class=\"shell-scrim shell-drawer-scrim\" data-event-click=\"close_ai_drawer()\"></div>";
   // The edge shadow rides with the drawer; the view goes into the body (ShellHost::MountAiDrawer).
-  out << "<div class=\"shell-drawer\"><div class=\"shell-drawer-edge\"></div>";
+  // Its top bar and "you" row are frosted like the top bars when Transparency is on (colors.rcss.tmpl).
+  out << "<div class=\"shell-drawer" << (ChromeFrostEnabled() ? " shell-drawer--frost" : "")
+      << "\"><div class=\"shell-drawer-edge\"></div>";
   out << "<div class=\"shell-drawer-body\" id=\"shell-ai-drawer-mount\"></div></div>";
   out << "</div>";
   return out.str();

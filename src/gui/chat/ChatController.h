@@ -94,6 +94,8 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
+  /** A conversation row is kept by a list's search when its title or preview contains the (lower-cased) query. */
+  static bool SessionRowMatches(const std::string& title, const std::string& preview, const std::string& lowered_query);
   void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
@@ -286,6 +288,8 @@ private:
   void OnToggleArchived();
   void OnToggleArchivedAi();
   void OnSessionsSearchChanged();
+  /** The AI drawer's search: typing filters live; Return or the magnifier also puts the keyboard away. */
+  void OnAiSessionsSearch(ui::Event& ev, bool submit);
   void OnForgetMemory() override;
   void OnSyncWithPeer() override;
   void OnRetryGapSync();

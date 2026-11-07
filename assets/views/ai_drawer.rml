@@ -4,12 +4,25 @@
      same swipes, same archived entry; this list has its own id because that one stays in the DOM. No drag-to-close
      (the rows' swipes). -->
 <div class="ai-drawer" data-model="window">
-  <div class="ai-drawer-head">
-    <button class="shell-circle-btn ai-drawer-close" type="button" data-event-click="close_ai_drawer()">
-      <span class="shell-circle-btn-face"><svg src="../icons/v2/close.svg"></svg></span>
-    </button>
-    <p class="ai-drawer-title">{{i18n:ai_drawer.title}}</p>
-    <span class="ai-drawer-head-gap"></span>
+  <!-- The top bar (title, then the search field) and the bottom "you" row are frosted bars over the list, like the top
+       bars: the list scrolls under them and its padding keeps every row clear of them at rest (Kenneth 2026-11-07). -->
+  <div class="ai-drawer-top">
+    <div class="ai-drawer-head">
+      <button class="shell-circle-btn ai-drawer-close" type="button" data-event-click="close_ai_drawer()">
+        <span class="shell-circle-btn-face"><svg src="../icons/v2/close.svg"></svg></span>
+      </button>
+      <p class="ai-drawer-title">{{i18n:ai_drawer.title}}</p>
+      <span class="ai-drawer-head-gap"></span>
+    </div>
+    <!-- Typing filters the list (title or last message); Return or the magnifier puts the keyboard away. -->
+    <div class="chat-search ai-drawer-search" data-model="shell">
+      <input class="chat-search-input" type="text" data-value="ai_sessions_query"
+             data-event-change="ai_sessions_search_changed()"/>
+      <p class="chat-search-label" data-if="ai_sessions_query == ''">{{i18n:ai_drawer.search_placeholder}}</p>
+      <button class="ai-drawer-search-go" type="button" data-event-click="ai_sessions_search()">
+        <svg class="chat-search-icon" src="../icons/v2/search.svg" width="18" height="18"></svg>
+      </button>
+    </div>
   </div>
   <div class="ai-drawer-list" id="ai-drawer-sessions" data-model="shell">
     <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">

@@ -4077,10 +4077,42 @@ select selectbox option {
 }
 
 .ai-drawer {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   box-sizing: border-box;
+}
+
+/* The frosted top bar (title 44dp + search 44dp) and "you" row (56dp) float over the list (colors.rcss.tmpl). */
+.ai-drawer-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.ai-drawer-search {
+  margin: 0 16dp 8dp 16dp;
+  padding: 0 0 0 8dp;
+}
+
+.ai-drawer-search .chat-search-label {
+  left: 14dp;
+}
+
+.ai-drawer-search-go {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 36dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
 }
 
 .ai-drawer-head {
@@ -4109,16 +4141,26 @@ select selectbox option {
   flex: 0 0 44dp;
 }
 
-/* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. */
+/* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. It runs the drawer's full
+   height under the two bars; its padding keeps the first and last rows clear of them at rest. */
 .ai-drawer-list {
   display: block;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  padding-top: 88dp;
+  padding-bottom: 56dp;
+  box-sizing: border-box;
 }
 
 .ai-drawer-me {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  box-sizing: border-box;
   flex: none;
   display: flex;
   flex-direction: row;
@@ -11297,6 +11339,22 @@ input.checkbox {
   height: 20dp;
 }
 
+/* A phone's people chat: the bold plus in the clip's place (ChatController::OnAttachFile opens its floating card). */
+.prompt-icon-plus {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-attach-btn--plus .prompt-icon-v2 {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-attach-btn--plus .prompt-icon-plus {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*
    contact-detail cards above. The plain group-* classes are inert on desktop; everything visual is scoped to
    .shell-layer-compact. */
@@ -13395,6 +13453,12 @@ textarea:composing ~ .prompt-composer-label,
    side margins; the A-Z strip stays on the right edge. Colours: colors.rcss.tmpl. */
 .shell-layer-compact .nc-page .nc-search {
   margin: 0 16dp 12dp 16dp;
+}
+
+/* New chat's and Add contact's bar only shows the title: it sits over the shell's round back (the transient chrome,
+   z-index 2, under this pane-nav's 3), so it lets taps through to it (2026-11-07: the back did nothing). */
+.shell-layer-compact .nc-bar {
+  pointer-events: none;
 }
 
 .shell-layer-compact .nc-page .nc-actions {

@@ -793,7 +793,7 @@ void ContextMenuHost::ShowActionsPopover(ui::Element* anchor, std::vector<Contex
 }
 
 void ContextMenuHost::ShowActionsPopoverLeftAligned(ui::Element* anchor, std::vector<ContextMenuAction> actions,
-                                                    std::function<void()> on_dismissed) {
+                                                    std::function<void()> on_dismissed, const bool above) {
   ui::Vector2i position{0, 0};
   if (anchor) {
     const ui::Vector2f offset = anchor->GetAbsoluteOffset(ui::BoxArea::Border);
@@ -802,8 +802,9 @@ void ContextMenuHost::ShowActionsPopoverLeftAligned(ui::Element* anchor, std::ve
     // A pull-down is laid out by its right edge; the card is 150dp wide (components.rcss, --popover-left), so that edge
     // goes 150dp right of the button's left, and the card starts 8dp under the button.
     position.x = static_cast<int>(offset.x + 150.f * ratio);
-    position.y = static_cast<int>(offset.y + size.y + 8.f * ratio);
+    position.y = static_cast<int>(above ? offset.y - 8.f * ratio : offset.y + size.y + 8.f * ratio);
   }
+  next_show_above_ = above;
   next_show_left_ = true;
   next_show_popover_ = true;
   ShowActions(position, std::move(actions), std::move(on_dismissed));

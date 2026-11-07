@@ -1841,6 +1841,11 @@ input.checkbox:checked {
   background-color: #000000;
 }
 
+/* The search field on the grouped page: a fill, so it reads as a field (the card colour vanished on the grey). */
+.shell-layer-compact .nc-page .nc-search {
+  background-color: #7878803d;
+}
+
 .shell-layer-compact .nc-page .nc-action,
 .shell-layer-compact .nc-page .nc-group,
 .shell-layer-compact .nc-page .nc-group .contacts-row {
@@ -2725,6 +2730,7 @@ input.checkbox:checked {
 }
 
 .shell-chat-overlay .prompt-icon-v2,
+.shell-chat-overlay .prompt-icon-plus,
 .ask-ai .prompt-icon-v2 {
   image-color: #ebebf599;
 }
@@ -3465,10 +3471,25 @@ input.checkbox:checked {
   color: #ffffff;
 }
 
+/* The drawer's top bar and "you" row: the bar colour, frosted with Transparency on (like .pane-nav-bg). */
+.ai-drawer-top,
 .ai-drawer-me,
 .ai-drawer-me:hover,
 .ai-drawer-me:focus {
-  background-color: transparent;
+  background-color: #1a1a1c;
+}
+
+/* The search pill on the bar: a fill, so it shows on the bar colour. */
+.ai-drawer-search {
+  background-color: #7878803d;
+}
+
+.shell-drawer--frost .ai-drawer-top,
+.shell-drawer--frost .ai-drawer-me,
+.shell-drawer--frost .ai-drawer-me:hover,
+.shell-drawer--frost .ai-drawer-me:focus {
+  background-color: #1a1a1cc7;
+  backdrop-filter: blur(20px);
 }
 
 .ai-drawer-me:active {
