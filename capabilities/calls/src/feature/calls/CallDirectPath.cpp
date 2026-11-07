@@ -148,6 +148,8 @@ CallMediaDirectCallbacks CallDirectPath::MakeBundleCallbacks(const std::string& 
   };
   // k4: the call lost its last path — reconnect window (the offerer re-anchors).
   cbs.on_path_lost = [outbox = outbox_, call_id]() { outbox.Emit(direct_event::PathLost{call_id}); };
+  // K014: the peer ended the call (bye): no failure, no reconnect.
+  cbs.on_remote_ended = [outbox = outbox_, call_id]() { outbox.Emit(direct_event::PeerEnded{call_id}); };
   // k3: the transport moved the call to another path; the path label (UI snapshot) follows.
   cbs.on_path_changed = [outbox = outbox_, call_id](CallMediaLinkKind kind) {
     outbox.Emit(direct_event::PathChanged{call_id, kind});
@@ -156,26 +158,60 @@ CallMediaDirectCallbacks CallDirectPath::MakeBundleCallbacks(const std::string& 
 }
 
 void CallDirectPath::OnBundleFailed(const std::string& call_id, const std::string& reason, const CallMediaErr code) {
+  if (YieldsToHop(call_id, reason, code == CallMediaErr::StreamClosed, DirectMediaReady())) {
+    return;
+  }
+  log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
+  SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
+}
+
+void CallDirectPath::OnPathLost(const std::string& call_id) {
+  // The peer releasing its 1:1 stream for the hop (SoftMigrate) closes it as bare as a lost path
+  // (K014): when the call moves onto the hop, nothing reconnects. The lost stream is not "up".
+  if (YieldsToHop(call_id, "path lost", /*soft_close=*/false, /*direct_ready=*/false)) {
+    return;
+  }
+  Apply(CallDirectPlannerEvent::PathLost, call_id, media_peer_identity_);
+}
+
+void CallDirectPath::OnPeerEnded(const std::string& call_id) {
+  if (!ForThisCall(call_id, "PeerEnded") || !media_session_) {
+    return;
+  }
+  // K014: the peer hung up. Its call_leave (control lane) ends the call; until then nothing here
+  // judges the stream it closed — no reconnect, no connect failure, no "dropped".
+  log().info << "call-media: the peer ended the call call_id=" << call_id;
+  peer_ended_ = true;
+  CancelReanchor();
+  CancelDirectUpgrade();
+  CancelRelayStandby();
+  CancelEscalateReach();
+  reports_.Emit(direct_report::PeerEnded{call_id, media_peer_identity_});
+  reports_.Emit(direct_report::Changed{call_id_});
+}
+
+bool CallDirectPath::YieldsToHop(const std::string& call_id, const std::string& reason, const bool soft_close,
+                                 const bool direct_ready) {
   CallMedia* call_media = engine_->Runs() ? CallMediaFor(call_id) : nullptr;
   BundleFailureInput in;
   in.engine_call = engine_->Runs();
   in.engine_running = engine_->Runs() || engine_->RunsAnother();
-  in.direct_ready = DirectMediaReady();
+  in.direct_ready = direct_ready;
   // IsPacketMode() is also true for 1:1 capture — the hop must be attached.
   in.hop_attached = call_media && call_media->HopAttached();
   in.media_connected = direct_connected_at_ms_ > 0 || in.hop_attached;
   in.hop_pending = call_media && (call_media->HopInFlight() || call_media->ExpectsHop());
-  in.soft_close = code == CallMediaErr::StreamClosed;
+  in.soft_close = soft_close;
   switch (DecideBundleFailure(in)) {
     case BundleFailureAction::Ignore:
-      return;
+      return true;
     case BundleFailureAction::CarriedByHop:
       log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
       direct_.Detach();
       ClearMeshConnectFailed();
       reports_.Emit(direct_report::Connected{call_id});
       reports_.Emit(direct_report::Changed{call_id_});
-      return;
+      return true;
     case BundleFailureAction::AwaitHop:
       log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id << " reason=" << reason;
       if (call_media) {
@@ -187,12 +223,11 @@ void CallDirectPath::OnBundleFailed(const std::string& call_id, const std::strin
       // Nothing is live until the hop attaches: the call waits for it (not "connected").
       reports_.Emit(direct_report::HandedToHop{call_id});
       reports_.Emit(direct_report::Changed{call_id_});
-      return;
+      return true;
     case BundleFailureAction::Fail:
       break;
   }
-  log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
-  SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
+  return false;
 }
 
 CallDirectPath::~CallDirectPath() {
@@ -438,7 +473,9 @@ void CallDirectPath::Handle(DirectPathEvent& event) {
         } else if constexpr (std::is_same_v<E, direct_event::BundleFailed>) {
           OnBundleFailed(e.call_id, e.reason, e.code);
         } else if constexpr (std::is_same_v<E, direct_event::PathLost>) {
-          Apply(CallDirectPlannerEvent::PathLost, e.call_id, media_peer_identity_);
+          OnPathLost(e.call_id);
+        } else if constexpr (std::is_same_v<E, direct_event::PeerEnded>) {
+          OnPeerEnded(e.call_id);
         } else if constexpr (std::is_same_v<E, direct_event::PathChanged>) {
           OnPathChanged(e.call_id, e.kind);
         } else if constexpr (std::is_same_v<E, direct_event::EscalateRestart>) {
@@ -747,7 +784,11 @@ void CallDirectPath::Reanchor(const std::string& call_id) {
   mesh::PeerReachRequest request;
   request.keys.push_back(peer_id);
   request.mode = mesh::PeerReachMode::Reach;
-  log().info << "reconnect: reaching the peer again call_id=" << call_id << " peer=" << peer_id;
+  // The same pair policy and H013 relays as the first connect (a relay-only pair stays relay-only).
+  ApplyReachPolicy(request, call_id, /*offerer=*/true);
+  log().info << "reconnect: reaching the peer again call_id=" << call_id << " peer=" << peer_id
+             << " advertised_relays=" << request.advertised_relays.size()
+             << " exclude_direct=" << (request.exclude_direct ? 1 : 0);
   const auto retry = [this, call_id]() {
     if (direct_planner_phase_ == CallDirectPlannerPhase::Reconnecting && reanchor_armed_ && call_id == call_id_) {
       ScheduleReanchor(call_id, std::chrono::milliseconds(reanchor_retry_ms_));
@@ -923,9 +964,13 @@ void CallDirectPath::PollMeshConnectHealth() {
   if (in.engine_running && !in.already_failed) {
     CallMedia* call_media = CallMediaFor(call_id);
     in.hop_in_flight = call_media && call_media->HopInFlight();
+    in.hop_expected = call_media && call_media->ExpectsHop();
     in.connect_in_flight = connect_.InFlight();
     in.media_connected = MediaConnected(call_id);
     in.direct_ready = DirectMediaReady();
+    in.direct_was_connected = direct_connected_at_ms_ > 0;
+    in.hop_attached = HopAttachedFor(call_id);
+    in.peer_ended = peer_ended_;
     in.has_call = !call_id.empty();
     if (in.has_call && !in.direct_ready) {
       if (auto joined = sessions_.CountJoined(call_id)) {
@@ -935,6 +980,14 @@ void CallDirectPath::PollMeshConnectHealth() {
     in.started_at_ms = engine_->StartedAtMs();
     in.now_ms = util::NowUnixMs();
     in.timeout_ms = kMeshConnectTimeoutMs;
+    if (in.direct_was_connected && !in.direct_ready) {
+      if (stream_gone_since_ms_ == 0) {
+        stream_gone_since_ms_ = in.now_ms;
+      }
+      in.stream_gone_ms = in.now_ms - stream_gone_since_ms_;
+    } else {
+      stream_gone_since_ms_ = 0;
+    }
   }
   switch (DecideDirectHealth(in)) {
     case DirectHealthAction::None:
@@ -948,6 +1001,12 @@ void CallDirectPath::PollMeshConnectHealth() {
       log().info << "Heal call-media connected from direct stream call_id=" << call_id;
       CommitDirectConnected(call_id);
       MaybeEscalateTxOnlyDirect();
+      return;
+    case DirectHealthAction::Dropped:
+      // K014: the leg's own report should have come; the call was connected, so it dropped.
+      log().warning << "call-media stream gone after connect, no report call_id=" << call_id;
+      SurfaceConnectFailed(call_id, "amp call-media: call dropped [health: the 1:1 stream is gone]",
+                           /*stop_media=*/true);
       return;
     case DirectHealthAction::TimedOut:
       break;
@@ -1175,20 +1234,26 @@ mesh::PeerReachRequest CallDirectPath::BuildReachRequest(const CallMediaDirectCo
   }
   // The offerer reaches; the answerer awaits the offerer's link (invite/accept is the agreement).
   request.mode = params.offerer ? mesh::PeerReachMode::Reach : mesh::PeerReachMode::Await;
-  const CallPathPolicy policy = PathPolicyFor(params.call_id);
-  request.exclude_direct = std::exchange(force_circuit_ensure_, false) || policy.relay_only;
-  request.allow_punch = policy.punch_at_start;
-  if (params.offerer) {
-    // H013: the answerer said where it is parked; its relays go first.
-    if (advertised_relays_) {
-      request.advertised_relays = advertised_relays_(params.call_id);
-    }
-  } else {
+  ApplyReachPolicy(request, params.call_id, params.offerer);
+  // TX-only escalation: this connect insists on a relayed link (once).
+  request.exclude_direct = std::exchange(force_circuit_ensure_, false) || request.exclude_direct;
+  if (!params.offerer) {
     // H013: the caller starts only once our CallAccept crossed its inbox — wait for it, until it tells
     // us it gave up (OnPeerGaveUpReaching), the link comes up, or this hold ends.
     request.await_hold_ms = answerer_await_hold_ms_;
   }
   return request;
+}
+
+void CallDirectPath::ApplyReachPolicy(mesh::PeerReachRequest& request, const std::string& call_id,
+                                      const bool offerer) const {
+  const CallPathPolicy policy = PathPolicyFor(call_id);
+  request.exclude_direct = policy.relay_only;
+  request.allow_punch = policy.punch_at_start;
+  if (offerer && advertised_relays_) {
+    // H013: the answerer said where it is parked; its relays go first.
+    request.advertised_relays = advertised_relays_(call_id);
+  }
 }
 
 CallMediaConnectHooks CallDirectPath::MakeConnectHooks(const std::string& call_id) {
@@ -1287,6 +1352,8 @@ void CallDirectPath::ResetDirectSessionState(const std::string& call_id, const s
   media_peer_identity_ = peer_identity;
   session_offerer_ = offerer;
   direct_connected_at_ms_ = 0;
+  stream_gone_since_ms_ = 0;
+  peer_ended_ = false;
   // Otherwise keep what an inbound hello of this session bound; stop / teardown clear it between calls.
   if (peer_identity.rfind("account:", 0) == 0) {
     receive_->remote_stream.store(PublisherStreamIdForIdentity(peer_identity), std::memory_order_release);
@@ -1601,13 +1668,19 @@ void CallDirectPath::StopMeshMedia(const std::string& call_id) {
     pending_answerer_peer_.clear();
   }
   reach_.ReleasePeer(peer);
-  direct_.Detach();
+  if (CallOverHere()) {
+    direct_.HangUp(); // K014: the peer hears `bye` — the close that follows is the call's end
+  } else {
+    direct_.Detach(); // the call stays open (a failed connect, a restart): a lost path to the peer
+  }
   media_peer_identity_.clear();
   media_session_ = false;
   reach_kind_ = mesh::PeerLinkKind::Unknown;
   force_circuit_ensure_ = false;
   session_offerer_ = false;
   direct_connected_at_ms_ = 0;
+  stream_gone_since_ms_ = 0;
+  peer_ended_ = false;
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
   failed_open_.reset();
@@ -1625,6 +1698,11 @@ void CallDirectPath::StopMeshMedia(const std::string& call_id) {
 CallMedia* CallDirectPath::CallMediaFor(const std::string& call_id) {
   // Quietly null for a call not admitted here (a leftover engine id): nothing to ask about it.
   return !call_id.empty() && host_.LiveCallOf(call_id) ? host_.CallMediaOf(call_id) : nullptr;
+}
+
+bool CallDirectPath::CallOverHere() const {
+  const LiveCall* call = host_.LiveCallOf(call_id_);
+  return !call || !call->IsOpen();
 }
 
 bool CallDirectPath::MediaConnected(const std::string& call_id) {

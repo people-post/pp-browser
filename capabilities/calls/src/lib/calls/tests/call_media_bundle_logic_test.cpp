@@ -215,6 +215,37 @@ TEST(CallMediaFailoverTest, SwitchesOnlyToALiveStandbyForALostOrSilentActive) {
   EXPECT_TRUE(ShouldFailOverToStandby(older_peer));
 }
 
+// K014: a close of a live call's active path that the peer did not announce with `bye` is a lost
+// path (fall back, fail over, or reconnect) — never the call's end. Only a media channel closing
+// under a still-open control channel waits for that channel's word: its best-effort CLOSE can
+// overtake the reliable `bye`.
+TEST(CallMediaActiveCloseTest, AnUnannouncedCloseIsALostPathNeverAHangUp) {
+  CallMediaActiveCloseInput in;
+  in.remote_close = true;
+  in.role = CallMediaChannelRole::OutboundControl;
+  in.control_open = true;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::PathLost) << "a bare peer_close";
+  in.role = CallMediaChannelRole::InboundControl;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::PathLost);
+  in.role = CallMediaChannelRole::Media;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::AwaitControl)
+      << "the bye may still be on its way on the control channel";
+  in.control_open = false;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::PathLost);
+  in.control_open = true;
+  in.remote_close = false;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::PathLost)
+      << "the link went: nothing to wait for";
+
+  in.role = CallMediaChannelRole::OutboundControl;
+  in.remote_close = true;
+  in.standby_alive = true;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::FailOverToStandby)
+      << "a peer_close fails over like a dead link";
+  in.retiring_alive = true;
+  EXPECT_EQ(DecideCallMediaActiveClose(in), CallMediaActiveCloseAction::FallBackToRetiring);
+}
+
 } // namespace
 } // namespace pbr
 

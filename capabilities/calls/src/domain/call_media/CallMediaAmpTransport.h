@@ -43,6 +43,7 @@ public:
   void SetAutoMigrateToDirect(bool allow) override;
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   void Detach() override;
+  void HangUp() override;
 
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(CallMediaRoe)> on_done, int timeout_ms = 15000) override;

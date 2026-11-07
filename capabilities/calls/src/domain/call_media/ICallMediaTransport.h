@@ -40,6 +40,11 @@ enum class CallMediaErr : int32_t {
   Generic,
   /** A migrate to the link the call's stream already rides: nothing to move (the path is there). */
   AlreadyOnLink,
+  /**
+   * K014: the call's media was up and ended under it — no path within the reconnect window, or the
+   * link went. The call was connected, then dropped: never a connect failure.
+   */
+  Dropped,
 };
 using CallMediaFailure = CodedFailure<CallMediaErr>;
 using CallMediaRoe = CodedRoe<void, CallMediaErr>;
@@ -56,9 +61,15 @@ struct CallMediaDirectCallbacks {
   /**
    * k4: the call lost its last path (link gone, no standby). It is kept for a reconnect window: a
    * migration onto a new link brings it back (`on_path_changed`); the window running out fails it
-   * (`on_failed`).
+   * (`on_failed`, `CallMediaErr::Dropped`). A close the peer did not announce with `bye` is such a
+   * loss, never the call's end (K014).
    */
   std::function<void()> on_path_lost;
+  /**
+   * K014: the peer ended the call (call-media `bye`); the leg is gone. Not a failure and nothing to
+   * reconnect: the call's end itself comes on the control lane (call_leave).
+   */
+  std::function<void()> on_remote_ended;
 };
 
 /** Answer to an inbound hello — any thread, at most once. An empty `media_key` NACKs the hello. */
@@ -144,6 +155,12 @@ public:
     }
   }
   virtual void Detach() = 0;
+  /**
+   * K014: this end ended the call — tell the peer (call-media `bye` on the active path, best-effort,
+   * no ack), then Detach. The peer takes the stream's close as the call ending, not as a lost path.
+   * Transports without it just detach.
+   */
+  virtual void HangUp() { Detach(); }
 
   /**
    * Non-blocking connect: arms the outbound leg and invokes `on_done` when MediaReady,

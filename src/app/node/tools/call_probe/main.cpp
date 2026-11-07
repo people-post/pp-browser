@@ -1027,7 +1027,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   while (std::chrono::steady_clock::now() < deadline) {
     (*peer)->Pump();
     if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
-      media->Detach();
+      media->HangUp(); // the call ends: bye, so the offerer does not hold it as a lost path (K014)
     }
     if (min_rx_frames > 0) {
       std::lock_guard lock(mu);
@@ -1240,7 +1240,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       }
     }
 
-    media->DetachLeg(leg_id);
+    media->HangUpLeg(leg_id); // the cycle's call ends: bye, then close (K014)
     if (via_hop) {
       hops->Clear(*peer_id, pp::amp::kAmpCircuitCarrierProtocolId);
       const auto settle = std::chrono::steady_clock::now() + std::chrono::milliseconds(800);
