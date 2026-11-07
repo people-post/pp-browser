@@ -17,12 +17,19 @@ Roe<void> SecureBlobDelete(const std::string& /*name*/) {
 }
 
 Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<uint8_t>& bytes,
-                                    SecureBlobAccess /*access*/) {
+                                    const SecureBlobAccess access) {
+  if (access == SecureBlobAccess::kBiometryCurrentSet) {
+    return Error("Biometry-bound secure blobs are not supported on this platform");
+  }
   return SecureBlobWrite(name, bytes);
 }
 
 Roe<pbr::SecureBlobLookup> SecureBlobLookup(const std::string& /*name*/) {
   return pbr::SecureBlobLookup{};
+}
+
+Roe<pbr::SecureBlobLookup> SecureBlobLookupWithPrompt(const std::string& name, const std::string& /*prompt*/) {
+  return SecureBlobLookup(name);
 }
 
 bool SecureBlobSupported() {

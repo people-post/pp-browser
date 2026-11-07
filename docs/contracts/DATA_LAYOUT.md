@@ -43,6 +43,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   relay_inbox_cursor.json   # poll watermark {relay_user_id, cursor}; delivery-queue ack progress
   vault.bin                 # PIN-wrapped DEK (created on first secrets unlock)
   grace.bin                 # PIN grace window: DEK under K_grace, AAD "grace|{id}" (iOS; only within a window — AT_REST_ENCRYPTION § PIN grace window)
+  biometric.bin             # Face ID / Touch ID unlock: DEK under K_bio, AAD "biometric|{id}" (iOS; only while the switch is on — AT_REST_ENCRYPTION § Face ID / Touch ID unlock)
   identity.enc              # identity JSON under DEK AEAD (plaintext schema_version 3; device ML-DSA-65 + account ML-DSA + account KEM; pre-v3 wipe; optional initiation_floor; optional recovery_seed_b64 — M023, AT_REST_ENCRYPTION § Identity plaintext)
   secrets.enc               # typed model API key (llm_api_key) under DEK AEAD, AAD purpose "config-secrets", schema_version 1; absent when there are none (PB-034)
   initiation_billing.json   # per-peer initiation billing state (P001; schema_version 1)
@@ -155,12 +156,17 @@ Earlier builds kept a PIN-sealed account backup in one Keychain generic-password
 
 One Keychain generic-password item per profile: service `dev.pp-browser.secure-blob`, account `{profile_id}/unlock_grace`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. It holds the key of `grace.bin` and the window's end on the device's own clocks, never the PIN or the DEK ([AT_REST_ENCRYPTION § PIN grace window](AT_REST_ENCRYPTION.md#pin-grace-window-gracebin--a-keychain-entry), [at-rest A013](../../projects/at-rest-crypto/DECISIONS.md#a013--pin-grace-window-a-pin-typed-a-short-while-ago-is-not-asked-again)). Deleted with `grace.bin` on expiry, Change PIN and a profile reset; one left by a deleted profile opens nothing (its `grace.bin` is gone).
 
+### Face ID / Touch ID unlock (iOS Keychain, outside the data dir)
+
+One Keychain generic-password item per profile: service `dev.pp-browser.secure-blob`, account `{profile_id}/unlock_biometric`, `kSecAttrAccessControl` = `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` + `kSecAccessControlBiometryCurrentSet` (reading it shows the system Face ID / Touch ID prompt; a new enrolment makes it unreadable). It holds version 1 + the key of `biometric.bin`, never the PIN or the DEK ([AT_REST_ENCRYPTION § Face ID / Touch ID unlock](AT_REST_ENCRYPTION.md#face-id--touch-id-unlock-biometricbin--a-keychain-entry), [at-rest A014](../../projects/at-rest-crypto/DECISIONS.md#a014--face-id--touch-id-unlock-the-dek-behind-the-enrolled-biometry)). Deleted with `biometric.bin` when the switch is turned off, when the enrolment changed, and on a recovery-phrase reset, a transfer-code import or a profile reset; one left by an uninstall or a deleted profile opens nothing (its `biometric.bin` is gone).
+
 ### PIN-related files (disk only)
 
 | File / field | Role |
 |--------------|------|
 | `vault.bin` | PIN-wrapped DEK |
 | `grace.bin` | DEK under the PIN grace window's key (with the Keychain item above; deleted when the window ends) |
+| `biometric.bin` | DEK under the Face ID / Touch ID unlock key (with the Keychain item above; present while the switch is on) |
 | `identity.enc` | Identity JSON under DEK AEAD |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
