@@ -20,6 +20,12 @@ body {
   background-color: #f2f2f7;
 }
 
+/* The home-indicator band under the grouped pages (Me and its detail pages, New chat); clear elsewhere. */
+.shell-home-indicator-strip.shell-home-indicator-strip--me,
+.shell-home-indicator-strip.shell-home-indicator-strip--new_chat {
+  background-color: #f2f2f7;
+}
+
 .shell-statusbar-strip.shell-statusbar-strip--add_contact {
   background-color: #f2f2f7;
 }

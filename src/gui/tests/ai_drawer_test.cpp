@@ -371,7 +371,8 @@ div, p, button, span { display: block; }
 .session-swipe-btn { width: 74px; height: 60px; }
 #home-landing { height: 500px; }
 </style></head><body><input id="probe" type="text" style="width: 100px; height: 20px;"/>
-<div id="shell-root"></div><div id="shell-statusbar-strip" class="shell-statusbar-strip"></div></body></rml>)";
+<div id="shell-root"></div><div id="shell-statusbar-strip" class="shell-statusbar-strip"></div>
+<div id="shell-home-indicator-strip" class="shell-home-indicator-strip"></div></body></rml>)";
 
 SessionDisplayRow AiRow(const char* id, const char* title) {
   SessionDisplayRow row;
@@ -552,6 +553,34 @@ TEST_F(ShellDrawerTest, TheStatusStripNamesThePageUnderIt) {
   host_.PushTransient({.key = "add_contact"});
   host_.SyncLayout();
   EXPECT_TRUE(only("add_contact"));
+}
+
+// The band over the home indicator: under a page with no bottom bar (Me, its detail pages, a pushed page) it is the
+// inset tall and named like the top strip, so the grouped pages do not end in a white band; under the tab bar it is 0.
+TEST_F(ShellDrawerTest, TheHomeIndicatorStripCoversTheInsetUnderGroupedPages) {
+  ui::Element* bottom = ById("shell-home-indicator-strip");
+  ASSERT_NE(bottom, nullptr);
+  host_.SetSafeAreaInsetsFromPrefs(59, 34);
+  const auto height = [bottom]() { return bottom->GetProperty<float>("height"); };
+  host_.SyncLayout();
+  EXPECT_EQ(height(), 0.f) << "Home: the tab bar owns the inset";
+  host_.SelectNavTab(NavTab::Me);
+  host_.SyncLayout();
+  EXPECT_EQ(height(), 34.f);
+  EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--me"));
+  // A settings detail page (安全, 网络…) is Me's inline detail with a local back, not a pushed page: still Me.
+  host_.PushLocalBack("settings_detail", [] {});
+  host_.SyncLayout();
+  EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--me"));
+  EXPECT_TRUE(ById("shell-statusbar-strip")->IsClassSet("shell-statusbar-strip--me"));
+  host_.ClearLocalBack("settings_detail");
+  host_.SelectNavTab(NavTab::Sessions);
+  host_.SyncLayout();
+  EXPECT_EQ(height(), 0.f) << "Chats: the tab bar";
+  host_.PushTransient({.key = "new_chat"});
+  host_.SyncLayout();
+  EXPECT_EQ(height(), 34.f);
+  EXPECT_TRUE(bottom->IsClassSet("shell-home-indicator-strip--new_chat"));
 }
 
 TEST_F(ShellDrawerTest, TheLayoutBecomingTheDesktopsClosesIt) {

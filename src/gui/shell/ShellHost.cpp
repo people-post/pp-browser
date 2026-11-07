@@ -1774,9 +1774,15 @@ void ShellHost::ApplySafeAreaLayout() {
         surface = "me";
       }
     }
+    ui::Element* bottom = doc->GetElementById("shell-home-indicator-strip");
     for (const char* known : {"home", "me", "new_chat", "add_contact"}) {
       strip->SetClass(std::string("shell-statusbar-strip--") + known, surface == known);
+      if (bottom) {
+        bottom->SetClass(std::string("shell-home-indicator-strip--") + known, surface == known);
+      }
     }
+    // Under a page with no bottom bar the page ends above the home indicator (padding below): the band covers it.
+    set_dp(bottom, "height", bottom_surface == CompactBottomSurface::Page ? layout.bottom_surface_padding_dp : 0.f);
   }
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {

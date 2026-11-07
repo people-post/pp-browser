@@ -1561,6 +1561,23 @@ select selectbox option {
   pointer-events: none;
 }
 
+/* Phones: the band over the home indicator (ShellHost sets its height to the bottom inset under a hidden tab or a pushed
+   page, 0 elsewhere); clear unless the page above it is grouped (colors.rcss.tmpl). */
+.shell-home-indicator-strip {
+  display: none;
+}
+
+.shell-body--compact .shell-home-indicator-strip {
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 35;
+  pointer-events: none;
+}
+
 /* Sibling of #shell-root — holds the mobile/compact emoji keyboard panel. */
 .shell-emoji-keyboard-mount {
   position: absolute;
