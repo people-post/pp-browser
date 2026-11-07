@@ -4141,7 +4141,8 @@ select selectbox option {
 }
 
 /* The swipe buttons sit outside the row (SessionSwipeGesture), so the list clips sideways. It runs the drawer's full
-   height under the two bars; its padding keeps the first and last rows clear of them at rest. */
+   height under the two bars; its top padding keeps the first row clear of the top bar at rest, its end spacer
+   (.ai-drawer-list-end) the last row clear of the "you" bar. */
 .ai-drawer-list {
   display: block;
   flex: 1 1 auto;
@@ -4149,8 +4150,14 @@ select selectbox option {
   overflow-y: auto;
   overflow-x: hidden;
   padding-top: 88dp;
-  padding-bottom: 56dp;
+  padding-bottom: 0;
   box-sizing: border-box;
+}
+
+/* Height set by ShellHost::ApplySafeAreaLayout (the "you" row + the home indicator). */
+.ai-drawer-list-end {
+  display: block;
+  height: 56dp;
 }
 
 .ai-drawer-me {

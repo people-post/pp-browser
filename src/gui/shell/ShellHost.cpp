@@ -79,6 +79,9 @@ constexpr int kPageSlideMs = 300;
 constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
+/** The AI drawer's "you" row above the home indicator (.ai-drawer-me: min-height, bottom padding). */
+constexpr float kAiDrawerMeHeightDp = 56.f;
+constexpr float kAiDrawerMePaddingDp = 8.f;
 
 } // namespace
 
@@ -1835,8 +1838,12 @@ void ShellHost::ApplySafeAreaLayout() {
          bottom_surface == CompactBottomSurface::Composer ? strip_dp : 0.f);
   set_dp(doc->GetElementById("shell-transient-layer"), "padding-bottom",
          bottom_surface == CompactBottomSurface::Page ? strip_dp : 0.f);
-  // The AI drawer reaches the screen bottom over the tab bar: its "you" row clears the home indicator.
-  set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", strip_dp);
+  // The AI drawer reaches the screen bottom over the tab bar. Its frosted "you" row runs down to the screen bottom too
+  // (one bar, Kenneth 2026-11-07), its content above the home indicator; the list's end spacer keeps the last row
+  // clear of the whole bar (the engine leaves a scroller's bottom padding out of its scroll height).
+  set_dp(doc->GetElementById("shell-ai-drawer-mount"), "padding-bottom", 0.f);
+  set_dp(doc->GetElementById("ai-drawer-me"), "padding-bottom", kAiDrawerMePaddingDp + strip_dp);
+  set_dp(doc->GetElementById("ai-drawer-list-end"), "height", kAiDrawerMeHeightDp + strip_dp);
   // Page sheets reach the screen bottom: their content clears the home indicator (not the keyboard: the body
   // already shrinks above it).
   // A sheet shows full height while the keyboard is up, and its own stop again once it is down.

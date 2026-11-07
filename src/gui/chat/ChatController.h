@@ -465,7 +465,11 @@ private:
   void OnSessionsScroll();
   void OnSessionsLoadMore();
   void FillSessionListAfterLayout();
+  void SyncComposerOverlay();
   ui::Element* SessionListElement() const;
+  /** The AI conversation list on screen: the phone's drawer, else the desktop's AI page list; null when neither shows. */
+  ui::Element* AiSessionListElement() const;
+  void OnAiSessionsScroll();
   void OnJumpToLatest();
   // Search inside the open chat (DEV/PLAN-chat-search.md). The decisions are ThreadSearchSession's; these bind
   // them to the screen, build the index on a worker and scroll to the hits.
@@ -686,6 +690,7 @@ private:
   enum class SearchFocus { None, Input, Composer };
   SearchFocus search_focus_ = SearchFocus::None; // moved after the next layout (data-if shows the element first)
   SessionListWindow session_window_;      // how many rows of the chats list the sidebar draws
+  SessionListWindow ai_session_window_;   // how many AI conversations the drawer (or the desktop's AI list) draws
   ThreadDrafts drafts_;                   // unsent text per conversation; the composer widget is shared
   std::map<std::string, std::string> quotes_; // a quote being replied to, per conversation, while another is shown
   void StashComposerExtras(const std::string& key);

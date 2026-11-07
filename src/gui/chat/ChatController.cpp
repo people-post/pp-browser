@@ -1017,6 +1017,7 @@ bool ChatController::SessionRowMatches(const std::string& title, const std::stri
 }
 
 void ChatController::OnToggleArchivedAi() {
+  ai_session_window_.Reset();  // the other list starts at its first rows
   presenter_.ToggleArchivedAi();
   RefreshFromMessaging();
   NotifySurfaceChanged();
@@ -1147,6 +1148,7 @@ void ChatController::OnProfileDataReset() {
   shell_.showing_archived = false;
   shell_.showing_archived_ai = false;
   session_window_.Reset();
+  ai_session_window_.Reset();
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -1240,11 +1242,21 @@ void ChatController::ApplySessionList() {
     }
     shell_.sessions.push_back(std::move(row));
   }
-  // AI conversations for the AI drawer (no window; the whole list, newest/pinned first), filtered by its search box.
+  // AI conversations for the AI drawer, newest/pinned first: the chats list's window (20 rows, 20 more near the end;
+  // Kenneth 2026-11-07), the open one always drawn; its search box filters every conversation.
+  for (size_t i = 0; i < list.ai_rows.size(); ++i) {
+    if (list.ai_rows[i].active) {
+      ai_session_window_.Include(i);
+      break;
+    }
+  }
   const std::string ai_query = LowerAscii(shell_.ai_sessions_query.c_str());
+  const size_t ai_visible =
+      ai_query.empty() ? ai_session_window_.Visible(list.ai_rows.size()) : list.ai_rows.size();
   shell_.ai_sessions.clear();
-  shell_.ai_sessions.reserve(list.ai_rows.size());
-  for (const ChatSessionRow& from : list.ai_rows) {
+  shell_.ai_sessions.reserve(ai_visible);
+  for (size_t i = 0; i < ai_visible; ++i) {
+    const ChatSessionRow& from = list.ai_rows[i];
     SessionRow row = ToSessionDisplayRow(from);
     if (SessionRowMatches(row.title.c_str(), from.preview, ai_query)) {
       shell_.ai_sessions.push_back(std::move(row));
@@ -1766,17 +1778,48 @@ void ChatController::OnSessionsLoadMore() {
   }
 }
 
+void ChatController::OnAiSessionsScroll() {
+  ui::Element* el = AiSessionListElement();
+  if (!el || !shell_.ai_sessions_query.empty()) {
+    return;
+  }
+  const bool near_bottom = SessionListNearBottom(el->GetScrollTop(), el->GetScrollHeight(), el->GetClientHeight());
+  if (ai_session_window_.ExtendIfNearBottom(presenter_.List().ai_rows.size(), near_bottom)) {
+    ApplySessionList();
+    DataModelHost::Instance().Dirty("shell", "ai_sessions");
+  }
+}
+
 void ChatController::FillSessionListAfterLayout() {
   // Rows that do not reach the bottom of the list cannot be scrolled, so the scroll event never asks for more:
   // after a layout, grow the window until the list overflows (or every row is drawn). One step per layout.
-  if (!shell_.sessions_more) {
-    return;
+  if (shell_.sessions_more) {
+    if (ui::Element* el = SessionListElement();
+        el && SessionListNeedsFill(el->GetScrollHeight(), el->GetClientHeight())) {
+      OnSessionsLoadMore();
+    }
   }
-  ui::Element* el = SessionListElement();
-  if (!el || !SessionListNeedsFill(el->GetScrollHeight(), el->GetClientHeight())) {
-    return;
+  if (shell_.ai_sessions_query.empty() && ai_session_window_.More(presenter_.List().ai_rows.size())) {
+    if (ui::Element* el = AiSessionListElement();
+        el && SessionListNeedsFill(el->GetScrollHeight(), el->GetClientHeight()) &&
+        ai_session_window_.Extend(presenter_.List().ai_rows.size())) {
+      ApplySessionList();
+      DataModelHost::Instance().Dirty("shell", "ai_sessions");
+    }
   }
-  OnSessionsLoadMore();
+}
+
+ui::Element* ChatController::AiSessionListElement() const {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return nullptr;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  for (const char* id : {"ai-drawer-sessions", "home-ai-sessions"}) {
+    if (ui::Element* el = doc->GetElementById(id); el && el->GetClientHeight() > 0.5f) {
+      return el;  // the one laid out (the desktop list stays in the DOM, hidden, on a phone)
+    }
+  }
+  return nullptr;
 }
 
 ui::Element* ChatController::SessionListElement() const {
@@ -4315,6 +4358,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("toggle_archived", DataEvent([this] { OnToggleArchived(); }));
         ctor.BindEventCallback("toggle_archived_ai", DataEvent([this] { OnToggleArchivedAi(); }));
         ctor.BindEventCallback("sessions_scroll", DataEvent([this] { OnSessionsScroll(); }));
+        ctor.BindEventCallback("ai_sessions_scroll", DataEvent([this] { OnAiSessionsScroll(); }));
         ctor.BindEventCallback("sessions_load_more", DataEvent([this] { OnSessionsLoadMore(); }));
         ctor.BindEventCallback("new_chat", DataEvent([this] { OnNewChat(); }));
         ctor.BindEventCallback("open_new_session_menu", DataEventAt([this](ui::Event& ev) {

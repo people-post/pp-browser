@@ -24,7 +24,7 @@
       </button>
     </div>
   </div>
-  <div class="ai-drawer-list" id="ai-drawer-sessions" data-model="shell">
+  <div class="ai-drawer-list" id="ai-drawer-sessions" data-model="shell" data-event-scroll="ai_sessions_scroll()">
     <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
@@ -87,9 +87,11 @@
         </div>
       </div>
     </div>
+    <!-- Keeps the last row clear of the frosted "you" bar (its height: the row and the home indicator, ShellHost). -->
+    <div class="ai-drawer-list-end" id="ai-drawer-list-end"></div>
   </div>
   <!-- You: the avatar and name (as on Settings' card; the letter when there is no picture) → Settings. -->
-  <button class="ai-drawer-me" type="button" data-event-click="open_settings_from_avatar()">
+  <button class="ai-drawer-me" id="ai-drawer-me" type="button" data-event-click="open_settings_from_avatar()">
     <div class="ai-drawer-me-avatar" data-model="settings"
          data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
          data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"

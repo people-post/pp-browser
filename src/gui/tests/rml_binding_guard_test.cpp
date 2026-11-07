@@ -120,3 +120,40 @@ TEST(RmlBindingGuardTest, NewChatAndAddContactBackReachTheShellsTransientBack) {
   EXPECT_NE(css.find(".shell-layer-compact .nc-bar {\n  pointer-events: none;\n}"), std::string::npos)
       << "the bar over the shell's back lets taps through";
 }
+
+// Kenneth 2026-11-07: the AI drawer's last row was hidden behind the "you" bar (the engine leaves a scroller's bottom
+// padding out of its scroll height): an end spacer, sized by ShellHost for the bar and the home indicator. The list
+// draws 20 conversations and 20 more near its end (SessionListWindow, like the chats list).
+TEST(RmlBindingGuardTest, TheAiDrawerListEndsWithASpacerAndGrowsOnScroll) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "ai_drawer.rml");
+  const size_t list = rml.find("id=\"ai-drawer-sessions\"");
+  const size_t rows = rml.find("data-for=\"session : ai_sessions\"");
+  const size_t spacer = rml.find("id=\"ai-drawer-list-end\"");
+  const size_t me = rml.find("id=\"ai-drawer-me\"");
+  ASSERT_NE(list, std::string::npos);
+  ASSERT_NE(spacer, std::string::npos);
+  ASSERT_NE(me, std::string::npos);
+  EXPECT_LT(rows, spacer);
+  EXPECT_LT(spacer, me) << "the spacer is the list's last child, before the bar";
+  EXPECT_NE(rml.substr(list, rml.find('>', list) - list).find("data-event-scroll=\"ai_sessions_scroll()\""),
+            std::string::npos);
+  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
+  EXPECT_NE(host.find("GetElementById(\"ai-drawer-list-end\"), \"height\""), std::string::npos);
+  EXPECT_NE(host.find("GetElementById(\"ai-drawer-me\"), \"padding-bottom\""), std::string::npos);
+  const std::string controller = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatController.cpp");
+  EXPECT_NE(controller.find("BindEventCallback(\"ai_sessions_scroll\""), std::string::npos);
+}
+
+// Kenneth 2026-11-07: an AI conversation's header showed a fixed star; it shows its list row's letter and colour.
+TEST(RmlBindingGuardTest, TheChatHeaderShowsTheRowsGlyphForAnAiConversation) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "chat.rml");
+  const size_t start = rml.find("<div class=\"chat-header-avatar\"");
+  ASSERT_NE(start, std::string::npos);
+  const std::string avatar = rml.substr(start, rml.find("<div class=\"chat-header-text\">", start) - start);
+  EXPECT_EQ(avatar.find("sparkle"), std::string::npos);
+  EXPECT_EQ(avatar.find("!thread_is_ai && !thread_is_group && thread_avatar_tone"), std::string::npos);
+  EXPECT_NE(avatar.find("data-if=\"!thread_is_group && !thread_has_icon\">{{thread_avatar_letter}}"), std::string::npos);
+  const std::string chrome = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/chat/ChatThreadChrome.cpp");
+  EXPECT_NE(chrome.find("MakeAvatarGlyph(label.title, label.stable_id)"), std::string::npos)
+      << "the row's own inputs (ChatPresenter)";
+}
