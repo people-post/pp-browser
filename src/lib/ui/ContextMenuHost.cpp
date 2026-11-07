@@ -690,8 +690,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (presentation == Presentation::Float && float_popover_ && compact_layout_) {
     layer_element->SetClass("context-menu-layer--popover", true);
   }
-  if (presentation == Presentation::Float && float_popover_ && float_above_ && compact_layout_) {
-    layer_element->SetClass("context-menu-layer--popover-above", true);
+  if (presentation == Presentation::Float && float_popover_ && float_left_ && compact_layout_) {
+    layer_element->SetClass("context-menu-layer--popover-left", true);
   }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
@@ -792,19 +792,19 @@ void ContextMenuHost::ShowActionsPopover(ui::Element* anchor, std::vector<Contex
   ShowActions(position, std::move(actions), std::move(on_dismissed));
 }
 
-void ContextMenuHost::ShowActionsPopoverAbove(ui::Element* anchor, std::vector<ContextMenuAction> actions,
-                                              std::function<void()> on_dismissed) {
+void ContextMenuHost::ShowActionsPopoverLeftAligned(ui::Element* anchor, std::vector<ContextMenuAction> actions,
+                                                    std::function<void()> on_dismissed) {
   ui::Vector2i position{0, 0};
   if (anchor) {
     const ui::Vector2f offset = anchor->GetAbsoluteOffset(ui::BoxArea::Border);
-    const float gap = context_ ? kAnchorGapDp * context_->GetDensityIndependentPixelRatio() : 4.f;
-    // The menu is 200dp wide (components.rcss, --popover-above) and a pull-down is laid out by its right edge: that edge
-    // goes 200dp right of the button's left, so the menu's left edge lines up with the button's.
+    const ui::Vector2f size = anchor->GetBox().GetSize(ui::BoxArea::Border);
     const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
-    position.x = static_cast<int>(offset.x + 200.f * ratio);
-    position.y = static_cast<int>(offset.y - gap);
+    // A pull-down is laid out by its right edge; the card is 150dp wide (components.rcss, --popover-left), so that edge
+    // goes 150dp right of the button's left, and the card starts 8dp under the button.
+    position.x = static_cast<int>(offset.x + 150.f * ratio);
+    position.y = static_cast<int>(offset.y + size.y + 8.f * ratio);
   }
-  next_show_above_ = true;
+  next_show_left_ = true;
   next_show_popover_ = true;
   ShowActions(position, std::move(actions), std::move(on_dismissed));
 }
@@ -813,6 +813,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
                                   std::function<void()> on_dismissed, std::string title) {
   const bool above = std::exchange(next_show_above_, false);
   const bool popover = std::exchange(next_show_popover_, false);
+  const bool left = std::exchange(next_show_left_, false);
   if (dismiss_pending_) {
     // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
     // event, which is why its teardown was deferred. Tearing it down here instead would leave the
@@ -823,6 +824,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   Dismiss();  // a menu still open went away without a choice: its notice runs in there
   float_above_ = above;
   float_popover_ = popover;
+  float_left_ = left;
   if (!context_ || actions.empty()) {
     if (on_dismissed) {
       on_dismissed();  // nothing was shown, so nothing can be chosen
@@ -886,6 +888,7 @@ void ContextMenuHost::Dismiss() {
   presentation_ = Presentation::Float;
   float_above_ = false;
   float_popover_ = false;
+  float_left_ = false;
   if (layer) {
     layer->RemoveEventListener(ui::EventId::Mousedown, this, true);
     layer->RemoveEventListener(ui::EventId::Click, this, true);

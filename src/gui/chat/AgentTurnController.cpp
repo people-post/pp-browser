@@ -352,28 +352,37 @@ void AgentTurnController::OnAttachAiImage() {
 }
 
 std::vector<ContextMenuAction> AgentTurnController::HomeAttachActions(std::function<void()> camera,
-                                                                       std::function<void()> photos) {
+                                                                       std::function<void()> photos,
+                                                                       std::function<void()> file) {
   std::vector<ContextMenuAction> actions;
   actions.push_back({"home_attach_camera", Tr("home.attach.camera"), nullptr, std::move(camera),
                      "../icons/v2/camera.svg"});
   actions.push_back({"home_attach_photo", Tr("home.attach.photo"), nullptr, std::move(photos),
                      "../icons/v2/photo.svg"});
+  actions.push_back({"home_attach_file", Tr("chat.attach.file"), nullptr, std::move(file), "../icons/v2/file.svg"});
   return actions;
 }
 
 void AgentTurnController::ShowHomeAttachMenu(ui::Element* anchor) {
   auto camera = [this]() { CaptureAiPhoto([this](std::string path) { StartAiImagePrepare(std::move(path)); }); };
-  auto photos = [this]() {
-    NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
-      AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-        if (!paths.empty()) {
-          StartAiImagePrepare(std::move(paths.front()));
-        }
-      });
+  const auto picker = [this](const bool files_app) {
+    return [this, files_app]() {
+      NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
+        AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+          if (!paths.empty()) {
+            StartAiImagePrepare(std::move(paths.front()));
+          }
+        });
+      };
+      // The assistant reads images only: "Photos" is the library, "File" the Files app's image files.
+      if (files_app) {
+        ShowOpenImageDocumentDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+      } else {
+        ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+      }
     };
-    ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
   };
-  ContextMenuHost::Instance().ShowActionsPopoverAbove(anchor, HomeAttachActions(std::move(camera), std::move(photos)));
+  ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(anchor, HomeAttachActions(std::move(camera), picker(false), picker(true)));
 }
 
 void AgentTurnController::PickAiImage(std::function<void(std::string path)> picked) {

@@ -977,20 +977,24 @@ TEST_F(AgentTurnBusyTest, ALateEventOfADeletedConversationIsIgnored) {
 }
 
 // The Home plus menu always lists Camera first, then Photos (the camera's own notice tells when it is unavailable).
-TEST(HomeAttachMenuTest, ListsCameraThenPhotosUnconditionally) {
-  int camera = 0, photos = 0;
+TEST(HomeAttachMenuTest, ListsCameraPhotosThenFileUnconditionally) {
+  int camera = 0, photos = 0, file = 0;
   const std::vector<ContextMenuAction> actions =
-      AgentTurnController::HomeAttachActions([&] { ++camera; }, [&] { ++photos; });
-  ASSERT_EQ(actions.size(), 2u);
+      AgentTurnController::HomeAttachActions([&] { ++camera; }, [&] { ++photos; }, [&] { ++file; });
+  ASSERT_EQ(actions.size(), 3u);
   EXPECT_EQ(actions[0].id, "home_attach_camera");
   EXPECT_EQ(actions[1].id, "home_attach_photo");
+  EXPECT_EQ(actions[2].id, "home_attach_file");
+  EXPECT_FALSE(actions[2].enabled);
   EXPECT_FALSE(actions[0].enabled) << "no availability gate";
   EXPECT_FALSE(actions[1].enabled);
   EXPECT_FALSE(actions[0].icon.empty());
   actions[0].run();
   actions[1].run();
+  actions[2].run();
   EXPECT_EQ(camera, 1);
   EXPECT_EQ(photos, 1);
+  EXPECT_EQ(file, 1);
 }
 
 } // namespace

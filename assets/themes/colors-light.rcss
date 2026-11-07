@@ -10,6 +10,11 @@ body {
   background-color: #ffffff;
 }
 
+/* Phone Home root: the page under the strip is the dock colour (see ShellHost::ApplySafeAreaLayout). */
+.shell-statusbar-strip.shell-statusbar-strip--home {
+  background-color: #ffffff;
+}
+
 /* Monochrome icons are white sources; tint with image-color (does not inherit). */
 svg {
   image-color: #000000;
@@ -3404,6 +3409,23 @@ input.checkbox:checked {
 }
 }
 
-.context-menu-layer--popover-above .context-menu-item-icon {
+.context-menu-layer--popover-left .context-menu-panel {
+  background-color: #e2e2e9;
+  decorator: linear-gradient(to bottom, #ffffff, #e2e2e9);
+  box-shadow: 0 2dp 8dp #00000026;
+}
+
+.context-menu-layer--popover-left .context-menu-item,
+.context-menu-layer--popover-left .context-menu-item:hover,
+.context-menu-layer--popover-left .context-menu-item:focus {
+  background-color: transparent;
+  border: 0;
+}
+
+.context-menu-layer--popover-left .context-menu-item:active {
+  background-color: #78788033;
+}
+
+.context-menu-layer--popover-left .context-menu-item-icon {
   background-color: #7878801f;
 }

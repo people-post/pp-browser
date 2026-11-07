@@ -1760,6 +1760,13 @@ void ShellHost::ApplySafeAreaLayout() {
          statusbar_dp + bottom_chrome_dp + layout.content_bottom_inset_dp);
   set_dp(doc->GetElementById("shell-chrome"), "padding-top", layout.content_top_dp);
   set_dp(doc->GetElementById("shell-statusbar-strip"), "height", layout.content_top_dp);
+  if (ui::Element* strip = doc->GetElementById("shell-statusbar-strip")) {
+    // On the phone's Home root the page under the strip is the dock colour, not the body's: the strip takes it, so the
+    // inset does not end in a line (the Chats bar keeps the body colour and its own material).
+    strip->SetClass("shell-statusbar-strip--home",
+                    state_.layout_mode == LayoutMode::Compact && state_.nav_tab == NavTab::Home &&
+                        !state_.compact_chat_open && state_.transient_stack.empty() && state_.overlay_stack.empty());
+  }
   if (ui::Element* toasts = doc->GetElementById("shell-toast-stack")) {
     if (bottom_surface != CompactBottomSurface::None) {
       // Phone: a centred pill above the tab bar / composer (the chrome fills the body, see components.rcss).

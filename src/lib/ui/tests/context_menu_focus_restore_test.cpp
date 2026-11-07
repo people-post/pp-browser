@@ -403,19 +403,19 @@ TEST_F(ContextMenuSheetTest, ThePlusGrowsTheSheetAndHandsItsBodyOver) {
 }
 
 // The Home composer's plus: a floating pull-down opened above the button (two rows), closed by a dismiss.
-TEST_F(ContextMenuPopoverTest, APopoverAboveIsAFloatMenuThatClosesOnDismiss) {
+TEST_F(ContextMenuPopoverTest, ALeftAlignedPopoverIsAFloatMenuThatClosesOnDismiss) {
   ContextMenuHost::Instance().SetCompactLayout(true);
   std::vector<ContextMenuAction> actions = OneAction();
   actions.push_back(actions.front());
   actions[1].id = "second";
-  ContextMenuHost::Instance().ShowActionsPopoverAbove(document_->GetElementById("field"), std::move(actions));
+  ContextMenuHost::Instance().ShowActionsPopoverLeftAligned(document_->GetElementById("field"), std::move(actions));
   context_->Update();
   ASSERT_TRUE(ContextMenuHost::Instance().IsOpen());
   ui::Element* layer = document_->GetElementById("context-menu-layer");
   ASSERT_NE(layer, nullptr);
   EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
   EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
-  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-above"));
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-left"));
   ui::ElementList items;
   layer->GetElementsByClassName(items, "context-menu-item");
   EXPECT_EQ(items.size(), 2u) << "both rows are in the menu";

@@ -13459,44 +13459,46 @@ textarea:composing ~ .prompt-composer-label,
   border-radius: 16dp;
 }
 
-/* Floating plus menu (ContextMenuHost::ShowActionsPopoverAbove; Grok / iOS look): 200dp wide, 16dp corners, 56dp rows
-   of a 36dp round grey icon tile and a 17dp label. Its shadow is the base panel's; colours: colors.rcss.tmpl. */
-.context-menu-layer--popover-above .context-menu-panel {
-  width: 200dp;
-  min-width: 200dp;
-  max-width: 200dp;
+/* Floating plus menu (ContextMenuHost::ShowActionsPopoverLeftAligned): a 150dp card under the button, left edges
+   aligned; 48dp rows of a 28dp round icon tile and a 16dp label, no separators. Its look (grey card, gradient, shadow)
+   is in colors.rcss.tmpl. */
+.context-menu-layer--popover-left .context-menu-panel {
+  width: 150dp;
+  min-width: 150dp;
+  max-width: 150dp;
   padding: 0;
   border: 0;
   border-radius: 16dp;
   overflow: hidden;
 }
 
-.context-menu-layer--popover-above .context-menu-item {
+.context-menu-layer--popover-left .context-menu-item {
   flex-direction: row;
   align-items: center;
-  gap: 12dp;
-  height: 56dp;
-  min-height: 56dp;
+  gap: 10dp;
+  height: 48dp;
+  min-height: 48dp;
   padding: 0 12dp;
+  border: 0;
   border-radius: 0;
 }
 
-.context-menu-layer--popover-above .context-menu-item-icon {
+.context-menu-layer--popover-left .context-menu-item-icon {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36dp;
-  height: 36dp;
-  border-radius: 18dp;
+  width: 28dp;
+  height: 28dp;
+  border-radius: 14dp;
 }
 
-.context-menu-layer--popover-above .context-menu-item-icon svg {
-  width: 20dp;
-  height: 20dp;
+.context-menu-layer--popover-left .context-menu-item-icon svg {
+  width: 16dp;
+  height: 16dp;
 }
 
-.context-menu-layer--popover-above .context-menu-item-label {
-  font-size: 17dp;
+.context-menu-layer--popover-left .context-menu-item-label {
+  font-size: 16dp;
   white-space: nowrap;
 }
