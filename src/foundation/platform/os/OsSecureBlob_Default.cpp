@@ -2,8 +2,8 @@
 
 namespace pbr::os {
 
-// Desktop uninstalls leave the user directory in place, so there is nothing to survive; Android
-// (Keystore + no-backup) is still to come.
+// Desktop uninstalls leave the user directory in place, so there is nothing to survive. Android has its own file
+// (Keystore + no-backup, OsSecureBlob_Android.cpp).
 Roe<void> SecureBlobWrite(const std::string& /*name*/, const std::vector<uint8_t>& /*bytes*/) {
   return Error("Secure blob store is not supported on this platform");
 }
