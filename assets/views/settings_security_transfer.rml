@@ -5,28 +5,8 @@
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.help}}</p>
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.send_hint}}</p>
   <p class="text muted settings-help group-foot">{{i18n:settings.security.link_device.reset_hint}}</p>
-  <!-- An own PIN: the PIN first, in a field under the button like the recovery phrase's (plan #21 ⑧). -->
-  <div class="stack" data-if="security_can_export_link && !own_devices_not_main && export_pin_open">
-    <p class="text muted settings-help group-foot">{{i18n:settings.security.export_pin_prompt}}</p>
-    <div class="group-card">
-      <label class="settings-field group-row group-row--field">
-        <span class="group-row-body group-row-body--field">
-          <span class="settings-label group-row-text">{{i18n:settings.security.recovery.pin_label}}</span>
-          <input class="field" type="password" data-value="export_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
-          <span class="group-field-hint" data-if="export_pin == ''">{{i18n:settings.security.recovery.pin_placeholder}}</span>
-        </span>
-      </label>
-    </div>
-    <div class="settings-toggle-row row group-actions">
-      <button class="btn btn-secondary" type="button" data-event-click="cancel_export_pin()">
-        {{i18n:common.cancel}}
-      </button>
-      <button class="btn" type="button" data-event-click="export_link_device()">
-        {{i18n:settings.security.link_device.export}}
-      </button>
-    </div>
-  </div>
-  <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main && !export_pin_open"
+  <!-- An own PIN: the PIN first, on the PIN gate (plan #21 ⑧; its number pad for a digit PIN, B2). -->
+  <button class="btn" type="button" data-if="security_can_export_link && !own_devices_not_main"
           data-event-click="export_link_device()">
     {{i18n:settings.security.link_device.export}}
   </button>

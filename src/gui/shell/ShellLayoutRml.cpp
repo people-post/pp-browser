@@ -366,6 +366,8 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
+  out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_biometric_hint != ''\">"
+         "{{pin_gate_biometric_hint}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
       << Tr("pin.identity_new") << "</button>";
@@ -406,26 +408,13 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<button class=\"btn btn-ghost\" data-if=\"pin_gate_link_paste_mode && pin_gate_phrase_flow && !pin_gate_payload_hidden\" "
          "data-event-click=\"pin_gate_use_saved_copy()\">"
       << Tr("pin.phrase_use_saved_copy") << "</button>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode && "
-         "!pin_gate_waiting_device_unlock\" "
-         "data-value=\"pin_gate_pin\" placeholder=\""
-      << Tr("pin.placeholder") << "\"/>";
-  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
-         "data-if=\"pin_gate_create_mode && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
-         "placeholder=\""
-      << Tr("pin.confirm_placeholder") << "\"/>";
-  out << "<div class=\"shell-dialog-actions row\" "
-         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_waiting_device_unlock\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
-         "data-event-click=\"pin_gate_cancel()\">"
-      << Tr("pin.not_now") << "</button>";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
-         "data-event-click=\"pin_gate_cancel()\">"
-      << Tr("common.back") << "</button>";
-  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
-      << "</button>";
-  out << "</div>";
+  if (state_.pin_gate.biometric_first) {
+    PinGateBiometricFirst(out);
+  } else if (state_.pin_gate.keypad) {
+    PinGateKeypad(out);
+  } else {
+    PinGateFields(out);
+  }
   // PIN grace window: a call waits for the locked phone's unlock; the PIN stays one tap away.
   out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_waiting_device_unlock\" "
          "data-event-click=\"pin_gate_use_pin_instead()\">"
@@ -437,6 +426,112 @@ std::string ShellLayoutRml::PinGate() const {
       << Tr("pin.forgot_explain") << "</p>";
   out << "</div></div>";
   return out.str();
+}
+
+bool ShellLayoutRml::PinGateFocusesField(const PinGateState& gate) {
+  return gate.active && !gate.keypad && !gate.biometric_first && !gate.chooser_mode && !gate.identity_fork_mode &&
+         !gate.link_paste_mode && !gate.waiting_device_unlock;
+}
+
+// The field mode: the PIN (and a new PIN's confirmation) in password fields with the system keyboard; Continue submits.
+void ShellLayoutRml::PinGateFields(std::ostringstream& out) const {
+  out << "<input id=\"" << kPinGateFieldId << "\" class=\"field shell-pin-gate-input\" type=\"password\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_link_paste_mode && "
+         "!pin_gate_waiting_device_unlock\" "
+         "data-value=\"pin_gate_pin\" placeholder=\""
+      << Tr("pin.placeholder") << "\"/>";
+  out << "<input class=\"field shell-pin-gate-input\" type=\"password\" "
+         "data-if=\"pin_gate_ask_confirm && !pin_gate_chooser_mode\" data-value=\"pin_gate_pin_confirm\" "
+         "placeholder=\""
+      << Tr("pin.confirm_placeholder") << "\"/>";
+  out << "<div class=\"shell-dialog-actions row\" "
+         "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode && !pin_gate_waiting_device_unlock\">";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("pin.not_now") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_verify_mode || pin_gate_change_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("common.cancel") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("common.back") << "</button>";
+  out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
+      << "</button>";
+  out << "</div>";
+  // Back to the number pad: a PIN known to be digits, or a new PIN on a phone.
+  out << "<button class=\"btn btn-ghost shell-pin-gate-link\" "
+         "data-if=\"pin_gate_keypad_offered && !pin_gate_link_paste_mode && !pin_gate_waiting_device_unlock\" "
+         "data-event-click=\"pin_gate_use_keypad()\">"
+      << Tr("pin.keypad_use_digits") << "</button>";
+  // Face / fingerprint unlock on: a text PIN (or a pad switched to the field) can prompt again too.
+  for (const char* kind : {"face", "touch", "fingerprint"}) {
+    out << "<button class=\"btn btn-ghost shell-pin-gate-link\" data-if=\"pin_gate_biometric_key && "
+           "pin_gate_biometric_kind == '"
+        << kind << "' && !pin_gate_waiting_device_unlock\" data-event-click=\"pin_gate_biometric()\">"
+        << Tr(std::string("pin.biometric_link.") + kind) << "</button>";
+  }
+}
+
+// Face / fingerprint unlock on (at-rest A014): the door opens like the phone's own lock screen -- the sensor's key
+// (prompts again) and "Enter PIN"; the pad / field come only after that button.
+void ShellLayoutRml::PinGateBiometricFirst(std::ostringstream& out) const {
+  out << "<div class=\"shell-pin-bio\" data-if=\"!pin_gate_waiting_device_unlock\">";
+  out << "<button class=\"shell-pin-bio-key\" data-event-click=\"pin_gate_biometric()\">"
+         "<svg class=\"shell-pin-bio-icon\" data-if=\"pin_gate_biometric_kind == 'face'\" "
+         "src=\"../icons/v2/face-id.svg\" width=\"64\" height=\"64\"></svg>"
+         "<svg class=\"shell-pin-bio-icon\" data-if=\"pin_gate_biometric_kind != 'face'\" "
+         "src=\"../icons/v2/fingerprint.svg\" width=\"64\" height=\"64\"></svg>"
+         "</button>";
+  out << "<button class=\"btn btn-secondary shell-pin-bio-pin\" data-event-click=\"pin_gate_use_pin()\">"
+      << Tr("pin.biometric_use_pin") << "</button>";
+  out << "</div>";
+}
+
+// The number pad (phones, a digit PIN; DEV/PLAN-pin-gate-redesign.md B): a row of dots, 3 x 4 keys, no input element
+// (no system keyboard). A full PIN submits itself; a new PIN's first entry goes on with "OK" (bottom left).
+void ShellLayoutRml::PinGateKeypad(std::ostringstream& out) const {
+  out << "<div class=\"shell-pin-pad\" data-if=\"!pin_gate_waiting_device_unlock\">";
+  out << "<div class=\"shell-pin-dots\" data-class-shell-pin-dots--busy=\"pin_gate_keypad_busy\">";
+  for (int i = 0; i < 8; ++i) {
+    out << "<span class=\"shell-pin-dot\" data-if=\"pin_gate_keypad_slots > " << i
+        << "\" data-class-shell-pin-dot--filled=\"pin_gate_keypad_filled > " << i << "\"></span>";
+  }
+  out << "</div>";
+  out << "<div class=\"shell-pin-keys\">";
+  for (int digit = 1; digit <= 9; ++digit) {
+    out << "<button class=\"shell-pin-key\" data-event-click=\"pin_gate_key(" << digit << ")\">" << digit
+        << "</button>";
+  }
+  out << "<button class=\"shell-pin-key shell-pin-key--plain shell-pin-key--word\" data-if=\"pin_gate_keypad_ok_shown\" "
+         "data-event-click=\"pin_gate_ok()\">"
+      << Tr("pin.keypad_ok") << "</button>";
+  // Face / fingerprint unlock on (unlock only, where no "OK" is due): its key prompts again.
+  out << "<button class=\"shell-pin-key shell-pin-key--plain\" "
+         "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" data-event-click=\"pin_gate_biometric()\">"
+         "<svg class=\"shell-pin-key-icon\" data-if=\"pin_gate_biometric_kind == 'face'\" "
+         "src=\"../icons/v2/face-id.svg\" width=\"28\" height=\"28\"></svg>"
+         "<svg class=\"shell-pin-key-icon\" data-if=\"pin_gate_biometric_kind != 'face'\" "
+         "src=\"../icons/v2/fingerprint.svg\" width=\"28\" height=\"28\"></svg>"
+         "</button>";
+  out << "<span class=\"shell-pin-key shell-pin-key--blank\" "
+         "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"></span>";
+  out << "<button class=\"shell-pin-key\" data-event-click=\"pin_gate_key(0)\">0</button>";
+  out << "<button class=\"shell-pin-key shell-pin-key--plain\" data-event-click=\"pin_gate_backspace()\">"
+         "<svg class=\"shell-pin-key-icon\" src=\"../icons/v2/delete-left.svg\" width=\"28\" height=\"28\"></svg>"
+         "</button>";
+  out << "</div>";
+  // Always there: any PIN can be typed in the field (a kind remembered wrongly still gets in).
+  out << "<button class=\"btn btn-ghost shell-pin-gate-link\" data-event-click=\"pin_gate_use_text()\">"
+         "{{pin_gate_keypad_text_label}}</button>";
+  out << "<div class=\"shell-dialog-actions row\" data-if=\"pin_gate_create_mode || pin_gate_verify_mode || "
+         "pin_gate_change_mode\">";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" data-event-click=\"pin_gate_cancel()\">"
+      << Tr("pin.not_now") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_verify_mode || pin_gate_change_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("common.cancel") << "</button>";
+  out << "</div>";
+  out << "</div>";
 }
 
 std::string ShellLayoutRml::ShellRoot() const {

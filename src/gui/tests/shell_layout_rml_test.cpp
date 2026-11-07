@@ -194,6 +194,101 @@ TEST(ShellLayoutRmlTest, ALongButtonLabelStacksTheDialogButtons) {
   EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").Dialog(), "shell-dialog-actions--stack"));
 }
 
+// DEV/PLAN-pin-gate-redesign.md B: the number pad has no input element (no system keyboard, the PIN bound nowhere);
+// the field mode keeps its field, which takes the focus as the gate comes up (Kenneth 2026-11-07).
+TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  const std::string pad = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(pad, "<input"));
+  EXPECT_FALSE(Has(pad, "pin_gate_pin"));
+  EXPECT_FALSE(Has(pad, "pin_gate_submit()")) << "a full PIN submits itself";
+  for (int digit = 0; digit <= 9; ++digit) {
+    EXPECT_TRUE(Has(pad, "pin_gate_key(" + std::to_string(digit) + ")")) << digit;
+  }
+  EXPECT_TRUE(Has(pad, "pin_gate_backspace()"));
+  EXPECT_TRUE(Has(pad, "pin_gate_ok()"));
+  EXPECT_TRUE(Has(pad, "pin_gate_use_text()")) << "the field is always one tap away";
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
+
+  state.pin_gate.keypad = false;
+  const std::string field = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(field, std::string("id=\"") + ShellLayoutRml::kPinGateFieldId + "\""));
+  EXPECT_TRUE(Has(field, "data-value=\"pin_gate_pin\""));
+  EXPECT_FALSE(Has(field, "pin_gate_key("));
+  EXPECT_TRUE(Has(field, "pin_gate_use_keypad()"));
+  EXPECT_TRUE(ShellLayoutRml::PinGateFocusesField(state.pin_gate));
+
+  for (bool PinGateState::*mode : {&PinGateState::chooser_mode, &PinGateState::identity_fork_mode,
+                                   &PinGateState::link_paste_mode, &PinGateState::waiting_device_unlock,
+                                   &PinGateState::biometric_first}) {
+    PinGateState gate = state.pin_gate;
+    gate.*mode = true;
+    EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(gate)) << "no PIN field to type in there";
+  }
+  PinGateState closed;
+  EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(closed));
+}
+
+// Face / fingerprint unlock (DEV/PLAN-pin-gate-redesign.md C): the pad's bottom-left key (where no "OK" is due) with
+// the face or the fingerprint icon; the field's link by the sensor's name; the hint line when there is one.
+TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  const std::string pad = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
+                       "data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"")) << "else the blank";
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_hint != ''\">{{pin_gate_biometric_hint}}"));
+  for (const char* icon : {"icons/v2/face-id.svg", "icons/v2/fingerprint.svg"}) {
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / icon)) << icon;
+  }
+
+  state.pin_gate.keypad = false;
+  const std::string field = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(field, "face-id.svg"));
+  for (const char* kind : {"face", "touch", "fingerprint"}) {
+    EXPECT_TRUE(Has(field, std::string("pin_gate_biometric_kind == '") + kind + "'")) << kind;
+    EXPECT_TRUE(Has(field, Tr(std::string("pin.biometric_link.") + kind))) << kind;
+  }
+  EXPECT_TRUE(Has(field, "pin_gate_biometric()"));
+  EXPECT_TRUE(Has(field, "{{pin_gate_biometric_hint}}"));
+}
+
+// Face / fingerprint first: the door opens with the big sensor key and "Enter PIN" -- no pad, no field.
+TEST(ShellLayoutRmlTest, ABiometricFirstDoorHasOnlyTheKeyAndEnterPin) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  state.pin_gate.biometric_first = true;
+  const std::string door = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(door, "class=\"shell-pin-bio-key\" data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(door, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
+  EXPECT_TRUE(Has(door, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));
+  EXPECT_TRUE(Has(door, "data-event-click=\"pin_gate_use_pin()\">" + Tr("pin.biometric_use_pin")));
+  EXPECT_FALSE(Has(door, "shell-pin-keys")) << "no pad yet";
+  EXPECT_FALSE(Has(door, "pin_gate_key("));
+  EXPECT_FALSE(Has(door, std::string("id=\"") + ShellLayoutRml::kPinGateFieldId)) << "no field yet";
+  EXPECT_TRUE(Has(door, "pin_gate_forgot_toggle()")) << "Forgot PIN stays";
+}
+
+TEST(ShellLayoutRmlTest, ThePinPadKeysAreAtLeast64dp) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  const std::string css = buffer.str();
+  const size_t key = css.find(".shell-pin-key {");
+  ASSERT_NE(key, std::string::npos);
+  EXPECT_EQ(css.find("width: 72dp;\n  height: 72dp;", key), css.find("width:", key));
+}
+
 TEST(ShellLayoutRmlTest, NoDialogNoPinGateNoMarkup) {
   const ShellLayoutRml rml(ShellState{}, false, "");
   EXPECT_TRUE(rml.Dialog().empty());

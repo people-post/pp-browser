@@ -230,6 +230,83 @@ void ProfileSecretsEngine::ForgetGrace() {
   }
 }
 
+void ProfileSecretsEngine::AttachBiometric(std::unique_ptr<BiometricUnlock> biometric) {
+  biometric_ = std::move(biometric);
+}
+
+bool ProfileSecretsEngine::BiometricSupported() const {
+  return biometric_ && biometric_->Supported();
+}
+
+bool ProfileSecretsEngine::BiometricEnabled() const {
+  return BiometricSupported() && biometric_->Enabled();
+}
+
+Roe<BiometricUnlock::Result> ProfileSecretsEngine::TryBiometricUnlock(const std::string& prompt) {
+  BiometricUnlock::Result missing;
+  if (!initialized_ || !BiometricSupported()) {
+    return missing;
+  }
+  auto found = biometric_->TryUnlock(prompt);
+  if (!found) {
+    return found.error();
+  }
+  // The same handling as TryGraceUnlock: the DEK is wiped on every way out. Nothing on disk can check it against
+  // the vault without the PIN, so the vault's own size check is the check; the DEK-replacing paths Disable.
+  auto wipe_dek = [&found]() {
+    if (!found->dek.empty()) {
+      sodium_memzero(found->dek.data(), found->dek.size());
+      found->dek.clear();
+    }
+  };
+  if (found->status != BiometricUnlock::Status::Found || unlocked_) {
+    wipe_dek();
+    return found;
+  }
+  if (!vault_ || !vault_->Exists()) {
+    wipe_dek();
+    biometric_->Disable();
+    return missing;
+  }
+  if (auto set = vault_->UnlockWithDek(found->dek); !set) {
+    wipe_dek();
+    biometric_->Disable();
+    return missing;
+  }
+  wipe_dek();
+  if (auto distributed = RedistributeUnlockedDek(); !distributed) {
+    Lock();
+    return distributed.error();
+  }
+  return found;
+}
+
+Roe<void> ProfileSecretsEngine::EnableBiometric(std::string_view pin) {
+  if (!initialized_ || !vault_) {
+    return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");
+  }
+  if (!BiometricSupported()) {
+    return Error("Biometric unlock is not supported on this device");
+  }
+  auto bytes = vault_->ReadVaultFile();
+  if (!bytes) {
+    return bytes.error();
+  }
+  auto dek = DataKeyVault::UnwrapDekFromVaultBytes(*bytes, vault_->ProfileId(), pin);
+  if (!dek) {
+    return dek.error();
+  }
+  auto enabled = biometric_->Enable(*dek);
+  sodium_memzero(dek->data(), dek->size());
+  return enabled;
+}
+
+void ProfileSecretsEngine::DisableBiometric() {
+  if (biometric_) {
+    biometric_->Disable();
+  }
+}
+
 Roe<void> ProfileSecretsEngine::VerifyPin(std::string_view pin) const {
   if (!initialized_ || !vault_) {
     return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets service not initialized");

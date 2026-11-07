@@ -2,6 +2,7 @@
 
 #include "lib/ui/ShellTypes.h"
 
+#include <sstream>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -23,6 +24,13 @@ public:
   std::string PinGate() const;
   /** True when a Cancel + OK pair would not fit side by side in the phone alert card: the buttons stack instead. */
   static bool DialogButtonsStacked(const std::string& cancel_label, const std::string& ok_label);
+  /** The PIN gate's field (field mode), focused when the gate is mounted. */
+  static constexpr const char* kPinGateFieldId = "shell-pin-gate-pin";
+  /**
+   * The gate shows a PIN field to type in (unlock / create / verify / change in field mode, not the number pad): it
+   * gets the focus as the gate comes up, so the system keyboard is there without a tap (Kenneth 2026-11-07).
+   */
+  static bool PinGateFocusesField(const PinGateState& gate);
 
 private:
   std::string PaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
@@ -32,6 +40,9 @@ private:
   std::string TransientLayer() const;
   std::string Overlays() const;
   const PaneState* FindPane(const std::string& key) const;
+  void PinGateFields(std::ostringstream& out) const;
+  void PinGateKeypad(std::ostringstream& out) const;
+  void PinGateBiometricFirst(std::ostringstream& out) const;
   bool ChromeFrostEnabled() const;
 
   const ShellState& state_;

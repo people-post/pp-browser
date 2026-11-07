@@ -2,6 +2,7 @@
 
 #include "common/Secret.h"
 
+#include "foundation/crypto/BiometricUnlock.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/GraceUnlock.h"
@@ -52,6 +53,23 @@ public:
   /** Moves the window's end to now + minutes; nothing without an entry. */
   Roe<void> TouchGrace(int minutes);
   void ForgetGrace();
+  // --- Face / fingerprint unlock (at-rest A014). Without AttachBiometric every call here is a no-op / Missing. ---
+  void AttachBiometric(std::unique_ptr<BiometricUnlock> biometric);
+  /** The device and store can hold the biometric entry. */
+  bool BiometricSupported() const;
+  /** Supported and `biometric.bin` exists. */
+  bool BiometricEnabled() const;
+  /**
+   * Shows the system prompt (blocks: never on the UI thread). Found → the vault is unlocked with the DEK and fanned
+   * out as after Unlock(); a DEK the vault does not take, or no vault, deletes both pieces and answers Missing. Only
+   * `status` and `code` are meaningful: the result's `dek` is wiped and empty.
+   */
+  Roe<BiometricUnlock::Result> TryBiometricUnlock(const std::string& prompt);
+  /** Opens the vault with `pin` on the side (as VerifyPin) and seals its DEK for biometric unlock. */
+  Roe<void> EnableBiometric(std::string_view pin);
+  /** Deletes both pieces. Every path that replaces the DEK must call it (biometric.bin cannot be checked). */
+  void DisableBiometric();
+
   /** DataKeyVault::ChangePin, then ForgetGrace on success. */
   Roe<void> ChangePin(std::string_view current_pin, std::string_view new_pin);
 
@@ -79,6 +97,7 @@ private:
   std::unique_ptr<DataKeyVault> vault_;
   std::unique_ptr<GraceUnlock> grace_;
   std::function<GraceClock()> grace_clock_;
+  std::unique_ptr<BiometricUnlock> biometric_;
   std::vector<IDekConsumer*> dek_consumers_;
   std::function<void()> on_unlocked_;
   bool initialized_ = false;

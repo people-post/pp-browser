@@ -30,12 +30,15 @@
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
+#include "foundation/crypto/PinRules.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/OsSecureBlobStore.h"
 #include "foundation/platform/os/OsProtectedData.h"
 #include "foundation/platform/os/OsAppState.h"
 #include "foundation/crypto/GraceUnlock.h"
+#include "foundation/crypto/BiometricUnlock.h"
+#include "foundation/platform/os/OsBiometry.h"
 #include "common/Diag.h"
 #include "lib/people/RetiredKeychainBackup.h"
 #include "foundation/data/SessionStore.h"
@@ -410,8 +413,11 @@ Roe<void> Application::ResetActiveProfile() {
   }
 
   // The PIN grace window's keychain entry outlives the profile directory: deleted right before the wipe, so a reset
-  // that stopped short above keeps the window.
+  // that stopped short above keeps the window. The face / fingerprint entry too (the DEK goes with the profile).
   ForgetGrace();
+  if (secrets_) {
+    secrets_->DisableBiometric();
+  }
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -429,6 +435,7 @@ Roe<void> Application::ResetActiveProfile() {
     return secrets.error();
   }
   AttachGrace();
+  AttachBiometric();
   secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
   if (auto hub = messaging_->Initialize(HubSettingsFor(config, profile_dir), profile_dir); !hub) {
@@ -550,6 +557,31 @@ void Application::AttachGrace() {
   secrets_->AttachGrace(
       std::make_unique<GraceUnlock>(OsSecureBlobStore(), secrets_->ProfileDataDir(), secrets_->ProfileId()),
       &os::GraceClockNow);
+}
+
+void Application::AttachBiometric() {
+  if (!secrets_ || !secrets_->IsInitialized()) {
+    return;
+  }
+  secrets_->AttachBiometric(
+      std::make_unique<BiometricUnlock>(OsSecureBlobStore(), secrets_->ProfileDataDir(), secrets_->ProfileId()));
+}
+
+std::string Application::BiometricKind() const {
+  if (!secrets_ || !secrets_->IsInitialized() || !secrets_->BiometricSupported()) {
+    return {};
+  }
+  switch (os::BiometryKind()) {
+  case os::Biometry::Face:
+    return "face";
+  case os::Biometry::Touch:
+    return "touch";
+  case os::Biometry::Fingerprint:
+    return "fingerprint";
+  case os::Biometry::None:
+    break;
+  }
+  return {};
 }
 
 void Application::TouchGrace() {
@@ -964,6 +996,20 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       StartGraceTimer();  // kept running, or back after "Immediately"
     }
   };
+  // Face / fingerprint unlock (at-rest A014): Me → Security's switch. Enabling runs Argon2 (the caller is a worker).
+  settings_commands.biometric_kind = [this]() { return BiometricKind(); };
+  settings_commands.biometric_enabled = [this]() { return secrets_ && secrets_->BiometricEnabled(); };
+  settings_commands.enable_biometric = [this](const SecretText& pin) -> Roe<void> {
+    if (!secrets_) {
+      return AppError::Pin(Err::Pin::VaultUnavailable, "Profile secrets unavailable");
+    }
+    return secrets_->EnableBiometric(pin.Reveal());
+  };
+  settings_commands.disable_biometric = [this]() {
+    if (secrets_) {
+      secrets_->DisableBiometric();
+    }
+  };
   settings_commands.recovery_phrase = [&facade](const SecretText& pin) { return facade.RecoveryPhrase(pin); };
   settings_commands.verify_pin = [this](const SecretText& pin) { return secrets_->VerifyPin(pin.Reveal()); };
   settings_commands.has_recovery_phrase = [&facade]() { return facade.HasRecoveryPhrase(); };
@@ -1195,6 +1241,19 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
+  {
+    // DEV/PLAN-pin-gate-redesign.md B: the number pad on phones only; desktops keep the field and the keyboard.
+    PinGateKeypadPorts keypad;
+    keypad.keypad_available = []() { return Platform::IsMobile(); };
+    keypad.pin_digits = [this]() -> std::optional<int> {
+      return store_.IsInitialized() ? store_.Snapshot().profile_prefs.pin_digits : std::nullopt;
+    };
+    // Face / fingerprint unlock on (A014): the unlock door's key.
+    keypad.biometric_kind = [this]() -> std::string {
+      return secrets_ && secrets_->BiometricEnabled() ? BiometricKind() : std::string();
+    };
+    pin_gate_->BindKeypad(std::move(keypad));
+  }
   // A push's call came or went (Android's call notification, P014): the PIN screen words itself by it, and the call
   // screen looks again for the ring it announced (an Answer made on it before the ring was known applies at once).
   ICallSystemUi::Instance().SetPendingChangedHandler([this]() {
@@ -1389,6 +1448,7 @@ void Application::WireUnlockPinAndFlow() {
     };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     gate_complete.use_device_pin_instead = [this]() { unlock_gate_->UseDevicePinInstead(); };
+    gate_complete.try_biometric = [this]() { unlock_gate_->TryBiometric(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
   ProfileUnlockPorts unlock_ports;
@@ -1405,6 +1465,22 @@ void Application::WireUnlockPinAndFlow() {
     ProfilePreferences prefs = store_.Snapshot().profile_prefs;
     prefs.pin_is_default = is_default;
     (void)store_.SaveProfilePrefs(prefs);
+  };
+  // The PIN's kind (B): kept from every PIN the user chose that opened the vault, so an older profile gets the number
+  // pad after its next unlock and a value left wrong by an interrupted change is put right.
+  unlock_ports.on_pin_verified = [this](const SecretText& pin) {
+    if (!store_.IsInitialized()) {
+      return;
+    }
+    const std::optional<int> digits = PinDigitsOf(pin.Reveal());
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (!digits || prefs.pin_digits == digits) {
+      return;
+    }
+    prefs.pin_digits = digits;
+    if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+      log().warning << "PIN kind not saved: " << saved.error().message;
+    }
   };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
@@ -1432,13 +1508,23 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
-  unlock_ports.import_link_device = [&facade](const SecretText& pin,
-                                             const std::string& bundle_json) -> Roe<void> {
-    return facade.ImportLinkDevice(bundle_json, pin);
+  // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
+  // failed import keeps it (the old DEK stays).
+  unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
+                                                   const std::string& bundle_json) -> Roe<void> {
+    auto imported = facade.ImportLinkDevice(bundle_json, pin);
+    if (imported && secrets_) {
+      secrets_->DisableBiometric();
+    }
+    return imported;
   };
-  unlock_ports.restore_recovery_phrase = [&facade](const SecretText& pin, const SecretText& phrase,
-                                                   const std::vector<std::string>& saved_copies) {
-    return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+  unlock_ports.restore_recovery_phrase = [this, &facade](const SecretText& pin, const SecretText& phrase,
+                                                         const std::vector<std::string>& saved_copies) -> Roe<void> {
+    auto restored = facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+    if (restored && secrets_) {
+      secrets_->DisableBiometric();
+    }
+    return restored;
   };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
@@ -1472,7 +1558,29 @@ void Application::WireUnlockPinAndFlow() {
     }
     return kept;
   };
-  unlock_ports.has_pending_push_call = []() { return ICallSystemUi::Instance().HasPendingPushCall(); };
+  // Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C): after the grace window.
+  AttachBiometric();
+  unlock_ports.biometric_enabled = [this]() { return secrets_ && secrets_->BiometricEnabled(); };
+  unlock_ports.try_biometric_unlock = [this](const std::string& prompt) -> Roe<BiometricUnlock::Result> {
+    if (!secrets_) {
+      return BiometricUnlock::Result{};  // Missing: nothing to prompt for
+    }
+    return secrets_->TryBiometricUnlock(prompt);
+  };
+  unlock_ports.biometric_prompt_text = []() { return Tr("pin.biometric_prompt"); };
+  unlock_ports.app_shown = []() { return os::AppShownNow(); };
+  unlock_ports.on_biometric_lost = [this]() {
+    if (settings_) {
+      settings_->OnBiometricLost();
+    }
+  };
+  unlock_ports.ui.show_biometric_reset = [this](const std::string& hint) { pin_gate_->ShowBiometricReset(hint); };
+  unlock_ports.ui.submit_declined = [this]() { pin_gate_->OnSubmitDeclined(); };
+  // A call waits for the unlock: the phone's call screen (Android), or a tapped call alert (iOS, P015).
+  unlock_ports.has_pending_push_call = []() {
+    return ICallSystemUi::Instance().HasPendingPushCall() ||
+           PendingNotificationTap::Instance().PeekCallRoute(PendingNotificationTap::Clock::now());
+  };
   unlock_ports.protected_data_available = []() { return os::ProtectedDataAvailable(); };
   unlock_ports.on_protected_data_available = [](std::function<void()> fn) {
     return os::OnProtectedDataAvailable(std::move(fn));
@@ -1552,6 +1660,16 @@ void Application::WireUnlockPinAndFlow() {
     unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
     chat_->BindUnlockEnsure(unlock_ensure);
     settings_->BindUnlockEnsure(unlock_ensure);
+    // B2: the transfer code, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
+    PinPromptPorts pin_prompt;
+    pin_prompt.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
+      pin_gate_->ShowVerify(purpose, std::move(check), std::move(on_ok));
+    };
+    pin_prompt.show_change = [this](PinGateCheck check_old, PinGateChange change,
+                                    std::optional<SecretText> current_pin) {
+      pin_gate_->ShowChange(std::move(check_old), std::move(change), std::move(current_pin));
+    };
+    settings_->BindPinPrompt(std::move(pin_prompt));
     contacts_->BindUnlockEnsure(unlock_ensure);
     people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
   }
@@ -1586,6 +1704,13 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
+    pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
+    pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
+    pin_actions.on_keypad_ok = [this]() { pin_gate_->OnKeypadOk(); };
+    pin_actions.on_use_text = [this]() { pin_gate_->OnUseText(); };
+    pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
+    pin_actions.on_biometric = [this]() { pin_gate_->OnBiometric(); };
+    pin_actions.on_use_pin = [this]() { pin_gate_->OnUsePin(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
@@ -1890,6 +2015,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
       pin_gate_->BindGateComplete({});
+      pin_gate_->BindKeypad({});
       if (onboarding_) {
         onboarding_->BindPorts({});
       }
@@ -1920,6 +2046,7 @@ bool Application::MountPresenters(ui::Context* context) {
     }
     if (settings_) {
       settings_->BindUnlockEnsure({});
+      settings_->BindPinPrompt({});
     }
     if (contacts_) {
       contacts_->BindUnlockEnsure({});

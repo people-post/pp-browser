@@ -1,16 +1,11 @@
 #include "foundation/crypto/GraceUnlock.h"
 
-#include "common/BoundedRead.h"
 #include "foundation/crypto/CryptoConstants.h"
-#include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/EncryptedPayload.h"
-#include "foundation/crypto/MessageCipher.h"
+#include "foundation/crypto/SealedDek.h"
 
 #include <algorithm>
-#include <fstream>
 #include <optional>
 #include <sodium.h>
-#include <system_error>
 #include <utility>
 #include "common/PbrCompat.h"
 
@@ -19,10 +14,9 @@ namespace pbr {
 namespace {
 
 constexpr uint8_t kEntryVersion = 1;
-constexpr size_t kGraceKeySize = 32;
+constexpr size_t kGraceKeySize = SealedDek::kKeySize;
 constexpr size_t kBootIdSize = 16;
 constexpr size_t kEntrySize = 1 + kGraceKeySize + kBootIdSize + 8;
-constexpr size_t kMaxGraceFileBytes = 4096; // version + nonce + 32-byte DEK + tag: well under this
 constexpr char kEntrySuffix[] = "/unlock_grace";
 constexpr char kFileName[] = "grace.bin";
 
@@ -110,7 +104,8 @@ Roe<GraceUnlock::Result> GraceUnlock::TryUnlock(const GraceClock& now) {
     return result; // Missing, nothing read or deleted
   }
   auto looked = store_.Lookup(EntryName());
-  if (!looked || looked->status == SecureBlobLookup::Status::Unavailable) {
+  if (!looked || (looked->status != SecureBlobLookup::Status::Found &&
+                  looked->status != SecureBlobLookup::Status::Missing)) {
     // Locked device or an unknown store error: keep both pieces, the caller tries again later.
     result.status = Status::Unavailable;
     return result;
@@ -131,29 +126,8 @@ Roe<GraceUnlock::Result> GraceUnlock::TryUnlock(const GraceClock& now) {
     return result;
   }
 
-  std::ifstream in(FilePath(), std::ios::binary);
-  if (!in) {
-    Forget();
-    return result;
-  }
-  auto file = ReadBoundedBytes(in, kMaxGraceFileBytes);
-  in.close();
-  if (!file) {
-    Forget();
-    return result;
-  }
-  auto blob = EncryptedPayload::DecodeBlob(std::move(*file));
-  if (!blob) {
-    Forget();
-    return result;
-  }
-  const std::string aad_text = "grace|" + profile_id_;
-  const ByteVector aad(aad_text.begin(), aad_text.end());
-  auto dek = MessageCipher::Decrypt(entry->key, *blob, aad);
-  if (!dek || dek->size() != kDataEncryptionKeySize) {
-    if (dek) {
-      Wipe(*dek);
-    }
+  auto dek = SealedDek::OpenFile(FilePath(), entry->key, "grace|" + profile_id_);
+  if (!dek) {
     Forget();
     return result;
   }
@@ -176,30 +150,10 @@ Roe<void> GraceUnlock::Remember(const ByteVector& dek, const int minutes, const 
   if (dek.size() != kDataEncryptionKeySize) {
     return Error("Invalid DEK size");
   }
-  EnsureSodiumInit();
-  ByteVector key(kGraceKeySize);
-  randombytes_buf(key.data(), key.size());
-
-  auto nonce = MessageCipher::GenerateNonce();
-  if (!nonce) {
-    Wipe(key);
-    return nonce.error();
-  }
-  const std::string aad_text = "grace|" + profile_id_;
-  const ByteVector aad(aad_text.begin(), aad_text.end());
-  auto sealed = MessageCipher::Encrypt(key, dek, aad, *nonce);
-  if (!sealed) {
+  ByteVector key = SealedDek::NewKey();
+  if (auto sealed = SealedDek::SealFile(FilePath(), key, "grace|" + profile_id_, dek); !sealed) {
     Wipe(key);
     return sealed.error();
-  }
-  auto file = EncryptedPayload::EncodeBlob(*sealed);
-  if (!file) {
-    Wipe(key);
-    return file.error();
-  }
-  if (auto written = AtomicFileWrite::Write(FilePath().string(), *file); !written) {
-    Wipe(key);
-    return written.error();
   }
 
   ByteVector entry = EncodeEntry(key, now.boot_id, ExpiryFrom(now, minutes));
@@ -249,9 +203,7 @@ void GraceUnlock::Forget() {
   if (!Supported()) {
     return;
   }
-  (void)store_.Delete(EntryName());
-  std::error_code ec;
-  std::filesystem::remove(FilePath(), ec);
+  SealedDek::Forget(store_, EntryName(), FilePath());
 }
 
 } // namespace pbr

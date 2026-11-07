@@ -219,6 +219,40 @@ struct PinGateState {
   bool forgot_open = false;
   /** Unlock with a call waiting on a locked phone (PIN grace window): "unlock your phone" + "Enter PIN instead". */
   bool waiting_device_unlock = false;
+  /** Settings asks for the PIN once (transfer code, recovery phrase) / changes it (old → new → again), B2. */
+  bool verify_mode = false;
+  bool change_mode = false;
+  /** Field mode: the "confirm" field is out too (a new PIN: create, change's new-PIN step). */
+  bool ask_confirm = false;
+  /**
+   * The app's own number pad instead of a field (phones only; a known digit PIN, or a new PIN). DEV/PLAN-pin-gate-
+   * redesign.md B. `pin` / `pin_confirm` are never bound to an input then: the markup has none, no system keyboard.
+   */
+  bool keypad = false;
+  /** The PIN is being checked (Argon2): keys, backspace and the links do nothing; the dots pulse. */
+  bool keypad_busy = false;
+  /** Dots drawn (unlock: the PIN's length; a new PIN: digits typed so far; its repeat: the first entry's length). */
+  int keypad_slots = 0;
+  int keypad_filled = 0;
+  /** The bottom-left "OK" key (a new PIN's first entry with 4 or more digits). */
+  bool keypad_ok_shown = false;
+  /** The link under the pad to the field ("Use the keyboard" / "Use letters and numbers"). */
+  ui::String keypad_text_label;
+  /** Field mode: "Use the number pad" is offered (phones; a known digit PIN, or a new PIN). */
+  bool keypad_offered = false;
+  /**
+   * Unlock with face / fingerprint unlock on (at-rest A014): the pad's bottom-left key (no "OK" is due there) and,
+   * in field mode, a link prompt again. `biometric_kind` is `face`, `touch` or `fingerprint` (icon and words).
+   */
+  bool biometric_key = false;
+  ui::String biometric_kind;
+  /** One line about face / fingerprint unlock on the door ("" none): pin.biometric_reset_hint after it was lost. */
+  ui::String biometric_hint;
+  /**
+   * Face / fingerprint unlock on: the door opens with only the sensor's key and an "Enter PIN" button (as the
+   * phone's own lock screen); the pad / field come after that button, or once the biometric unlock is lost.
+   */
+  bool biometric_first = false;
   ui::String title;
   ui::String message;
   ui::String error;

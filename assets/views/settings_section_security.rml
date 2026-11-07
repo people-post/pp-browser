@@ -1,8 +1,23 @@
       <div class="settings-section settings-section--grouped stack">
+        <p class="text group-head">{{i18n:settings.security.group.unlock}}</p>
+        <!-- Face / fingerprint unlock (A014): a device with the sensor and an own PIN; on asks for the PIN first. -->
+        <div class="group-card" data-if="security_biometric_shown">
+          <div class="settings-toggle-row row group-row">
+            <span class="group-row-body">
+              <span class="settings-label settings-toggle-label group-row-text">{{security_biometric_label}}</span>
+              <button class="settings-switch" type="button"
+                      data-class-settings-switch--on="security_biometric_on"
+                      data-event-click="toggle_biometric()">
+                <div class="settings-switch-knob"></div>
+              </button>
+            </span>
+          </div>
+        </div>
+        <p class="text muted settings-help group-foot" data-if="security_biometric_shown">{{i18n:settings.security.biometric.help}}</p>
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         </div>
-        <!-- Phones: a short list; Change PIN and the transfer code are pages of their own (Kenneth 2026-11-04). -->
+        <!-- Phones: a short list; Change PIN is a page of its own (Kenneth 2026-11-04). -->
         <div class="group-card settings-phone-only">
           <button class="group-row" type="button" data-if="show_change_pin"
                   data-event-click="open_security_page('change_pin')">
@@ -18,20 +33,6 @@
               <span class="settings-choice-value-text">{{pin_protection_status}}</span>
             </span>
           </div>
-          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
-            <span class="group-row-body">
-              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
-          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
-          <button class="group-row" type="button" data-event-click="open_blocked_people()">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
-              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
         </div>
         <!-- PIN grace window (#21): under the PIN; only with an own PIN on a platform with a secure store. -->
         <div class="group-card" data-if="security_grace_shown">
@@ -56,8 +57,44 @@
         <div class="settings-desktop-only">
 {{include:settings_security_pin}}
         </div>
+        <p class="text group-head" data-if="!security_has_recovery_phrase">{{i18n:settings.security.group.recovery}}</p>
+        <div class="settings-q-head row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.group.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
+        <div class="group-card settings-phone-only">
+          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
+            <span class="group-row-body">
+              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <div class="settings-desktop-only">
 {{include:settings_security_transfer}}
+        </div>
+        <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
+        </div>
+        <div class="stack settings-actions" data-if="security_has_recovery_phrase">
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
+          <div class="stack" data-if="recovery_phrase == ''">
+            <!-- The PIN on the PIN gate first (its number pad for a digit PIN, B2). -->
+            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
+              {{i18n:settings.security.recovery.show}}
+            </button>
+          </div>
+          <div class="stack" data-if="recovery_phrase != ''">
+            <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>
+            <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.shown_hint}}</p>
+            <button class="btn" type="button" data-event-click="hide_recovery_phrase()">
+              {{i18n:settings.security.recovery.hide}}
+            </button>
+          </div>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
+          <div class="settings-toggle-row row group-actions">
+            <button class="btn" type="button" data-event-click="save_account_copy()">
+              {{i18n:settings.security.copy.save}}
+            </button>
+            <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
+          </div>
         </div>
         <div class="stack settings-actions" data-if="own_devices_shown">
           <p class="text group-head">{{i18n:settings.security.devices}}</p>
@@ -79,49 +116,16 @@
             {{i18n:settings.security.devices.not_main}}
           </p>
         </div>
-        <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
-          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p></div>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
-        </div>
-        <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
-          <div class="stack" data-if="recovery_phrase == ''">
-            <div class="group-card" data-if="!pin_protection_is_default && recovery_pin_open">
-              <label class="settings-field group-row group-row--field">
-                <span class="group-row-body group-row-body--field">
-                  <span class="settings-label group-row-text">{{i18n:settings.security.recovery.pin_label}}</span>
-                  <input class="field" type="password" data-value="recovery_phrase_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
-                  <span class="group-field-hint" data-if="recovery_phrase_pin == ''">{{i18n:settings.security.recovery.pin_placeholder}}</span>
-                </span>
-              </label>
-            </div>
-            <button class="btn" type="button" data-event-click="show_recovery_phrase()" data-if="!recovery_pin_open">
-              {{i18n:settings.security.recovery.show}}
-            </button>
-            <div class="settings-toggle-row row group-actions" data-if="recovery_pin_open">
-              <button class="btn btn-secondary" type="button" data-event-click="hide_recovery_phrase()">
-                {{i18n:common.cancel}}
-              </button>
-              <button class="btn" type="button" data-event-click="show_recovery_phrase()">
-                {{i18n:settings.security.recovery.confirm}}
-              </button>
-            </div>
-          </div>
-          <div class="stack" data-if="recovery_phrase != ''">
-            <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>
-            <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.shown_hint}}</p>
-            <button class="btn" type="button" data-event-click="hide_recovery_phrase()">
-              {{i18n:settings.security.recovery.hide}}
-            </button>
-          </div>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.copy.help}}</p>
-          <div class="settings-toggle-row row group-actions">
-            <button class="btn" type="button" data-event-click="save_account_copy()">
-              {{i18n:settings.security.copy.save}}
-            </button>
-            <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
-          </div>
+        <p class="text group-head">{{i18n:settings.security.group.privacy}}</p>
+        <div class="group-card settings-phone-only">
+          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
+          <button class="group-row" type="button" data-event-click="open_blocked_people()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
+              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
         </div>
         <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
@@ -157,6 +161,8 @@
             {{i18n:settings.security.tool_permissions.reset}}
           </button>
         </div>
+        <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
+        <p class="text group-head settings-phone-only" data-if="advanced">{{i18n:settings.security.group.diagnostics}}</p>
         <div class="stack settings-actions" data-if="advanced">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.clear_undelivered.help}}</p>
           <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
@@ -191,4 +197,3 @@
           {{diagnostics_last_label}}
         </button>
       </div>
-

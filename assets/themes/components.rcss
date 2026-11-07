@@ -6525,6 +6525,129 @@ input.checkbox {
   color: #b42318;
 }
 
+/* Face / fingerprint first (at-rest A014): one big sensor key, then "Enter PIN"; the pad comes after that. */
+.shell-pin-bio {
+  display: block;
+  margin-top: 16dp;
+}
+
+.shell-pin-bio-key {
+  display: block;
+  width: 112dp;
+  height: 112dp;
+  margin: 8dp auto 24dp auto;
+  padding: 0;
+  border-width: 0;
+  border-radius: 56dp;
+  background-color: #7878802e;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.shell-pin-bio-key:active {
+  background-color: #78788066;
+}
+
+.shell-pin-bio-icon {
+  margin-top: 24dp;
+}
+
+.shell-pin-bio-pin {
+  display: block;
+  width: 100%;
+  min-height: 48dp;
+}
+
+/* The number pad (phones, a digit PIN; DEV/PLAN-pin-gate-redesign.md B): dots, then 3 x 4 round keys >= 64dp. */
+.shell-pin-pad {
+  display: block;
+  margin-top: 8dp;
+}
+
+.shell-pin-dots {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  height: 16dp;
+  margin-bottom: 24dp;
+}
+
+.shell-pin-dot {
+  display: block;
+  width: 14dp;
+  height: 14dp;
+  margin: 0 8dp;
+  border-width: 1.5dp;
+  border-color: #8e8e93;
+  border-radius: 7dp;
+  box-sizing: border-box;
+}
+
+.shell-pin-dot--filled {
+  background-color: #8e8e93;
+}
+
+@keyframes shell-pin-dots-busy {
+  0% { opacity: 1; }
+  50% { opacity: 0.4; }
+  100% { opacity: 1; }
+}
+
+.shell-pin-dots--busy {
+  animation: 1.0s sine-in-out infinite shell-pin-dots-busy;
+}
+
+.shell-pin-keys {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 264dp;
+  margin: 0 auto;
+}
+
+.shell-pin-key {
+  display: block;
+  width: 72dp;
+  height: 72dp;
+  margin: 6dp 8dp;
+  padding: 0;
+  border-width: 0;
+  border-radius: 36dp;
+  background-color: #7878802e;
+  font-size: 28dp;
+  line-height: 72dp;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.shell-pin-key:active {
+  background-color: #78788066;
+}
+
+.shell-pin-key--plain {
+  background-color: transparent;
+}
+
+.shell-pin-key--blank {
+  background-color: transparent;
+}
+
+.shell-pin-key--word {
+  font-size: 17dp;
+}
+
+.shell-pin-key-icon {
+  margin-top: 22dp;
+}
+
+.shell-pin-gate-link {
+  display: block;
+  width: 100%;
+  min-height: 44dp;
+  margin-top: 12dp;
+  text-align: center;
+}
+
 .chat-empty {
   padding: 24dp;
   margin-bottom: 16dp;
