@@ -12541,13 +12541,10 @@ textarea:composing ~ .prompt-composer-label,
   display: none;
 }
 
-/* The minimal AI home scrolls a conversation list into the dock, so the composer gets the same soft frosted fade at
-   its top edge as the chat composer (Kenneth 2026-11-05). Only on the minimal home; the dock must anchor it. */
+/* Off on phones: the AI conversation list moved to the drawer (2026-11-07), so nothing scrolls into the composer and
+   this fade, drawn above the centred block, sat at the top of the page as a grey line under the status bar. */
 .shell-layer-compact .home-composer-fade {
   display: none;
-}
-.shell-layer-compact .home-landing--minimal .home-composer-fade {
-  display: block;
 }
 
 /* The AI conversation list fills the page and scrolls (its "PP 助手" title scrolls with it); the ask-AI field + chips
@@ -12722,6 +12719,13 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .home-composer-mount .prompt-composer {
   flex: none;
   margin: 0 0 12dp 0;
+  border-radius: 24dp;
+}
+
+/* The box is the composer, not the pill (Kenneth 2026-11-07): a picture chip (status row) sits inside it, above the
+   text; the pill inside is clear (colors.rcss.tmpl). */
+.shell-layer-compact .home-composer-mount .prompt-composer-status {
+  margin: 12dp 16dp 0 16dp;
 }
 
 .shell-layer-compact .home-composer-mount .prompt-composer-pill {

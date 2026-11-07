@@ -1505,6 +1505,10 @@ void Application::WireUnlockPinAndFlow() {
     if (secrets_ && secrets_->IsUnlocked() && !default_pin && secrets_->GraceSupported() && os::AppShownNow()) {
       StartGraceTimer();
     }
+    // The settings model was filled at start with the vault locked ("?" and no name on the Chats bar until Me opened).
+    if (secrets_ && secrets_->IsUnlocked() && settings_) {
+      settings_->OnProfileUnlocked();
+    }
     // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
     if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
       onboarding_->MaybeStart();

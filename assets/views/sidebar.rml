@@ -4,7 +4,8 @@
     <div class="bar-fade"></div>
     <!-- Phone bar (DEV/PLAN-minimal-nav.md D, Kenneth 2026-11-07): no title; the round avatar on the left opens Settings,
          the round plus on the right opens New chat. The avatar reads the settings model like Me's card. -->
-    <button class="pane-nav-avatar" type="button" data-event-click="open_settings_from_avatar()">
+    <!-- open_settings_from_avatar is the window model's (ShellHost), not this page's shell model: declared here. -->
+    <button class="pane-nav-avatar" type="button" data-model="window" data-event-click="open_settings_from_avatar()">
       <!-- Same structure as the AI drawer's "you" row (ai_drawer.rml), which renders: the settings model is declared on
            the avatar element itself, whose children carry the bindings. -->
       <div class="shell-circle-avatar" data-model="settings"

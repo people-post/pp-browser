@@ -1762,6 +1762,8 @@ void ContactsController::OnScanQr() {
 // "Add contact" asks the directory first: an account id or nickname is looked up and the person is
 // added from the hit; no empty contacts (Kenneth 2026-10-23, TODO #33).
 void ContactsController::OnAddContact() {
+  // Read the layout now: compact_layout_ only follows the Contacts tab, and New chat (on Chats) gets here without it.
+  compact_layout_ = ChromeSnapshot().layout_mode == LayoutMode::Compact;
   if (AddContactUsesPage(compact_layout_)) {
     OpenAddContactPage(); // the phone: the Add contact page (scan, my QR, search), same as the Contacts "+"
     return;

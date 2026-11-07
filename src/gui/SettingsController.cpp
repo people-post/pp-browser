@@ -2165,6 +2165,10 @@ void SettingsController::ShowStatus(const std::string& status) {
   DataModelHost::Instance().Dirty("settings", "status");
 }
 
+void SettingsController::OnProfileUnlocked() {
+  Resync(/*include_profile_nickname=*/true);
+}
+
 void SettingsController::Resync(const bool include_profile_nickname) {
   SyncBindingsFromSession();
   DirtyAll(include_profile_nickname);

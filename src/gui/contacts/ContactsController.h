@@ -242,6 +242,9 @@ public:
   void OnNewChatDismissed();
   /** The Add contact page was closed (the shell popped its transient, or the sheet layer went). */
   void OnAddContactDismissed();
+  /** "Add contact" (New chat's row, the desktop "+" menu): the Add contact page on a phone, the paste-an-ID prompt on
+   *  the desktop. Public for tests. */
+  void OnAddContact();
 
   /** Contacts → find people; also the first-run wizard's "Find friends". */
   /**
@@ -352,7 +355,6 @@ private:
   void OnContactsIndexAt(ui::Event& ev, const std::string& target);
   /** The finger left the index strip: hide the bubble. */
   void OnContactsIndexEnd();
-  void OnAddContact();
   void AddContactByQuery(const std::string& query);
   void OnPeopleSearched(const std::string& query, Roe<std::vector<mesh::DirectoryHit>> hits);
   void AddContactFromHit(const mesh::DirectoryHit& hit);

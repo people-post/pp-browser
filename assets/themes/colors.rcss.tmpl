@@ -2737,6 +2737,19 @@ input.checkbox:checked {
   image-color: {{accent}};
 }
 
+/* The phone Home's box is the whole composer (the picture chip sits inside it); the pill in it is clear. */
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  background-color: {{bg-card-2}};
+  border: 1dp {{separator}};
+  box-shadow: 0 2dp 8dp {{shadow}};
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+  background-color: transparent;
+  border-width: 0;
+  box-shadow: none;
+}
+
 .shell-layer-compact .home-composer-mount .prompt-icon-home {
   image-color: {{label-2}};
 }
@@ -3485,7 +3498,6 @@ input.checkbox:checked {
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
   image-color: #ffffff;
 }
-}
 
 .context-menu-layer--popover-left .context-menu-panel {
   background-color: {{x-circle-bottom}};
@@ -3506,4 +3518,5 @@ input.checkbox:checked {
 
 .context-menu-layer--popover-left .context-menu-item-icon {
   background-color: {{fill-2}};
+}
 }

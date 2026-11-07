@@ -81,3 +81,19 @@ TEST(RmlBindingGuardTest, TheChatsBarAvatarAndNameResolveInTheSettingsModel) {
         << name << " is bound in the settings model";
   }
 }
+
+// The Chats avatar's tap is the window model's event (ShellHost registers open_settings_from_avatar there); inside the
+// page's shell model it found no handler and the tap did nothing on the phone. The button declares the window model.
+TEST(RmlBindingGuardTest, TheChatsAvatarTapIsHandledByTheWindowModel) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
+  EXPECT_NE(rml.find("<button class=\"pane-nav-avatar\" type=\"button\" data-model=\"window\" "
+                     "data-event-click=\"open_settings_from_avatar()\">"),
+            std::string::npos);
+  const std::string host = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/shell/ShellHost.cpp");
+  const size_t window_model = host.find("Register(context, \"window\"");
+  const size_t event = host.find("BindEventCallback(\"open_settings_from_avatar\"");
+  ASSERT_NE(window_model, std::string::npos);
+  ASSERT_NE(event, std::string::npos);
+  EXPECT_LT(window_model, event);
+  EXPECT_GT(host.find("Register(context, ", window_model + 1), event) << "inside the window model's constructor";
+}

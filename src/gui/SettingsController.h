@@ -101,6 +101,9 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** The vault has opened: the profile (name, picture) is readable now. The Chats bar and the AI drawer read it from
+   *  this model, which was filled while it was still locked. */
+  void OnProfileUnlocked();
   /** The unlock gate found face / fingerprint unlock gone (its pieces deleted): Security's switch reads off. */
   void OnBiometricLost();
   /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
