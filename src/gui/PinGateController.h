@@ -18,6 +18,11 @@ struct PinGateKeypadPorts {
   std::function<bool()> keypad_available;
   /** This profile's `pin_digits`: nullopt unknown, 0 a text PIN, 4–8 a digit PIN. */
   std::function<std::optional<int>()> pin_digits;
+  /**
+   * Face / fingerprint unlock on (at-rest A014): `face`, `touch` or `fingerprint` (the device's sensor); "" (or
+   * unset) when off or not supported — the unlock door then has no face / fingerprint key.
+   */
+  std::function<std::string()> biometric_kind;
 };
 
 /**
@@ -48,14 +53,19 @@ public:
    * and an "Enter PIN instead" button instead of the PIN box — or no longer does (false): the unlock screen as usual.
    */
   void SetWaitingDeviceUnlock(bool waiting);
+  /** Face / fingerprint unlock was lost (at-rest A014): the door's key goes, `hint` shows on it. */
+  void ShowBiometricReset(const std::string& hint);
 
   /**
    * Settings asks for the PIN once (B2): `check` runs on what is typed; ok → the gate closes, then `on_ok`. Cancel
    * closes it without `on_ok`.
    */
   void ShowVerify(PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok);
-  /** Settings changes the PIN (B2): the current PIN (`check_old`), the new one, again, then `change`. */
-  void ShowChange(PinGateCheck check_old, PinGateChange change);
+  /**
+   * Settings changes the PIN (B2): the current PIN (`check_old`), the new one, again, then `change`. A known
+   * `current_pin` (the app default PIN, public anyway) skips the first step.
+   */
+  void ShowChange(PinGateCheck check_old, PinGateChange change, std::optional<SecretText> current_pin = std::nullopt);
 
   void OnSubmit();
   /** Number pad: a digit 0–9 (a full PIN submits itself), backspace, and a new PIN's "OK". */
@@ -65,6 +75,8 @@ public:
   /** The pad → the field ("Use the keyboard"), and back ("Use the number pad"). */
   void OnUseText();
   void OnUseKeypad();
+  /** The face / fingerprint key (pad) or link (field) on the unlock door: the system prompt again. */
+  void OnBiometric();
   /** Create / chooser / identity-fork / link-paste may cancel. Unlock ignores cancel. */
   void OnCancel();
   void OnSetPin();

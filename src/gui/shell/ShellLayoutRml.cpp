@@ -366,6 +366,8 @@ std::string ShellLayoutRml::PinGate() const {
   out << "<h2 class=\"heading-2 shell-dialog-title\">{{pin_gate_title}}</h2>";
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
+  out << "<p class=\"text muted shell-pin-gate-note\" data-if=\"pin_gate_biometric_hint != ''\">"
+         "{{pin_gate_biometric_hint}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
       << Tr("pin.identity_new") << "</button>";
@@ -459,6 +461,13 @@ void ShellLayoutRml::PinGateFields(std::ostringstream& out) const {
          "data-if=\"pin_gate_keypad_offered && !pin_gate_link_paste_mode && !pin_gate_waiting_device_unlock\" "
          "data-event-click=\"pin_gate_use_keypad()\">"
       << Tr("pin.keypad_use_digits") << "</button>";
+  // Face / fingerprint unlock on: a text PIN (or a pad switched to the field) can prompt again too.
+  for (const char* kind : {"face", "touch", "fingerprint"}) {
+    out << "<button class=\"btn btn-ghost shell-pin-gate-link\" data-if=\"pin_gate_biometric_key && "
+           "pin_gate_biometric_kind == '"
+        << kind << "' && !pin_gate_waiting_device_unlock\" data-event-click=\"pin_gate_biometric()\">"
+        << Tr(std::string("pin.biometric_link.") + kind) << "</button>";
+  }
 }
 
 // The number pad (phones, a digit PIN; DEV/PLAN-pin-gate-redesign.md B): a row of dots, 3 x 4 keys, no input element
@@ -479,7 +488,16 @@ void ShellLayoutRml::PinGateKeypad(std::ostringstream& out) const {
   out << "<button class=\"shell-pin-key shell-pin-key--plain shell-pin-key--word\" data-if=\"pin_gate_keypad_ok_shown\" "
          "data-event-click=\"pin_gate_ok()\">"
       << Tr("pin.keypad_ok") << "</button>";
-  out << "<span class=\"shell-pin-key shell-pin-key--blank\" data-if=\"!pin_gate_keypad_ok_shown\"></span>";
+  // Face / fingerprint unlock on (unlock only, where no "OK" is due): its key prompts again.
+  out << "<button class=\"shell-pin-key shell-pin-key--plain\" "
+         "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" data-event-click=\"pin_gate_biometric()\">"
+         "<svg class=\"shell-pin-key-icon\" data-if=\"pin_gate_biometric_kind == 'face'\" "
+         "src=\"../icons/v2/face-id.svg\" width=\"28\" height=\"28\"></svg>"
+         "<svg class=\"shell-pin-key-icon\" data-if=\"pin_gate_biometric_kind != 'face'\" "
+         "src=\"../icons/v2/fingerprint.svg\" width=\"28\" height=\"28\"></svg>"
+         "</button>";
+  out << "<span class=\"shell-pin-key shell-pin-key--blank\" "
+         "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"></span>";
   out << "<button class=\"shell-pin-key\" data-event-click=\"pin_gate_key(0)\">0</button>";
   out << "<button class=\"shell-pin-key shell-pin-key--plain\" data-event-click=\"pin_gate_backspace()\">"
          "<svg class=\"shell-pin-key-icon\" src=\"../icons/v2/delete-left.svg\" width=\"28\" height=\"28\"></svg>"

@@ -240,6 +240,14 @@ struct PinGateState {
   ui::String keypad_text_label;
   /** Field mode: "Use the number pad" is offered (phones; a known digit PIN, or a new PIN). */
   bool keypad_offered = false;
+  /**
+   * Unlock with face / fingerprint unlock on (at-rest A014): the pad's bottom-left key (no "OK" is due there) and,
+   * in field mode, a link prompt again. `biometric_kind` is `face`, `touch` or `fingerprint` (icon and words).
+   */
+  bool biometric_key = false;
+  ui::String biometric_kind;
+  /** One line about face / fingerprint unlock on the door ("" none): pin.biometric_reset_hint after it was lost. */
+  ui::String biometric_hint;
   ui::String title;
   ui::String message;
   ui::String error;

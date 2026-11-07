@@ -231,6 +231,35 @@ TEST(ShellLayoutRmlTest, ThePinPadHasNoFieldAndTheFieldModeFocusesItsField) {
   EXPECT_FALSE(ShellLayoutRml::PinGateFocusesField(closed));
 }
 
+// Face / fingerprint unlock (DEV/PLAN-pin-gate-redesign.md C): the pad's bottom-left key (where no "OK" is due) with
+// the face or the fingerprint icon; the field's link by the sensor's name; the hint line when there is one.
+TEST(ShellLayoutRmlTest, TheBiometricKeyLinkAndHintFollowTheirFields) {
+  ShellState state;
+  state.pin_gate.active = true;
+  state.pin_gate.unlock_mode = true;
+  state.pin_gate.keypad = true;
+  const std::string pad = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_key && !pin_gate_keypad_ok_shown\" "
+                       "data-event-click=\"pin_gate_biometric()\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"!pin_gate_keypad_ok_shown && !pin_gate_biometric_key\"")) << "else the blank";
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind == 'face'\" src=\"../icons/v2/face-id.svg\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_kind != 'face'\" src=\"../icons/v2/fingerprint.svg\""));
+  EXPECT_TRUE(Has(pad, "data-if=\"pin_gate_biometric_hint != ''\">{{pin_gate_biometric_hint}}"));
+  for (const char* icon : {"icons/v2/face-id.svg", "icons/v2/fingerprint.svg"}) {
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / icon)) << icon;
+  }
+
+  state.pin_gate.keypad = false;
+  const std::string field = ShellLayoutRml(state, false, "").PinGate();
+  EXPECT_FALSE(Has(field, "face-id.svg"));
+  for (const char* kind : {"face", "touch", "fingerprint"}) {
+    EXPECT_TRUE(Has(field, std::string("pin_gate_biometric_kind == '") + kind + "'")) << kind;
+    EXPECT_TRUE(Has(field, Tr(std::string("pin.biometric_link.") + kind))) << kind;
+  }
+  EXPECT_TRUE(Has(field, "pin_gate_biometric()"));
+  EXPECT_TRUE(Has(field, "{{pin_gate_biometric_hint}}"));
+}
+
 TEST(ShellLayoutRmlTest, ThePinPadKeysAreAtLeast64dp) {
   std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
   std::stringstream buffer;

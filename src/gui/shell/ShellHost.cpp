@@ -153,6 +153,9 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_keypad_ok_shown", &host.state_.pin_gate.keypad_ok_shown);
     ctor.Bind("pin_gate_keypad_text_label", &host.state_.pin_gate.keypad_text_label);
     ctor.Bind("pin_gate_keypad_offered", &host.state_.pin_gate.keypad_offered);
+    ctor.Bind("pin_gate_biometric_key", &host.state_.pin_gate.biometric_key);
+    ctor.Bind("pin_gate_biometric_kind", &host.state_.pin_gate.biometric_kind);
+    ctor.Bind("pin_gate_biometric_hint", &host.state_.pin_gate.biometric_hint);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -341,6 +344,11 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_keypad", DataEvent<>([this]() {
       if (pin_gate_actions_.on_use_keypad) {
         pin_gate_actions_.on_use_keypad();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_biometric", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_biometric) {
+        pin_gate_actions_.on_biometric();
       }
     }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
@@ -1029,6 +1037,9 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_keypad_ok_shown");
   DataModelHost::Instance().Dirty("window", "pin_gate_keypad_text_label");
   DataModelHost::Instance().Dirty("window", "pin_gate_keypad_offered");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_key");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_kind");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_hint");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");

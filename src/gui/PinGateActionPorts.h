@@ -28,6 +28,8 @@ struct PinGateActionPorts {
   std::function<void()> on_keypad_ok;
   std::function<void()> on_use_text;
   std::function<void()> on_use_keypad;
+  /** The pad's face / fingerprint key, or the field's "Unlock with Face ID" link (at-rest A014). */
+  std::function<void()> on_biometric;
 };
 
 } // namespace pbr

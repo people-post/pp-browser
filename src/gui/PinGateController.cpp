@@ -201,6 +201,25 @@ void PinGateController::SetWaitingDeviceUnlock(const bool waiting) {
   DirtyPinFields();
 }
 
+void PinGateController::ShowBiometricReset(const std::string& hint) {
+  if (!pin_state_.active || !pin_state_.unlock_mode || !shell_pin_gate_.apply_pin_gate) {
+    return;
+  }
+  PullBoundPinFields();
+  pin_state_.biometric_key = false;
+  pin_state_.biometric_hint = hint.c_str();
+  ApplyPinGate();
+  DirtyPinFields();
+}
+
+void PinGateController::OnBiometric() {
+  if (!pin_state_.active || !pin_state_.unlock_mode || !pin_state_.biometric_key || pin_state_.keypad_busy ||
+      pin_state_.waiting_device_unlock || !gate_complete_.try_biometric) {
+    return;
+  }
+  gate_complete_.try_biometric();
+}
+
 void PinGateController::OnUsePinInstead() {
   if (!pin_state_.active || !pin_state_.waiting_device_unlock || !gate_complete_.use_device_pin_instead) {
     return;
@@ -290,6 +309,10 @@ void PinGateController::ShowUnlock() {
   pin_state_.title = Tr("pin.unlock_title").c_str();
   pin_state_.message = UnlockMessage().c_str();
   SetupKnownPinEntry();
+  // Face / fingerprint unlock on (at-rest A014): the pad's bottom-left key / the field's link prompt again.
+  const std::string biometric_kind = keypad_ports_.biometric_kind ? keypad_ports_.biometric_kind() : std::string();
+  pin_state_.biometric_key = !biometric_kind.empty();
+  pin_state_.biometric_kind = biometric_kind.c_str();
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -369,7 +392,8 @@ void PinGateController::ShowVerify(const PinVerifyPurpose purpose, PinGateCheck 
   Remount();
 }
 
-void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change) {
+void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change,
+                                   std::optional<SecretText> current_pin) {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
@@ -383,8 +407,16 @@ void PinGateController::ShowChange(PinGateCheck check_old, PinGateChange change)
   pin_state_.active = true;
   pin_state_.change_mode = true;
   pin_state_.title = Tr("settings.security.change_pin").c_str();
-  pin_state_.message = Tr("pin.change_old_message").c_str();
-  SetupKnownPinEntry();
+  if (current_pin) {
+    // The app default PIN: straight to the new PIN.
+    change_old_pin_ = std::move(*current_pin);
+    change_step_ = 1;
+    SetupNewPinEntry();
+    pin_state_.message = NewPinMessage().c_str();
+  } else {
+    pin_state_.message = Tr("pin.change_old_message").c_str();
+    SetupKnownPinEntry();
+  }
   ApplyPinGate();
   Remount();
 }

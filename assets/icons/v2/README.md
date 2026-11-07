@@ -22,6 +22,8 @@ Old icons with no v2 counterpart (not in any mockup): more, pin, play/stop/pause
 | copy | 04-contact-detail, 05-WideContacts, 07-SetProfile, WideContacts | drawn | `copy.svg` |
 | database | 07-Me | drawn | - |
 | delete-left | PIN gate number pad (backspace key), DEV/PLAN-pin-gate-redesign.md | drawn | - |
+| face-id | PIN gate number pad (face unlock key, Face ID devices), DEV/PLAN-pin-gate-redesign.md C | drawn | - |
+| fingerprint | PIN gate number pad (fingerprint unlock key, Touch ID / fingerprint devices), DEV/PLAN-pin-gate-redesign.md C | drawn | - |
 | emoji | 01-chat, 05-WideChats, 06-Group, 06-GroupLive (+1 more); §8.5 | drawn | `emoji.svg` |
 | globe | 07-Me | drawn | - |
 | group | 02-chatlist, 03-home, 04-contacts, 04-contacts-add (+12 more); §8.2 / 8.3 / 8.13 | drawn | `contacts.svg`, `group.svg` |

@@ -39,6 +39,7 @@ protected:
     PinGateKeypadPorts keypad;
     keypad.keypad_available = [this]() { return keypad_available_; };
     keypad.pin_digits = [this]() { return pin_digits_; };
+    keypad.biometric_kind = [this]() { return biometric_kind_; };
     controller_.BindKeypad(std::move(keypad));
     UnlockGateCompletePorts complete;
     complete.complete_phrase_restore = [this](const SecretText& pin, const SecretText& phrase, bool is_default,
@@ -58,6 +59,7 @@ protected:
       ++completes_;
     };
     complete.use_device_pin_instead = [this]() { ++use_pin_instead_; };
+    complete.try_biometric = [this]() { ++biometric_tries_; };
     controller_.BindGateComplete(std::move(complete));
   }
 
@@ -78,6 +80,8 @@ protected:
   int remounts_ = 0;
   bool keypad_available_ = true;  // a phone
   std::optional<int> pin_digits_;
+  std::string biometric_kind_;  // "": face / fingerprint unlock off
+  int biometric_tries_ = 0;
   std::optional<std::string> field_pin_;
   std::optional<std::string> field_confirm_;
 
@@ -596,6 +600,84 @@ TEST_F(PinGateControllerTest, ChangeTextModeWhenUnknown) {
   field_confirm_ = "new secret";
   controller_.OnSubmit();
   ASSERT_EQ(changes_, (std::vector<std::pair<std::string, std::string>>{{"old secret", "new secret"}}));
+}
+
+// Kenneth 2026-11-07: on the app default PIN, Change PIN starts at the new PIN; the change gets the default PIN.
+TEST_F(PinGateControllerTest, ChangeFromTheDefaultPinStartsAtTheNewPin) {
+  pin_digits_.reset();
+  controller_.ShowChange(Check(), Change(), SecretText(std::string(kDefaultProfilePin)));
+  ASSERT_TRUE(shown_.change_mode);
+  EXPECT_TRUE(shown_.keypad) << "a new PIN: the pad on a phone";
+  EXPECT_EQ(Message(), Tr("pin.create_digits_message"));
+  Keys("2468");
+  controller_.OnKeypadOk();
+  Keys("2468");
+  EXPECT_TRUE(checked_.empty()) << "no current PIN asked or checked";
+  ASSERT_EQ(changes_, (std::vector<std::pair<std::string, std::string>>{{std::string(kDefaultProfilePin), "2468"}}));
+  change_done_(Roe<void>{});
+  EXPECT_FALSE(shown_.active);
+}
+
+// Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C): the unlock door's key (pad) / link
+// (field) prompts again; only there, and not while a PIN is being checked.
+TEST_F(PinGateControllerTest, UnlockShowsTheBiometricKeyWhenOn) {
+  pin_digits_ = 6;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  EXPECT_TRUE(shown_.keypad);
+  EXPECT_TRUE(shown_.biometric_key);
+  EXPECT_EQ(std::string(shown_.biometric_kind.c_str()), "face");
+  EXPECT_FALSE(shown_.keypad_ok_shown) << "the bottom-left key is free for it";
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 1);
+
+  controller_.OnUseText();  // the field: the link prompts too
+  EXPECT_FALSE(shown_.keypad);
+  EXPECT_TRUE(shown_.biometric_key);
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 2);
+
+  biometric_kind_.clear();  // off
+  controller_.ShowUnlock();
+  EXPECT_FALSE(shown_.biometric_key);
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 2);
+}
+
+TEST_F(PinGateControllerTest, TheBiometricKeyIsOnlyOnTheUnlockDoor) {
+  pin_digits_ = 4;
+  biometric_kind_ = "touch";
+  controller_.ShowVerify(PinVerifyPurpose::EnableBiometric, Check(), [] {});
+  EXPECT_FALSE(shown_.biometric_key);
+  controller_.ShowChange(Check(), Change());
+  EXPECT_FALSE(shown_.biometric_key);
+  ShowCreate();
+  EXPECT_FALSE(shown_.biometric_key);
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 0);
+}
+
+TEST_F(PinGateControllerTest, TheBiometricKeyWaitsWhileThePinIsChecked) {
+  pin_digits_ = 4;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  Keys("1234");
+  ASSERT_TRUE(shown_.keypad_busy);
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 0);
+}
+
+TEST_F(PinGateControllerTest, ALostBiometricUnlockHidesTheKeyAndSaysWhy) {
+  pin_digits_ = 4;
+  biometric_kind_ = "face";
+  controller_.ShowUnlock();
+  Keys("12");
+  controller_.ShowBiometricReset("turn it on again");
+  EXPECT_FALSE(shown_.biometric_key);
+  EXPECT_EQ(std::string(shown_.biometric_hint.c_str()), "turn it on again");
+  EXPECT_EQ(Pin(), "12") << "what was typed stays";
+  controller_.OnBiometric();
+  EXPECT_EQ(biometric_tries_, 0);
 }
 
 } // namespace
