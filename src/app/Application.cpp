@@ -30,6 +30,7 @@
 #include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
+#include "foundation/crypto/PinRules.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/ProfileManifest.h"
 #include "foundation/platform/OsSecureBlobStore.h"
@@ -1195,6 +1196,15 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
     }
   });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
+  {
+    // DEV/PLAN-pin-gate-redesign.md B: the number pad on phones only; desktops keep the field and the keyboard.
+    PinGateKeypadPorts keypad;
+    keypad.keypad_available = []() { return Platform::IsMobile(); };
+    keypad.pin_digits = [this]() -> std::optional<int> {
+      return store_.IsInitialized() ? store_.Snapshot().profile_prefs.pin_digits : std::nullopt;
+    };
+    pin_gate_->BindKeypad(std::move(keypad));
+  }
   // A push's call came or went (Android's call notification, P014): the PIN screen words itself by it, and the call
   // screen looks again for the ring it announced (an Answer made on it before the ring was known applies at once).
   ICallSystemUi::Instance().SetPendingChangedHandler([this]() {
@@ -1406,6 +1416,22 @@ void Application::WireUnlockPinAndFlow() {
     prefs.pin_is_default = is_default;
     (void)store_.SaveProfilePrefs(prefs);
   };
+  // The PIN's kind (B): kept from every PIN the user chose that opened the vault, so an older profile gets the number
+  // pad after its next unlock and a value left wrong by an interrupted change is put right.
+  unlock_ports.on_pin_verified = [this](const SecretText& pin) {
+    if (!store_.IsInitialized()) {
+      return;
+    }
+    const std::optional<int> digits = PinDigitsOf(pin.Reveal());
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (!digits || prefs.pin_digits == digits) {
+      return;
+    }
+    prefs.pin_digits = digits;
+    if (auto saved = store_.SaveProfilePrefs(prefs); !saved) {
+      log().warning << "PIN kind not saved: " << saved.error().message;
+    }
+  };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
@@ -1552,6 +1578,15 @@ void Application::WireUnlockPinAndFlow() {
     unlock_ensure.is_unlock_in_progress = [this]() { return unlock_gate_->IsUnlockInProgress(); };
     chat_->BindUnlockEnsure(unlock_ensure);
     settings_->BindUnlockEnsure(unlock_ensure);
+    // B2: the transfer code, the recovery phrase and Change PIN ask for the PIN on the gate (its pad for a digit PIN).
+    PinPromptPorts pin_prompt;
+    pin_prompt.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck check, std::function<void()> on_ok) {
+      pin_gate_->ShowVerify(purpose, std::move(check), std::move(on_ok));
+    };
+    pin_prompt.show_change = [this](PinGateCheck check_old, PinGateChange change) {
+      pin_gate_->ShowChange(std::move(check_old), std::move(change));
+    };
+    settings_->BindPinPrompt(std::move(pin_prompt));
     contacts_->BindUnlockEnsure(unlock_ensure);
     people_picker_->BindUnlockEnsure(std::move(unlock_ensure));
   }
@@ -1586,6 +1621,11 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_saved_copy = [this]() { pin_gate_->OnUseSavedCopy(); };
     pin_actions.on_forgot_toggle = [this]() { pin_gate_->OnForgotToggle(); };
     pin_actions.on_use_pin_instead = [this]() { pin_gate_->OnUsePinInstead(); };
+    pin_actions.on_key = [this](const int digit) { pin_gate_->OnKey(digit); };
+    pin_actions.on_backspace = [this]() { pin_gate_->OnBackspace(); };
+    pin_actions.on_keypad_ok = [this]() { pin_gate_->OnKeypadOk(); };
+    pin_actions.on_use_text = [this]() { pin_gate_->OnUseText(); };
+    pin_actions.on_use_keypad = [this]() { pin_gate_->OnUseKeypad(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
@@ -1890,6 +1930,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
       pin_gate_->BindGateComplete({});
+      pin_gate_->BindKeypad({});
       if (onboarding_) {
         onboarding_->BindPorts({});
       }
@@ -1920,6 +1961,7 @@ bool Application::MountPresenters(ui::Context* context) {
     }
     if (settings_) {
       settings_->BindUnlockEnsure({});
+      settings_->BindPinPrompt({});
     }
     if (contacts_) {
       contacts_->BindUnlockEnsure({});

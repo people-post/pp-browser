@@ -11,6 +11,7 @@ Normative spec for profile secrets on disk. Planning ADRs: [projects/at-rest-cry
 - **PIN per profile** — collected in-app; `--pin` / `PP_BROWSER_PIN` optional for tests/CI.
 - **First secrets use:** identity fork — **I'm new on this device** (then the PIN chooser) or **I already have an account** (PIN for this device, then paste a link payload). `--pin` / CI still take the create path.
 - **`pin_is_default`** in `preferences.json` — when true, bootstrap and UI load silently unlock with the default PIN; cleared after **Change PIN** in Me → Security.
+- **`pin_digits`** in `preferences.json` — the PIN's kind (length of a 4–8 digit PIN, `0` for a text PIN; never the PIN or a hash). On phones a digit PIN is typed on the gate's number pad; the field ("Use the keyboard") is always one tap away, so a wrong value never locks anyone out and the next unlock rewrites it. Every PIN prompt (unlock, set, change, transfer code, recovery phrase) is the same gate.
 - Random **32-byte DEK** wrapped by a PIN-derived KEK (Argon2id).
 - **XChaCha20-Poly1305** encrypts identity and PSK material under the DEK.
 - Whole-file replaces use **atomic write** (tmp → fsync → rename).

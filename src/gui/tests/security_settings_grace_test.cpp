@@ -1,6 +1,7 @@
 // PIN grace window (#21, DEV/PLAN-pin-grace.md "设置页"): Me → Security → "Ask for PIN again after" — every time / 5 /
 // 15 / 60 minutes, saved in this profile's preferences and handed to the app (set_grace_minutes); the row only shows
-// with an own PIN on a platform that keeps the window. And the transfer code asks for that PIN first (plan ⑧).
+// with an own PIN on a platform that keeps the window. And the transfer code asks for that PIN first (plan ⑧), on the PIN
+// gate like Change PIN (DEV/PLAN-pin-gate-redesign.md B2).
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsSecurityActions.h"
 
@@ -13,7 +14,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -152,15 +155,17 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
   EXPECT_LT(rml.find("on_choose_unlock_grace"), rml.find("on_choose_group_invite_policy")) << "under the PIN";
 
-  const std::string transfer = ReadAsset("views/settings_security_transfer.rml");
-  EXPECT_NE(transfer.find("data-value=\"export_pin\""), std::string::npos);
-  EXPECT_NE(transfer.find("cancel_export_pin()"), std::string::npos);
+  // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
+  for (const char* view : {"views/settings_security_transfer.rml", "views/settings_security_pin.rml",
+                           "views/settings_section_security.rml"}) {
+    EXPECT_EQ(ReadAsset(view).find("type=\"password\""), std::string::npos) << view;
+  }
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
     for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
                             "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.help",
-                            "settings.security.export_pin_prompt"}) {
+                            "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -175,43 +180,89 @@ protected:
       return std::string("code");
     };
     commands_.verify_pin = [](const SecretText&) -> Roe<void> { return {}; };
+    commands_.change_pin = [this](const SecretText& old_pin, const SecretText& new_pin) -> Roe<void> {
+      changed_.emplace_back(old_pin.Reveal(), new_pin.Reveal());
+      return {};
+    };
     feedback_.show_confirm = [this](const std::string&, const std::string&, std::function<void(bool)>,
                                     const std::string&) { ++confirms_; };
+    pin_prompt_.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck, std::function<void()> on_ok) {
+      purposes_.push_back(purpose);
+      on_ok_ = std::move(on_ok);
+    };
+    pin_prompt_.show_change = [this](PinGateCheck check_old, PinGateChange change) {
+      check_old_ = std::move(check_old);
+      change_ = std::move(change);
+    };
   }
 
   ShellFeedbackPorts feedback_;
   UnlockEnsurePorts unlock_;
+  PinPromptPorts pin_prompt_;
+  std::vector<PinVerifyPurpose> purposes_;
+  std::function<void()> on_ok_;
+  PinGateCheck check_old_;
+  PinGateChange change_;
+  std::vector<std::pair<std::string, std::string>> changed_;
   int confirms_ = 0;
   int exports_ = 0;
 };
 
 TEST_F(TransferCodePinTest, AnOwnPinIsAskedForBeforeTheCode) {
   FakeSettingsHost host(store_);
-  SettingsSecurityActions actions(host, commands_, feedback_, unlock_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
   actions.ExportLinkDevice();
-  EXPECT_TRUE(actions.ExportPinOpen()) << "the PIN field comes out first";
+  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::ExportTransferCode}) << "the PIN gate first";
   EXPECT_EQ(confirms_, 0);
   EXPECT_EQ(exports_, 0);
 
-  actions.ExportLinkDevice();  // nothing typed
-  EXPECT_EQ(host.failures, 1);
-  EXPECT_EQ(confirms_, 0);
-  EXPECT_EQ(exports_, 0);
-
-  actions.CancelExportPin();
-  EXPECT_FALSE(actions.ExportPinOpen());
+  ASSERT_TRUE(on_ok_);
+  on_ok_();  // the gate took the PIN and closed
+  EXPECT_EQ(confirms_, 1);
+  EXPECT_EQ(host.failures, 0);
 }
 
 TEST_F(TransferCodePinTest, TheAppDefaultPinOnlyConfirmsAsBefore) {
   SetPinIsDefault(true);
   FakeSettingsHost host(store_);
-  SettingsSecurityActions actions(host, commands_, feedback_, unlock_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
   actions.ExportLinkDevice();
-  EXPECT_FALSE(actions.ExportPinOpen());
+  EXPECT_TRUE(purposes_.empty());
   EXPECT_EQ(confirms_, 1);
   EXPECT_EQ(host.failures, 0);
+}
+
+// B2: Change PIN is the gate's change mode; the engine's change is the same, and the new PIN's kind is kept so the
+// gate's number pad follows it.
+TEST_F(TransferCodePinTest, ChangePinGoesThroughTheGateAndKeepsTheNewKind) {
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+
+  actions.ChangePin();
+  ASSERT_TRUE(check_old_);
+  ASSERT_TRUE(change_);
+
+  int done = 0;
+  change_("4321", "135790", [&done](Roe<void> result) {
+    EXPECT_TRUE(static_cast<bool>(result));
+    ++done;
+  });
+  EXPECT_EQ(done, 1);
+  EXPECT_EQ(changed_, (std::vector<std::pair<std::string, std::string>>{{"4321", "135790"}}));
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 6);
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.pin_is_default);
+
+  change_("135790", "correct horse", [&done](Roe<void>) { ++done; });
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "a text PIN";
+
+  commands_.change_pin = [](const SecretText&, const SecretText&) -> Roe<void> { return Error("refused"); };
+  std::optional<bool> ok;
+  change_("correct horse", "2468", [&ok](Roe<void> result) { ok = static_cast<bool>(result); });
+  ASSERT_TRUE(ok.has_value());
+  EXPECT_FALSE(*ok) << "the gate shows the failure";
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "nothing written";
 }
 
 } // namespace

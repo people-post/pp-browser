@@ -1,28 +1,6 @@
-<!-- Me > Security > Change PIN: the three fields and the button (inline on desktop, its own page on phones). -->
+<!-- Me > Security > Change PIN (desktop, inline): the PIN gate's three steps (current, new, again; B2), no fields
+     on this page. Phones reach the same from the Change PIN row. -->
 <div data-if="show_change_pin && security_can_change_pin" class="stack">
-  <div class="group-card">
-    <label class="settings-field group-row group-row--field">
-      <span class="group-row-body group-row-body--field">
-        <span class="settings-label group-row-text">{{i18n:settings.security.current_pin}}</span>
-        <input class="field" type="password" data-value="pin_change_old" placeholder="{{i18n:settings.security.current_pin_placeholder}}"/>
-        <span class="group-field-hint" data-if="pin_change_old == ''">{{i18n:settings.security.current_pin_placeholder}}</span>
-      </span>
-    </label>
-    <label class="settings-field group-row group-row--field">
-      <span class="group-row-body group-row-body--field">
-        <span class="settings-label group-row-text">{{i18n:settings.security.new_pin}}</span>
-        <input class="field" type="password" data-value="pin_change_new" placeholder="{{i18n:settings.security.new_pin_placeholder}}"/>
-        <span class="group-field-hint" data-if="pin_change_new == ''">{{i18n:settings.security.new_pin_placeholder}}</span>
-      </span>
-    </label>
-    <label class="settings-field group-row group-row--field">
-      <span class="group-row-body group-row-body--field">
-        <span class="settings-label group-row-text">{{i18n:settings.security.confirm_pin}}</span>
-        <input class="field" type="password" data-value="pin_change_confirm" placeholder="{{i18n:settings.security.confirm_pin_placeholder}}"/>
-        <span class="group-field-hint" data-if="pin_change_confirm == ''">{{i18n:settings.security.confirm_pin_placeholder}}</span>
-      </span>
-    </label>
-  </div>
   <p class="text muted settings-help group-foot">{{i18n:pin.forget_warning}}</p>
   <div class="settings-actions row">
     <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>

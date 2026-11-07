@@ -190,6 +190,10 @@ void SettingsController::BindUnlockEnsure(UnlockEnsurePorts ports) {
   unlock_ensure_ = std::move(ports);
 }
 
+void SettingsController::BindPinPrompt(PinPromptPorts ports) {
+  pin_prompt_ = std::move(ports);
+}
+
 SettingsCommands& SettingsController::Commands() {
   return commands_;
 }
@@ -816,10 +820,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "unlock_grace_label");
   host.Dirty("settings", "security_grace_shown");
   host.Dirty("settings", "recovery_phrase");
-  host.Dirty("settings", "recovery_phrase_pin");
-  host.Dirty("settings", "recovery_pin_open");
-  host.Dirty("settings", "export_pin");
-  host.Dirty("settings", "export_pin_open");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -830,9 +830,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "support_visible");
   host.Dirty("settings", "support_display_name");
   host.Dirty("settings", "support_subtitle");
-  host.Dirty("settings", "pin_change_old");
-  host.Dirty("settings", "pin_change_new");
-  host.Dirty("settings", "pin_change_confirm");
   host.Dirty("settings", "status");
 }
 
@@ -1351,12 +1348,14 @@ void SettingsController::RefreshBlockedCount() {
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (page == "change_pin") {
+    OpenChangePin();  // B2: the PIN gate's three steps, not a page of fields
+    return;
+  }
   if (selected_id_ != "security" || !show_detail_) {
     return; // phones only: desktop shows both inline
   }
-  if (page == "change_pin") {
-    security_page_title_ = Tr("settings.security.change_pin").c_str();
-  } else if (page == "transfer") {
+  if (page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
   } else {
     return;
@@ -1384,9 +1383,6 @@ void SettingsController::OnCloseSecurityPage() {
 }
 
 void SettingsController::ApplyCloseSecurityPage() {
-  if (security_page_ == "transfer") {
-    security_actions_.CancelExportPin();  // the transfer code's PIN field does not stay out behind the page
-  }
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1408,8 +1404,7 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_subpage");
   }
-  security_actions_.HideRecoveryPhrase();  // the phrase and its PIN field do not follow the user off the page
-  security_actions_.CancelExportPin();
+  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
   if (security_page_.empty()) {
     return;
   }
@@ -2187,7 +2182,7 @@ void SettingsController::RequestSyncLayout(const char* reason) {
 }
 
 void SettingsController::OpenChangePin() {
-  OpenSecurityPage("change_pin");
+  security_actions_.ChangePin();
 }
 
 Roe<void> SettingsController::ForgetToolPermissions() {
