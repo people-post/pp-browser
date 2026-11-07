@@ -3770,8 +3770,14 @@ select selectbox option {
   cursor: pointer;
 }
 
+/* The composer is a frosted bar over the transcript, like the top bar (Kenneth 2026-11-07): the transcript runs down
+   under it; ChatController::SyncComposerOverlay keeps its end spacer, fade and "new messages" pill above the bar. */
 .shell-chat-overlay .shell-composer-mount {
-  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
 }
 
 .shell-pane {

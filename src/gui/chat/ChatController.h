@@ -94,6 +94,12 @@ public:
   using AgentConfig = AgentTurnController::AgentConfig;
 
   static AgentConfig ProjectAgent(const AppConfig& config) { return AgentTurnController::ProjectAgent(config); }
+  /** Phones: keeps `overlay`'s (#shell-chat-overlay) transcript end spacer, fade and "new messages" pill clear of its
+   *  floating composer bar, whatever the bar's height. Per frame; changes nothing when they already are. */
+  static void KeepClearOfComposer(ui::Element* overlay);
+  /** Between the newest message and the composer bar; between the "new messages" pill and the bar. */
+  static constexpr float kComposerClearGapDp = 12.f;
+  static constexpr float kJumpLatestGapDp = 16.f;
   /** A conversation row is kept by a list's search when its title or preview contains the (lower-cased) query. */
   static bool SessionRowMatches(const std::string& title, const std::string& preview, const std::string& lowered_query);
   void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }

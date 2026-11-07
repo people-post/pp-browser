@@ -1,5 +1,6 @@
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <limits>
 #include <thread>
 #include <stdexcept>
@@ -4597,8 +4598,59 @@ void ChatController::AfterLayout() {
       el->Focus();
     }
   }
+  SyncComposerOverlay();
   scroller_.ApplyPolicy();
   FillSessionListAfterLayout();
+}
+
+namespace {
+
+/** Sets `name` to `dp` unless it already is (no relayout for an unchanged value). */
+void SetDpIfChanged(ui::Element* element, const char* name, const float dp) {
+  if (!element) {
+    return;
+  }
+  if (const ui::Property* now = element->GetLocalProperty(name)) {
+    const ui::NumericValue value = now->GetNumericValue();
+    if (value.unit == ui::Unit::DP && std::abs(value.number - dp) < 0.5f) {
+      return;
+    }
+  }
+  element->SetProperty(name, std::to_string(static_cast<int>(std::lround(dp))) + "dp");
+}
+
+ui::Element* FirstByClass(ui::Element* root, const char* name) {
+  ui::ElementList found;
+  root->GetElementsByClassName(found, name);
+  return found.empty() ? nullptr : found.front();
+}
+
+} // namespace
+
+void ChatController::SyncComposerOverlay() {
+  if (context_ && context_->GetNumDocuments() > 0) {
+    KeepClearOfComposer(context_->GetDocument(0)->GetElementById("shell-chat-overlay"));
+  }
+}
+
+void ChatController::KeepClearOfComposer(ui::Element* overlay) {
+  // A phone chat's composer is a frosted bar over the transcript (Kenneth 2026-11-07), which runs down under it: the
+  // transcript's end spacer, its fade and the "new messages" pill follow the bar's height (one line or five, a
+  // picture chip, a quote, the home indicator or the keyboard), so the newest message and the pill stay above it.
+  ui::Element* mount = overlay ? overlay->GetElementById("shell-composer-mount") : nullptr;
+  ui::Context* context = mount ? mount->GetContext() : nullptr;
+  if (!context) {
+    return;
+  }
+  const float ratio =
+      context->GetDensityIndependentPixelRatio() > 0.f ? context->GetDensityIndependentPixelRatio() : 1.f;
+  const float bar_dp = mount->GetOffsetHeight() / ratio;
+  if (bar_dp <= 0.f) {
+    return;
+  }
+  SetDpIfChanged(FirstByClass(overlay, "composer-clear"), "height", bar_dp + kComposerClearGapDp);
+  SetDpIfChanged(FirstByClass(overlay, "chat-composer-fade"), "bottom", bar_dp);
+  SetDpIfChanged(FirstByClass(overlay, "chat-jump-latest"), "bottom", bar_dp + kJumpLatestGapDp);
 }
 
 void ChatController::Shutdown() {
