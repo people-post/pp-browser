@@ -6,7 +6,7 @@
 namespace pbr {
 
 /**
- * CallKit + PushKit (P013; builds with PP_BROWSER_IOS_CALLKIT). Called from
+ * CallKit + PushKit (P016; builds with PP_BROWSER_IOS_CALLKIT). Called from
  * didFinishLaunching: a VoIP push that launched the app is delivered only once the push registry
  * exists, and must put a call on the CallKit screen before its handler returns.
  */

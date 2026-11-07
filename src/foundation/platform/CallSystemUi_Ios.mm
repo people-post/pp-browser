@@ -1,9 +1,11 @@
-// CallKit + PushKit: the phone's own call screen for incoming calls (P013).
+// CallKit + PushKit: the phone's own call screen for incoming calls (P016; builds with
+// PP_BROWSER_IOS_CALLKIT).
 //
-// A VoIP push (`type: call_wake`, sent by the relay for an urgent send) puts "Incoming call" on the
-// CallKit screen at once — iOS requires it for every VoIP push — and wakes the app to sync; the
-// app then fills that call in with the ring it finds (CallSystemUiBridge → ReportIncoming). Built
-// with MRC: objects kept for the process are never released.
+// A VoIP push (`type: call_wake`, sent by the relay for an urgent send, `wake_hint`: the call id)
+// puts "Incoming call" on the CallKit screen at once — iOS requires it for every VoIP push — and
+// wakes the app to sync; the app then fills that call in with the ring of that call id it finds
+// (CallSystemUiBridge → ReportIncoming). Built with MRC: objects kept for the process are never
+// released.
 
 #include "foundation/platform/IosCallSystemUi.h"
 
@@ -16,6 +18,7 @@
 #import <CallKit/CallKit.h>
 #import <Foundation/Foundation.h>
 #import <PushKit/PushKit.h>
+#import <UIKit/UIKit.h>
 
 #include <algorithm>
 #include <chrono>
@@ -77,6 +80,29 @@ double UptimeSec() {
   return [NSProcessInfo processInfo].systemUptime;
 }
 
+/** The push's `wake_hint` (the call id) when it is one the relay may send: 1..64 of [A-Za-z0-9-]; else empty. */
+std::string WakeHintOf(NSDictionary* payload) {
+  id raw = payload[@"wake_hint"];
+  if (![raw isKindOfClass:[NSString class]]) {
+    return {};
+  }
+  const char* utf8 = [(NSString*)raw UTF8String];
+  if (utf8 == nullptr) {
+    return {};
+  }
+  std::string hint(utf8);
+  if (hint.empty() || hint.size() > 64) {
+    return {};
+  }
+  for (const char c : hint) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+    if (!ok) {
+      return {};
+    }
+  }
+  return hint;
+}
+
 /** Main thread only (CallKit's and PushKit's delegate queue, and the app's UI thread). */
 class IosCallSystemUi final : public ICallSystemUi {
 public:
@@ -118,10 +144,12 @@ public:
       [provider_ reportCallWithUUID:it->second updated:update];
       return;
     }
-    if (pending_ != nil) {
-      // The push's call is this ring: it takes the caller's name (and pending_'s retain).
+    if (pending_ != nil && (pending_call_id_.empty() || pending_call_id_ == call_id)) {
+      // The push's call is this ring (the call it named, or any for a push that named none): it takes the
+      // caller's name (and pending_'s retain). Another ring gets a call of its own, below.
       NSUUID* uuid = pending_;
       pending_ = nil;
+      pending_call_id_.clear();
       pending_answered_ = false;
       ++pending_generation_;
       calls_[call_id] = uuid;
@@ -160,11 +188,24 @@ public:
 
   // --- the push ------------------------------------------------------------------------------
 
-  /** A VoIP push: "Incoming call" on the CallKit screen now (iOS requires it), then wake the app. */
-  void OnCallPush(void (^completion)(void)) {
+  /** The app is open, unlocked and on screen: it rings a call itself (the push's call need not stay up). */
+  bool AppRingsItself() const {
+    return app_ready_ && [UIApplication sharedApplication].applicationState == UIApplicationStateActive;
+  }
+
+  /**
+   * A VoIP push: "Incoming call" on the CallKit screen now (iOS requires a call for every VoIP push), then wake the
+   * app. `call_id`: the push's `wake_hint` (empty: none) — only that call's ring fills the push's call in.
+   * With the app open and unlocked it rings the call itself (the invite also comes over the live link): the push's
+   * call is reported, as iOS requires, and ended at once, so the system screen does not cover the app's own ring.
+   */
+  void OnCallPush(const std::string& call_id, void (^completion)(void)) {
     NSUUID* uuid = [[NSUUID alloc] init];
-    const bool busy = pending_ != nil || !calls_.empty();
-    if (app_ready_) {
+    const bool app_rings = AppRingsItself();
+    const bool busy = app_rings || pending_ != nil || !calls_.empty();
+    if (app_rings) {
+      Note("push_in_app");
+    } else if (app_ready_) {
       Note("push");
     } else {
       Note("push_locked");
@@ -179,11 +220,13 @@ public:
                                       }
                                     }
                                     if (busy && error == nil) {
-                                      // A call is already on the screen (an earlier push, the
-                                      // ring itself): this push's call goes at once.
+                                      // The app rings the call itself, or a call is already on the
+                                      // screen (an earlier push, the ring itself): this push's call
+                                      // goes at once.
                                       [provider_ reportCallWithUUID:uuid
                                                         endedAtDate:nil
-                                                             reason:CXCallEndedReasonFailed];
+                                                             reason:app_rings ? CXCallEndedReasonAnsweredElsewhere
+                                                                              : CXCallEndedReasonFailed];
                                     }
                                     [uuid release];
                                     if (completion) {
@@ -192,6 +235,7 @@ public:
                                   }];
     if (!busy) {
       pending_ = [uuid retain];
+      pending_call_id_ = call_id;
       pending_since_ = UptimeSec();
       pending_answered_ = false;
       RearmPending();
@@ -215,7 +259,7 @@ public:
     if (pending_ != nil && [action.callUUID isEqual:pending_]) {
       pending_answered_ = true;
       RearmPending();
-      Call(callbacks_.answer, std::string());
+      Call(callbacks_.answer, pending_call_id_); // empty: the push named no call
     } else if (const std::string call_id = IdOf(action.callUUID); !call_id.empty()) {
       Call(callbacks_.answer, call_id);
     }
@@ -224,8 +268,9 @@ public:
 
   void OnEnd(CXEndCallAction* action) {
     if (pending_ != nil && [action.callUUID isEqual:pending_]) {
-      ClearPending();
-      Call(callbacks_.end, std::string());
+      const std::string call_id = pending_call_id_; // ClearPending forgets it
+      ClearPending(); // gone first (its choices with it), then the decline: kept for the ring
+      Call(callbacks_.end, call_id);
     } else if (const std::string call_id = IdOf(action.callUUID); !call_id.empty()) {
       Forget(call_id);
       Call(callbacks_.end, call_id);
@@ -299,6 +344,7 @@ private:
     const bool had = pending_ != nil;
     [pending_ release];
     pending_ = nil;
+    pending_call_id_.clear();
     pending_answered_ = false;
     ++pending_generation_;
     if (had) {
@@ -348,6 +394,8 @@ private:
   std::unordered_map<std::string, NSUUID*> calls_;
   /** The push's call, its ring not found yet (retained); nil: none. */
   NSUUID* pending_ = nil;
+  /** The call the push named (`wake_hint`); empty: none, the first ring is its call. */
+  std::string pending_call_id_;
   bool pending_answered_ = false;
   /** UptimeSec() of the push. */
   double pending_since_ = 0;
@@ -437,12 +485,11 @@ IosCallSystemUi& Ui() {
                               forType:(PKPushType)type
                 withCompletionHandler:(void (^)(void))completion {
   (void)registry;
-  (void)payload;
   if (![type isEqualToString:PKPushTypeVoIP]) {
     completion();
     return;
   }
-  pbr::Ui().OnCallPush(completion);
+  pbr::Ui().OnCallPush(pbr::WakeHintOf(payload.dictionaryPayload), completion);
 }
 
 @end

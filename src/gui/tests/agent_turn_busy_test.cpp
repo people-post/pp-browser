@@ -592,6 +592,27 @@ TEST_F(AgentTurnBusyTest, HeldSendOfAnotherThreadThanTheOpenOneGoesBackToItsOwnD
   EXPECT_STREQ(chat_.draft.c_str(), "");
 }
 
+// B183: a Brief key renewed on a turn's thread reaches the sessions only once no turn runs (a configure under a
+// running turn would rebuild its client and tools).
+TEST_F(AgentTurnBusyTest, ARenewedKeyReconfiguresTheSessionsOnceNoTurnRuns) {
+  bool busy = true;
+  int configures = 0;
+  AgentUiPorts ports;
+  ports.has_session = [] { return true; };
+  ports.any_busy = [&busy] { return busy; };
+  ports.configure = [&configures](const AppConfig&) { ++configures; };
+  controller_.BindPorts(std::move(ports));
+
+  controller_.ReloadAgentConfigWhenIdle();
+  controller_.Tick();
+  EXPECT_EQ(configures, 0);
+  busy = false;
+  controller_.Tick();
+  EXPECT_EQ(configures, 1);
+  controller_.Tick();
+  EXPECT_EQ(configures, 1); // once
+}
+
 TEST_F(AgentTurnBusyTest, AnotherChatsTurnIsSaidAboveTheComposer) {
   controller_.MarkAgentBusy("A");
   Open("B");

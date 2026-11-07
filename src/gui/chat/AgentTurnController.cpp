@@ -173,6 +173,10 @@ void AgentTurnController::Tick() {
       HandleAgentEvent(event);
     }
   }
+  if (reload_when_idle_ && !(agent_ports_.any_busy && agent_ports_.any_busy())) {
+    reload_when_idle_ = false; // reconfiguring under a running turn would rebuild its client and tools
+    ReloadAgentConfig();
+  }
   RecoverMissedTurnEnd();
   RetryQueueDrain();
 }

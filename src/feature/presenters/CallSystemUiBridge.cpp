@@ -42,6 +42,40 @@ bool CallSystemUiBridge::ChoiceLive(const int64_t at_ms) const {
   return now - at_ms <= kPendingMaxMs && now - std::max(at_ms, ready_at_ms_) <= kPendingChoiceMs;
 }
 
+bool CallSystemUiBridge::ChoiceFits(const std::string& call_id) const {
+  return choice_call_id_.empty() || choice_call_id_ == call_id;
+}
+
+void CallSystemUiBridge::RecordChoice(const bool answer, const std::string& call_id) {
+  if (answer) {
+    Note("answer_pending");
+  } else {
+    Note("decline_pending");
+  }
+  answer_pending_at_ms_ = answer ? Now() : 0;
+  decline_pending_at_ms_ = answer ? 0 : Now();
+  choice_call_id_ = call_id;
+}
+
+void CallSystemUiBridge::ClearChoice() {
+  answer_pending_at_ms_ = 0;
+  decline_pending_at_ms_ = 0;
+  choice_call_id_.clear();
+}
+
+void CallSystemUiBridge::ApplyDecline() {
+  Note("decline_applied");
+  if (actions_.decline) {
+    actions_.decline();
+  }
+}
+
+void CallSystemUiBridge::SetAudioManaged(const bool managed) {
+  if (actions_.audio_managed) {
+    actions_.audio_managed(managed);
+  }
+}
+
 bool CallSystemUiBridge::Ringing(const std::string& call_id) const {
   return screen_.kind == CallScreen::Kind::Ringing && screen_.ring_call_id == call_id;
 }
@@ -68,6 +102,7 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
       }
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::Ended);
       shown_.clear();
+      SetAudioManaged(false);
     } else if (!ringing && !shown_answered_) {
       // Answered in the app: its own call screen shows the call.
       ui_.ReportEnded(shown_, ICallSystemUi::EndReason::AnsweredElsewhere);
@@ -82,19 +117,30 @@ void CallSystemUiBridge::Sync(const CallScreen& screen, const std::string& activ
     ui_.EndPendingPushCall();
   }
 
+  const bool ring = screen.kind == CallScreen::Kind::Ringing && !screen.ring_call_id.empty();
+  // The push named this call and the user declined it there: it goes wherever it would ring (the app may be open
+  // by now, the push's call gone with the decline).
+  if (ring && !choice_call_id_.empty() && choice_call_id_ == screen.ring_call_id &&
+      ChoiceLive(decline_pending_at_ms_)) {
+    ClearChoice();
+    ApplyDecline();
+    return;
+  }
+
   // A ring for the system screen.
-  if (screen.kind == CallScreen::Kind::Ringing && !screen.ring_call_id.empty() && TakesRing(app_foreground)) {
-    const bool declined = ChoiceLive(decline_pending_at_ms_);
-    const bool answered = ChoiceLive(answer_pending_at_ms_);
+  if (ring && TakesRing(app_foreground)) {
+    const bool fits = ChoiceFits(screen.ring_call_id);
+    const bool declined = fits && ChoiceLive(decline_pending_at_ms_);
+    const bool answered = fits && ChoiceLive(answer_pending_at_ms_);
     Note("ring_found");
-    decline_pending_at_ms_ = 0;
-    answer_pending_at_ms_ = 0;
+    if (fits) {
+      ClearChoice();
+    } else if (ChoiceLive(answer_pending_at_ms_) || ChoiceLive(decline_pending_at_ms_)) {
+      Note("choice_other_call"); // made on the call the push named: kept for its ring
+    }
     if (declined) {
       // The user declined the push's call: the ring it announced goes too.
-      Note("decline_applied");
-      if (actions_.decline) {
-        actions_.decline();
-      }
+      ApplyDecline();
       return;
     }
     const std::string name = actions_.display_name ? actions_.display_name(screen.caller_identity) : std::string();
@@ -113,6 +159,7 @@ void CallSystemUiBridge::AcceptShown(const bool voice_only) {
   shown_answered_ = true;
   shown_taken_ = false;
   answered_at_ms_ = Now();
+  SetAudioManaged(true); // before the accept: its audio waits for the system's activation
   if (actions_.accept) {
     actions_.accept(shown_, voice_only); // redraws at once: Sync re-enters (StillTaking keeps the call)
   }
@@ -137,25 +184,28 @@ void CallSystemUiBridge::OnMessagingReady() {
 }
 
 void CallSystemUiBridge::OnAudioSession(const bool active) {
+  if (actions_.audio_activated) {
+    actions_.audio_activated(active);
+  }
   if (active) {
     Note("audio_on");
   } else {
     Note("audio_off");
+    SetAudioManaged(false);
   }
 }
 
 void CallSystemUiBridge::OnPendingGone() {
   Note("pending_gone");
-  answer_pending_at_ms_ = 0;
-  decline_pending_at_ms_ = 0;
+  ClearChoice();
+  SetAudioManaged(false);
 }
 
 void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
-  if (call_id.empty()) {
-    // Managed only once the ring matches (Sync): a placeholder that never does must leave no managed state.
-    Note("answer_pending");
-    answer_pending_at_ms_ = Now();
-    decline_pending_at_ms_ = 0;
+  if (call_id.empty() || (call_id != shown_ && call_id != active_call_id_)) {
+    // The push's call (named by its hint, or not): answered once its ring shows. Managed only once the ring
+    // matches (Sync): a placeholder that never does must leave no managed state.
+    RecordChoice(/*answer=*/true, call_id);
     return;
   }
   if (call_id != shown_ || !Ringing(call_id)) {
@@ -166,10 +216,8 @@ void CallSystemUiBridge::OnAnswer(const std::string& call_id) {
 }
 
 void CallSystemUiBridge::OnEnd(const std::string& call_id) {
-  if (call_id.empty()) {
-    Note("decline_pending");
-    decline_pending_at_ms_ = Now();
-    answer_pending_at_ms_ = 0;
+  if (call_id.empty() || (call_id != shown_ && call_id != active_call_id_)) {
+    RecordChoice(/*answer=*/false, call_id); // the push's call: its ring is declined once it shows
     return;
   }
   if (call_id != shown_) {

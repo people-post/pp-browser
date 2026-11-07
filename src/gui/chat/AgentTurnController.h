@@ -132,6 +132,8 @@ public:
   AgentUiPorts& Ports() { return agent_ports_; }
   void ApplyConfig(const AgentConfig& config);
   void ReloadAgentConfig();
+  /** The Brief key changed off the UI thread (a 401 renewed it, B183): ReloadAgentConfig once no turn runs. */
+  void ReloadAgentConfigWhenIdle() { reload_when_idle_ = true; }
   /** An LLM is configured (else replies are the mock assistant's). */
   bool UseLlm() const { return use_llm_; }
   void SetUseLlm(bool use) { use_llm_ = use; }
@@ -298,6 +300,7 @@ private:
   AgentConfig last_agent_runtime_;
   bool use_llm_ = false;
   bool brief_guest_mint_attempted_ = false;
+  bool reload_when_idle_ = false; // ReloadAgentConfigWhenIdle; done in Tick
   std::string brief_guest_mint_user_hint_;
   std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   HeldAgentSend held_agent_send_; // sends made while the agent was still (re)configuring, one per thread

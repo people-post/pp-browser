@@ -97,6 +97,7 @@ public:
   void Apply(const AgentConfig& config) { agent_.ApplyConfig(config); }
   void BindAgentPorts(AgentUiPorts ports) { agent_.BindPorts(std::move(ports)); }
   void ReloadAgentConfig() { agent_.ReloadAgentConfig(); }
+  void ReloadAgentConfigWhenIdle() { agent_.ReloadAgentConfigWhenIdle(); }
 
   /**
    * A peer's photo was fetched (new path: files are named after their bytes). Rebuilds what shows photos: the open

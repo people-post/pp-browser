@@ -21,6 +21,13 @@ public:
 
   static AppLifecycleState Current();
   static bool IsForeground();
+  /**
+   * The app's screen is up, perhaps under a system overlay (the phone's own call screen, Control Center, a
+   * notification shade): only going to the background proper (SDL's DID_ENTER_BACKGROUND) makes it not visible.
+   * IsForeground() turns false already when iOS resigns the app active (SDL's WILL_ENTER_BACKGROUND), which suits
+   * pausing work but not deciding where a call rings. Desktop: always true.
+   */
+  static bool IsVisible();
 
   /**
    * True when the user is actively attending to the app UI.
@@ -66,6 +73,8 @@ public:
   static void OpenWakeWindow(std::chrono::milliseconds window);
 
   static void OnWillEnterBackground();
+  /** Mobile: the app went to the background proper (not just an overlay): IsVisible() turns false. */
+  static void OnDidEnterBackground();
   static void OnDidEnterForeground();
   static void OnLowMemory();
 

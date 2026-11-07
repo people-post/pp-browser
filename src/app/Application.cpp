@@ -16,6 +16,7 @@
 #include "foundation/platform/PlatformUserHints.h"
 #include "common/Localized.h"
 #include "lib/net/BriefGuestLlmClient.h"
+#include "domain/registration/BriefLlmKeyRenewal.h"
 
 #include "foundation/data/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
@@ -1745,6 +1746,40 @@ void Application::WireAgentAndConfig() {
 
   agent_sessions_.emplace();
   chat_->BindAgentPorts(MakeAgentUiPorts(*agent_sessions_));
+  if (messaging_facade_) {
+    // B183: the gateway refused the AI Bearer (HTTP 401). A guest key is minted and stored beside the registered key
+    // (never re-registers); the refused key goes only once a retry with the new one was answered. Runs on the turn's
+    // thread: the identity store locks itself (the diagnostics Bearer does the same off the UI); the sessions take the
+    // new key once no turn runs.
+    ConversationsFacade& facade = *messaging_facade_;
+    BriefLlmKeyStore key_store{
+        .get = [&facade]() { return facade.GetIdentity(); },
+        .save = [&facade](const LocalIdentity& identity) -> Roe<void> {
+          if (auto saved = facade.UpdateLocalIdentity(identity); !saved) {
+            return saved.error();
+          }
+          return {};
+        },
+        .mint = [](const std::string& llm_base_url) { return MintBriefGuestLlmKey(llm_base_url); },
+    };
+    agent_sessions_->SetBriefKeyPorts(BriefKeyPorts{
+        .renew = [key_store](const std::string& rejected, const std::string& llm_base_url) -> Roe<BriefKeyRenewal> {
+          auto renewed = RenewBriefLlmKey(key_store, rejected, llm_base_url);
+          if (!renewed) {
+            return renewed.error();
+          }
+          return BriefKeyRenewal{.key = std::move(renewed->key), .reused = renewed->reused};
+        },
+        .commit =
+            [this, key_store](const std::string& rejected) {
+              if (auto committed = CommitBriefLlmKey(key_store, rejected); !committed) {
+                log().warning << "Brief LLM key: the refused key was not dropped: " << committed.error().message;
+              }
+              AppRuntime::PostUI([this] { chat_->ReloadAgentConfigWhenIdle(); });
+            },
+        .stored_key = [key_store]() { return StoredBriefLlmKey(key_store); },
+    });
+  }
   if (messaging_facade_) {
     // MessageRouter checks is_busy before it routes, so these start; anything else would be a send that slipped past.
     const auto log_not_started = [this](const SubmitOutcome outcome) {
