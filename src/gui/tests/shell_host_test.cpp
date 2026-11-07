@@ -6,6 +6,9 @@
 #include "lib/ui/ShellTypes.h"
 
 #include <gtest/gtest.h>
+#include <fstream>
+#include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -378,14 +381,19 @@ namespace {
 
 using namespace pbr;
 
-// RequestSyncLayout queues a UI task that holds the host; the UI queue is never run in this binary, so the hosts made
-// here are never freed (a freed one would leave that task dangling).
+// RequestSyncLayout queues a UI task that holds the host; the UI queue is not run here, so the hosts made here live
+// until the process ends (a freed one would leave that task dangling), kept reachable so leak checkers stay quiet.
+ShellHost& KeptHost() {
+  static std::vector<std::unique_ptr<ShellHost>> hosts;
+  return *hosts.emplace_back(std::make_unique<ShellHost>());
+}
+
 ShellHost& PhoneHost(const NavTab tab) {
-  auto* host = new ShellHost();
-  host->State().layout_mode = LayoutMode::Compact;
-  ShellLayout::SyncLayoutModeString(host->State());
-  host->SelectNavTab(tab);
-  return *host;
+  ShellHost& host = KeptHost();
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.SelectNavTab(tab);
+  return host;
 }
 
 // Opens a chat overlay as ChatController does for a chat picked on that tab.
@@ -491,10 +499,67 @@ TEST(ShellHostHiddenTabTest, SystemBackOnAHiddenTabRootReturnsToThePreviousTab) 
   EXPECT_FALSE(host.HandleDismiss());
 
   // On the desktop Me is a plain tab: Escape there does not switch tabs.
-  auto* desktop = new ShellHost();  // never freed: see PhoneHost
-  desktop->SelectNavTab(NavTab::Me);
-  EXPECT_FALSE(desktop->HandleDismiss());
-  EXPECT_EQ(desktop->State().nav_tab, NavTab::Me);
+  ShellHost& desktop = KeptHost();
+  desktop.SelectNavTab(NavTab::Me);
+  EXPECT_FALSE(desktop.HandleDismiss());
+  EXPECT_EQ(desktop.State().nav_tab, NavTab::Me);
+}
+
+TEST(ShellHostHiddenTabTest, SettingsEnteredOnTheDesktopStillGoesBackAfterTheWindowNarrows) {
+  ShellHost& host = KeptHost();
+  host.SelectNavTab(NavTab::Home);
+  host.SelectNavTab(NavTab::Me);  // the desktop rail's Me
+  host.State().layout_mode = LayoutMode::Compact;
+  ShellLayout::SyncLayoutModeString(host.State());
+  host.HiddenTabBack();
+  EXPECT_EQ(host.State().nav_tab, NavTab::Home) << "the tab Settings was entered from, not a stale one";
+}
+
+TEST(ShellHostHiddenTabTest, BackToAChatLeftOpenUnderAHiddenTabSaysItIsShownAgain) {
+  ShellHost& host = PhoneHost(NavTab::Home);
+  OpenChat(host);
+  int shown_again = 0;
+  bool open_when_told = false;
+  host.SetOnCompactChatShownAgain([&]() {
+    ++shown_again;
+    open_when_told = ShellLayout::WhichPanesVisible(host.State()).compact_chat_overlay;
+  });
+  host.OpenSettingsFromAvatar();
+  host.SelectNavTab(NavTab::Contacts);
+  EXPECT_EQ(shown_again, 0) << "still covered";
+  host.HiddenTabBack();
+  EXPECT_EQ(shown_again, 1) << "the chat's messages are read now (ChatController::OnCompactChatShownAgain)";
+  EXPECT_TRUE(open_when_told);
+
+  ShellHost& no_chat = PhoneHost(NavTab::Sessions);
+  int told = 0;
+  no_chat.SetOnCompactChatShownAgain([&told]() { ++told; });
+  no_chat.OpenSettingsFromAvatar();
+  no_chat.HiddenTabBack();
+  EXPECT_EQ(told, 0) << "no chat was left open";
+}
+
+// The wiring the shell callback needs (ChatController needs the whole app to run): Application passes it on, and the
+// chat reads the thread, refreshes it and lands on its newest message, as opening it does.
+TEST(ShellHostHiddenTabTest, TheChatShownAgainIsMarkedRead) {
+  const auto read = [](const char* relative) {
+    std::ifstream in(std::string(PP_SOURCE_DIR) + "/" + relative, std::ios::binary);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    std::string text = buffer.str();
+    std::erase(text, '\r');  // a Windows checkout has CRLF line ends
+    return text;
+  };
+  EXPECT_NE(read("src/app/Application.cpp")
+                .find("shell.SetOnCompactChatShownAgain([&chat]() { chat.OnCompactChatShownAgain(); });"),
+            std::string::npos);
+  const std::string chat = read("src/gui/chat/ChatController.cpp");
+  const size_t at = chat.find("void ChatController::OnCompactChatShownAgain() {");
+  ASSERT_NE(at, std::string::npos);
+  const std::string body = chat.substr(at, chat.find("\n}\n", at) - at);
+  EXPECT_NE(body.find("presenter_.MarkRead(thread_id);"), std::string::npos);
+  EXPECT_NE(body.find("RefreshFromMessaging();"), std::string::npos);
+  EXPECT_NE(body.find("scroller_.RequestScrollToLatest();"), std::string::npos);
 }
 
 TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
@@ -510,5 +575,19 @@ TEST(ShellHostHiddenTabTest, ASecondTapOnTheAiTabOpensTheAiList) {
   OpenChat(host);
   host.OnNavTabClicked("home");
   EXPECT_FALSE(host.State().ai_drawer_open) << "not over an open AI chat";
+}
+
+TEST(ShellHostHiddenTabTest, TheAiDrawerFlagNeverSurvivesATabSwitch) {
+  for (const NavTab to : {NavTab::Home, NavTab::Sessions, NavTab::Contacts, NavTab::Me}) {
+    ShellHost& host = PhoneHost(NavTab::Home);
+    host.OpenAiDrawer();
+    ASSERT_TRUE(host.State().ai_drawer_open);
+    host.SelectNavTab(to);
+    EXPECT_FALSE(host.State().ai_drawer_open) << ShellLayout::NavTabString(to);
+  }
+  ShellHost& cleared = PhoneHost(NavTab::Home);
+  cleared.OpenAiDrawer();
+  cleared.ClearTabContext();
+  EXPECT_FALSE(cleared.State().ai_drawer_open) << "the tab's context goes with it";
 }
 

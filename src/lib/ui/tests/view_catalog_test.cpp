@@ -91,6 +91,11 @@ TEST_F(ViewCatalogTest, OnboardingIsAKnownView) {
   EXPECT_EQ(pbr::ViewCatalog::LoadBody("onboarding"), "<div>wizard</div>");
 }
 
+// The phone AI drawer (DEV/PLAN-minimal-nav.md C): ShellHost::MountAiDrawer loads it by key.
+TEST_F(ViewCatalogTest, TheAiDrawerIsAKnownView) {
+  EXPECT_EQ(pbr::ViewCatalog::ResolvePath("ai_drawer"), "views/ai_drawer.rml");
+}
+
 // Every registered key points at a real file, and every file under assets/views is registered
 // (includes use keys too). The first-run wizard shipped with its .rml present but no key, so
 // LoadBody("onboarding") returned nothing and the wizard never appeared (2026-10-13).

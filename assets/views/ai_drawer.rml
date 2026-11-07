@@ -1,0 +1,95 @@
+<!-- Phone AI conversation list (DEV/PLAN-minimal-nav.md C): the drawer from the left on the AI page, opened by its
+     ☰, a rightward drag across the page or a second tap on AI. Closed by ✕, the scrim, a picked conversation (it opens
+     over the AI page) or the system back. The rows are the AI page's (home.rml #home-ai-sessions, the desktop's list):
+     same swipes, same archived entry; this list has its own id because that one stays in the DOM. No drag-to-close
+     (the rows' swipes). -->
+<div class="ai-drawer" data-model="window">
+  <div class="ai-drawer-head">
+    <button class="shell-circle-btn ai-drawer-close" type="button" data-event-click="close_ai_drawer()">
+      <span class="shell-circle-btn-face"><svg src="../icons/v2/close.svg"></svg></span>
+    </button>
+    <p class="ai-drawer-title">{{i18n:ai_drawer.title}}</p>
+    <span class="ai-drawer-head-gap"></span>
+  </div>
+  <div class="ai-drawer-list" id="ai-drawer-sessions" data-model="shell">
+    <div class="sidebar-archived-entry row" data-if="archived_count_ai &gt; 0" data-event-click="toggle_archived_ai()">
+      <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived_ai"></svg>
+      <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived_ai"></svg>
+      <p class="sidebar-archived-label">{{archived_entry_label_ai}}</p>
+    </div>
+    <div data-for="session : ai_sessions" class="sidebar-session sidebar-session--ai"
+         data-attr-session-id="session.id"
+         data-class-sidebar-session--unread="session.unread_count &gt; 0 || session.unread_dot"
+         data-class-sidebar-session--pinned="session.pinned"
+         data-event-click="select_thread(session.id)">
+      <!-- Each AI conversation shows its title's first character in a per-conversation colour (like chats),
+           so they are distinguishable rather than all the same icon (Kenneth 2026-11-05). -->
+      <div class="chat-row-avatar"
+           data-class-avatar-tone-0="session.avatar_tone == 0"
+           data-class-avatar-tone-1="session.avatar_tone == 1"
+           data-class-avatar-tone-2="session.avatar_tone == 2"
+           data-class-avatar-tone-3="session.avatar_tone == 3"
+           data-class-avatar-tone-4="session.avatar_tone == 4"
+           data-class-avatar-tone-5="session.avatar_tone == 5"
+           data-class-avatar-tone-6="session.avatar_tone == 6"
+           data-class-avatar-tone-7="session.avatar_tone == 7">
+        <p class="chat-row-avatar-letter">{{session.avatar_letter}}</p>
+      </div>
+      <div class="sidebar-session-body">
+        <div class="sidebar-session-line">
+          <p class="sidebar-session-title">{{session.title}}</p>
+          <svg class="sidebar-session-flag sidebar-session-flag--pin" src="../icons/pin.svg" width="12" height="12" crop-to-content="true" data-if="session.pinned"></svg>
+          <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
+        </div>
+        <div class="sidebar-session-line">
+          <p class="sidebar-session-preview">{{session.preview}}</p>
+          <span class="badge-count sidebar-unread" data-if="session.unread_count &gt; 0">{{session.unread_display}}</span>
+          <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
+        </div>
+      </div>
+      <div class="session-swipe session-swipe--end">
+        <div class="session-swipe-btn session-swipe-btn--more" swipe-action="more">
+          <svg src="../icons/v2/more.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.more}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--archive" swipe-action="archive">
+          <svg src="../icons/v2/archive.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label" data-if="!showing_archived_ai">{{i18n:sidebar.swipe.archive}}</p>
+          <p class="session-swipe-label" data-if="showing_archived_ai">{{i18n:sidebar.swipe.unarchive}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--delete" swipe-action="delete">
+          <svg src="../icons/v2/trash.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.delete}}</p>
+        </div>
+      </div>
+      <div class="session-swipe session-swipe--start">
+        <div class="session-swipe-btn session-swipe-btn--pin" swipe-action="pin">
+          <svg src="../icons/v2/pin.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label" data-if="!session.pinned">{{i18n:sidebar.swipe.pin}}</p>
+          <p class="session-swipe-label" data-if="session.pinned">{{i18n:sidebar.swipe.unpin}}</p>
+        </div>
+        <div class="session-swipe-btn session-swipe-btn--rename" swipe-action="rename">
+          <svg src="../icons/v2/compose.svg" width="22" height="22"></svg>
+          <p class="session-swipe-label">{{i18n:sidebar.swipe.rename}}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- You: the avatar and name (as on Settings' card; the letter when there is no picture) → Settings. -->
+  <button class="ai-drawer-me" type="button" data-event-click="open_settings_from_avatar()">
+    <div class="ai-drawer-me-avatar" data-model="settings"
+         data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+         data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+         data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+         data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+         data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+         data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+         data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+         data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+      <img class="ai-drawer-me-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+      <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+    </div>
+    <p class="ai-drawer-me-name" data-model="settings">{{profile_nickname}}</p>
+    <svg class="ai-drawer-me-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+  </button>
+</div>

@@ -44,10 +44,24 @@ The phone bar shows **two text tabs** (`nav.home` "AI", `nav.sessions` "Chats"; 
 | Me (Settings) | no (hidden tab) | no | avatar, `select_nav_tab(Me)` from code | the tab it was entered from |
 | Contacts | no (hidden tab) | no | invite link, `select_nav_tab(Contacts)` from code | the tab it was entered from |
 
-- `ShellLayout::CompactTabBarDp` is 0 on a hidden tab, under the compact chat overlay and under a pushed (transient) page; 48 on the Home and Sessions pages. The shell emits `#shell-bottom-chrome` only when it is not 0.
-- Moving from a tab in the bar to a hidden tab by any path records `tab_before_hidden_` (moving hidden → hidden keeps it); `hidden_tab_back()` returns there (Sessions when nothing is recorded). A hidden tab's root page has a 44dp round back (`.shell-circle-btn`) left of its always-shown centred title and no large title.
-- A compact chat overlay open when the app enters a hidden tab stays open (`compact_chat_open`, primary pane) and is drawn again on the way back; meanwhile the hidden tab's page is drawn instead of it (`WhichPanesVisible`, `ShellInterruption::Top` and the chrome snapshot treat the overlay as not on screen).
-- A second tap on AI while the AI page shows with nothing over it calls `open_ai_drawer()` (sets `ai_drawer_open`; the drawer itself is DEV/PLAN-minimal-nav.md C).
+- `ShellLayout::CompactTabBarDp` is 0 on a hidden tab and under the compact chat overlay; 48 on the Home and Sessions pages, also under a pushed (transient) page, which covers it (so its swipe-back shows the bar underneath) and under the AI drawer's scrim. The shell emits `#shell-bottom-chrome` only when it is not 0.
+- Moving from a tab in the bar to a hidden tab by any path, in either layout, records `tab_before_hidden_` (moving hidden → hidden keeps it); `hidden_tab_back()` returns there (Sessions when nothing is recorded). A hidden tab's root page has a 44dp round back (`.shell-circle-btn`) left of its always-shown centred title and no large title.
+- A compact chat overlay open when the app enters a hidden tab stays open (`compact_chat_open`, primary pane) and is drawn again on the way back; meanwhile the hidden tab's page is drawn instead of it (`WhichPanesVisible`, `ShellInterruption::Top` and the chrome snapshot treat the overlay as not on screen). On the way back `SetOnCompactChatShownAgain` fires: `ChatController::OnCompactChatShownAgain` reads the chat (what arrived meanwhile was counted unread), refreshes it and scrolls to its newest message.
+- A second tap on AI while the AI page shows with nothing over it opens the AI drawer (below).
+
+### AI drawer (compact; DEV/PLAN-minimal-nav.md B / C)
+
+The phone's AI conversation list is a drawer that slides in from the left over the AI page (Home): 86% wide, full height, a scrim over the rest (the tab bar stays at 48dp under it, not tappable), a soft shadow on its right edge. `ShellLayoutRml::AiDrawer()` draws its layer into `#shell-ai-drawer-host` (z 28: above the tab bar and the chat overlay, under pushed pages, the call bar and dialogs); `ShellHost::MountAiDrawer` mounts `views/ai_drawer.rml` (key `ai_drawer`) into `#shell-ai-drawer-mount`. Opening and closing remount only that host, on the next UI turn (`RemountAiDrawer`); a full `SyncLayout` draws it again while it is open. The view: ✕ and the title `ai_drawer.title`, the AI rows of `home.rml` in `#ai-drawer-sessions` (same swipe actions and archived entry; its own id because the AI page's inline `#home-ai-sessions` list, now the desktop's, stays in the DOM under `data-if`), and a bottom row with your avatar and name → `open_settings_from_avatar()`.
+
+| | |
+|---|---|
+| **Open** | the ☰ round button in the AI page's bar (`open_ai_drawer()`, minimal and 动态 page alike); a second tap on AI on the bare AI page; a rightward drag across the AI page's minimal block (`#home-landing`, `ShellDrawerOpenGesture`): more than 60dp right and more sideways than up or down, not from the composer, the chips or a field, only while the AI page shows with nothing over it. Opening first lets go of the composer (focus, keyboard and emoji panel down, the keyboard's inset dropped). Never on the desktop. |
+| **Close** | ✕, a tap on the scrim, a picked conversation (`select_thread` → the chat overlay opens over the AI page, which closes the drawer), the system back. No drag-to-close (it would fight the rows' swipes). |
+| **Reset** (`ai_drawer_open` → false) | any `SelectNavTab` (`ClearTabContext` too), the layout becoming Expanded, a ring or the call screen (not the minimised chip), `OpenCompactChat`, any `PushTransient` / `PushLayer`. |
+| **Row swipes** | `SessionSwipeGesture` attached to `#ai-drawer-sessions` once per mount (`drawer_session_swipe_`, apart from the nav page's `session_swipe_`); released at once when the drawer closes (inside the click that closed it), its DOM on the next UI turn. |
+| **Back key** | Android back / Escape: a menu, popover, dialog or the PIN gate over the drawer close first; then the drawer, and nothing else; then the rest of the order below. |
+
+The AI conversation's own bar (compact chat overlay, an AI thread: `thread_is_ai` in the chat model) has a ✎ round button on the right → `new_chat()`.
 
 Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
@@ -173,7 +187,7 @@ Escape, chrome back buttons, and swipe gestures share `ShellHost::RequestDismiss
 
 | Input | Typical target |
 |-------|----------------|
-| Escape / system back | Top of local-back stack, else `ShellInterruption::Top`, else (phone) a hidden tab's root page back to its tab (`DismissTarget::HiddenTab`) |
+| Escape / system back | (phone) the AI drawer, else top of local-back stack, else `ShellInterruption::Top`, else (phone) a hidden tab's root page back to its tab (`DismissTarget::HiddenTab`) |
 | `transient_back` / compact chat back | Forced transient / chat overlay |
 | Horizontal swipe | Same as back for that surface (`ShellSwipeBackGesture`): from anywhere on transient pages and settings detail; edge-only (28dp) in the chat overlay and on a phone hidden tab's root page (back to its tab) |
 
@@ -188,7 +202,7 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 | `select_nav_tab(tab)` | Switch nav tab (`home`, `sessions`, `contacts`, or `me`); clears tab context. The compact bar shows only `home` and `sessions` (Me and Contacts are hidden tabs). A second `home` on the phone's AI page opens the AI drawer. |
 | `hidden_tab_back()` | Phone hidden tab (Me, Contacts): back to the tab it was entered from |
 | `open_settings_from_avatar()` | Open Settings (the Me tab) |
-| `open_ai_drawer()` / `close_ai_drawer()` | Phone: open / close the AI conversation drawer (`ai_drawer_open`) |
+| `open_ai_drawer()` / `close_ai_drawer()` | Phone: open / close the AI conversation drawer (`ai_drawer_open`; see *AI drawer*) |
 | `open_scan_qr()` | Open the transient scanner from the expanded rail (desktop only for now) |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |

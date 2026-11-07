@@ -18,8 +18,8 @@ struct ShellLayout {
   static bool IsHiddenTabOnCompact(NavTab tab);
   /** Phone layout on a hidden tab (IsHiddenTabOnCompact): its page covers a chat overlay left open under it. */
   static bool HiddenTabShown(const ShellState& state);
-  /** Height of the phone tab bar now: 0 where it is not drawn (a hidden tab, the chat overlay, a pushed page),
-   *  else `bar_height_dp`. 0 on desktop. */
+  /** Height of the phone tab bar now: 0 where it is not drawn (a hidden tab, the chat overlay), else `bar_height_dp`
+   *  (also under a pushed page, which covers it, and under the AI drawer's scrim). 0 on desktop. */
   static float CompactTabBarDp(const ShellState& state, float bar_height_dp = ShellConfig{}.compact_nav_height_dp);
 
   static constexpr int kSidebarMinWidthDp = 200;

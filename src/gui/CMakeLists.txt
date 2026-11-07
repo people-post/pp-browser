@@ -78,6 +78,7 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellFavoritesSnap.cpp
     shell/ShellPageSheetGesture.cpp
     shell/ShellSwipeBackGesture.cpp
+    shell/ShellDrawerOpenGesture.cpp
     shell/SessionSwipeGesture.cpp
     BlobQuotaRecoveryFlow.cpp
     UserFeedback.cpp

@@ -114,8 +114,9 @@ TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
   pushed.spec.key = "new_chat";
   pushed.id = 3;
   state.transient_stack.push_back(pushed);
-  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "a pushed page";
-  EXPECT_FALSE(bar_drawn());
+  // A pushed page covers the bar; the bar stays, so the page's swipe-back shows the page underneath with its bar.
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f) << "a pushed page";
+  EXPECT_TRUE(bar_drawn());
   state.transient_stack.clear();
   state.layout_mode = LayoutMode::Expanded;
   EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
