@@ -371,7 +371,7 @@ div, p, button, span { display: block; }
 .session-swipe-btn { width: 74px; height: 60px; }
 #home-landing { height: 500px; }
 </style></head><body><input id="probe" type="text" style="width: 100px; height: 20px;"/>
-<div id="shell-root"></div></body></rml>)";
+<div id="shell-root"></div><div id="shell-statusbar-strip" class="shell-statusbar-strip"></div></body></rml>)";
 
 SessionDisplayRow AiRow(const char* id, const char* title) {
   SessionDisplayRow row;
@@ -524,6 +524,34 @@ TEST_F(ShellDrawerTest, ADragAcrossTheAiPageOpensIt) {
   EXPECT_TRUE(host_.State().ai_drawer_open);
   Settle();
   EXPECT_NE(ById("ai-drawer-sessions"), nullptr);
+}
+
+// The phone's status-bar strip takes the colour of the page under it: one class per surface (colors.rcss.tmpl), so the
+// top inset does not end in a line over the grouped Me page or the full-screen New chat / Add contact pages.
+TEST_F(ShellDrawerTest, TheStatusStripNamesThePageUnderIt) {
+  ui::Element* strip = ById("shell-statusbar-strip");
+  ASSERT_NE(strip, nullptr);
+  const auto only = [strip](const char* surface) {
+    for (const char* known : {"home", "me", "new_chat", "add_contact"}) {
+      if (strip->IsClassSet(std::string("shell-statusbar-strip--") + known) != (std::string(known) == surface)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  EXPECT_TRUE(only("home"));
+  host_.SelectNavTab(NavTab::Me);
+  host_.SyncLayout();
+  EXPECT_TRUE(only("me"));
+  host_.SelectNavTab(NavTab::Sessions);
+  host_.SyncLayout();
+  EXPECT_TRUE(only("")) << "the Chats bar keeps the body colour";
+  host_.PushTransient({.key = "new_chat"});
+  host_.SyncLayout();
+  EXPECT_TRUE(only("new_chat"));
+  host_.PushTransient({.key = "add_contact"});
+  host_.SyncLayout();
+  EXPECT_TRUE(only("add_contact"));
 }
 
 TEST_F(ShellDrawerTest, TheLayoutBecomingTheDesktopsClosesIt) {

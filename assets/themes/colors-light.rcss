@@ -10,9 +10,18 @@ body {
   background-color: #ffffff;
 }
 
-/* Phone Home root: the page under the strip is the dock colour (see ShellHost::ApplySafeAreaLayout). */
+/* Phones: the strip takes the colour of the page under it (ShellHost::ApplySafeAreaLayout picks the surface). */
 .shell-statusbar-strip.shell-statusbar-strip--home {
   background-color: #ffffff;
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--me,
+.shell-statusbar-strip.shell-statusbar-strip--new_chat {
+  background-color: #f2f2f7;
+}
+
+.shell-statusbar-strip.shell-statusbar-strip--add_contact {
+  background-color: #f2f2f7;
 }
 
 /* Monochrome icons are white sources; tint with image-color (does not inherit). */
