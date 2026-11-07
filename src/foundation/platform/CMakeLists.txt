@@ -81,6 +81,13 @@ else()
   list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
 endif()
 
+# Which face / finger sensor the biometric unlock switch names (at-rest A014): iOS LocalAuthentication; else None.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Default.cpp)
+endif()
+
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsThreadName_Win32.cpp
@@ -275,7 +282,8 @@ if(PP_BROWSER_IS_IOS)
     "-framework Security"
     "-framework CoreFoundation"
     "-framework Foundation"
-    "-framework UIKit")
+    "-framework UIKit"
+    "-framework LocalAuthentication")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL

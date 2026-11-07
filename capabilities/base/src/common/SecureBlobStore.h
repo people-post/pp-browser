@@ -21,14 +21,23 @@ namespace pbr {
 enum class SecureBlobAccess {
   kAfterFirstUnlock, ///< After the device unlocked once since boot (the default of every blob before 2026-11-06).
   kWhenUnlocked,     ///< Only while the device is unlocked (the PIN grace key, #21 phase 1).
+  /// Only after the enrolled face / finger passes the system prompt, and gone for good once the enrolment changes
+  /// (iOS kSecAccessControlBiometryCurrentSet, this device only; the biometric unlock key, at-rest A014). Stores
+  /// that cannot hold it answer Supports() false and refuse the write.
+  kBiometryCurrentSet,
 };
 
 /** A read that tells "nothing stored" from "stored but not readable right now" (iOS: device locked). */
 struct SecureBlobLookup {
-  enum class Status { Found, Missing, Unavailable };
+  enum class Status {
+    Found,
+    Missing,
+    Unavailable,
+    Canceled, ///< The system prompt of a kBiometryCurrentSet item was canceled or not passed; the item stays.
+  };
   Status status = Status::Missing;
   std::vector<uint8_t> bytes; ///< Only with Found.
-  int64_t code = 0;           ///< The OS status with Unavailable (0 when the store has none).
+  int64_t code = 0;           ///< The OS status with Unavailable and Canceled (0 when the store has none).
 };
 
 class ISecureBlobStore {
@@ -38,9 +47,19 @@ public:
   virtual Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes) = 0;
   virtual Roe<std::optional<std::vector<uint8_t>>> Read(const std::string& name) = 0;
   virtual Roe<void> Delete(const std::string& name) = 0;
-  /** Write under an access level. Stores without levels (and the default here) ignore it. */
-  virtual Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes, SecureBlobAccess /*access*/) {
+  /**
+   * Write under an access level. Stores without levels (and the default here) ignore it, except that the default
+   * refuses kBiometryCurrentSet: a blob meant to need the face / finger is never kept without it.
+   */
+  virtual Roe<void> Write(const std::string& name, const std::vector<uint8_t>& bytes, SecureBlobAccess access) {
+    if (access == SecureBlobAccess::kBiometryCurrentSet) {
+      return Error("Secure blob store cannot hold a biometry-bound blob");
+    }
     return Write(name, bytes);
+  }
+  /** Whether this store can hold a blob under `access`. The default: every level but kBiometryCurrentSet. */
+  virtual bool Supports(SecureBlobAccess access) const {
+    return Supported() && access != SecureBlobAccess::kBiometryCurrentSet;
   }
   /** Read with the three-state answer. The default maps Read(): error → Unavailable, nullopt → Missing. */
   virtual Roe<SecureBlobLookup> Lookup(const std::string& name) {
@@ -56,6 +75,13 @@ public:
     out.status = SecureBlobLookup::Status::Found;
     out.bytes = std::move(**got);
     return out;
+  }
+  /**
+   * Lookup() for an item whose read shows a system prompt (kBiometryCurrentSet): `prompt` is the line the prompt
+   * shows. Blocks until the user answers, so never on the UI thread. Stores without prompts: Lookup().
+   */
+  virtual Roe<SecureBlobLookup> LookupWithPrompt(const std::string& name, const std::string& /*prompt*/) {
+    return Lookup(name);
   }
 };
 
