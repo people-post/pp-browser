@@ -314,6 +314,8 @@ Upstream is AI harness `POST /v1/chat/completions` (stateless; www→harness use
 
 Overlay prefers registered over guest. Soft banner for free tier; register for higher limits.
 
+A streamed answer refused with `401` (the gateway does not know the Bearer) drops the key that was sent from `identity.enc` (registered or guest), mints a guest key and asks the same question once more; at most one such renewal until a turn is answered again, so a second `401` or a failed mint is the turn's error (B183, `AgentSession` + `Application`).
+
 Wire format is OpenAI chat completions, including client tool loops (`assistant.tool_calls` + `role: tool`). www does not adapt messages; the harness maps them to the configured provider.
 
 Lost registered key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active. Guests remint via `/guest/start` (app caches until expiry / register).

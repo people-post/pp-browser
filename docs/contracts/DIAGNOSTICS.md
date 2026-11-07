@@ -52,6 +52,7 @@ There is no method that takes free text, so a name, a message, a search query, a
 | `relay.poll_too_large` | `n` | `MeshDeliveryOrchestrator` |
 | `chat.send_failed` | `failure` (`SendFailureWord`), `thread` (ref) | `MeshDeliveryOrchestrator` |
 | `chat.receive_failed` | `reason` (`ReceiveFailureWord`), `sender` (ref) | `MeshDeliveryOrchestrator` |
+| `ai.llm_key` | `reason` (`401` — the gateway refused the Brief LLM Bearer), `outcome` (`minted` — the key that was sent was dropped and a new guest key came back (or another turn had already replaced it); the turn asks once more / `mint_failed` — no new key, `error` set; the turn ends in its error / `retry_401` — the question asked again with the new key was refused too) — at most one renewal until a turn is answered again (B183) | `AgentSession` (brief stream turn) |
 | `unlock.start` | — (a PIN or silent unlock began) | `ProfileUnlockGate` |
 | `unlock.done` | `unlocked` | `ProfileUnlockGate` |
 | `unlock.failed` | `wrong_pin`, `silent` (no PIN was typed) | `ProfileUnlockGate` |
@@ -107,4 +108,4 @@ Metrics events are listed where they are emitted (`MetricsLine("…")`); they fo
 
 The gateway (www, `app/src/r_support_client.ts`) checks the Bearer like the LLM routes, validates the body (the fields above, strict; 1–4 `files`; 30 000 lines, 2048 chars a line, 2.5 MB of line bytes) and forwards it to app-support `POST /v1/diagnostics` with two hashes for the quota: `X-Diag-Key-Hash` (SHA-256 of the Bearer) and `X-Diag-Ip-Hash` (HMAC with a gateway-only secret; IPv6 by /64). Its access log for this path carries no IP, user agent or request id. app-support validates the same body, reserves the daily quotas (3 a key, 10 an IP, a global cap), writes each line to CloudWatch as a `client_diag` record (`upload`, `file`, `version`, `os`, `line`) and keeps only the upload record in Mongo. A change to the body or the file limits is a change on all three.
 
-Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`).
+Changelog: 2026-10-30 — first version (P009). 2026-10-31 — call connection events (`call.*`). 2026-11-07 — `ai.llm_key` (B183).

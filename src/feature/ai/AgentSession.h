@@ -16,6 +16,7 @@
 #include "lib/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -36,6 +37,11 @@ using ToolRegistrationHook = std::function<void(ToolRegistry&)>;
 using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs&)>;
 /** The local contacts, flattened for the on-device app-action planner (called on a worker thread). */
 using LocalContactsFn = std::function<std::vector<LocalPlanContact>()>;
+/**
+ * The brief stream answered HTTP 401 with `rejected_key` (B183): drop that key from the identity, mint a guest key and
+ * return the Bearer to ask again with. Blocking (network); called on the turn's thread.
+ */
+using BriefKeyRenewFn = std::function<Roe<std::string>(const std::string& rejected_key)>;
 
 enum class AgentEventType {
   LoadingChanged,
@@ -115,6 +121,8 @@ struct AgentSessionShared {
   std::vector<AgentEvent> pending_events;
   std::mutex last_role_mutex;
   std::unordered_map<std::string, std::string> last_role_by_thread;
+  /** A 401 renewed the brief key (BriefKeyRenewFn) and no turn has been answered since: no second renewal (B183). */
+  std::atomic<bool> brief_key_renewed{false};
 };
 
 class AgentSession {
@@ -134,6 +142,11 @@ public:
   void SetThreadStore(IThreadStore* store);
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
+  /**
+   * A brief stream turn that gets HTTP 401 renews the key through `renew` and asks once more (B183). At most one
+   * renewal until a turn is answered again (AgentSessionShared::brief_key_renewed). Unset: a 401 is the turn's error.
+   */
+  void SetBriefKeyRenewer(BriefKeyRenewFn renew);
   /**
    * How long a turn whose planned tool is missing waits for the promoted MCP server to list it, re-listing every
    * `poll` (default 10 s / 500 ms; tests shorten it).
