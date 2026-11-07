@@ -168,6 +168,14 @@ TEST(ShellHostTest, LayoutInterruptionAndFeedbackBehavior) {
   ASSERT_EQ(phone_toasts.toasts.size(), 1U);
   EXPECT_FLOAT_EQ(phone_toasts.toasts.back().expires_at_ms, 4500.f);
 
+  // Phones: an app-level error is the bottom pill, never a top banner.
+  ShellFeedback::ShowBanner(phone_toasts, "Invalid API key", 1000.f);
+  EXPECT_TRUE(phone_toasts.banner_message.empty());
+  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Invalid API key");
+  ShellFeedback::ShowStickyBanner(phone_toasts, "Still wrong");
+  EXPECT_TRUE(phone_toasts.banner_message.empty());
+  EXPECT_STREQ(phone_toasts.toasts.back().message.c_str(), "Still wrong");
+
   ShellFeedback::ShowBanner(toast_state, "Offline");
   EXPECT_FALSE(toast_state.banner_message.empty());
   ShellFeedback::DismissBanner(toast_state);

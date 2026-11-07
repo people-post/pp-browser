@@ -160,6 +160,10 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-chat\"></div>";
     out << "<div class=\"shell-composer-mount surface-chrome";
+    if (frost_enabled && !solid) {
+      // Frosted like the bars (Kenneth 2026-11-07): a translucent bar colour over a blur.
+      out << " surface-chrome--frost";
+    }
     if (solid) {
       out << " surface-chrome--solid";
     }
