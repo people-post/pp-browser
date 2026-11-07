@@ -116,6 +116,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("layout_mode", &host.state_.layout_mode_str);
     ctor.Bind("nav_tab", &host.state_.nav_tab_str);
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
+    ctor.Bind("ai_drawer_open", &host.state_.ai_drawer_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
     ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
     ctor.Bind("large_title_collapsed", &host.state_.large_title_collapsed);
@@ -291,6 +292,10 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("open_auxiliary", DataEvent<>([this]() { OpenAuxiliary(); }));
     ctor.BindEventCallback("select_nav_tab", DataEvent<std::string>([this](const std::string& tab) { OnNavTabClicked(tab); }));
     ctor.BindEventCallback("compact_chat_back", DataEvent<>([this]() { RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay); }));
+    ctor.BindEventCallback("hidden_tab_back", DataEvent<>([this]() { HiddenTabBack(); }));
+    ctor.BindEventCallback("open_settings_from_avatar", DataEvent<>([this]() { OpenSettingsFromAvatar(); }));
+    ctor.BindEventCallback("open_ai_drawer", DataEvent<>([this]() { OpenAiDrawer(); }));
+    ctor.BindEventCallback("close_ai_drawer", DataEvent<>([this]() { CloseAiDrawer(); }));
     ctor.BindEventCallback("open_scan_qr", DataEvent<>([this]() {
       if (scan_action_) {
         scan_action_();
@@ -437,6 +442,7 @@ void ShellHost::Initialize(ui::Context* context) {
   elapsed_ms_ = 0.f;
   pending_dismiss_.reset();
   local_back_stack_.clear();
+  tab_before_hidden_ = NavTab::Sessions;
   DetachDismissGestures();
   saved_focus_id_.clear();
   sync_pending_ = false;
@@ -529,12 +535,14 @@ void ShellHost::CloseAuxiliary() {
   RequestSyncLayout();
 }
 
-void ShellHost::ClearTabContext() {
-  state_.primary_pane_key.clear();
+void ShellHost::ClearTabContext(const bool keep_compact_chat) {
+  if (!keep_compact_chat) {
+    state_.primary_pane_key.clear();
+    state_.compact_chat_open = false;
+  }
   state_.auxiliary_open = false;
   state_.transient_stack.clear();
   state_.transient_active = false;
-  state_.compact_chat_open = false;
   pending_dismiss_.reset();
   local_back_stack_.clear();
   DetachDismissGestures();
@@ -557,7 +565,18 @@ void ShellHost::SelectNavTab(NavTab tab) {
   }
   const bool tab_changed = state_.nav_tab != tab;
   if (tab_changed) {
-    ClearTabContext();
+    // Phones (DEV/PLAN-minimal-nav.md A): entering a hidden tab (Me, Contacts) from a tab in the bar remembers that
+    // tab, whichever way it was entered (avatar, invite link, the AI opening Settings); hidden to hidden keeps it.
+    // A chat overlay open on that tab stays open under the hidden tab's page, and is there again on the way back.
+    const bool compact = state_.layout_mode == LayoutMode::Compact;
+    const bool from_hidden = ShellLayout::IsHiddenTabOnCompact(state_.nav_tab);
+    const bool to_hidden = ShellLayout::IsHiddenTabOnCompact(tab);
+    if (compact && to_hidden && !from_hidden) {
+      tab_before_hidden_ = state_.nav_tab;
+    }
+    const bool keep_compact_chat =
+        compact && state_.compact_chat_open && (to_hidden || (from_hidden && tab == tab_before_hidden_));
+    ClearTabContext(keep_compact_chat);
     // The new root page opens at its top, large title showing.
     SetLargeTitleCollapsed(false);
   }
@@ -567,6 +586,43 @@ void ShellHost::SelectNavTab(NavTab tab) {
     on_nav_tab_changed_(tab);
   }
   RequestSyncLayout();
+}
+
+void ShellHost::HiddenTabBack() {
+  if (!ShellLayout::HiddenTabShown(state_)) {
+    return;
+  }
+  SelectNavTab(tab_before_hidden_);
+}
+
+void ShellHost::OpenSettingsFromAvatar() {
+  SelectNavTab(NavTab::Me);
+}
+
+void ShellHost::OpenAiDrawer() {
+  if (state_.layout_mode != LayoutMode::Compact || state_.ai_drawer_open) {
+    return;
+  }
+  state_.ai_drawer_open = true;
+  DataModelHost::Instance().Dirty("window", "ai_drawer_open");
+}
+
+void ShellHost::CloseAiDrawer() {
+  if (!state_.ai_drawer_open) {
+    return;
+  }
+  state_.ai_drawer_open = false;
+  DataModelHost::Instance().Dirty("window", "ai_drawer_open");
+}
+
+bool ShellHost::HomeRootShown() const {
+  return state_.layout_mode == LayoutMode::Compact && state_.nav_tab == NavTab::Home && !state_.compact_chat_open &&
+         state_.transient_stack.empty() && state_.overlay_stack.empty() && !state_.ai_drawer_open;
+}
+
+bool ShellHost::HiddenTabRootShown() const {
+  return ShellLayout::HiddenTabShown(state_) && local_back_stack_.empty() &&
+         ShellInterruption::Top(state_) == InterruptionKind::None;
 }
 
 void ShellHost::SetLargeTitleCollapsed(const bool collapsed) {
@@ -774,11 +830,13 @@ DismissTarget ShellHost::ResolveDismissTarget() const {
     return DismissTarget::AuxiliarySheet;
   case InterruptionKind::CompactChatOverlay:
     return DismissTarget::CompactChatOverlay;
+  case InterruptionKind::None:
+    // A hidden tab's root page (phone Me / Contacts) goes back to the tab it came from.
+    return HiddenTabRootShown() ? DismissTarget::HiddenTab : DismissTarget::None;
   case InterruptionKind::Dialog:
   case InterruptionKind::PinGate:
   case InterruptionKind::CallRing:
   case InterruptionKind::LiveSessionOn:
-  case InterruptionKind::None:
     return DismissTarget::None;
   }
   return DismissTarget::None;
@@ -802,6 +860,9 @@ ui::Element* ShellHost::PageElementFor(DismissTarget target) const {
     break;
   case DismissTarget::CompactChatOverlay:
     id = "shell-chat-overlay";
+    break;
+  case DismissTarget::HiddenTab:
+    id = "shell-nav-page";
     break;
   case DismissTarget::OverlayLayer:
     if (TopPageSheet()) {
@@ -891,6 +952,9 @@ void ShellHost::CommitDismiss(DismissTarget target) {
   case DismissTarget::OverlayLayer:
     CloseLayer();
     return;
+  case DismissTarget::HiddenTab:
+    HiddenTabBack();
+    return;
   }
 }
 
@@ -948,6 +1012,10 @@ bool ShellHost::HandleDismiss() {
     RequestSyncLayout();
     return true;
   }
+  // Phone back order (Android system back, Escape; DEV/PLAN-minimal-nav.md A): (1) the AI drawer -- W2 closes it
+  // here, before anything else, once it is drawn; then RequestDismiss: (2) a settings page (local back), a layer, a
+  // pushed page, the auxiliary sheet or the chat overlay; (3) a hidden tab's root page back to its tab (HiddenTab);
+  // (4) nothing left: the caller's own (PlatformNavigation minimises on phones).
   return RequestDismiss(DismissStyle::Instant);
 }
 
@@ -1514,9 +1582,10 @@ void ShellHost::ApplySafeAreaLayout() {
   ContextMenuHost::Instance().SetHomeIndicatorDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? 0 : state_.safe_area_bottom_dp);
   CompactBottomSurface bottom_surface = CompactBottomSurface::None;
   if (state_.layout_mode == LayoutMode::Compact) {
-    bottom_surface = !state_.transient_stack.empty() ? CompactBottomSurface::Page
-                     : state_.compact_chat_open      ? CompactBottomSurface::Composer
-                                                     : CompactBottomSurface::TabBar;
+    // A hidden tab's page (Me, Contacts) has no tab bar: like a pushed page it reaches the screen bottom itself.
+    bottom_surface = !state_.transient_stack.empty() || ShellLayout::HiddenTabShown(state_) ? CompactBottomSurface::Page
+                     : state_.compact_chat_open                                         ? CompactBottomSurface::Composer
+                                                                                         : CompactBottomSurface::TabBar;
   }
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp, bottom_surface, bottom_chrome_open_);
@@ -1569,15 +1638,16 @@ void ShellHost::ApplySafeAreaLayout() {
   if (state_.layout_mode != LayoutMode::Compact) {
     return;
   }
-  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats, Contacts and Me
-  // scroll under the 49dp tab bar (their scrollers pad themselves past it), so their page clears the home-indicator
-  // strip only; Home's dock sits above the bar.
-  const float tab_bar_dp = state_.nav_tab == NavTab::Home ? 0.f : config_.compact_nav_height_dp;
-  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom",
-         std::max(0.f, layout.content_padding_bottom_dp - tab_bar_dp));
-  set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   // The bottom surface owns the home-indicator strip (padding keeps its controls above the inset).
   const float strip_dp = layout.bottom_surface_padding_dp;
+  // Nav page only needs nav-height padding; shell-root bottom already clears the bottom chrome. Chats scrolls under
+  // the tab bar (its scroller pads itself past it), so its page clears the home-indicator strip only; Home's dock sits
+  // above the bar. A hidden tab's page (no tab bar) pads by the strip alone, like a pushed page.
+  const float scrolls_under_bar_dp = state_.nav_tab == NavTab::Home ? 0.f : config_.compact_nav_height_dp;
+  set_dp(doc->GetElementById("shell-nav-page"), "padding-bottom",
+         ShellLayout::HiddenTabShown(state_) ? strip_dp
+                                             : std::max(0.f, layout.content_padding_bottom_dp - scrolls_under_bar_dp));
+  set_dp(doc->GetElementById("shell-bottom-chrome"), "bottom", layout.chrome_bottom_dp);
   set_dp(doc->GetElementById("shell-bottom-chrome"), "padding-bottom",
          bottom_surface == CompactBottomSurface::TabBar ? strip_dp : 0.f);
   // Keyboard up, or an emoji/attachment panel open, over a tab-bar page: hide the nav tab bar so the keyboard / panel
@@ -1869,6 +1939,16 @@ void ShellHost::AttachSwipeBackGesture() {
     }
   }
 
+  if (HiddenTabRootShown()) {
+    // Phone Me / Contacts root page: an edge swipe goes back to the tab it came from (rows keep their own swipes).
+    if (ui::Element* page = doc->GetElementById("shell-nav-page")) {
+      options.chrome_classes = {"shell-circle-btn"};
+      swipe_back_gesture_.Attach(page, context_, std::move(options),
+                                 [slide_out]() { slide_out(DismissTarget::HiddenTab); });
+    }
+    return;
+  }
+
   if (state_.layout_mode == LayoutMode::Compact && state_.compact_chat_open) {
     if (ui::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
       options.chrome_classes = {"shell-chat-overlay-chrome", "shell-back-btn"};
@@ -1917,7 +1997,7 @@ void ShellHost::MountPaneBodies() {
         }
       }
     }
-  } else if (state_.compact_chat_open) {
+  } else if (state_.compact_chat_open && !ShellLayout::HiddenTabShown(state_)) {
     if (state_.nav_tab == NavTab::Sessions) {
       mount_key("sidebar");
     }
@@ -2528,6 +2608,11 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
 
 void ShellHost::OnNavTabClicked(const std::string& tab_name) {
   const NavTab tab = NavTabFromString(tab_name.c_str());
+  // Phones: AI tapped again on the AI page itself opens its conversation list.
+  if (tab == NavTab::Home && HomeRootShown()) {
+    OpenAiDrawer();
+    return;
+  }
   // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
   if (state_.layout_mode == LayoutMode::Expanded &&
       ShellLayout::SidebarCollapsedAfterNavSelect(state_.sidebar_collapsed, tab) != state_.sidebar_collapsed) {

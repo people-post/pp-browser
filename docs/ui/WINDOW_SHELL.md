@@ -31,7 +31,23 @@ Nav rail → Secondary (index/list) → Primary (drill-down) → Auxiliary → T
 | Auxiliary | Next column right | Further content in this tab (working set) | Right column when open | Sheet |
 | Transient | Overlay | Deeper drill-down in this tab | Over primary | Over primary |
 
-**Tab switch** (`SelectNavTab`) calls `ClearTabContext()`: primary pane cleared, auxiliary closed, transient stack cleared, compact overlay closed. Controllers mount tab-specific content into secondary and primary via `SetPrimaryPane(key)`.
+**Tab switch** (`SelectNavTab`) calls `ClearTabContext()`: primary pane cleared, auxiliary closed, transient stack cleared, compact overlay closed. Controllers mount tab-specific content into secondary and primary via `SetPrimaryPane(key)`. One exception on phones: a compact chat overlay stays open (with its primary pane) when the app moves to a hidden tab, between hidden tabs, and back to the tab it was opened on (see *Phone tabs* below).
+
+### Phone tabs (compact; DEV/PLAN-minimal-nav.md A)
+
+The phone bar shows **two text tabs** (`nav.home` "AI", `nav.sessions` "Chats"; no icons, 48dp, 16dp words, the chosen one bold in the label colour, the Chats unread count at the word's top right). **Me and Contacts are hidden tabs** (`ShellLayout::IsHiddenTabOnCompact`): still real `NavTab`s (their controllers keep their tab logic), but they have no button in the bar. Me is entered from an avatar (`open_settings_from_avatar()`) or the AI's "open settings"; Contacts from an invite link or a scanned code (`ContactsController::OfferInvite`). Expanded keeps the four-tab rail.
+
+| Tab | In the phone bar | Tab bar shown | Entered by | Back from its root page |
+|-----|------------------|---------------|------------|-------------------------|
+| Home (AI) | yes | yes (hidden while the keyboard / emoji panel is up: `tab_bar_hidden`) | the bar | the platform's (minimise) |
+| Sessions (Chats) | yes | yes | the bar | the platform's (minimise) |
+| Me (Settings) | no (hidden tab) | no | avatar, `select_nav_tab(Me)` from code | the tab it was entered from |
+| Contacts | no (hidden tab) | no | invite link, `select_nav_tab(Contacts)` from code | the tab it was entered from |
+
+- `ShellLayout::CompactTabBarDp` is 0 on a hidden tab, under the compact chat overlay and under a pushed (transient) page; 48 on the Home and Sessions pages. The shell emits `#shell-bottom-chrome` only when it is not 0.
+- Moving from a tab in the bar to a hidden tab by any path records `tab_before_hidden_` (moving hidden → hidden keeps it); `hidden_tab_back()` returns there (Sessions when nothing is recorded). A hidden tab's root page has a 44dp round back (`.shell-circle-btn`) left of its always-shown centred title and no large title.
+- A compact chat overlay open when the app enters a hidden tab stays open (`compact_chat_open`, primary pane) and is drawn again on the way back; meanwhile the hidden tab's page is drawn instead of it (`WhichPanesVisible`, `ShellInterruption::Top` and the chrome snapshot treat the overlay as not on screen).
+- A second tap on AI while the AI page shows with nothing over it calls `open_ai_drawer()` (sets `ai_drawer_open`; the drawer itself is DEV/PLAN-minimal-nav.md C).
 
 Primary is **tab-scoped drill-down content**, not always chat. Examples:
 
@@ -47,7 +63,7 @@ Primary is **tab-scoped drill-down content**, not always chat. Examples:
 | Layout | Entry | Presentation |
 |--------|--------|----------------|
 | **Expanded** | Nav rail Me tab (`select_nav_tab('me')`) | Secondary list → primary section detail (same pattern as Contacts) |
-| **Compact** | Fourth tab in the bottom tab bar | Me tab with the same list → detail; settings detail opens inline in the Me pane (local back, slides in from the right, swipe back from anywhere) |
+| **Compact** | A hidden tab (no bar button): an avatar (`open_settings_from_avatar()`) | Me tab with the same list → detail; settings detail opens inline in the Me pane (local back, slides in from the right, swipe back from anywhere); the list's own back returns to the tab it was entered from |
 
 **Scan QR code** is a direct action on the expanded rail: Scan sits immediately above the Me tab.
 It is desktop-rail only for now; compact does not offer it. It opens a transient scan surface without switching tabs; [SCANNING.md](SCANNING.md) owns
@@ -157,9 +173,9 @@ Escape, chrome back buttons, and swipe gestures share `ShellHost::RequestDismiss
 
 | Input | Typical target |
 |-------|----------------|
-| Escape / system back | Top of local-back stack, else `ShellInterruption::Top` |
+| Escape / system back | Top of local-back stack, else `ShellInterruption::Top`, else (phone) a hidden tab's root page back to its tab (`DismissTarget::HiddenTab`) |
 | `transient_back` / compact chat back | Forced transient / chat overlay |
-| Horizontal swipe | Same as back for that surface (`ShellSwipeBackGesture`): from anywhere on transient pages and settings detail; edge-only (28dp) in the chat overlay |
+| Horizontal swipe | Same as back for that surface (`ShellSwipeBackGesture`): from anywhere on transient pages and settings detail; edge-only (28dp) in the chat overlay and on a phone hidden tab's root page (back to its tab) |
 
 The horizontal swipe-back gesture is decided by [`ShellGestureAxisLock`](../../src/lib/ui/ShellGestureAxis.h), which commits the dominant axis after the deadzone.
 
@@ -169,7 +185,10 @@ Root document: `assets/samples/window_shell.rml` with `data-model="window"`.
 
 | Callback | Action |
 |----------|--------|
-| `select_nav_tab(tab)` | Switch nav tab (`home`, `sessions`, `contacts`, or `me`); clears tab context. Compact bottom bar shows all four tabs. |
+| `select_nav_tab(tab)` | Switch nav tab (`home`, `sessions`, `contacts`, or `me`); clears tab context. The compact bar shows only `home` and `sessions` (Me and Contacts are hidden tabs). A second `home` on the phone's AI page opens the AI drawer. |
+| `hidden_tab_back()` | Phone hidden tab (Me, Contacts): back to the tab it was entered from |
+| `open_settings_from_avatar()` | Open Settings (the Me tab) |
+| `open_ai_drawer()` / `close_ai_drawer()` | Phone: open / close the AI conversation drawer (`ai_drawer_open`) |
 | `open_scan_qr()` | Open the transient scanner from the expanded rail (desktop only for now) |
 | `compact_chat_back()` | Close compact chat overlay |
 | `toggle_auxiliary()` | Open/close preview sheet/panel |

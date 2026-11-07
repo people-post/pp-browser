@@ -3204,13 +3204,6 @@ select selectbox option {
   flex-shrink: 0;
 }
 
-/* 28dp tab icons, one step up from §8.2's 24dp (Kenneth 2026-11-04: "图标好像小了一点，感觉很小气"); the 11dp label
-   stays. Size in dp so the layout box matches the drawn icon on every density. */
-.shell-nav-rail--compact .shell-nav-tab svg {
-  width: 28dp;
-  height: 28dp;
-}
-
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
 .shell-nav-collapse {
   height: 28dp;
@@ -3232,10 +3225,33 @@ select selectbox option {
   line-height: 1.1;
 }
 
-/* caption-2 */
-.shell-nav-rail--compact .shell-nav-tab-label {
-  font-size: 11dp;
-  line-height: 13dp;
+/* Phone tab bar (DEV/PLAN-minimal-nav.md A, Kenneth 2026-11-07): two words, no icons, 48dp; the chosen one bold. The
+   Chats unread count sits at the word's top right. */
+.shell-nav-rail--text,
+.shell-nav-rail--text .shell-nav-rail-inner,
+.shell-nav-rail--text .shell-nav-tab {
+  height: 48dp;
+}
+
+.shell-nav-tab-text-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-nav-rail--text .shell-nav-tab-label {
+  font-size: 16dp;
+  line-height: 20dp;
+}
+
+.shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-label {
+  font-weight: bold;
+}
+
+.shell-nav-rail--text .badge-count--text {
+  top: -8dp;
+  right: -20dp;
 }
 
 .shell-nav-page {
@@ -3324,6 +3340,28 @@ select selectbox option {
 
 .shell-nav-page.large-title-collapsed .pane-nav-title {
   opacity: 1;
+}
+
+/* Phone hidden tab's root page (Settings, Contacts; DEV/PLAN-minimal-nav.md A): its bar holds the round back on the
+   left and the title in the middle at all times, so the page has no large title; no tab bar under it, so the spacer
+   at the end of its list only keeps the last row off the screen edge. */
+.shell-nav-page--hidden-tab .pane-nav-title {
+  opacity: 1;
+}
+
+.shell-nav-page--hidden-tab .large-title {
+  display: none;
+}
+
+.shell-nav-page--hidden-tab .tab-bar-clear {
+  height: 16dp;
+}
+
+.shell-layer-compact .pane-nav-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
 /* Phone bars (Kenneth 2026-11-04, PLAN-ui-refresh-impl 65-67): no hairline under a top bar or over the tab bar; a
@@ -3914,6 +3952,41 @@ select selectbox option {
   height: 18dp;
 }
 
+/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 44dp target around a 34dp grey disc
+   holding an 18dp icon; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
+   keeps its own buttons. */
+.shell-circle-btn-face {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-layer-compact .shell-circle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44dp;
+  height: 44dp;
+  min-width: 44dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.shell-layer-compact .shell-circle-btn-face {
+  width: 34dp;
+  height: 34dp;
+  border-radius: 17dp;
+}
+
+.shell-layer-compact .shell-circle-btn-face svg {
+  flex-shrink: 0;
+  width: 18dp;
+  height: 18dp;
+}
+
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
@@ -3952,41 +4025,6 @@ select selectbox option {
 }
 
 .shell-layer-overlay,
-/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 44dp target around a 34dp grey disc
-   holding an 18dp icon; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
-   keeps its own buttons. */
-.shell-circle-btn-face {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.shell-layer-compact .shell-circle-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44dp;
-  height: 44dp;
-  min-width: 44dp;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  cursor: pointer;
-}
-
-.shell-layer-compact .shell-circle-btn-face {
-  width: 34dp;
-  height: 34dp;
-  border-radius: 17dp;
-}
-
-.shell-layer-compact .shell-circle-btn-face svg {
-  flex-shrink: 0;
-  width: 18dp;
-  height: 18dp;
-}
-
 .shell-layer-dialog {
   z-index: 50;
 }
@@ -8638,6 +8676,18 @@ input.checkbox {
   padding-top: 8dp;
 }
 
+/* The back: a word on the desktop, the round back on phones. */
+.people-picker-back-circle,
+.shell-layer-compact .people-picker-back-text {
+  display: none;
+}
+
+.shell-layer-compact .people-picker-back-circle {
+  display: flex;
+  flex: 0 0 44dp;
+  align-self: center;
+}
+
 .people-picker-name,
 .people-picker-select {
   display: flex;
@@ -8674,18 +8724,6 @@ input.checkbox {
   padding: 4dp 10dp;
   border-radius: 999dp;
   font-size: 13dp;
-}
-
-/* The back: a word on the desktop, the round back on phones. */
-.people-picker-back-circle,
-.shell-layer-compact .people-picker-back-text {
-  display: none;
-}
-
-.shell-layer-compact .people-picker-back-circle {
-  display: flex;
-  flex: 0 0 44dp;
-  align-self: center;
 }
 
 .contact-detail-panel {

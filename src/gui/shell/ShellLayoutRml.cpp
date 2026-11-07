@@ -110,11 +110,19 @@ std::string ShellLayoutRml::CompactBase() const {
   std::ostringstream out;
   out << "<div class=\"shell-layer shell-layer-base shell-layer-compact\" data-model=\"window\">";
 
-  if (!state_.compact_chat_open) {
+  // A hidden tab's page (Me, Contacts: DEV/PLAN-minimal-nav.md A) is drawn instead of a chat overlay left open under
+  // it; the overlay is drawn again on the way back.
+  const bool hidden_tab = ShellLayout::HiddenTabShown(state_);
+  const bool chat_shown = state_.compact_chat_open && !hidden_tab;
+  if (!chat_shown) {
     const bool home_inline = state_.nav_tab == NavTab::Home;
     out << "<div class=\"shell-nav-page";
     if (home_inline) {
       out << " shell-nav-page--home";
+    }
+    if (hidden_tab) {
+      // Its bar: back, the title always shown, no large title, and no tab bar under it.
+      out << " shell-nav-page--hidden-tab";
     }
     // The tab page's bars (nav bar, a settings page's bar) are the frosted ones while nothing covers them.
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
@@ -134,7 +142,7 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  if (state_.compact_chat_open) {
+  if (chat_shown) {
     out << "<div class=\"shell-chat-overlay\" id=\"shell-chat-overlay\">";
     out << "<div class=\"shell-chat-overlay-chrome row "
         << SurfaceChromeClass(CompactChromeFrostSurface::ChatOverlayHeader, frost, frost_enabled, solid) << "\">";
@@ -170,7 +178,8 @@ std::string ShellLayoutRml::CompactBase() const {
     out << "</div>";
   }
 
-  if (!state_.compact_chat_open) {
+  // The tab bar only where it is drawn (ShellLayout::CompactTabBarDp): not on a hidden tab, the chat or a pushed page.
+  if (ShellLayout::CompactTabBarDp(state_) > 0.f) {
     out << "<div class=\"shell-bottom-chrome";
     if (frost == CompactChromeFrostSurface::BottomNav && frost_enabled) {
       out << " shell-bottom-chrome--frost";
@@ -184,7 +193,7 @@ std::string ShellLayoutRml::CompactBase() const {
     }
     out << "\" id=\"shell-bottom-chrome\">";
     out << "<div class=\"bar-fade bar-fade--up\"></div>";
-    out << "<div class=\"shell-nav-rail shell-nav-rail--compact\" id=\"shell-nav-rail-mount\"></div>";
+    out << "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" id=\"shell-nav-rail-mount\"></div>";
     out << "</div>";
   }
 

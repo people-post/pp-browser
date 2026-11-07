@@ -51,6 +51,8 @@ enum class DismissTarget {
   AuxiliarySheet,
   Transient,
   OverlayLayer,
+  /** Phone Me / Contacts root page: back to the tab it was entered from (ShellHost::HiddenTabBack). */
+  HiddenTab,
 };
 
 struct LocalBackEntry {
@@ -122,10 +124,28 @@ public:
   void OpenAuxiliary();
   void CloseAuxiliary();
   void ToggleAuxiliary();
+  /**
+   * On phones, moving from a tab in the bar to a hidden tab (ShellLayout::IsHiddenTabOnCompact: Me, Contacts) by any
+   * path remembers the tab left, for HiddenTabBack; a chat overlay open there stays open under the hidden tab's page.
+   */
   void SelectNavTab(NavTab tab);
+  /** A tab-bar click (the select_nav_tab event): a second tap on the phone's AI page opens the AI list. */
+  void OnNavTabClicked(const std::string& tab_name);
+  /** Phone hidden tab's root page (its back, edge swipe, system back): the tab it was entered from (else Chats). */
+  void HiddenTabBack();
+  /** An avatar opens Settings (the Me tab) from anywhere. */
+  void OpenSettingsFromAvatar();
+  /** Phone Home: the AI list drawer opens / closes (state only; the drawer view is DEV/PLAN-minimal-nav.md C). */
+  void OpenAiDrawer();
+  void CloseAiDrawer();
+  /** Phone layout: the AI page (Home) shows with nothing over it (no chat, pushed page, layer or drawer). */
+  bool HomeRootShown() const;
+  /** Phone layout: the hidden tab's own root page is on top (nothing pushed over it, no settings page open). */
+  bool HiddenTabRootShown() const;
   /** Phone root pages: flips the large-title state; dirties the model only when it changes. */
   void SetLargeTitleCollapsed(bool collapsed);
-  void ClearTabContext();
+  /** `keep_compact_chat`: a chat overlay stays open (under a hidden tab, or again on the way back to it). */
+  void ClearTabContext(bool keep_compact_chat = false);
   void SetPrimaryPane(const std::string& key);
   void ClearPrimaryPane();
   void OpenCompactChat();
@@ -246,7 +266,6 @@ public:
 
 private:
   // Data-model events with more to them than one call.
-  void OnNavTabClicked(const std::string& tab_name);
   void DismissBanner();
   void DialogOk();
   void DialogCancel();
@@ -379,6 +398,8 @@ private:
   /** A swipe-back already started the slide-out; BeginAnimatedDismiss must not restart it. */
   bool slide_out_started_ = false;
   std::vector<LocalBackEntry> local_back_stack_;
+  /** Phone: the tab-bar tab left for a hidden tab (Me, Contacts); HiddenTabBack returns to it. */
+  NavTab tab_before_hidden_ = NavTab::Sessions;
   ui::String saved_focus_id_;
   bool sync_pending_ = false;
   /** Who asked for the pending / running SyncLayout (first request) and how many requests it merges. */

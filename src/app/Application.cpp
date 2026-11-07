@@ -182,10 +182,13 @@ void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, Sett
     if (previous == NavTab::Me && tab != NavTab::Me) {
       settings.OnMeSurfaceClosed();
     }
-    if (tab == NavTab::Home) {
+    // Back from a phone hidden tab (Me, Contacts) to a chat overlay left open under it: the chat is still the one
+    // shown, so Home / Chats are not reset to their lists (DEV/PLAN-minimal-nav.md A).
+    const bool back_to_open_chat = shell.State().compact_chat_open;
+    if (tab == NavTab::Home && !back_to_open_chat) {
       chat.OnHomeTabActivated();
     }
-    if (tab == NavTab::Sessions) {
+    if (tab == NavTab::Sessions && !back_to_open_chat) {
       chat.OnSessionsTabActivated();
     }
     chat.SyncDraftOwner(); // every tab change: the composer shows that place's own unsent text

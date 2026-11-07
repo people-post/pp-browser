@@ -62,8 +62,8 @@ struct ShellConfig {
    */
   float titlebar_controls_width_dp = 120.f;
   float frame_padding_dp = 24.f;
-  /** Compact bottom nav bar height (excludes safe-area inset). */
-  float compact_nav_height_dp = 49.f;
+  /** Compact bottom nav bar height (excludes safe-area inset): the two-word tab bar (DEV/PLAN-minimal-nav.md A). */
+  float compact_nav_height_dp = 48.f;
   /** Horizontal inset for the compact tab bar (full-width, so 0). */
   float compact_nav_horizontal_inset_dp = 0.f;
   size_t max_toasts = 3;
@@ -529,6 +529,8 @@ struct ShellState {
   std::vector<OverlayEntry> overlay_stack;
 
   bool compact_chat_open = false;
+  /** Phone Home: the AI conversation list slides in from the left (open_ai_drawer / close_ai_drawer). */
+  bool ai_drawer_open = false;
   bool auxiliary_open = false;
   bool auxiliary_available = false;
   bool transient_active = false;

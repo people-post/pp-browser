@@ -725,6 +725,15 @@ select selectbox option:hover {
   background-color: transparent;
 }
 
+/* Phone two-word tab bar (DEV/PLAN-minimal-nav.md A): grey words, the chosen one in the label colour. */
+.shell-nav-rail--text .shell-nav-tab {
+  color: {{gray}};
+}
+
+.shell-nav-rail--text .shell-nav-tab--active {
+  color: {{label}};
+}
+
 .shell-chat-overlay {
   background-color: {{chat-bg}};
 }
@@ -3354,7 +3363,6 @@ input.checkbox:checked {
 .storage-file-type-text {
   color: {{label-on-accent}};
 }
-}
 
 /* Phone round button (DEV/PLAN-minimal-nav.md G): a clear 44dp target, the 34dp disc a quiet grey that darkens while
    pressed, the icon in the label colour. */
@@ -3374,4 +3382,5 @@ input.checkbox:checked {
 
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
   image-color: {{label}};
+}
 }

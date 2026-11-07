@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lib/ui/ShellLayout.h"
 #include "lib/ui/ShellTypes.h"
 
 #include <functional>
@@ -41,7 +42,8 @@ inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   snap.nav_badges = state.nav_badges;
   snap.banner_message = state.banner_message.c_str();
   snap.auxiliary_open = state.auxiliary_open;
-  snap.compact_chat_open = state.compact_chat_open;
+  // Under a hidden tab's page (phone Me / Contacts) the chat overlay is open but not on screen.
+  snap.compact_chat_open = state.compact_chat_open && !ShellLayout::HiddenTabShown(state);
   return snap;
 }
 

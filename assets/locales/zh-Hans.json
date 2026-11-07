@@ -29,6 +29,7 @@
     "nav.sessions": "聊天",
     "nav.contacts": "联系人",
     "nav.me": "我",
+    "settings.title": "设置",
     "shell.sidebar.collapse": "收起列表",
     "shell.sidebar.expand": "展开列表",
     "shell.statusbar.direct_off": "直接连接关闭",

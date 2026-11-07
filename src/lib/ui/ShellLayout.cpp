@@ -50,6 +50,22 @@ bool ShellLayout::TabHasSecondary(NavTab tab) {
   return NavContentKey(tab) != nullptr;
 }
 
+bool ShellLayout::IsHiddenTabOnCompact(const NavTab tab) {
+  return tab == NavTab::Me || tab == NavTab::Contacts;
+}
+
+bool ShellLayout::HiddenTabShown(const ShellState& state) {
+  return state.layout_mode == LayoutMode::Compact && IsHiddenTabOnCompact(state.nav_tab);
+}
+
+float ShellLayout::CompactTabBarDp(const ShellState& state, const float bar_height_dp) {
+  if (state.layout_mode != LayoutMode::Compact || HiddenTabShown(state) || state.compact_chat_open ||
+      !state.transient_stack.empty()) {
+    return 0.f;
+  }
+  return bar_height_dp;
+}
+
 int ShellLayout::ClampSidebarWidthDp(int width_dp) {
   return std::clamp(width_dp, kSidebarMinWidthDp, kSidebarMaxWidthDp);
 }
@@ -80,8 +96,11 @@ PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
     return vis;
   }
 
-  vis.compact_nav_page = !state.compact_chat_open || state.nav_tab == NavTab::Sessions;
-  vis.compact_chat_overlay = state.compact_chat_open;
+  // A hidden tab's page (Me, Contacts) is drawn over a chat overlay left open under it; the overlay comes back with
+  // its chat on the way back (hidden_tab_back).
+  const bool hidden_tab = HiddenTabShown(state);
+  vis.compact_nav_page = !state.compact_chat_open || state.nav_tab == NavTab::Sessions || hidden_tab;
+  vis.compact_chat_overlay = state.compact_chat_open && !hidden_tab;
   vis.auxiliary_sheet = state.auxiliary_open;
   return vis;
 }

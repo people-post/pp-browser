@@ -1,5 +1,6 @@
 #include "gui/shell/ShellLayoutRml.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "lib/ui/ShellLayout.h"
 
 #include <gtest/gtest.h>
 
@@ -13,6 +14,21 @@ namespace {
 
 bool Has(const std::string& rml, const std::string& part) {
   return rml.find(part) != std::string::npos;
+}
+
+size_t Count(const std::string& text, const std::string& part) {
+  size_t n = 0;
+  for (size_t at = text.find(part); at != std::string::npos; at = text.find(part, at + 1)) {
+    ++n;
+  }
+  return n;
+}
+
+std::string ReadAsset(const char* relative) {
+  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / relative);
+  std::stringstream buffer;
+  buffer << in.rdbuf();
+  return buffer.str();
 }
 
 ShellState WithChatPane(const LayoutMode mode) {
@@ -32,31 +48,149 @@ TEST(ShellLayoutRmlTest, AnExpandedWindowHasTheRailTheListAndThePrimaryPane) {
   EXPECT_TRUE(Has(rml, "id=\"pane-composer-chat\"")) << "the chat pane carries the composer";
 }
 
-TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAPlainTab) {
+TEST(ShellLayoutRmlTest, ACompactWindowHasTheTabBarAndMeIsAHiddenTab) {
   ShellState state = WithChatPane(LayoutMode::Compact);
   state.compact_chat_open = false;
+  const std::string chats = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(chats, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(chats, "<div class=\"shell-nav-rail shell-nav-rail--compact shell-nav-rail--text\" "
+                         "id=\"shell-nav-rail-mount\">")) << "the two-word tab bar mounts here";
+  EXPECT_FALSE(Has(chats, "shell-nav-page--hidden-tab"));
+
+  // DEV/PLAN-minimal-nav.md A: Settings (Me) fills the screen with its own back, no tab bar.
   state.nav_tab = NavTab::Me;
   const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
-  EXPECT_TRUE(Has(rml, "id=\"shell-bottom-chrome\""));
-  EXPECT_TRUE(Has(rml, "id=\"shell-nav-rail-mount\"")) << "the tab bar mounts here";
-  EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\"")) << "Me fills the page like any other tab";
+  EXPECT_FALSE(Has(rml, "id=\"shell-bottom-chrome\""));
+  EXPECT_TRUE(Has(rml, "shell-nav-page--hidden-tab"));
+  EXPECT_TRUE(Has(rml, "id=\"pane-body-settings\""));
   EXPECT_FALSE(Has(rml, "account-sheet"));
   EXPECT_FALSE(Has(rml, "close_account_sheet"));
 }
 
+// DEV/PLAN-minimal-nav.md A: the phone bar is two words (AI, Chats) and no icons; the desktop rail keeps its four tabs.
+TEST(ShellLayoutRmlTest, ThePhoneTabBarHasTwoWordsAndTheDesktopRailFourTabs) {
+  const std::string rail = ReadAsset("views/nav_rail.rml");
+  const size_t desktop = rail.find("<div class=\"shell-nav-rail-inner\" data-if=\"layout_mode != 'compact'\">");
+  ASSERT_NE(desktop, std::string::npos);
+  const size_t phone = rail.find("<div class=\"shell-nav-rail-inner\" data-if=\"layout_mode == 'compact'\">");
+  ASSERT_NE(phone, std::string::npos);
+  ASSERT_LT(phone, desktop);
+  const std::string phone_bar = rail.substr(phone, desktop - phone);
+  const std::string desktop_rail = rail.substr(desktop);
+  EXPECT_EQ(Count(phone_bar, "class=\"shell-nav-tab shell-nav-tab--text\""), 2u);
+  EXPECT_EQ(Count(phone_bar, "select_nav_tab("), 2u);
+  EXPECT_TRUE(Has(phone_bar, "select_nav_tab('home')"));
+  EXPECT_TRUE(Has(phone_bar, "select_nav_tab('sessions')"));
+  EXPECT_TRUE(Has(phone_bar, "{{i18n:nav.home}}"));
+  EXPECT_TRUE(Has(phone_bar, "{{i18n:nav.sessions}}"));
+  EXPECT_FALSE(Has(phone_bar, "<svg")) << "no icons";
+  EXPECT_TRUE(Has(phone_bar, "nav_sessions_unread > 0")) << "the Chats unread count stays";
+  EXPECT_EQ(Count(desktop_rail, "select_nav_tab("), 4u);
+  EXPECT_TRUE(Has(desktop_rail, "select_nav_tab('me')"));
+  EXPECT_TRUE(Has(desktop_rail, "select_nav_tab('contacts')"));
+}
+
+// The tab bar is drawn on the two tabs' own pages only (DEV/PLAN-minimal-nav.md 目标 8).
+TEST(ShellLayoutRmlTest, TheTabBarIsOnlyOnTheAiAndChatsPages) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = false;
+  const auto bar_drawn = [&state]() { return Has(ShellLayoutRml(state, false, "").ShellRoot(), "shell-bottom-chrome"); };
+  for (const NavTab tab : {NavTab::Home, NavTab::Sessions}) {
+    state.nav_tab = tab;
+    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 48.f);
+    EXPECT_TRUE(bar_drawn());
+  }
+  for (const NavTab tab : {NavTab::Me, NavTab::Contacts}) {
+    state.nav_tab = tab;
+    EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f);
+    EXPECT_FALSE(bar_drawn());
+  }
+  state.nav_tab = NavTab::Home;
+  state.compact_chat_open = true;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "a chat open";
+  EXPECT_FALSE(bar_drawn());
+  state.compact_chat_open = false;
+  PaneState pushed;
+  pushed.spec.key = "new_chat";
+  pushed.id = 3;
+  state.transient_stack.push_back(pushed);
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "a pushed page";
+  EXPECT_FALSE(bar_drawn());
+  state.transient_stack.clear();
+  state.layout_mode = LayoutMode::Expanded;
+  EXPECT_EQ(ShellLayout::CompactTabBarDp(state), 0.f) << "the desktop has its rail";
+  EXPECT_EQ(ShellConfig{}.compact_nav_height_dp, 48.f);
+}
+
+// A hidden tab entered over an open chat (an invite, Settings from the AI) is drawn instead of the chat overlay.
+TEST(ShellLayoutRmlTest, AHiddenTabIsDrawnOverAChatLeftOpen) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.nav_tab = NavTab::Contacts;
+  state.compact_chat_open = true;
+  const std::string rml = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(rml, "id=\"pane-body-contacts\""));
+  EXPECT_TRUE(Has(rml, "shell-nav-page--hidden-tab"));
+  EXPECT_FALSE(Has(rml, "shell-chat-overlay"));
+  EXPECT_FALSE(Has(rml, "shell-bottom-chrome"));
+}
+
+// DEV/PLAN-minimal-nav.md G: the phone backs are the round button (shell-back-btn stays: the swipe-back's chrome);
+// the desktop's pushed page keeps its plain back.
+TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
+  ShellState state = WithChatPane(LayoutMode::Compact);
+  state.compact_chat_open = true;
+  const std::string chat = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(chat, "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
+                        "data-event-click=\"compact_chat_back()\"><span class=\"shell-circle-btn-face\">"));
+  EXPECT_FALSE(Has(chat, "</svg>返回")) << "no word";
+
+  state.compact_chat_open = false;
+  PaneState pushed;
+  pushed.spec.key = "contact_detail";
+  pushed.id = 4;
+  state.transient_stack.push_back(pushed);
+  EXPECT_TRUE(Has(ShellLayoutRml(state, false, "").ShellRoot(),
+                  "<button class=\"shell-back-btn shell-circle-btn\" type=\"button\" "
+                  "data-event-click=\"transient_back()\"><span class=\"shell-circle-btn-face\">"));
+  state.layout_mode = LayoutMode::Expanded;
+  const std::string desktop = ShellLayoutRml(state, false, "").ShellRoot();
+  EXPECT_TRUE(Has(desktop, "<button class=\"shell-back-btn\" type=\"button\" data-event-click=\"transient_back()\">"));
+  EXPECT_FALSE(Has(desktop, "shell-circle-btn"));
+
+  // The views' own backs: Settings' pages, the hidden tabs' roots, the group picker.
+  const std::string settings = ReadAsset("views/settings.rml");
+  EXPECT_EQ(Count(settings, "class=\"settings-back-btn shell-circle-btn\""), 2u);
+  EXPECT_TRUE(Has(settings, "class=\"pane-nav-back shell-circle-btn\" type=\"button\" data-model=\"window\" "
+                            "data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(settings, "{{i18n:settings.title}}"));
+  EXPECT_TRUE(Has(ReadAsset("views/contacts.rml"), "class=\"pane-nav-back shell-circle-btn\" type=\"button\" "
+                                                   "data-model=\"window\" data-event-click=\"hidden_tab_back()\""));
+  EXPECT_TRUE(Has(ReadAsset("views/people_picker.rml"),
+                  "class=\"shell-circle-btn people-picker-back-circle\" type=\"button\" "
+                  "data-event-click=\"back_picker()\""));
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t face = css.find(".shell-layer-compact .shell-circle-btn-face {");
+  ASSERT_NE(face, std::string::npos);
+  EXPECT_EQ(css.find("width: 34dp;\n  height: 34dp;", face), css.find("width:", face)) << "a 34dp disc";
+  const size_t button = css.find(".shell-layer-compact .shell-circle-btn {");
+  ASSERT_NE(button, std::string::npos);
+  EXPECT_NE(css.find("width: 44dp;\n  height: 44dp;", button), std::string::npos) << "in a 44dp target";
+}
+
 // Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
-TEST(ShellLayoutRmlTest, ThePhoneTabIconsAre28dpAndTheLabels11dp) {
-  // Kenneth 2026-11-04 (PLAN-ui-refresh-impl 62.6): the icons one step bigger, the words as they were.
-  std::ifstream in(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "themes/components.rcss");
-  std::stringstream buffer;
-  buffer << in.rdbuf();
-  const std::string css = buffer.str();
-  const size_t icon = css.find(".shell-nav-rail--compact .shell-nav-tab svg {");
-  ASSERT_NE(icon, std::string::npos);
-  EXPECT_EQ(css.find("width: 28dp;\n  height: 28dp;", icon), css.find("width:", icon));
-  const size_t label = css.find(".shell-nav-rail--compact .shell-nav-tab-label {");
+TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
+  // DEV/PLAN-minimal-nav.md A (Kenneth 2026-11-07): two words, the chosen one bold.
+  const std::string css = ReadAsset("themes/components.rcss");
+  const size_t bar = css.find(".shell-nav-rail--text,\n.shell-nav-rail--text .shell-nav-rail-inner,\n"
+                              ".shell-nav-rail--text .shell-nav-tab {");
+  ASSERT_NE(bar, std::string::npos);
+  EXPECT_EQ(css.find("height: 48dp;", bar), css.find("height:", bar));
+  const size_t label = css.find(".shell-nav-rail--text .shell-nav-tab-label {");
   ASSERT_NE(label, std::string::npos);
-  EXPECT_EQ(css.find("font-size: 11dp;", label), css.find("font-size:", label));
+  EXPECT_EQ(css.find("font-size: 16dp;", label), css.find("font-size:", label));
+  const size_t active = css.find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-label {");
+  ASSERT_NE(active, std::string::npos);
+  EXPECT_EQ(css.find("font-weight: bold;", active), css.find("font-weight:", active));
 }
 
 TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {
