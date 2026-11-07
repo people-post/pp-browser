@@ -1,8 +1,12 @@
 // PIN grace window (#21, DEV/PLAN-pin-grace.md "设置页"): Me → Security → "Ask for PIN again after" — every time / 5 /
 // 15 / 60 minutes, saved in this profile's preferences and handed to the app (set_grace_minutes); the row only shows
-// with an own PIN on a platform that keeps the window. And the transfer code asks for that PIN first (plan ⑧).
+// with an own PIN on a platform that keeps the window. And the transfer code asks for that PIN first (plan ⑧), on the PIN
+// gate like Change PIN (DEV/PLAN-pin-gate-redesign.md B2).
 #include "gui/SecuritySettingsSection.h"
 #include "gui/SettingsSecurityActions.h"
+
+#include "foundation/crypto/PinDefaults.h"
+#include "foundation/i18n/LocalizationService.h"
 
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
@@ -13,7 +17,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace pbr {
@@ -35,13 +41,14 @@ public:
   void Resync(bool) override {}
   SettingsUiState& UiState() override { return state_; }
   void PullFromView() override {}
-  void PushToView(bool) override {}
+  void PushToView(bool) override { ++pushes; }
   void SaveProfileNickname() override {}
   void RequestSyncLayout(const char*) override {}
   Roe<void> ForgetToolPermissions() override { return {}; }
   void OpenChangePin() override {}
 
   int failures = 0;
+  int pushes = 0;
 
 private:
   SessionStore& store_;
@@ -152,15 +159,17 @@ TEST_F(SecuritySettingsGraceTest, ThePageHasTheRowItsHelpAndBothLanguages) {
   EXPECT_NE(rml.find("{{i18n:settings.security.grace.help}}"), std::string::npos);
   EXPECT_LT(rml.find("on_choose_unlock_grace"), rml.find("on_choose_group_invite_policy")) << "under the PIN";
 
-  const std::string transfer = ReadAsset("views/settings_security_transfer.rml");
-  EXPECT_NE(transfer.find("data-value=\"export_pin\""), std::string::npos);
-  EXPECT_NE(transfer.find("cancel_export_pin()"), std::string::npos);
+  // B2: no PIN field of their own any more; the PIN gate asks (its number pad for a digit PIN).
+  for (const char* view : {"views/settings_security_transfer.rml", "views/settings_security_pin.rml",
+                           "views/settings_section_security.rml"}) {
+    EXPECT_EQ(ReadAsset(view).find("type=\"password\""), std::string::npos) << view;
+  }
 
   for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
     const std::string text = ReadAsset(locale);
     for (const char* key : {"settings.security.grace.title", "settings.security.grace.now", "settings.security.grace.5",
                             "settings.security.grace.15", "settings.security.grace.60", "settings.security.grace.help",
-                            "settings.security.export_pin_prompt"}) {
+                            "pin.verify_export_message", "pin.verify_recovery_message", "pin.change_old_message"}) {
       EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
     }
   }
@@ -175,43 +184,206 @@ protected:
       return std::string("code");
     };
     commands_.verify_pin = [](const SecretText&) -> Roe<void> { return {}; };
+    commands_.change_pin = [this](const SecretText& old_pin, const SecretText& new_pin) -> Roe<void> {
+      changed_.emplace_back(old_pin.Reveal(), new_pin.Reveal());
+      return {};
+    };
     feedback_.show_confirm = [this](const std::string&, const std::string&, std::function<void(bool)>,
                                     const std::string&) { ++confirms_; };
+    pin_prompt_.show_verify = [this](const PinVerifyPurpose purpose, PinGateCheck, std::function<void()> on_ok) {
+      purposes_.push_back(purpose);
+      on_ok_ = std::move(on_ok);
+    };
+    pin_prompt_.show_change = [this](PinGateCheck check_old, PinGateChange change,
+                                     std::optional<SecretText> current_pin) {
+      check_old_ = std::move(check_old);
+      change_ = std::move(change);
+      current_pin_ = current_pin ? std::optional<std::string>(current_pin->Reveal()) : std::nullopt;
+    };
   }
 
   ShellFeedbackPorts feedback_;
   UnlockEnsurePorts unlock_;
+  PinPromptPorts pin_prompt_;
+  std::vector<PinVerifyPurpose> purposes_;
+  std::function<void()> on_ok_;
+  PinGateCheck check_old_;
+  PinGateChange change_;
+  std::optional<std::string> current_pin_;
+  std::vector<std::pair<std::string, std::string>> changed_;
   int confirms_ = 0;
   int exports_ = 0;
 };
 
 TEST_F(TransferCodePinTest, AnOwnPinIsAskedForBeforeTheCode) {
   FakeSettingsHost host(store_);
-  SettingsSecurityActions actions(host, commands_, feedback_, unlock_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
   actions.ExportLinkDevice();
-  EXPECT_TRUE(actions.ExportPinOpen()) << "the PIN field comes out first";
+  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::ExportTransferCode}) << "the PIN gate first";
   EXPECT_EQ(confirms_, 0);
   EXPECT_EQ(exports_, 0);
 
-  actions.ExportLinkDevice();  // nothing typed
-  EXPECT_EQ(host.failures, 1);
-  EXPECT_EQ(confirms_, 0);
-  EXPECT_EQ(exports_, 0);
-
-  actions.CancelExportPin();
-  EXPECT_FALSE(actions.ExportPinOpen());
+  ASSERT_TRUE(on_ok_);
+  on_ok_();  // the gate took the PIN and closed
+  EXPECT_EQ(confirms_, 1);
+  EXPECT_EQ(host.failures, 0);
 }
 
 TEST_F(TransferCodePinTest, TheAppDefaultPinOnlyConfirmsAsBefore) {
   SetPinIsDefault(true);
   FakeSettingsHost host(store_);
-  SettingsSecurityActions actions(host, commands_, feedback_, unlock_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
 
   actions.ExportLinkDevice();
-  EXPECT_FALSE(actions.ExportPinOpen());
+  EXPECT_TRUE(purposes_.empty());
   EXPECT_EQ(confirms_, 1);
   EXPECT_EQ(host.failures, 0);
+}
+
+// B2: Change PIN is the gate's change mode; the engine's change is the same, and the new PIN's kind is kept so the
+// gate's number pad follows it.
+TEST_F(TransferCodePinTest, ChangePinGoesThroughTheGateAndKeepsTheNewKind) {
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+
+  actions.ChangePin();
+  ASSERT_TRUE(check_old_);
+  ASSERT_TRUE(change_);
+
+  int done = 0;
+  change_("4321", "135790", [&done](Roe<void> result) {
+    EXPECT_TRUE(static_cast<bool>(result));
+    ++done;
+  });
+  EXPECT_EQ(done, 1);
+  EXPECT_EQ(changed_, (std::vector<std::pair<std::string, std::string>>{{"4321", "135790"}}));
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 6);
+  EXPECT_FALSE(store_.Snapshot().profile_prefs.pin_is_default);
+
+  change_("135790", "correct horse", [&done](Roe<void>) { ++done; });
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "a text PIN";
+
+  commands_.change_pin = [](const SecretText&, const SecretText&) -> Roe<void> { return Error("refused"); };
+  std::optional<bool> ok;
+  change_("correct horse", "2468", [&ok](Roe<void> result) { ok = static_cast<bool>(result); });
+  ASSERT_TRUE(ok.has_value());
+  EXPECT_FALSE(*ok) << "the gate shows the failure";
+  EXPECT_EQ(store_.Snapshot().profile_prefs.pin_digits, 0) << "nothing written";
+}
+
+// Kenneth 2026-11-07: Change PIN on the app default PIN (public anyway) skips the "current PIN" step; the change uses
+// the default PIN as the old one. An own PIN still starts with it.
+TEST_F(TransferCodePinTest, ChangePinOnTheDefaultPinSkipsTheCurrentPin) {
+  FakeSettingsHost host(store_);
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+  actions.ChangePin();
+  EXPECT_FALSE(current_pin_.has_value()) << "an own PIN: asked first";
+
+  SetPinIsDefault(true);
+  actions.ChangePin();
+  ASSERT_TRUE(current_pin_.has_value());
+  EXPECT_EQ(*current_pin_, std::string(kDefaultProfilePin));
+}
+
+// --- Face / fingerprint unlock (at-rest A014, DEV/PLAN-pin-gate-redesign.md C): Me → Security's switch. ---
+
+class SecuritySettingsBiometricTest : public TransferCodePinTest {
+protected:
+  void SetUp() override {
+    TransferCodePinTest::SetUp();
+    commands_.biometric_kind = [this]() { return kind_; };
+    commands_.biometric_enabled = [this]() { return enabled_; };
+    commands_.enable_biometric = [this](const SecretText&) -> Roe<void> {
+      enabled_ = true;
+      return {};
+    };
+    commands_.disable_biometric = [this]() {
+      enabled_ = false;
+      ++disables_;
+    };
+  }
+
+  std::string kind_ = "face";
+  bool enabled_ = false;
+  int disables_ = 0;
+};
+
+TEST_F(SecuritySettingsBiometricTest, TheSwitchShowsWithAnOwnPinOnADeviceWithTheSensor) {
+  SettingsUiState state = Synced();
+  EXPECT_TRUE(state.security_biometric_shown) << "supported + a PIN set + not the default";
+  EXPECT_FALSE(state.security_biometric_on);
+  EXPECT_EQ(state.security_biometric_label, Tr("settings.security.biometric.face"));
+  enabled_ = true;
+  EXPECT_TRUE(Synced().security_biometric_on);
+
+  kind_ = "touch";
+  EXPECT_EQ(Synced().security_biometric_label, Tr("settings.security.biometric.touch"));
+  kind_ = "fingerprint";
+  EXPECT_EQ(Synced().security_biometric_label, Tr("settings.security.biometric.fingerprint"));
+
+  SetPinIsDefault(true);
+  EXPECT_FALSE(Synced().security_biometric_shown) << "the app default PIN";
+  EXPECT_FALSE(Synced().security_biometric_on);
+  SetPinIsDefault(false);
+
+  kind_.clear();
+  EXPECT_FALSE(Synced().security_biometric_shown) << "no sensor (or no secure store)";
+  kind_ = "face";
+
+  commands_.load_pin_protection = []() { return PinProtectionView{}; };
+  EXPECT_FALSE(Synced().security_biometric_shown) << "no PIN set up yet";
+}
+
+TEST_F(SecuritySettingsBiometricTest, OnAsksForThePinFirstOffDoesNot) {
+  FakeSettingsHost host(store_);
+  host.UiState() = Synced();
+  SettingsSecurityActions actions(host, commands_, feedback_, unlock_, pin_prompt_);
+
+  actions.ToggleBiometric();
+  ASSERT_EQ(purposes_, std::vector<PinVerifyPurpose>{PinVerifyPurpose::EnableBiometric}) << "the PIN gate first";
+  EXPECT_FALSE(host.UiState().security_biometric_on) << "not before the PIN";
+  EXPECT_EQ(host.pushes, 0);
+  ASSERT_TRUE(on_ok_);
+  enabled_ = true;  // the gate's check ran enable_biometric with the PIN: the engine sealed the DEK
+  on_ok_();         // and the gate closed
+  EXPECT_TRUE(host.UiState().security_biometric_on);
+  EXPECT_EQ(host.pushes, 1) << "the switch redrawn";
+
+  actions.ToggleBiometric();
+  EXPECT_EQ(purposes_.size(), 1U) << "off needs no PIN";
+  EXPECT_EQ(disables_, 1);
+  EXPECT_FALSE(host.UiState().security_biometric_on);
+  EXPECT_EQ(host.pushes, 2);
+  EXPECT_EQ(host.failures, 0);
+
+  // The switch shows what the engine holds, not what was asked for (here nothing was sealed).
+  actions.ToggleBiometric();
+  ASSERT_TRUE(on_ok_);
+  on_ok_();
+  EXPECT_FALSE(host.UiState().security_biometric_on);
+}
+
+TEST_F(SecuritySettingsBiometricTest, ThePageHasTheSwitchItsHelpAndBothLanguages) {
+  const std::string rml = ReadAsset("views/settings_section_security.rml");
+  EXPECT_NE(rml.find("data-if=\"security_biometric_shown\""), std::string::npos);
+  EXPECT_NE(rml.find("data-event-click=\"toggle_biometric()\""), std::string::npos);
+  EXPECT_NE(rml.find("data-class-settings-switch--on=\"security_biometric_on\""), std::string::npos);
+  EXPECT_NE(rml.find("{{security_biometric_label}}"), std::string::npos);
+  EXPECT_NE(rml.find("{{i18n:settings.security.biometric.help}}"), std::string::npos);
+  EXPECT_EQ(rml.find("biometric toggle row goes here"), std::string::npos);
+  EXPECT_LT(rml.find("toggle_biometric()"), rml.find("on_choose_unlock_grace()")) << "first in the Unlock group";
+
+  for (const char* locale : {"locales/en.json", "locales/zh-Hans.json"}) {
+    const std::string text = ReadAsset(locale);
+    for (const char* key :
+         {"settings.security.biometric.face", "settings.security.biometric.touch",
+          "settings.security.biometric.fingerprint", "settings.security.biometric.help",
+          "settings.security.biometric.enabled", "pin.biometric_link.face", "pin.biometric_link.touch",
+          "pin.biometric_link.fingerprint", "pin.biometric_prompt", "pin.biometric_reset_hint"}) {
+      EXPECT_NE(text.find(std::string("\"") + key + "\""), std::string::npos) << locale << " " << key;
+    }
+  }
 }
 
 } // namespace

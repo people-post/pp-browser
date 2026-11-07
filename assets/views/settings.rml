@@ -186,8 +186,8 @@
     </div>
   </div>
 
-  <!-- Phones: a page pushed over a section (Security's Change PIN and Move to a new device; a pick-one-value page of
-       any section); same bar, back and swipe-back. -->
+  <!-- Phones: a page pushed over a section (Security's Move to a new device; a pick-one-value page of any section);
+       same bar, back and swipe-back. -->
   <div data-if="show_detail && security_page != ''" class="settings-detail-view settings-subpage-view nav-bar-host stack"
        id="settings-subpage-view">
     <div class="settings-detail-header row">
@@ -203,9 +203,6 @@
 
     <div class="settings-detail-body nav-bar-scroll stack">
       <p class="page-large-title">{{security_page_title}}</p>
-      <div class="settings-section settings-section--grouped stack" data-if="security_page == 'change_pin'">
-{{include:settings_security_pin}}
-      </div>
       <div class="settings-section settings-section--grouped stack" data-if="security_page == 'transfer'">
 {{include:settings_security_transfer}}
       </div>

@@ -33,6 +33,8 @@ struct UnlockGateCompletePorts {
   std::function<void()> cancel;
   /** ProfileUnlockGate::UseDevicePinInstead: stop waiting for the phone's unlock, type the PIN. */
   std::function<void()> use_device_pin_instead;
+  /** ProfileUnlockGate::TryBiometric: the face / fingerprint prompt again (the door's key). */
+  std::function<void()> try_biometric;
 };
 
 } // namespace pbr

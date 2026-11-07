@@ -3,6 +3,7 @@
 #include "foundation/platform/os/KeychainStatus.h"
 
 #import <Foundation/Foundation.h>
+#import <LocalAuthentication/LocalAuthentication.h>
 #import <Security/Security.h>
 
 #include <string>
@@ -34,6 +35,7 @@ std::string StatusText(const char* what, const OSStatus status) {
 CFStringRef AccessLevel(const SecureBlobAccess access) {
   switch (access) {
   case SecureBlobAccess::kWhenUnlocked:
+  case SecureBlobAccess::kBiometryCurrentSet: // written through WriteBiometryBound (an access control, not this)
     return kSecAttrAccessibleWhenUnlockedThisDeviceOnly;
   case SecureBlobAccess::kAfterFirstUnlock:
     break;
@@ -46,6 +48,81 @@ OSStatus AddItem(const std::string& name, const UInt8* bytes, const CFIndex leng
   query[(id)kSecValueData] = [NSData dataWithBytes:bytes length:static_cast<NSUInteger>(length)];
   query[(id)kSecAttrAccessible] = (__bridge id)level;
   return SecItemAdd((__bridge CFDictionaryRef)query, nullptr);
+}
+
+// The biometric unlock key (at-rest A014): readable only after the enrolled face / finger passes the system prompt,
+// this device only, and unreadable for good (errSecItemNotFound) once the enrolment changes. Always delete then add:
+// SecItemAdd on a leftover item (a reinstall keeps Keychain items) answers errSecDuplicateItem, and SecItemUpdate or
+// reading the old item would show the prompt. Neither the delete nor the add needs one; the add's UI is allowed
+// (the default; kSecUseAuthenticationUIAllow is deprecated since iOS 14).
+Roe<void> WriteBiometryBound(const std::string& name, const std::vector<uint8_t>& bytes) {
+  CFErrorRef error = nullptr;
+  SecAccessControlRef control = SecAccessControlCreateWithFlags(
+      kCFAllocatorDefault, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, kSecAccessControlBiometryCurrentSet, &error);
+  if (control == nullptr) {
+    const long code = error != nullptr ? static_cast<long>(CFErrorGetCode(error)) : 0;
+    if (error != nullptr) {
+      CFRelease(error);
+    }
+    return Error("SecAccessControlCreateWithFlags failed: " + std::to_string(code));
+  }
+  OSStatus status = SecItemDelete((__bridge CFDictionaryRef)BaseQuery(name));
+  if (status != errSecSuccess && status != errSecItemNotFound) {
+    CFRelease(control);
+    return Error(StatusText("SecItemDelete", status));
+  }
+  NSMutableDictionary* query = BaseQuery(name);
+  query[(id)kSecValueData] = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+  query[(id)kSecAttrAccessControl] = (__bridge id)control;
+  status = SecItemAdd((__bridge CFDictionaryRef)query, nullptr);
+  CFRelease(control);
+  if (status != errSecSuccess) {
+    return Error(StatusText("SecItemAdd", status));
+  }
+  return {};
+}
+
+// One read for both lookups. `context` (may be nil) carries the prompt's text for a biometry-bound item
+// (LAContext.localizedReason, the replacement of the deprecated kSecUseOperationPrompt); a fresh context per read,
+// so an earlier pass is never reused.
+pbr::SecureBlobLookup LookupItem(const std::string& name, LAContext* context) {
+  NSMutableDictionary* query = BaseQuery(name);
+  query[(id)kSecReturnData] = @YES;
+  query[(id)kSecMatchLimit] = (id)kSecMatchLimitOne;
+  if (context != nil) {
+    query[(id)kSecUseAuthenticationContext] = context;
+  }
+  CFTypeRef result = nullptr;
+  const OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+  pbr::SecureBlobLookup out;
+  switch (MapKeychainStatus(static_cast<int32_t>(status))) {
+  case KeychainLookup::Found:
+    if (result != nullptr && CFGetTypeID(result) == CFDataGetTypeID()) {
+      CFDataRef data = static_cast<CFDataRef>(result);
+      const UInt8* begin = CFDataGetBytePtr(data);
+      out.bytes.assign(begin, begin + CFDataGetLength(data));
+      out.status = pbr::SecureBlobLookup::Status::Found;
+    } else {
+      out.status = pbr::SecureBlobLookup::Status::Unavailable;  // success without data: unexpected, keep it
+      out.code = status;
+    }
+    break;
+  case KeychainLookup::Missing:
+    out.status = pbr::SecureBlobLookup::Status::Missing;
+    break;
+  case KeychainLookup::Unavailable:
+    out.status = pbr::SecureBlobLookup::Status::Unavailable;
+    out.code = status;
+    break;
+  case KeychainLookup::Canceled:
+    out.status = pbr::SecureBlobLookup::Status::Canceled;
+    out.code = status;
+    break;
+  }
+  if (result != nullptr) {
+    CFRelease(result);
+  }
+  return out;
 }
 
 } // namespace
@@ -105,6 +182,9 @@ Roe<void> SecureBlobDelete(const std::string& name) {
 Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<uint8_t>& bytes,
                                     const SecureBlobAccess access) {
   @autoreleasepool {
+    if (access == SecureBlobAccess::kBiometryCurrentSet) {
+      return WriteBiometryBound(name, bytes);
+    }
     CFStringRef level = AccessLevel(access);
     NSMutableDictionary* query = BaseQuery(name);
     query[(id)kSecReturnAttributes] = @YES;
@@ -162,35 +242,19 @@ Roe<void> SecureBlobWriteWithAccess(const std::string& name, const std::vector<u
 
 Roe<pbr::SecureBlobLookup> SecureBlobLookup(const std::string& name) {
   @autoreleasepool {
-    NSMutableDictionary* query = BaseQuery(name);
-    query[(id)kSecReturnData] = @YES;
-    query[(id)kSecMatchLimit] = (id)kSecMatchLimitOne;
-    CFTypeRef result = nullptr;
-    const OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
-    pbr::SecureBlobLookup out;
-    switch (MapKeychainStatus(static_cast<int32_t>(status))) {
-    case KeychainLookup::Found:
-      if (result != nullptr && CFGetTypeID(result) == CFDataGetTypeID()) {
-        CFDataRef data = static_cast<CFDataRef>(result);
-        const UInt8* begin = CFDataGetBytePtr(data);
-        out.bytes.assign(begin, begin + CFDataGetLength(data));
-        out.status = pbr::SecureBlobLookup::Status::Found;
-      } else {
-        out.status = pbr::SecureBlobLookup::Status::Unavailable;  // success without data: unexpected, keep it
-        out.code = status;
-      }
-      break;
-    case KeychainLookup::Missing:
-      out.status = pbr::SecureBlobLookup::Status::Missing;
-      break;
-    case KeychainLookup::Unavailable:
-      out.status = pbr::SecureBlobLookup::Status::Unavailable;
-      out.code = status;
-      break;
+    return LookupItem(name, nil);
+  }
+}
+
+Roe<pbr::SecureBlobLookup> SecureBlobLookupWithPrompt(const std::string& name, const std::string& prompt) {
+  @autoreleasepool {
+    LAContext* context = [[LAContext alloc] init];
+    NSString* reason = [NSString stringWithUTF8String:prompt.c_str()];
+    if (reason != nil && reason.length > 0) {
+      context.localizedReason = reason;
     }
-    if (result != nullptr) {
-      CFRelease(result);
-    }
+    pbr::SecureBlobLookup out = LookupItem(name, context);
+    [context release];
     return out;
   }
 }

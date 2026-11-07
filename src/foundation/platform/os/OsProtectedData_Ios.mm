@@ -101,15 +101,21 @@ void RemoveProtectedDataHandler(const ProtectedDataHandlerId id) {
 
 GraceClock GraceClockNow() {
   GraceClock now;
-  // kern.bootsessionuuid: a new UUID each boot. All zero if it cannot be read (then every boot looks alike,
-  // and the monotonic clock, which restarts at boot, still closes old windows in most cases).
+  // kern.bootsessionuuid: a new UUID each boot. Without it there is no clock at all (mono_seconds stays 0 and
+  // GraceUnlock fails closed): the monotonic clock restarts at boot, so an all-zero id would let a window
+  // outlive a reboot.
   char text[64] = {};
   size_t length = sizeof(text) - 1;
+  bool have_boot_id = false;
   if (sysctlbyname("kern.bootsessionuuid", text, &length, nullptr, 0) == 0) {
     uuid_t parsed;
     if (uuid_parse(text, parsed) == 0) {
       std::copy(parsed, parsed + sizeof(uuid_t), now.boot_id.begin());
+      have_boot_id = true;
     }
+  }
+  if (!have_boot_id) {
+    return now;
   }
   // mach_continuous_time keeps counting while the device sleeps (mach_absolute_time does not).
   mach_timebase_info_data_t timebase{};

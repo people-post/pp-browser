@@ -58,27 +58,42 @@ if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources IosBackupExclusion_Ios.mm)
 endif()
 
-# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; else a stub.
+# Uninstall-surviving blob store (OsSecureBlobStore, behind common/SecureBlobStore.h): iOS Keychain; Android a
+# Keystore-sealed no-backup file (PpSecureBlob.java, API 28+); else a stub.
 list(APPEND _pp_platform_core_sources OsSecureBlobStore.cpp)
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Android.cpp)
 else()
   list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
 endif()
 
-# Protected-data state + the PIN grace clock (#21 phase 1): iOS UIKit / sysctl / mach; a stub elsewhere
-# (macOS, Windows, Linux, Android until its own file in PR 2).
+# Protected-data state + the PIN grace clock (#21): iOS UIKit / sysctl / mach; Android KeyguardManager /
+# ACTION_USER_PRESENT / BOOT_COUNT / CLOCK_BOOTTIME; a stub elsewhere (macOS, Windows, Linux).
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsProtectedData_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsProtectedData_Android.cpp)
 else()
   list(APPEND _pp_platform_core_sources os/OsProtectedData_Default.cpp)
 endif()
 
-# Whether the app is on screen now (PIN grace window: only the foreground extends it): iOS asks UIKit; else true.
+# Whether the app is on screen now (PIN grace window: only the foreground extends it): iOS asks UIKit; Android
+# MainActivity (onStart..onStop); else true.
 if(PP_BROWSER_IS_IOS)
   list(APPEND _pp_platform_core_sources os/OsAppState_Ios.mm)
+elseif(PP_BROWSER_IS_ANDROID)
+  list(APPEND _pp_platform_core_sources os/OsAppState_Android.cpp)
 else()
   list(APPEND _pp_platform_core_sources os/OsAppState_Default.cpp)
+endif()
+
+# Which face / finger sensor the biometric unlock switch names (at-rest A014): iOS LocalAuthentication; else None.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsBiometry_Default.cpp)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
@@ -275,7 +290,8 @@ if(PP_BROWSER_IS_IOS)
     "-framework Security"
     "-framework CoreFoundation"
     "-framework Foundation"
-    "-framework UIKit")
+    "-framework UIKit"
+    "-framework LocalAuthentication")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL

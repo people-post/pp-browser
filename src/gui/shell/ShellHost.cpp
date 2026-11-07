@@ -143,6 +143,20 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("pin_gate_unlock_mode", &host.state_.pin_gate.unlock_mode);
     ctor.Bind("pin_gate_forgot_open", &host.state_.pin_gate.forgot_open);
     ctor.Bind("pin_gate_waiting_device_unlock", &host.state_.pin_gate.waiting_device_unlock);
+    ctor.Bind("pin_gate_verify_mode", &host.state_.pin_gate.verify_mode);
+    ctor.Bind("pin_gate_change_mode", &host.state_.pin_gate.change_mode);
+    ctor.Bind("pin_gate_ask_confirm", &host.state_.pin_gate.ask_confirm);
+    ctor.Bind("pin_gate_keypad", &host.state_.pin_gate.keypad);
+    ctor.Bind("pin_gate_keypad_busy", &host.state_.pin_gate.keypad_busy);
+    ctor.Bind("pin_gate_keypad_slots", &host.state_.pin_gate.keypad_slots);
+    ctor.Bind("pin_gate_keypad_filled", &host.state_.pin_gate.keypad_filled);
+    ctor.Bind("pin_gate_keypad_ok_shown", &host.state_.pin_gate.keypad_ok_shown);
+    ctor.Bind("pin_gate_keypad_text_label", &host.state_.pin_gate.keypad_text_label);
+    ctor.Bind("pin_gate_keypad_offered", &host.state_.pin_gate.keypad_offered);
+    ctor.Bind("pin_gate_biometric_key", &host.state_.pin_gate.biometric_key);
+    ctor.Bind("pin_gate_biometric_kind", &host.state_.pin_gate.biometric_kind);
+    ctor.Bind("pin_gate_biometric_hint", &host.state_.pin_gate.biometric_hint);
+    ctor.Bind("pin_gate_biometric_first", &host.state_.pin_gate.biometric_first);
     ctor.Bind("pin_gate_title", &host.state_.pin_gate.title);
     ctor.Bind("pin_gate_message", &host.state_.pin_gate.message);
     ctor.Bind("pin_gate_error", &host.state_.pin_gate.error);
@@ -308,6 +322,41 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_saved_copy", DataEvent<>([this]() { PinGateUseSavedCopy(); }));
     ctor.BindEventCallback("pin_gate_forgot_toggle", DataEvent<>([this]() { PinGateForgotToggle(); }));
     ctor.BindEventCallback("pin_gate_use_pin_instead", DataEvent<>([this]() { PinGateUsePinInstead(); }));
+    ctor.BindEventCallback("pin_gate_key", DataEvent<int>([this](const int digit) {
+      if (pin_gate_actions_.on_key) {
+        pin_gate_actions_.on_key(digit);
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_backspace", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_backspace) {
+        pin_gate_actions_.on_backspace();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_ok", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_keypad_ok) {
+        pin_gate_actions_.on_keypad_ok();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_use_text", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_use_text) {
+        pin_gate_actions_.on_use_text();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_use_keypad", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_use_keypad) {
+        pin_gate_actions_.on_use_keypad();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_biometric", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_biometric) {
+        pin_gate_actions_.on_biometric();
+      }
+    }));
+    ctor.BindEventCallback("pin_gate_use_pin", DataEvent<>([this]() {
+      if (pin_gate_actions_.on_use_pin) {
+        pin_gate_actions_.on_use_pin();
+      }
+    }));
     ctor.BindEventCallback("call_accept", DataEvent<>([this]() { CallAccept(); }));
     ctor.BindEventCallback("call_accept_voice", DataEvent<>([this]() { CallAcceptVoice(); }));
     ctor.BindEventCallback("call_accept_charge", DataEvent<>([this]() { CallAcceptCharge(); }));
@@ -879,7 +928,7 @@ bool ShellHost::HandleDismiss() {
   }
   if (state_.pin_gate.active) {
     if (state_.pin_gate.create_mode || state_.pin_gate.chooser_mode || state_.pin_gate.identity_fork_mode ||
-        state_.pin_gate.link_paste_mode) {
+        state_.pin_gate.link_paste_mode || state_.pin_gate.verify_mode || state_.pin_gate.change_mode) {
       if (pin_gate_actions_.on_cancel) {
         pin_gate_actions_.on_cancel();
       }
@@ -984,6 +1033,20 @@ void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_unlock_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_forgot_open");
   DataModelHost::Instance().Dirty("window", "pin_gate_waiting_device_unlock");
+  DataModelHost::Instance().Dirty("window", "pin_gate_verify_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_change_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_ask_confirm");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_busy");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_slots");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_filled");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_ok_shown");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_text_label");
+  DataModelHost::Instance().Dirty("window", "pin_gate_keypad_offered");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_key");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_kind");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_hint");
+  DataModelHost::Instance().Dirty("window", "pin_gate_biometric_first");
   DataModelHost::Instance().Dirty("window", "pin_gate_title");
   DataModelHost::Instance().Dirty("window", "pin_gate_message");
   DataModelHost::Instance().Dirty("window", "pin_gate_error");
@@ -2355,6 +2418,13 @@ void ShellHost::RemountPinGateChromeNow() {
   }
   if (ui::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
     RmlMount::MountInner(mount, Rml().PinGate());
+  }
+  // Field mode: the PIN field has the focus as the gate comes up, so the keyboard is there without a tap (Kenneth
+  // 2026-11-07). The number pad has no field.
+  if (ShellLayoutRml::PinGateFocusesField(state_.pin_gate)) {
+    if (ui::Element* field = doc->GetElementById(ShellLayoutRml::kPinGateFieldId)) {
+      field->Focus();
+    }
   }
   DirtyPinGate();
 }

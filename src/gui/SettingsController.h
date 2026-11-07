@@ -15,6 +15,7 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
+#include "gui/PinPromptPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -76,6 +77,8 @@ public:
   /** Phones: Me -> Appearance -> Home widgets opens the Edit Home sheet (ChatController). */
   void BindOpenHomeEdit(std::function<void()> open);
   void BindUnlockEnsure(UnlockEnsurePorts ports);
+  /** B2: settings asks for the PIN on the PIN gate (Application fills from PinGateController). */
+  void BindPinPrompt(PinPromptPorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
   bool RegisterModel(ui::Context* context);
@@ -98,6 +101,8 @@ public:
   void Tick();
   /** Rebuild localized section titles / bindings after UI language changes. */
   void RefreshLocalizedChrome();
+  /** The unlock gate found face / fingerprint unlock gone (its pieces deleted): Security's switch reads off. */
+  void OnBiometricLost();
   /** Refresh PP Support Me-row from client-compat discovery (via SettingsCommands). */
   void SyncSupportDiscovery();
   /** Deep-link: select Me (if needed) and open the Network section. */
@@ -204,6 +209,10 @@ private:
     int unlock_grace_minutes = 15;
     ui::String unlock_grace_label;
     bool security_grace_shown = false;
+    /** Face / fingerprint unlock (at-rest A014): the switch shows, its state, its title. */
+    bool security_biometric_shown = false;
+    bool security_biometric_on = false;
+    ui::String security_biometric_label;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
     ui::String call_invite_policy = "everyone";
@@ -277,7 +286,10 @@ private:
   void OpenSettingsDetailPane();
   bool CloseSettingsDetailPane();
   void OnBackToList();
-  /** Phones: Security's own pages ("change_pin", "transfer"), pushed over the section with the local-back stack. */
+  /**
+   * Phones: Security's own page ("transfer"), pushed over the section with the local-back stack. "change_pin" (any
+   * platform) is the PIN gate's change mode instead (B2).
+   */
   void OpenSecurityPage(const std::string& page);
   void OnCloseSecurityPage();
   /** Drops the open security page (state only; the local-back entry is the caller's). */
@@ -371,9 +383,10 @@ private:
   std::function<void()> open_ui_perf_test_;
   std::function<void()> open_home_edit_;
   UnlockEnsurePorts unlock_ensure_;
+  PinPromptPorts pin_prompt_;
   SettingsCasLibrary cas_library_{commands_, shell_feedback_, unlock_ensure_,
                                   [this](const Error& err) { ReportFailure(err); }};
-  SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_};
+  SettingsSecurityActions security_actions_{*this, commands_, shell_feedback_, unlock_ensure_, pin_prompt_};
   SettingsOwnDevices own_devices_{commands_, shell_feedback_, [this](const Error& err) { ReportFailure(err); }};
   SettingsProfileActions profile_actions_{*this, commands_, unlock_ensure_};
   StorageManagerController storage_manager_{commands_, shell_navigation_, shell_feedback_, [this]() {

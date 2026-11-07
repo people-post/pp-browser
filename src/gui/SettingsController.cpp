@@ -190,6 +190,10 @@ void SettingsController::BindUnlockEnsure(UnlockEnsurePorts ports) {
   unlock_ensure_ = std::move(ports);
 }
 
+void SettingsController::BindPinPrompt(PinPromptPorts ports) {
+  pin_prompt_ = std::move(ports);
+}
+
 SettingsCommands& SettingsController::Commands() {
   return commands_;
 }
@@ -301,6 +305,9 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.unlock_grace_minutes = bindings_.unlock_grace_minutes;
   ui_state_.unlock_grace_label = bindings_.unlock_grace_label.c_str();
   ui_state_.security_grace_shown = bindings_.security_grace_shown;
+  ui_state_.security_biometric_shown = bindings_.security_biometric_shown;
+  ui_state_.security_biometric_on = bindings_.security_biometric_on;
+  ui_state_.security_biometric_label = bindings_.security_biometric_label.c_str();
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
   ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
@@ -409,6 +416,9 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.unlock_grace_minutes = ui_state_.unlock_grace_minutes;
   bindings_.unlock_grace_label = ui_state_.unlock_grace_label.c_str();
   bindings_.security_grace_shown = ui_state_.security_grace_shown;
+  bindings_.security_biometric_shown = ui_state_.security_biometric_shown;
+  bindings_.security_biometric_on = ui_state_.security_biometric_on;
+  bindings_.security_biometric_label = ui_state_.security_biometric_label.c_str();
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
   bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
@@ -621,6 +631,9 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_has_recovery_phrase", &controller.bindings_.security_has_recovery_phrase);
     ctor.Bind("unlock_grace_label", &controller.bindings_.unlock_grace_label);
     ctor.Bind("security_grace_shown", &controller.bindings_.security_grace_shown);
+    ctor.Bind("security_biometric_shown", &controller.bindings_.security_biometric_shown);
+    ctor.Bind("security_biometric_on", &controller.bindings_.security_biometric_on);
+    ctor.Bind("security_biometric_label", &controller.bindings_.security_biometric_label);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
     ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
@@ -815,11 +828,10 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_has_recovery_phrase");
   host.Dirty("settings", "unlock_grace_label");
   host.Dirty("settings", "security_grace_shown");
+  host.Dirty("settings", "security_biometric_shown");
+  host.Dirty("settings", "security_biometric_on");
+  host.Dirty("settings", "security_biometric_label");
   host.Dirty("settings", "recovery_phrase");
-  host.Dirty("settings", "recovery_phrase_pin");
-  host.Dirty("settings", "recovery_pin_open");
-  host.Dirty("settings", "export_pin");
-  host.Dirty("settings", "export_pin_open");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
   host.Dirty("settings", "call_invite_policy_label");
@@ -830,9 +842,6 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "support_visible");
   host.Dirty("settings", "support_display_name");
   host.Dirty("settings", "support_subtitle");
-  host.Dirty("settings", "pin_change_old");
-  host.Dirty("settings", "pin_change_new");
-  host.Dirty("settings", "pin_change_confirm");
   host.Dirty("settings", "status");
 }
 
@@ -1351,12 +1360,14 @@ void SettingsController::RefreshBlockedCount() {
 }
 
 void SettingsController::OpenSecurityPage(const std::string& page) {
+  if (page == "change_pin") {
+    OpenChangePin();  // B2: the PIN gate's three steps, not a page of fields
+    return;
+  }
   if (selected_id_ != "security" || !show_detail_) {
     return; // phones only: desktop shows both inline
   }
-  if (page == "change_pin") {
-    security_page_title_ = Tr("settings.security.change_pin").c_str();
-  } else if (page == "transfer") {
+  if (page == "transfer") {
     security_page_title_ = Tr("settings.security.transfer_row").c_str();
   } else {
     return;
@@ -1384,9 +1395,6 @@ void SettingsController::OnCloseSecurityPage() {
 }
 
 void SettingsController::ApplyCloseSecurityPage() {
-  if (security_page_ == "transfer") {
-    security_actions_.CancelExportPin();  // the transfer code's PIN field does not stay out behind the page
-  }
   security_page_ = "";
   security_page_title_ = "";
   choice_page_.Close();
@@ -1408,8 +1416,7 @@ void SettingsController::ResetSecurityPage() {
   if (shell_navigation_.clear_local_back) {
     shell_navigation_.clear_local_back("settings_subpage");
   }
-  security_actions_.HideRecoveryPhrase();  // the phrase and its PIN field do not follow the user off the page
-  security_actions_.CancelExportPin();
+  security_actions_.HideRecoveryPhrase();  // the phrase does not follow the user off the page
   if (security_page_.empty()) {
     return;
   }
@@ -2186,8 +2193,14 @@ void SettingsController::RequestSyncLayout(const char* reason) {
   }
 }
 
+void SettingsController::OnBiometricLost() {
+  bindings_.security_biometric_on = false;
+  ui_state_.security_biometric_on = false;
+  DataModelHost::Instance().Dirty("settings", "security_biometric_on");
+}
+
 void SettingsController::OpenChangePin() {
-  OpenSecurityPage("change_pin");
+  security_actions_.ChangePin();
 }
 
 Roe<void> SettingsController::ForgetToolPermissions() {

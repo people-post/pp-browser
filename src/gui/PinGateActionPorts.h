@@ -22,6 +22,16 @@ struct PinGateActionPorts {
   std::function<void()> on_forgot_toggle;
   /** "Enter PIN instead" while the unlock screen waits for the phone's unlock (PIN grace window). */
   std::function<void()> on_use_pin_instead;
+  /** The number pad (DEV/PLAN-pin-gate-redesign.md B): a digit, backspace, a new PIN's "OK", and the two links. */
+  std::function<void(int digit)> on_key;
+  std::function<void()> on_backspace;
+  std::function<void()> on_keypad_ok;
+  std::function<void()> on_use_text;
+  std::function<void()> on_use_keypad;
+  /** The pad's face / fingerprint key, or the field's "Unlock with Face ID" link (at-rest A014). */
+  std::function<void()> on_biometric;
+  /** "Enter PIN" on a biometric-first unlock door. */
+  std::function<void()> on_use_pin;
 };
 
 } // namespace pbr

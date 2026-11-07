@@ -270,6 +270,36 @@ TEST(ConfigJsonTest, ProfilePrefsUnlockGraceMinutesRoundTripsAndRejectsOddValues
   }
 }
 
+TEST(ConfigJsonTest, ProfilePrefsPinDigitsUnknownWhenAbsentAndRejectsOddValues) {
+  // DEV/PLAN-pin-gate-redesign.md B: absent = unknown (no schema bump); 0 (a text PIN) and 4..8 round-trip; anything
+  // else reads back as unknown.
+  auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
+  ASSERT_TRUE(absent.has_value());
+  pbr::ProfilePreferences loaded;
+  loaded.pin_digits = 6;
+  pbr::ProfilePrefsFromObject(*absent, loaded);
+  EXPECT_EQ(loaded.pin_digits, std::nullopt);
+  EXPECT_FALSE(pbr::ProfilePrefsToObject(loaded).getIf<int64_t>("pin_digits").has_value()) << "unknown is not written";
+
+  for (int digits : {0, 6}) {
+    pbr::ProfilePreferences edited;
+    edited.pin_digits = digits;
+    pbr::ProfilePreferences parsed;
+    pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
+    EXPECT_EQ(parsed.pin_digits, digits);
+  }
+
+  for (const char* odd_json : {R"({ "pin_digits": 3 })", R"({ "pin_digits": 9 })", R"({ "pin_digits": -1 })",
+                               R"({ "pin_digits": true })"}) {
+    auto odd = pbr::TryParseObject(odd_json);
+    ASSERT_TRUE(odd.has_value());
+    pbr::ProfilePreferences parsed;
+    parsed.pin_digits = 6;
+    pbr::ProfilePrefsFromObject(*odd, parsed);
+    EXPECT_EQ(parsed.pin_digits, std::nullopt) << odd_json;
+  }
+}
+
 TEST(ConfigJsonTest, ProfilePrefsHomeShowDynamicRoundTripsAndDefaultsOff) {
   // Minimal AI-first Home: absent (a fresh or pre-existing profile) reads off; once set it stays set.
   auto absent = pbr::TryParseObject(R"({ "schema_version": 14 })");
