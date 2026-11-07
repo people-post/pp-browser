@@ -282,10 +282,13 @@ final class PpSecureBlob {
         return false;
     }
 
+    /**
+     * The blob can never open again. Not UnrecoverableKeyException: the Keystore also throws it for a busy or failing
+     * backend (keystore2), and a Missing deletes the blob; such a read is an error, which keeps it.
+     */
     private static boolean isGone(Throwable e) {
         for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof KeyPermanentlyInvalidatedException || t instanceof UnrecoverableKeyException
-                    || t instanceof AEADBadTagException) {
+            if (t instanceof KeyPermanentlyInvalidatedException || t instanceof AEADBadTagException) {
                 return true;
             }
         }

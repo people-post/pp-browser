@@ -89,16 +89,17 @@ void RemoveProtectedDataHandler(const ProtectedDataHandlerId id) {
 
 GraceClock GraceClockNow() {
   GraceClock now;
-  // Settings.Global.BOOT_COUNT: one more each boot. Byte 0 = 1 (the format), bytes 1-8 the count big-endian. All
-  // zero if it cannot be read (then every boot looks alike, and the monotonic clock, which restarts at boot, still
-  // closes old windows in most cases).
+  // Settings.Global.BOOT_COUNT: one more each boot. Byte 0 = 1 (the format), bytes 1-8 the count big-endian.
+  // Without it there is no clock at all (mono_seconds stays 0 and GraceUnlock fails closed): CLOCK_BOOTTIME
+  // restarts at boot, so an all-zero id would let a window outlive a reboot.
   jint count = -1;
-  if (CallActivity("bootCount", "()I", true, &count) && count >= 0) {
-    const uint64_t value = static_cast<uint64_t>(count);
-    now.boot_id[0] = 1;
-    for (int i = 0; i < 8; ++i) {
-      now.boot_id[1 + i] = static_cast<uint8_t>(value >> (8 * (7 - i)));
-    }
+  if (!CallActivity("bootCount", "()I", true, &count) || count < 0) {
+    return now;
+  }
+  const uint64_t value = static_cast<uint64_t>(count);
+  now.boot_id[0] = 1;
+  for (int i = 0; i < 8; ++i) {
+    now.boot_id[1 + i] = static_cast<uint8_t>(value >> (8 * (7 - i)));
   }
   // CLOCK_BOOTTIME (SystemClock.elapsedRealtime) keeps counting while the device sleeps (CLOCK_MONOTONIC does not).
   timespec ts{};
