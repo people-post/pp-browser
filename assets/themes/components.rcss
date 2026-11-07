@@ -9786,8 +9786,8 @@ input.checkbox {
 }
 
 .shell-layer-compact .qr-scan-back svg {
-  width: 24dp;
-  height: 24dp;
+  width: 18dp;
+  height: 18dp;
 }
 
 .shell-layer-compact .qr-scan-tools {

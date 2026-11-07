@@ -169,6 +169,13 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   EXPECT_TRUE(Has(ReadAsset("views/people_picker.rml"),
                   "class=\"shell-circle-btn people-picker-back-circle\" type=\"button\" "
                   "data-event-click=\"back_picker()\""));
+  // The scanner's back over the camera is the same round button (dark glass), with no text.
+  const std::string scan = ReadAsset("views/qr_scan.rml");
+  EXPECT_TRUE(Has(scan, "class=\"qr-scan-back shell-circle-btn\" type=\"button\" data-event-click=\"cancel_scan()\""));
+  EXPECT_TRUE(Has(scan, "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\" width=\"18\""));
+  // Every phone back that is a button of its own has no "Back" word beside the round one.
+  EXPECT_EQ(Count(ReadAsset("views/settings.rml"), "common.back"), 0u);
+  EXPECT_EQ(Count(ReadAsset("views/contacts.rml"), "common.back"), 0u);
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t face = css.find(".shell-layer-compact .shell-circle-btn-face {");
   ASSERT_NE(face, std::string::npos);
