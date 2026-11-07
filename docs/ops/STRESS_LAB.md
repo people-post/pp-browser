@@ -29,13 +29,13 @@ scripts/test/pp_node_stress.py bridges --pairs 100 --duration 45 --procs 4
 | Group calls, 4 members, 500 kbps video + 32 kbps audio | 50 calls (200 members, 316 Mbps out): 100 % delivered, p95 0.75 s, level busy | 100 calls: the pump saturates (busy 0.98), level full, new attaches refused — but the members already in degrade (60 %, p95 27 s) |
 | Relayed pairs (reliable channel) | 100 pairs (105 Mbps): 100 %, p95 9 ms, level busy | 200 pairs: kernel drops (~11 k/s), level full, 16 % delivered |
 
-Before the pump fix (pp-cpp-mesh after v6.1.0) the node collapsed at half these loads and said `open` throughout: 50 calls 79 % delivered with p95 22.6 s; 100 pairs 23 % with 32 s.
+Before the pump fix (pp-cpp-mesh v6.2.0) the node collapsed at half these loads and said `open` throughout: 50 calls 79 % delivered with p95 22.6 s; 100 pairs 23 % with 32 s.
 
 ## What limits a node
 
 1. **One pump thread does the data plane**, sealing every fan-out copy per recipient (XChaCha20-Poly1305): group calls saturate one core while the worker pool idles. Its busy share is `pp_io_busy_fraction` and a pressure on every level.
 2. **Socket buffers** — the OS default (208 KiB) overflows in bursts; kernel drops are `pp_udp_receive_drops` and a pressure. Hosts should raise the cap (`packaging/pp-node/99-pp-node-udp.conf`).
-3. **Media waits without an age limit.** Call media is best effort on every normal path, but a frame can wait in a link's send queue (the mux holds up to 32 MiB) for seconds; under overload media arrives late instead of being dropped.
+3. **Media waits without an age limit.** Call media is best effort on every normal path ([V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)), but a frame can wait in a link's send queue (the mux holds up to 32 MiB) for seconds; under overload media arrives late instead of being dropped.
 4. **The link table** (2048) caps clients per node.
 
 ## Open

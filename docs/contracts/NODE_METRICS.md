@@ -26,7 +26,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_runtime_task_wait_seconds` | histogram | `owner` | Queued → started |
 | `pp_runtime_task_run_seconds` | histogram | `owner` | Started → done |
 | `pp_service_load` | gauge | `service` = `park` \| `relay` \| `media_relay` | This node's level per service ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): 1 open, 2 busy, 3 full, 4 draining |
-| `pp_service_pressure` | gauge | `service` | The worst pressure behind the level, 0 (idle) .. 1 (at capacity): reservations, bridges, hosted calls, the link table |
+| `pp_service_pressure` | gauge | `service` | The worst pressure behind the level, 0 (idle) .. 1 (at capacity): reservations, bridges, hosted calls, the link table, the pump's busy share, kernel receive drops |
 | `pp_media_relay_sessions` | gauge | | Hosted sessions with participants |
 | `pp_media_relay_participants` | gauge | | Across those sessions |
 | `pp_media_relay_frames_total` | counter | `direction` = `received` \| `forwarded` | Data frames (forwarded counts each recipient) |
@@ -40,6 +40,9 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_amp_reliable_packets_total` | counter | `event` = `sent` \| `retransmitted` \| `lost` | `lost` = given up after the retry cap |
 | `pp_amp_rtt_seconds` | histogram | | Round trips: acks of never-retransmitted reliable packets (buckets 0.005 … 2.5) |
 | `pp_link_active` | gauge | | Amp links in the link table |
+| `pp_io_busy_fraction` | gauge | | Share of the last second the Amp pump thread spent working rather than waiting, 0..1; 1 = it never catches up (pp-cpp-mesh ≥ v6.2.0) |
+| `pp_udp_receive_drops` | gauge | | Datagrams the kernel dropped on the node's Amp socket for want of receive buffer, since start (use `rate()`); Linux |
+| `pp_udp_receive_buffer_bytes` | gauge | | The socket's receive buffer as granted (the host's `net.core.rmem_max` caps the 8 MiB asked) |
 | `pp_amp_channels_open` | gauge | `protocol` = `directory` \| `dht` \| `reach` \| `punch` \| `circuit` \| `circuit_carrier` \| `rpc_chat` \| `rpc_history` \| `rpc_peer_announce` \| `rpc_broadcast` \| `blob` \| `realtime` \| `datagram_relay` \| `other` | Open L3 channels across all links. Fixed label set: ids outside the shipped map ([L4_PROTOCOL_KINDS.md](L4_PROTOCOL_KINDS.md)) count as `other` |
 | `pp_link_connects_total` | counter | `path` = `direct` \| `punched` \| `carrier`; `direction` = `outbound` \| `inbound` | Links that connected |
 | `pp_link_drops_total` | counter | `reason` ([AMP-LINK-ERRORS](AMP-LINK-ERRORS.md) drop reasons, e.g. `connection-dead`, `handshake-timeout`); `stage` = `connected` \| `attempt` | `attempt` = never connected (a failed dial) |

@@ -23,7 +23,7 @@ Guidance for clients (not a contract): level `1` ≈ 360p / ~400 kbps, level `2`
 
 ## Channel type (relay QoS)
 
-Senders set the relay frame's `channel_type` from the kind: audio → `ReliableOrdered`, video → `LatestLossy` (the relay drops a stale non-keyframe for a subscriber that already has a newer one).
+Senders set the relay frame's `channel_type` from the kind: audio → `ReliableOrdered`, video → `LatestLossy`. Only `LatestLossy` changes what a relay does: it drops a stale non-keyframe for a subscriber that already has a newer one. `ReliableOrdered` is a label — the frame is forwarded like any other, and it is not resent. Call audio is best effort on every normal path, and the codec (Opus FEC, loss concealment, the jitter buffer) covers losses: [V063](../../projects/p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses).
 
 ## Level negotiation (broadcast publishers)
 

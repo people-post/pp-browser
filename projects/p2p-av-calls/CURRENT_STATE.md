@@ -40,6 +40,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
 | **V050 group topology** | **Landed (gt0–gt6)** — full invite roster + joined-count arming; initiator leave keeps the rest on the hop with one agreed next owner; `planned_hop` from the invite list; Accept hop report (reached / unreachable) with the one adjustment or joiner refusal at the third join; later joiners move the whole group once, only to a hop every member can use, guests following the owner. Hard lab Phases 13–15 across three NATs and two hops. Paid-hop ownership handover deferred (pricing P004) — [PHASES gt](PHASES.md#gt--group-call-topology-v050) |
 | **V062 guests in a group's call** | **Built 2026-11-05** (`feat/call-guests`): `guest` / `brought_by` on the mid-call invite and roster, the Guest label and "joined as …'s guest", bring per preset (each device checks the roster), `call_remove` from the owner / admins (key rotates, the guest's device leaves), "Add {name} to the group", the guest's ring notice. Lab `group_call_guest` registered, not yet run — [CALLS.md § Guests](../../docs/architecture/CALLS.md) |
+| **V063 audio best effort** | **Recorded 2026-11-06** — the code already did it (1:1 since 2026-08, groups since the data lane 2026-11-03); docs and V024 / V032 / V034 / N021 corrected — [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos) |
 
 ## a4 thin in code (still relevant under V026)
 
