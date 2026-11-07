@@ -1472,7 +1472,11 @@ void Application::WireUnlockPinAndFlow() {
     }
     return kept;
   };
-  unlock_ports.has_pending_push_call = []() { return ICallSystemUi::Instance().HasPendingPushCall(); };
+  // A call waits for the unlock: the phone's call screen (Android), or a tapped call alert (iOS, P015).
+  unlock_ports.has_pending_push_call = []() {
+    return ICallSystemUi::Instance().HasPendingPushCall() ||
+           PendingNotificationTap::Instance().PeekCallRoute(PendingNotificationTap::Clock::now());
+  };
   unlock_ports.protected_data_available = []() { return os::ProtectedDataAvailable(); };
   unlock_ports.on_protected_data_available = [](std::function<void()> fn) {
     return os::OnProtectedDataAvailable(std::move(fn));
