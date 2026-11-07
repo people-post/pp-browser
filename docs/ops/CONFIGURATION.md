@@ -56,6 +56,8 @@ curl -sS -X POST -H 'Content-Type: application/json' -d '{"state":"draining"}' h
 
 States only advance `active` → `draining` → `retiring`; `draining` → `active` is allowed, `retiring` is final (409). Contract: [MESH_DIRECTORY.md](../../projects/p2p-mesh/MESH_DIRECTORY.md#heartbeat).
 
+**Draining the node itself** ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): on a loopback status bind the same `POST /control/state` works with or without the heartbeat. `draining` (or `retiring`) makes every service take nothing new and say `draining` in its replies: phones park elsewhere, new calls go to other nodes, and what the node already serves goes on until it stops. `active` lifts it (unless the heartbeat has reached `retiring`). Use it before a planned restart.
+
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
 **Initiation floor (P001):** top-level `initiation_floor` (integer `pp_credit` minor units, default `0`) seeds `LocalIdentity.initiation_floor` when the identity value is still `0`. No Me UI yet — set in `config.json` for testing. Older directory/register servers that omit the field are treated as `0`.

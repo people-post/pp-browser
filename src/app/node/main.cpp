@@ -383,12 +383,19 @@ int main(int argc, char** argv) {
         return true;
       };
     }
-    // State control steers the node: loopback binds only.
-    if (heartbeat && pbr::IsLoopbackStatusBindHost(bind->host)) {
-      pbr::NodeHeartbeat* hb = &*heartbeat;
-      actions.set_state = [hb](const std::string& state) {
+    // State control steers the node: loopback binds only. Draining (or retiring) makes every service take nothing new
+    // and say so in its replies (p2p-mesh N033), heartbeat or not; with one, the directory hears it too.
+    if (pbr::IsLoopbackStatusBindHost(bind->host)) {
+      pbr::NodeHeartbeat* hb = heartbeat ? &*heartbeat : nullptr;
+      actions.set_state = [hb, boot_ptr](const std::string& state) {
         const auto parsed = pbr::ParseHeartbeatState(state);
-        return parsed && hb->SetState(*parsed);
+        if (!parsed || (hb && !hb->SetState(*parsed))) {
+          return false;
+        }
+        if (boot_ptr->mesh) {
+          boot_ptr->mesh->OwnLoad().SetDraining(state != "active");
+        }
+        return true;
       };
     }
     if (auto started = status_http.Start(*bind, std::move(auth),

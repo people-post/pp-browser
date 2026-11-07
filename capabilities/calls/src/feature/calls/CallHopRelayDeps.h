@@ -7,6 +7,7 @@
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "mesh/l4/media_relay/MediaRelayTypes.h"
+#include "mesh/types/ServiceLoad.h"
 #include "common/media/CallMediaHealth.h"
 #include "amp/link/Types.h"
 
@@ -52,6 +53,8 @@ struct CallHopMediaRelayDeps {
   std::function<bool()> seed_dial_ok;
   /** The mesh's reach record holds this peer down (it could not be reached lately): not a hop now. */
   std::function<bool(const std::string& peer_id)> reach_held_down;
+  /** What this peer said of its own group-call load (p2p-mesh N033): its residual capacity in the ranking. */
+  std::function<mesh::ServiceLoad(const std::string& peer_id)> hop_load;
   /**
    * PreferLocalMediaHop / AttachAsLocalHop — durable Node only (desktop/org).
    * Must stay false for mobile ephemeral media_relay (V027): phones must not SoftMigrate

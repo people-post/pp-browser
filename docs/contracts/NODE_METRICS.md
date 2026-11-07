@@ -25,6 +25,8 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_runtime_queue_depth` | gauge | `owner` | Owner-thread tasks queued, not started |
 | `pp_runtime_task_wait_seconds` | histogram | `owner` | Queued → started |
 | `pp_runtime_task_run_seconds` | histogram | `owner` | Started → done |
+| `pp_service_load` | gauge | `service` = `park` \| `relay` \| `media_relay` | This node's level per service ([N033](../../projects/p2p-mesh/DECISIONS.md#n033--nodes-say-how-busy-they-are-per-service-clients-act-on-the-level)): 1 open, 2 busy, 3 full, 4 draining |
+| `pp_service_pressure` | gauge | `service` | The worst pressure behind the level, 0 (idle) .. 1 (at capacity): reservations, bridges, hosted calls, the link table |
 | `pp_media_relay_sessions` | gauge | | Hosted sessions with participants |
 | `pp_media_relay_participants` | gauge | | Across those sessions |
 | `pp_media_relay_frames_total` | counter | `direction` = `received` \| `forwarded` | Data frames (forwarded counts each recipient) |
