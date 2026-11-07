@@ -395,7 +395,6 @@ select selectbox option {
 }
 
 .bubble {
-  /* Horizontal padding is mirrored by kBubbleHorizontalPaddingDp (src/gui/chat/AiImageAttach.h); change both. */
   padding: 10dp 14dp;
   border-radius: 12dp;
   text-align: left;
@@ -8291,10 +8290,37 @@ input.checkbox {
   margin-bottom: 8dp;
 }
 
+/* An AI question with a picture (DecorateAiImageBubble): the chat's picture bubble (B181), a 3dp frame round the
+   picture (kAiPictureFrameDp) and the question under it. The bubble's width is set inline (picture + frame), so the
+   question wraps inside it; the picture sits in a clip box with rounded corners (the engine does not round an <img>). */
+.bubble.bubble-user--picture,
+.shell-chat-overlay .bubble.bubble-user--picture {
+  max-width: none;
+  padding: 3dp;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.chat-ai-image-clip {
+  display: block;
+  overflow: hidden;
+  border-radius: 15dp;
+}
+
 .chat-ai-image {
   display: block;
-  border-radius: 8dp;
-  margin-bottom: 8dp;
+  max-width: 200dp;
+  max-height: 240dp;
+  margin: 0;
+}
+
+.bubble-user--picture .bubble-text {
+  margin: 0;
+  padding: 5dp 9dp 0 9dp;
+}
+
+.bubble-user--picture .bubble-time {
+  padding: 0 9dp 3dp 9dp;
 }
 
 .chat-attachment-video-poster {
