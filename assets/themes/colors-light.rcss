@@ -2672,7 +2672,8 @@ input.checkbox:checked {
 
 .shell-chat-overlay .prompt-icon-v2,
 .shell-chat-overlay .prompt-icon-plus,
-.ask-ai .prompt-icon-v2 {
+.ask-ai .prompt-icon-v2,
+.ask-ai .prompt-icon-plus {
   image-color: #3c3c4399;
 }
 

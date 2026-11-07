@@ -11372,20 +11372,108 @@ input.checkbox {
   height: 20dp;
 }
 
-/* A phone's people chat: the bold plus in the clip's place (ChatController::OnAttachFile opens its floating card). */
+/* Phones: the bold plus in the clip's place (ChatController::OnAttachFile opens the chat's or the AI's floating card). */
 .prompt-icon-plus {
   display: none;
 }
 
-.shell-chat-overlay .prompt-attach-btn--plus .prompt-icon-v2 {
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-v2 {
   display: none;
 }
 
-.shell-chat-overlay .prompt-attach-btn--plus .prompt-icon-plus {
+.shell-chat-overlay .prompt-attach-btn .prompt-icon-plus {
   display: block;
   flex-shrink: 0;
   width: 24dp;
   height: 24dp;
+}
+
+/* One composer on phones (Kenneth 2026-11-07), in a chat, an AI conversation and the ask-AI panel: every key sits
+   inside the pill, the bold plus and the emoji key at its bottom left, the microphone (Send once there is text) at its
+   bottom right; no camera (the plus card has it). The row is the keys' positioning box and the pill fills it, so the
+   keys stay on the last line while the text grows; the pill's side padding keeps the text clear of them. Each key is a
+   40 x 44dp target, 3dp past the 38dp one-line pill above and below. */
+.shell-chat-overlay .prompt-composer-row,
+.ask-ai .prompt-composer-row {
+  position: relative;
+}
+
+.shell-chat-overlay .prompt-composer-pill,
+.ask-ai .prompt-composer-pill {
+  padding: 0 44dp 0 84dp;
+}
+
+.shell-chat-overlay .prompt-composer-label,
+.ask-ai .prompt-composer-label {
+  left: 84dp;
+}
+
+.shell-chat-overlay .prompt-composer-pill .prompt-attach-btn,
+.ask-ai .prompt-composer-pill .prompt-attach-btn {
+  position: absolute;
+  left: 0;
+  bottom: -3dp;
+  width: 40dp;
+  min-width: 40dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 0;
+}
+
+.shell-chat-overlay .prompt-composer-row .prompt-emoji-btn,
+.ask-ai .prompt-composer-row .prompt-emoji-btn {
+  position: absolute;
+  left: 41dp;
+  bottom: -3dp;
+  z-index: 1;
+  width: 40dp;
+  min-width: 40dp;
+  height: 44dp;
+  margin: 0;
+  border-radius: 0;
+}
+
+.shell-chat-overlay .prompt-composer-pill .prompt-capture-btn,
+.ask-ai .prompt-composer-pill .prompt-capture-btn {
+  display: none;
+}
+
+.shell-chat-overlay .prompt-composer-row .prompt-send-btn,
+.shell-chat-overlay .prompt-composer-row .prompt-voice-toggle-btn--end,
+.ask-ai .prompt-composer-row .prompt-send-btn {
+  position: absolute;
+  right: 0;
+  bottom: -3dp;
+  z-index: 1;
+  width: 44dp;
+  min-width: 44dp;
+  height: 44dp;
+  margin: 0;
+}
+
+/* Voice mode (a people chat): the hold-to-talk bar takes the pill's place; the keyboard key sits inside its right end. */
+.shell-chat-overlay .prompt-voice-bar {
+  padding-right: 44dp;
+}
+
+.ask-ai .prompt-attach-btn .prompt-icon-plus {
+  display: block;
+  flex-shrink: 0;
+  width: 24dp;
+  height: 24dp;
+}
+
+/* The ask-AI panel's settings "?" (text only): no plus, the emoji key leads. */
+.ask-ai .ask-ai-input-row--text-only .prompt-composer-pill {
+  padding-left: 44dp;
+}
+
+.ask-ai .ask-ai-input-row--text-only .prompt-composer-label {
+  left: 44dp;
+}
+
+.ask-ai .ask-ai-input-row--text-only .prompt-emoji-btn {
+  left: 1dp;
 }
 
 /* Grouped lists on phones: the Me tab and the settings pages (DESIGN-pp-ui 8.7, 8.10). Same geometry as the .cd-*

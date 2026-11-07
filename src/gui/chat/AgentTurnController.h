@@ -227,9 +227,10 @@ public:
     int height = 0;
   };
   void OnAttachAiImage();
-  /** The Home composer's plus: a floating menu above it with Camera and Photos (no file item); each hands its image to
-   *  StartAiImagePrepare like a picked photo. */
-  void ShowHomeAttachMenu(ui::Element* anchor);
+  /** The Home composer's plus (and a phone AI conversation's): a floating menu with Camera, Photos and File; each hands
+   *  its image to StartAiImagePrepare like a picked photo. `above`: the card opens above `anchor` (a composer at the
+   *  bottom of the screen). */
+  void ShowHomeAttachMenu(ui::Element* anchor, bool above = false);
   /** The Home plus menu's rows, in order: Camera, Photos, File (image files from the Files app). All are always offered (a
    *  missing camera is told by the capture itself). Pure, so a test can count them. */
   static std::vector<ContextMenuAction> HomeAttachActions(std::function<void()> camera, std::function<void()> photos,
@@ -257,6 +258,9 @@ public:
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows, const std::string& thread_id = {}) const;
 
   // --- the ask-AI panel's picture (DEV/PLAN-ui-batch5-ask-ai.md 5b): the same path, its own state ---------
+  /** The phone library (`files_app` false) or the Files app's image files; `picked` runs on the UI thread with the
+   *  chosen file (not at all when nothing was chosen). */
+  void PickAiImageFrom(bool files_app, std::function<void(std::string path)> picked);
   /** The photo library / file picker (images only); `picked` runs on the UI thread with one file, or not at all. */
   void PickAiImage(std::function<void(std::string path)> picked);
   /** The system camera, photo only; `picked` as above. Tells the person when the camera is unavailable. */

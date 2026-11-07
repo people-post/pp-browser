@@ -2014,6 +2014,11 @@ void ChatController::OnAttachFile(ui::Event* ev) {
     attach_menu_y_ = anchor.y;
   }
   if (InAiComposerContext()) {
+    // A phone's AI conversation (Kenneth 2026-11-07): the bold plus opens the Home composer's floating card above it.
+    if (ev && Platform::IsMobile() && ChromeSnapshot().layout_mode == LayoutMode::Compact) {
+      agent_.ShowHomeAttachMenu(ev->GetCurrentElement(), /*above=*/true);
+      return;
+    }
     agent_.OnAttachAiImage();
     return;
   }
