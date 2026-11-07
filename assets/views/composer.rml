@@ -88,7 +88,10 @@
                 data-value="draft" data-event-change="draft_changed()" data-attr-placeholder="draft_placeholder"
                 data-attrif-disabled="composer_input_disabled"></textarea>
       <!-- Phones: the engine draws no placeholder, so a label sits over the empty input (hidden on the desktop). -->
-      <p class="prompt-composer-label" data-if="draft == '' && thread_is_ai">{{draft_placeholder}}</p>
+      <p class="prompt-composer-label prompt-composer-label--thread" data-if="draft == '' && thread_is_ai">{{draft_placeholder}}</p>
+      <!-- Only the Home-root field (inside #home-composer-mount) shows this one; inside a conversation the thread label above
+           (draft_placeholder) stays (Kenneth 2026-11-07: 我能为你做点什么？). -->
+      <p class="prompt-composer-label prompt-composer-label--home" data-if="draft == '' && thread_is_ai">{{i18n:home.composer.placeholder}}</p>
       <p class="prompt-composer-label" data-if="draft == '' && !thread_is_ai">{{i18n:chat.composer.placeholder}}</p>
       <button class="prompt-attach-btn" type="button" data-if="show_attach_button"
               data-event-click="attach_file()" data-attrif-disabled="composer_input_disabled"

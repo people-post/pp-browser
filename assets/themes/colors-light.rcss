@@ -1687,6 +1687,7 @@ input.checkbox:checked {
 
 .ac-account-name,
 .ac-tile-label,
+.ac-top-card-label,
 .qr-name {
   color: #000000;
 }
@@ -1709,8 +1710,17 @@ input.checkbox:checked {
   background-color: #7878801f;
 }
 
-.ac-tile {
+.ac-tile,
+.ac-top-card {
   background-color: #f2f2f7;
+}
+
+.ac-top-card-icon {
+  background-color: #007aff;
+}
+
+.ac-top-card-icon svg {
+  image-color: #ffffff;
 }
 
 .ac-tile-disc {

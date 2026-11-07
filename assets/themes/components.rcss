@@ -4162,6 +4162,34 @@ select selectbox option {
   margin-right: 36dp;
 }
 
+/* Chats bar (DEV/PLAN-minimal-nav.md D): the round avatar sits where the other pages' round back does; the plus is a
+   plain round button in the actions slot. The photo or letter fills the 34dp disc. */
+.shell-layer-compact .pane-nav-avatar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.shell-circle-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34dp;
+  height: 34dp;
+  border-radius: 17dp;
+  overflow: hidden;
+}
+
+.shell-circle-avatar .avatar-letter {
+  font-size: 15dp;
+}
+
+.shell-circle-avatar-image {
+  width: 34dp;
+  height: 34dp;
+}
+
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 48dp;
@@ -9975,8 +10003,32 @@ input.checkbox {
   box-sizing: border-box;
 }
 
-.shell-layer-compact .nc-title {
-  padding: 12dp 16dp 0 16dp;
+/* The full-screen page's bar (DEV/PLAN-minimal-nav.md E): 48dp, the shell's round back at its left (transient chrome),
+   the title centred on the back's centre line; the A-Z strip sits right of the list under it. */
+.nc-page {
+  position: relative;
+}
+
+.shell-layer-compact .nc-page .nc-bar {
+  position: relative;
+  flex: none;
+  top: auto;
+  height: 48dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar-title {
+  top: 2dp;
+  opacity: 1;
+}
+
+.shell-layer-compact .nc-page .contacts-index {
+  top: 48dp;
+  bottom: 16dp;
+}
+
+.nc-empty-hint {
+  margin: 48dp 24dp 0 24dp;
+  text-align: center;
 }
 
 /* A name-only row: centre the name in the 60dp row. */
@@ -10123,6 +10175,56 @@ input.checkbox {
   flex-wrap: wrap;
   gap: 12dp;
   margin: 12dp 16dp 0 16dp;
+}
+
+/* The two cards at the top of the sheet, scan and my QR code, side by side like the New chat page's action rows:
+   a round icon and a label, 60dp tall. */
+.shell-layer-compact .ac-top-cards {
+  display: flex;
+  flex-direction: row;
+  gap: 12dp;
+  margin: 4dp 16dp 12dp 16dp;
+}
+
+.shell-layer-compact .ac-top-card {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10dp;
+  height: 60dp;
+  padding: 0 8dp;
+  border-radius: 14dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.shell-layer-compact .ac-top-card:active {
+  opacity: 0.6;
+}
+
+.shell-layer-compact .ac-top-card-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.shell-layer-compact .ac-top-card-icon svg {
+  flex-shrink: 0;
+  width: 20dp;
+  height: 20dp;
+}
+
+.shell-layer-compact .ac-top-card-label {
+  margin: 0;
+  font-size: 16dp;
+  line-height: 22dp;
+  font-weight: bold;
 }
 
 .shell-layer-compact .ac-tile {
@@ -12500,24 +12602,120 @@ textarea:composing ~ .prompt-composer-label,
   padding: 0 16dp;
 }
 
+/* The chips wrap onto a second row when they do not fit, centred (Kenneth 2026-11-07). When the keyboard leaves too
+   little height they shrink away before the field does (min-height 0 + clip). */
 .shell-layer-compact .home-suggestions {
   display: flex;
   flex-direction: row;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0 16dp;
-  text-align: left;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 12dp;
+  text-align: center;
 }
 
 .shell-layer-compact .home-suggestions .chat-suggestion {
   flex: none;
   height: 32dp;
   min-height: 32dp;
-  margin: 0 8dp 0 0;
+  margin: 0 4dp 8dp 4dp;
   padding: 0 12dp;
   font-size: 15dp;
   line-height: 32dp;
+}
+
+/* Phone minimal AI Home (Kenneth 2026-11-07): one centred block, logo, two-line field, wrapping chips, with open
+   space under it. The sessions list moved to the drawer, so it is not drawn here; there is no page heading. The block
+   sits in the middle of the page; both spacers give way first, then the chips and the logo shrink and clip, so with the
+   keyboard up the field stays on its top edge (the tab bar hides then, ShellHost). */
+.home-logo {
+  display: none;
+}
+
+.shell-layer-compact .home-landing--minimal .home-ai-list {
+  display: none;
+}
+
+.shell-layer-compact .home-landing--minimal .home-landing-inner {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 0;
+  justify-content: center;
+  padding-bottom: 72dp;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo {
+  display: block;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  height: 72dp;
+  margin: 0 0 16dp 0;
+  text-align: center;
+}
+
+.shell-layer-compact .home-landing--minimal .home-logo img {
+  width: 72dp;
+  height: 72dp;
+  border-radius: 16dp;
+}
+
+/* iPhone SE class screens (under 600dp tall): a smaller logo so logo, field and two chip rows fit. */
+@media (max-height: 599dp) {
+  .shell-layer-compact .home-landing--minimal .home-logo {
+    height: 56dp;
+    margin-bottom: 10dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-logo img {
+    width: 56dp;
+    height: 56dp;
+    border-radius: 13dp;
+  }
+  .shell-layer-compact .home-landing--minimal .home-landing-inner {
+    padding-bottom: 24dp;
+  }
+}
+
+/* The field on the Home root is two lines tall; its placeholder label is the "what can I do for you" line (the draft
+   label for a conversation stays with the conversation's own composer). */
+.shell-layer-compact .home-composer-mount .prompt-composer {
+  flex: none;
+  margin: 0 0 12dp 0;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-pill {
+  min-height: 76dp;
+  padding: 0 4dp 0 16dp;
+  border-radius: 24dp;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-input {
+  align-self: stretch;
+  min-height: 52dp;
+  padding: 12dp 0;
+}
+
+.prompt-composer-label--home,
+.shell-chat-overlay .prompt-composer-label--home,
+.ask-ai .prompt-composer-label--home {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-label--thread {
+  display: none;
+}
+
+.shell-layer-compact .home-composer-mount .prompt-composer-label--home {
+  display: block;
+  position: absolute;
+  top: 12dp;
+  left: 16dp;
+  margin: 0;
+  font-size: 17dp;
+  line-height: 24dp;
+  pointer-events: none;
 }
 
 /* Me → Storage and its "Manage storage" pages (DEV/PLAN-storage-manager.md): iOS-style grouped lists, in-place

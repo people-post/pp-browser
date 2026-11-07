@@ -223,7 +223,7 @@ public:
   /** The contact shown is starred (tests). */
   bool SelectedStarred() const { return selected_.starred; }
 
-  /** Phone Chats "compose": pushes the full-screen New chat page (AI chat / group / add contact / contacts). */
+  /** Phone Chats "plus": pushes the full-screen New chat page (new group / add contact / contacts by letter). */
   void OpenNewChatPage();
   /** Opens (or starts) the chat with a contact, as a pick on the New chat page does (Home's Favorites). */
   void MessageContact(const std::string& contact_id);
@@ -268,6 +268,13 @@ public:
   static std::vector<IndexLetterRow> ContactIndexLetters(const std::vector<NewChatSectionRow>& sections);
   /** The section an index letter jumps to: that letter's, else the next one after it, else the last; -1 if none. */
   static int ContactSectionForLetter(const std::vector<NewChatSectionRow>& sections, char letter);
+  /**
+   * Scrolls the list an index strip belongs to so the section for `letter` sits at its top. `strip` is the strip
+   * element; its parent holds the list: `.contacts-list-view` with `.contacts-section-header`s (`target` "contacts"), or
+   * `.nc-scroll` with `.nc-section-header`s (`target` "new_chat"). The other list is not touched. Exposed for tests.
+   */
+  static void ScrollIndexListTo(ui::Element* strip, const std::string& target,
+                                const std::vector<NewChatSectionRow>& sections, char letter);
 
 private:
   void OnNewGroup();
@@ -336,8 +343,9 @@ private:
   void OnStartChat();
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
-  /** A press or drag on the phone index strip: jump the list to the letter under the finger, show it in the bubble. */
-  void OnContactsIndexAt(ui::Event& ev);
+  /** A press or drag on a phone index strip (`target`: "contacts" or "new_chat"): jump that list to the letter under
+   *  the finger, show it in the bubble. */
+  void OnContactsIndexAt(ui::Event& ev, const std::string& target);
   /** The finger left the index strip: hide the bubble. */
   void OnContactsIndexEnd();
   void OnAddContact();
@@ -385,15 +393,15 @@ private:
   std::vector<IndexLetterRow> contact_index_;
   /** The letter in the centred bubble while a finger is on the index strip; empty otherwise. */
   ui::String contact_index_bubble_;
-  std::vector<ContactListRow> new_chat_frequent_;
   std::vector<NewChatSectionRow> new_chat_sections_;
+  /** The New chat page's own A-Z strip (from new_chat_sections_) and whether there are any contacts at all. */
+  std::vector<IndexLetterRow> new_chat_index_;
+  bool new_chat_has_contacts_ = false;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
   /** Blocked people, by name (OpenBlockedPeople). */
   std::vector<ContactListRow> blocked_rows_;
   bool blocked_open_ = false;
-  /** The New chat sheet's overlay layer (-1: not open). */
-  int new_chat_layer_id_ = -1;
   /** The contact page shown as a page sheet (OnSelectContactSheet); -1: none. */
   int detail_sheet_layer_id_ = -1;
   RemarkSaveNotice remark_notice_;

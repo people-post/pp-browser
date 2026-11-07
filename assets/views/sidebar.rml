@@ -2,10 +2,28 @@
   <div class="pane-nav">
     <div class="pane-nav-bg"></div>
     <div class="bar-fade"></div>
-    <p class="pane-nav-title">{{i18n:nav.sessions}}</p>
+    <!-- Phone bar (DEV/PLAN-minimal-nav.md D, Kenneth 2026-11-07): no title; the round avatar on the left opens Settings,
+         the round plus on the right opens New chat. The avatar reads the settings model like Me's card. -->
+    <button class="pane-nav-avatar shell-circle-btn" type="button" data-model="window"
+            data-event-click="open_settings_from_avatar()">
+      <span class="shell-circle-btn-face" data-model="settings">
+        <span class="shell-circle-avatar"
+                  data-class-avatar-tone-0="!profile_has_icon && profile_avatar_tone == 0"
+                  data-class-avatar-tone-1="!profile_has_icon && profile_avatar_tone == 1"
+                  data-class-avatar-tone-2="!profile_has_icon && profile_avatar_tone == 2"
+                  data-class-avatar-tone-3="!profile_has_icon && profile_avatar_tone == 3"
+                  data-class-avatar-tone-4="!profile_has_icon && profile_avatar_tone == 4"
+                  data-class-avatar-tone-5="!profile_has_icon && profile_avatar_tone == 5"
+                  data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
+                  data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
+          <img class="shell-circle-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
+          <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
+        </span>
+      </span>
+    </button>
     <div class="pane-nav-actions row">
-      <button class="pane-nav-btn" type="button" data-event-click="open_new_session_menu()">
-        <svg src="../icons/v2/compose.svg" width="24" height="24"></svg>
+      <button class="pane-nav-plus shell-circle-btn" type="button" data-event-click="open_new_session_menu()">
+        <span class="shell-circle-btn-face"><svg src="../icons/v2/plus.svg" width="18" height="18"></svg></span>
       </button>
     </div>
   </div>
@@ -18,7 +36,6 @@
     </div>
   </div>
   <div id="sidebar-sessions" class="sidebar-sessions root-scroll" data-event-scroll="sessions_scroll()">
-    <p class="large-title">{{i18n:nav.sessions}}</p>
     <div class="chat-search">
       <svg class="chat-search-icon" src="../icons/v2/search.svg" width="16" height="16"></svg>
       <input class="chat-search-input" type="text" data-value="sessions_query"
