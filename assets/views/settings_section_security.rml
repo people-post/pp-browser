@@ -1,8 +1,10 @@
       <div class="settings-section settings-section--grouped stack">
+        <p class="text group-head">{{i18n:settings.security.group.unlock}}</p>
+        <!-- biometric toggle row goes here (plan C) -->
         <div class="group-card group-card--pad settings-desktop-only">
           <p class="text muted group-note">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         </div>
-        <!-- Phones: a short list; Change PIN and the transfer code are pages of their own (Kenneth 2026-11-04). -->
+        <!-- Phones: a short list; Change PIN is a page of its own (Kenneth 2026-11-04). -->
         <div class="group-card settings-phone-only">
           <button class="group-row" type="button" data-if="show_change_pin"
                   data-event-click="open_security_page('change_pin')">
@@ -18,20 +20,6 @@
               <span class="settings-choice-value-text">{{pin_protection_status}}</span>
             </span>
           </div>
-          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
-            <span class="group-row-body">
-              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
-          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
-          <button class="group-row" type="button" data-event-click="open_blocked_people()">
-            <span class="group-row-body">
-              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
-              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
-              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
-            </span>
-          </button>
         </div>
         <!-- PIN grace window (#21): under the PIN; only with an own PIN on a platform with a secure store. -->
         <div class="group-card" data-if="security_grace_shown">
@@ -56,35 +44,23 @@
         <div class="settings-desktop-only">
 {{include:settings_security_pin}}
         </div>
+        <p class="text group-head" data-if="!security_has_recovery_phrase">{{i18n:settings.security.group.recovery}}</p>
+        <div class="settings-q-head row" data-if="security_has_recovery_phrase"><p class="text group-head">{{i18n:settings.security.group.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
+        <div class="group-card settings-phone-only">
+          <button class="group-row" type="button" data-event-click="open_security_page('transfer')">
+            <span class="group-row-body">
+              <span class="group-row-label settings-q-label"><span class="group-row-text">{{i18n:settings.security.transfer_row}}</span><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.transfer_row')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <div class="settings-desktop-only">
 {{include:settings_security_transfer}}
         </div>
-        <div class="stack settings-actions" data-if="own_devices_shown">
-          <p class="text group-head">{{i18n:settings.security.devices}}</p>
-          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
-          <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
-          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card group-card--pad">
-            <div class="row settings-device-title">
-              <p class="text">{{device.label}}</p>
-              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
-            </div>
-            <div class="settings-device-actions row" data-if="device.can_manage">
-              <button class="btn btn-secondary" type="button"
-                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
-              <button class="btn btn-secondary" type="button"
-                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
-            </div>
-          </div>
-          <p class="text muted settings-help group-foot" data-if="own_devices_not_main && !own_devices_signed_out">
-            {{i18n:settings.security.devices.not_main}}
-          </p>
-        </div>
         <div class="stack settings-actions" data-if="!security_has_recovery_phrase && security_can_export_link">
-          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p></div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.none}}</p>
         </div>
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
-          <div class="settings-q-head row"><p class="text group-head">{{i18n:settings.security.recovery}}</p><button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.security.recovery')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button></div>
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
           <div class="stack" data-if="recovery_phrase == ''">
             <div class="group-card" data-if="!pin_protection_is_default && recovery_pin_open">
@@ -123,6 +99,37 @@
             <button class="settings-q-btn" type="button" data-event-click="ask_setting_help('settings.help.topic.account_copy')"><svg class="settings-q-icon" src="../icons/v2/help-circle.svg" width="20" height="20"></svg></button>
           </div>
         </div>
+        <div class="stack settings-actions" data-if="own_devices_shown">
+          <p class="text group-head">{{i18n:settings.security.devices}}</p>
+          <p class="text muted settings-help group-foot">{{i18n:settings.security.devices.help}}</p>
+          <p class="text error group-foot" data-if="own_devices_signed_out">{{i18n:settings.security.devices.signed_out}}</p>
+          <div data-for="device, device_index : own_device_rows" class="settings-device-row stack group-card group-card--pad">
+            <div class="row settings-device-title">
+              <p class="text">{{device.label}}</p>
+              <span class="settings-device-badge" data-if="device.is_main">{{i18n:settings.security.devices.main}}</span>
+            </div>
+            <div class="settings-device-actions row" data-if="device.can_manage">
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="make_main_device(device_index)">{{i18n:settings.security.devices.make_main}}</button>
+              <button class="btn btn-secondary" type="button"
+                      data-event-click="remove_own_device(device_index)">{{i18n:settings.security.devices.remove}}</button>
+            </div>
+          </div>
+          <p class="text muted settings-help group-foot" data-if="own_devices_not_main && !own_devices_signed_out">
+            {{i18n:settings.security.devices.not_main}}
+          </p>
+        </div>
+        <p class="text group-head">{{i18n:settings.security.group.privacy}}</p>
+        <div class="group-card settings-phone-only">
+          <!-- Blocked people, findable again to unblock (Kenneth 2026-11-04). -->
+          <button class="group-row" type="button" data-event-click="open_blocked_people()">
+            <span class="group-row-body">
+              <span class="group-row-label"><span class="group-row-text">{{i18n:contacts.blocked.title}}</span></span>
+              <span class="settings-choice-value-text" data-if="blocked_count > 0">{{blocked_count}}</span>
+              <svg class="group-chevron" src="../icons/v2/chevron-right.svg" width="16" height="16"></svg>
+            </span>
+          </button>
+        </div>
         <div class="group-card">
           <button class="settings-toggle-row settings-choice-row row group-row" type="button"
                   data-event-click="on_choose_group_invite_policy()">
@@ -157,6 +164,8 @@
             {{i18n:settings.security.tool_permissions.reset}}
           </button>
         </div>
+        <p class="text group-head settings-desktop-only">{{i18n:settings.security.group.diagnostics}}</p>
+        <p class="text group-head settings-phone-only" data-if="advanced">{{i18n:settings.security.group.diagnostics}}</p>
         <div class="stack settings-actions" data-if="advanced">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.clear_undelivered.help}}</p>
           <button class="btn" type="button" data-event-click="clear_undelivered_older_than()">
@@ -191,4 +200,3 @@
           {{diagnostics_last_label}}
         </button>
       </div>
-
