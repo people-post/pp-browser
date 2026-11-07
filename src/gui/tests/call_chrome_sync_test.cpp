@@ -275,7 +275,7 @@ TEST(CallChromeSyncTest, RingConflictDirties) {
   pbr::CallChromeLayer next = synced;
   next.ring_conflict = true;
   next.ring_eyebrow = "You're already calling";
-  next.ring_conflict_hint = "Alice is calling you back. Answering ends your outgoing call.";
+  next.ring_conflict_hint = "Accepting ends your call with Bob.";
   next.ring_accept_label = "End & Accept";
   next.ring_decline_label = "Ignore";
   EXPECT_EQ(pbr::ClassifyCallChromeUpdate(synced, next), pbr::CallChromeUpdate::DirtyOnly);

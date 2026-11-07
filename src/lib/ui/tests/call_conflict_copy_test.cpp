@@ -1,3 +1,4 @@
+// The ring over a call (CALLS.md "Conflict", V064): it says who is calling and which call answering ends.
 #include "lib/ui/CallConflictCopy.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -6,37 +7,65 @@
 
 namespace {
 
-void LoadLocales() {
+void LoadLocales(const char* language = "en") {
 #ifdef PP_BROWSER_ASSETS_DIR
   ASSERT_TRUE(pbr::LocalizationService::Instance().LoadFromAssets(PP_BROWSER_ASSETS_DIR));
 #endif
-  pbr::LocalizationService::Instance().SetPreferredLanguage("en");
+  pbr::LocalizationService::Instance().SetPreferredLanguage(language);
+}
+
+pbr::CallConflictNames Names(std::string caller, std::string ending, bool group = false, bool same_peer = false) {
+  return {.caller = std::move(caller), .ending = std::move(ending), .ending_group = group, .same_peer = same_peer};
 }
 
 } // namespace
 
 TEST(CallConflictCopyTest, NoConflictUsesAcceptDecline) {
   LoadLocales();
-  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(false, false, "Alice", "Bob");
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(false, Names("Alice", "Bob"));
   EXPECT_EQ(copy.eyebrow, "Incoming call");
+  EXPECT_TRUE(copy.title.empty()) << "the ring says what kind of call it is";
   EXPECT_EQ(copy.accept_label, "Accept");
   EXPECT_EQ(copy.decline_label, "Decline");
   EXPECT_TRUE(copy.hint.empty());
 }
 
-TEST(CallConflictCopyTest, SamePeerCallbackHint) {
+TEST(CallConflictCopyTest, SaysWhoIsCallingAndWhoTheCallThatEndsIsWith) {
   LoadLocales();
-  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, true, "Alice", "Alice");
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names("Carol", "Bob"));
   EXPECT_EQ(copy.eyebrow, "You're already in a call");
+  EXPECT_EQ(copy.title, "Carol is calling");
   EXPECT_EQ(copy.accept_label, "End & accept");
   EXPECT_EQ(copy.decline_label, "Ignore");
-  EXPECT_EQ(copy.hint, "Alice is calling you back. Answering ends your outgoing call.");
+  EXPECT_EQ(copy.hint, "Accepting ends your call with Bob.");
 }
 
-TEST(CallConflictCopyTest, DifferentPeerEndsCurrentCall) {
+TEST(CallConflictCopyTest, AGroupsCallIsNamedByItsGroup) {
   LoadLocales();
-  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, false, "Carol", "Bob");
-  EXPECT_EQ(copy.accept_label, "End & accept");
-  EXPECT_EQ(copy.decline_label, "Ignore");
-  EXPECT_EQ(copy.hint, "Answering will end your current call with Bob.");
+  EXPECT_EQ(pbr::MakeCallConflictCopy(true, Names("Carol", "Family", true)).hint,
+            "Accepting ends your call in Family.");
+  EXPECT_EQ(pbr::MakeCallConflictCopy(true, Names("Carol", "", true)).hint, "Accepting ends your group call.");
+}
+
+TEST(CallConflictCopyTest, UnknownNamesStillSayTheCallEnds) {
+  LoadLocales();
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names("", ""));
+  EXPECT_EQ(copy.title, "Someone is calling");
+  EXPECT_EQ(copy.hint, "Accepting ends your current call.");
+}
+
+TEST(CallConflictCopyTest, TheSamePeerCallingAgainEndsTheOtherCallWithThem) {
+  LoadLocales();
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names("Alice", "Alice", false, true));
+  EXPECT_EQ(copy.title, "Alice is calling");
+  EXPECT_EQ(copy.hint, "Accepting ends your other call with Alice.");
+}
+
+TEST(CallConflictCopyTest, ChineseNamesTheCallerAndTheCallThatEnds) {
+  LoadLocales("zh-Hans");
+  const pbr::CallConflictCopy copy = pbr::MakeCallConflictCopy(true, Names("Carol", "Bob"));
+  EXPECT_EQ(copy.title, "Carol 来电");
+  EXPECT_EQ(copy.hint, "接听将结束你与 Bob 的通话。");
+  EXPECT_EQ(copy.accept_label, "结束并接听");
+  LoadLocales("en");
 }

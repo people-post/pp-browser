@@ -67,6 +67,14 @@ protected:
     s.ring_video = video;
     return s;
   }
+  /** `call_id` rings over the call `ending` this device is in (answering ends it). */
+  static CallScreen RingOver(const std::string& call_id, const std::string& ending) {
+    CallScreen s = Ring(call_id);
+    s.conflict = true;
+    s.ending.call_id = ending;
+    s.ending.peer_identity = "bob";
+    return s;
+  }
   static CallScreen Answering(const std::string& call_id) {
     CallScreen s = Ring(call_id);
     s.kind = CallScreen::Kind::Answering;
@@ -91,8 +99,8 @@ protected:
 };
 
 TEST_F(CallSystemUiBridgeTest, ARingInTheForegroundStaysInTheApp) {
-  EXPECT_FALSE(bridge_.TakesRing(true));
-  EXPECT_TRUE(bridge_.TakesRing(false));
+  EXPECT_FALSE(bridge_.TakesRing(true, false));
+  EXPECT_TRUE(bridge_.TakesRing(false, false));
   bridge_.Sync(Ring("c1"), "", /*app_foreground=*/true);
   EXPECT_TRUE(ui_.log.empty());
   EXPECT_FALSE(bridge_.SystemRings("c1"));
@@ -392,6 +400,60 @@ TEST_F(CallSystemUiBridgeTest, DeclinedWhileLockedDeclinesTheRingOnceFound) {
   bridge_.Sync(Ring("c1"), "", false);
   EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"ready"}));
+}
+
+// V064: answering a ring over a call ends that call. The system screen's Answer does not say so; the app's
+// ring (End & accept) and its alert do — so such a ring never goes to the system screen.
+TEST_F(CallSystemUiBridgeTest, ARingOverACallInTheBackgroundStaysInTheApp) {
+  bridge_.Sync(InCall("c1"), "c1", false); // answered in the app, then the app went to the background
+  EXPECT_FALSE(bridge_.TakesRing(false, /*over_call=*/true)) << "its alert is the app's, worded for the conflict";
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_TRUE(ui_.log.empty());
+  EXPECT_FALSE(bridge_.SystemRings("c2")) << "the app rings it";
+  EXPECT_TRUE(did.empty()) << "nothing ends the call the user is in";
+}
+
+TEST_F(CallSystemUiBridgeTest, AnAnswerOnThePushsCallIsNotAppliedToARingOverACall) {
+  bridge_.Sync(InCall("c1"), "c1", false);
+  ui_.pending_push = true;
+  ui_.callbacks_.answer(""); // "Incoming call" answered before its ring showed: nothing said it ends c1
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_TRUE(did.empty()) << "the app's ring asks first (End & accept)";
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending"})) << "the push's call gives way to the app's ring";
+  EXPECT_FALSE(bridge_.SystemRings("c2"));
+  // Spent: the same ring, once the first call is gone, is not answered by that earlier tap.
+  bridge_.Sync(Ring("c2"), "", false);
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ADeclineOnThePushsCallStillDeclinesARingOverACall) {
+  bridge_.Sync(InCall("c1"), "c1", false);
+  ui_.pending_push = true;
+  ui_.callbacks_.end("c2"); // the push named c2; declined there
+  ui_.pending_push = false;
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"decline"})) << "declining ends nothing";
+  ui_.pending_push = true;
+  ui_.callbacks_.end(""); // a push that named no call
+  bridge_.Sync(RingOver("c3", "c1"), "c1", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"decline", "decline"}));
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"ended pending"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, ACallOnTheSystemScreenStaysThereWhileASecondRingsInTheApp) {
+  // iPhone: the first call was answered on CallKit; a second call rings.
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.callbacks_.answer("c1");
+  bridge_.Sync(InCall("c1"), "c1", false);
+  ASSERT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
+  bridge_.Sync(RingOver("c2", "c1"), "c1", false);
+  EXPECT_EQ(ui_.log.size(), 1u) << "c1 stays on the system screen; c2 is not reported there";
+  EXPECT_FALSE(bridge_.SystemRings("c2"));
+  // End & accept in the app: c1 goes, and the system screen lets it go.
+  bridge_.Sync(Answering("c2"), "", false);
+  EXPECT_EQ(ui_.log.back(), "ended c1");
+  EXPECT_EQ(audio.back(), "unmanaged");
+  EXPECT_EQ(accepted_ids, (std::vector<std::string>{"c1"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, TheSystemsAudioSessionCallbacksAreAccepted) {

@@ -26,6 +26,10 @@ namespace pbr {
  *   longer than kPendingMaxMs after the choice.
  * - Answered there, the system owns the call's audio session (CallKit activates it): audio_managed
  *   tells AudioSession so until the call leaves the system screen.
+ * - A ring over a call this device is in (the screen's `conflict`) never goes there (V064): answering it ends
+ *   that call, which the system screen's Answer would not say. The app's ring says it (End & accept), and so
+ *   does its alert in the background. The push's call is let go, and an answer given on it is not applied
+ *   (a decline still is).
  *
  * UI thread. Holds no GUI: CallController wires it to the presenter.
  */
@@ -66,8 +70,11 @@ public:
   void Sync(const CallScreen& screen, const std::string& active_call_id, bool app_foreground);
   /** The system screen rings `call_id` (its own ringtone): the app's stays quiet. */
   bool SystemRings(const std::string& call_id) const;
-  /** A ring showing now goes to the system screen (so the app posts no "Incoming call" banner). */
-  bool TakesRing(bool app_foreground) const;
+  /**
+   * A ring showing now goes to the system screen (so the app posts no "Incoming call" banner). `over_call`: it
+   * rings over a call this device is in (answering ends that one): never.
+   */
+  bool TakesRing(bool app_foreground, bool over_call) const;
 
   /** Messaging is up (after the PIN): the pending choices' window counts from now. */
   void OnMessagingReady();
@@ -91,6 +98,8 @@ private:
   void ClearChoice();
   /** Declines the ring: the user declined its call on the system screen before it showed. */
   void ApplyDecline();
+  /** A ring over a call: the app rings it (V064); the push's call goes, a choice made on it is spent. */
+  void LeaveRingToApp(const std::string& ring_call_id);
   void SetAudioManaged(bool managed);
   /** The call on the system screen was answered there; tell the presenter to accept it. */
   void AcceptShown(bool voice_only);

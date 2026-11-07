@@ -204,6 +204,8 @@ const char* NoticeKindName(CallNotice::Kind kind) {
     return "incoming_call";
   case CallNotice::Kind::GuestJoined:
     return "guest_joined";
+  case CallNotice::Kind::CallBack:
+    return "call_back";
   }
   return "?";
 }

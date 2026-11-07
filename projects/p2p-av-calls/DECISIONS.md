@@ -1497,3 +1497,30 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Rationale:** Late audio is worse than lost audio in a conversation; FEC and concealment hide single losses well. One best-effort lane per peer keeps the hop simple and blind.
 **Open:** a deadline on real-time media in a link's send queue — under overload media waits there instead of being dropped (STRESS_LAB § What limits a node, with the data plane's threading).
+
+
+## V064 — Call waiting (Hold & Accept): not now
+
+**Date:** 2026-11-07
+**Status:** Accepted (Hongwei, 2026-11-07) — **implemented 2026-11-07** (the clearer conflict ring, "Call back", the system screen rule below; the current rule is [CALLS.md](../../docs/architecture/CALLS.md), the Conflict rows and § The phone's own call screen). Answers Kenneth's [PROPOSAL-call-waiting.md](PROPOSAL-call-waiting.md) with its alternative. V055 3 (several may ring, one call has media) unchanged.
+
+**Context:** A second PP call ringing during a call offers End & accept / Ignore. Kenneth proposed Hold & Accept with a Switch row (two open 1:1 calls, one with media, the held side shown "On hold" via V060). The client side is days; the calls side is not: two open calls with one running media means about four weeks, because today:
+
+- `CallMediaSeat::Acquire` force-tears-down the call bound to the seat — a second call takes the seat by ending the first one's media, not by parking it.
+- `CallMediaLegCoordinator` allows one live bundle per device: an outbound `StartLeg` tears the others down, and an inbound hello for another call gets `RejectBusy` (`OtherBundleBusy`).
+- `LiveCalls::Active()` assumes one active call; call state, chrome and the presenter read "the" call.
+- A held call's path cannot re-anchor: `CallDirectPath` gates on the engine running, so a held call loses its path and resume is a reconnect.
+- The peer keeps sending media to the held side: `on_hold` (V060) is a label, nothing pauses the peer's TX.
+- The phones are set up for one call: CallKit `maximumCallGroups = 1`, `supportsHolding = NO` (`CallSystemUi_Ios.mm`); Android has one call notification.
+
+**Decision:**
+
+1. **No Hold & Accept for now.** A ring over a call keeps End & accept / Ignore; one open call.
+2. **The ring says what accepting does:** "{caller} is calling" and "Accepting ends your call with {name}." (a group's call: "…your call in {group}."; the caller being that call's peer: "…your other call with {caller}."). The app's background alert for it says the same.
+3. **A ring over a call never goes to the phone's call screen** (CallKit, Android's call notification). Their Answer would end the call in the app without saying so — it did, silently, with the app in the background. The app rings it; the push's call waiting for it is ended, an Answer given on that push's call is not applied (a Decline is). A call answered on CallKit stays there while the second rings in the app.
+4. **"Call {name} back?"** once the call taken in its place is over and no other call is up: Call back calls the ended 1:1 call's chat, voice or video as it was. Not for a group's call (it goes on; its chat's call bar offers Join), nor when the caller was that call's peer.
+
+**Revisit when** call waiting is designed as a decision of its own, covering: a seat that can park a call (hand the media epoch to another call and back without tearing the first down); two bundles per device (a held leg kept, the busy rule per call); the peer pausing its TX on a remote `on_hold` (and resuming); a held call's path policy (kept warm or re-anchored on resume, with a timeout); CallKit holding (`supportsHolding`, two call groups) and Android's two calls.
+
+**Rationale:** The proposal's own alternative gets most of the value — no surprise that a call ends, and an easy way back — at no protocol or media cost; the system screen rule closes the one path where a call ended with no word at all.
+**Alternatives:** Hold & Accept now (four weeks, mostly the media stack); words on the system screen's ring (CallKit and Android's call style take a caller name, not a sentence, and Answer stays one tap).

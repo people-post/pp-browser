@@ -75,10 +75,23 @@ struct CallScreen {
   std::string ring_call_id;
   std::string caller_identity;
   bool ring_video = false;
-  /** Ringing over a call this device is in: answering ends that one. */
+  /** Ringing over a call this device is in: answering ends that one (`ending`). */
   bool conflict = false;
-  bool conflict_same_peer = false;
-  std::string conflict_peer_identity;
+  /** The call a conflict ring's answer ends (V064): its ring says who with, and "Call back" offers it again. */
+  struct EndingCall {
+    std::string call_id;
+    /** A 1:1 call's peer (a group's: one of its people); empty when not known. */
+    std::string peer_identity;
+    /** The ringing call's caller is that peer (they are calling back). */
+    bool same_peer = false;
+    /** A group's call: the ring names the group (`thread_id`'s title). */
+    bool group = false;
+    std::string thread_id;
+    bool video = false;
+
+    bool operator==(const EndingCall&) const = default;
+  };
+  EndingCall ending;
   /** P001: the caller's initiation offer (0: none) and whether the take-all answer can be offered. */
   int64_t offer_minor = 0;
   bool charge_enabled = false;
