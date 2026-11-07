@@ -41,7 +41,8 @@ WATCHED = [
     "pp_circuit_relay_tunnels", "pp_media_relay_sessions", "pp_media_relay_participants",
     "pp_media_relay_dropped_frames_total", "pp_media_relay_frames_total", "pp_process_cpu_seconds",
     "pp_process_resident_memory_bytes", "pp_runtime_queue_depth", "pp_amp_rejected_datagrams_total",
-    "pp_link_drops_total", "pp_io_busy_fraction", "pp_udp_receive",
+    "pp_link_drops_total", "pp_io_busy_fraction", "pp_udp_receive", "pp_link_connects_total", "pp_amp_datagrams_total",
+    "pp_amp_reliable_packets_total", "pp_circuit_relay_requests_total", "pp_amp_channels_open",
 ]
 METRIC_LINE = re.compile(r'^([a-z_]+)(\{[^}]*\})?\s+([-0-9.eE+]+)$')
 
