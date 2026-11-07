@@ -169,6 +169,7 @@ One Keychain generic-password item per profile: service `dev.pp-browser.secure-b
 | `biometric.bin` | DEK under the Face ID / Touch ID unlock key (with the Keychain item above; present while the switch is on) |
 | `identity.enc` | Identity JSON under DEK AEAD |
 | `preferences.json` → `pin_is_default` | Schema v4; set when user chooses default PIN (“Just continue”); cleared on Change PIN |
+| `preferences.json` → `pin_digits` | Optional (no schema bump); the PIN's kind, not a secret: absent = unknown, `0` = text PIN, `4`–`8` = digit PIN of that length (the phone gate's number pad). Written after each unlock with an own PIN and on Change PIN |
 | `preferences.json` → `auto_renew_registration` | Schema v4; default true; renew near/past expiry after unlock |
 
 Interactive unlock / chooser UX: [AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md). Forgotten PIN → wipe the profile directory.
@@ -204,6 +205,7 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `appearance` | `preferences.json` | `system`, `light`, or `dark` |
 | `language` | `preferences.json` | `system` or BCP-47 tag (`en`, `zh-Hans`); schema v6 |
 | `pin_is_default` | `preferences.json` | boolean, schema v4 |
+| `pin_digits` | `preferences.json` | optional int: absent unknown, 0 text PIN, 4–8 digit PIN; other values read as unknown |
 | `auto_renew_registration` | `preferences.json` | boolean, schema v4 (default true) |
 | `show_notifications` | `preferences.json` | boolean; alerts ≠ sync |
 | `reduce_transparency` | `preferences.json` | boolean, schema v8; opaque compact chrome |

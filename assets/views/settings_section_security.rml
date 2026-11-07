@@ -63,26 +63,10 @@
         <div class="stack settings-actions" data-if="security_has_recovery_phrase">
           <p class="text muted settings-help group-foot">{{i18n:settings.security.recovery.help}}</p>
           <div class="stack" data-if="recovery_phrase == ''">
-            <div class="group-card" data-if="!pin_protection_is_default && recovery_pin_open">
-              <label class="settings-field group-row group-row--field">
-                <span class="group-row-body group-row-body--field">
-                  <span class="settings-label group-row-text">{{i18n:settings.security.recovery.pin_label}}</span>
-                  <input class="field" type="password" data-value="recovery_phrase_pin" placeholder="{{i18n:settings.security.recovery.pin_placeholder}}"/>
-                  <span class="group-field-hint" data-if="recovery_phrase_pin == ''">{{i18n:settings.security.recovery.pin_placeholder}}</span>
-                </span>
-              </label>
-            </div>
-            <button class="btn" type="button" data-event-click="show_recovery_phrase()" data-if="!recovery_pin_open">
+            <!-- The PIN on the PIN gate first (its number pad for a digit PIN, B2). -->
+            <button class="btn" type="button" data-event-click="show_recovery_phrase()">
               {{i18n:settings.security.recovery.show}}
             </button>
-            <div class="settings-toggle-row row group-actions" data-if="recovery_pin_open">
-              <button class="btn btn-secondary" type="button" data-event-click="hide_recovery_phrase()">
-                {{i18n:common.cancel}}
-              </button>
-              <button class="btn" type="button" data-event-click="show_recovery_phrase()">
-                {{i18n:settings.security.recovery.confirm}}
-              </button>
-            </div>
           </div>
           <div class="stack" data-if="recovery_phrase != ''">
             <p class="text group-card group-card--pad" selectable="text">{{recovery_phrase}}</p>

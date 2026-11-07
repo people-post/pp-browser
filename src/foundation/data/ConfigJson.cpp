@@ -759,6 +759,9 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("appearance", prefs.appearance);
   object.set("language", prefs.language);
   object.set("pin_is_default", prefs.pin_is_default);
+  if (prefs.pin_digits) {
+    object.set("pin_digits", static_cast<int64_t>(*prefs.pin_digits));
+  }
   object.set("recovery_phrase_seen", prefs.recovery_phrase_seen);
   object.set("unlock_grace_minutes", static_cast<int64_t>(prefs.unlock_grace_minutes));
   object.set("auto_renew_registration", prefs.auto_renew_registration);
@@ -826,6 +829,11 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   if (auto pin_is_default = object.getIf<bool>("pin_is_default")) {
     prefs.pin_is_default = *pin_is_default;
   }
+  // Absent or not 0 / 4..8: unknown (the next PIN unlock writes it).
+  const std::optional<int64_t> pin_digits = ReadI64(object, "pin_digits");
+  prefs.pin_digits = (pin_digits && (*pin_digits == 0 || (*pin_digits >= 4 && *pin_digits <= 8)))
+                         ? std::optional<int>(static_cast<int>(*pin_digits))
+                         : std::nullopt;
   prefs.recovery_phrase_seen = object.getIf<bool>("recovery_phrase_seen").value_or(false);
   const int64_t grace_minutes = ReadI64(object, "unlock_grace_minutes").value_or(15);
   prefs.unlock_grace_minutes =
