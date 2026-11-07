@@ -735,6 +735,10 @@ select selectbox option:hover {
   color: {{label}};
 }
 
+.shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {
+  background-color: {{fill-2}};
+}
+
 .shell-chat-overlay {
   background-color: {{chat-bg}};
 }
@@ -3418,11 +3422,14 @@ input.checkbox:checked {
 }
 
 .shell-layer-compact .shell-circle-btn-face {
-  background-color: {{fill-2}};
+  background-color: {{x-circle-bottom}};
+  decorator: linear-gradient(to bottom, {{x-circle-top}}, {{x-circle-bottom}});
+  box-shadow: 0 1dp 3dp {{shadow}};
 }
 
 .shell-layer-compact .shell-circle-btn:active .shell-circle-btn-face {
   background-color: {{fill}};
+  decorator: linear-gradient(to bottom, {{fill}}, {{fill}});
 }
 
 .shell-layer-compact .shell-circle-btn .shell-circle-btn-face svg {
@@ -3466,9 +3473,15 @@ input.checkbox:checked {
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face,
 .shell-layer-compact .qr-scan-back:active .shell-circle-btn-face {
   background-color: #00000066;
+  decorator: none;
+  box-shadow: none;
 }
 
 .shell-layer-compact .qr-scan-back .shell-circle-btn-face svg {
   image-color: #ffffff;
 }
+}
+
+.context-menu-layer--popover-above .context-menu-item-icon {
+  background-color: {{fill-2}};
 }

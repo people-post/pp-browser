@@ -172,17 +172,17 @@ TEST(ShellLayoutRmlTest, ThePhoneBacksAreRoundButtons) {
   // The scanner's back over the camera is the same round button (dark glass), with no text.
   const std::string scan = ReadAsset("views/qr_scan.rml");
   EXPECT_TRUE(Has(scan, "class=\"qr-scan-back shell-circle-btn\" type=\"button\" data-event-click=\"cancel_scan()\""));
-  EXPECT_TRUE(Has(scan, "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\" width=\"22\""));
+  EXPECT_TRUE(Has(scan, "<span class=\"shell-circle-btn-face\"><svg src=\"../icons/v2/back.svg\" width=\"24\""));
   // Every phone back that is a button of its own has no "Back" word beside the round one.
   EXPECT_EQ(Count(ReadAsset("views/settings.rml"), "common.back"), 0u);
   EXPECT_EQ(Count(ReadAsset("views/contacts.rml"), "common.back"), 0u);
   const std::string css = ReadAsset("themes/components.rcss");
   const size_t face = css.find(".shell-layer-compact .shell-circle-btn-face {");
   ASSERT_NE(face, std::string::npos);
-  EXPECT_EQ(css.find("width: 40dp;\n  height: 40dp;", face), css.find("width:", face)) << "a 40dp disc";
+  EXPECT_EQ(css.find("width: 44dp;\n  height: 44dp;", face), css.find("width:", face)) << "a 44dp disc";
   const size_t button = css.find(".shell-layer-compact .shell-circle-btn {");
   ASSERT_NE(button, std::string::npos);
-  EXPECT_NE(css.find("width: 48dp;\n  height: 48dp;", button), std::string::npos) << "in a 48dp target";
+  EXPECT_NE(css.find("width: 52dp;\n  height: 52dp;", button), std::string::npos) << "in a 52dp target";
 }
 
 // Kenneth 2026-11-03: on Home the dock and the tab bar read as two hard lines; there they are one bottom area.
@@ -199,6 +199,11 @@ TEST(ShellLayoutRmlTest, ThePhoneTabBarIs48dpWith16dpWords) {
   const size_t active = css.find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-label {");
   ASSERT_NE(active, std::string::npos);
   EXPECT_EQ(css.find("font-weight: bold;", active), css.find("font-weight:", active));
+  // The chosen word sits on a 72 x 32dp rounded pill (its colour is a token in colors-*.rcss).
+  const size_t wrap = css.find(".shell-nav-rail--text .shell-nav-tab-text-wrap {\n  width: 72dp;\n  height: 32dp;\n  border-radius: 16dp;");
+  EXPECT_NE(wrap, std::string::npos);
+  EXPECT_NE(ReadAsset("themes/colors-light.rcss").find(".shell-nav-rail--text .shell-nav-tab--active .shell-nav-tab-text-wrap {"),
+            std::string::npos);
 }
 
 TEST(ShellLayoutRmlTest, OnlyHomeMarksTheTabBarToBlendWithTheDock) {

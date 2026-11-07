@@ -690,6 +690,9 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (presentation == Presentation::Float && float_popover_ && compact_layout_) {
     layer_element->SetClass("context-menu-layer--popover", true);
   }
+  if (presentation == Presentation::Float && float_popover_ && float_above_ && compact_layout_) {
+    layer_element->SetClass("context-menu-layer--popover-above", true);
+  }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
   panel_ = layer_ ? layer_->GetElementById("context-menu-panel") : nullptr;
@@ -794,9 +797,11 @@ void ContextMenuHost::ShowActionsPopoverAbove(ui::Element* anchor, std::vector<C
   ui::Vector2i position{0, 0};
   if (anchor) {
     const ui::Vector2f offset = anchor->GetAbsoluteOffset(ui::BoxArea::Border);
-    const ui::Vector2f size = anchor->GetBox().GetSize(ui::BoxArea::Border);
     const float gap = context_ ? kAnchorGapDp * context_->GetDensityIndependentPixelRatio() : 4.f;
-    position.x = static_cast<int>(offset.x + size.x);
+    // The menu is 200dp wide (components.rcss, --popover-above) and a pull-down is laid out by its right edge: that edge
+    // goes 200dp right of the button's left, so the menu's left edge lines up with the button's.
+    const float ratio = context_ ? context_->GetDensityIndependentPixelRatio() : 1.f;
+    position.x = static_cast<int>(offset.x + 200.f * ratio);
     position.y = static_cast<int>(offset.y - gap);
   }
   next_show_above_ = true;

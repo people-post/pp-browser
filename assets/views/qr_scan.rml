@@ -28,7 +28,7 @@
     </div>
   </div>
   <button class="qr-scan-back shell-circle-btn" type="button" data-event-click="cancel_scan()">
-    <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="22" height="22"></svg></span>
+    <span class="shell-circle-btn-face"><svg src="../icons/v2/back.svg" width="24" height="24"></svg></span>
   </button>
   <div class="qr-scan-tools">
     <button class="qr-scan-tool" type="button" data-if="can_show_my_qr" data-event-click="scan_show_my_qr()">

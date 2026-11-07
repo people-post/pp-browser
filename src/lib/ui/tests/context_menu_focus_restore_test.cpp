@@ -415,6 +415,10 @@ TEST_F(ContextMenuPopoverTest, APopoverAboveIsAFloatMenuThatClosesOnDismiss) {
   ASSERT_NE(layer, nullptr);
   EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover"));
   EXPECT_FALSE(layer->IsClassSet("context-menu-layer--sheet"));
+  EXPECT_TRUE(layer->IsClassSet("context-menu-layer--popover-above"));
+  ui::ElementList items;
+  layer->GetElementsByClassName(items, "context-menu-item");
+  EXPECT_EQ(items.size(), 2u) << "both rows are in the menu";
   EXPECT_TRUE(ContextMenuHost::Instance().HandleDismiss());
   EXPECT_FALSE(ContextMenuHost::Instance().IsOpen());
   ContextMenuHost::Instance().SetCompactLayout(false);

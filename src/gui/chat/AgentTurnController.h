@@ -19,6 +19,8 @@
 
 #include <chrono>
 #include <cstdint>
+#include "lib/ui/ContextMenuHost.h"
+
 #include <functional>
 #include <map>
 #include <set>
@@ -226,6 +228,9 @@ public:
   /** The Home composer's plus: a floating menu above it with Camera and Photos (no file item); each hands its image to
    *  StartAiImagePrepare like a picked photo. */
   void ShowHomeAttachMenu(ui::Element* anchor);
+  /** The Home plus menu's rows, in order: Camera, then Photos. Both are always offered (a missing camera is told by the
+   *  capture itself). Pure, so a test can count them. */
+  static std::vector<ContextMenuAction> HomeAttachActions(std::function<void()> camera, std::function<void()> photos);
   void StartAiImagePrepare(std::string path);
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();

@@ -60,3 +60,24 @@ TEST(RmlBindingGuardTest, DataRmlIsOnlyUsedForMarkupFields) {
     return joined;
   }();
 }
+
+// Every name the Chats bar binds must be registered in the model its element declares (the bar's avatar and name live
+// in the settings model; the rest of the bar in the shell/window ones). A name nobody binds renders as nothing.
+TEST(RmlBindingGuardTest, TheChatsBarAvatarAndNameResolveInTheSettingsModel) {
+  const std::string rml = ReadAll(std::filesystem::path(PP_BROWSER_ASSETS_DIR) / "views" / "sidebar.rml");
+  const size_t begin = rml.find("<div class=\"pane-nav\">");
+  const size_t end = rml.find("<div class=\"sidebar-header row\">");
+  ASSERT_NE(begin, std::string::npos);
+  ASSERT_NE(end, std::string::npos);
+  const std::string bar = rml.substr(begin, end - begin);
+  // The avatar element carries data-model="settings" itself, like the AI drawer's row, and the name span too.
+  EXPECT_NE(bar.find("<div class=\"shell-circle-avatar\" data-model=\"settings\""), std::string::npos);
+  EXPECT_NE(bar.find("<p class=\"pane-nav-avatar-name\" data-model=\"settings\">{{profile_nickname}}</p>"), std::string::npos);
+  const std::string settings = ReadAll(std::filesystem::path(PP_SOURCE_DIR) / "src/gui/SettingsController.cpp");
+  for (const char* name : {"profile_has_icon", "profile_avatar_tone", "profile_icon_src", "profile_avatar_letter",
+                           "profile_nickname"}) {
+    EXPECT_NE(bar.find(name), std::string::npos) << name << " used by the bar";
+    EXPECT_NE(settings.find(std::string("ctor.Bind(\"") + name + "\""), std::string::npos)
+        << name << " is bound in the settings model";
+  }
+}

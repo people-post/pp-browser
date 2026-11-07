@@ -204,7 +204,7 @@ TEST_F(HomeMinimalLayoutTest, ChatsBarShowsTheAvatarAndTheName) {
   ASSERT_FALSE(names.empty());
   EXPECT_GT(names.front()->GetBox().GetSize(ui::BoxArea::Border).x, 20.f) << "the name has a width";
   ui::ElementList faces;
-  document->GetElementsByClassName(faces, "shell-circle-btn-face");
+  document->GetElementsByClassName(faces, "shell-circle-avatar");
   ASSERT_FALSE(faces.empty());
   EXPECT_FLOAT_EQ(faces.front()->GetBox().GetSize(ui::BoxArea::Border).x, 52.f);
 }

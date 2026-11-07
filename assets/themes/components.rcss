@@ -3359,7 +3359,7 @@ select selectbox option {
 
 .shell-layer-compact .pane-nav-back {
   position: absolute;
-  top: 1dp;
+  top: 2dp;
   left: 12dp;
   z-index: 1;
 }
@@ -3410,9 +3410,9 @@ select selectbox option {
 
 .pane-nav-actions {
   position: absolute;
-  top: 1dp;
+  top: 2dp;
   right: 12dp;
-  height: 48dp;
+  height: 52dp;
   align-items: center;
 }
 
@@ -3558,9 +3558,9 @@ select selectbox option {
 
 .shell-chat-overlay-chrome .shell-back-btn,
 .shell-layer-compact .shell-transient-chrome .shell-back-btn {
-  width: 48dp;
-  height: 48dp;
-  min-width: 48dp;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
   border-radius: 0;
 }
 
@@ -3580,7 +3580,7 @@ select selectbox option {
   position: relative;
   z-index: 3;
   height: 55dp;
-  margin: -56dp -12dp 8dp 48dp;
+  margin: -56dp -12dp 8dp 52dp;
   padding: 0 8dp 0 0;
   border-radius: 0;
   border-left-width: 0;
@@ -3960,8 +3960,8 @@ select selectbox option {
   height: 18dp;
 }
 
-/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 48dp target around a 40dp grey disc
-   holding a 22dp icon, the disc 16dp from the screen edge; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
+/* Phone round button (DEV/PLAN-minimal-nav.md G, Kenneth 2026-11-07 "像苹果一样"): a 52dp target around a 44dp raised disc
+   (a soft top-to-bottom gradient and a faint shadow) holding a 24dp icon, the disc 16dp from the screen edge; darker while pressed (colors-*.rcss). Back, menu, avatar, plus, new, close alike. The desktop
    keeps its own buttons. */
 .shell-circle-btn-face {
   display: flex;
@@ -3973,9 +3973,9 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48dp;
-  height: 48dp;
-  min-width: 48dp;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
   margin: 0;
   padding: 0;
   border: 0;
@@ -3984,15 +3984,15 @@ select selectbox option {
 }
 
 .shell-layer-compact .shell-circle-btn-face {
-  width: 40dp;
-  height: 40dp;
-  border-radius: 20dp;
+  width: 44dp;
+  height: 44dp;
+  border-radius: 22dp;
 }
 
 .shell-layer-compact .shell-circle-btn-face svg {
   flex-shrink: 0;
-  width: 22dp;
-  height: 22dp;
+  width: 24dp;
+  height: 24dp;
 }
 
 /* Phone AI drawer (DEV/PLAN-minimal-nav.md C): the AI conversation list slides in from the left over the AI page,
@@ -4161,7 +4161,7 @@ select selectbox option {
 .shell-layer-compact .shell-chat-new-slot {
   display: flex;
   position: absolute;
-  top: 4dp;
+  top: 2dp;
   right: 12dp;
   z-index: 4;
 }
@@ -4215,11 +4215,8 @@ select selectbox option {
   cursor: pointer;
 }
 
-.shell-layer-compact .pane-nav-avatar .shell-circle-btn-face {
+.shell-layer-compact .pane-nav-avatar .shell-circle-avatar {
   flex: none;
-  width: 52dp;
-  height: 52dp;
-  border-radius: 26dp;
 }
 
 .pane-nav-avatar-name {
@@ -8932,7 +8929,7 @@ input.checkbox {
 
 .shell-layer-compact .people-picker-back-circle {
   display: flex;
-  flex: 0 0 48dp;
+  flex: 0 0 52dp;
   align-self: center;
 }
 
@@ -9822,8 +9819,8 @@ input.checkbox {
   align-items: center;
   justify-content: center;
   align-self: flex-start;
-  width: 48dp;
-  height: 48dp;
+  width: 52dp;
+  height: 52dp;
   margin: 0 0 0 12dp;
   padding: 0;
   border: 0;
@@ -9831,8 +9828,8 @@ input.checkbox {
 }
 
 .shell-layer-compact .qr-scan-back svg {
-  width: 22dp;
-  height: 22dp;
+  width: 24dp;
+  height: 24dp;
 }
 
 .shell-layer-compact .qr-scan-tools {
@@ -11434,11 +11431,11 @@ input.checkbox {
 
 .shell-layer-compact .settings-back-btn {
   position: absolute;
-  top: 1dp;
+  top: 2dp;
   left: 12dp;
-  width: 48dp;
-  height: 48dp;
-  min-width: 48dp;
+  width: 52dp;
+  height: 52dp;
+  min-width: 52dp;
   margin: 0;
   border-radius: 0;
   z-index: 1;
@@ -13302,14 +13299,14 @@ textarea:composing ~ .prompt-composer-label,
 }
 
 .shell-layer-compact .pane-nav-actions {
-  top: 4dp;
+  top: 2dp;
   right: 12dp;
-  height: 48dp;
+  height: 52dp;
 }
 
 .shell-layer-compact .pane-nav-back,
 .shell-layer-compact .settings-back-btn {
-  top: 4dp;
+  top: 2dp;
 }
 
 .shell-layer-compact .pane-nav-avatar {
@@ -13348,7 +13345,7 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .shell-transient-chrome,
 .shell-layer-compact .shell-transient-chrome--titled {
   min-height: 56dp;
-  padding: 4dp 0 0 12dp;
+  padding: 2dp 0 0 12dp;
 }
 
 .shell-layer-compact .shell-transient-chrome--titled {
@@ -13443,4 +13440,63 @@ textarea:composing ~ .prompt-composer-label,
 .shell-layer-compact .nc-page .contacts-row-title {
   font-size: 17dp;
   line-height: 55dp;
+}
+
+/* The Home root's bar is clear at rest: nothing of the fade or the frost shows as a line round the menu circle. */
+.shell-layer-compact .shell-nav-page--home .pane-nav .bar-fade {
+  display: none;
+}
+
+.shell-layer-compact .shell-nav-page--home .pane-nav-bg {
+  border: 0;
+  box-shadow: none;
+}
+
+/* Phone tab bar (round 7): the chosen word sits on a 72 x 32dp rounded light pill; the other word is plain grey. */
+.shell-nav-rail--text .shell-nav-tab-text-wrap {
+  width: 72dp;
+  height: 32dp;
+  border-radius: 16dp;
+}
+
+/* Floating plus menu (ContextMenuHost::ShowActionsPopoverAbove; Grok / iOS look): 200dp wide, 16dp corners, 56dp rows
+   of a 36dp round grey icon tile and a 17dp label. Its shadow is the base panel's; colours: colors.rcss.tmpl. */
+.context-menu-layer--popover-above .context-menu-panel {
+  width: 200dp;
+  min-width: 200dp;
+  max-width: 200dp;
+  padding: 0;
+  border: 0;
+  border-radius: 16dp;
+  overflow: hidden;
+}
+
+.context-menu-layer--popover-above .context-menu-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 12dp;
+  height: 56dp;
+  min-height: 56dp;
+  padding: 0 12dp;
+  border-radius: 0;
+}
+
+.context-menu-layer--popover-above .context-menu-item-icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+}
+
+.context-menu-layer--popover-above .context-menu-item-icon svg {
+  width: 20dp;
+  height: 20dp;
+}
+
+.context-menu-layer--popover-above .context-menu-item-label {
+  font-size: 17dp;
+  white-space: nowrap;
 }
