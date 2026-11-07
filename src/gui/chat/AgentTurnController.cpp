@@ -603,7 +603,8 @@ bool AgentTurnController::SendImageQuestion(const std::string& text) {
   // Taken out first: opening the AI thread from Home switches threads, which discards a pending image.
   PendingAiImage image = std::move(*pending_image_);
   pending_image_.reset();
-  if (host_.ChromeSnapshot().nav_tab == NavTab::Home && !host_.EnsureHomeOutboundSession()) {
+  // Only from the AI page's own composer: in a conversation open over it the picture goes to that conversation.
+  if (SendStartsHomeConversation(host_.ChromeSnapshot()) && !host_.EnsureHomeOutboundSession()) {
     pending_image_ = std::move(image);
     return false;
   }

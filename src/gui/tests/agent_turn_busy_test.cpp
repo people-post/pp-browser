@@ -9,6 +9,8 @@
 
 #include <chrono>
 #include <deque>
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <map>
 #include <set>
@@ -384,6 +386,30 @@ TEST_F(AgentTurnBusyTest, AnImageQuestionTheSessionDidNotTakeComesBack) {
   controller_.SubmitStoredImageQuestion("A", "again", "again", "m3", image(), "");
   EXPECT_FALSE(controller_.HasPendingImage());
   EXPECT_EQ(host_.put_back.size(), 1u);
+}
+
+// Kenneth 2026-11-07 (round 11): a picture asked in an AI conversation opened from the drawer went to a brand-new
+// "新对话". SendImageQuestion started a Home conversation whenever the AI page (Home) was the tab, while the text path
+// already left an open conversation alone. Both now share SendStartsHomeConversation.
+TEST(AgentTurnHomeSendTest, OnlyTheAiPagesOwnComposerStartsANewConversation) {
+  ShellChromeSnapshot chrome;
+  chrome.nav_tab = NavTab::Home;
+  EXPECT_TRUE(SendStartsHomeConversation(chrome)) << "the PP 助手 page's composer";
+  chrome.compact_chat_open = true;
+  EXPECT_FALSE(SendStartsHomeConversation(chrome)) << "a conversation open over the AI page";
+  chrome.compact_chat_open = false;
+  chrome.nav_tab = NavTab::Sessions;
+  EXPECT_FALSE(SendStartsHomeConversation(chrome));
+  // The image path cannot run without a messaging facade here: it is read from the source.
+  std::ifstream in(std::string(PP_SOURCE_DIR) + "/src/gui/chat/AgentTurnController.cpp");
+  std::stringstream source;
+  source << in.rdbuf();
+  const std::string text = source.str();
+  const size_t start = text.find("bool AgentTurnController::SendImageQuestion(");
+  ASSERT_NE(start, std::string::npos);
+  const std::string body = text.substr(start, text.find("\n}\n", start) - start);
+  EXPECT_NE(body.find("SendStartsHomeConversation(host_.ChromeSnapshot())"), std::string::npos);
+  EXPECT_EQ(body.find("nav_tab == NavTab::Home"), std::string::npos);
 }
 
 TEST_F(AgentTurnBusyTest, AQueueTheSessionsRefusedIsAskedAgainEverySecond) {

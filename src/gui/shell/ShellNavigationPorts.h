@@ -28,6 +28,14 @@ struct ShellChromeSnapshot {
   bool compact_chat_open = false;
 };
 
+/**
+ * A send from the AI page's own composer (the PP 助手 list, no conversation open over it) starts a new AI
+ * conversation; once one is open over that page, the same tab sends into it (text and pictures alike).
+ */
+inline bool SendStartsHomeConversation(const ShellChromeSnapshot& chrome) {
+  return chrome.nav_tab == NavTab::Home && !chrome.compact_chat_open;
+}
+
 inline ShellChromeSnapshot ProjectShellChromeSnapshot(const ShellState& state) {
   ShellChromeSnapshot snap;
   snap.layout_mode = state.layout_mode;
