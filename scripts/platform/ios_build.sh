@@ -54,6 +54,7 @@ Environment:
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
   PP_API_URL_PROD             Prod backend origin compiled into the app (empty = none)
   PP_API_URL_QA               QA backend origin compiled into the app (empty = QA option hidden)
+  PP_BROWSER_IOS_CALLKIT      ON (default) or OFF: CallKit + PushKit for incoming calls; OFF for the China storefront
   IOS_CMAKE_GENERATOR       Ninja (default) or Xcode
   IOS_SIMULATOR_UDID        Target a specific simulator (optional; otherwise newest iPhone)
   IOS_DEVICE_UDID           Target a specific physical device (optional; otherwise first paired iPhone)
@@ -139,6 +140,9 @@ common_cmake_args() {
   fi
   if [[ -n "${PP_BROWSER_RELEASE_VERSION:-}" ]]; then
     args+=(-DPP_BROWSER_RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION}")
+  fi
+  if [[ -n "${PP_BROWSER_IOS_CALLKIT:-}" ]]; then
+    args+=(-DPP_BROWSER_IOS_CALLKIT="${PP_BROWSER_IOS_CALLKIT}")
   fi
   if [[ "${GENERATOR}" == "Xcode" ]]; then
     args+=(-G Xcode)

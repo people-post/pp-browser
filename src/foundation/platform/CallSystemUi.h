@@ -7,8 +7,9 @@
 namespace pbr {
 
 /**
- * The phone's own call screen: the incoming-call notification on Android (P014, AndroidCallSystemUi).
- * It rings full screen, on the lock screen too, and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
+ * The phone's own call screen: CallKit on iPhone builds that may use it (P016, PP_BROWSER_IOS_CALLKIT), the
+ * incoming-call notification on Android (P014, AndroidCallSystemUi). It rings full screen, on the lock screen
+ * too, and answers / ends calls there. Null elsewhere (Available() is false): the app's own ring and
  * notifications do it all.
  *
  * Driven by CallSystemUiBridge on the UI thread; the callbacks arrive there too.
@@ -16,9 +17,12 @@ namespace pbr {
 class ICallSystemUi {
 public:
   struct Callbacks {
-    /** The user answered on the system screen. `call_id` empty: the push's call, its ring not known yet. */
+    /**
+     * The user answered on the system screen. On the push's call, its ring not known yet: `call_id` is the call
+     * the push named (its `wake_hint`, CallKit), or empty when it named none.
+     */
     std::function<void(const std::string& call_id)> answer;
-    /** The user ended (declined, hung up) on the system screen; empty: the push's call. */
+    /** The user ended (declined, hung up) on the system screen; the push's call: as for `answer`. */
     std::function<void(const std::string& call_id)> end;
     std::function<void(const std::string& call_id, bool muted)> set_muted;
     /** The system activated (true) or deactivated (false) the audio session of a call it owns. */
@@ -46,7 +50,10 @@ public:
   virtual void EndPendingPushCall() {}
   /** `fn` runs (UI thread) whenever HasPendingPushCall() changes; the PIN screen words itself by it. */
   virtual void SetPendingChangedHandler(std::function<void()> fn) { (void)fn; }
-  /** Ring `call_id` on the system screen (fills in the push's pending call when there is one). */
+  /**
+   * Ring `call_id` on the system screen. It fills in the push's pending call when there is one and the push named
+   * this call or none; another ring gets a call of its own.
+   */
   virtual void ReportIncoming(const std::string& call_id, const std::string& caller_name, bool video) {
     (void)call_id;
     (void)caller_name;

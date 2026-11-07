@@ -984,7 +984,7 @@ def scenario_peer_hangs_up_while_backgrounded(lab):
 
 def scenario_answered_in_background(lab):
     """Bob's phone app is in the background; Alice's call wakes it by push and he answers without
-    opening the app (the phone's own call screen). The call outlasts the push's
+    opening the app (the phone's own call screen, CallKit on iPhone). The call outlasts the push's
     wake window, and ends when Alice hangs up."""
     a, a_thread, b, b_thread = open_pair(lab)
     b.cmd("background")

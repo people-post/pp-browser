@@ -74,6 +74,8 @@ CallController::CallController()
               .toggle_mute = [this]() { ToggleMute(); },
               .display_name = [this](const std::string& identity) { return DisplayNameForIdentity(identity); },
               .now_ms = {},
+              .audio_managed = [](const bool managed) { AudioSession::SetSystemManaged(managed); },
+              .audio_activated = [](const bool active) { AudioSession::NotifySystemActivation(active); },
           }) {
   redirectLogger("CallController");
   CallRingtone::SetRingSoundPath(IAssetLocator::Instance().Resolve("sounds/call_ring.wav"));
@@ -928,8 +930,8 @@ void CallController::ShowNotice(const CallNotice& notice) {
     return;
   }
   case CallNotice::Kind::IncomingCall: {
-    if (system_call_screen_.TakesRing(AppLifecycle::IsForeground())) {
-      return; // the phone's own call screen rings it (Android's call notification)
+    if (system_call_screen_.TakesRing(AppLifecycle::IsVisible())) {
+      return; // the phone's own call screen rings it (CallKit, Android's call notification)
     }
     const std::string caller = DisplayNameForIdentity(notice.identity);
     const std::string body =
@@ -943,7 +945,9 @@ void CallController::ShowNotice(const CallNotice& notice) {
 void CallController::Render() {
   phone_layout_ = shell_call_chrome_.phone_layout && shell_call_chrome_.phone_layout();
   const CallScreen& screen = presenter_.Screen();
-  system_call_screen_.Sync(screen, presenter_.ActiveCallId(), AppLifecycle::IsForeground());
+  // Visible, not foreground: an overlay (the system's own call screen, Control Center) makes iOS resign the app
+  // active, which is not a reason to move a ring to the system screen.
+  system_call_screen_.Sync(screen, presenter_.ActiveCallId(), AppLifecycle::IsVisible());
   // The chat header shows "In call": tell it when the call on screen changes.
   if (screen.kind != header_kind_ || presenter_.ActiveCallId() != header_call_id_) {
     header_kind_ = screen.kind;
@@ -958,7 +962,8 @@ void CallController::Render() {
     return;
   case CallScreen::Kind::Ringing:
     if (system_call_screen_.SystemRings(screen.ring_call_id)) {
-      // The phone's own call screen rings it (Android's call notification, P014): one ring, not the app's dialog too.
+      // The phone's own call screen rings it (CallKit, P016; Android's call notification, P014): one ring, not the
+      // app's dialog too.
       ClearRing();
       SyncShellState();
       SyncRingtone();

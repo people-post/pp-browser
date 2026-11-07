@@ -40,21 +40,24 @@ public:
 class CallSystemUiBridgeTest : public ::testing::Test {
 protected:
   CallSystemUiBridgeTest()
-      : bridge_(ui_, {
-                         .accept =
-                             [this](const std::string& call_id, bool voice_only) {
-                               did.push_back(voice_only ? "accept voice" : "accept");
-                               accepted_ids.push_back(call_id);
-                               if (on_accept) {
-                                 on_accept(); // what the presenter does: it redraws at once
-                               }
-                             },
-                         .decline = [this]() { did.push_back("decline"); },
-                         .leave = [this]() { did.push_back("leave"); },
-                         .toggle_mute = [this]() { did.push_back("toggle mute"); },
-                         .display_name = [](const std::string& identity) { return "name-of-" + identity; },
-                         .now_ms = [this]() { return now; },
-                     }) {}
+      : bridge_(ui_,
+                {
+                    .accept =
+                        [this](const std::string& call_id, bool voice_only) {
+                          did.push_back(voice_only ? "accept voice" : "accept");
+                          accepted_ids.push_back(call_id);
+                          if (on_accept) {
+                            on_accept(); // what the presenter does: it redraws at once
+                          }
+                        },
+                    .decline = [this]() { did.push_back("decline"); },
+                    .leave = [this]() { did.push_back("leave"); },
+                    .toggle_mute = [this]() { did.push_back("toggle mute"); },
+                    .display_name = [](const std::string& identity) { return "name-of-" + identity; },
+                    .now_ms = [this]() { return now; },
+                    .audio_managed = [this](bool managed) { audio.push_back(managed ? "managed" : "unmanaged"); },
+                    .audio_activated = [this](bool active) { audio.push_back(active ? "activated" : "deactivated"); },
+                }) {}
 
   static CallScreen Ring(const std::string& call_id, bool video = false) {
     CallScreen s;
@@ -80,6 +83,8 @@ protected:
   FakeCallSystemUi ui_;
   std::vector<std::string> did;
   std::vector<std::string> accepted_ids;
+  /** What AudioSession was told (managed by the system screen, its activation). */
+  std::vector<std::string> audio;
   std::function<void()> on_accept;
   int64_t now = 1'000'000;
   CallSystemUiBridge bridge_;
@@ -106,6 +111,99 @@ TEST_F(CallSystemUiBridgeTest, ARingInTheBackgroundRingsOnTheSystemScreenAndEnds
 TEST_F(CallSystemUiBridgeTest, ThePushsCallIsFilledInEvenWithTheAppOpen) {
   ui_.pending_push = true;
   bridge_.Sync(Ring("c1"), "", true);
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, AnsweredOnTheSystemScreenItsAudioIsTheSystemsUntilTheCallEnds) {
+  bridge_.Sync(Ring("c1"), "", false);
+  on_accept = [this]() { EXPECT_EQ(audio, (std::vector<std::string>{"managed"})) << "before the accept's audio"; };
+  ui_.callbacks_.answer("c1");
+  ASSERT_EQ(did, (std::vector<std::string>{"accept voice"}));
+  ui_.callbacks_.audio_session(true); // CallKit's didActivateAudioSession
+  bridge_.Sync(InCall("c1"), "c1", false);
+  EXPECT_EQ(audio, (std::vector<std::string>{"managed", "activated"}));
+  bridge_.Sync(CallScreen{}, "", false); // the peer hung up
+  EXPECT_EQ(audio.back(), "unmanaged");
+}
+
+TEST_F(CallSystemUiBridgeTest, TheSystemDeactivatingTheSessionEndsItsHold) {
+  bridge_.Sync(Ring("c1"), "", false);
+  ui_.callbacks_.answer("c1");
+  ui_.callbacks_.end("c1"); // hung up there: CallKit releases the session and says so
+  ui_.callbacks_.audio_session(false);
+  EXPECT_EQ(audio, (std::vector<std::string>{"managed", "deactivated", "unmanaged"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, AnsweredInTheAppTheAudioStaysTheApps) {
+  bridge_.Sync(Ring("c1"), "", false);
+  bridge_.Sync(Answering("c1"), "", true);
+  bridge_.Sync(InCall("c1"), "c1", true);
+  EXPECT_TRUE(audio.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsAnswerHoldsTheAudioOnlyOnceItsRingShows) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("");
+  EXPECT_TRUE(audio.empty()) << "a placeholder that never finds its ring must leave nothing managed";
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(audio, (std::vector<std::string>{"managed"}));
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsCallGoingAwayReleasesTheAudio) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("");
+  ui_.callbacks_.audio_session(true); // CallKit activated it on the answer
+  ui_.pending_push = false;
+  ui_.callbacks_.pending_gone();
+  EXPECT_EQ(audio, (std::vector<std::string>{"activated", "unmanaged"}));
+}
+
+// P016: the VoIP push names its call (`wake_hint`); a choice made on the push's call is that call's only.
+TEST_F(CallSystemUiBridgeTest, AnAnswerOnThePushsNamedCallAnswersOnlyThatRing) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("c1");         // the push named c1; its ring is not known yet
+  bridge_.Sync(Ring("c2"), "", false); // another call rings first
+  EXPECT_TRUE(did.empty()) << "c2 is not the call the user answered";
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
+  EXPECT_TRUE(audio.empty());
+  bridge_.Sync(CallScreen{}, "", false); // c2's caller gives up
+  EXPECT_EQ(ui_.log.back(), "ended c2");
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_EQ(did, (std::vector<std::string>{"accept voice"}));
+  EXPECT_EQ(accepted_ids, (std::vector<std::string>{"c1"}));
+  EXPECT_EQ(ui_.log.back(), "incoming c1 name-of-alice");
+}
+
+TEST_F(CallSystemUiBridgeTest, ADeclineOnThePushsNamedCallDeclinesOnlyThatRing) {
+  ui_.pending_push = true;
+  ui_.callbacks_.end("c1");
+  ui_.pending_push = false; // the system screen ended the push's call
+  bridge_.Sync(Ring("c2"), "", false);
+  EXPECT_TRUE(did.empty());
+  EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c2 name-of-alice"}));
+  ui_.callbacks_.end("c2"); // declined there too
+  EXPECT_EQ(did, (std::vector<std::string>{"decline"}));
+  bridge_.Sync(CallScreen{}, "", false);
+  // The user opened the app meanwhile: the call he declined there does not ring in it.
+  bridge_.Sync(Ring("c1"), "", true);
+  EXPECT_EQ(did, (std::vector<std::string>{"decline", "decline"}));
+  EXPECT_EQ(ui_.log.size(), 1u);
+}
+
+TEST_F(CallSystemUiBridgeTest, AChoiceOnThePushsNamedCallStillExpires) {
+  ui_.callbacks_.end("c1");
+  now += CallSystemUiBridge::kPendingChoiceMs + 1;
+  bridge_.Sync(Ring("c1"), "", true);
+  EXPECT_TRUE(did.empty());
+}
+
+TEST_F(CallSystemUiBridgeTest, ThePushsNamedCallGoingAwayForgetsItsAnswer) {
+  ui_.pending_push = true;
+  ui_.callbacks_.answer("c1");
+  ui_.pending_push = false;
+  ui_.callbacks_.pending_gone(); // its wait ran out
+  bridge_.Sync(Ring("c1"), "", false);
+  EXPECT_TRUE(did.empty());
   EXPECT_EQ(ui_.log, (std::vector<std::string>{"incoming c1 name-of-alice"}));
 }
 
@@ -300,6 +398,7 @@ TEST_F(CallSystemUiBridgeTest, TheSystemsAudioSessionCallbacksAreAccepted) {
   ui_.callbacks_.audio_session(true);
   ui_.callbacks_.audio_session(false);
   EXPECT_TRUE(did.empty());
+  EXPECT_EQ(audio, (std::vector<std::string>{"activated", "deactivated", "unmanaged"}));
 }
 
 TEST_F(CallSystemUiBridgeTest, NothingWithoutASystemScreen) {
