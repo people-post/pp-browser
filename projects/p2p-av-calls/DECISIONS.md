@@ -462,6 +462,7 @@ Open public directory; paid settle UI; pure `min(price)` sort; hardcoded N014 st
 
 **Date:** 2026-07-30  
 **Updated:** 2026-07-30 — policy applies to **1:1 P2P** as well as group/SFU  
+**Status:** Accepted; audio's "FIFO; even if late" / `reliable_ordered` is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) (best effort, the codec recovers)  
 **Decision:** One **adaptation policy** for all calls: priority **audio ≫ video_lo ≫ video_hi**, producer rate control first, prefer fluent low video over stalled high. **Transport backends differ**; do not force 1:1 through `media_relay` when P2P ICE works. Mesh hop framing: [N021](../p2p-mesh/DECISIONS.md#n021--generic-media_relay-framing-qos-channel-types). **No new codec matrix** in a4 — reuse Opus + H264 HW (V017–V019).
 
 ### Same policy brain, two backends
@@ -697,7 +698,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V032 — Media QoS enforcement, playout, SFU E2E
 
 **Date:** 2026-08-06  
-**Status:** Accepted (implementing)  
+**Status:** Accepted (implementing); **amended by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses) — audio is best effort (no class priority in the hop's queue), and the receiver's jitter target is 60–400 ms adaptive with an 800 ms cap, not 60 / 200 ms  
 **Decision:** Close the structural gaps between N019/N021/V024 **docs** and host/receiver **code** before further quality tuning. Policy matrix: [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md).
 
 | Area | Rule |
@@ -744,7 +745,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 ## V034 — Video on libp2p (video_lo; E2E; same streams)
 
 **Date:** 2026-08-18  
-**Status:** Accepted (**implementing**)  
+**Status:** Accepted (**implementing**); the hop-queue rule ("never shed `ReliableOrdered`") is **superseded by** [V063](#v063--call-audio-is-best-effort-the-codec-recovers-losses)  
 **Decision:** Product **video** rides the existing libp2p voice path — not WebRTC. Capture/encode/decode/tiles stay the a3 SDL + platform HW H264 stack ([V017](#v017--video-codec-h264-via-platform-hw) / [V018](#v018--video-capture--render-path-in-sdl--rmlui-shell)). Transport is **encrypted H264 video_lo** on the same 1:1 duplex and the same blind `media_relay` hop as Opus.
 
 | Topic | Rule |
@@ -1477,3 +1478,22 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Rationale:** An open group lets its members bring friends into its call; order is kept the way the group keeps it, by its owner and admins, under the same preset as invites. Labelling guests and who brought them keeps an open call accountable without a gate.
 **Alternatives:** A separate guest setting (a second knob next to the preset); guests bring guests (unchecked chains); removal of members from a call (undone by Join); the bringer may remove its guest (a second rule next to the group's); a host for ad-hoc calls (calls are hostless, DESIGN row 5).
+
+
+## V063 — Call audio is best effort; the codec recovers losses
+
+**Date:** 2026-11-06
+**Status:** Accepted (Hongwei, 2026-11-06) — records what the code has done since 2026-08 (1:1) and 2026-11-03 (groups: pp-cpp-mesh v3.1.0, the hop's data lane). **Supersedes** audio's `reliable_ordered` / "FIFO; even if late" in V024 and N021 and the hop-queue rule in V032 / V034. The current rule: [MEDIA_CHANNELS § Channel type](../../docs/contracts/MEDIA_CHANNELS.md#channel-type-relay-qos).
+
+**Context:** V024 and N021 put call audio on `reliable_ordered` (deliver in order, even if late), and V032 / V034 told the hop never to shed it for video. An audit while stress-testing pp-node (2026-11-06, [STRESS_LAB.md](../../docs/ops/STRESS_LAB.md)) found the code had moved on: audio is not resent on any normal path, and the stamp changes nothing.
+
+**Decision:**
+
+1. **Every normal path is best effort.** A 1:1 call's media rides the BestEffort `Realtime` channel, direct or through a circuit (the inner media channel is BestEffort; the outer splice too, [CALL_MEDIA_CIRCUIT](../adp/CALL_MEDIA_CIRCUIT.md)). A group call's media rides the participant's data lane on the hop (`/pp-mesh/media-relay-data/1.0.0`, BestEffort, the oldest dropped). A lost frame costs that frame, never a stall.
+2. **The fallback stays reliable.** Without a data lane (a hop reached through a circuit, or one older than pp-cpp-mesh v3.1.0) group media rides the participant's control channel, which is Reliable. That is a compatibility path, not a policy.
+3. **`ReliableOrdered` is a label.** Senders still stamp audio `0` (the wire keeps its values); a hop treats it like any other frame. Only `LatestLossy` changes a hop's behaviour (the stale non-keyframe drop). The hop's queues have no class priority.
+4. **The codec covers losses:** Opus in-band FEC (tuned for 10 % loss), loss concealment on a gap, and the receiver's jitter buffer (target 60–400 ms, adapting to arrival jitter; at most 800 ms).
+5. **Resending audio is rejected for real-time calls:** a resent 20 ms frame arrives after its playout slot, and under load resends add to the very queue that is late. Audio before video stays a sender rule (V024's priority and rate ladder), not a transport class.
+
+**Rationale:** Late audio is worse than lost audio in a conversation; FEC and concealment hide single losses well. One best-effort lane per peer keeps the hop simple and blind.
+**Open:** a deadline on real-time media in a link's send queue — under overload media waits there instead of being dropped (STRESS_LAB § What limits a node, with the data plane's threading).

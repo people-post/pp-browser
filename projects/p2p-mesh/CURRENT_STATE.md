@@ -97,7 +97,7 @@
 |------|-------|
 | Protocol | `/pp-mesh/datagram-relay/1.0.0` (`MediaRelayService`) |
 | Framing | N021 binary frames: `stream_id \| channel_id \| channel_type \| seq \| mark` + opaque payload |
-| QoS | `reliable_ordered`, `latest_lossy`, `best_effort` |
+| QoS | `reliable_ordered` (a label), `latest_lossy` (stale-dropped), `best_effort` — audio is best effort ([V063](../p2p-av-calls/DECISIONS.md#v063--call-audio-is-best-effort-the-codec-recovers-losses)) |
 | Session | quote → accept → attach; subscribe `(stream_id, channel_id)`; ↑/↓ budget defaults; volunteer rate 0 |
 | Auth stub | `auth` must equal `call_id` (a4 will supply roster proof) |
 | Config | `capabilities.media_relay` **default on**; `pricing.media_relay`; `media_relay_budget` |
