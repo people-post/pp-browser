@@ -402,6 +402,8 @@ private:
   bool new_chat_has_contacts_ = false;
   ui::String new_chat_query_;
   bool new_chat_open_ = false;
+  /** The Add contact page is a full-screen transient (phones), not a page sheet layer. */
+  bool add_is_transient_ = false;
   /** Blocked people, by name (OpenBlockedPeople). */
   std::vector<ContactListRow> blocked_rows_;
   bool blocked_open_ = false;

@@ -257,7 +257,7 @@ TEST_F(ContactsPhoneTest, AddContactSheetHasTopCardsSearchAccountCardAndTwoTiles
   const std::string rml = ReadAsset("views/add_contact.rml");
   ASSERT_FALSE(rml.empty());
   for (const char* piece :
-       {"class=\"sheet-header\"", "class=\"sheet-title\"", "data-value=\"add_query\"",
+       {"class=\"pane-nav nc-bar ac-bar\"", "class=\"pane-nav-title nc-bar-title\"", "data-value=\"add_query\"",
         "data-event-change=\"add_search_changed()\"", "add_copy_id()", "add_share()", "add_action('scan')",
         "add_action('qr')", "add_action('invite')", "add_action('group')", "add_pick(hit.index)",
         "{{i18n:contacts.add_sheet.search_placeholder}}", "{{i18n:settings.profile.relay_id_none}}",

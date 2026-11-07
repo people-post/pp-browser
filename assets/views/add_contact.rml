@@ -1,7 +1,7 @@
 <div class="ac-page" data-model="contacts">
-  <!-- The sheet's title row (.sheet-header) stays put above the content. -->
-  <div class="sheet-header">
-    <p class="sheet-title">{{i18n:contacts.add}}</p>
+  <!-- Full-screen page on phones (Kenneth 2026-11-07), like New chat: the shell's round back at the left of this bar. -->
+  <div class="pane-nav nc-bar ac-bar">
+    <p class="pane-nav-title nc-bar-title">{{i18n:contacts.add}}</p>
   </div>
   <div class="ac-scroll">
     <!-- Two big cards side by side (Kenneth 2026-11-07): scan, and my own QR code. Same handlers the tiles used. -->

@@ -13502,3 +13502,20 @@ textarea:composing ~ .prompt-composer-label,
   font-size: 16dp;
   white-space: nowrap;
 }
+
+/* Add contact is a full-screen page on phones, the same bar as New chat. */
+.shell-layer-compact .ac-page {
+  position: relative;
+}
+
+.shell-layer-compact .ac-page .nc-bar {
+  position: relative;
+  flex: none;
+  top: auto;
+  height: 56dp;
+}
+
+.shell-layer-compact .ac-page .nc-bar-title {
+  top: 0;
+  opacity: 1;
+}

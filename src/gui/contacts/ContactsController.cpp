@@ -2430,6 +2430,15 @@ void ContactsController::OpenAddContactPage() {
   can_new_group_ = static_cast<bool>(chat_ports_.open_new_group);
   add_open_ = true;
   DirtyAddContact();
+  if (compact_layout_ && shell_navigation_.push_transient) {
+    // A full-screen page like New chat: the shell's round back, the edge swipe and the system back close it and
+    // report it through OnAddContactDismissed (Application's transient-popped hook).
+    add_is_transient_ = true;
+    PaneSpec page;
+    page.key = "add_contact";
+    shell_navigation_.push_transient(page);
+    return;
+  }
   PaneSpec spec;
   spec.key = "add_contact";
   spec.page_sheet = true;
@@ -2441,6 +2450,7 @@ void ContactsController::OpenAddContactPage() {
 
 void ContactsController::OnAddContactDismissed() {
   add_open_ = false;
+  add_is_transient_ = false;
   add_layer_id_ = -1;
   add_search_deadline_ms_ = 0;
   ++add_search_generation_; // a search still in flight answers into nothing
@@ -2448,6 +2458,13 @@ void ContactsController::OnAddContactDismissed() {
 
 void ContactsController::CloseAddContactPage() {
   if (!add_open_) {
+    return;
+  }
+  if (add_is_transient_) {
+    if (shell_navigation_.pop_transient) {
+      shell_navigation_.pop_transient();
+    }
+    OnAddContactDismissed();
     return;
   }
   const int layer_id = add_layer_id_;

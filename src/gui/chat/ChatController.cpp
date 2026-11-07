@@ -4350,6 +4350,8 @@ bool ChatController::Setup(ui::Context* context) {
   shell_setup_.register_pane(
       {.key = "new_chat", .rml_path = "views/new_chat.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
+      {.key = "add_contact", .rml_path = "views/add_contact.rml", .role = PaneRole::Primary});
+  shell_setup_.register_pane(
       {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
       {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = Tr("shell.pane.preview").c_str()});
