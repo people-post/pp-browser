@@ -543,6 +543,7 @@ protected:
     ports.app_shown = [this]() { return app_shown_; };
     ports.on_biometric_lost = [this]() { ++lost_; };
     ports.ui.show_biometric_reset = [this](const std::string& hint) { hints_.push_back(hint); };
+    ports.ui.set_unlock_in_progress = [this](const bool in_progress) { busy_ui_.push_back(in_progress); };
     return ports;
   }
 
@@ -569,6 +570,7 @@ protected:
   int lost_ = 0;
   std::vector<std::string> prompts_;
   std::vector<std::string> hints_;
+  std::vector<bool> busy_ui_;
 };
 
 // Order: the grace window, then the face / fingerprint prompt over the raised door (the dev PIN would come after; this
@@ -682,24 +684,53 @@ TEST_F(ProfileUnlockGateBiometricTest, GraceRetryDoesNotPrompt) {
   EXPECT_EQ(Prompts(), 1);
 }
 
-TEST_F(ProfileUnlockGateBiometricTest, BiometricResultAfterPinUnlockIsDropped) {
-  BioAnswers({BiometricUnlock::Status::Found});
+// PIN and face / fingerprint never run at once: a PIN submitted while the prompt runs is declined (the door is told it
+// is not busy, so the pad takes keys again); once the prompt has answered, the PIN opens it.
+TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringBiometricIsDeclined) {
+  BioAnswers({BiometricUnlock::Status::Canceled});
   gate_.BindPorts(BioPorts());
   gate_.BeginDeferredUnlockAfterFirstPresent();
   RunJob(0);  // the grace read: the door rises, the prompt is queued
   ASSERT_EQ(jobs_.size(), 1U);
+  busy_ui_.clear();
 
   gate_.CompleteWithPin("4321", /*create_mode=*/false);
-  ASSERT_EQ(jobs_.size(), 2U);
-  RunJob(1);  // the PIN's unlock answers first
-  ASSERT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(jobs_.size(), 1U) << "no unlock started beside the prompt";
+  EXPECT_EQ(busy_ui_, std::vector<bool>{false}) << "the door hears it was declined";
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+
+  RunAll();  // the prompt is canceled
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  EXPECT_TRUE(engine_.IsUnlocked());
   EXPECT_EQ(dismissed_, 1);
   EXPECT_EQ(remembered_, std::vector<int>{15});
+}
 
-  RunAll();  // the prompt's late Found
-  EXPECT_EQ(dismissed_, 1) << "no second close";
-  EXPECT_EQ(remembered_, std::vector<int>{15}) << "no second grace entry";
-  EXPECT_FALSE(gate_.IsUnlockInProgress());
+// A PIN submitted while a grace retry runs (a locked phone's entry read again) is declined the same way, not dropped
+// silently with the pad left busy.
+TEST_F(ProfileUnlockGateBiometricTest, PinSubmitDuringAGraceRetryIsDeclined) {
+  bio_enabled_ = false;
+  Answers({GraceUnlock::Status::Unavailable, GraceUnlock::Status::Unavailable, GraceUnlock::Status::Expired});
+  gate_.BindPorts(BioPorts());
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  RunAll();
+  ASSERT_EQ(doors_, 1);
+  ASSERT_TRUE(handler_);
+  handler_();  // the phone's unlock: the retry is queued, an unlock in progress
+  ASSERT_EQ(jobs_.size(), 1U);
+  ASSERT_TRUE(gate_.IsUnlockInProgress());
+  busy_ui_.clear();
+
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  EXPECT_EQ(jobs_.size(), 1U);
+  EXPECT_EQ(busy_ui_, std::vector<bool>{false});
+
+  RunAll();  // the window has expired: the door stays
+  gate_.CompleteWithPin("4321", /*create_mode=*/false);
+  RunAll();
+  EXPECT_TRUE(engine_.IsUnlocked());
+  EXPECT_EQ(dismissed_, 1);
 }
 
 TEST_F(ProfileUnlockGateBiometricTest, BiometricResultAfterGateClosedIsDropped) {

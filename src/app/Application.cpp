@@ -1497,16 +1497,23 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.on_default_provisioned = []() {
     UserFeedback::Ok("Using the app default. Change anytime in Me → Security.");
   };
-  // Both bring another DEK: a face / fingerprint entry left from before could not open it (A014).
+  // Both bring another DEK: once it is in, a face / fingerprint entry left from before could not open it (A014). A
+  // failed import keeps it (the old DEK stays).
   unlock_ports.import_link_device = [this, &facade](const SecretText& pin,
                                                    const std::string& bundle_json) -> Roe<void> {
-    secrets_->DisableBiometric();
-    return facade.ImportLinkDevice(bundle_json, pin);
+    auto imported = facade.ImportLinkDevice(bundle_json, pin);
+    if (imported) {
+      secrets_->DisableBiometric();
+    }
+    return imported;
   };
   unlock_ports.restore_recovery_phrase = [this, &facade](const SecretText& pin, const SecretText& phrase,
-                                                         const std::vector<std::string>& saved_copies) {
-    secrets_->DisableBiometric();
-    return facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+                                                         const std::vector<std::string>& saved_copies) -> Roe<void> {
+    auto restored = facade.RestoreFromRecoveryPhrase(phrase, pin, saved_copies);
+    if (restored) {
+      secrets_->DisableBiometric();
+    }
+    return restored;
   };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {

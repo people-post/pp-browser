@@ -205,6 +205,8 @@ private:
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);
+  /** A PIN / import submitted while another unlock or a prompt runs: not started, and the UI told it is not busy. */
+  void DeclineSubmit();
   void Finish(bool unlocked);
   void DrainQueue(bool unlocked);
   void ReportError(const std::string& message);

@@ -143,6 +143,20 @@ void PinGateController::SetUnlockInProgressUi(const bool in_progress) {
   } else if (shell_pin_gate_.set_activity) {
     shell_pin_gate_.set_activity(false, {});
   }
+  // Not busy any more with the door still up (the gate declined the PIN while another unlock ran): the pad takes keys
+  // again, its last full entry cleared to be typed anew. Settings' verify / change keep their own busy state.
+  if (!in_progress && pin_state_.active && pin_state_.keypad_busy && !pin_state_.verify_mode &&
+      !pin_state_.change_mode && shell_pin_gate_.apply_pin_gate) {
+    PullBoundPinFields();
+    pin_state_.keypad_busy = false;
+    if (InNewPinStep()) {
+      pin_state_.pin_confirm = "";
+    } else {
+      pin_state_.pin = "";
+    }
+    RefreshKeypad();
+    ApplyPinGate();
+  }
   DirtyPinFields();
 }
 

@@ -88,6 +88,15 @@ void ProfileUnlockGate::SetUnlockInProgress(const bool in_progress) {
   }
 }
 
+void ProfileUnlockGate::DeclineSubmit() {
+  // Another unlock (a grace read, a face / fingerprint prompt) is running: this one is not started. The door is told,
+  // so a pad that went busy on its full PIN takes keys again.
+  log().info << "Unlock not started: another one is running";
+  if (ports_.ui.set_unlock_in_progress) {
+    ports_.ui.set_unlock_in_progress(false);
+  }
+}
+
 void ProfileUnlockGate::Finish(const bool unlocked) {
   StopGrace();
   // The door closes: a face / fingerprint answer still on its way is for a door that is gone.
@@ -188,7 +197,8 @@ void ProfileUnlockGate::RequestShowUnlock(std::function<void(bool)> done) {
 
 void ProfileUnlockGate::RunUnlockAndReadyAsync(SecretText pin, const bool set_default_pin,
                                                const bool clear_default_pin, const bool remember_grace) {
-  if (unlock_in_progress_) {
+  if (unlock_in_progress_ || biometric_in_flight_) {
+    DeclineSubmit();
     return;
   }
   SetUnlockInProgress(true);
@@ -414,7 +424,8 @@ void ProfileUnlockGate::CompletePhraseRestore(const SecretText& pin, const Secre
 
 void ProfileUnlockGate::CompleteAccountImport(const SecretText& pin, const bool set_default_pin,
                                               std::function<Roe<void>()> import, const char* mark) {
-  if (unlock_in_progress_) {
+  if (unlock_in_progress_ || biometric_in_flight_) {
+    DeclineSubmit();
     return;
   }
   SetUnlockInProgress(true);
@@ -590,7 +601,7 @@ void ProfileUnlockGate::OnGraceUnavailable(const GraceStep step) {
 }
 
 void ProfileUnlockGate::RetryGrace() {
-  if (!grace_pending_ || unlock_in_progress_ || (secrets_ && Secrets().IsUnlocked())) {
+  if (!grace_pending_ || unlock_in_progress_ || biometric_in_flight_ || (secrets_ && Secrets().IsUnlocked())) {
     return;
   }
   RunGraceAttempt(GraceStep::Retry);

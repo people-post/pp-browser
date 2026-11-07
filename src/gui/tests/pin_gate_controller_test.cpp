@@ -602,6 +602,22 @@ TEST_F(PinGateControllerTest, ChangeTextModeWhenUnknown) {
   ASSERT_EQ(changes_, (std::vector<std::pair<std::string, std::string>>{{"old secret", "new secret"}}));
 }
 
+// The gate declined a full pad's PIN (another unlock was running) and said it is not busy: the pad takes keys again.
+TEST_F(PinGateControllerTest, ADeclinedPinLeavesThePadUsable) {
+  pin_digits_ = 4;
+  controller_.ShowUnlock();
+  Keys("1234");
+  ASSERT_TRUE(shown_.keypad_busy);
+  ASSERT_EQ(completes_, 1);
+
+  controller_.SetUnlockInProgressUi(false);
+  EXPECT_FALSE(shown_.keypad_busy);
+  EXPECT_EQ(Pin(), "");
+  EXPECT_EQ(shown_.keypad_filled, 0);
+  Keys("1234");
+  EXPECT_EQ(completes_, 2) << "typed and submitted again";
+}
+
 // Kenneth 2026-11-07: on the app default PIN, Change PIN starts at the new PIN; the change gets the default PIN.
 TEST_F(PinGateControllerTest, ChangeFromTheDefaultPinStartsAtTheNewPin) {
   pin_digits_.reset();
