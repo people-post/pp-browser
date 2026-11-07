@@ -4,7 +4,7 @@
     <div class="bar-fade"></div>
     <!-- Phone bar (DEV/PLAN-minimal-nav.md D, Kenneth 2026-11-07): no title; the round avatar on the left opens Settings,
          the round plus on the right opens New chat. The avatar reads the settings model like Me's card. -->
-    <button class="pane-nav-avatar shell-circle-btn" type="button" data-model="window"
+    <button class="pane-nav-avatar" type="button" data-model="window"
             data-event-click="open_settings_from_avatar()">
       <span class="shell-circle-btn-face" data-model="settings">
         <span class="shell-circle-avatar"
@@ -20,6 +20,7 @@
           <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
         </span>
       </span>
+      <span class="pane-nav-avatar-name" data-model="settings">{{profile_nickname}}</span>
     </button>
     <div class="pane-nav-actions row">
       <button class="pane-nav-plus shell-circle-btn" type="button" data-event-click="open_new_session_menu()">

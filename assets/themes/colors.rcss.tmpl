@@ -726,10 +726,9 @@ select selectbox option:hover {
 }
 
 /* Phone two-word tab bar (DEV/PLAN-minimal-nav.md A): grey words, the chosen one in the label colour. The bar is an
-   opaque fill (the words must read over any scrolling content) with a hairline on top; the frost only blurs behind it. */
+   opaque fill (the words must read over any scrolling content) and no line on top; the frost only blurs behind it. */
 .shell-nav-rail--text {
   background-color: {{x-bar}};
-  border-top: 0.5dp {{separator}};
 }
 
 .shell-nav-rail--text .shell-nav-tab {
@@ -830,7 +829,7 @@ select selectbox option:hover {
   color: {{accent}};
 }
 
-.large-title, .pane-nav-title {
+.large-title, .pane-nav-title, .pane-nav-avatar-name {
   color: {{label}};
 }
 

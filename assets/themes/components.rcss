@@ -4183,34 +4183,55 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48dp;
-  height: 48dp;
-  border-radius: 24dp;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
   overflow: hidden;
 }
 
 .shell-circle-avatar .avatar-letter {
-  font-size: 20dp;
+  font-size: 22dp;
 }
 
 .shell-circle-avatar-image {
-  width: 48dp;
-  height: 48dp;
+  width: 52dp;
+  height: 52dp;
 }
 
-/* The Chats avatar is the one circle bigger than its 40dp face: 48dp, clearly larger than the 44dp list avatars. Its
-   box is the same 48dp, flush with the bar top (so it never rides up into the status bar), 16dp from the left edge. */
+/* The Chats avatar and the user's name beside it are one tap target (open_settings_from_avatar): a 52dp avatar, then
+   the name in 17dp bold on one line, cut at about 45% of the bar. Centred in the 56dp bar (compact bar block at the end
+   of the file). */
 .shell-layer-compact .pane-nav-avatar {
-  top: 0;
-  left: 16dp;
-  width: 48dp;
-  height: 48dp;
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  max-width: 45%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  cursor: pointer;
 }
 
 .shell-layer-compact .pane-nav-avatar .shell-circle-btn-face {
-  width: 48dp;
-  height: 48dp;
-  border-radius: 24dp;
+  flex: none;
+  width: 52dp;
+  height: 52dp;
+  border-radius: 26dp;
+}
+
+.pane-nav-avatar-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 10dp;
+  font-size: 17dp;
+  line-height: 22dp;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Phone contact page and blocked list: a 48dp bar over the page (which scrolls under it) with the back arrow. */
@@ -13247,4 +13268,88 @@ textarea:composing ~ .prompt-composer-label,
 
 .storage-select-delete {
   flex-shrink: 0;
+}
+
+/* Phone top bars are 56dp (Kenneth 2026-11-07, round 3): the 40dp circles sit centred with 8dp clear above and below
+   (the status-bar inset is already outside #shell-root), and the pages' scrollers start under the bar, not behind it.
+   Compact only; the desktop's 44dp panes and constants are untouched. */
+.shell-layer-compact .pane-nav,
+.shell-layer-compact .pane-nav-bg,
+.shell-layer-compact .pane-nav-title {
+  height: 56dp;
+}
+
+.shell-layer-compact .pane-nav-title {
+  line-height: 56dp;
+}
+
+.shell-layer-compact .pane-nav-actions {
+  top: 4dp;
+  right: 12dp;
+  height: 48dp;
+}
+
+.shell-layer-compact .pane-nav-back,
+.shell-layer-compact .settings-back-btn {
+  top: 4dp;
+}
+
+.shell-layer-compact .pane-nav-avatar {
+  top: 2dp;
+  left: 16dp;
+  height: 52dp;
+}
+
+.shell-layer-compact .sidebar-sessions,
+.shell-layer-compact .contacts-list-view,
+.shell-layer-compact .settings-list-view {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .home-scroll {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .settings-detail-header {
+  height: 56dp;
+}
+
+.shell-layer-compact .settings-detail-body {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .contacts-index {
+  top: 56dp;
+}
+
+.shell-layer-compact .nav-bar-host.nav-bar-hidden .settings-detail-header,
+.shell-layer-transient.nav-bar-host.nav-bar-hidden .shell-transient-chrome {
+  transform: translateY(-72dp);
+}
+
+.shell-layer-compact .shell-transient-chrome,
+.shell-layer-compact .shell-transient-chrome--titled {
+  min-height: 56dp;
+  padding: 4dp 0 0 12dp;
+}
+
+.shell-layer-compact .shell-transient-chrome--titled {
+  height: 56dp;
+}
+
+.shell-layer-transient.shell-layer-compact .contact-detail-panel,
+.shell-layer-transient.shell-layer-compact .blocked-page {
+  padding-top: 56dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar {
+  height: 56dp;
+}
+
+.shell-layer-compact .nc-page .nc-bar-title {
+  top: 0;
+}
+
+.shell-layer-compact .nc-page .contacts-index {
+  top: 56dp;
 }
